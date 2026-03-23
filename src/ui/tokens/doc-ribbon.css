@@ -1,0 +1,335 @@
+/* ============================================================
+   LeanZero Design System — Doc Ribbon Tokens & Components
+   ============================================================ */
+
+/* ---------- Light mode tokens (default) ---------- */
+:root {
+  --sv-bg-primary: #FFFFFF;
+  --sv-bg-secondary: #F8F9FA;
+  --sv-bg-tertiary: #F1F3F5;
+  --sv-bg-elevated: #FFFFFF;
+  --sv-bg-overlay: rgba(0, 0, 0, 0.45);
+  --sv-bg-hover: #E9ECEF;
+
+  --sv-text-primary: #111827;
+  --sv-text-secondary: #4B5563;
+  --sv-text-subtle: #9CA3AF;
+  --sv-text-disabled: #D1D5DB;
+  --sv-text-inverse: #FFFFFF;
+
+  --sv-border-primary: #E5E7EB;
+  --sv-border-secondary: #E5E7EB;
+  --sv-border-focus: #0D9488;
+
+  --sv-surface-raised: #FFFFFF;
+  --sv-surface-overlay: #FFFFFF;
+
+  --sv-status-success: #059669;
+  --sv-status-success-bg: #F0FDF4;
+  --sv-status-success-border: #A7F3D0;
+
+  --sv-status-warning: #DC2626;
+  --sv-status-warning-bg: #FEF2F2;
+  --sv-status-warning-border: #FECACA;
+
+  --sv-status-info: #0D9488;
+  --sv-status-info-bg: #F0FDFA;
+  --sv-status-info-border: #99F6E4;
+
+  --sv-status-neutral: #6B7280;
+  --sv-status-neutral-bg: #F9FAFB;
+  --sv-status-neutral-border: #E5E7EB;
+
+  --sv-interactive-primary: #0D9488;
+  --sv-interactive-primary-hover: #0F766E;
+  --sv-interactive-primary-active: #115E59;
+
+  --sv-interactive-success: #059669;
+  --sv-interactive-success-hover: #047857;
+  --sv-interactive-success-active: #065F46;
+
+  --sv-interactive-danger: #DC2626;
+  --sv-interactive-danger-hover: #B91C1C;
+  --sv-interactive-danger-active: #991B1B;
+
+  --sv-scrollbar-track: #F1F3F5;
+  --sv-scrollbar-thumb: #D1D5DB;
+  --sv-scrollbar-thumb-hover: #9CA3AF;
+
+  --sv-shadow-light: rgba(0, 0, 0, 0.06);
+  --sv-shadow-medium: rgba(0, 0, 0, 0.08);
+  --sv-shadow-strong: rgba(0, 0, 0, 0.12);
+
+  --sv-gradient-header: #FFFFFF;
+  --sv-gradient-footer: #FFFFFF;
+
+  --sv-font-family: "Inter", -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", system-ui, sans-serif;
+}
+
+/* ---------- Dark mode tokens ---------- */
+html[data-color-mode="dark"] {
+  --sv-bg-primary: #0A0A0A;
+  --sv-bg-secondary: #111111;
+  --sv-bg-tertiary: #1A1A1A;
+  --sv-bg-elevated: #1F1F1F;
+  --sv-bg-overlay: rgba(0, 0, 0, 0.7);
+  --sv-bg-hover: #262626;
+
+  --sv-text-primary: #F9FAFB;
+  --sv-text-secondary: #D1D5DB;
+  --sv-text-subtle: #6B7280;
+  --sv-text-disabled: #4B5563;
+  --sv-text-inverse: #0A0A0A;
+
+  --sv-border-primary: #2A2A2A;
+  --sv-border-secondary: #2A2A2A;
+  --sv-border-focus: #2DD4BF;
+
+  --sv-surface-raised: #1F1F1F;
+  --sv-surface-overlay: #1A1A1A;
+
+  --sv-status-success: #34D399;
+  --sv-status-success-bg: #052E16;
+  --sv-status-success-border: #065F46;
+
+  --sv-status-warning: #F87171;
+  --sv-status-warning-bg: #1C0A0A;
+  --sv-status-warning-border: #7F1D1D;
+
+  --sv-status-info: #2DD4BF;
+  --sv-status-info-bg: #042F2E;
+  --sv-status-info-border: #115E59;
+
+  --sv-status-neutral: #6B7280;
+  --sv-status-neutral-bg: #1A1A1A;
+  --sv-status-neutral-border: #374151;
+
+  --sv-interactive-primary: #2DD4BF;
+  --sv-interactive-primary-hover: #5EEAD4;
+  --sv-interactive-primary-active: #99F6E4;
+
+  --sv-interactive-success: #34D399;
+  --sv-interactive-success-hover: #6EE7B7;
+  --sv-interactive-success-active: #A7F3D0;
+
+  --sv-interactive-danger: #F87171;
+  --sv-interactive-danger-hover: #FCA5A5;
+  --sv-interactive-danger-active: #FECACA;
+
+  --sv-scrollbar-track: #1A1A1A;
+  --sv-scrollbar-thumb: #374151;
+  --sv-scrollbar-thumb-hover: #4B5563;
+
+  --sv-shadow-light: rgba(0, 0, 0, 0.3);
+  --sv-shadow-medium: rgba(0, 0, 0, 0.4);
+  --sv-shadow-strong: rgba(0, 0, 0, 0.5);
+
+  --sv-gradient-header: #0A0A0A;
+  --sv-gradient-footer: #0A0A0A;
+}
+
+/* ============================================================
+   Base styles
+   ============================================================ */
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  font-family: var(--sv-font-family);
+  background-color: transparent;
+  color: var(--sv-text-primary);
+  font-size: 13px;
+  line-height: 1.4;
+  -webkit-font-smoothing: antialiased;
+}
+
+#root {
+  width: 100%;
+}
+
+button {
+  transition: all 200ms cubic-bezier(0.4, 0, 0.2, 1);
+  font-family: inherit;
+}
+
+button:focus-visible {
+  outline: 2px solid var(--sv-border-focus);
+  outline-offset: 2px;
+}
+
+/* ---------- Scrollbar ---------- */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--sv-scrollbar-track);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--sv-scrollbar-thumb);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--sv-scrollbar-thumb-hover);
+}
+
+/* ============================================================
+   Ribbon component classes
+   ============================================================ */
+
+/* Main ribbon bar */
+.ribbon-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 16px;
+  background: var(--sv-bg-primary);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+  border-radius: 10px;
+  margin: 8px 0;
+}
+
+/* Shield icon area */
+.ribbon-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--sv-interactive-primary);
+  flex-shrink: 0;
+}
+
+.ribbon-icon svg {
+  width: 18px;
+  height: 18px;
+}
+
+/* Title text */
+.ribbon-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--sv-interactive-primary);
+}
+
+/* Status info text */
+.ribbon-status {
+  font-size: 12px;
+  color: var(--sv-text-subtle);
+  flex: 1;
+}
+
+/* Manage button */
+.ribbon-action {
+  background: transparent;
+  border: 1px solid var(--sv-interactive-primary);
+  color: var(--sv-interactive-primary);
+  padding: 6px 16px;
+  border-radius: 9999px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.ribbon-action:hover {
+  background: var(--sv-interactive-primary);
+  color: var(--sv-text-inverse);
+}
+
+/* Alert section */
+.ribbon-alert {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 16px;
+  background: #FFFBEB;
+  border-radius: 10px;
+  margin-top: 6px;
+}
+
+html[data-color-mode="dark"] .ribbon-alert {
+  background: #1A1500;
+}
+
+.ribbon-alert-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--sv-text-primary);
+}
+
+.ribbon-alert-icon {
+  color: #D97706;
+  flex-shrink: 0;
+}
+
+html[data-color-mode="dark"] .ribbon-alert-icon {
+  color: #FBBF24;
+}
+
+.ribbon-alert-text {
+  flex: 1;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.ribbon-alert-text strong {
+  font-weight: 600;
+}
+
+/* Dismiss button */
+.ribbon-alert-dismiss {
+  background: none;
+  border: none;
+  color: var(--sv-text-subtle);
+  font-size: 12px;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 6px;
+}
+
+.ribbon-alert-dismiss:hover {
+  color: var(--sv-text-primary);
+  background: var(--sv-bg-hover);
+}
+
+/* Hidden state */
+.ribbon-hidden {
+  display: none;
+}
+
+/* ============================================================
+   Utility classes
+   ============================================================ */
+
+.sv-text-primary { color: var(--sv-text-primary, #111827); }
+.sv-text-secondary { color: var(--sv-text-secondary, #4B5563); }
+.sv-text-subtle { color: var(--sv-text-subtle, #9CA3AF); }
+.sv-text-disabled { color: var(--sv-text-disabled, #D1D5DB); }
+.sv-text-inverse { color: var(--sv-text-inverse, #FFFFFF); }
+
+.sv-bg-primary { background-color: var(--sv-bg-primary, #FFFFFF); }
+.sv-bg-secondary { background-color: var(--sv-bg-secondary, #F8F9FA); }
+.sv-bg-tertiary { background-color: var(--sv-bg-tertiary, #F1F3F5); }
+.sv-bg-elevated { background-color: var(--sv-bg-elevated, #FFFFFF); }
+.sv-bg-hover { background-color: var(--sv-bg-hover, #E9ECEF); }
+
+.sv-border-primary { border-color: var(--sv-border-primary, #E5E7EB); }
+.sv-border-secondary { border-color: var(--sv-border-secondary, #E5E7EB); }
+
+.sv-shadow-light { box-shadow: 0 1px 3px var(--sv-shadow-light, rgba(0, 0, 0, 0.06)); }
+.sv-shadow-medium { box-shadow: 0 2px 6px var(--sv-shadow-medium, rgba(0, 0, 0, 0.08)); }
+.sv-shadow-strong { box-shadow: 0 4px 12px var(--sv-shadow-strong, rgba(0, 0, 0, 0.12)); }
+
+/* Dark mode utility override */
+html[data-color-mode="dark"] .sv-text-inverse {
+  color: var(--sv-text-inverse, #0A0A0A);
+}

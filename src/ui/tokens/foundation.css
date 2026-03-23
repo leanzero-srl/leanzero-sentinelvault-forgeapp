@@ -1,0 +1,229 @@
+/* Sentinel Vault — LeanZero Design System */
+/* Theme detection via Confluence data-color-mode attribute */
+
+:root {
+  /* ── Backgrounds ────────────────────────────────── */
+  --sv-bg-primary: #FFFFFF;
+  --sv-bg-secondary: #F8F9FA;
+  --sv-bg-tertiary: #F1F3F5;
+  --sv-bg-elevated: #FFFFFF;
+  --sv-bg-overlay: rgba(0, 0, 0, 0.45);
+  --sv-bg-hover: #E9ECEF;
+
+  /* ── Text ───────────────────────────────────────── */
+  --sv-text-primary: #111827;
+  --sv-text-secondary: #4B5563;
+  --sv-text-subtle: #9CA3AF;
+  --sv-text-disabled: #D1D5DB;
+  --sv-text-inverse: #FFFFFF;
+
+  /* ── Borders ────────────────────────────────────── */
+  --sv-border-primary: #E5E7EB;
+  --sv-border-secondary: #E5E7EB;
+  --sv-border-focus: #0D9488;
+
+  /* ── Surfaces ───────────────────────────────────── */
+  --sv-surface-raised: #FFFFFF;
+  --sv-surface-overlay: #FFFFFF;
+
+  /* ── Status: Success ────────────────────────────── */
+  --sv-status-success: #059669;
+  --sv-status-success-bg: #F0FDF4;
+  --sv-status-success-border: #A7F3D0;
+
+  /* ── Status: Warning / Danger ───────────────────── */
+  --sv-status-warning: #DC2626;
+  --sv-status-warning-bg: #FEF2F2;
+  --sv-status-warning-border: #FECACA;
+
+  /* ── Status: Info ───────────────────────────────── */
+  --sv-status-info: #0D9488;
+  --sv-status-info-bg: #F0FDFA;
+  --sv-status-info-border: #99F6E4;
+
+  /* ── Status: Neutral ────────────────────────────── */
+  --sv-status-neutral: #6B7280;
+  --sv-status-neutral-bg: #F9FAFB;
+  --sv-status-neutral-border: #E5E7EB;
+
+  /* ── Interactive: Primary (Teal) ────────────────── */
+  --sv-interactive-primary: #0D9488;
+  --sv-interactive-primary-hover: #0F766E;
+  --sv-interactive-primary-active: #115E59;
+
+  /* ── Interactive: Success ────────────────────────── */
+  --sv-interactive-success: #059669;
+  --sv-interactive-success-hover: #047857;
+  --sv-interactive-success-active: #065F46;
+
+  /* ── Interactive: Danger ─────────────────────────── */
+  --sv-interactive-danger: #DC2626;
+  --sv-interactive-danger-hover: #B91C1C;
+  --sv-interactive-danger-active: #991B1B;
+
+  /* ── Scrollbar ──────────────────────────────────── */
+  --sv-scrollbar-track: #F1F3F5;
+  --sv-scrollbar-thumb: #D1D5DB;
+  --sv-scrollbar-thumb-hover: #9CA3AF;
+
+  /* ── Shadows ────────────────────────────────────── */
+  --sv-shadow-subtle: 0 1px 2px rgba(0, 0, 0, 0.04);
+  --sv-shadow-light: 0 2px 8px rgba(0, 0, 0, 0.06);
+  --sv-shadow-medium: 0 4px 16px rgba(0, 0, 0, 0.08);
+  --sv-shadow-strong: 0 8px 32px rgba(0, 0, 0, 0.12);
+
+  /* ── Spacing (8px base) ─────────────────────────── */
+  --sv-space-1: 4px;
+  --sv-space-2: 8px;
+  --sv-space-3: 12px;
+  --sv-space-4: 16px;
+  --sv-space-5: 24px;
+  --sv-space-6: 32px;
+  --sv-space-7: 48px;
+  --sv-space-8: 64px;
+
+  /* ── Radius ─────────────────────────────────────── */
+  --sv-radius-sm: 6px;
+  --sv-radius-md: 10px;
+  --sv-radius-lg: 16px;
+  --sv-radius-full: 9999px;
+
+  /* ── Typography ─────────────────────────────────── */
+  --sv-font-family: "Inter", -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", system-ui, sans-serif;
+
+  /* ── Label colors ───────────────────────────────── */
+  --sv-label-bg: #F0FDFA;
+  --sv-label-text: #0F766E;
+  --sv-label-border: #99F6E4;
+  --sv-label-remove-hover: #DC2626;
+
+  /* ── Deprecated (kept for compat, maps to flat) ─── */
+  --sv-gradient-header: var(--sv-bg-primary);
+  --sv-gradient-footer: var(--sv-bg-primary);
+}
+
+/* ── Dark Mode ────────────────────────────────────── */
+html[data-color-mode="dark"] {
+  --sv-bg-primary: #0A0A0A;
+  --sv-bg-secondary: #111111;
+  --sv-bg-tertiary: #1A1A1A;
+  --sv-bg-elevated: #1F1F1F;
+  --sv-bg-overlay: rgba(0, 0, 0, 0.7);
+  --sv-bg-hover: #262626;
+
+  --sv-text-primary: #F9FAFB;
+  --sv-text-secondary: #D1D5DB;
+  --sv-text-subtle: #6B7280;
+  --sv-text-disabled: #4B5563;
+  --sv-text-inverse: #0A0A0A;
+
+  --sv-border-primary: #2A2A2A;
+  --sv-border-secondary: #2A2A2A;
+  --sv-border-focus: #2DD4BF;
+
+  --sv-surface-raised: #1F1F1F;
+  --sv-surface-overlay: #1A1A1A;
+
+  --sv-status-success: #34D399;
+  --sv-status-success-bg: #052E16;
+  --sv-status-success-border: #065F46;
+
+  --sv-status-warning: #F87171;
+  --sv-status-warning-bg: #1C0A0A;
+  --sv-status-warning-border: #7F1D1D;
+
+  --sv-status-info: #2DD4BF;
+  --sv-status-info-bg: #042F2E;
+  --sv-status-info-border: #115E59;
+
+  --sv-status-neutral: #6B7280;
+  --sv-status-neutral-bg: #1A1A1A;
+  --sv-status-neutral-border: #374151;
+
+  --sv-interactive-primary: #2DD4BF;
+  --sv-interactive-primary-hover: #5EEAD4;
+  --sv-interactive-primary-active: #99F6E4;
+
+  --sv-interactive-success: #34D399;
+  --sv-interactive-success-hover: #6EE7B7;
+  --sv-interactive-success-active: #A7F3D0;
+
+  --sv-interactive-danger: #F87171;
+  --sv-interactive-danger-hover: #FCA5A5;
+  --sv-interactive-danger-active: #FECACA;
+
+  --sv-scrollbar-track: #1A1A1A;
+  --sv-scrollbar-thumb: #374151;
+  --sv-scrollbar-thumb-hover: #4B5563;
+
+  --sv-shadow-subtle: 0 1px 2px rgba(0, 0, 0, 0.2);
+  --sv-shadow-light: 0 2px 8px rgba(0, 0, 0, 0.3);
+  --sv-shadow-medium: 0 4px 16px rgba(0, 0, 0, 0.4);
+  --sv-shadow-strong: 0 8px 32px rgba(0, 0, 0, 0.5);
+
+  --sv-gradient-header: var(--sv-bg-primary);
+  --sv-gradient-footer: var(--sv-bg-primary);
+
+  --sv-label-bg: #042F2E;
+  --sv-label-text: #2DD4BF;
+  --sv-label-border: #115E59;
+  --sv-label-remove-hover: #F87171;
+}
+
+/* ── Scrollbar ────────────────────────────────────── */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: var(--sv-scrollbar-track); border-radius: 3px; }
+::-webkit-scrollbar-thumb { background: var(--sv-scrollbar-thumb); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--sv-scrollbar-thumb-hover); }
+
+/* ── Base ─────────────────────────────────────────── */
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  font-family: var(--sv-font-family);
+  background-color: var(--sv-bg-primary);
+  color: var(--sv-text-primary);
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+#root { width: 100%; height: 100%; }
+
+/* ── Interactive transitions (only on interactive elements) */
+button, a, input, select, textarea {
+  transition: all 200ms cubic-bezier(0.4, 0, 0.2, 1);
+  font-family: inherit;
+}
+
+/* ── Focus ────────────────────────────────────────── */
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: 2px solid var(--sv-border-focus);
+  outline-offset: 2px;
+}
+
+/* ── Utility classes ──────────────────────────────── */
+.sv-text-primary { color: var(--sv-text-primary); }
+.sv-text-secondary { color: var(--sv-text-secondary); }
+.sv-text-subtle { color: var(--sv-text-subtle); }
+.sv-text-inverse { color: var(--sv-text-inverse); }
+
+.sv-bg-primary { background-color: var(--sv-bg-primary); }
+.sv-bg-secondary { background-color: var(--sv-bg-secondary); }
+.sv-bg-tertiary { background-color: var(--sv-bg-tertiary); }
+.sv-bg-elevated { background-color: var(--sv-bg-elevated); }
+
+.sv-border-primary { border-color: var(--sv-border-primary); }
+.sv-border-secondary { border-color: var(--sv-border-secondary); }
+
+.sv-shadow-subtle { box-shadow: var(--sv-shadow-subtle); }
+.sv-shadow-light { box-shadow: var(--sv-shadow-light); }
+.sv-shadow-medium { box-shadow: var(--sv-shadow-medium); }
+.sv-shadow-strong { box-shadow: var(--sv-shadow-strong); }

@@ -1,0 +1,482 @@
+/* Macro Config Panel — LeanZero design system */
+/* Renders inside the Confluence macro editor panel */
+
+:root {
+  --mc-bg: #FFFFFF;
+  --mc-bg-subtle: #F8F9FA;
+  --mc-bg-hover: #F1F3F5;
+  --mc-bg-selected: #F0FDFA;
+
+  --mc-text: #111827;
+  --mc-text-secondary: #4B5563;
+  --mc-text-subtle: #9CA3AF;
+  --mc-text-disabled: #D1D5DB;
+  --mc-text-inverse: #FFFFFF;
+  --mc-text-brand: #0D9488;
+
+  --mc-border: #E5E7EB;
+  --mc-border-bold: #E5E7EB;
+  --mc-border-focused: #0D9488;
+
+  --mc-blue: #0D9488;
+  --mc-blue-hover: #0F766E;
+  --mc-blue-subtle: #F0FDFA;
+  --mc-green: #059669;
+  --mc-green-bg: #F0FDF4;
+  --mc-red: #DC2626;
+  --mc-red-bg: #FEF2F2;
+
+  --mc-toggle-off: #D1D5DB;
+  --mc-toggle-on: #0D9488;
+
+  --mc-shadow-overlay: 0 4px 16px rgba(0, 0, 0, 0.08), 0 0 1px rgba(0, 0, 0, 0.12);
+}
+
+html[data-color-mode="dark"] {
+  --mc-bg: #0A0A0A;
+  --mc-bg-subtle: #111111;
+  --mc-bg-hover: #1A1A1A;
+  --mc-bg-selected: #042F2E;
+
+  --mc-text: #F9FAFB;
+  --mc-text-secondary: #D1D5DB;
+  --mc-text-subtle: #6B7280;
+  --mc-text-disabled: #4B5563;
+  --mc-text-inverse: #0A0A0A;
+  --mc-text-brand: #2DD4BF;
+
+  --mc-border: #2A2A2A;
+  --mc-border-bold: #2A2A2A;
+  --mc-border-focused: #2DD4BF;
+
+  --mc-blue: #2DD4BF;
+  --mc-blue-hover: #5EEAD4;
+  --mc-blue-subtle: #042F2E;
+  --mc-green: #34D399;
+  --mc-green-bg: #052E16;
+  --mc-red: #F87171;
+  --mc-red-bg: #1C0A0A;
+
+  --mc-toggle-off: #374151;
+  --mc-toggle-on: #2DD4BF;
+
+  --mc-shadow-overlay: 0 4px 16px rgba(0, 0, 0, 0.4), 0 0 1px rgba(0, 0, 0, 0.5);
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: "Inter", -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", system-ui, sans-serif;
+  background: var(--mc-bg);
+  color: var(--mc-text);
+  font-size: 14px;
+  line-height: 20px;
+  -webkit-font-smoothing: antialiased;
+}
+
+#root { width: 100%; }
+
+/* ── Layout ──────────────────────────────────────── */
+
+.mc-panel {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.mc-panel.loading {
+  align-items: center;
+  justify-content: center;
+  min-height: 120px;
+  color: var(--mc-text-subtle);
+}
+
+/* ── Header ──────────────────────────────────────── */
+
+.mc-header {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 0 4px 8px;
+  border-bottom: 1px solid var(--mc-border);
+}
+
+.mc-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--mc-text);
+  line-height: 1;
+}
+
+.mc-subtitle {
+  font-size: 12px;
+  color: var(--mc-text-subtle);
+}
+
+/* ── Section ─────────────────────────────────────── */
+
+.mc-section {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.mc-section-label {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--mc-text-brand);
+  padding: 0 4px;
+}
+
+.mc-section-content {
+  display: flex;
+  flex-direction: column;
+}
+
+.mc-section-content.two-col {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0;
+}
+
+/* ── Checkbox list ───────────────────────────────── */
+
+.mc-checkbox-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.1s;
+}
+
+.mc-checkbox-item:hover {
+  background: var(--mc-bg-hover);
+}
+
+.mc-checkbox-item input[type="checkbox"] {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+}
+
+.mc-check {
+  width: 14px;
+  height: 14px;
+  border-radius: 4px;
+  border: 2px solid var(--mc-text-disabled);
+  background: transparent;
+  flex-shrink: 0;
+  transition: all 0.1s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.mc-checkbox-item:hover .mc-check {
+  border-color: var(--mc-blue);
+}
+
+.mc-checkbox-item input:checked + .mc-check {
+  background: var(--mc-blue);
+  border-color: var(--mc-blue);
+}
+
+.mc-checkbox-item input:focus-visible + .mc-check {
+  box-shadow: 0 0 0 2px var(--mc-bg), 0 0 0 4px var(--mc-border-focused);
+}
+
+.mc-check svg {
+  opacity: 0;
+  transition: opacity 0.08s;
+}
+
+.mc-checkbox-item input:checked + .mc-check svg {
+  opacity: 1;
+}
+
+.mc-checkbox-label {
+  font-size: 14px;
+  color: var(--mc-text);
+}
+
+.mc-checkbox-item input:not(:checked) ~ .mc-checkbox-label {
+  color: var(--mc-text-secondary);
+}
+
+/* ── Select / dropdown ───────────────────────────── */
+
+.mc-field {
+  padding: 0 4px;
+}
+
+.mc-field-label {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--mc-text-secondary);
+  margin-bottom: 4px;
+}
+
+.mc-select-wrap {
+  position: relative;
+}
+
+.mc-select-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid var(--mc-border);
+  border-radius: 10px;
+  background: var(--mc-bg);
+  color: var(--mc-text);
+  font-size: 14px;
+  font-family: inherit;
+  cursor: pointer;
+  transition: border-color 0.1s;
+}
+
+.mc-select-trigger:hover {
+  background: var(--mc-bg-hover);
+}
+
+.mc-select-trigger.open {
+  border-color: var(--mc-border-focused);
+  box-shadow: 0 0 0 3px rgba(13, 148, 136, 0.1);
+}
+
+.mc-select-arrow {
+  display: flex;
+  color: var(--mc-text-subtle);
+  transition: transform 0.15s;
+}
+
+.mc-select-trigger.open .mc-select-arrow {
+  transform: rotate(180deg);
+}
+
+.mc-select-dropdown {
+  position: absolute;
+  bottom: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  background: var(--mc-bg);
+  border-radius: 10px;
+  box-shadow: var(--mc-shadow-overlay);
+  z-index: 50;
+  overflow: hidden;
+  padding: 4px 0;
+}
+
+.mc-select-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  margin: 2px 4px;
+  font-size: 14px;
+  color: var(--mc-text);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.08s;
+}
+
+.mc-select-option:hover {
+  background: var(--mc-bg-hover);
+}
+
+.mc-select-option.selected {
+  background: var(--mc-bg-selected);
+  color: var(--mc-text-brand);
+  font-weight: 500;
+}
+
+.mc-select-option-check {
+  color: var(--mc-blue);
+  display: flex;
+}
+
+/* ── Toggle row ──────────────────────────────────── */
+
+.mc-toggle-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 4px;
+  border-radius: 3px;
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.1s;
+}
+
+.mc-toggle-row:hover {
+  background: var(--mc-bg-hover);
+}
+
+.mc-toggle-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.mc-toggle-label {
+  font-size: 14px;
+  color: var(--mc-text);
+}
+
+.mc-toggle-hint {
+  font-size: 12px;
+  color: var(--mc-text-subtle);
+}
+
+/* Toggle switch — LeanZero style */
+
+.mc-toggle {
+  position: relative;
+  width: 32px;
+  height: 16px;
+  border-radius: 10px;
+  background: var(--mc-toggle-off);
+  cursor: pointer;
+  transition: background 0.2s;
+  border: none;
+  padding: 0;
+  flex-shrink: 0;
+}
+
+.mc-toggle.active {
+  background: var(--mc-toggle-on);
+}
+
+.mc-toggle::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: white;
+  transition: transform 0.15s cubic-bezier(0.2, 0, 0, 1);
+}
+
+.mc-toggle.active::after {
+  transform: translateX(16px);
+}
+
+/* ── Divider ─────────────────────────────────────── */
+
+.mc-divider {
+  height: 1px;
+  background: var(--mc-border);
+  margin: 2px 4px;
+}
+
+/* ── Actions ─────────────────────────────────────── */
+
+.mc-actions {
+  display: flex;
+  gap: 8px;
+  padding: 0 4px;
+}
+
+.mc-btn-primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 6px 12px;
+  border: none;
+  border-radius: 10px;
+  background: var(--mc-blue);
+  color: var(--mc-text-inverse);
+  font-size: 14px;
+  font-weight: 500;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 0.1s;
+  height: 36px;
+}
+
+.mc-btn-primary:hover {
+  background: var(--mc-blue-hover);
+}
+
+.mc-btn-primary:active {
+  background: var(--mc-blue-hover);
+}
+
+.mc-btn-primary:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.mc-btn-primary.saved {
+  background: var(--mc-green);
+}
+
+.mc-btn-subtle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 6px 12px;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--mc-text-secondary);
+  font-size: 14px;
+  font-weight: 500;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 0.1s;
+  height: 36px;
+}
+
+.mc-btn-subtle:hover {
+  background: var(--mc-bg-hover);
+}
+
+/* ── Status toast ────────────────────────────────── */
+
+.mc-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  margin: 0 4px;
+  animation: mc-fade-in 0.15s ease;
+}
+
+@keyframes mc-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.mc-status.success {
+  color: var(--mc-green);
+  background: var(--mc-green-bg);
+}
+
+.mc-status.error {
+  color: var(--mc-red);
+  background: var(--mc-red-bg);
+}
+
+/* ── Focus ───────────────────────────────────────── */
+
+button:focus-visible {
+  outline: 2px solid var(--mc-border-focused);
+  outline-offset: 2px;
+}

@@ -1,0 +1,153 @@
+# UI Kit 2 configuration for Sentinel Vault app
+app:
+  id: ari:cloud:ecosystem::app/c30bf71e-4287-4872-954d-db49cc68f0ff
+  runtime:
+    name: nodejs20.x
+
+modules:
+  # Macro module — inline reservation status panel on page content
+  macro:
+    - key: sentinel-vault-panel
+      resource: inline-panel-ui
+      resolver:
+        function: action-router
+      title: Sentinel Vault
+      description: Shows reservation status for every file on this page
+      layout: block
+      categories:
+        - admin
+      config:
+        resource: panel-setup-ui
+        openOnInsert: false
+        viewportSize: medium
+
+  # Page ribbon for reservation notifications
+  confluence:pageBanner:
+    - key: sentinel-vault-ribbon
+      resource: doc-ribbon
+      resolver:
+        function: action-router
+
+  # Backend resolver functions
+  function:
+    - key: action-router
+      handler: boot.actionRouter
+    - key: artifact-trigger
+      handler: boot.artifactEventTrigger
+    - key: lifecycle-trigger
+      handler: boot.lifecycleTrigger
+    - key: expiry-sweep-task
+      handler: boot.expirySweepTask
+    - key: recurring-nudge-task
+      handler: boot.recurringNudgeTask
+    - key: halfway-check-task
+      handler: boot.halfwayCheckTask
+    - key: realm-scan-consumer-fn
+      handler: boot.realmScanConsumer
+      timeoutSeconds: 900
+    - key: seal-index-cron-fn
+      handler: boot.sealIndexCron
+
+  # Queue consumer for async realm admin scanning
+  consumer:
+    - key: realm-audit-queue
+      queue: realm-audit-queue
+      function: realm-scan-consumer-fn
+
+  # Attachment events trigger
+  trigger:
+    - key: attachment-events
+      function: artifact-trigger
+      events:
+        - avi:confluence:updated:attachment
+    - key: app-lifecycle-events
+      function: lifecycle-trigger
+      events:
+        - avi:forge:installed:app
+        - avi:forge:uninstalled:app
+
+  # Scheduled triggers for automated tasks
+  scheduledTrigger:
+    - key: expiry-sweep-scheduled
+      function: expiry-sweep-task
+      interval: hour
+    - key: recurring-nudge-scheduled
+      function: recurring-nudge-task
+      interval: day
+    - key: seal-index-cron
+      function: seal-index-cron-fn
+      interval: hour
+
+  # Sentinel Vault admin configuration module (Custom UI)
+  confluence:globalSettings:
+    - key: steward-console
+      title: "Sentinel Vault Admin"
+      resource: steward-console
+      resolver:
+        function: action-router
+
+  # Realm-level administration (Custom UI)
+  # Only visible to space administrators
+  confluence:spaceSettings:
+    - key: realm-console
+      title: "Sentinel Vault"
+      route: realm-console
+      resource: realm-console
+      resolver:
+        function: action-router
+      displayConditions:
+        isSpaceAdmin: true
+
+resources:
+  - key: overlay
+    path: static/overlay
+  - key: steward-console
+    path: static/steward-console
+  - key: realm-console
+    path: static/realm-console
+  - key: doc-ribbon
+    path: static/doc-ribbon
+  - key: inline-panel-ui
+    path: static/inline-panel
+  - key: panel-setup-ui
+    path: static/panel-setup
+
+permissions:
+  scopes:
+    - read:email-address:confluence
+    - read:confluence-content.all
+    - read:confluence-content.summary
+    - write:confluence-content
+    - write:confluence-file
+    - readonly:content.attachment:confluence
+    - read:confluence-space.summary
+    - read:space:confluence
+    - write:confluence-space
+    - read:confluence-props
+    - write:confluence-props
+    - read:confluence-content.permission
+    - read:confluence-user
+    - read:confluence-groups
+    - search:confluence
+    - read:content:confluence
+    - read:content-details:confluence
+    - read:page:confluence
+    - write:page:confluence
+    - write:content:confluence
+    - read:attachment:confluence
+    - write:attachment:confluence
+    - delete:attachment:confluence
+    - read:comment:confluence
+    - write:comment:confluence
+    - read:content.property:confluence
+    - write:content.property:confluence
+    - read:content.restriction:confluence
+    - write:content.restriction:confluence
+    - read:content.metadata:confluence
+    - read:content.permission:confluence
+    - storage:app
+  external:
+    fetch:
+      backend:
+        - address: api.atlassian.com
+        - address: api.resend.com
