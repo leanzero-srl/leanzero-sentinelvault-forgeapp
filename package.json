@@ -1,0 +1,39 @@
+{
+  "name": "sentinel-vault",
+  "version": "1.0.0",
+  "main": "index.js",
+  "license": "MIT",
+  "private": true,
+  "homepage": "./",
+  "scripts": {
+    "lint": "eslint src/**/*",
+    "build": "webpack --mode production",
+    "dev": "webpack --mode development --watch"
+  },
+  "dependencies": {
+    "@forge/api": "^6.1.1",
+    "@forge/bridge": "^5.5.0",
+    "@forge/events": "^2.0.17",
+    "@forge/kvs": "^1.2.6",
+    "@forge/react": "^11.3.0",
+    "@forge/resolver": "^1.7.0",
+    "@forge/ui": "^1.11.4",
+    "form-data": "^4.0.5",
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1",
+    "resend": "^4.1.0"
+  },
+  "devDependencies": {
+    "@babel/core": "^7.22.0",
+    "@babel/plugin-bugfix-firefox-class-in-computed-class-key": "^7.28.5",
+    "@babel/preset-env": "^7.22.0",
+    "@babel/preset-react": "^7.22.0",
+    "babel-loader": "^9.1.0",
+    "copy-webpack-plugin": "^13.0.1",
+    "eslint": "^8.56.0",
+    "eslint-plugin-react-hooks": "^4.6.0",
+    "html-webpack-plugin": "^5.6.6",
+    "webpack": "^5.88.0",
+    "webpack-cli": "^5.1.0"
+  }
+}
