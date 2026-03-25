@@ -363,10 +363,14 @@ const RealmPolicyDashboard = () => {
   const [myClaimedFiles, setMyClaimedFiles] = useState([]);
   const [myClaimsLoading, setMyClaimsLoading] = useState(false);
   const [stewardRequestSent, setStewardRequestSent] = useState(false);
+  // "none" | "pending" | "denied"
+  const [stewardRequestStatus, setStewardRequestStatus] = useState("none");
+  const [stewardRequestDeniedAt, setStewardRequestDeniedAt] = useState(null);
 
   // Pending steward requests (steward-only)
   const [pendingRequests, setPendingRequests] = useState([]);
   const [pendingRequestsLoading, setPendingRequestsLoading] = useState(false);
+  const [requestActionBusy, setRequestActionBusy] = useState(null); // accountId of request being processed
 
   useEffect(() => {
     const bootstrapRealm = async () => {
@@ -411,10 +415,16 @@ const RealmPolicyDashboard = () => {
               setUserRole("user");
               setActiveTab("my-claims");
               fetchMyClaimedFiles();
-              // Check if this user already has a pending steward request
+              // Check if this user already has a pending or denied steward request
               try {
                 const reqCheck = await invoke("check-steward-request", { spaceKey: realmKeyValue });
-                if (reqCheck?.pending) setStewardRequestSent(true);
+                if (reqCheck?.status === "pending") {
+                  setStewardRequestSent(true);
+                  setStewardRequestStatus("pending");
+                } else if (reqCheck?.status === "denied") {
+                  setStewardRequestStatus("denied");
+                  setStewardRequestDeniedAt(reqCheck.deniedAt);
+                }
               } catch (e) { /* non-critical */ }
             }
           } catch (err) {
@@ -568,6 +578,7 @@ const RealmPolicyDashboard = () => {
   };
 
   const handleApproveRequest = async (requestAccountId) => {
+    setRequestActionBusy(requestAccountId);
     try {
       const result = await invoke("approve-steward-request", { requestAccountId, spaceKey: realmKey });
       if (result?.success) {
@@ -587,18 +598,22 @@ const RealmPolicyDashboard = () => {
       console.error("Approve request failed:", e);
       setMessage("Failed to approve request.");
       setMessageType("error");
+    } finally {
+      setRequestActionBusy(null);
     }
   };
 
   const handleDenyRequest = async (requestAccountId) => {
+    setRequestActionBusy(requestAccountId);
     try {
-      // Denying = deleting the request from KVS without granting access
       await invoke("deny-steward-request", { requestAccountId, spaceKey: realmKey });
       setPendingRequests((prev) => prev.filter((r) => r.accountId !== requestAccountId));
       setMessage("Request denied.");
       setMessageType("success");
     } catch (e) {
       console.error("Deny request failed:", e);
+    } finally {
+      setRequestActionBusy(null);
     }
   };
 
@@ -1352,7 +1367,7 @@ const RealmPolicyDashboard = () => {
       {/* Tab Content */}
       {activeTab === "my-claims" && (
         <div className="tab-content">
-          {userRole === "user" && !stewardRequestSent && (
+          {userRole === "user" && stewardRequestStatus === "none" && !stewardRequestSent && (
             <div className="steward-request-banner">
               <div>
                 <strong>Want to manage all sealed files in this space?</strong>
@@ -1365,9 +1380,26 @@ const RealmPolicyDashboard = () => {
               </button>
             </div>
           )}
-          {stewardRequestSent && (
+          {(stewardRequestSent || stewardRequestStatus === "pending") && (
             <div className="steward-request-banner" style={{ borderLeftColor: "var(--sv-status-success)" }}>
               <span>Your steward access request has been submitted. A space admin or steward will review it.</span>
+            </div>
+          )}
+          {stewardRequestStatus === "denied" && (
+            <div className="steward-request-banner" style={{ borderLeftColor: "var(--sv-status-warning)" }}>
+              <div>
+                <strong>Your steward access request was denied.</strong>
+                <p style={{ margin: "4px 0 0", fontSize: "12px", color: "var(--sv-text-secondary)" }}>
+                  {stewardRequestDeniedAt ? (() => {
+                    const deniedTime = new Date(stewardRequestDeniedAt).getTime();
+                    const retryTime = deniedTime + (48 * 60 * 60 * 1000);
+                    const remaining = retryTime - Date.now();
+                    if (remaining <= 0) return "You can submit a new request now.";
+                    const hours = Math.ceil(remaining / 3600000);
+                    return `You can submit a new request in approximately ${hours} hour${hours !== 1 ? "s" : ""}.`;
+                  })() : "You may submit a new request after 48 hours."}
+                </p>
+              </div>
             </div>
           )}
 
@@ -1793,18 +1825,20 @@ const RealmPolicyDashboard = () => {
                         {requestDate && <span style={{ fontSize: "10px", color: "var(--sv-text-subtle)" }}>{requestDate}</span>}
                         <span style={{ display: "flex", gap: "6px", marginTop: "4px" }}>
                           <button
-                            className="action-btn lock"
+                            className={`action-btn lock ${requestActionBusy === request.accountId ? "is-busy" : ""}`}
                             onClick={() => handleApproveRequest(request.accountId)}
+                            disabled={!!requestActionBusy}
                             title="Grant steward access to this user"
                           >
-                            Approve
+                            {requestActionBusy === request.accountId ? <>Approving<span className="btn-busy-bar" /></> : "Approve"}
                           </button>
                           <button
-                            className="action-btn unlock"
+                            className={`action-btn unlock ${requestActionBusy === request.accountId ? "is-busy" : ""}`}
                             onClick={() => handleDenyRequest(request.accountId)}
+                            disabled={!!requestActionBusy}
                             title="Deny this steward access request"
                           >
-                            Deny
+                            {requestActionBusy === request.accountId ? <>Denying<span className="btn-busy-bar" /></> : "Deny"}
                           </button>
                         </span>
                       </div>

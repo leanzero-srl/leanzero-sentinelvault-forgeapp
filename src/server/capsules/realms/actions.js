@@ -390,17 +390,29 @@ const requestStewardAccess = async (req) => {
 };
 
 /**
- * Check if the current user already has a pending steward request for a space.
+ * Check if the current user already has a pending or denied steward request for a space.
  */
 const checkStewardRequest = async (req) => {
   const accountId = req.context.accountId;
   const spaceKey = req.payload?.spaceKey;
-  if (!spaceKey || !accountId) return { pending: false };
+  if (!spaceKey || !accountId) return { status: "none" };
   try {
     const existing = await kvs.get(`steward-request-${spaceKey}-${accountId}`);
-    return { pending: existing?.status === "pending" };
+    if (!existing) return { status: "none" };
+    if (existing.status === "pending") return { status: "pending" };
+    if (existing.status === "denied") {
+      const deniedAt = existing.deniedAt ? new Date(existing.deniedAt) : null;
+      const cooldownMs = 48 * 60 * 60 * 1000; // 48 hours
+      if (deniedAt && (Date.now() - deniedAt.getTime()) >= cooldownMs) {
+        // Cooldown elapsed — clear the denied record so user can retry
+        await kvs.delete(`steward-request-${spaceKey}-${accountId}`);
+        return { status: "none" };
+      }
+      return { status: "denied", deniedAt: existing.deniedAt };
+    }
+    return { status: "none" };
   } catch (e) {
-    return { pending: false };
+    return { status: "none" };
   }
 };
 
@@ -490,7 +502,14 @@ const denyStewardRequest = async (req) => {
 
   try {
     const requestKey = `steward-request-${spaceKey}-${requestAccountId}`;
-    await kvs.delete(requestKey);
+    const existing = await kvs.get(requestKey);
+    if (!existing) return { success: false, reason: "Request not found" };
+    // Mark as denied with timestamp so the user can retry after 48 hours
+    await kvs.set(requestKey, {
+      ...existing,
+      status: "denied",
+      deniedAt: new Date().toISOString(),
+    });
     return { success: true };
   } catch (e) {
     console.error("[DENY-STEWARD] Error:", e);
