@@ -1,4 +1,4 @@
-import { asUser, route } from "@forge/api";
+import { asUser, asApp, route } from "@forge/api";
 import { kvs, WhereConditions } from "@forge/kvs";
 
 // Import from shared
@@ -15,6 +15,7 @@ import {
 
 // Import from capsule logic
 import { writeSealContentProp, removeSealContentProp, touchSealTimestamp } from "./logic.js";
+import { purgeAllSealState } from "./confluence-sync.js";
 
 // Import from sibling capsules
 import { recordDispatch, postDocFootnote, notifyWatchers } from "../bulletins/logic.js";
@@ -813,26 +814,60 @@ const enumeratePageSeals = async (req) => {
       ({ value }) => value && value.contentId === contentId,
     );
 
-    const claimedArtifacts = pageSeals.map(({ key, value }) => {
-      const isMine = value.lockedBy === operatorAccountId;
-      const isExpired = value.expiresAt && new Date(value.expiresAt) < new Date();
-      return {
-        id: value.attachmentId || key.replace("protection-", ""),
-        title: value.attachmentName || "Unknown file",
-        lockStatus: isMine ? "HELD_BY_ACTOR" : "HELD",
-        lockedByAccountId: value.lockedBy,
-        lockedByName: value.lockedByName,
-        expiresAt: value.expiresAt || null,
-        isExpired: !!isExpired,
-        lockedOn: value.timestamp || null,
-        // Minimal data — Confluence metadata will be merged later
-        fileSize: null,
-        mediaType: null,
-        labels: [],
-        comment: null,
-        notifyRequested: false,
-      };
-    });
+    // Read global policy for restore/purge toggles
+    const globalPolicy = await kvs.get("admin-settings-global");
+    const allowRestore = globalPolicy?.allowSealRestore === true;
+    const allowPurge = globalPolicy?.allowSealPurge === true;
+
+    const claimedArtifacts = await Promise.all(
+      pageSeals.map(async ({ key, value }) => {
+        const artifactId = value.attachmentId || key.replace("protection-", "");
+        const isMine = value.lockedBy === operatorAccountId;
+        const isExpired = value.expiresAt && new Date(value.expiresAt) < new Date();
+
+        // Probe attachment existence to detect stale seals
+        let isStale = false;
+        let staleReason = null;
+        try {
+          const probeRes = await asApp().requestConfluence(
+            route`/wiki/api/v2/attachments/${artifactId}`,
+          );
+          if (probeRes.ok) {
+            const probeData = await probeRes.json();
+            if (probeData.status === "trashed") {
+              isStale = true;
+              staleReason = "trashed";
+            }
+          } else if (probeRes.status === 404) {
+            isStale = true;
+            staleReason = "deleted";
+          }
+        } catch (_) {
+          // Probe failure — treat as non-stale to avoid false positives
+        }
+
+        return {
+          id: artifactId,
+          title: value.attachmentName || "Unknown file",
+          lockStatus: isMine ? "HELD_BY_ACTOR" : "HELD",
+          lockedByAccountId: value.lockedBy,
+          lockedByName: value.lockedByName,
+          expiresAt: value.expiresAt || null,
+          isExpired: !!isExpired,
+          lockedOn: value.timestamp || null,
+          isStale,
+          staleReason,
+          allowRestore,
+          allowPurge,
+          // Minimal data — Confluence metadata will be merged later
+          fileSize: null,
+          mediaType: null,
+          labels: [],
+          comment: null,
+          notifyRequested: false,
+        };
+      }),
+    );
 
     return { claimedArtifacts };
   } catch (error) {
@@ -850,6 +885,156 @@ const checkSealStamp = async () => {
   return { stamp: stamp || 0 };
 };
 
+/**
+ * Restore a sealed attachment that was trashed in Confluence.
+ * Only works for trashed attachments — permanently deleted ones cannot be recovered.
+ */
+const restoreSealedArtifact = async (req) => {
+  const { attachmentId } = req.payload;
+  const operatorAccountId = req.context.accountId;
+  const realmKey =
+    req.context.extension?.content?.space?.key ||
+    req.context.extension?.space?.key;
+
+  if (!attachmentId) {
+    return { success: false, reason: "Missing attachmentId" };
+  }
+
+  const sealRecord = await kvs.get(`protection-${attachmentId}`);
+  if (!sealRecord) {
+    return { success: false, reason: "No seal record found" };
+  }
+
+  // Check admin toggle
+  const globalPolicy = await kvs.get("admin-settings-global");
+  if (globalPolicy?.allowSealRestore !== true) {
+    return { success: false, reason: "Seal restore is disabled by admin" };
+  }
+
+  // Permission: owner or steward
+  const isOwner = sealRecord.lockedBy === operatorAccountId;
+  if (!isOwner) {
+    const hasStewardAccess = realmKey
+      ? await authorizeSteward(operatorAccountId, realmKey)
+      : false;
+    if (!hasStewardAccess) {
+      return { success: false, reason: "Only the seal owner or a steward can restore" };
+    }
+  }
+
+  // Probe attachment status
+  const probeRes = await asApp().requestConfluence(
+    route`/wiki/api/v2/attachments/${attachmentId}`,
+  );
+
+  if (probeRes.status === 404) {
+    return { success: false, reason: "Attachment was permanently deleted and cannot be recovered", unrecoverable: true };
+  }
+
+  if (!probeRes.ok) {
+    return { success: false, reason: `Failed to probe attachment: ${probeRes.status}` };
+  }
+
+  const probeData = await probeRes.json();
+
+  if (probeData.status === "current") {
+    return { success: false, reason: "Attachment already exists on the page" };
+  }
+
+  if (probeData.status !== "trashed") {
+    return { success: false, reason: `Unexpected attachment status: ${probeData.status}` };
+  }
+
+  // Restore from trash
+  const pageId = sealRecord.contentId;
+  if (!pageId) {
+    return { success: false, reason: "Seal record is missing page context — cannot restore" };
+  }
+
+  const currentVersion = probeData.version?.number;
+  if (!currentVersion) {
+    return { success: false, reason: "Cannot determine attachment version" };
+  }
+
+  const restoreRoute = route`/wiki/rest/api/content/${pageId}/child/attachment/${attachmentId}`;
+  const restoreRes = await asApp().requestConfluence(restoreRoute, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      id: attachmentId,
+      type: "attachment",
+      status: "current",
+      title: probeData.title || sealRecord.attachmentName || "Unknown",
+      version: { number: currentVersion + 1 },
+    }),
+  });
+
+  if (!restoreRes.ok) {
+    const errorText = await restoreRes.text();
+    console.error(`[RESTORE] Failed ${attachmentId}: ${restoreRes.status} — ${errorText}`);
+    return { success: false, reason: `Restore failed: ${restoreRes.status}` };
+  }
+
+  await touchSealTimestamp();
+  console.warn(`[RESTORE] Restored sealed attachment ${attachmentId}`);
+  return { success: true };
+};
+
+/**
+ * Purge a stale seal record for an attachment that may no longer exist.
+ * Cleans up KVS keys, content properties, and watcher subscriptions.
+ */
+const purgeSealRecord = async (req) => {
+  const { attachmentId } = req.payload;
+  const operatorAccountId = req.context.accountId;
+  const realmKey =
+    req.context.extension?.content?.space?.key ||
+    req.context.extension?.space?.key;
+
+  if (!attachmentId) {
+    return { success: false, reason: "Missing attachmentId" };
+  }
+
+  const sealRecord = await kvs.get(`protection-${attachmentId}`);
+  if (!sealRecord) {
+    return { success: false, reason: "No seal record found" };
+  }
+
+  // Check admin toggle
+  const globalPolicy = await kvs.get("admin-settings-global");
+  if (globalPolicy?.allowSealPurge !== true) {
+    return { success: false, reason: "Seal record cleanup is disabled by admin" };
+  }
+
+  // Permission: owner or steward
+  const isOwner = sealRecord.lockedBy === operatorAccountId;
+  if (!isOwner) {
+    const hasStewardAccess = realmKey
+      ? await authorizeSteward(operatorAccountId, realmKey)
+      : false;
+    if (!hasStewardAccess) {
+      return { success: false, reason: "Only the seal owner or a steward can purge" };
+    }
+  }
+
+  // Full cleanup via shared utility
+  await purgeAllSealState(attachmentId, sealRecord);
+
+  // Clean up watcher subscriptions
+  const watchPrefix = `notification-${attachmentId}-`;
+  const { results: watchEntries } = await kvs
+    .query()
+    .where("key", WhereConditions.beginsWith(watchPrefix))
+    .limit(50)
+    .getMany();
+  for (const { key } of watchEntries) {
+    await kvs.delete(key);
+  }
+
+  console.warn(`[PURGE] Removed seal record for ${sealRecord.attachmentName || attachmentId}`);
+  return { success: true };
+};
+
 export const actions = [
   ["seal-artifact", sealArtifact],
   ["unseal-artifact", unsealArtifact],
@@ -857,4 +1042,6 @@ export const actions = [
   ["enumerate-operator-seals", enumerateOperatorSeals],
   ["enumerate-page-seals", enumeratePageSeals],
   ["check-seal-stamp", checkSealStamp],
+  ["restore-sealed-artifact", restoreSealedArtifact],
+  ["purge-seal-record", purgeSealRecord],
 ];

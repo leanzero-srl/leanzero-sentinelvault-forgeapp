@@ -10,8 +10,7 @@ import {
 
 import { recordDispatch, postDocFootnote } from "./capsules/bulletins/logic.js";
 import { resolveBulletinToggles } from "./shared/bulletin-flags.js";
-import { touchSealTimestamp } from "./capsules/sealing/logic.js";
-import { removeSealContentProp } from "./capsules/sealing/confluence-sync.js";
+import { touchSealTimestamp, removeSealContentProp } from "./capsules/sealing/logic.js";
 
 // --- Helpers ---
 
