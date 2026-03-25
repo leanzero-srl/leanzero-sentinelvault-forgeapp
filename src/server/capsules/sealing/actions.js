@@ -161,13 +161,8 @@ const enumerateDocArtifacts = async (req) => {
  * Seal an artifact for the specified duration
  */
 const sealArtifact = async (req) => {
-  console.info(
-    `seal-artifact called: attachmentId=${req.payload.attachmentId}, userAccountId=${req.context.accountId}`,
-  );
-
   const { attachmentId } = req.payload;
   const operatorAccountId = req.context.accountId;
-  console.info(`Sealing artifact ${attachmentId} for operator ${operatorAccountId}`);
 
   // Guard: reject if already sealed by a different user
   const existingSeal = await kvs.get(`protection-${attachmentId}`);
@@ -315,9 +310,6 @@ const sealArtifact = async (req) => {
         creatorName: null,
         creatorAccountId: creatorAccountId || null,
       });
-      console.log(
-        `[SEAL-ARTIFACT] Wrote realm-seal index key for artifact ${attachmentId} in realm ${realmId}`,
-      );
     } catch (indexError) {
       console.warn(
         `[SEAL-ARTIFACT] Failed to write realm-seal index:`,
@@ -366,11 +358,7 @@ const sealArtifact = async (req) => {
             expiryDate,
           );
 
-          if (emailResult.success) {
-            console.info(
-              `Seal confirmation email sent successfully to operator ${operatorAccountId}`,
-            );
-          } else {
+          if (!emailResult.success) {
             console.error(
               `Seal confirmation email failed: ${emailResult.reason}`,
             );
@@ -457,9 +445,6 @@ const unsealArtifact = async (req) => {
     if (sealRecord.spaceId) {
       try {
         await kvs.delete(`space-protection-${sealRecord.spaceId}-${attachmentId}`);
-        console.log(
-          `[UNSEAL] Removed realm-seal index key for artifact ${attachmentId} in realm ${sealRecord.spaceId}`,
-        );
       } catch (indexError) {
         console.warn(`[UNSEAL] Failed to delete realm-seal index:`, indexError);
       }
@@ -567,9 +552,6 @@ const unsealArtifact = async (req) => {
 const enumerateOperatorSeals = async (req) => {
   const { cursor, limit = 10 } = req.payload;
   const operatorAccountId = req.context.accountId;
-  console.info(
-    `[ENUMERATE-OPERATOR-SEALS] Called with operatorAccountId: ${operatorAccountId}, cursor=${cursor || "null"}, limit=${limit}`,
-  );
 
   if (!operatorAccountId) {
     console.warn("[ENUMERATE-OPERATOR-SEALS] No operator account ID found in context");
@@ -587,7 +569,6 @@ const enumerateOperatorSeals = async (req) => {
     const autoUnsealActive = globalPolicy?.autoUnlockEnabled !== false;
 
     // Query all seals from KVS with pagination
-    console.info("[ENUMERATE-OPERATOR-SEALS] Querying KVS for protection- keys...");
     const allSeals = [];
 
     const start = cursor !== null ? parseInt(cursor, 10) : 0;
@@ -595,31 +576,20 @@ const enumerateOperatorSeals = async (req) => {
     let iteration = 0;
     const maxIterations = 10;
 
-    console.log(
-      `[ENUMERATE-OPERATOR-SEALS] Starting KVS pagination: cursor=${cursor}, start=${start}, kvsCursor=${kvsCursor || "null"}`,
-    );
-
     let query = kvs
       .query()
       .where("key", WhereConditions.beginsWith("protection-"))
       .limit(100);
 
     if (kvsCursor) {
-      console.log("[ENUMERATE-OPERATOR-SEALS] Using KVS cursor:", kvsCursor);
       query = query.cursor(kvsCursor);
-    } else {
-      console.log("[ENUMERATE-OPERATOR-SEALS] No cursor - getting first page of results");
     }
 
     do {
       iteration++;
-      console.log(`[ENUMERATE-OPERATOR-SEALS] KVS query iteration ${iteration}`);
 
       try {
         const { results, nextCursor } = await query.getMany();
-        console.log(
-          `[ENUMERATE-OPERATOR-SEALS] Got ${results?.length || 0} results, nextCursor=${nextCursor ? "present" : "null"}, iteration=${iteration}`,
-        );
         if (results && results.length > 0) {
           allSeals.push(...results);
         }
@@ -632,7 +602,6 @@ const enumerateOperatorSeals = async (req) => {
         }
 
         if (kvsCursor) {
-          console.log("[ENUMERATE-OPERATOR-SEALS] Preparing next query with cursor");
           query = kvs
             .query()
             .where("key", WhereConditions.beginsWith("protection-"))
@@ -648,12 +617,7 @@ const enumerateOperatorSeals = async (req) => {
       }
     } while (kvsCursor);
 
-    console.log(
-      `[ENUMERATE-OPERATOR-SEALS] Total iterations: ${iteration}, total seals from KVS: ${allSeals.length}`,
-    );
-
     if (allSeals.length === 0) {
-      console.info("[ENUMERATE-OPERATOR-SEALS] No seals found in KVS");
       return {
         attachments: [],
         hasMore: false,
@@ -662,43 +626,10 @@ const enumerateOperatorSeals = async (req) => {
       };
     }
 
-    // Debug: Log sample of fetched seals
-    console.log(
-      `[ENUMERATE-OPERATOR-SEALS] Sample seal keys: ${allSeals
-        .slice(0, 3)
-        .map((s) => s.key)
-        .join(", ")}`,
-    );
-    console.log(
-      `[ENUMERATE-OPERATOR-SEALS] Operator account ID from context: ${operatorAccountId}`,
-    );
-
-    const sampleLockedByValues = allSeals.slice(0, 5).map((s) => ({
-      key: s.key,
-      lockedBy: s.value?.lockedBy,
-      hasLockedBy: !!s.value?.lockedBy,
-    }));
-    console.log(
-      `[ENUMERATE-OPERATOR-SEALS] Sample lockedBy values: ${JSON.stringify(sampleLockedByValues)}`,
-    );
-
     // Filter seals owned by the current operator
     const operatorSeals = allSeals.filter(
       ({ value }) => value && value.lockedBy === operatorAccountId,
     );
-    console.info(
-      `[ENUMERATE-OPERATOR-SEALS] Found ${operatorSeals.length} seals for operator ${operatorAccountId}`,
-    );
-
-    if (operatorSeals.length === 0 && allSeals.length > 0) {
-      console.warn(
-        `[ENUMERATE-OPERATOR-SEALS] NO MATCHES - checking for partial matches or format issues`,
-      );
-      const sealsWithLockedBy = allSeals.filter((s) => s.value?.lockedBy);
-      console.warn(
-        `[ENUMERATE-OPERATOR-SEALS] Seals with lockedBy field: ${sealsWithLockedBy.length}`,
-      );
-    }
 
     if (operatorSeals.length === 0) {
       return {
@@ -723,15 +654,21 @@ const enumerateOperatorSeals = async (req) => {
           const artifactResponse = await asUser().requestConfluence(
             route`/wiki/api/v2/attachments/${artifactId}`,
           );
-          if (artifactResponse.ok) {
-            const artifactData = await artifactResponse.json();
-            artifactTitle = artifactData.title || artifactTitle;
-            fileSize = artifactData.fileSize
-              ? `${Math.round(artifactData.fileSize / 1024)}KB`
-              : "Unknown";
+          if (!artifactResponse.ok) {
+            // Attachment is trashed/deleted — skip it
+            continue;
           }
+          const artifactData = await artifactResponse.json();
+          if (artifactData.status && artifactData.status !== "current") {
+            continue;
+          }
+          artifactTitle = artifactData.title || artifactTitle;
+          fileSize = artifactData.fileSize
+            ? `${Math.round(artifactData.fileSize / 1024)}KB`
+            : "Unknown";
         } catch (attErr) {
-          console.warn(`Failed to fetch artifact ${artifactId}:`, attErr);
+          // Can't verify attachment — skip it
+          continue;
         }
 
         let docTitle = "Unknown Page";
@@ -804,10 +741,6 @@ const enumerateOperatorSeals = async (req) => {
     const paginatedArtifacts = sealedArtifacts.slice(start, start + limit);
     const hasMore = total > start + limit;
     const nextCursor = hasMore ? String(start + limit) : null;
-
-    console.info(
-      `[ENUMERATE-OPERATOR-SEALS] Returning ${paginatedArtifacts.length} of ${total} total artifacts, hasMore=${hasMore}, nextCursor=${nextCursor}`,
-    );
 
     return {
       attachments: paginatedArtifacts,

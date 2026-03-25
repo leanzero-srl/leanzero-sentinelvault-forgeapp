@@ -78,15 +78,8 @@ async function handleSealedArtifactEdit(sealRecord, artifactId, contentId, atlas
 
   // Allow the seal owner to edit their own sealed artifact
   if (sealRecord.lockedBy === atlassianId) {
-    console.log(
-      `Artifact ${artifactId} edited by seal owner ${atlassianId} - allowed`,
-    );
     return;
   }
-
-  console.log(
-    `Artifact ${artifactId} was edited while sealed by ${sealRecord.lockedBy}`,
-  );
 
   // Determine target version: prefer the exact version captured at seal time,
   // fall back to currentVersion - 1 for seals created before sealedVersion was tracked.
@@ -101,9 +94,6 @@ async function handleSealedArtifactEdit(sealRecord, artifactId, contentId, atlas
 
   // If the current version already matches the sealed version, no revert needed
   if (currentVersion === targetVersion) {
-    console.log(
-      `Artifact ${artifactId} is already at sealed version ${targetVersion} - no revert needed`,
-    );
     return;
   }
 
@@ -119,10 +109,6 @@ async function handleSealedArtifactEdit(sealRecord, artifactId, contentId, atlas
   }
 
   const artifactDetails = await artifactResponse.json();
-
-  console.log(
-    `Reverting artifact ${artifactId} from version ${currentVersion} to sealed version ${targetVersion}`,
-  );
 
   // Download the sealed version
   const downloadRoute = route`/wiki/rest/api/content/${contentId}/child/attachment/${artifactId}/download?version=${targetVersion}`;
@@ -157,9 +143,7 @@ async function handleSealedArtifactEdit(sealRecord, artifactId, contentId, atlas
     return;
   }
 
-  console.log(
-    `Successfully reverted ${artifactDetails.title} to sealed version ${targetVersion}`,
-  );
+  console.warn(`[EDIT-REVERT] Reverted ${artifactDetails.title} to v${targetVersion}`);
 
   // Send seal violation email to the seal owner
   const artifactName = artifactDetails.title || attachment.fileName;
@@ -246,8 +230,6 @@ async function sendViolationNotifications(sealRecord, artifactId, contentId, atl
         console.warn(
           `Failed to send seal violation email: ${emailResult.reason}`,
         );
-      } else {
-        console.log("Seal violation email sent successfully");
       }
     } catch (emailError) {
       console.error("Error sending seal violation email:", emailError);
@@ -303,18 +285,12 @@ export async function lifecycleTrigger(event) {
 // --- Expiry Sweep Task (Scheduled Job) ---
 export async function expirySweepTask() {
   try {
-    console.info("[EXPIRY-SWEEP] ========== CRON TASK TRIGGERED ==========");
-    console.info(`[EXPIRY-SWEEP] Execution time: ${new Date().toISOString()}`);
-
     // Read policy and bulletin toggles once for the entire task
     const systemPolicy = await kvs.get("admin-settings-global");
     const autoUnsealActive = systemPolicy?.autoUnlockEnabled !== false;
     const bulletinToggles = await resolveBulletinToggles(systemPolicy);
 
-    console.info(`[EXPIRY-SWEEP] Auto-unseal enabled: ${autoUnsealActive}`);
-
     if (!autoUnsealActive) {
-      console.info("[EXPIRY-SWEEP] Auto-unseal is disabled - skipping task");
       return {
         statusCode: 200,
         headers: {},
@@ -334,17 +310,12 @@ export async function expirySweepTask() {
       .getMany();
 
     if (!activeSeals || activeSeals.length === 0) {
-      console.info("[EXPIRY-SWEEP] No sealed artifacts found to process");
       return {
         statusCode: 200,
         headers: {},
         body: JSON.stringify({ notifiedCount: 0, fiftyPctReminders: 0 }),
       };
     }
-
-    console.info(
-      `[EXPIRY-SWEEP] Processing ${activeSeals.length} sealed artifacts`,
-    );
 
     const now = new Date();
     let notifiedCount = 0;
@@ -368,8 +339,6 @@ export async function expirySweepTask() {
           if (alreadyNotified) {
             continue;
           }
-
-          console.info(`[EXPIRY-SWEEP] Sending expiry notification for artifact ${artifactId}`);
 
           // Send expiry notification email
           if (
@@ -504,9 +473,9 @@ export async function expirySweepTask() {
       }
     }
 
-    console.info(
-      `[EXPIRY-SWEEP] Completed: ${notifiedCount} expiry notifications sent, ${halfwayAlertsSent} halfway reminders sent`,
-    );
+    if (notifiedCount > 0 || halfwayAlertsSent > 0) {
+      console.warn(`[EXPIRY-SWEEP] ${notifiedCount} expiry notifications, ${halfwayAlertsSent} reminders sent`);
+    }
     return {
       statusCode: 200,
       headers: {},
@@ -553,8 +522,6 @@ export async function recurringNudgeTask(request, context) {
       };
     }
 
-    console.info("Recurring nudge CRON task started");
-
     const { results: activeSeals } = await kvs
       .query()
       .where("key", WhereConditions.beginsWith("protection-"))
@@ -562,17 +529,12 @@ export async function recurringNudgeTask(request, context) {
       .getMany();
 
     if (activeSeals.length === 0) {
-      console.info("No sealed artifacts found to process");
       return {
         statusCode: 200,
         headers: {},
         body: JSON.stringify({ reminderCount: 0 }),
       };
     }
-
-    console.info(
-      `Processing ${activeSeals.length} sealed artifacts for recurring nudges`,
-    );
 
     const now = new Date();
     const nudgeTally = new Map();
@@ -626,9 +588,6 @@ export async function recurringNudgeTask(request, context) {
                 day: "numeric",
               });
 
-              console.info(
-                `Sending recurring nudge email to ${value.lockedBy} for artifact ${artifactName}`,
-              );
               const result = await mailPeriodicReminder(
                 value.lockedBy,
                 artifactIdValue,
@@ -638,10 +597,6 @@ export async function recurringNudgeTask(request, context) {
                 sealDate,
                 daysHeld,
               );
-              console.info(
-                `Recurring nudge email result: success=${result.success}, reason=${result.reason || "N/A"}, messageId=${result.messageId || "N/A"}`,
-              );
-
               if (result.success) {
                 await kvs.set(nudgeKey, {
                   sentAt: now.toISOString(),
@@ -671,9 +626,9 @@ export async function recurringNudgeTask(request, context) {
       (a, b) => a + b,
       0,
     );
-    console.info(
-      `Recurring nudge task completed: ${totalNudges} nudges sent`,
-    );
+    if (totalNudges > 0) {
+      console.warn(`[NUDGE] ${totalNudges} reminder emails sent`);
+    }
     return {
       statusCode: 200,
       headers: {},

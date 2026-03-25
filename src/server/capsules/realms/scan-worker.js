@@ -15,10 +15,6 @@ import { Queue } from "@forge/events";
 export async function realmScanConsumer(event) {
   const { jobId, spaceKey: realmKey, spaceId: realmId } = event.body;
 
-  console.log(
-    `[REALM-SCAN] Starting scan job ${jobId} for realm ${realmKey} (${realmId})`,
-  );
-
   // Update status to processing
   await kvs.set(`space-scan-status-${realmId}`, {
     jobId,
@@ -152,11 +148,7 @@ export async function realmScanConsumer(event) {
         cleanupCursor = nextCursor;
       } while (cleanupCursor);
 
-      if (staleCount > 0) {
-        console.log(
-          `[REALM-SCAN] Cleaned up ${staleCount} stale realm-seal keys`,
-        );
-      }
+      // staleCount tracked in job stats
     } catch (cleanupError) {
       console.warn(
         `[REALM-SCAN] Error during stale key cleanup:`,
@@ -178,9 +170,6 @@ export async function realmScanConsumer(event) {
       },
     });
 
-    console.log(
-      `[REALM-SCAN] Job ${jobId} completed: scanned ${totalArtifactsScanned} artifacts across ${totalPagesFetched} batches, found ${sealedCount} sealed`,
-    );
   } catch (error) {
     console.error(`[REALM-SCAN] Job ${jobId} failed:`, error);
 
@@ -203,13 +192,10 @@ export async function realmScanConsumer(event) {
  * queue job per realm so the consumer rebuilds the index in the background.
  */
 export async function sealIndexCron() {
-  console.info("[INDEX-CRON] Starting realm-seal index refresh");
-
   // Change-detection gate: skip full scan if no seals have changed since last run
   const lastModified = await kvs.get("protections-last-modified");
   const lastScanned = await kvs.get("protections-last-scanned");
   if (lastModified && lastScanned && lastModified <= lastScanned) {
-    console.info("[INDEX-CRON] No seal changes since last scan — skipping");
     return { statusCode: 200, body: JSON.stringify({ realmsQueued: 0, skipped: true }) };
   }
 
@@ -247,8 +233,6 @@ export async function sealIndexCron() {
     }
   } while (cursor);
 
-  console.info(`[INDEX-CRON] Found ${realmMap.size} realms with active seals`);
-
   if (realmMap.size === 0) {
     return { statusCode: 200, body: JSON.stringify({ realmsQueued: 0 }) };
   }
@@ -258,7 +242,6 @@ export async function sealIndexCron() {
   for (const [realmId, realmKey] of realmMap) {
     const existingStatus = await kvs.get(`space-scan-status-${realmId}`);
     if (existingStatus?.status === "processing") {
-      console.log(`[INDEX-CRON] Skipping realm ${realmKey} - scan in progress`);
       continue;
     }
 
@@ -278,12 +261,9 @@ export async function sealIndexCron() {
     });
 
     queued++;
-    console.log(`[INDEX-CRON] Queued scan for realm ${realmKey} (${realmId})`);
   }
 
   // Mark scan timestamp so next run can skip if nothing changed
   await kvs.set("protections-last-scanned", Date.now());
-
-  console.info(`[INDEX-CRON] Done — queued ${queued} realm scans`);
   return { statusCode: 200, body: JSON.stringify({ realmsQueued: queued }) };
 }

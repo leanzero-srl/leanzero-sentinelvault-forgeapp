@@ -50,9 +50,6 @@ export async function listRealmSeals(realmId, cursor = null, limit = 50) {
 
   try {
     const prefix = `space-protection-${realmId}-`;
-    console.log(
-      `[REALM-SEALS] Querying KVS with prefix: ${prefix}, cursor=${cursor || "null"}, limit=${limit}`,
-    );
 
     // Build KVS query with realm-seal prefix
     let query = kvs
@@ -65,10 +62,6 @@ export async function listRealmSeals(realmId, cursor = null, limit = 50) {
     }
 
     const { results, nextCursor } = await query.getMany();
-
-    console.log(
-      `[REALM-SEALS] Got ${results?.length || 0} results, nextCursor=${nextCursor ? "present" : "null"}`,
-    );
 
     // Map KVS results to artifact objects for the frontend
     const artifacts = (results || []).map(({ key, value }) => {
@@ -124,7 +117,6 @@ export async function initiateRealmSweep(realmKey, realmId, scanQueue) {
   // Check if a scan is already in progress
   const existingStatus = await kvs.get(`space-scan-status-${realmId}`);
   if (existingStatus?.status === "processing") {
-    console.log(`[REALM-SCAN] Scan already in progress for realm ${realmId}`);
     return {
       jobId: existingStatus.jobId,
       status: "already-running",
@@ -146,8 +138,6 @@ export async function initiateRealmSweep(realmKey, realmId, scanQueue) {
   await scanQueue.push({
     body: { jobId, spaceKey: realmKey, spaceId: realmId },
   });
-
-  console.log(`[REALM-SCAN] Queued scan job ${jobId} for realm ${realmKey}`);
 
   return { jobId, status: "queued" };
 }
