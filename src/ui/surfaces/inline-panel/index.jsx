@@ -271,6 +271,8 @@ const ArtifactCard = ({ att, onRefresh, columns }) => {
   const isSealedByMe = att.lockStatus === "HELD_BY_ACTOR";
   const isSealedByOther = att.lockStatus === "HELD";
   const canUnseal = isSealedByMe;
+  const isStale = att.isStale === true;
+  const isRecoverable = att.staleReason === "trashed";
 
   const handleSeal = async () => {
     setActionBusy("seal");
@@ -333,10 +335,49 @@ const ArtifactCard = ({ att, onRefresh, columns }) => {
     }
   };
 
+  const handleRestore = async () => {
+    setActionBusy("restore");
+    try {
+      const result = await invoke("restore-sealed-artifact", { attachmentId: att.id });
+      if (result && result.success) {
+        onRefresh();
+      } else {
+        alert(result?.reason || "Restore unsuccessful");
+      }
+    } catch (e) {
+      console.error("Restore failed:", e);
+    } finally {
+      setActionBusy(null);
+    }
+  };
+
+  const handlePurge = async () => {
+    if (!window.confirm(`Remove the seal record for "${att.title}"? This cannot be undone.`)) return;
+    setActionBusy("purge");
+    try {
+      const result = await invoke("purge-seal-record", { attachmentId: att.id });
+      if (result && result.success) {
+        onRefresh();
+      } else {
+        alert(result?.reason || "Cleanup unsuccessful");
+      }
+    } catch (e) {
+      console.error("Purge failed:", e);
+    } finally {
+      setActionBusy(null);
+    }
+  };
+
   // Status
   let statusClass = "unlocked";
   let statusText = "Available";
-  if (att.isExpired && isSealed) {
+  if (isStale && isRecoverable) {
+    statusClass = "trashed";
+    statusText = "Trashed";
+  } else if (isStale) {
+    statusClass = "stale";
+    statusText = "Missing";
+  } else if (att.isExpired && isSealed) {
     statusClass = "expired";
     statusText = "Overdue";
   } else if (isSealedByMe) {
@@ -373,7 +414,16 @@ const ArtifactCard = ({ att, onRefresh, columns }) => {
   // Primary action (line 1)
   let primaryActionBtn = null;
   if (columns.actions) {
-    if (!isSealed) {
+    if (isStale && isRecoverable && att.allowRestore) {
+      primaryActionBtn = (
+        <button className={`action-btn restore ${actionBusy === "restore" ? "is-busy" : ""}`} onClick={handleRestore} disabled={actionBusy && actionBusy !== "restore"} title="Restore this trashed attachment back to the page">
+          {actionBusy === "restore" ? <>Restoring<span className="btn-busy-bar" /></> : "Restore"}
+        </button>
+      );
+    } else if (isStale) {
+      // Permanently deleted — no primary action possible
+      primaryActionBtn = null;
+    } else if (!isSealed) {
       primaryActionBtn = (
         <button className={`action-btn lock ${actionBusy === "seal" ? "is-busy" : ""}`} onClick={handleSeal} disabled={actionBusy && actionBusy !== "seal"} title="Reserve this file so only you can modify it">
           {actionBusy === "seal" ? <>Sealing<span className="btn-busy-bar" /></> : "Seal"}
@@ -391,7 +441,19 @@ const ArtifactCard = ({ att, onRefresh, columns }) => {
   // Secondary actions (line 2)
   const secondaryActions = [];
   if (columns.actions) {
-    if (isSealedByOther) {
+    if (isStale && att.allowPurge) {
+      secondaryActions.push(
+        <button
+          key="purge"
+          className={`action-btn purge ${actionBusy === "purge" ? "is-busy" : ""}`}
+          onClick={handlePurge}
+          disabled={actionBusy && actionBusy !== "purge"}
+          title="Remove this stale seal record"
+        >
+          {actionBusy === "purge" ? <>Purging<span className="btn-busy-bar" /></> : "Purge"}
+        </button>
+      );
+    } else if (isSealedByOther) {
       secondaryActions.push(
         <button
           key="watch"
@@ -404,7 +466,7 @@ const ArtifactCard = ({ att, onRefresh, columns }) => {
         </button>
       );
     }
-    if (att.allowDelete) {
+    if (!isStale && att.allowDelete) {
       if (!isSealed) {
         // No seal — show normal delete button
         secondaryActions.push(
@@ -433,6 +495,19 @@ const ArtifactCard = ({ att, onRefresh, columns }) => {
         );
       }
       // Sealed by someone else — hide the Remove button entirely
+    }
+    if (!isStale && isSealedByMe && att.allowPurge) {
+      secondaryActions.push(
+        <button
+          key="purge"
+          className={`action-btn purge ${actionBusy === "purge" ? "is-busy" : ""}`}
+          onClick={handlePurge}
+          disabled={actionBusy && actionBusy !== "purge"}
+          title="Remove this seal record permanently"
+        >
+          {actionBusy === "purge" ? <>Purging<span className="btn-busy-bar" /></> : "Purge"}
+        </button>
+      );
     }
   }
 
@@ -710,8 +785,9 @@ const ArtifactGridView = () => {
   const cols = panelConfig.columns;
   const isClaimed = (a) => a.lockStatus === "HELD" || a.lockStatus === "HELD_BY_ACTOR";
   const prioritized = [...artifacts].sort((a, b) => (isClaimed(a) ? 0 : 1) - (isClaimed(b) ? 0 : 1));
-  const claimedFiles = prioritized.filter(isClaimed);
-  const availableFiles = prioritized.filter((a) => !isClaimed(a));
+  const staleFiles = prioritized.filter((a) => a.isStale);
+  const claimedFiles = prioritized.filter((a) => isClaimed(a) && !a.isStale);
+  const availableFiles = prioritized.filter((a) => !isClaimed(a) && !a.isStale);
 
   const gridProps = {
     className: "sv-card-list",
@@ -734,6 +810,9 @@ const ArtifactGridView = () => {
         <span className="sv-panel-header-counts">
           {claimedFiles.length > 0 && (
             <span className="sv-panel-header-badge">{claimedFiles.length} sealed</span>
+          )}
+          {staleFiles.length > 0 && (
+            <span className="sv-panel-header-badge badge-stale">{staleFiles.length} missing</span>
           )}
           {availableFiles.length > 0 && (
             <span className="sv-panel-header-badge badge-available">{availableFiles.length} available</span>
@@ -762,6 +841,15 @@ const ArtifactGridView = () => {
                 <span className="sv-card-section-count">{claimedFiles.length}</span>
               </div>
               <div {...gridProps}>{renderCards(claimedFiles)}</div>
+            </div>
+          )}
+          {staleFiles.length > 0 && (
+            <div className="sv-card-section">
+              <div className="sv-card-section-header">
+                <span className="sv-card-section-title">Missing</span>
+                <span className="sv-card-section-count badge-stale">{staleFiles.length}</span>
+              </div>
+              <div {...gridProps}>{renderCards(staleFiles)}</div>
             </div>
           )}
           {availableFiles.length > 0 && (

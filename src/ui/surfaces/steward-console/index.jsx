@@ -27,6 +27,8 @@ const GlobalPolicyEditor = () => {
     allowStewardOverride: false,
     autoUnsealEnabled: true,
     allowArtifactDelete: false,
+    allowSealRestore: false,
+    allowSealPurge: false,
     reminderIntervalDays: 7,
     enableFlashMessages: true,
     enableDocRibbons: true,
@@ -73,6 +75,8 @@ const GlobalPolicyEditor = () => {
           allowStewardOverride: globalSettings?.allowStewardOverride || false,
           autoUnsealEnabled: globalSettings?.autoUnsealEnabled !== false,
           allowArtifactDelete: globalSettings?.allowArtifactDelete === true,
+          allowSealRestore: globalSettings?.allowSealRestore === true,
+          allowSealPurge: globalSettings?.allowSealPurge === true,
           reminderIntervalDays: globalSettings?.reminderIntervalDays || 7,
           enableFlashMessages:
             globalSettings?.enableFlashMessages !== false,
@@ -114,6 +118,8 @@ const GlobalPolicyEditor = () => {
           allowStewardOverride: settings.allowStewardOverride,
           autoUnsealEnabled: settings.autoUnsealEnabled,
           allowArtifactDelete: settings.allowArtifactDelete,
+          allowSealRestore: settings.allowSealRestore,
+          allowSealPurge: settings.allowSealPurge,
           reminderIntervalDays: settings.reminderIntervalDays,
           enableFlashMessages: settings.enableFlashMessages,
           enableDocRibbons: settings.enableDocRibbons,
@@ -267,6 +273,36 @@ const GlobalPolicyEditor = () => {
                   setSettings((prev) => ({
                     ...prev,
                     allowArtifactDelete: e.target.checked,
+                  }))
+                }
+              />
+            </SettingsRow>
+
+            <SettingsRow
+              label="Allow Seal Restore from Panel"
+              description="When active, operators and stewards may attempt to restore trashed attachments that still have seal records. Permanently deleted attachments cannot be restored."
+            >
+              <Toggle
+                checked={settings.allowSealRestore}
+                onChange={(e) =>
+                  setSettings((prev) => ({
+                    ...prev,
+                    allowSealRestore: e.target.checked,
+                  }))
+                }
+              />
+            </SettingsRow>
+
+            <SettingsRow
+              label="Allow Seal Record Cleanup from Panel"
+              description="When active, operators and stewards may remove stale seal records for attachments that no longer exist on the page."
+            >
+              <Toggle
+                checked={settings.allowSealPurge}
+                onChange={(e) =>
+                  setSettings((prev) => ({
+                    ...prev,
+                    allowSealPurge: e.target.checked,
                   }))
                 }
               />

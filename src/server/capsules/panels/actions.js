@@ -30,6 +30,8 @@ const enumeratePanelArtifacts = async (req) => {
     const autoUnsealActive = globalPolicy?.autoUnlockEnabled !== false;
     const allowArtifactDelete =
       globalPolicy?.allowAttachmentDelete === true;
+    const allowSealRestore = globalPolicy?.allowSealRestore === true;
+    const allowSealPurge = globalPolicy?.allowSealPurge === true;
 
     // Fetch attachments via v2 API
     let url = route`/wiki/api/v2/pages/${contentId}/attachments?limit=${limit}`;
@@ -121,6 +123,8 @@ const enumeratePanelArtifacts = async (req) => {
           isExpired,
           autoUnlockEnabled: autoUnsealActive,
           allowDelete: allowArtifactDelete,
+          allowRestore: allowSealRestore,
+          allowPurge: allowSealPurge,
           labels,
           comment,
           notifyRequested: watchRequested,
