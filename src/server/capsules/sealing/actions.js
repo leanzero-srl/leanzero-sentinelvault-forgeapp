@@ -38,9 +38,11 @@ const enumerateDocArtifacts = async (req) => {
   }
 
   try {
-    // Get global policy to check autoUnseal
+    // Get global policy to check autoUnseal and action toggles
     const globalPolicy = await kvs.get("admin-settings-global");
     const autoUnsealActive = globalPolicy?.autoUnlockEnabled !== false;
+    const allowSealRestore = globalPolicy?.allowSealRestore === true;
+    const allowSealPurge = globalPolicy?.allowSealPurge === true;
 
     // Build URL with cursor if present
     let url = route`/wiki/api/v2/pages/${contentId}/attachments?limit=${limit}`;
@@ -121,6 +123,8 @@ const enumerateDocArtifacts = async (req) => {
           expiresAt,
           isExpired: hasLapsed,
           autoUnlockEnabled: autoUnsealActive,
+          allowRestore: allowSealRestore,
+          allowPurge: allowSealPurge,
           labels,
           comment: att.version?.message || null,
           versionNumber: att.version?.number || null,
