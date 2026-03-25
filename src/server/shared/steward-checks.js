@@ -114,7 +114,7 @@ export async function isOperatorSiteAdmin(operatorAccountId) {
 
       const hasStewardOps = operations.some(
         (op) =>
-          op.operation === "administer" || op.targetType === "application",
+          op.operation === "administer" && op.targetType === "application",
       );
 
       return hasStewardOps;
