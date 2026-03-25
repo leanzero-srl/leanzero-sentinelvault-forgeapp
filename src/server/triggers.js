@@ -10,6 +10,32 @@ import {
 
 import { recordDispatch, postDocFootnote } from "./capsules/bulletins/logic.js";
 import { resolveBulletinToggles } from "./shared/bulletin-flags.js";
+import { touchSealTimestamp } from "./capsules/sealing/logic.js";
+
+// --- Helpers ---
+
+/**
+ * Resolve the app's own Atlassian account ID (cached in KVS).
+ * Used to prevent infinite loops when the app edits/restores artifacts.
+ */
+async function resolveAppAccountId() {
+  let systemAccountId = await kvs.get("app-account-id");
+  if (!systemAccountId) {
+    try {
+      const myselfResponse = await asApp().requestConfluence(
+        route`/wiki/rest/api/user/current`,
+      );
+      if (myselfResponse.ok) {
+        const myself = await myselfResponse.json();
+        systemAccountId = myself.accountId;
+        await kvs.set("app-account-id", systemAccountId);
+      }
+    } catch (e) {
+      console.error("Error fetching App Account ID:", e);
+    }
+  }
+  return systemAccountId;
+}
 
 // --- Artifact Event Trigger (Forge Trigger) ---
 export async function artifactEventTrigger(event) {
@@ -24,7 +50,9 @@ export async function artifactEventTrigger(event) {
     const artifactId = attachment.id;
     const contentId = attachment.container?.id;
 
-    if (eventType !== "avi:confluence:updated:attachment") {
+    // Prevent infinite loops - ignore actions made by our own app
+    const systemAccountId = await resolveAppAccountId();
+    if (systemAccountId && atlassianId === systemAccountId) {
       return;
     }
 
@@ -35,184 +63,243 @@ export async function artifactEventTrigger(event) {
       return;
     }
 
-    const editorAccountId = atlassianId;
-    const currentVersion = attachment.version?.number;
-
-    // Prevent infinite loops - ignore edits made by our own app
-    let systemAccountId = await kvs.get("app-account-id");
-    if (!systemAccountId) {
-      try {
-        const myselfResponse = await asApp().requestConfluence(
-          route`/wiki/rest/api/user/current`,
-        );
-        if (myselfResponse.ok) {
-          const myself = await myselfResponse.json();
-          systemAccountId = myself.accountId;
-          await kvs.set("app-account-id", systemAccountId);
-        }
-      } catch (e) {
-        console.error("Error fetching App Account ID:", e);
-      }
-    }
-
-    if (systemAccountId && editorAccountId === systemAccountId) {
-      return;
-    }
-
-    // Allow the seal owner to edit their own sealed artifact
-    if (sealRecord.lockedBy === editorAccountId) {
-      console.log(
-        `Artifact ${artifactId} edited by seal owner ${editorAccountId} - allowed`,
-      );
-      return;
-    }
-
-    console.log(
-      `Artifact ${artifactId} was edited while sealed by ${sealRecord.lockedBy}`,
-    );
-
-    // Determine target version: prefer the exact version captured at seal time,
-    // fall back to currentVersion - 1 for seals created before sealedVersion was tracked.
-    const targetVersion = sealRecord.sealedVersion || (currentVersion ? currentVersion - 1 : null);
-
-    if (!targetVersion || targetVersion < 1) {
-      console.warn(
-        `Cannot revert artifact ${artifactId} - no valid target version (sealedVersion=${sealRecord.sealedVersion}, current=${currentVersion})`,
-      );
-      return;
-    }
-
-    // If the current version already matches the sealed version, no revert needed
-    if (currentVersion === targetVersion) {
-      console.log(
-        `Artifact ${artifactId} is already at sealed version ${targetVersion} - no revert needed`,
-      );
-      return;
-    }
-
-    // Get artifact details to obtain the filename for re-upload
-    const artifactRoute = route`/wiki/api/v2/attachments/${artifactId}`;
-    const artifactResponse = await asApp().requestConfluence(artifactRoute);
-
-    if (!artifactResponse.ok) {
-      console.error(
-        `Failed to get artifact details: ${artifactResponse.status}`,
-      );
-      return;
-    }
-
-    const artifactDetails = await artifactResponse.json();
-
-    console.log(
-      `Reverting artifact ${artifactId} from version ${currentVersion} to sealed version ${targetVersion}`,
-    );
-
-    // Download the sealed version
-    const downloadRoute = route`/wiki/rest/api/content/${contentId}/child/attachment/${artifactId}/download?version=${targetVersion}`;
-    const downloadResponse = await asApp().requestConfluence(downloadRoute);
-
-    if (!downloadResponse.ok) {
-      console.error(
-        `Failed to download previous version: ${downloadResponse.status}`,
-      );
-      return;
-    }
-
-    // Re-upload the previous version
-    const fileBuffer = await downloadResponse.arrayBuffer();
-    const formData = new FormData();
-    formData.append("file", new Blob([fileBuffer]), artifactDetails.title);
-    formData.append(
-      "comment",
-      "(Sentinel Vault automatically reversed modifications)",
-    );
-    formData.append("minorEdit", "true");
-
-    const updateRoute = route`/wiki/rest/api/content/${contentId}/child/attachment/${artifactId}/data`;
-    const updateResponse = await asApp().requestConfluence(updateRoute, {
-      method: "POST",
-      headers: { "X-Atlassian-Token": "nocheck" },
-      body: formData,
-    });
-
-    if (!updateResponse.ok) {
-      console.error(`Failed to revert artifact: ${updateResponse.status}`);
-      return;
-    }
-
-    console.log(
-      `Successfully reverted ${artifactDetails.title} to sealed version ${targetVersion}`,
-    );
-
-    // Send seal violation email to the seal owner
-    const bulletinToggles = await resolveBulletinToggles();
-    if (bulletinToggles.ENABLE_EMAIL_BULLETINS) {
-      try {
-        // Get page details for email
-        const pageResponse = await asApp().requestConfluence(
-          route`/wiki/api/v2/pages/${contentId}`,
-        );
-        let docTitle = "Confluence Page";
-        let pageUrl = "";
-        if (pageResponse.ok) {
-          const pageData = await pageResponse.json();
-          docTitle = pageData.title || "Confluence Page";
-          const baseUrl = pageData._links?.base || "";
-          const webui = pageData._links?.webui || "";
-          pageUrl = baseUrl && webui ? `${baseUrl}${webui}` : "";
-        }
-
-        const emailResult = await mailViolationAlert(
-          sealRecord.lockedBy,
-          atlassianId,
-          artifactId,
-          artifactDetails.title || attachment.fileName,
-          docTitle,
-          pageUrl,
-        );
-
-        if (!emailResult.success) {
-          console.warn(
-            `Failed to send seal violation email: ${emailResult.reason}`,
-          );
-        } else {
-          console.log("Seal violation email sent successfully");
-        }
-      } catch (emailError) {
-        console.error("Error sending seal violation email:", emailError);
-      }
-    }
-
-    const dispatchPayload = {
-      id: `notification-${Date.now()}`,
-      type: "edit-reverted",
-      attachmentId: artifactId,
-      attachmentName: artifactDetails.title || attachment.fileName,
-      ownerAccountId: sealRecord.lockedBy,
-      editorAccountId: atlassianId,
-      timestamp: Date.now(),
-      pageId: contentId,
-    };
-
-    await recordDispatch(dispatchPayload);
-
-    // Send Confluence notification via comment
-    await postDocFootnote(
-      contentId,
-      sealRecord.lockedBy,
-      atlassianId,
-      artifactDetails.title || attachment.fileName,
-      artifactId,
-    );
-
-    if (bulletinToggles?.ENABLE_TOAST_DISPATCHES) {
-      const violationKey = `violation-alert-${sealRecord.lockedBy}-${artifactId}-${Date.now()}`;
-      await kvs.set(violationKey, dispatchPayload, {
-        expiresAt: Date.now() + 3600000,
-      });
+    if (eventType === "avi:confluence:updated:attachment") {
+      await handleSealedArtifactEdit(sealRecord, artifactId, contentId, atlassianId, attachment);
+    } else if (eventType === "avi:confluence:trashed:attachment") {
+      await handleSealedArtifactTrash(sealRecord, artifactId, contentId, atlassianId, attachment);
     }
   } catch (error) {
     console.error("Error in artifact event trigger:", error);
+  }
+}
+
+// --- Handle unauthorized edit of a sealed artifact ---
+async function handleSealedArtifactEdit(sealRecord, artifactId, contentId, atlassianId, attachment) {
+  const currentVersion = attachment.version?.number;
+
+  // Allow the seal owner to edit their own sealed artifact
+  if (sealRecord.lockedBy === atlassianId) {
+    console.log(
+      `Artifact ${artifactId} edited by seal owner ${atlassianId} - allowed`,
+    );
+    return;
+  }
+
+  console.log(
+    `Artifact ${artifactId} was edited while sealed by ${sealRecord.lockedBy}`,
+  );
+
+  // Determine target version: prefer the exact version captured at seal time,
+  // fall back to currentVersion - 1 for seals created before sealedVersion was tracked.
+  const targetVersion = sealRecord.sealedVersion || (currentVersion ? currentVersion - 1 : null);
+
+  if (!targetVersion || targetVersion < 1) {
+    console.warn(
+      `Cannot revert artifact ${artifactId} - no valid target version (sealedVersion=${sealRecord.sealedVersion}, current=${currentVersion})`,
+    );
+    return;
+  }
+
+  // If the current version already matches the sealed version, no revert needed
+  if (currentVersion === targetVersion) {
+    console.log(
+      `Artifact ${artifactId} is already at sealed version ${targetVersion} - no revert needed`,
+    );
+    return;
+  }
+
+  // Get artifact details to obtain the filename for re-upload
+  const artifactRoute = route`/wiki/api/v2/attachments/${artifactId}`;
+  const artifactResponse = await asApp().requestConfluence(artifactRoute);
+
+  if (!artifactResponse.ok) {
+    console.error(
+      `Failed to get artifact details: ${artifactResponse.status}`,
+    );
+    return;
+  }
+
+  const artifactDetails = await artifactResponse.json();
+
+  console.log(
+    `Reverting artifact ${artifactId} from version ${currentVersion} to sealed version ${targetVersion}`,
+  );
+
+  // Download the sealed version
+  const downloadRoute = route`/wiki/rest/api/content/${contentId}/child/attachment/${artifactId}/download?version=${targetVersion}`;
+  const downloadResponse = await asApp().requestConfluence(downloadRoute);
+
+  if (!downloadResponse.ok) {
+    console.error(
+      `Failed to download previous version: ${downloadResponse.status}`,
+    );
+    return;
+  }
+
+  // Re-upload the previous version
+  const fileBuffer = await downloadResponse.arrayBuffer();
+  const formData = new FormData();
+  formData.append("file", new Blob([fileBuffer]), artifactDetails.title);
+  formData.append(
+    "comment",
+    "(Sentinel Vault automatically reversed modifications)",
+  );
+  formData.append("minorEdit", "true");
+
+  const updateRoute = route`/wiki/rest/api/content/${contentId}/child/attachment/${artifactId}/data`;
+  const updateResponse = await asApp().requestConfluence(updateRoute, {
+    method: "POST",
+    headers: { "X-Atlassian-Token": "nocheck" },
+    body: formData,
+  });
+
+  if (!updateResponse.ok) {
+    console.error(`Failed to revert artifact: ${updateResponse.status}`);
+    return;
+  }
+
+  console.log(
+    `Successfully reverted ${artifactDetails.title} to sealed version ${targetVersion}`,
+  );
+
+  // Send seal violation email to the seal owner
+  const artifactName = artifactDetails.title || attachment.fileName;
+  await sendViolationNotifications(sealRecord, artifactId, contentId, atlassianId, artifactName, "edit");
+}
+
+// --- Handle trashing of a sealed artifact — restore from trash ---
+async function handleSealedArtifactTrash(sealRecord, artifactId, contentId, atlassianId, attachment) {
+  // Unlike edits, we restore even if the seal owner trashed it.
+  // The seal contract means the attachment must not be deletable while sealed.
+  console.log(
+    `Sealed artifact ${artifactId} was trashed by ${atlassianId} - restoring from trash`,
+  );
+
+  // Use contentId from event, fall back to seal record
+  const pageId = contentId || sealRecord.contentId;
+
+  // Step 1: Fetch trashed attachment to get its version number
+  const getRoute = route`/wiki/rest/api/content/${artifactId}?status=trashed`;
+  const getResponse = await asApp().requestConfluence(getRoute);
+
+  if (!getResponse.ok) {
+    console.error(
+      `Failed to fetch trashed attachment ${artifactId}: ${getResponse.status}`,
+    );
+    return;
+  }
+
+  const trashedContent = await getResponse.json();
+  const currentVersion = trashedContent.version?.number;
+
+  if (!currentVersion) {
+    console.error(
+      `Cannot restore attachment ${artifactId} - no version number found in trashed content`,
+    );
+    return;
+  }
+
+  // Step 2: Restore by setting status back to "current"
+  const restoreRoute = route`/wiki/rest/api/content/${artifactId}`;
+  const restoreResponse = await asApp().requestConfluence(restoreRoute, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      id: artifactId,
+      status: "current",
+      version: { number: currentVersion + 1 },
+    }),
+  });
+
+  if (!restoreResponse.ok) {
+    const errorText = await restoreResponse.text();
+    console.error(
+      `Failed to restore trashed attachment ${artifactId}: ${restoreResponse.status} - ${errorText}`,
+    );
+    return;
+  }
+
+  console.log(
+    `Successfully restored sealed attachment ${artifactId} from trash`,
+  );
+
+  // Touch seal timestamp so frontend polling picks up the change
+  await touchSealTimestamp();
+
+  // Send violation notifications
+  const artifactName = sealRecord.attachmentName || trashedContent.title || attachment.title || "Unknown Attachment";
+  await sendViolationNotifications(sealRecord, artifactId, pageId, atlassianId, artifactName, "delete");
+}
+
+// --- Shared violation notification logic ---
+async function sendViolationNotifications(sealRecord, artifactId, contentId, atlassianId, artifactName, actionVerb) {
+  const bulletinToggles = await resolveBulletinToggles();
+
+  if (bulletinToggles.ENABLE_EMAIL_BULLETINS) {
+    try {
+      const pageResponse = await asApp().requestConfluence(
+        route`/wiki/api/v2/pages/${contentId}`,
+      );
+      let docTitle = "Confluence Page";
+      let pageUrl = "";
+      if (pageResponse.ok) {
+        const pageData = await pageResponse.json();
+        docTitle = pageData.title || "Confluence Page";
+        const baseUrl = pageData._links?.base || "";
+        const webui = pageData._links?.webui || "";
+        pageUrl = baseUrl && webui ? `${baseUrl}${webui}` : "";
+      }
+
+      const emailResult = await mailViolationAlert(
+        sealRecord.lockedBy,
+        atlassianId,
+        artifactId,
+        artifactName,
+        docTitle,
+        pageUrl,
+      );
+
+      if (!emailResult.success) {
+        console.warn(
+          `Failed to send seal violation email: ${emailResult.reason}`,
+        );
+      } else {
+        console.log("Seal violation email sent successfully");
+      }
+    } catch (emailError) {
+      console.error("Error sending seal violation email:", emailError);
+    }
+  }
+
+  const dispatchType = actionVerb === "delete" ? "trash-restored" : "edit-reverted";
+  const dispatchPayload = {
+    id: `notification-${Date.now()}`,
+    type: dispatchType,
+    attachmentId: artifactId,
+    attachmentName: artifactName,
+    ownerAccountId: sealRecord.lockedBy,
+    editorAccountId: atlassianId,
+    timestamp: Date.now(),
+    pageId: contentId,
+  };
+
+  await recordDispatch(dispatchPayload);
+
+  // Send Confluence notification via comment
+  await postDocFootnote(
+    contentId,
+    sealRecord.lockedBy,
+    atlassianId,
+    artifactName,
+    artifactId,
+    actionVerb,
+  );
+
+  if (bulletinToggles?.ENABLE_TOAST_DISPATCHES) {
+    const violationKey = `violation-alert-${sealRecord.lockedBy}-${artifactId}-${Date.now()}`;
+    await kvs.set(violationKey, dispatchPayload, {
+      expiresAt: Date.now() + 3600000,
+    });
   }
 }
 

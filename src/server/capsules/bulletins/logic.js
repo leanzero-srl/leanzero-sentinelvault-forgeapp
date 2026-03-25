@@ -19,6 +19,7 @@ export async function postDocFootnote(
   editorAccountId,
   artifactName,
   artifactId,
+  actionVerb = "edit",
 ) {
   const bulletinConfig = await resolveBulletinToggles();
   if (!bulletinConfig.ENABLE_CONFLUENCE_BULLETINS) {
@@ -32,7 +33,10 @@ export async function postDocFootnote(
     ]);
 
     // Create a simple comment (plain text with user mentions)
-    const commentBody = `<p><strong>🔒 Protection Alert</strong></p><p><ac:link><ri:user ri:account-id="${editorInfo.accountId}" /></ac:link> tried to edit <strong>"${artifactName}"</strong>, locked by <ac:link><ri:user ri:account-id="${ownerInfo.accountId}" /></ac:link>. Changes were reverted.</p>`;
+    const outcomeText = actionVerb === "delete"
+      ? "Attachment was restored."
+      : "Changes were reverted.";
+    const commentBody = `<p><strong>🔒 Protection Alert</strong></p><p><ac:link><ri:user ri:account-id="${editorInfo.accountId}" /></ac:link> tried to ${actionVerb} <strong>"${artifactName}"</strong>, locked by <ac:link><ri:user ri:account-id="${ownerInfo.accountId}" /></ac:link>. ${outcomeText}</p>`;
 
     const response = await asApp().requestConfluence(
       route`/wiki/api/v2/footer-comments`,

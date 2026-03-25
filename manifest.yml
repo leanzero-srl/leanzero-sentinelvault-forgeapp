@@ -60,6 +60,7 @@ modules:
       function: artifact-trigger
       events:
         - avi:confluence:updated:attachment
+        - avi:confluence:trashed:attachment
     - key: app-lifecycle-events
       function: lifecycle-trigger
       events:
