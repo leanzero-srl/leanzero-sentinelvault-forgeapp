@@ -71,8 +71,27 @@ export async function artifactEventTrigger(event) {
       `Artifact ${artifactId} was edited while sealed by ${sealRecord.lockedBy}`,
     );
 
-    // Get artifact details with all versions
-    const artifactRoute = route`/wiki/api/v2/attachments/${artifactId}?include-versions=true`;
+    // Determine target version: prefer the exact version captured at seal time,
+    // fall back to currentVersion - 1 for seals created before sealedVersion was tracked.
+    const targetVersion = sealRecord.sealedVersion || (currentVersion ? currentVersion - 1 : null);
+
+    if (!targetVersion || targetVersion < 1) {
+      console.warn(
+        `Cannot revert artifact ${artifactId} - no valid target version (sealedVersion=${sealRecord.sealedVersion}, current=${currentVersion})`,
+      );
+      return;
+    }
+
+    // If the current version already matches the sealed version, no revert needed
+    if (currentVersion === targetVersion) {
+      console.log(
+        `Artifact ${artifactId} is already at sealed version ${targetVersion} - no revert needed`,
+      );
+      return;
+    }
+
+    // Get artifact details to obtain the filename for re-upload
+    const artifactRoute = route`/wiki/api/v2/attachments/${artifactId}`;
     const artifactResponse = await asApp().requestConfluence(artifactRoute);
 
     if (!artifactResponse.ok) {
@@ -83,30 +102,13 @@ export async function artifactEventTrigger(event) {
     }
 
     const artifactDetails = await artifactResponse.json();
-    const versions = artifactDetails.versions?.results || [];
-
-    if (versions.length < 2) {
-      console.warn(
-        `Cannot revert artifact ${artifactId} - not enough versions`,
-      );
-      return;
-    }
-
-    // Find the previous version
-    const previousVersion = versions.find(
-      (v) => v.number === currentVersion - 1,
-    );
-    if (!previousVersion) {
-      console.error(`Previous version ${currentVersion - 1} not found`);
-      return;
-    }
 
     console.log(
-      `Reverting artifact ${artifactId} from version ${currentVersion} to ${previousVersion.number}`,
+      `Reverting artifact ${artifactId} from version ${currentVersion} to sealed version ${targetVersion}`,
     );
 
-    // Download the previous version
-    const downloadRoute = route`/wiki/rest/api/content/${contentId}/child/attachment/${artifactId}/download?version=${previousVersion.number}`;
+    // Download the sealed version
+    const downloadRoute = route`/wiki/rest/api/content/${contentId}/child/attachment/${artifactId}/download?version=${targetVersion}`;
     const downloadResponse = await asApp().requestConfluence(downloadRoute);
 
     if (!downloadResponse.ok) {
@@ -139,12 +141,12 @@ export async function artifactEventTrigger(event) {
     }
 
     console.log(
-      `Successfully reverted ${artifactDetails.title} to version ${previousVersion.number}`,
+      `Successfully reverted ${artifactDetails.title} to sealed version ${targetVersion}`,
     );
 
     // Send seal violation email to the seal owner
     const bulletinToggles = await resolveBulletinToggles();
-    if (bulletinToggles.ENABLE_EMAIL_NOTIFICATIONS) {
+    if (bulletinToggles.ENABLE_EMAIL_BULLETINS) {
       try {
         // Get page details for email
         const pageResponse = await asApp().requestConfluence(
@@ -203,7 +205,7 @@ export async function artifactEventTrigger(event) {
       artifactId,
     );
 
-    if (bulletinToggles?.ENABLE_TOAST_NOTIFICATIONS) {
+    if (bulletinToggles?.ENABLE_TOAST_DISPATCHES) {
       const violationKey = `violation-alert-${sealRecord.lockedBy}-${artifactId}-${Date.now()}`;
       await kvs.set(violationKey, dispatchPayload, {
         expiresAt: Date.now() + 3600000,
@@ -252,8 +254,8 @@ export async function expirySweepTask() {
 
     // Determine if halfway reminders should be sent
     const sendHalfwayAlerts =
-      bulletinToggles.ENABLE_EMAIL_NOTIFICATIONS &&
-      bulletinToggles.ENABLE_LOCK_EXPIRY_REMINDER_EMAIL;
+      bulletinToggles.ENABLE_EMAIL_BULLETINS &&
+      bulletinToggles.ENABLE_SEAL_EXPIRY_REMINDER_EMAIL;
 
     const { results: activeSeals } = await kvs
       .query()
@@ -301,8 +303,8 @@ export async function expirySweepTask() {
 
           // Send expiry notification email
           if (
-            bulletinToggles.ENABLE_EMAIL_NOTIFICATIONS &&
-            bulletinToggles.ENABLE_AUTO_UNLOCK_NOTIFICATION_EMAIL &&
+            bulletinToggles.ENABLE_EMAIL_BULLETINS &&
+            bulletinToggles.ENABLE_AUTO_UNSEAL_BULLETIN_EMAIL &&
             value.contentId
           ) {
             try {
@@ -472,7 +474,7 @@ export async function recurringNudgeTask(request, context) {
     const bulletinToggles = await resolveBulletinToggles(systemPolicy);
     if (
       !bulletinToggles.ENABLE_PERIODIC_REMINDER_EMAIL ||
-      !bulletinToggles.ENABLE_EMAIL_NOTIFICATIONS
+      !bulletinToggles.ENABLE_EMAIL_BULLETINS
     ) {
       return {
         statusCode: 200,

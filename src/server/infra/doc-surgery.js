@@ -1,13 +1,58 @@
-import { asApp, route } from "@forge/api";
+import { asApp, route, getAppContext } from "@forge/api";
 import { kvs } from "@forge/kvs";
 
 const PANEL_KEY_SUFFIX = "/static/sentinel-vault-panel";
+const MACRO_MODULE_KEY = "sentinel-vault-panel";
 
 /**
  * Check if an extension key matches the panel suffix
  */
 export function isPanelExtensionKey(extensionKey) {
   return extensionKey?.endsWith(PANEL_KEY_SUFFIX);
+}
+
+/**
+ * Build the extension key from the Forge app context.
+ * Format: <appId>/<environmentId>/static/<module-key>
+ * Uses getAppContext() which provides appAri and environmentAri at runtime.
+ */
+function buildExtensionKeyFromContext() {
+  try {
+    const { appAri, environmentAri } = getAppContext();
+    const appId = appAri?.appId;
+    const envId = environmentAri?.environmentId;
+
+    if (!appId || !envId) {
+      console.warn("[PANEL-AUTO] Could not extract appId or envId from app context");
+      return null;
+    }
+
+    return `${appId}/${envId}/static/${MACRO_MODULE_KEY}`;
+  } catch (e) {
+    console.warn("[PANEL-AUTO] getAppContext() failed:", e);
+    return null;
+  }
+}
+
+/**
+ * Get the extension key for the Sentinel Vault macro.
+ * First checks KVS cache, then derives it from the Forge app context.
+ * Stores the result in KVS for future use.
+ */
+export async function resolveExtensionKey() {
+  // Check KVS cache first
+  const cached = await kvs.get("macro-extension-key");
+  if (cached) return cached;
+
+  // Derive from app context
+  const key = buildExtensionKeyFromContext();
+  if (key) {
+    await kvs.set("macro-extension-key", key);
+    console.info(`[PANEL-AUTO] Derived extension key from app context: ${key}`);
+    return key;
+  }
+
+  return null;
 }
 
 /**
@@ -258,11 +303,11 @@ export async function triggerPanelEmbed(contentId, spaceKey) {
   }
 
   try {
-    // Get the stored extension key (set by the panel Custom UI on first render)
-    const extensionKey = await kvs.get("macro-extension-key");
+    // Resolve the extension key (from cache or app context)
+    const extensionKey = await resolveExtensionKey();
     if (!extensionKey) {
       console.info(
-        "[PANEL-AUTO] Extension key not yet discovered, skipping auto-insert",
+        "[PANEL-AUTO] Could not determine extension key, skipping auto-insert",
       );
       return;
     }

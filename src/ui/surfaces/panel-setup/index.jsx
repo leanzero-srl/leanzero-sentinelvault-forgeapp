@@ -44,10 +44,17 @@ const PAGE_SIZE_OPTIONS = [
   { value: 25, label: "25 items" },
 ];
 
+const CARDS_PER_ROW_OPTIONS = [
+  { value: 1, label: "1 (list view)" },
+  { value: 2, label: "2 per row" },
+  { value: 3, label: "3 per row" },
+];
+
 const INITIAL_CONFIG = {
   columns: COLUMN_OPTIONS.reduce((acc, col) => ({ ...acc, [col.key]: col.defaultOn }), {}),
   rowsPerPage: 15,
   showUploadZone: true,
+  cardsPerRow: 2,
 };
 
 // ── Custom Select ────────────────────────────────────
@@ -114,6 +121,7 @@ const GridLayoutEditor = () => {
           columns: { ...INITIAL_CONFIG.columns, ...(saved.columns || {}) },
           rowsPerPage: saved.rowsPerPage ?? INITIAL_CONFIG.rowsPerPage,
           showUploadZone: saved.showUploadZone ?? INITIAL_CONFIG.showUploadZone,
+          cardsPerRow: saved.cardsPerRow ?? INITIAL_CONFIG.cardsPerRow,
         });
       }
       setLoading(false);
@@ -175,7 +183,7 @@ const GridLayoutEditor = () => {
 
       <div className="mc-divider" />
 
-      {/* Rows per page */}
+      {/* Layout */}
       <div className="mc-section">
         <div className="mc-section-label">Layout</div>
         <div className="mc-field">
@@ -185,6 +193,17 @@ const GridLayoutEditor = () => {
             options={PAGE_SIZE_OPTIONS}
             onChange={(val) => {
               setConfig((prev) => ({ ...prev, rowsPerPage: val }));
+              setStatus(null);
+            }}
+          />
+        </div>
+        <div className="mc-field">
+          <span className="mc-field-label">Cards per row</span>
+          <SelectControl
+            value={config.cardsPerRow}
+            options={CARDS_PER_ROW_OPTIONS}
+            onChange={(val) => {
+              setConfig((prev) => ({ ...prev, cardsPerRow: val }));
               setStatus(null);
             }}
           />

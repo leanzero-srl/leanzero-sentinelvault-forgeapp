@@ -88,15 +88,14 @@ modules:
 
   # Realm-level administration (Custom UI)
   # Only visible to space administrators
-  confluence:spaceSettings:
+  confluence:spacePage:
     - key: realm-console
       title: "Sentinel Vault"
       route: realm-console
       resource: realm-console
       resolver:
         function: action-router
-      displayConditions:
-        isSpaceAdmin: true
+      icon: "static/steward-console/assets/icon.png"
 
 resources:
   - key: overlay
@@ -146,6 +145,9 @@ permissions:
     - read:content.metadata:confluence
     - read:content.permission:confluence
     - storage:app
+  content:
+    styles:
+      - "unsafe-inline"
   external:
     fetch:
       backend:

@@ -14,7 +14,7 @@
  */
 
 import { Resend } from "resend";
-import { deriveSignalFlags } from "../shared/alert-config.js";
+import { resolveBulletinToggles } from "../shared/bulletin-flags.js";
 
 // =====================================================
 // INTERNAL RESEND CONFIGURATION
@@ -23,8 +23,8 @@ import { deriveSignalFlags } from "../shared/alert-config.js";
 // =====================================================
 const RESEND_CONFIG = {
   apiKey: process.env.RESEND_API_KEY,
-  fromEmail: "noreply@sentinelvault.app",
-  domain: "sentinelvault.app",
+  fromEmail: "noreply@leanzero.atlascrafted.com",
+  domain: "leanzero.atlascrafted.com",
 };
 
 // Rate limiting configuration
@@ -78,9 +78,9 @@ export async function transmitMail({ to, subject, html, text }) {
     };
   }
 
-  const alertConfig = await deriveSignalFlags();
+  const alertConfig = await resolveBulletinToggles();
 
-  if (!alertConfig.ENABLE_EMAIL_NOTIFICATIONS) {
+  if (!alertConfig.ENABLE_EMAIL_BULLETINS) {
     console.info(
       `Email not sent to ${to}: Email notifications disabled by admin settings`,
     );

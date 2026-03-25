@@ -1,14 +1,13 @@
 import api, { asUser, asApp, route } from "@forge/api";
 import { kvs } from "@forge/kvs";
-import { deriveSealState, eraseSealProperty, stampSealMutation } from "../data/guard-data.js";
-import { fetchOperatorProfile } from "./mail-composer.js";
+import { computeSealStatus, removeSealContentProp, touchSealTimestamp } from "../capsules/sealing/logic.js";
+import { fetchOperatorProfile, mailViolationAlert } from "./mail-composer.js";
 import {
-  storeSignalEvent,
-  postDocComment,
-  notifySubscribers,
-} from "../data/alert-store.js";
-import { mailViolationAlert } from "./mail-composer.js";
-import { deriveSignalFlags } from "../shared/alert-config.js";
+  recordDispatch,
+  postDocFootnote,
+  notifyWatchers,
+} from "../capsules/bulletins/logic.js";
+import { resolveBulletinToggles } from "../shared/bulletin-flags.js";
 
 /**
  * Fetches the full download URL for a specific artifact from Confluence
@@ -96,7 +95,7 @@ export async function fetchArtifactMetadata(contentId, userAccountId) {
     const artifactsWithStatus = await Promise.all(
       data.results.map(async (att) => {
         const { lockStatus, lockedByAccountId, expiresAt } =
-          await deriveSealState(att.id, userAccountId);
+          await computeSealStatus(att.id, userAccountId);
 
         return {
           ...att,
@@ -157,10 +156,10 @@ export async function artifactEventHandler(event) {
     // Check if seal has expired
     if (sealRecord.expiresAt && new Date(sealRecord.expiresAt) < new Date()) {
       await kvs.delete(`protection-${artifactId}`);
-      await stampSealMutation();
+      await touchSealTimestamp();
       // Also delete the seal property from the parent page for CQL searchability
       if (sealRecord.contentId) {
-        await eraseSealProperty(sealRecord.contentId);
+        await removeSealContentProp(sealRecord.contentId);
       }
       // Clean up space-seal index key
       if (sealRecord.spaceId) {
@@ -170,7 +169,7 @@ export async function artifactEventHandler(event) {
           /* best effort */
         }
       }
-      await notifySubscribers(artifactId, {
+      await notifyWatchers(artifactId, {
         attachmentName: sealRecord.attachmentName,
         contentId: sealRecord.contentId,
       });
@@ -266,7 +265,7 @@ async function handleSealViolation({
   ]);
 
   // Store notification event for frontend (Options 1 & 2)
-  await storeSignalEvent({
+  await recordDispatch({
     type: "SEAL_CONFLICT",
     attachmentId: artifactId,
     attachmentName: artifactTitle,
@@ -279,7 +278,7 @@ async function handleSealViolation({
   });
 
   // Send Confluence notification via comment (Option 3)
-  await postDocComment(
+  await postDocFootnote(
     contentId,
     sealRecord.lockedBy,
     userAccountId,
@@ -288,8 +287,8 @@ async function handleSealViolation({
   );
 
   // Send email notification via Resend (Option 4)
-  const alertConfig = await deriveSignalFlags();
-  if (alertConfig.ENABLE_EMAIL_NOTIFICATIONS) {
+  const alertConfig = await resolveBulletinToggles();
+  if (alertConfig.ENABLE_EMAIL_BULLETINS) {
     // Build page URL from available context in the event
     const siteBaseUrl =
       attachment.container?._links?.webui ||

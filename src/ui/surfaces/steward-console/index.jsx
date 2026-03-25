@@ -4,14 +4,30 @@ import { invoke, view } from "@forge/bridge";
 import { enablePaletteSync } from "../../kit/palette-sync";
 import logo from "../../assets/icons/icon.png";
 
+const SettingsRow = ({ label, description, children }) => (
+  <div className="settings-row">
+    <div className="settings-row-info">
+      <p className="settings-row-label">{label}</p>
+      <p className="settings-row-description">{description}</p>
+    </div>
+    <div className="settings-row-control">{children}</div>
+  </div>
+);
+
+const Toggle = ({ checked, onChange }) => (
+  <label className="form-checkbox">
+    <input type="checkbox" checked={checked} onChange={onChange} />
+  </label>
+);
+
 const GlobalPolicyEditor = () => {
+  const [activeTab, setActiveTab] = useState("general");
   const [settings, setSettings] = useState({
-    defaultSealDurationHours: 24, // Store in hours instead of seconds - ALSO used for auto-unseal timeout
+    defaultSealDurationHours: 24,
     allowStewardOverride: false,
     autoUnsealEnabled: true,
     allowArtifactDelete: false,
-    reminderIntervalDays: 7, // Default: remind operators every 7 days when auto-unseal is off
-    // Dispatch settings
+    reminderIntervalDays: 7,
     enableFlashMessages: true,
     enableDocRibbons: true,
     enableConfluenceDispatches: true,
@@ -23,14 +39,13 @@ const GlobalPolicyEditor = () => {
 
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState(null);
-  const [messageType, setMessageType] = useState(null); // 'success' or 'error'
+  const [messageType, setMessageType] = useState(null);
   const [currentRealmKey, setCurrentRealmKey] = useState(null);
   const [currentRealmName, setCurrentRealmName] = useState("Current Realm");
 
   useEffect(() => {
     const fetchPreferences = async () => {
       try {
-        // Initialize palette detection
         await enablePaletteSync();
 
         setLoading(true);
@@ -54,12 +69,11 @@ const GlobalPolicyEditor = () => {
         setSettings({
           defaultSealDurationHours: Math.round(
             (globalSettings?.defaultSealDuration || 86400) / 3600,
-          ), // Convert seconds to hours
+          ),
           allowStewardOverride: globalSettings?.allowStewardOverride || false,
           autoUnsealEnabled: globalSettings?.autoUnsealEnabled !== false,
           allowArtifactDelete: globalSettings?.allowArtifactDelete === true,
-          reminderIntervalDays: globalSettings?.reminderIntervalDays || 7, // Default: 7 days
-          // Dispatch settings - default to true if not set
+          reminderIntervalDays: globalSettings?.reminderIntervalDays || 7,
           enableFlashMessages:
             globalSettings?.enableFlashMessages !== false,
           enableDocRibbons: globalSettings?.enableDocRibbons !== false,
@@ -96,12 +110,11 @@ const GlobalPolicyEditor = () => {
       await invoke("store-policy", {
         scope: "global",
         data: {
-          defaultSealDuration: settings.defaultSealDurationHours * 3600, // Convert hours to seconds - ALSO used for auto-unseal timeout
+          defaultSealDuration: settings.defaultSealDurationHours * 3600,
           allowStewardOverride: settings.allowStewardOverride,
           autoUnsealEnabled: settings.autoUnsealEnabled,
           allowArtifactDelete: settings.allowArtifactDelete,
           reminderIntervalDays: settings.reminderIntervalDays,
-          // Dispatch settings
           enableFlashMessages: settings.enableFlashMessages,
           enableDocRibbons: settings.enableDocRibbons,
           enableConfluenceDispatches: settings.enableConfluenceDispatches,
@@ -123,16 +136,6 @@ const GlobalPolicyEditor = () => {
     } finally {
       setLoading(false);
     }
-  };
-
-  const renderTimespan = (seconds) => {
-    if (seconds < 60) return `${seconds}s`;
-    const minutes = Math.floor(seconds / 60);
-    if (minutes < 60) return `${minutes}m`;
-    const hours = Math.floor(minutes / 60);
-    if (hours < 24) return `${hours}h`;
-    const days = Math.floor(hours / 24);
-    return `${days}d`;
   };
 
   if (loading) {
@@ -176,271 +179,242 @@ const GlobalPolicyEditor = () => {
         </div>
       )}
 
-      <h3 className="section-header">General Preferences</h3>
-
-      <div className="form-group">
-        <label className="form-label">Standard Seal Period (Hours)</label>
-        <input
-          className="form-input"
-          type="number"
-          value={settings.defaultSealDurationHours}
-          onChange={(e) => {
-            const value = parseInt(e.target.value);
-            if (!isNaN(value)) {
-              setSettings((prev) => ({
-                ...prev,
-                defaultSealDurationHours: Math.max(1, value),
-              }));
-            }
-          }}
-          min="1"
-          style={{ width: "120px" }}
-        />
-        <p className="form-help">
-          How long artifacts are sealed by default (minimum 1 hour). Realms may
-          set their own values.
-        </p>
+      {/* Tab Navigation */}
+      <div className="tab-navigation">
+        <button
+          className={`tab-button ${activeTab === "general" ? "active" : ""}`}
+          onClick={() => setActiveTab("general")}
+        >
+          General
+        </button>
+        <button
+          className={`tab-button ${activeTab === "alerts" ? "active" : ""}`}
+          onClick={() => setActiveTab("alerts")}
+        >
+          Alerts
+        </button>
       </div>
 
-      <div className="form-group">
-        <label className="form-checkbox">
-          <input
-            type="checkbox"
-            checked={settings.allowStewardOverride}
-            onChange={(e) =>
-              setSettings((prev) => ({
-                ...prev,
-                allowStewardOverride: e.target.checked,
-              }))
-            }
-          />
-          Permit Steward Force-Unseal
-        </label>
-        <p className="form-help">
-          Let stewards unseal artifacts held by other operators.
-        </p>
-      </div>
+      {/* Tab Content */}
+      <div className="tab-content">
+        {activeTab === "general" && (
+          <div className="settings-panel">
+            <SettingsRow
+              label="Standard Seal Period"
+              description="How long artifacts are sealed by default (minimum 1 hour). Realms may set their own values."
+            >
+              <div className="input-with-unit">
+                <input
+                  className="form-input"
+                  type="number"
+                  value={settings.defaultSealDurationHours}
+                  onChange={(e) => {
+                    const value = parseInt(e.target.value);
+                    if (!isNaN(value)) {
+                      setSettings((prev) => ({
+                        ...prev,
+                        defaultSealDurationHours: Math.max(1, value),
+                      }));
+                    }
+                  }}
+                  min="1"
+                />
+                <span className="input-unit">hrs</span>
+              </div>
+            </SettingsRow>
 
-      <div className="form-group">
-        <label className="form-checkbox">
-          <input
-            type="checkbox"
-            checked={settings.autoUnsealEnabled}
-            onChange={(e) =>
-              setSettings((prev) => ({
-                ...prev,
-                autoUnsealEnabled: e.target.checked,
-              }))
-            }
-          />
-          Enable Expiry Dispatches
-        </label>
+            <SettingsRow
+              label="Permit Steward Force-Unseal"
+              description="Let stewards unseal artifacts held by other operators."
+            >
+              <Toggle
+                checked={settings.allowStewardOverride}
+                onChange={(e) =>
+                  setSettings((prev) => ({
+                    ...prev,
+                    allowStewardOverride: e.target.checked,
+                  }))
+                }
+              />
+            </SettingsRow>
 
-        <p className="form-help">
-          {settings.autoUnsealEnabled
-            ? "Operators will receive periodic dispatches when their seals expire, reminding them to unseal artifacts. Artifacts will not be unsealed automatically."
-            : "Artifacts stay sealed until manually unsealed. Timers display 'Overdue' once the seal period ends."}
-        </p>
-      </div>
-
-      <div className="form-group">
-        <label className="form-checkbox">
-          <input
-            type="checkbox"
-            checked={settings.allowArtifactDelete}
-            onChange={(e) =>
-              setSettings((prev) => ({
-                ...prev,
-                allowArtifactDelete: e.target.checked,
-              }))
-            }
-          />
-          Allow Artifact Removal via Inline Panel
-        </label>
-        <p className="form-help">
-          When active, operators may remove unsealed artifacts directly from the
-          Sentinel Vault panel on the page. Removed artifacts go to trash and
-          can be recovered. Sealed artifacts cannot be removed.
-        </p>
-      </div>
-
-      {!settings.autoUnsealEnabled && (
-        <div className="form-group">
-          <label className="form-label">Dispatch Recurrence (Days)</label>
-          <input
-            className="form-input"
-            type="number"
-            value={settings.reminderIntervalDays}
-            onChange={(e) => {
-              const value = parseInt(e.target.value);
-              if (!isNaN(value)) {
-                setSettings((prev) => ({
-                  ...prev,
-                  reminderIntervalDays: Math.max(1, value),
-                }));
+            <SettingsRow
+              label="Enable Expiry Dispatches"
+              description={
+                settings.autoUnsealEnabled
+                  ? "Operators will receive periodic dispatches when their seals expire, reminding them to unseal artifacts. Artifacts will not be unsealed automatically."
+                  : "Artifacts stay sealed until manually unsealed. Timers display 'Overdue' once the seal period ends."
               }
-            }}
-            min="1"
-            style={{ width: "120px" }}
-          />
-          <p className="form-help">
-            Operators receive periodic reminder emails every{" "}
-            {settings.reminderIntervalDays} day
-            {settings.reminderIntervalDays === 1 ? "" : "s"} about their sealed
-            artifacts. This prevents forgotten seals when timed unseal is
-            turned off.
-          </p>
-        </div>
-      )}
-
-      <h3 className="section-header">Alert Preferences</h3>
-
-      <div className="form-group">
-        <label className="form-checkbox">
-          <input
-            type="checkbox"
-            checked={settings.enableFlashMessages}
-            onChange={(e) =>
-              setSettings((prev) => ({
-                ...prev,
-                enableFlashMessages: e.target.checked,
-              }))
-            }
-          />
-          Enable Transient Notices
-        </label>
-        <p className="form-help">
-          Show brief transient notices to operators when artifact seals are created,
-          unsealed, or when unauthorized access is attempted.
-        </p>
-      </div>
-
-      <div className="form-group">
-        <label className="form-checkbox">
-          <input
-            type="checkbox"
-            checked={settings.enableDocRibbons}
-            onChange={(e) =>
-              setSettings((prev) => ({
-                ...prev,
-                enableDocRibbons: e.target.checked,
-              }))
-            }
-          />
-          Enable Document Ribbons
-        </label>
-        <p className="form-help">
-          Display informational ribbons at the top of Confluence pages when
-          artifacts are sealed, showing seal status and expiry details.
-        </p>
-      </div>
-
-      <div className="form-group">
-        <label className="form-checkbox">
-          <input
-            type="checkbox"
-            checked={settings.enableConfluenceDispatches}
-            onChange={(e) =>
-              setSettings((prev) => ({
-                ...prev,
-                enableConfluenceDispatches: e.target.checked,
-              }))
-            }
-          />
-          Enable Confluence Comments
-        </label>
-        <p className="form-help">
-          Post native Confluence comment dispatches when artifact seals
-          are created, unsealed, or when unauthorized access is attempted.
-        </p>
-      </div>
-
-      <div className="form-group">
-        <label className="form-checkbox">
-          <input
-            type="checkbox"
-            checked={settings.enableEmailDispatches}
-            onChange={(e) =>
-              setSettings((prev) => ({
-                ...prev,
-                enableEmailDispatches: e.target.checked,
-              }))
-            }
-          />
-          Enable Email Alerts
-        </label>
-        <p className="form-help">
-          Send email alerts to operators regarding artifact seals. This master
-          toggle must be on for any email alerts to function.
-        </p>
-      </div>
-
-      {settings.enableEmailDispatches && (
-        <div className="nested-control">
-          <div className="form-group">
-            <label className="form-checkbox">
-              <input
-                type="checkbox"
-                checked={settings.enableSealExpiryReminderEmail}
+            >
+              <Toggle
+                checked={settings.autoUnsealEnabled}
                 onChange={(e) =>
                   setSettings((prev) => ({
                     ...prev,
-                    enableSealExpiryReminderEmail: e.target.checked,
+                    autoUnsealEnabled: e.target.checked,
                   }))
                 }
               />
-              Seal Confirmation Emails
-            </label>
-            <p className="form-help">
-              Email operators right after they seal an artifact, confirming the
-              seal period and expiry time.
-            </p>
-          </div>
+            </SettingsRow>
 
-          <div className="form-group">
-            <label className="form-checkbox">
-              <input
-                type="checkbox"
-                checked={settings.enableAutoUnsealDispatchEmail}
+            <SettingsRow
+              label="Allow Artifact Removal via Inline Panel"
+              description="When active, operators may remove unsealed artifacts directly from the Sentinel Vault panel on the page. Removed artifacts go to trash and can be recovered. Sealed artifacts cannot be removed."
+            >
+              <Toggle
+                checked={settings.allowArtifactDelete}
                 onChange={(e) =>
                   setSettings((prev) => ({
                     ...prev,
-                    enableAutoUnsealDispatchEmail: e.target.checked,
+                    allowArtifactDelete: e.target.checked,
                   }))
                 }
               />
-              Expiry Dispatch Emails
-            </label>
-            <p className="form-help">
-              Send email dispatches to operators when their artifact seals
-              expire, prompting them to unseal the artifact.
-            </p>
-          </div>
+            </SettingsRow>
 
-          <div className="form-group">
-            <label className="form-checkbox">
-              <input
-                type="checkbox"
-                checked={settings.enablePeriodicReminderEmail}
+            {!settings.autoUnsealEnabled && (
+              <SettingsRow
+                label="Dispatch Recurrence"
+                description={`Operators receive periodic reminder emails every ${settings.reminderIntervalDays} day${settings.reminderIntervalDays === 1 ? "" : "s"} about their sealed artifacts. This prevents forgotten seals when timed unseal is turned off.`}
+              >
+                <div className="input-with-unit">
+                  <input
+                    className="form-input"
+                    type="number"
+                    value={settings.reminderIntervalDays}
+                    onChange={(e) => {
+                      const value = parseInt(e.target.value);
+                      if (!isNaN(value)) {
+                        setSettings((prev) => ({
+                          ...prev,
+                          reminderIntervalDays: Math.max(1, value),
+                        }));
+                      }
+                    }}
+                    min="1"
+                  />
+                  <span className="input-unit">days</span>
+                </div>
+              </SettingsRow>
+            )}
+          </div>
+        )}
+
+        {activeTab === "alerts" && (
+          <div className="settings-panel">
+            <SettingsRow
+              label="Enable Transient Notices"
+              description="Show brief transient notices to operators when artifact seals are created, unsealed, or when unauthorized access is attempted."
+            >
+              <Toggle
+                checked={settings.enableFlashMessages}
                 onChange={(e) =>
                   setSettings((prev) => ({
                     ...prev,
-                    enablePeriodicReminderEmail: e.target.checked,
+                    enableFlashMessages: e.target.checked,
                   }))
                 }
               />
-              Recurring Reminder Emails
-            </label>
-            <p className="form-help">
-              Send recurring reminder emails about sealed artifacts when timed
-              unseal is turned off. Frequency is controlled by the
-              Dispatch Recurrence setting.
-            </p>
-          </div>
-        </div>
-      )}
+            </SettingsRow>
 
-      <div className="action-section">
+            <SettingsRow
+              label="Enable Document Ribbons"
+              description="Display informational ribbons at the top of Confluence pages when artifacts are sealed, showing seal status and expiry details."
+            >
+              <Toggle
+                checked={settings.enableDocRibbons}
+                onChange={(e) =>
+                  setSettings((prev) => ({
+                    ...prev,
+                    enableDocRibbons: e.target.checked,
+                  }))
+                }
+              />
+            </SettingsRow>
+
+            <SettingsRow
+              label="Enable Confluence Comments"
+              description="Post native Confluence comment dispatches when artifact seals are created, unsealed, or when unauthorized access is attempted."
+            >
+              <Toggle
+                checked={settings.enableConfluenceDispatches}
+                onChange={(e) =>
+                  setSettings((prev) => ({
+                    ...prev,
+                    enableConfluenceDispatches: e.target.checked,
+                  }))
+                }
+              />
+            </SettingsRow>
+
+            <SettingsRow
+              label="Enable Email Alerts"
+              description="Send email alerts to operators regarding artifact seals. This master toggle must be on for any email alerts to function."
+            >
+              <Toggle
+                checked={settings.enableEmailDispatches}
+                onChange={(e) =>
+                  setSettings((prev) => ({
+                    ...prev,
+                    enableEmailDispatches: e.target.checked,
+                  }))
+                }
+              />
+            </SettingsRow>
+
+            {settings.enableEmailDispatches && (
+              <div className="nested-control">
+                <SettingsRow
+                  label="Seal Confirmation Emails"
+                  description="Email operators right after they seal an artifact, confirming the seal period and expiry time."
+                >
+                  <Toggle
+                    checked={settings.enableSealExpiryReminderEmail}
+                    onChange={(e) =>
+                      setSettings((prev) => ({
+                        ...prev,
+                        enableSealExpiryReminderEmail: e.target.checked,
+                      }))
+                    }
+                  />
+                </SettingsRow>
+
+                <SettingsRow
+                  label="Expiry Dispatch Emails"
+                  description="Send email dispatches to operators when their artifact seals expire, prompting them to unseal the artifact."
+                >
+                  <Toggle
+                    checked={settings.enableAutoUnsealDispatchEmail}
+                    onChange={(e) =>
+                      setSettings((prev) => ({
+                        ...prev,
+                        enableAutoUnsealDispatchEmail: e.target.checked,
+                      }))
+                    }
+                  />
+                </SettingsRow>
+
+                <SettingsRow
+                  label="Recurring Reminder Emails"
+                  description="Send recurring reminder emails about sealed artifacts when timed unseal is turned off. Frequency is controlled by the Dispatch Recurrence setting."
+                >
+                  <Toggle
+                    checked={settings.enablePeriodicReminderEmail}
+                    onChange={(e) =>
+                      setSettings((prev) => ({
+                        ...prev,
+                        enablePeriodicReminderEmail: e.target.checked,
+                      }))
+                    }
+                  />
+                </SettingsRow>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      <div className="action-bar">
         <button className="btn-primary" onClick={onSavePreferences} disabled={loading}>
           {loading ? "Updating..." : "Apply Configuration"}
         </button>

@@ -1,8 +1,89 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import { createRoot } from "react-dom/client";
 import { invoke, view } from "@forge/bridge";
 import { enablePaletteSync } from "../../kit/palette-sync";
 import { flashArtifactSealed, flashArtifactUnsealed } from "../../kit/flash-messages";
+
+// ── Column definitions ──────────────────────────────────
+const OVERLAY_COLUMNS = [
+  { key: "name",      label: "Name",                 defaultOn: true,  alwaysOn: true },
+  { key: "status",    label: "Status",               defaultOn: true },
+  { key: "heldBy",    label: "Held by",              defaultOn: true },
+  { key: "lapses",    label: "Lapses",               defaultOn: true },
+  { key: "watch",     label: "Watch for Relinquish", defaultOn: true },
+  { key: "actions",   label: "Actions",              defaultOn: true,  alwaysOn: true },
+  { key: "fileSize",  label: "File Size",            defaultOn: false },
+  { key: "fileType",  label: "File Type",            defaultOn: false },
+  { key: "labels",    label: "Labels",               defaultOn: false },
+  { key: "comment",   label: "Comment",              defaultOn: false },
+  { key: "createdAt", label: "Created",              defaultOn: false },
+  { key: "version",   label: "Version",              defaultOn: false },
+];
+
+
+const buildDefaults = (cols) =>
+  cols.reduce((acc, col) => ({ ...acc, [col.key]: col.defaultOn }), {});
+
+const loadColumnPrefs = (storageKey, cols) => {
+  try {
+    const saved = localStorage.getItem(storageKey);
+    if (saved) return { ...buildDefaults(cols), ...JSON.parse(saved) };
+  } catch (e) { /* ignore */ }
+  return buildDefaults(cols);
+};
+
+// ── Helpers ─────────────────────────────────────────────
+const formatFileSize = (bytes) => {
+  if (bytes == null) return "-";
+  if (bytes < 1024) return bytes + " B";
+  if (bytes < 1048576) return (bytes / 1024).toFixed(1) + " KB";
+  return (bytes / 1048576).toFixed(1) + " MB";
+};
+
+// ── Column Picker component ─────────────────────────────
+const ColumnPicker = ({ columns, visible, onChange, isOpen, onToggle }) => {
+  const ref = useRef(null);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const close = (e) => {
+      if (ref.current && !ref.current.contains(e.target)) onToggle(false);
+    };
+    document.addEventListener("mousedown", close);
+    return () => document.removeEventListener("mousedown", close);
+  }, [isOpen]);
+
+  return (
+    <div className="column-picker" ref={ref}>
+      <button
+        className="column-picker-trigger"
+        onClick={() => onToggle(!isOpen)}
+        title="Choose which columns to display"
+      >
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <circle cx="12" cy="12" r="3" />
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+        </svg>
+        Properties
+      </button>
+      {isOpen && (
+        <div className="column-picker-dropdown">
+          {columns.map((col) => (
+            <label key={col.key} className="column-picker-option">
+              <input
+                type="checkbox"
+                checked={!!visible[col.key]}
+                disabled={col.alwaysOn}
+                onChange={() => onChange(col.key)}
+              />
+              <span>{col.label}</span>
+            </label>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
 
 // Operator avatar component with fallback
 const AvatarFigure = ({ operatorInfo }) => {
@@ -92,17 +173,288 @@ const OperatorTag = ({ accountId }) => {
   );
 };
 
+const SkeletonCard = () => (
+  <div className="artifact-card skeleton-card">
+    <div className="card-row card-row-primary">
+      <span className="skeleton-bar skeleton-title" />
+      <span className="skeleton-bar skeleton-badge" />
+    </div>
+    <div className="card-row card-row-secondary">
+      <span className="skeleton-bar skeleton-meta" />
+    </div>
+  </div>
+);
+
+const ArtifactTypeIcon = ({ mediaType }) => {
+  const isImage = mediaType?.startsWith("image/");
+  const isPdf = mediaType === "application/pdf";
+  const color = isImage ? "#36B37E" : isPdf ? "#FF5630" : "var(--sv-text-subtle)";
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" className="file-icon">
+      <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8l-6-6z" stroke={color} strokeWidth="1.5" />
+      <polyline points="14,2 14,8 20,8" stroke={color} strokeWidth="1.5" />
+    </svg>
+  );
+};
+
+const SORT_FIELDS = [
+  { key: "title", label: "Name" },
+  { key: "lockStatus", label: "Status" },
+  { key: "expiresAt", label: "Lapses" },
+  { key: "createdAt", label: "Created" },
+];
+
+const SortPicker = ({ orderField, orderDir, onSort }) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const ref = useRef(null);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const close = (e) => {
+      if (ref.current && !ref.current.contains(e.target)) setIsOpen(false);
+    };
+    document.addEventListener("mousedown", close);
+    return () => document.removeEventListener("mousedown", close);
+  }, [isOpen]);
+
+  const fields = SORT_FIELDS;
+  const currentLabel = fields.find(f => f.key === orderField)?.label || "Name";
+  const arrow = orderDir === "asc" ? "\u2191" : "\u2193";
+
+  return (
+    <div className="sort-picker" ref={ref}>
+      <button className="column-picker-trigger" onClick={() => setIsOpen(!isOpen)}>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M11 5h10M11 9h7M11 13h4M3 17l3 3 3-3M6 18V4" />
+        </svg>
+        {currentLabel} {arrow}
+      </button>
+      {isOpen && (
+        <div className="column-picker-dropdown">
+          {fields.map((f) => (
+            <div
+              key={f.key}
+              className={`column-picker-option ${f.key === orderField ? "selected" : ""}`}
+              style={{ cursor: "pointer", fontWeight: f.key === orderField ? 600 : 400 }}
+              onClick={() => { onSort(f.key); setIsOpen(false); }}
+            >
+              <span>{f.label}</span>
+              {f.key === orderField && <span style={{ marginLeft: "auto", fontSize: "11px" }}>{arrow}</span>}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
+const OverlayArtifactCard = ({ artifact, visibleColumns, onSecure, onRelease, onWatch, isWatching, busyAction, formatRemainingTime, formatFileSize }) => {
+  const isSealed = artifact.lockStatus === "HELD" || artifact.lockStatus === "HELD_BY_ACTOR";
+  const isSealedByMe = artifact.lockStatus === "HELD_BY_ACTOR";
+  const isSealedByOther = artifact.lockStatus === "HELD";
+
+  let statusClass = "unlocked";
+  let statusText = "Available";
+  if (artifact.isExpired && isSealed) {
+    statusClass = "expired";
+    statusText = "Overdue";
+  } else if (isSealedByMe) {
+    statusClass = "locked-by-me";
+    statusText = "Yours";
+  } else if (isSealed) {
+    statusClass = "locked";
+    statusText = "Sealed";
+  }
+
+  // Primary action
+  let primaryAction = null;
+  if (visibleColumns.actions) {
+    if (!isSealed) {
+      primaryAction = (
+        <button className={`action-btn lock ${busyAction === "seal" ? "is-busy" : ""}`} onClick={() => onSecure(artifact.id)} disabled={busyAction && busyAction !== "seal"} title="Reserve this file so only you can modify it">
+          {busyAction === "seal" ? <>Sealing<span className="btn-busy-bar" /></> : "Seal"}
+        </button>
+      );
+    } else if (isSealedByMe) {
+      primaryAction = (
+        <button className={`action-btn unlock ${busyAction === "unseal" ? "is-busy" : ""}`} onClick={() => onRelease(artifact.id)} disabled={busyAction && busyAction !== "unseal"} title="Release your seal and allow others to modify this file">
+          {busyAction === "unseal" ? <>Releasing<span className="btn-busy-bar" /></> : "Relinquish"}
+        </button>
+      );
+    }
+  }
+
+  // Meta items gated by visibleColumns
+  const metaItems = [];
+  if (visibleColumns.heldBy && artifact.lockedByAccountId) {
+    metaItems.push(
+      <span key="owner" className="card-meta-owner">
+        <span className="card-meta-owner-label">Sealed by</span>
+        <OperatorTag accountId={artifact.lockedByAccountId} />
+      </span>
+    );
+  }
+  if (visibleColumns.lapses && isSealed) {
+    metaItems.push(<span key="lapses" className="card-meta-item">{formatRemainingTime(artifact)}</span>);
+  }
+  if (visibleColumns.fileSize && artifact.fileSize) {
+    metaItems.push(<span key="size" className="card-meta-item">{formatFileSize(artifact.fileSize)}</span>);
+  }
+  if (visibleColumns.fileType && artifact.mediaType) {
+    metaItems.push(<span key="type" className="card-meta-item card-meta-type">{artifact.mediaType.split("/").pop()}</span>);
+  }
+  if (visibleColumns.comment) {
+    const commentText = artifact.comment || (typeof artifact.version === "object" ? artifact.version?.message : null);
+    if (commentText) {
+      metaItems.push(<span key="cmt" className="card-meta-item card-meta-comment" title={commentText}>{commentText}</span>);
+    }
+  }
+  if (visibleColumns.createdAt && artifact.createdAt) {
+    const d = new Date(artifact.createdAt);
+    metaItems.push(<span key="created" className="card-meta-item">{d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}</span>);
+  }
+  if (visibleColumns.version) {
+    const ver = artifact.versionNumber || (typeof artifact.version === "object" ? artifact.version?.number : artifact.version);
+    if (ver) {
+      metaItems.push(<span key="ver" className="card-meta-item">v{ver}</span>);
+    }
+  }
+
+  // Labels
+  const showLabels = visibleColumns.labels && artifact.labels?.length > 0;
+
+  // Secondary actions
+  const secondaryActions = [];
+  if (visibleColumns.watch && isSealedByOther) {
+    secondaryActions.push(
+      <button
+        key="watch"
+        className={`action-btn watch ${isWatching ? "watching" : ""} ${busyAction === "watch" ? "is-busy" : ""}`}
+        onClick={() => onWatch(artifact.id)}
+        disabled={busyAction && busyAction !== "watch"}
+        title={isWatching ? "Stop watching" : "Get notified when relinquished"}
+      >
+        {busyAction === "watch" ? <>Updating<span className="btn-busy-bar" /></> : (isWatching ? "Watching" : "Watch")}
+      </button>
+    );
+  }
+
+  const hasSecondLine = metaItems.length > 0 || showLabels || secondaryActions.length > 0;
+
+  return (
+    <div className={`artifact-card status-${statusClass}`}>
+      <div className="card-row card-row-primary">
+        <span className="card-filename">
+          <ArtifactTypeIcon mediaType={artifact.mediaType} />
+          <span className="card-filename-text">{artifact.title}</span>
+        </span>
+        <span className="card-row-right">
+          {visibleColumns.status && (
+            <span className={`status-lozenge ${statusClass}`}>{statusText}</span>
+          )}
+          {primaryAction}
+        </span>
+      </div>
+      {hasSecondLine && (
+        <div className="card-row card-row-secondary">
+          <span className="card-secondary-left">
+            {metaItems.length > 0 && (
+              <span className="card-meta">
+                {metaItems.reduce((acc, item, i) => {
+                  if (i > 0) acc.push(<span key={`sep-${i}`} className="card-meta-sep">&middot;</span>);
+                  acc.push(item);
+                  return acc;
+                }, [])}
+              </span>
+            )}
+            {showLabels && (
+              <span className="card-labels-inline">
+                {artifact.labels.map(l => (
+                  <span key={l.id || l.name} className="label-chip">
+                    <span className="label-chip-name">{l.name}</span>
+                  </span>
+                ))}
+              </span>
+            )}
+          </span>
+          {secondaryActions.length > 0 && (
+            <span className="card-secondary-right">{secondaryActions}</span>
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
+
+const MyFileCard = ({ artifact, visibleColumns, onRelease, busyAction, formatRemainingTime, formatReservedDate }) => {
+  const isExpired = artifact.isExpired;
+  const statusClass = isExpired ? "expired" : "locked-by-me";
+  const statusText = isExpired ? "Overdue" : "My Reservation";
+
+  const metaItems = [];
+  if (visibleColumns.location && artifact.pageTitle) {
+    metaItems.push(
+      <span key="loc" className="card-meta-item">
+        {artifact.pageUrl ? (
+          <a href={artifact.pageUrl} target="_top" style={{ color: "var(--sv-interactive-primary)", textDecoration: "none" }}>
+            {artifact.pageTitle}
+          </a>
+        ) : artifact.pageTitle}
+      </span>
+    );
+  }
+  if (visibleColumns.space && (artifact.spaceName || artifact.spaceKey)) {
+    metaItems.push(<span key="space" className="card-meta-item">{artifact.spaceName || artifact.spaceKey}</span>);
+  }
+  if (visibleColumns.claimedOn && artifact.lockedOn) {
+    metaItems.push(<span key="claimed" className="card-meta-item">{formatReservedDate(artifact.lockedOn)}</span>);
+  }
+  if (visibleColumns.lapses) {
+    metaItems.push(<span key="lapses" className="card-meta-item">{formatRemainingTime(artifact)}</span>);
+  }
+
+  const hasSecondLine = metaItems.length > 0;
+
+  return (
+    <div className={`artifact-card status-${statusClass}`}>
+      <div className="card-row card-row-primary">
+        <span className="card-filename">
+          <ArtifactTypeIcon mediaType={artifact.mediaType} />
+          <span className="card-filename-text">{artifact.title}</span>
+        </span>
+        <span className="card-row-right">
+          <span className={`status-lozenge ${statusClass}`}>{statusText}</span>
+          {visibleColumns.actions && (
+            <button className={`action-btn unlock ${busyAction === "unseal" ? "is-busy" : ""}`} onClick={() => onRelease(artifact.id)} disabled={busyAction && busyAction !== "unseal"} title="Release your seal and allow others to modify this file">
+              {busyAction === "unseal" ? <>Releasing<span className="btn-busy-bar" /></> : "Relinquish"}
+            </button>
+          )}
+        </span>
+      </div>
+      {hasSecondLine && (
+        <div className="card-row card-row-secondary">
+          <span className="card-secondary-left">
+            <span className="card-meta">
+              {metaItems.reduce((acc, item, i) => {
+                if (i > 0) acc.push(<span key={`sep-${i}`} className="card-meta-sep">&middot;</span>);
+                acc.push(item);
+                return acc;
+              }, [])}
+            </span>
+          </span>
+        </div>
+      )}
+    </div>
+  );
+};
+
 const ArtifactControlPanel = () => {
-  const [currentView, setCurrentView] = useState("page-attachments");
   const [fileList, setFileList] = useState([]);
-  const [myReservedFiles, setMyReservedFiles] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [mySealsLoading, setMySealsLoading] = useState(false);
+  const [enriching, setEnriching] = useState(false);
   const [error, setError] = useState(null);
   const [orderByField, setOrderByField] = useState("title");
   const [orderDirection, setOrderDirection] = useState("asc");
-  const [myFilesOrderField, setMyFilesOrderField] = useState("lockedOn");
-  const [myFilesOrderDir, setMyFilesOrderDir] = useState("desc");
   // Page panel settings
   const [panelHidden, setPanelHidden] = useState(false);
   const [panelConfigUpdating, setPanelConfigUpdating] = useState(false);
@@ -112,6 +464,14 @@ const ArtifactControlPanel = () => {
   const [settingsLoaded, setSettingsLoaded] = useState(false);
   // Track dispatch request state per artifact
   const [watchStatus, setWatchStatus] = useState({});
+  // Track which artifact + action is currently in flight
+  const [busyAction, setBusyAction] = useState(null);
+
+  // Column visibility state
+  const [visibleColumns, setVisibleColumns] = useState(() =>
+    loadColumnPrefs("sv-overlay-columns", OVERLAY_COLUMNS),
+  );
+  const [columnPickerOpen, setColumnPickerOpen] = useState(false);
 
   // Pagination state for artifacts tab
   const [moreFilesAvailable, setMoreFilesAvailable] = useState(false);
@@ -119,14 +479,10 @@ const ArtifactControlPanel = () => {
   const [fetchingMoreFiles, setFetchingMoreFiles] =
     useState(false);
 
-  // Pagination state for my sealed artifacts tab
-  const [moreReservedAvailable, setMoreReservedAvailable] = useState(false);
-  const [nextReservedCursor, setNextReservedCursor] = useState(null);
-  const [fetchingMoreReserved, setFetchingMoreReserved] = useState(false);
 
-  const retrieveFileData = async (append = false, cursorOverride = null) => {
+  const retrieveFileData = async (append = false, cursorOverride = null, isEnrichPhase = false) => {
     try {
-      setLoading(!append);
+      if (!append && !isEnrichPhase) setLoading(true);
       setError(null);
       const cursor = cursorOverride !== null ? cursorOverride : null;
       console.log(
@@ -142,11 +498,28 @@ const ArtifactControlPanel = () => {
         `[OVERLAY] Got result: hasMore=${result.hasMore}, nextCursor=${result.nextCursor}, count=${result.attachments?.length}`,
       );
 
-      if (append) {
-        setFileList((prev) => [...prev, ...(result.attachments || [])]);
-      } else {
-        setFileList(result.attachments || []);
-      }
+      const incoming = result.attachments || [];
+
+      // Merge: deduplicate, enrich existing items, add new ones
+      setFileList((prev) => {
+        if (prev.length === 0) return incoming;
+        const prevMap = new Map(prev.map((a) => [a.id, a]));
+        const merged = [...prev];
+        const existingIds = new Set(prev.map((a) => a.id));
+
+        for (const item of incoming) {
+          if (existingIds.has(item.id)) {
+            // Enrich existing item with Confluence data
+            const idx = merged.findIndex((a) => a.id === item.id);
+            if (idx !== -1) merged[idx] = { ...merged[idx], ...item };
+          } else {
+            // New item — add to list
+            merged.push(item);
+          }
+        }
+
+        return merged;
+      });
 
       // Update both state and refs immediately
       const hasMore = result.hasMore || false;
@@ -164,63 +537,32 @@ const ArtifactControlPanel = () => {
       setFileList([]);
     } finally {
       setLoading(false);
+      setEnriching(false);
     }
   };
 
-  const retrieveMyReservedFiles = async (
-    append = false,
-    cursorOverride = null,
-  ) => {
-    try {
-      setMySealsLoading(!append);
-      setError(null);
-      const cursor = cursorOverride !== null ? cursorOverride : null;
-      console.log(
-        `[OVERLAY] Fetching my sealed artifacts: cursor=${cursor}, append=${append}`,
-      );
-
-      const result = await invoke("enumerate-operator-seals", {
-        cursor,
-        limit: 10,
-      });
-
-      console.log(
-        `[OVERLAY] Got my seals result: hasMore=${result.hasMore}, nextCursor=${result.nextCursor}, count=${result.attachments?.length}`,
-      );
-
-      if (append) {
-        setMyReservedFiles((prev) => [
-          ...prev,
-          ...(result.attachments || []),
-        ]);
-      } else {
-        setMyReservedFiles(result.attachments || []);
-      }
-
-      // Update both state and refs immediately
-      const hasMore = result.hasMore || false;
-      const nextCursor = result.nextCursor || null;
-
-      setMoreReservedAvailable(hasMore);
-      setNextReservedCursor(nextCursor);
-
-      console.log(
-        `[OVERLAY] Updated my seals: hasMore=${hasMore}, nextCursor=${nextCursor}`,
-      );
-    } catch (err) {
-      console.error("Failed to fetch my sealed artifacts:", err);
-      setError("Unable to retrieve your claimed files. Please try again.");
-      setMyReservedFiles([]);
-    } finally {
-      setMySealsLoading(false);
-    }
-  };
 
   useEffect(() => {
     // Initialize theme detection and fetch artifacts
     const initializeComponent = async () => {
       await enablePaletteSync();
-      await retrieveFileData();
+
+      // Phase 1: Show claimed files instantly from KVS
+      let hasPhase1 = false;
+      try {
+        const seals = await invoke("enumerate-page-seals", { pageId: null });
+        if (seals?.claimedArtifacts?.length > 0) {
+          setFileList(seals.claimedArtifacts);
+          setLoading(false);
+          setEnriching(true);
+          hasPhase1 = true;
+        }
+      } catch (e) {
+        console.warn("[OVERLAY] Fast seal fetch failed:", e);
+      }
+
+      // Phase 2: Full list from Confluence API (merges with Phase 1)
+      await retrieveFileData(false, null, hasPhase1);
 
       // Fetch global settings to check auto-unlock status
       try {
@@ -241,7 +583,7 @@ const ArtifactControlPanel = () => {
       // Fetch page-level panel settings
       try {
         const panelStatus = await invoke("check-panel-status", { pageId: null });
-        setPanelHidden(panelStatus?.widgetHidden === true);
+        setPanelHidden(panelStatus?.macroDisabled === true);
       } catch (error) {
         console.warn("Failed to get panel status:", error);
       } finally {
@@ -250,6 +592,12 @@ const ArtifactControlPanel = () => {
     };
     initializeComponent();
   }, []);
+
+  // Persist column preferences
+  useEffect(() => {
+    localStorage.setItem("sv-overlay-columns", JSON.stringify(visibleColumns));
+  }, [visibleColumns]);
+
 
   const fetchNextFilePage = useCallback(async () => {
     console.log(
@@ -274,51 +622,24 @@ const ArtifactControlPanel = () => {
     }
   }, [moreFilesAvailable, fetchingMoreFiles, nextFileCursor]);
 
-  const fetchNextReservedPage = useCallback(async () => {
-    console.log(
-      `[OVERLAY] fetchNextReservedPage called: hasMore=${moreReservedAvailable}, isLoading=${fetchingMoreReserved}, nextCursor=${nextReservedCursor}`,
-    );
-
-    if (!moreReservedAvailable || fetchingMoreReserved || !nextReservedCursor) {
-      console.log(`[OVERLAY] fetchNextReservedPage skipped - conditions not met`);
-      return;
-    }
-
-    console.log(
-      `[OVERLAY] fetchNextReservedPage proceeding with cursor=${nextReservedCursor}`,
-    );
-    setFetchingMoreReserved(true);
-    try {
-      await retrieveMyReservedFiles(true, nextReservedCursor);
-    } catch (error) {
-      console.error("Error loading more sealed artifacts:", error);
-    } finally {
-      setFetchingMoreReserved(false);
-    }
-  }, [moreReservedAvailable, fetchingMoreReserved, nextReservedCursor]);
-
-  // Fetch my sealed artifacts when switching to that tab
-  useEffect(() => {
-    if (
-      currentView === "my-locked-attachments" &&
-      myReservedFiles.length === 0 &&
-      !mySealsLoading
-    ) {
-      retrieveMyReservedFiles();
-    }
-  }, [currentView]);
 
   const onDismiss = () => {
     view.close();
   };
 
   const onSecureFile = async (artifactId) => {
+    setBusyAction({ id: artifactId, action: "seal" });
     try {
       // Find artifact name for dispatch
       const artifact = fileList.find((att) => att.id === artifactId);
       const artifactName = artifact?.title || "attachment";
 
-      await invoke("seal-artifact", { attachmentId: artifactId });
+      const result = await invoke("seal-artifact", { attachmentId: artifactId });
+      if (result && result.success === false) {
+        setError(result.reason || "Could not seal file.");
+        await retrieveFileData();
+        return;
+      }
       await retrieveFileData();
 
       // Show success flash (Option 1)
@@ -329,11 +650,14 @@ const ArtifactControlPanel = () => {
       }
     } catch (err) {
       console.error("Failed to seal artifact:", err);
-      setError("Could not claim file.");
+      setError("Could not seal file.");
+    } finally {
+      setBusyAction(null);
     }
   };
 
   const onReleaseFile = async (artifactId) => {
+    setBusyAction({ id: artifactId, action: "unseal" });
     try {
       // Find artifact name for dispatch
       const artifact = fileList.find((att) => att.id === artifactId);
@@ -351,10 +675,13 @@ const ArtifactControlPanel = () => {
     } catch (err) {
       console.error("Failed to unseal artifact:", err);
       setError("Could not relinquish file.");
+    } finally {
+      setBusyAction(null);
     }
   };
 
   const onWatchToggle = async (artifactId) => {
+    setBusyAction({ id: artifactId, action: "watch" });
     const isCurrentlyRequested = watchStatus[artifactId];
 
     try {
@@ -373,6 +700,8 @@ const ArtifactControlPanel = () => {
       }
     } catch (err) {
       console.error("Failed to toggle dispatch:", err);
+    } finally {
+      setBusyAction(null);
     }
   };
 
@@ -493,82 +822,7 @@ const ArtifactControlPanel = () => {
     });
   };
 
-  const columnSortIndicator = (field) => {
-    if (orderByField !== field) return "↕";
-    return orderDirection === "asc" ? "↑" : "↓";
-  };
 
-  // Sorting for My Sealed Artifacts tab
-  const onReorderMyFiles = (field) => {
-    if (myFilesOrderField === field) {
-      setMyFilesOrderDir(myFilesOrderDir === "asc" ? "desc" : "asc");
-    } else {
-      setMyFilesOrderField(field);
-      setMyFilesOrderDir("asc");
-    }
-  };
-
-  const arrangeMyReservedFiles = () => {
-    return [...myReservedFiles].sort((a, b) => {
-      let aValue = a[myFilesOrderField];
-      let bValue = b[myFilesOrderField];
-
-      // Handle different field types
-      if (
-        myFilesOrderField === "title" ||
-        myFilesOrderField === "pageTitle" ||
-        myFilesOrderField === "spaceName"
-      ) {
-        aValue = aValue?.toLowerCase() || "";
-        bValue = bValue?.toLowerCase() || "";
-      } else if (
-        myFilesOrderField === "lockedOn" ||
-        myFilesOrderField === "expiresAt"
-      ) {
-        aValue = aValue ? new Date(aValue).getTime() : Number.MAX_SAFE_INTEGER;
-        bValue = bValue ? new Date(bValue).getTime() : Number.MAX_SAFE_INTEGER;
-      }
-
-      if (myFilesOrderDir === "asc") {
-        return aValue > bValue ? 1 : -1;
-      } else {
-        return aValue < bValue ? 1 : -1;
-      }
-    });
-  };
-
-  const myFilesSortIndicator = (field) => {
-    if (myFilesOrderField !== field) return "↕";
-    return myFilesOrderDir === "asc" ? "↑" : "↓";
-  };
-
-  const onReleaseMyFile = async (artifactId) => {
-    try {
-      const artifact = myReservedFiles.find(
-        (att) => att.id === artifactId,
-      );
-      const artifactName = artifact?.title || "attachment";
-
-      await invoke("unseal-artifact", { attachmentId: artifactId });
-
-      // Remove from my sealed artifacts list
-      setMyReservedFiles((prev) =>
-        prev.filter((att) => att.id !== artifactId),
-      );
-
-      // Also refresh page artifacts if on the same page
-      await retrieveFileData();
-
-      try {
-        await flashArtifactUnsealed(artifactName);
-      } catch (notifyErr) {
-        // Flash failed, but unseal succeeded
-      }
-    } catch (err) {
-      console.error("Failed to unseal artifact:", err);
-      setError("Could not relinquish file.");
-    }
-  };
 
   const formatReservedDate = (timestamp) => {
     if (!timestamp) return "-";
@@ -581,6 +835,7 @@ const ArtifactControlPanel = () => {
     });
   };
 
+
   return (
     <div className="modal-container">
       <div className="modal-header">
@@ -590,19 +845,32 @@ const ArtifactControlPanel = () => {
         </button>
       </div>
 
-      {/* Tab Navigation */}
-      <div className="tab-navigation">
+      {/* Toolbar */}
+      <div className="overlay-toolbar">
+        <ColumnPicker
+          columns={OVERLAY_COLUMNS}
+          visible={visibleColumns}
+          onChange={(key) => setVisibleColumns((prev) => ({ ...prev, [key]: !prev[key] }))}
+          isOpen={columnPickerOpen}
+          onToggle={setColumnPickerOpen}
+        />
+        <SortPicker
+          orderField={orderByField}
+          orderDir={orderDirection}
+          onSort={onReorderColumn}
+        />
+        <span className="toolbar-file-count">
+          {`${fileList.length} file${fileList.length !== 1 ? "s" : ""}`}
+        </span>
         <button
-          className={`tab-button ${currentView === "page-attachments" ? "active" : ""}`}
-          onClick={() => setCurrentView("page-attachments")}
+          className="toolbar-refresh"
+          onClick={() => retrieveFileData()}
         >
-          Files on This Page
-        </button>
-        <button
-          className={`tab-button ${currentView === "my-locked-attachments" ? "active" : ""}`}
-          onClick={() => setCurrentView("my-locked-attachments")}
-        >
-          My Claimed Files
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="23 4 23 10 17 10" />
+            <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
+          </svg>
+          Refresh
         </button>
       </div>
 
@@ -657,10 +925,10 @@ const ArtifactControlPanel = () => {
                 }}
               >
                 {!panelConfigReady
-                  ? "Checking inline panel status…"
+                  ? "Checking macro visibility…"
                   : panelHidden
-                    ? "Inline status panel is hidden on this page"
-                    : "Inline status panel is visible on this page"}
+                    ? "Sentinel Vault macro is hidden on this page"
+                    : "Sentinel Vault macro is visible on this page"}
               </span>
             </div>
             <p
@@ -673,10 +941,10 @@ const ArtifactControlPanel = () => {
               }}
             >
               {!panelConfigReady
-                ? "Checking whether the inline status panel is enabled for this page…"
+                ? "Checking whether the Sentinel Vault macro is enabled for this page…"
                 : panelHidden
-                  ? "The status panel that normally appears inside the page content is currently turned off. Visitors to this page will not see file claim information inline. You can still manage claims from this dialog."
-                  : "The status panel is displayed inside the page content, allowing all viewers to see which files are claimed and by whom directly on the page."}
+                  ? "The Sentinel Vault macro on this page is hidden. Page viewers won't see seal status inline, but you can still manage seals from this dialog."
+                  : "The Sentinel Vault macro is embedded in this page, showing seal status and actions directly in the page content for all viewers."}
             </p>
           </div>
           <button
@@ -687,7 +955,7 @@ const ArtifactControlPanel = () => {
               try {
                 await invoke("store-doc-panel-prefs", {
                   pageId: null,
-                  widgetHidden: newValue,
+                  macroDisabled: newValue,
                 });
                 setPanelHidden(newValue);
               } catch (err) {
@@ -727,10 +995,10 @@ const ArtifactControlPanel = () => {
             {!panelConfigReady
               ? "Please wait…"
               : panelConfigUpdating
-                ? "Updating…"
+                ? "Saving…"
                 : panelHidden
-                  ? "Show on this page"
-                  : "Hide on this page"}
+                  ? "Show macro"
+                  : "Hide macro"}
           </button>
         </div>
       </div>
@@ -741,8 +1009,7 @@ const ArtifactControlPanel = () => {
       >
         {error && <div className="alert-error">{error}</div>}
 
-        {/* Page Artifacts Tab */}
-        {currentView === "page-attachments" && (
+        {/* Page Artifacts */}
           <div
             style={{
               display: "flex",
@@ -751,8 +1018,10 @@ const ArtifactControlPanel = () => {
               minHeight: 0,
             }}
           >
-            {loading && (
-              <div className="loading-text">Retrieving files...</div>
+            {loading && !fileList.length && (
+              <div className="sv-card-list" data-cols="3" style={{ '--sv-cards-per-row': 3 }}>
+                {Array.from({ length: 6 }).map((_, i) => <SkeletonCard key={`init-skel-${i}`} />)}
+              </div>
             )}
 
             {!loading && !error && fileList.length === 0 && (
@@ -766,143 +1035,75 @@ const ArtifactControlPanel = () => {
                 className="attachments-tab-content"
                 style={{ flex: 1, overflowY: "auto", minHeight: 0 }}
               >
-                <table className="data-table">
-                  <thead>
-                    <tr>
-                      <th
-                        className="sortable"
-                        onClick={() => onReorderColumn("title")}
-                      >
-                        Name {columnSortIndicator("title")}
-                      </th>
-                      <th
-                        className="sortable"
-                        onClick={() => onReorderColumn("lockStatus")}
-                      >
-                        Status {columnSortIndicator("lockStatus")}
-                      </th>
-                      <th>Held by</th>
-                      {settingsLoaded && expiryAlertsActive && (
-                        <th
-                          className="sortable"
-                          onClick={() => onReorderColumn("expiresAt")}
-                        >
-                          Lapses {columnSortIndicator("expiresAt")}
-                        </th>
+                {(() => {
+                  const sortedFiles = arrangeFileList();
+                  const isClaimedFile = (a) => a.lockStatus === "HELD" || a.lockStatus === "HELD_BY_ACTOR";
+                  const prioritized = [...sortedFiles].sort((a, b) => (isClaimedFile(a) ? 0 : 1) - (isClaimedFile(b) ? 0 : 1));
+                  const claimedFiles = prioritized.filter(isClaimedFile);
+                  const availableFiles = prioritized.filter((a) => !isClaimedFile(a));
+                  return (
+                    <>
+                      {claimedFiles.length > 0 && (
+                        <div className="sv-card-section">
+                          <div className="sv-card-section-header">
+                            <span className="sv-card-section-title">Sealed</span>
+                            <span className="sv-card-section-count">{claimedFiles.length}</span>
+                          </div>
+                          <div className="sv-card-list" data-cols="3">
+                            {claimedFiles.map((artifact) => (
+                              <OverlayArtifactCard
+                                key={artifact.id}
+                                artifact={artifact}
+                                visibleColumns={visibleColumns}
+                                onSecure={onSecureFile}
+                                onRelease={onReleaseFile}
+                                onWatch={onWatchToggle}
+                                isWatching={watchStatus[artifact.id]}
+                                busyAction={busyAction?.id === artifact.id ? busyAction.action : null}
+                                formatRemainingTime={formatRemainingTime}
+                                formatFileSize={formatFileSize}
+                              />
+                            ))}
+                          </div>
+                        </div>
                       )}
-                      <th>Watch for Relinquish</th>
-                      <th>Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody className="attachment-list">
-                    {arrangeFileList().map((artifact) => (
-                      <tr key={artifact.id}>
-                        <td>{artifact.title}</td>
-                        <td>
-                          <span
-                            className={`status-badge ${
-                              artifact.lockStatus === "HELD"
-                                ? "locked"
-                                : artifact.lockStatus === "HELD_BY_ACTOR"
-                                  ? "locked-by-me"
-                                  : "unlocked"
-                            }`}
-                          >
-                            {artifact.lockStatus || "OPEN"}
-                          </span>
-                        </td>
-                        <td>
-                          {artifact.lockStatus === "HELD_BY_ACTOR" ? (
-                            "You"
-                          ) : artifact.lockStatus === "HELD" &&
-                            artifact.lockedByAccountId ? (
-                            <OperatorTag
-                              accountId={artifact.lockedByAccountId}
-                            />
-                          ) : artifact.lockStatus === "HELD" ? (
-                            "Someone else"
-                          ) : (
-                            "-"
-                          )}
-                        </td>
-                        {settingsLoaded && expiryAlertsActive && (
-                          <td
-                            style={{
-                              color: artifact.isExpired
-                                ? "var(--sv-text-subtle)"
-                                : "var(--sv-text-subtle)",
-                              fontStyle: artifact.isExpired
-                                ? "italic"
-                                : "normal",
-                            }}
-                          >
-                            {formatRemainingTime(artifact)}
-                          </td>
-                        )}
-                        <td>
-                          {artifact.lockStatus === "HELD" && (
-                            <button
-                              onClick={() => onWatchToggle(artifact.id)}
-                              style={{
-                                backgroundColor: watchStatus[artifact.id]
-                                  ? "var(--sv-interactive-success)"
-                                  : "var(--sv-bg-tertiary)",
-                                color: watchStatus[artifact.id]
-                                  ? "var(--sv-text-inverse)"
-                                  : "var(--sv-text-primary)",
-                                border: watchStatus[artifact.id]
-                                  ? "1px solid var(--sv-interactive-success)"
-                                  : "1px solid var(--sv-border-secondary)",
-                                padding: "4px 8px",
-                                borderRadius: "4px",
-                                fontSize: "11px",
-                                cursor: "pointer",
-                                fontWeight: 500,
-                                transition: "all 0.2s ease",
-                              }}
-                              title={
-                                watchStatus[artifact.id]
-                                  ? "Stop watching"
-                                  : "Get alerted when relinquished"
-                              }
-                            >
-                              {watchStatus[artifact.id]
-                                ? "Watching"
-                                : "Watch"}
-                            </button>
-                          )}
-                        </td>
-                        <td>
-                          {artifact.lockStatus === "OPEN" && (
-                            <button
-                              onClick={() => onSecureFile(artifact.id)}
-                              className="btn btn-primary"
-                            >
-                              Claim
-                            </button>
-                          )}
-                          {artifact.lockStatus === "HELD_BY_ACTOR" && (
-                            <button
-                              onClick={() => onReleaseFile(artifact.id)}
-                              className="btn btn-warning"
-                            >
-                              Relinquish
-                            </button>
-                          )}
-                          {artifact.lockStatus === "HELD" && (
-                            <button
-                              className="btn btn-subtle"
-                              disabled
-                              title="This file is held by someone else"
-                            >
-                              Claimed
-                            </button>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+                      {availableFiles.length > 0 && (
+                        <div className="sv-card-section">
+                          <div className="sv-card-section-header">
+                            <span className="sv-card-section-title">Available</span>
+                            <span className="sv-card-section-count">{availableFiles.length}</span>
+                          </div>
+                          <div className="sv-card-list" data-cols="3">
+                            {availableFiles.map((artifact) => (
+                              <OverlayArtifactCard
+                                key={artifact.id}
+                                artifact={artifact}
+                                visibleColumns={visibleColumns}
+                                onSecure={onSecureFile}
+                                onRelease={onReleaseFile}
+                                onWatch={onWatchToggle}
+                                isWatching={watchStatus[artifact.id]}
+                                busyAction={busyAction?.id === artifact.id ? busyAction.action : null}
+                                formatRemainingTime={formatRemainingTime}
+                                formatFileSize={formatFileSize}
+                              />
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      {enriching && (
+                        <div className="sv-card-section">
+                          <div className="sv-card-section-header">
+                            <span className="sv-card-section-title">Loading more files…</span>
+                          </div>
+                          <div className="sv-card-list" data-cols="3" style={{ '--sv-cards-per-row': 3 }}>
+                            {Array.from({ length: 6 }).map((_, i) => <SkeletonCard key={`skel-${i}`} />)}
+                          </div>
+                        </div>
+                      )}
+                    </>
+                  );
+                })()}
                 {(fetchingMoreFiles || moreFilesAvailable) && (
                   <div
                     style={{
@@ -913,22 +1114,8 @@ const ArtifactControlPanel = () => {
                     }}
                   >
                     {fetchingMoreFiles ? (
-                      <div
-                        style={{
-                          display: "flex",
-                          alignItems: "center",
-                          color: "var(--sv-text-subtle)",
-                        }}
-                      >
-                        <div
-                          className="loading-spinner"
-                          style={{
-                            width: "16px",
-                            height: "16px",
-                            margin: "0 8px 0 0",
-                          }}
-                        ></div>
-                        Fetching additional files...
+                      <div className="sv-card-list" data-cols="3" style={{ '--sv-cards-per-row': 3 }}>
+                        {Array.from({ length: 3 }).map((_, i) => <SkeletonCard key={`more-skel-${i}`} />)}
                       </div>
                     ) : (
                       <button
@@ -974,214 +1161,9 @@ const ArtifactControlPanel = () => {
               </div>
             )}
           </div>
-        )}
-
-        {/* My Sealed Artifacts Tab */}
-        {currentView === "my-locked-attachments" && (
-          <div
-            style={{
-              display: "flex",
-              flexDirection: "column",
-              flex: 1,
-              minHeight: 0,
-            }}
-          >
-            {mySealsLoading && (
-              <div className="loading-text">
-                Retrieving your claimed files...
-              </div>
-            )}
-
-            {!mySealsLoading && !error && myReservedFiles.length === 0 && (
-              <div className="alert-info">
-                You have no claimed files anywhere in Confluence.
-              </div>
-            )}
-
-            {!mySealsLoading && !error && myReservedFiles.length > 0 && (
-              <div
-                className="my-locks-tab-content"
-                style={{ flex: 1, overflowY: "auto", minHeight: 0 }}
-              >
-                <table className="data-table">
-                  <thead>
-                    <tr>
-                      <th
-                        className="sortable"
-                        onClick={() => onReorderMyFiles("title")}
-                      >
-                        Name {myFilesSortIndicator("title")}
-                      </th>
-                      <th
-                        className="sortable"
-                        onClick={() => onReorderMyFiles("pageTitle")}
-                      >
-                        Location {myFilesSortIndicator("pageTitle")}
-                      </th>
-                      <th
-                        className="sortable"
-                        onClick={() => onReorderMyFiles("spaceName")}
-                      >
-                        Space {myFilesSortIndicator("spaceName")}
-                      </th>
-                      <th
-                        className="sortable"
-                        onClick={() => onReorderMyFiles("lockedOn")}
-                      >
-                        Claimed on {myFilesSortIndicator("lockedOn")}
-                      </th>
-                      {settingsLoaded && expiryAlertsActive && (
-                        <th
-                          className="sortable"
-                          onClick={() => onReorderMyFiles("expiresAt")}
-                        >
-                          Lapses {myFilesSortIndicator("expiresAt")}
-                        </th>
-                      )}
-                      <th>Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody className="attachment-list">
-                    {arrangeMyReservedFiles().map((artifact) => (
-                      <tr key={artifact.id}>
-                        <td>{artifact.title}</td>
-                        <td>
-                          {artifact.pageUrl ? (
-                            <a
-                              href={artifact.pageUrl}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              style={{
-                                color: "var(--sv-interactive-primary)",
-                                textDecoration: "none",
-                              }}
-                              title={`Open ${artifact.pageTitle}`}
-                            >
-                              {artifact.pageTitle}
-                            </a>
-                          ) : (
-                            artifact.pageTitle
-                          )}
-                        </td>
-                        <td>
-                          {artifact.spaceName || artifact.spaceKey || "-"}
-                        </td>
-                        <td>{formatReservedDate(artifact.lockedOn)}</td>
-                        {settingsLoaded && expiryAlertsActive && (
-                          <td
-                            style={{
-                              color: artifact.isExpired
-                                ? "var(--sv-text-subtle)"
-                                : "var(--sv-text-subtle)",
-                              fontStyle: artifact.isExpired
-                                ? "italic"
-                                : "normal",
-                            }}
-                          >
-                            {formatRemainingTime(artifact)}
-                          </td>
-                        )}
-                        <td>
-                          <button
-                            onClick={() =>
-                              onReleaseMyFile(artifact.id)
-                            }
-                            className="btn btn-warning"
-                          >
-                            Relinquish
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-                {(fetchingMoreReserved || moreReservedAvailable) && (
-                  <div
-                    style={{
-                      display: "flex",
-                      justifyContent: "center",
-                      alignItems: "center",
-                      padding: "20px",
-                    }}
-                  >
-                    {fetchingMoreReserved ? (
-                      <div
-                        style={{
-                          display: "flex",
-                          alignItems: "center",
-                          color: "var(--sv-text-subtle)",
-                        }}
-                      >
-                        <div
-                          className="loading-spinner"
-                          style={{
-                            width: "16px",
-                            height: "16px",
-                            margin: "0 8px 0 0",
-                          }}
-                        ></div>
-                        Fetching additional claimed files...
-                      </div>
-                    ) : (
-                      <button
-                        onClick={fetchNextReservedPage}
-                        style={{
-                          backgroundColor: "var(--sv-interactive-primary)",
-                          color: "var(--sv-text-inverse)",
-                          border: "none",
-                          padding: "8px 16px",
-                          borderRadius: "4px",
-                          fontSize: "12px",
-                          cursor: "pointer",
-                          fontWeight: 500,
-                          transition: "all 0.15s ease",
-                        }}
-                        onMouseEnter={(e) => {
-                          e.target.style.backgroundColor =
-                            "var(--sv-interactive-primary-hover)";
-                        }}
-                        onMouseLeave={(e) => {
-                          e.target.style.backgroundColor =
-                            "var(--sv-interactive-primary)";
-                        }}
-                      >
-                        Show more claimed files
-                      </button>
-                    )}
-                  </div>
-                )}
-                {!moreReservedAvailable &&
-                  myReservedFiles.length > 0 &&
-                  !mySealsLoading && (
-                    <div
-                      style={{
-                        textAlign: "center",
-                        padding: "16px",
-                        color: "var(--sv-text-subtle)",
-                        fontStyle: "italic",
-                        fontSize: "12px",
-                      }}
-                    >
-                      All claimed files displayed
-                    </div>
-                  )}
-              </div>
-            )}
-          </div>
-        )}
       </div>
 
       <div className="modal-footer">
-        <button
-          onClick={() =>
-            currentView === "page-attachments"
-              ? retrieveFileData()
-              : retrieveMyReservedFiles()
-          }
-          className="btn btn-subtle btn-footer"
-        >
-          Reload
-        </button>
         <button onClick={onDismiss} className="btn btn-primary btn-footer">
           Done
         </button>

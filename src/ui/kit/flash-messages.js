@@ -4,7 +4,7 @@
  * This module provides flash message functionality using
  * Atlassian Forge's showFlag API.
  *
- * To disable: Set ENABLE_TOAST_NOTIFICATIONS = false in src/resolvers/index.js
+ * To disable: Set ENABLE_TOAST_DISPATCHES = false in src/resolvers/index.js
  */
 
 import { showFlag } from "@forge/bridge";
@@ -17,7 +17,7 @@ import { invoke } from "@forge/bridge";
 export async function flashMessagesEnabled() {
   try {
     const result = await invoke("load-bulletin-toggles");
-    return result?.flags?.ENABLE_TOAST_NOTIFICATIONS === true;
+    return result?.flags?.ENABLE_TOAST_DISPATCHES === true;
   } catch (error) {
     console.error("Error checking notification flags:", error);
     return false;

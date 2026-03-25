@@ -24,7 +24,7 @@ const DocumentRibbon = () => {
       setTotalCount(artifacts.length);
       setSealedCount(
         artifacts.filter(
-          (f) => f.sealStatus === "HELD" || f.sealStatus === "HELD_BY_ACTOR",
+          (f) => f.lockStatus === "HELD" || f.lockStatus === "HELD_BY_ACTOR",
         ).length,
       );
     } catch (err) {
@@ -55,11 +55,21 @@ const DocumentRibbon = () => {
 
         const context = await view.getContext();
         const pageId = context?.extension?.content?.id || context?.contentId;
+        const contentType = context?.extension?.content?.type;
+        const location = context?.extension?.location || "";
         const operatorId = context?.accountId;
+
+        // Only show ribbon on actual content pages (not space apps, settings, or admin pages)
+        const isSpaceAppPage = location.includes("/apps/") || location.includes("/settings/");
+        const isContentPage = contentType === "page" || contentType === "blogpost";
+        if (!pageId || isSpaceAppPage || (contentType && !isContentPage)) {
+          setLoading(false);
+          return;
+        }
 
         await fetchArtifactStats();
 
-        if (pageId && operatorId) {
+        if (operatorId) {
           await fetchAlerts(pageId, operatorId);
         }
       } catch (err) {
@@ -94,12 +104,8 @@ const DocumentRibbon = () => {
     [],
   );
 
-  if (loading) {
-    return null;
-  }
-
-  // Hide ribbon entirely when the page has no artifacts
-  if (totalCount === 0 && alerts.length === 0) {
+  // Hide ribbon entirely when the page has no artifacts (only after loading)
+  if (!loading && totalCount === 0 && alerts.length === 0) {
     return null;
   }
 
@@ -127,7 +133,9 @@ const DocumentRibbon = () => {
         <span className="ribbon-title">Sentinel Vault</span>
 
         <span className="ribbon-status">
-          {sealedCount > 0
+          {loading ? (
+            <span className="ribbon-loading-bar" />
+          ) : sealedCount > 0
             ? `${sealedCount} artifact${sealedCount !== 1 ? "s" : ""} sealed on this page`
             : totalCount > 0
               ? `${totalCount} artifact${totalCount !== 1 ? "s" : ""} on this page — none sealed`
