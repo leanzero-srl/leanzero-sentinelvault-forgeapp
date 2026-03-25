@@ -1,4 +1,4 @@
-import { asUser, route } from "@forge/api";
+import { asApp, asUser, route } from "@forge/api";
 import { kvs, WhereConditions } from "@forge/kvs";
 import { Queue } from "@forge/events";
 
@@ -11,7 +11,7 @@ import {
 } from "../../infra/mail-composer.js";
 
 // Queue for background realm scanning
-const realmScanQueue = new Queue({ key: "space-admin-scan-queue" });
+const realmScanQueue = new Queue({ key: "realm-audit-queue" });
 
 /**
  * Get realm information by realm key
@@ -327,10 +327,137 @@ const stewardUnseal = async (req) => {
   return { success: true, reason: "admin override" };
 };
 
+/**
+ * Check if the current user is a steward for the given space.
+ */
+const checkUserRole = async (req) => {
+  const accountId = req.context.accountId;
+  const spaceKey = req.payload?.spaceKey;
+  if (!spaceKey || !accountId) return { role: "user" };
+  try {
+    const isSteward = await authorizeSteward(accountId, spaceKey);
+    return { role: isSteward ? "steward" : "user" };
+  } catch (e) {
+    console.warn("[CHECK-USER-ROLE] Error:", e);
+    return { role: "user" };
+  }
+};
+
+/**
+ * User requests to become a steward for a space.
+ */
+const requestStewardAccess = async (req) => {
+  const accountId = req.context.accountId;
+  const spaceKey = req.payload?.spaceKey;
+  if (!spaceKey || !accountId) return { success: false, reason: "Missing context" };
+
+  try {
+    // Get user display name for the request
+    let displayName = "Unknown User";
+    try {
+      const userRes = await asApp().requestConfluence(
+        route`/wiki/rest/api/user?accountId=${accountId}`,
+        { headers: { Accept: "application/json" } },
+      );
+      if (userRes.ok) {
+        const userData = await userRes.json();
+        displayName = userData.displayName || displayName;
+      }
+    } catch (e) { /* ignore */ }
+
+    await kvs.set(`steward-request-${spaceKey}-${accountId}`, {
+      accountId,
+      displayName,
+      spaceKey,
+      requestedAt: new Date().toISOString(),
+      status: "pending",
+    });
+    return { success: true };
+  } catch (e) {
+    console.error("[REQUEST-STEWARD] Error:", e);
+    return { success: false, reason: e.message };
+  }
+};
+
+/**
+ * List pending steward requests for a space (steward-only).
+ */
+const listStewardRequests = async (req) => {
+  const spaceKey = req.payload?.spaceKey;
+  const accountId = req.context.accountId;
+  if (!spaceKey) return { requests: [] };
+
+  // Verify caller is steward
+  const isSteward = await authorizeSteward(accountId, spaceKey);
+  if (!isSteward) return { requests: [], reason: "Not authorized" };
+
+  try {
+    const prefix = `steward-request-${spaceKey}-`;
+    const allRequests = [];
+    let query = kvs.query().where("key", WhereConditions.beginsWith(prefix)).limit(50);
+    const { results } = await query.getMany();
+    if (results) {
+      for (const { value } of results) {
+        if (value?.status === "pending") {
+          allRequests.push(value);
+        }
+      }
+    }
+    return { requests: allRequests };
+  } catch (e) {
+    console.error("[LIST-STEWARD-REQUESTS] Error:", e);
+    return { requests: [] };
+  }
+};
+
+/**
+ * Approve a pending steward access request (steward-only).
+ */
+const approveStewardRequest = async (req) => {
+  const { requestAccountId, spaceKey } = req.payload;
+  const callerAccountId = req.context.accountId;
+
+  if (!requestAccountId || !spaceKey) return { success: false, reason: "Missing params" };
+
+  // Verify caller is steward
+  const isSteward = await authorizeSteward(callerAccountId, spaceKey);
+  if (!isSteward) return { success: false, reason: "Not authorized" };
+
+  try {
+    // Get request data
+    const requestKey = `steward-request-${spaceKey}-${requestAccountId}`;
+    const requestData = await kvs.get(requestKey);
+    if (!requestData) return { success: false, reason: "Request not found" };
+
+    // Add user to realm admin users
+    const sanitizedKey = spaceKey.replace(/[^a-zA-Z0-9:._\s-#]/g, "_");
+    const realmSettings = await kvs.get(`admin-settings-space-${sanitizedKey}`) || {};
+    const adminUsers = realmSettings.adminUsers || [];
+
+    if (!adminUsers.some(u => (typeof u === "string" ? u : u.accountId) === requestAccountId)) {
+      adminUsers.push({ accountId: requestAccountId, displayName: requestData.displayName || "User" });
+      realmSettings.adminUsers = adminUsers;
+      await kvs.set(`admin-settings-space-${sanitizedKey}`, realmSettings);
+    }
+
+    // Delete the request
+    await kvs.delete(requestKey);
+
+    return { success: true };
+  } catch (e) {
+    console.error("[APPROVE-STEWARD] Error:", e);
+    return { success: false, reason: e.message };
+  }
+};
+
 export const actions = [
   ["identify-realm", identifyRealm],
   ["enumerate-realm-seals", enumerateRealmSeals],
   ["launch-realm-audit", launchRealmAudit],
   ["check-audit-status", checkAuditStatus],
   ["steward-unseal", stewardUnseal],
+  ["check-user-role", checkUserRole],
+  ["request-steward-access", requestStewardAccess],
+  ["list-steward-requests", listStewardRequests],
+  ["approve-steward-request", approveStewardRequest],
 ];

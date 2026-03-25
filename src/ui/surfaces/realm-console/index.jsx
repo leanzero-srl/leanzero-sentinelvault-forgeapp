@@ -1,13 +1,293 @@
 // src/ui/surfaces/realm-console/index.jsx
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { createRoot } from "react-dom/client";
 import { invoke, view } from "@forge/bridge";
 import { enablePaletteSync } from "../../kit/palette-sync";
 import logo from "../../assets/icons/icon.png";
 
+const SkeletonRow = ({ cols = 5 }) => (
+  <tr className="skeleton-row">
+    {Array.from({ length: cols }).map((_, i) => (
+      <td key={i}><span className="skeleton-bar skeleton-cell" /></td>
+    ))}
+  </tr>
+);
+
+const SkeletonDropdownItem = () => (
+  <div className="skeleton-dropdown-item">
+    <span className="skeleton-bar skeleton-avatar" />
+    <span className="skeleton-bar skeleton-name" />
+  </div>
+);
+
+const SkeletonCard = () => (
+  <div className="artifact-card" style={{ opacity: 0.5 }}>
+    <div className="card-row card-row-primary">
+      <span className="card-filename"><span className="skeleton-bar" style={{ width: "60%", height: 14 }} /></span>
+      <span className="card-row-right"><span className="skeleton-bar" style={{ width: 60, height: 20, borderRadius: 9999 }} /></span>
+    </div>
+    <div className="card-row card-row-secondary" style={{ marginTop: 4 }}>
+      <span className="skeleton-bar" style={{ width: "40%", height: 10 }} />
+    </div>
+  </div>
+);
+
+const ArtifactTypeIcon = ({ mediaType }) => {
+  const isImage = mediaType?.startsWith("image/");
+  const isPdf = mediaType === "application/pdf";
+  const color = isImage ? "#36B37E" : isPdf ? "#FF5630" : "var(--sv-text-subtle)";
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" className="file-icon">
+      <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8l-6-6z" stroke={color} strokeWidth="1.5" />
+      <polyline points="14,2 14,8 20,8" stroke={color} strokeWidth="1.5" />
+    </svg>
+  );
+};
+
+const ColumnPicker = ({ columns, visible, onChange, isOpen, onToggle }) => {
+  const ref = useRef(null);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const close = (e) => {
+      if (ref.current && !ref.current.contains(e.target)) onToggle(false);
+    };
+    document.addEventListener("mousedown", close);
+    return () => document.removeEventListener("mousedown", close);
+  }, [isOpen]);
+
+  return (
+    <div className="column-picker" ref={ref}>
+      <button
+        className="column-picker-trigger"
+        onClick={() => onToggle(!isOpen)}
+        title="Choose which columns to display"
+      >
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <circle cx="12" cy="12" r="3" />
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+        </svg>
+        Properties
+      </button>
+      {isOpen && (
+        <div className="column-picker-dropdown">
+          {columns.map((col) => (
+            <label key={col.key} className="column-picker-option">
+              <input
+                type="checkbox"
+                checked={!!visible[col.key]}
+                disabled={col.alwaysOn}
+                onChange={() => onChange(col.key)}
+              />
+              <span>{col.label}</span>
+            </label>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
+const REALM_COLUMNS = [
+  { key: "name",     label: "Name",      defaultOn: true, alwaysOn: true },
+  { key: "status",   label: "Status",    defaultOn: true },
+  { key: "sealedBy", label: "Sealed by", defaultOn: true },
+  { key: "location", label: "Location",  defaultOn: true },
+  { key: "fileSize", label: "File Size", defaultOn: false },
+  { key: "sealedOn", label: "Sealed on", defaultOn: false },
+  { key: "lapses",   label: "Lapses",    defaultOn: true },
+  { key: "actions",  label: "Actions",   defaultOn: true, alwaysOn: true },
+];
+
+const REALM_SORT_FIELDS = [
+  { key: "title", label: "Name" },
+  { key: "lockedBy", label: "Sealed by" },
+  { key: "pageTitle", label: "Location" },
+  { key: "lockedOn", label: "Sealed on" },
+  { key: "expiresAt", label: "Lapses" },
+];
+
+const buildDefaults = (cols) =>
+  cols.reduce((acc, col) => ({ ...acc, [col.key]: col.defaultOn }), {});
+
+const SortPicker = ({ orderField, orderDir, onSort }) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const ref = useRef(null);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const close = (e) => {
+      if (ref.current && !ref.current.contains(e.target)) setIsOpen(false);
+    };
+    document.addEventListener("mousedown", close);
+    return () => document.removeEventListener("mousedown", close);
+  }, [isOpen]);
+
+  const fields = REALM_SORT_FIELDS;
+  const currentLabel = fields.find(f => f.key === orderField)?.label || "Name";
+  const arrow = orderDir === "asc" ? "\u2191" : "\u2193";
+
+  return (
+    <div className="sort-picker" ref={ref}>
+      <button className="column-picker-trigger" onClick={() => setIsOpen(!isOpen)}>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M11 5h10M11 9h7M11 13h4M3 17l3 3 3-3M6 18V4" />
+        </svg>
+        {currentLabel} {arrow}
+      </button>
+      {isOpen && (
+        <div className="column-picker-dropdown">
+          {fields.map((f) => (
+            <div
+              key={f.key}
+              className={`column-picker-option ${f.key === orderField ? "selected" : ""}`}
+              style={{ cursor: "pointer", fontWeight: f.key === orderField ? 600 : 400 }}
+              onClick={() => { onSort(f.key); setIsOpen(false); }}
+            >
+              <span>{f.label}</span>
+              {f.key === orderField && <span style={{ marginLeft: "auto", fontSize: "11px" }}>{arrow}</span>}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
+const RealmClaimedCard = ({ artifact, onForceRelease, onWatch, isWatching, forceReleaseActive, visibleColumns, busyAction }) => {
+  const statusClass = artifact.isExpired ? "expired" : "locked";
+  const statusText = artifact.isExpired ? "Overdue" : "Sealed";
+
+  const vc = visibleColumns || {};
+
+  const metaItems = [];
+  if (vc.sealedBy !== false && artifact.lockedBy) metaItems.push(
+    <span key="owner" className="card-meta-owner">
+      <span className="card-meta-owner-label">Sealed by</span>
+      <span>{artifact.lockedBy}</span>
+    </span>
+  );
+  if (vc.location !== false && artifact.pageTitle) metaItems.push(<span key="loc" className="card-meta-item">{artifact.pageTitle}</span>);
+  if (vc.fileSize !== false && artifact.fileSize) metaItems.push(<span key="size" className="card-meta-item">{artifact.fileSize}</span>);
+  if (vc.sealedOn !== false && artifact.lockedOn) {
+    const d = new Date(artifact.lockedOn);
+    metaItems.push(<span key="date" className="card-meta-item">{d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}</span>);
+  }
+  // Lapses
+  if (vc.lapses !== false && artifact.expiresAt) {
+    const now = new Date();
+    const exp = new Date(artifact.expiresAt);
+    const diff = exp - now;
+    if (diff > 0) {
+      const hours = Math.floor(diff / 3600000);
+      const mins = Math.floor((diff % 3600000) / 60000);
+      metaItems.push(<span key="lapses" className="card-meta-item">{hours}h {mins}m</span>);
+    } else {
+      metaItems.push(<span key="lapses" className="card-meta-item" style={{ color: "var(--sv-status-warning)" }}>Overdue</span>);
+    }
+  }
+
+  return (
+    <div className={`artifact-card status-${statusClass}`}>
+      <div className="card-row card-row-primary">
+        <span className="card-filename">
+          <ArtifactTypeIcon mediaType={artifact.mediaType} />
+          <span className="card-filename-text">{artifact.title}</span>
+        </span>
+        <span className="card-row-right">
+          {vc.status !== false && (
+            <span className={`status-lozenge ${statusClass}`}>{statusText}</span>
+          )}
+          {vc.actions !== false && forceReleaseActive && onForceRelease && (
+            <button className={`action-btn unlock ${busyAction === "unseal" ? "is-busy" : ""}`} onClick={() => onForceRelease(artifact.id)} disabled={busyAction && busyAction !== "unseal"} title="Override the seal as a steward and release this file">
+              {busyAction === "unseal" ? <>Unsealing<span className="btn-busy-bar" /></> : "Force Unseal"}
+            </button>
+          )}
+        </span>
+      </div>
+      {metaItems.length > 0 && (
+        <div className="card-row card-row-secondary">
+          <span className="card-secondary-left">
+            <span className="card-meta">
+              {metaItems.reduce((acc, item, i) => {
+                if (i > 0) acc.push(<span key={`sep-${i}`} className="card-meta-sep">&middot;</span>);
+                acc.push(item);
+                return acc;
+              }, [])}
+            </span>
+          </span>
+          <span className="card-secondary-right">
+            {onWatch && (
+              <button className={`action-btn watch ${isWatching ? "watching" : ""} ${busyAction === "watch" ? "is-busy" : ""}`} onClick={() => onWatch(artifact.id)} disabled={busyAction && busyAction !== "watch"} title={isWatching ? "Stop watching this file" : "Get notified when this file is unsealed"}>
+                {busyAction === "watch" ? <>Updating<span className="btn-busy-bar" /></> : (isWatching ? "Watching" : "Watch")}
+              </button>
+            )}
+          </span>
+        </div>
+      )}
+    </div>
+  );
+};
+
+const MyClaimedCard = ({ artifact, onRelease, busyAction }) => {
+  const isExpired = artifact.isExpired || (artifact.expiresAt && new Date(artifact.expiresAt) < new Date());
+  const statusClass = isExpired ? "expired" : "locked-by-me";
+  const statusText = isExpired ? "Overdue" : "My Reservation";
+
+  const metaItems = [];
+  if (artifact.pageTitle) metaItems.push(<span key="loc" className="card-meta-item">{artifact.pageTitle}</span>);
+  if (artifact.spaceName || artifact.spaceKey) metaItems.push(<span key="space" className="card-meta-item">{artifact.spaceName || artifact.spaceKey}</span>);
+  if (artifact.lockedOn) {
+    const d = new Date(artifact.lockedOn);
+    metaItems.push(<span key="date" className="card-meta-item">{d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}</span>);
+  }
+  if (artifact.expiresAt) {
+    const now = new Date();
+    const exp = new Date(artifact.expiresAt);
+    const diff = exp - now;
+    if (diff > 0) {
+      const hours = Math.floor(diff / 3600000);
+      const mins = Math.floor((diff % 3600000) / 60000);
+      metaItems.push(<span key="lapses" className="card-meta-item">{hours}h {mins}m</span>);
+    }
+  }
+
+  return (
+    <div className={`artifact-card status-${statusClass}`}>
+      <div className="card-row card-row-primary">
+        <span className="card-filename">
+          <ArtifactTypeIcon mediaType={artifact.mediaType} />
+          <span className="card-filename-text">{artifact.title}</span>
+        </span>
+        <span className="card-row-right">
+          <span className={`status-lozenge ${statusClass}`}>{statusText}</span>
+          {onRelease && (
+            <button className={`action-btn unlock ${busyAction === "unseal" ? "is-busy" : ""}`} onClick={() => onRelease(artifact.id)} disabled={busyAction && busyAction !== "unseal"} title="Release your seal and allow others to modify this file">
+              {busyAction === "unseal" ? <>Releasing<span className="btn-busy-bar" /></> : "Relinquish"}
+            </button>
+          )}
+        </span>
+      </div>
+      {metaItems.length > 0 && (
+        <div className="card-row card-row-secondary">
+          <span className="card-secondary-left">
+            <span className="card-meta">
+              {metaItems.reduce((acc, item, i) => {
+                if (i > 0) acc.push(<span key={`sep-${i}`} className="card-meta-sep">&middot;</span>);
+                acc.push(item);
+                return acc;
+              }, [])}
+            </span>
+          </span>
+        </div>
+      )}
+    </div>
+  );
+};
+
 const RealmPolicyDashboard = () => {
-  const [activeTab, setActiveTab] = useState("locked-attachments");
+  const [activeTab, setActiveTab] = useState("my-claims");
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState(null);
   const [messageType, setMessageType] = useState(null); // 'success' or 'error'
@@ -41,6 +321,8 @@ const RealmPolicyDashboard = () => {
   const [systemExpiryAlertsActive, setSystemExpiryAlertsActive] = useState(true);
   // Track dispatch request state per artifact
   const [watchStatus, setWatchStatus] = useState({});
+  // Track which artifact + action is currently in flight
+  const [busyAction, setBusyAction] = useState(null);
 
   // Pagination state for sealed artifacts
   const [moreFilesAvailable, setMoreFilesAvailable] = useState(false);
@@ -65,6 +347,22 @@ const RealmPolicyDashboard = () => {
   // Background scan state
   const [scanStatus, setScanStatus] = useState(null); // null | "queued" | "processing" | "completed" | "failed"
   const [isScanning, setIsScanning] = useState(false);
+
+  // Column/sort picker state
+  const [realmVisibleColumns, setRealmVisibleColumns] = useState(buildDefaults(REALM_COLUMNS));
+  const [realmColumnPickerOpen, setRealmColumnPickerOpen] = useState(false);
+  const [realmSortField, setRealmSortField] = useState("title");
+  const [realmSortDir, setRealmSortDir] = useState("asc");
+
+  // Steward search toggle state
+  const [showOperatorSearch, setShowOperatorSearch] = useState(false);
+  const [showGuildSearch, setShowGuildSearch] = useState(false);
+
+  // Role and my-claims state
+  const [userRole, setUserRole] = useState("user");
+  const [myClaimedFiles, setMyClaimedFiles] = useState([]);
+  const [myClaimsLoading, setMyClaimsLoading] = useState(false);
+  const [stewardRequestSent, setStewardRequestSent] = useState(false);
 
   useEffect(() => {
     const bootstrapRealm = async () => {
@@ -92,6 +390,23 @@ const RealmPolicyDashboard = () => {
           } catch (err) {
             console.warn("Failed to get realm name, using default");
             setRealmName("Current Space");
+          }
+
+          // Check user role
+          try {
+            const roleResult = await invoke("check-user-role", { spaceKey: realmKeyValue });
+            if (roleResult?.role === "steward") {
+              setUserRole("steward");
+              setActiveTab("locked-attachments");
+            } else {
+              setUserRole("user");
+              setActiveTab("my-claims");
+              fetchMyClaimedFiles();
+            }
+          } catch (err) {
+            console.warn("Failed to check user role, defaulting to user");
+            setUserRole("user");
+            setActiveTab("my-claims");
           }
 
           // Fetch global settings to check auto-unlock status
@@ -124,6 +439,9 @@ const RealmPolicyDashboard = () => {
 
           // Check if steward override is enabled
           await checkStewardOverrideStatus();
+
+          // Fetch my claimed files for default tab
+          await fetchMyClaimedFiles();
         } else {
           console.error("No realm key found in context.extension.space.key");
           console.error("Extension object:", context?.extension);
@@ -161,7 +479,7 @@ const RealmPolicyDashboard = () => {
       setHasMoreTeams(result.hasMore || false);
       setNextTeamsStart(result.nextStart || null);
     } catch (error) {
-      setMessage(`Unable to fetch team list: ${error.message}`);
+      setMessage(`Unable to fetch guild list: ${error.message}`);
       setMessageType("error");
     }
   };
@@ -193,6 +511,27 @@ const RealmPolicyDashboard = () => {
       setForceReleaseActive(result.enabled);
     } catch (error) {
       setForceReleaseActive(false);
+    }
+  };
+
+  const fetchMyClaimedFiles = async () => {
+    setMyClaimsLoading(true);
+    try {
+      const result = await invoke("enumerate-operator-seals", { cursor: null, limit: 50 });
+      setMyClaimedFiles(result?.attachments || []);
+    } catch (e) {
+      console.error("Failed to fetch my claims:", e);
+    } finally {
+      setMyClaimsLoading(false);
+    }
+  };
+
+  const handleRequestSteward = async () => {
+    try {
+      await invoke("request-steward-access", { spaceKey: realmKey });
+      setStewardRequestSent(true);
+    } catch (e) {
+      console.error("Steward request failed:", e);
     }
   };
 
@@ -412,7 +751,7 @@ const RealmPolicyDashboard = () => {
       setMoreFilesAvailable(result.hasMore || false);
       setNextFileCursor(result.nextCursor || null);
     } catch (err) {
-      setMessage(`Could not load claimed files: ${err.message}`);
+      setMessage(`Could not load sealed files: ${err.message}`);
       setMessageType("error");
     }
   };
@@ -423,7 +762,7 @@ const RealmPolicyDashboard = () => {
     try {
       setIsScanning(true);
       setScanStatus("queued");
-      setMessage("Reconstructing claimed files index in the background...");
+      setMessage("Reconstructing sealed files index in the background...");
       setMessageType("success");
 
       const result = await invoke("launch-realm-audit", {
@@ -456,7 +795,7 @@ const RealmPolicyDashboard = () => {
           clearInterval(interval);
           setIsScanning(false);
           setMessage(
-            `Index reconstruction finished! Located ${status.stats?.lockedFound || 0} claimed files.`,
+            `Index reconstruction finished! Located ${status.stats?.lockedFound || 0} sealed files.`,
           );
           setMessageType("success");
           // Reload the artifacts list with fresh data
@@ -649,6 +988,15 @@ const RealmPolicyDashboard = () => {
     await fetchReservedFiles(realmKey, realmId, false, null, newPageSize);
   };
 
+  const onRealmSort = (field) => {
+    if (realmSortField === field) {
+      setRealmSortDir(realmSortDir === "asc" ? "desc" : "asc");
+    } else {
+      setRealmSortField(field);
+      setRealmSortDir("asc");
+    }
+  };
+
   const onAddOperator = (operator) => {
     // Store operator object with accountId and displayName
     const operatorToAdd = {
@@ -771,6 +1119,7 @@ const RealmPolicyDashboard = () => {
   };
 
   const onWatchToggle = async (artifactId) => {
+    setBusyAction({ id: artifactId, action: "watch" });
     const isCurrentlyRequested = watchStatus[artifactId];
 
     try {
@@ -789,6 +1138,8 @@ const RealmPolicyDashboard = () => {
       }
     } catch (err) {
       console.error("Failed to toggle dispatch:", err);
+    } finally {
+      setBusyAction(null);
     }
   };
 
@@ -817,8 +1168,8 @@ const RealmPolicyDashboard = () => {
   }, [reservedFiles]);
 
   const onForceRelease = async (artifactId) => {
+    setBusyAction({ id: artifactId, action: "unseal" });
     try {
-      setLoading(true);
       setMessage(null);
       setMessageType(null);
 
@@ -829,7 +1180,7 @@ const RealmPolicyDashboard = () => {
       });
 
       if (result.success) {
-        setMessage("File claim cleared!");
+        setMessage("File seal cleared!");
         setMessageType("success");
         // Reload sealed artifacts to update the table
         if (realmKey && realmId) {
@@ -843,7 +1194,7 @@ const RealmPolicyDashboard = () => {
       setMessage(`Steward unseal failed: ${err.message}`);
       setMessageType("error");
     } finally {
-      setLoading(false);
+      setBusyAction(null);
     }
   };
 
@@ -853,7 +1204,7 @@ const RealmPolicyDashboard = () => {
         <div className="loading-spinner"></div>
         <h2 className="loading-title">Preparing Realm Settings</h2>
         <p className="loading-text">
-          Retrieving realm preferences and claimed files...
+          Retrieving realm preferences and sealed files...
         </p>
       </div>
     );
@@ -890,265 +1241,153 @@ const RealmPolicyDashboard = () => {
 
       {/* Tab Navigation */}
       <div className="tab-navigation">
-        <button
-          className={`tab-button ${activeTab === "locked-attachments" ? "active" : ""}`}
-          onClick={() => setActiveTab("locked-attachments")}
-        >
-          Claimed Files
-        </button>
-        <button
-          className={`tab-button ${activeTab === "permissions" ? "active" : ""}`}
-          onClick={() => setActiveTab("permissions")}
-        >
-          Access Control
-        </button>
-        <button
-          className={`tab-button ${activeTab === "unlock-timeouts" ? "active" : ""}`}
-          onClick={() => setActiveTab("unlock-timeouts")}
-        >
-          Reservation Duration
-        </button>
-        <button
-          className={`tab-button ${activeTab === "macro-settings" ? "active" : ""}`}
-          onClick={() => setActiveTab("macro-settings")}
-        >
-          Panel
-        </button>
+        {userRole === "user" && (
+          <button className={`tab-button ${activeTab === "my-claims" ? "active" : ""}`}
+            onClick={() => { setActiveTab("my-claims"); fetchMyClaimedFiles(); }}>
+            My Sealed Files
+          </button>
+        )}
+        {userRole === "steward" && (
+          <>
+            <button className={`tab-button ${activeTab === "locked-attachments" ? "active" : ""}`}
+              onClick={() => setActiveTab("locked-attachments")}>
+              Realm Sealed Files
+            </button>
+            <button className={`tab-button ${activeTab === "permissions" ? "active" : ""}`}
+              onClick={() => setActiveTab("permissions")}>
+              Access Control
+            </button>
+            <button className={`tab-button ${activeTab === "unlock-timeouts" ? "active" : ""}`}
+              onClick={() => setActiveTab("unlock-timeouts")}>
+              Reservation Duration
+            </button>
+            <button className={`tab-button ${activeTab === "macro-settings" ? "active" : ""}`}
+              onClick={() => setActiveTab("macro-settings")}>
+              Macro
+            </button>
+          </>
+        )}
       </div>
 
       {/* Tab Content */}
+      {activeTab === "my-claims" && (
+        <div className="tab-content">
+          {userRole === "user" && !stewardRequestSent && (
+            <div className="steward-request-banner">
+              <div>
+                <strong>Want to manage all sealed files in this space?</strong>
+                <p style={{ margin: "4px 0 0", fontSize: "12px", color: "var(--sv-text-secondary)" }}>
+                  As a steward you can view all sealed files and force unseal them when needed.
+                </p>
+              </div>
+              <button className="action-btn lock" onClick={handleRequestSteward} title="Ask a space admin to grant you steward permissions">Request Steward Access</button>
+            </div>
+          )}
+          {stewardRequestSent && (
+            <div className="steward-request-banner" style={{ borderLeftColor: "var(--sv-status-success)" }}>
+              <span>Your steward access request has been submitted. A space admin or steward will review it.</span>
+            </div>
+          )}
+
+          {myClaimsLoading && (
+            <div className="sv-card-list" data-cols="3" style={{ '--sv-cards-per-row': 3 }}>
+              {Array.from({ length: 6 }).map((_, i) => <SkeletonCard key={`my-skel-${i}`} />)}
+            </div>
+          )}
+
+          {!myClaimsLoading && myClaimedFiles.length === 0 && (
+            <div className="empty-state">You have no sealed files in this space.</div>
+          )}
+
+          {!myClaimsLoading && myClaimedFiles.length > 0 && (
+            <div className="sv-card-list" data-cols="3" style={{ '--sv-cards-per-row': 3 }}>
+              {myClaimedFiles.map(artifact => (
+                <MyClaimedCard
+                  key={artifact.id}
+                  artifact={artifact}
+                  busyAction={busyAction?.id === artifact.id ? busyAction.action : null}
+                  onRelease={async (id) => {
+                    setBusyAction({ id, action: "unseal" });
+                    try {
+                      await invoke("unseal-artifact", { attachmentId: id });
+                      fetchMyClaimedFiles();
+                    } catch (e) { console.error("Release failed:", e); }
+                    finally { setBusyAction(null); }
+                  }}
+                />
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
       {activeTab === "locked-attachments" && (
         <div className="tab-content">
           <div className="form-section">
             <h3 className="section-header">
-              Claimed Files in {realmName}
+              Realm Sealed Files in {realmName}
             </h3>
             <p className="space-admin-subtitle">
-              Review and track all claimed files in this realm. Claimed
+              Review and track all sealed files in this realm. Sealed
               files are shielded from unauthorized changes.
             </p>
           </div>
 
-          <div
-            style={{
-              marginBottom: "16px",
-              display: "flex",
-              alignItems: "center",
-              gap: "16px",
-              flexWrap: "wrap",
-            }}
-          >
-            <div>
-              <label style={{ marginRight: "8px", fontWeight: "500" }}>
-                Results per page:
-              </label>
-              <select
-                value={artifactsPageSize}
-                onChange={(e) => onResultsPerPageChange(Number(e.target.value))}
-                style={{
-                  padding: "6px 12px",
-                  borderRadius: "4px",
-                  border: "1px solid var(--sv-border-secondary)",
-                  backgroundColor: "var(--sv-bg-primary)",
-                  color: "var(--sv-text-primary)",
-                  fontSize: "14px",
-                  cursor: "pointer",
-                }}
-              >
-                <option value={10}>10</option>
-                <option value={25}>25</option>
-                <option value={50}>50</option>
-              </select>
-            </div>
-            <button
-              onClick={onReconstructIndex}
-              disabled={isScanning}
-              style={{
-                padding: "6px 16px",
-                borderRadius: "4px",
-                border: "1px solid var(--sv-border-secondary)",
-                backgroundColor: isScanning
-                  ? "var(--sv-bg-tertiary)"
-                  : "var(--sv-bg-primary)",
-                color: isScanning
-                  ? "var(--sv-text-disabled)"
-                  : "var(--sv-text-primary)",
-                fontSize: "13px",
-                cursor: isScanning ? "not-allowed" : "pointer",
-                fontWeight: 500,
-              }}
-              title="Scan pages to locate claimed files not yet in the index"
-            >
-              {isScanning ? "Scanning..." : "Reconstruct Index"}
-            </button>
-            {isScanning && (
-              <span
-                style={{
-                  fontSize: "12px",
-                  color: "var(--sv-text-subtle)",
-                  fontStyle: "italic",
-                }}
-              >
-                Background scan running. Results will appear when complete.
-              </span>
-            )}
+          <div className="overlay-toolbar">
+            <ColumnPicker
+              columns={REALM_COLUMNS}
+              visible={realmVisibleColumns}
+              onChange={(key) => setRealmVisibleColumns((prev) => ({ ...prev, [key]: !prev[key] }))}
+              isOpen={realmColumnPickerOpen}
+              onToggle={setRealmColumnPickerOpen}
+            />
+            <SortPicker
+              orderField={realmSortField}
+              orderDir={realmSortDir}
+              onSort={onRealmSort}
+            />
+            <span className="toolbar-file-count">{reservedFiles.length} sealed files</span>
           </div>
 
           {reservedFiles.length === 0 && !fetchingMoreFiles ? (
             <div className="empty-state">
-              <p>No claimed files discovered in the index.</p>
-              <p
-                style={{
-                  fontSize: "13px",
-                  color: "var(--sv-text-subtle)",
-                  marginTop: "8px",
-                }}
-              >
-                If you recently claimed files or this is an initial
-                setup, click <strong>Reconstruct Index</strong> above to scan all
-                pages.
-              </p>
+              <p>No sealed files discovered in the index.</p>
             </div>
           ) : (
-            <div
-              className="attachments-table"
-              style={{ maxHeight: "600px", overflowY: "auto" }}
-            >
-              <table>
-                <thead>
-                  <tr>
-                    <th>Name</th>
-                    <th>Size</th>
-                    <th>Creator</th>
-                    <th>Location</th>
-                    <th>Claimed by</th>
-                    <th>Claimed on</th>
-                    <th>Lapses</th>
-                    <th>Watch for Relinquish</th>
-                    <th>Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {reservedFiles.map((artifact) => (
-                    <tr key={artifact.id}>
-                      <td className="table-cell-name">{artifact.title}</td>
-                      <td>{artifact.fileSize}</td>
-                      <td>{artifact.creator}</td>
-                      <td className="table-cell-page-static">
-                        {artifact.pageTitle}
-                      </td>
-                      <td className="table-cell-locked-by">
-                        {artifact.lockedBy}
-                      </td>
-                      <td>
-                        {new Date(artifact.lockedOn).toLocaleDateString(
-                          "en-US",
-                          {
-                            year: "numeric",
-                            month: "short",
-                            day: "numeric",
-                            hour: "2-digit",
-                            minute: "2-digit",
-                          },
-                        )}
-                      </td>
-                      <td>
-                        <span
-                          style={{
-                            color: systemExpiryAlertsActive
-                              ? formatCountdown(artifact.expiresAt) ===
-                                "Overdue"
-                                ? "var(--sv-status-warning)"
-                                : "var(--sv-text-subtle)"
-                              : "var(--sv-text-disabled)",
-                            fontWeight: systemExpiryAlertsActive
-                              ? formatCountdown(artifact.expiresAt) ===
-                                "Overdue"
-                                ? "600"
-                                : "400"
-                              : "400",
-                            fontStyle: !systemExpiryAlertsActive
-                              ? "italic"
-                              : "normal",
-                          }}
-                        >
-                          {!systemExpiryAlertsActive
-                            ? "Auto-unlock disabled"
-                            : formatCountdown(artifact.expiresAt)}
-                        </span>
-                      </td>
-                      <td>
-                        <button
-                          onClick={() => onWatchToggle(artifact.id)}
-                          style={{
-                            backgroundColor: watchStatus[artifact.id]
-                              ? "var(--sv-interactive-success)"
-                              : "var(--sv-bg-tertiary)",
-                            color: watchStatus[artifact.id]
-                              ? "var(--sv-text-inverse)"
-                              : "var(--sv-text-primary)",
-                            border: watchStatus[artifact.id]
-                              ? "1px solid var(--sv-interactive-success)"
-                              : "1px solid var(--sv-border-secondary)",
-                            padding: "4px 8px",
-                            borderRadius: "4px",
-                            fontSize: "11px",
-                            cursor: "pointer",
-                            fontWeight: 500,
-                            transition: "all 0.2s ease",
-                          }}
-                          title={
-                            watchStatus[artifact.id]
-                              ? "Stop watching"
-                              : "Alerted when relinquished"
-                          }
-                        >
-                          {watchStatus[artifact.id]
-                            ? "Watching"
-                            : "Watch"}
-                        </button>
-                      </td>
-                      <td>
-                        {forceReleaseActive ? (
-                          <button
-                            className="btn btn-warning"
-                            onClick={() => onForceRelease(artifact.id)}
-                          >
-                            Force Release
-                          </button>
-                        ) : (
-                          <button
-                            className="btn btn-subtle disabled-unlock-btn"
-                            disabled={true}
-                            data-tooltip="Steward override is disabled in Global Configuration"
-                          >
-                            Force Release
-                          </button>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+            <>
+              <div className="sv-card-list" data-cols="3" style={{ '--sv-cards-per-row': 3 }}>
+                {[...reservedFiles].sort((a, b) => {
+                  const aVal = a[realmSortField] || "";
+                  const bVal = b[realmSortField] || "";
+                  const cmp = String(aVal).localeCompare(String(bVal), undefined, { sensitivity: "base" });
+                  return realmSortDir === "asc" ? cmp : -cmp;
+                }).map(artifact => (
+                  <RealmClaimedCard
+                    key={artifact.id}
+                    artifact={artifact}
+                    onForceRelease={onForceRelease}
+                    onWatch={(id) => onWatchToggle(id)}
+                    isWatching={watchStatus[artifact.id]}
+                    forceReleaseActive={forceReleaseActive}
+                    visibleColumns={realmVisibleColumns}
+                    busyAction={busyAction?.id === artifact.id ? busyAction.action : null}
+                  />
+                ))}
+              </div>
               {fetchingMoreFiles && moreFilesAvailable && (
-                <div
-                  style={{
-                    display: "flex",
-                    justifyContent: "center",
-                    alignItems: "center",
-                    padding: "20px",
-                    color: "var(--sv-text-subtle)",
-                  }}
-                >
-                  <div
-                    className="loading-spinner"
-                    style={{
-                      width: "20px",
-                      height: "20px",
-                      margin: "0 8px 0 0",
-                    }}
-                  ></div>
-                  Resolving more artifacts...
+                <div className="sv-card-list" data-cols="3" style={{ '--sv-cards-per-row': 3 }}>
+                  {Array.from({ length: 3 }).map((_, i) => <SkeletonCard key={`skel-${i}`} />)}
+                </div>
+              )}
+              {moreFilesAvailable && !fetchingMoreFiles && (
+                <div style={{ textAlign: "center", padding: "16px" }}>
+                  <button
+                    className="btn-primary"
+                    onClick={fetchNextFilePage}
+                    style={{ fontSize: "13px", padding: "8px 20px" }}
+                  >
+                    Show more
+                  </button>
                 </div>
               )}
               {!moreFilesAvailable && reservedFiles.length > 0 && (
@@ -1160,29 +1399,27 @@ const RealmPolicyDashboard = () => {
                     fontStyle: "italic",
                   }}
                 >
-                  All claimed files shown
+                  All sealed files shown
                 </div>
               )}
-            </div>
+            </>
           )}
         </div>
       )}
 
       {activeTab === "permissions" && (
         <div className="tab-content">
-          <div className="form-section">
-            <h3 className="section-header">Realm-Level Activation</h3>
-            <p className="space-admin-subtitle">
-              Configure how Sentinel Vault operates within this realm:
-            </p>
-
-            <div className="form-control">
+          {/* Realm Activation */}
+          <div className="settings-card">
+            <div className="settings-card-header">
+              <h3>Realm Activation</h3>
+              <p className="settings-card-desc">Configure how Sentinel Vault operates within this realm.</p>
+            </div>
+            <div className="settings-card-body">
               <div className="custom-select-container">
                 <div
                   className="custom-select"
-                  onClick={() =>
-                    setShowActivationDropdown(!showActivationDropdown)
-                  }
+                  onClick={() => setShowActivationDropdown(!showActivationDropdown)}
                   tabIndex={0}
                   onBlur={() => {
                     setTimeout(() => setShowActivationDropdown(false), 200);
@@ -1191,9 +1428,7 @@ const RealmPolicyDashboard = () => {
                   <span className="select-value">
                     {activationDisplayText(realmPrefs.activation)}
                   </span>
-                  <span
-                    className={`select-arrow ${showActivationDropdown ? "open" : ""}`}
-                  >
+                  <span className={`select-arrow ${showActivationDropdown ? "open" : ""}`}>
                     ▼
                   </span>
                 </div>
@@ -1207,9 +1442,7 @@ const RealmPolicyDashboard = () => {
                         onClick={() => onActivationPick(option.value)}
                       >
                         <div className="option-label">{option.label}</div>
-                        <div className="option-description">
-                          {option.description}
-                        </div>
+                        <div className="option-description">{option.description}</div>
                       </div>
                     ))}
                   </div>
@@ -1218,378 +1451,150 @@ const RealmPolicyDashboard = () => {
             </div>
           </div>
 
-          <div className="permission-section">
-            <h4>Authorized Teams:</h4>
-
-            {/* Selected steward teams display */}
-            <div className="admin-list">
-              {realmPrefs.adminGroups.length === 0 ? (
-                <span className="admin-empty">No teams assigned</span>
-              ) : (
-                realmPrefs.adminGroups.map((group) => (
-                  <span
-                    key={group}
-                    className="admin-tag admin-tag-group selected"
-                  >
-                    {group}
-                    <button
-                      className="admin-tag-remove"
-                      onClick={() => onRemoveTeam(group)}
-                    >
-                      ×
-                    </button>
-                  </span>
-                ))
-              )}
+          {/* Stewards */}
+          <div className="settings-card">
+            <div className="settings-card-header">
+              <h3>Stewards</h3>
+              <p className="settings-card-desc">
+                Operators with steward privileges can view all sealed files and force unseal them.
+                Space admins and org admins are automatically stewards.
+              </p>
             </div>
+            <div className="settings-card-body">
+              {/* Operators as mini-cards in a grid */}
+              <div className="steward-grid">
+                {realmPrefs.adminUsers.map((operator, index) => {
+                  const accountId = typeof operator === "string" ? operator : operator.accountId;
+                  const displayName = typeof operator === "string" ? `User ${accountId.slice(-4)}` : operator.displayName;
+                  const initials = displayName.split(/\s+/).map(p => p[0]).join("").toUpperCase().slice(0, 2);
+                  return (
+                    <div key={accountId || index} className="steward-card">
+                      <div className="steward-avatar">{initials}</div>
+                      <span className="steward-name">{displayName}</span>
+                      <button className="steward-remove" onClick={() => onRemoveOperator(operator)} title="Remove steward">&times;</button>
+                    </div>
+                  );
+                })}
+                {/* Add Operator card */}
+                <div className="steward-card steward-card-add" onClick={() => { setShowOperatorSearch(!showOperatorSearch); }}>
+                  <div className="steward-avatar steward-avatar-add">+</div>
+                  <span className="steward-name">Add Operator</span>
+                </div>
+              </div>
 
-            {/* Team selection - custom dropdown */}
-            <div className="group-selector">
-              <h5>Add Team:</h5>
-              {teamList.length === 0 ? (
-                <p className="loading-text">
-                  Loading teams from Confluence...
-                </p>
-              ) : (
-                <div className="search-container">
+              {/* Operator search (shown when add is clicked) */}
+              {showOperatorSearch && (
+                <div className="search-container" style={{ marginBottom: "16px" }}>
                   <input
                     type="text"
                     className="search-input"
-                    placeholder="Type to search and select teams..."
-                    value={teamSearchTerm}
-                    onChange={onTeamSearch}
+                    placeholder="Type to search for operators..."
+                    value={operatorQuery}
+                    onChange={onOperatorSearch}
                     onFocus={() => {
-                      setShowTeamDropdown(true);
+                      setShowOperatorDropdown(true);
+                      if (!operatorQuery && operatorResults.length === 0) {
+                        fetchInitialOperators();
+                      }
                     }}
                     onBlur={() => {
-                      // Delay hiding to allow clicking on results
-                      setTimeout(() => setShowTeamDropdown(false), 200);
+                      setTimeout(() => setShowOperatorDropdown(false), 200);
                     }}
                   />
 
-                  {showTeamDropdown && (
-                    <div
-                      className="search-dropdown"
-                      style={{ maxHeight: "300px", overflowY: "auto" }}
-                    >
-                      {filteredTeams().length === 0 ? (
-                        <div className="search-result">
-                          <span
-                            style={{
-                              color: "var(--sv-text-subtle)",
-                              fontStyle: "italic",
-                            }}
-                          >
-                            {teamSearchTerm
-                              ? `No teams found matching "${teamSearchTerm}"`
-                              : "All available teams are already selected"}
-                          </span>
-                        </div>
-                      ) : (
-                        <>
-                          {filteredTeams().map((group) => (
-                            <div
-                              key={group}
-                              className="search-result"
-                              onClick={() => onPickTeam(group)}
-                              style={{ cursor: "pointer" }}
-                            >
-                              <div className="user-name">{group}</div>
-                            </div>
-                          ))}
-                          {isLoadingMoreTeams && hasMoreTeams && (
-                            <div className="search-result">
-                              <div
-                                style={{
-                                  display: "flex",
-                                  alignItems: "center",
-                                  justifyContent: "center",
-                                  gap: "8px",
-                                  padding: "12px",
-                                }}
-                              >
-                                <div
-                                  className="loading-spinner"
-                                  style={{
-                                    width: "16px",
-                                    height: "16px",
-                                    margin: "0",
-                                  }}
-                                ></div>
-                                <span>Loading more teams...</span>
-                              </div>
-                            </div>
-                          )}
-                          {!isLoadingMoreTeams &&
-                            !hasMoreTeams &&
-                            filteredTeams().length > 0 && (
-                              <div className="search-result">
-                                <div
-                                  style={{
-                                    display: "flex",
-                                    justifyContent: "center",
-                                    padding: "12px",
-                                    color: "var(--sv-text-subtle)",
-                                    fontStyle: "italic",
-                                    fontSize: "12px",
-                                  }}
-                                >
-                                  All teams loaded
-                                </div>
-                              </div>
-                            )}
-                        </>
-                      )}
+                  {isSearchingOperators && (
+                    <div className="search-dropdown">
+                      {Array.from({ length: 3 }).map((_, i) => <SkeletonDropdownItem key={`op-skel-${i}`} />)}
                     </div>
                   )}
 
-                  <p className="form-help form-help-highlight">
-                    Browse teams from your Confluence instance. Selected teams
-                    will appear above. Scroll down or type to filter teams.
-                  </p>
-                </div>
-              )}
-            </div>
-          </div>
-
-          <div className="permission-section">
-            <h4>Authorized Operators:</h4>
-
-            {/* Selected steward operators display */}
-            <div className="admin-list">
-              {realmPrefs.adminUsers.length === 0 ? (
-                <span className="admin-empty">No operators assigned</span>
-              ) : (
-                realmPrefs.adminUsers.map((operator, index) => {
-                  // Handle both old format (string) and new format (object)
-                  const displayName =
-                    typeof operator === "string"
-                      ? `User ${operator.slice(-4)}`
-                      : operator.displayName;
-                  const accountId =
-                    typeof operator === "string" ? operator : operator.accountId;
-
-                  return (
-                    <span
-                      key={accountId || index}
-                      className="admin-tag admin-tag-user"
+                  {showOperatorDropdown && !isSearchingOperators && operatorQuery && (
+                    <div
+                      className="search-dropdown user-search-dropdown"
+                      style={{ maxHeight: "300px", overflowY: "auto" }}
                     >
-                      {displayName}
-                      <button
-                        className="admin-tag-remove"
-                        onClick={() => onRemoveOperator(operator)}
-                      >
-                        ×
-                      </button>
-                    </span>
-                  );
-                })
-              )}
-            </div>
-
-            {/* Operator search and selection */}
-            <div className="group-selector">
-              <h5>Add Operator:</h5>
-              <div className="search-container">
-                <input
-                  type="text"
-                  className="search-input"
-                  placeholder="Type to search for operators..."
-                  value={operatorQuery}
-                  onChange={onOperatorSearch}
-                  onFocus={() => {
-                    setShowOperatorDropdown(true);
-                    // Load initial operators if search is empty
-                    if (!operatorQuery && operatorResults.length === 0) {
-                      fetchInitialOperators();
-                    }
-                  }}
-                  onBlur={() => {
-                    // Delay hiding to allow clicking on results
-                    setTimeout(() => setShowOperatorDropdown(false), 200);
-                  }}
-                />
-
-                {isSearchingOperators && (
-                  <div className="search-dropdown">
-                    <div className="search-result">
-                      <div
-                        style={{
-                          display: "flex",
-                          alignItems: "center",
-                          gap: "8px",
-                        }}
-                      >
-                        <div
-                          className="loading-spinner"
-                          style={{ width: "16px", height: "16px", margin: "0" }}
-                        ></div>
-                        <span>Searching operators...</span>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {showOperatorDropdown && !isSearchingOperators && operatorQuery && (
-                  <div
-                    className="search-dropdown user-search-dropdown"
-                    style={{ maxHeight: "300px", overflowY: "auto" }}
-                  >
-                    {operatorResults.length > 0 ? (
-                      <>
-                        {operatorResults.map((operator) => {
-                          // Check if operator is already added
-                          const isAlreadyAdded = realmPrefs.adminUsers.some(
-                            (existingOperator) =>
-                              (typeof existingOperator === "string"
-                                ? existingOperator
-                                : existingOperator.accountId) === operator.accountId,
-                          );
-
-                          return (
-                            <div
-                              key={operator.accountId}
-                              className={`search-result user-search-result ${isAlreadyAdded ? "disabled" : ""}`}
-                              onClick={() =>
-                                !isAlreadyAdded && onAddOperator(operator)
-                              }
-                              style={{
-                                opacity: isAlreadyAdded ? 0.5 : 1,
-                                cursor: isAlreadyAdded
-                                  ? "not-allowed"
-                                  : "pointer",
-                              }}
-                            >
-                              <div className="user-name">
-                                {operator.displayName}
-                                {isAlreadyAdded && (
-                                  <span
-                                    style={{
-                                      marginLeft: "8px",
-                                      fontSize: "10px",
-                                    }}
-                                  >
-                                    (Already added)
-                                  </span>
+                      {operatorResults.length > 0 ? (
+                        <>
+                          {operatorResults.map((operator) => {
+                            const isAlreadyAdded = realmPrefs.adminUsers.some(
+                              (existingOperator) =>
+                                (typeof existingOperator === "string"
+                                  ? existingOperator
+                                  : existingOperator.accountId) === operator.accountId,
+                            );
+                            return (
+                              <div
+                                key={operator.accountId}
+                                className={`search-result user-search-result ${isAlreadyAdded ? "disabled" : ""}`}
+                                onClick={() => !isAlreadyAdded && onAddOperator(operator)}
+                                style={{
+                                  opacity: isAlreadyAdded ? 0.5 : 1,
+                                  cursor: isAlreadyAdded ? "not-allowed" : "pointer",
+                                }}
+                              >
+                                <div className="user-name">
+                                  {operator.displayName}
+                                  {isAlreadyAdded && (
+                                    <span style={{ marginLeft: "8px", fontSize: "10px" }}>(Already added)</span>
+                                  )}
+                                </div>
+                                {operator.email && (
+                                  <div className="user-email">{operator.email}</div>
                                 )}
                               </div>
-                              {operator.email && (
-                                <div className="user-email">{operator.email}</div>
-                              )}
+                            );
+                          })}
+                          {isLoadingMoreOperators && hasMoreOperators && (
+                            <>
+                              {Array.from({ length: 3 }).map((_, i) => <SkeletonDropdownItem key={`op-more-skel-${i}`} />)}
+                            </>
+                          )}
+                          {!isLoadingMoreOperators && !hasMoreOperators && (
+                            <div className="search-result">
+                              <div style={{ display: "flex", justifyContent: "center", padding: "12px", color: "var(--sv-text-subtle)", fontStyle: "italic", fontSize: "12px" }}>
+                                All operators loaded
+                              </div>
                             </div>
-                          );
-                        })}
-                        {isLoadingMoreOperators && hasMoreOperators && (
-                          <div className="search-result">
-                            <div
-                              style={{
-                                display: "flex",
-                                alignItems: "center",
-                                justifyContent: "center",
-                                gap: "8px",
-                                padding: "12px",
-                              }}
-                            >
-                              <div
-                                className="loading-spinner"
-                                style={{
-                                  width: "16px",
-                                  height: "16px",
-                                  margin: "0",
-                                }}
-                              ></div>
-                              <span>Loading more operators...</span>
-                            </div>
-                          </div>
-                        )}
-                        {!isLoadingMoreOperators && !hasMoreOperators && (
-                          <div className="search-result">
-                            <div
-                              style={{
-                                display: "flex",
-                                justifyContent: "center",
-                                padding: "12px",
-                                color: "var(--sv-text-subtle)",
-                                fontStyle: "italic",
-                                fontSize: "12px",
-                              }}
-                            >
-                              All operators loaded
-                            </div>
-                          </div>
-                        )}
-                      </>
-                    ) : operatorQuery ? (
-                      <div className="search-result">
-                        <span
-                          style={{
-                            color: "var(--sv-text-subtle)",
-                            fontStyle: "italic",
-                          }}
-                        >
-                          No operators found for "{operatorQuery}"
-                        </span>
-                      </div>
-                    ) : null}
-                  </div>
-                )}
+                          )}
+                        </>
+                      ) : operatorQuery ? (
+                        <div className="search-result">
+                          <span style={{ color: "var(--sv-text-subtle)", fontStyle: "italic" }}>
+                            No operators found for &quot;{operatorQuery}&quot;
+                          </span>
+                        </div>
+                      ) : null}
+                    </div>
+                  )}
 
-                {showOperatorDropdown &&
-                  !isSearchingOperators &&
-                  !operatorQuery &&
-                  operatorResults.length > 0 && (
+                  {showOperatorDropdown && !isSearchingOperators && !operatorQuery && operatorResults.length > 0 && (
                     <div className="search-dropdown">
-                      <div
-                        className="search-result"
-                        style={{
-                          backgroundColor: "var(--sv-bg-tertiary)",
-                          cursor: "default",
-                        }}
-                      >
-                        <span
-                          style={{
-                            color: "var(--sv-text-subtle)",
-                            fontStyle: "italic",
-                            fontSize: "11px",
-                          }}
-                        >
+                      <div className="search-result" style={{ backgroundColor: "var(--sv-bg-tertiary)", cursor: "default" }}>
+                        <span style={{ color: "var(--sv-text-subtle)", fontStyle: "italic", fontSize: "11px" }}>
                           Recent operators (type to search for more):
                         </span>
                       </div>
                       {operatorResults.map((operator) => {
-                        // Check if operator is already added
                         const isAlreadyAdded = realmPrefs.adminUsers.some(
                           (existingOperator) =>
                             (typeof existingOperator === "string"
                               ? existingOperator
                               : existingOperator.accountId) === operator.accountId,
                         );
-
                         return (
                           <div
                             key={operator.accountId}
                             className={`search-result user-search-result ${isAlreadyAdded ? "disabled" : ""}`}
-                            onClick={() =>
-                              !isAlreadyAdded && onAddOperator(operator)
-                            }
+                            onClick={() => !isAlreadyAdded && onAddOperator(operator)}
                             style={{
                               opacity: isAlreadyAdded ? 0.5 : 1,
-                              cursor: isAlreadyAdded
-                                ? "not-allowed"
-                                : "pointer",
+                              cursor: isAlreadyAdded ? "not-allowed" : "pointer",
                             }}
                           >
                             <div className="user-name">
                               {operator.displayName}
                               {isAlreadyAdded && (
-                                <span
-                                  style={{
-                                    marginLeft: "8px",
-                                    fontSize: "10px",
-                                  }}
-                                >
-                                  (Already added)
-                                </span>
+                                <span style={{ marginLeft: "8px", fontSize: "10px" }}>(Already added)</span>
                               )}
                             </div>
                             {operator.email && (
@@ -1600,75 +1605,149 @@ const RealmPolicyDashboard = () => {
                       })}
                     </div>
                   )}
-              </div>
+                </div>
+              )}
 
-              <p className="form-help">
-                Search for operators by name or email. Type at least{" "}
-                <span className="dynamic-value">2 characters</span> to start
-                searching. Selected operators will appear above.
-              </p>
+              {/* Guilds section */}
+              <div className="steward-guilds">
+                <h4 className="steward-guilds-title">Guilds</h4>
+                <p className="steward-guilds-desc">Members of these guilds are automatically stewards.</p>
+                <div className="guild-chips">
+                  {realmPrefs.adminGroups.map((group) => (
+                    <span key={group} className="guild-chip">
+                      {group}
+                      <button className="guild-chip-remove" onClick={() => onRemoveTeam(group)}>&times;</button>
+                    </span>
+                  ))}
+                  <button className="guild-chip guild-chip-add" onClick={() => { setShowGuildSearch(!showGuildSearch); }}>
+                    + Add Guild
+                  </button>
+                </div>
+
+                {/* Guild search dropdown (shown when add is clicked) */}
+                {showGuildSearch && (
+                  <div className="search-container" style={{ marginTop: "10px" }}>
+                    {teamList.length === 0 ? (
+                      <>
+                        {Array.from({ length: 3 }).map((_, i) => <SkeletonDropdownItem key={`guild-skel-${i}`} />)}
+                      </>
+                    ) : (
+                      <>
+                        <input
+                          type="text"
+                          className="search-input"
+                          placeholder="Type to search and select guilds..."
+                          value={teamSearchTerm}
+                          onChange={onTeamSearch}
+                          onFocus={() => { setShowTeamDropdown(true); }}
+                          onBlur={() => { setTimeout(() => setShowTeamDropdown(false), 200); }}
+                        />
+
+                        {showTeamDropdown && (
+                          <div className="search-dropdown" style={{ maxHeight: "300px", overflowY: "auto" }}>
+                            {filteredTeams().length === 0 ? (
+                              <div className="search-result">
+                                <span style={{ color: "var(--sv-text-subtle)", fontStyle: "italic" }}>
+                                  {teamSearchTerm
+                                    ? `No guilds found matching "${teamSearchTerm}"`
+                                    : "All available guilds are already selected"}
+                                </span>
+                              </div>
+                            ) : (
+                              <>
+                                {filteredTeams().map((group) => (
+                                  <div key={group} className="search-result" onClick={() => onPickTeam(group)} style={{ cursor: "pointer" }}>
+                                    <div className="user-name">{group}</div>
+                                  </div>
+                                ))}
+                                {isLoadingMoreTeams && hasMoreTeams && (
+                                  <>
+                                    {Array.from({ length: 3 }).map((_, i) => <SkeletonDropdownItem key={`guild-more-skel-${i}`} />)}
+                                  </>
+                                )}
+                                {!isLoadingMoreTeams && !hasMoreTeams && filteredTeams().length > 0 && (
+                                  <div className="search-result">
+                                    <div style={{ display: "flex", justifyContent: "center", padding: "12px", color: "var(--sv-text-subtle)", fontStyle: "italic", fontSize: "12px" }}>
+                                      All guilds loaded
+                                    </div>
+                                  </div>
+                                )}
+                              </>
+                            )}
+                          </div>
+                        )}
+                      </>
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
           </div>
 
-          <p className="form-help">
-            <strong>Note:</strong> Realm Stewards and Confluence Administrators
-            always have these privileges.
-          </p>
+          {/* Note */}
+          <div className="settings-note">
+            <strong>Note:</strong> Realm Stewards and Confluence Administrators always have these privileges.
+          </div>
+
+          {/* Save button */}
+          <div className="action-bar">
+            <button className="btn-primary" onClick={onSaveRealmPrefs}>Apply Configuration</button>
+          </div>
         </div>
       )}
 
       {activeTab === "unlock-timeouts" && (
         <div className="tab-content">
-          <div className="form-section">
-            <h3 className="section-header">Reservation Duration Settings</h3>
-            <p className="space-admin-subtitle">
-              Configure when file claims should automatically lapse
-              in this realm.
-            </p>
+          <div className="settings-panel">
+            <div className="settings-row">
+              <div className="settings-row-info">
+                <p className="settings-row-label">Use System Default Timeouts</p>
+                <p className="settings-row-description">
+                  When enabled, this realm will inherit the global unlock timeout
+                  settings configured by administrators.
+                </p>
+              </div>
+              <div className="settings-row-control">
+                <label className="form-checkbox">
+                  <input
+                    type="checkbox"
+                    checked={realmPrefs.autoUnlockTimeoutHours === null}
+                    onChange={(e) => {
+                      if (e.target.checked) {
+                        setRealmPrefs((prev) => ({
+                          ...prev,
+                          autoUnlockTimeoutHours: null,
+                        }));
+                      } else {
+                        setRealmPrefs((prev) => ({
+                          ...prev,
+                          autoUnlockTimeoutHours: 48,
+                        }));
+                      }
+                    }}
+                  />
+                </label>
+              </div>
+            </div>
 
-            <div className="form-control">
-              <label className="checkbox-control">
-                <input
-                  type="checkbox"
-                  checked={realmPrefs.autoUnlockTimeoutHours === null}
-                  onChange={(e) => {
-                    if (e.target.checked) {
-                      setRealmPrefs((prev) => ({
-                        ...prev,
-                        autoUnlockTimeoutHours: null,
-                      }));
-                    } else {
-                      setRealmPrefs((prev) => ({
-                        ...prev,
-                        autoUnlockTimeoutHours: 48,
-                      }));
-                    }
-                  }}
-                />
-                <span className="checkbox-label">
-                  Use system default unlock timeouts
-                </span>
-              </label>
-
-              <p className="form-help">
-                When enabled, this realm will inherit the global unlock timeout
-                settings configured by administrators.
-              </p>
-
-              {realmPrefs.autoUnlockTimeoutHours !== null && (
-                <div className="nested-control">
-                  <h4>Custom Unlock Schedule</h4>
-
-                  <div className="input-group">
-                    <label>Automatically unlock after:</label>
-                    <div
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: "12px",
-                      }}
-                    >
+            {realmPrefs.autoUnlockTimeoutHours !== null && (
+              <div className="nested-control">
+                <div className="settings-row">
+                  <div className="settings-row-info">
+                    <p className="settings-row-label">Custom Unlock Duration</p>
+                    <p className="settings-row-description">
+                      File seals lapse after{" "}
+                      <span className="dynamic-value">
+                        {realmPrefs.autoUnlockTimeoutHours} hours
+                      </span>{" "}
+                      of inactivity. This overrides the global system settings for
+                      this realm only.
+                    </p>
+                  </div>
+                  <div className="settings-row-control">
+                    <div className="input-with-unit">
                       <input
+                        className="form-input"
                         type="number"
                         value={realmPrefs.autoUnlockTimeoutHours}
                         onChange={(e) => {
@@ -1681,129 +1760,104 @@ const RealmPolicyDashboard = () => {
                           }
                         }}
                         min="1"
-                        style={{ width: "80px" }}
                       />
-                      <span
-                        style={{
-                          color: "var(--sv-text-primary)",
-                          fontWeight: "500",
-                        }}
-                      >
-                        hours
-                      </span>
+                      <span className="input-unit">hrs</span>
                     </div>
                   </div>
-
-                  <p className="form-help form-help-highlight">
-                    File claims lapse after{" "}
-                    <span className="dynamic-value">
-                      {realmPrefs.autoUnlockTimeoutHours} hours
-                    </span>{" "}
-                    of inactivity. This overrides the global system settings for
-                    this realm only.
-                  </p>
                 </div>
-              )}
-            </div>
+              </div>
+            )}
           </div>
         </div>
       )}
 
       {activeTab === "macro-settings" && (
         <div className="tab-content">
-          <div className="form-section">
-            <h3 className="section-header">Panel Auto-Insert</h3>
-            <p className="space-admin-subtitle">
-              Control whether the Sentinel Vault panel is automatically
-              inserted at the bottom of pages when the first file is claimed.
-            </p>
-
-            <div className="form-control">
-              <label className="checkbox-control">
-                <input
-                  type="checkbox"
-                  checked={realmPrefs.autoInsertMacro !== false}
-                  onChange={(e) => {
-                    setRealmPrefs((prev) => ({
-                      ...prev,
-                      autoInsertMacro: e.target.checked,
-                    }));
-                  }}
-                />
-                <span className="checkbox-label">
-                  Auto-insert panel when a claim is first added
-                </span>
-              </label>
-
-              <p className="form-help">
-                When enabled, the Sentinel Vault panel will be automatically
-                added to a page in this realm when a file is first claimed.
-                The panel shows claim status, labels, and actions for all
-                files on the page. Individual pages can override this
-                setting.
-              </p>
+          <div className="settings-panel">
+            <div className="settings-row">
+              <div className="settings-row-info">
+                <p className="settings-row-label">Auto-Insert Macro</p>
+                <p className="settings-row-description">
+                  When enabled, the Sentinel Vault macro will be automatically
+                  inserted into a page in this realm when a file is first sealed.
+                  The macro shows seal status, labels, and actions for all
+                  files on the page. Individual pages can override this setting.
+                </p>
+              </div>
+              <div className="settings-row-control">
+                <label className="form-checkbox">
+                  <input
+                    type="checkbox"
+                    checked={realmPrefs.autoInsertMacro !== false}
+                    onChange={(e) => {
+                      setRealmPrefs((prev) => ({
+                        ...prev,
+                        autoInsertMacro: e.target.checked,
+                      }));
+                    }}
+                  />
+                </label>
+              </div>
             </div>
-          </div>
 
-          <div
-            className="form-section"
-            style={{
-              opacity: realmPrefs.autoInsertMacro === false ? 0.45 : 1,
-              pointerEvents:
-                realmPrefs.autoInsertMacro === false ? "none" : "auto",
-              transition: "opacity 0.2s",
-            }}
-          >
-            <h3 className="section-header">Panel Position</h3>
-            <p className="space-admin-subtitle">
-              Choose where the panel will be placed when it is automatically
-              inserted into a page.
-            </p>
-
-            <div className="form-control">
-              <label className="checkbox-control">
-                <input
-                  type="radio"
-                  name="panelInsertPosition"
-                  value="top"
-                  checked={realmPrefs.macroInsertPosition === "top"}
-                  onChange={() => {
-                    setRealmPrefs((prev) => ({
-                      ...prev,
-                      macroInsertPosition: "top",
-                    }));
-                  }}
-                />
-                <span className="checkbox-label">Top of page</span>
-              </label>
-
-              <label className="checkbox-control" style={{ marginTop: "6px" }}>
-                <input
-                  type="radio"
-                  name="panelInsertPosition"
-                  value="bottom"
-                  checked={realmPrefs.macroInsertPosition !== "top"}
-                  onChange={() => {
-                    setRealmPrefs((prev) => ({
-                      ...prev,
-                      macroInsertPosition: "bottom",
-                    }));
-                  }}
-                />
-                <span className="checkbox-label">Bottom of page</span>
-              </label>
-
-              <p className="form-help">
-                This only affects where the panel is placed when it is first
-                auto-inserted. Moving an existing panel on a page must be done
-                manually through the Confluence editor.
-              </p>
+            <div
+              style={{
+                opacity: realmPrefs.autoInsertMacro === false ? 0.45 : 1,
+                pointerEvents:
+                  realmPrefs.autoInsertMacro === false ? "none" : "auto",
+                transition: "opacity 0.2s",
+              }}
+            >
+              <div className="settings-row">
+                <div className="settings-row-info">
+                  <p className="settings-row-label">Macro Position</p>
+                  <p className="settings-row-description">
+                    Choose where the macro will be placed when it is automatically
+                    inserted into a page. Moving an existing macro must be done
+                    manually through the Confluence editor.
+                  </p>
+                </div>
+                <div className="settings-row-control">
+                  <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+                    <label className="checkbox-control" style={{ marginBottom: 0 }}>
+                      <input
+                        type="radio"
+                        name="panelInsertPosition"
+                        value="top"
+                        checked={realmPrefs.macroInsertPosition === "top"}
+                        onChange={() => {
+                          setRealmPrefs((prev) => ({
+                            ...prev,
+                            macroInsertPosition: "top",
+                          }));
+                        }}
+                      />
+                      <span className="checkbox-label">Top</span>
+                    </label>
+                    <label className="checkbox-control" style={{ marginBottom: 0 }}>
+                      <input
+                        type="radio"
+                        name="panelInsertPosition"
+                        value="bottom"
+                        checked={realmPrefs.macroInsertPosition !== "top"}
+                        onChange={() => {
+                          setRealmPrefs((prev) => ({
+                            ...prev,
+                            macroInsertPosition: "bottom",
+                          }));
+                        }}
+                      />
+                      <span className="checkbox-label">Bottom</span>
+                    </label>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         </div>
       )}
 
-      <div className="action-section">
+      <div className="action-bar">
         <button
           className="btn-primary"
           onClick={onSaveRealmPrefs}

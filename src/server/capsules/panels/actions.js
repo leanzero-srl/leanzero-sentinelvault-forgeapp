@@ -9,6 +9,7 @@ import {
   locateExtensionNodes,
   isPanelExtensionKey,
   triggerPanelEmbed,
+  resolveExtensionKey,
 } from "../../infra/doc-surgery.js";
 
 /**
@@ -263,12 +264,11 @@ const injectPanel = async (req) => {
     return { success: false, reason: "Missing pageId" };
   }
 
-  const extensionKey = await kvs.get("macro-extension-key");
+  const extensionKey = await resolveExtensionKey();
   if (!extensionKey) {
     return {
       success: false,
-      reason:
-        "Extension key not yet discovered. Insert the macro manually once to register it.",
+      reason: "Could not determine the macro extension key.",
     };
   }
 

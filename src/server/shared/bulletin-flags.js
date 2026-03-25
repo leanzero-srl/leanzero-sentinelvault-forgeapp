@@ -20,16 +20,16 @@ export async function resolveBulletinToggles(existingConfig = null) {
 
     return {
       ENABLE_TOAST_DISPATCHES:
-        stewardConfig?.enableToastNotifications !== false,
-      ENABLE_PAGE_BANNERS: stewardConfig?.enablePageBanners !== false,
+        stewardConfig?.enableFlashMessages !== false,
+      ENABLE_PAGE_BANNERS: stewardConfig?.enableDocRibbons !== false,
       ENABLE_CONFLUENCE_BULLETINS:
-        stewardConfig?.enableConfluenceNotifications !== false,
+        stewardConfig?.enableConfluenceDispatches !== false,
       ENABLE_EMAIL_BULLETINS:
-        stewardConfig?.enableEmailNotifications !== false,
+        stewardConfig?.enableEmailDispatches !== false,
       ENABLE_SEAL_EXPIRY_REMINDER_EMAIL:
-        stewardConfig?.enableLockExpiryReminderEmail !== false,
+        stewardConfig?.enableSealExpiryReminderEmail !== false,
       ENABLE_AUTO_UNSEAL_BULLETIN_EMAIL:
-        stewardConfig?.enableAutoUnlockNotificationEmail !== false,
+        stewardConfig?.enableAutoUnsealDispatchEmail !== false,
       ENABLE_PERIODIC_REMINDER_EMAIL:
         stewardConfig?.enablePeriodicReminderEmail !== false,
     };

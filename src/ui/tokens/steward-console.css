@@ -2,99 +2,105 @@
 
 :root {
   --sv-bg-primary: #FFFFFF;
-  --sv-bg-secondary: #F8F9FA;
-  --sv-bg-tertiary: #F1F3F5;
+  --sv-bg-secondary: #F8FAFC;
+  --sv-bg-tertiary: #F1F5F9;
   --sv-bg-elevated: #FFFFFF;
   --sv-bg-overlay: rgba(0, 0, 0, 0.45);
-  --sv-bg-hover: #E9ECEF;
-  --sv-text-primary: #111827;
-  --sv-text-secondary: #4B5563;
-  --sv-text-subtle: #9CA3AF;
-  --sv-text-disabled: #D1D5DB;
+  --sv-bg-hover: #E2E8F0;
+  --sv-text-primary: #0F172A;
+  --sv-text-secondary: #475569;
+  --sv-text-subtle: #94A3B8;
+  --sv-text-disabled: #CBD5E1;
   --sv-text-inverse: #FFFFFF;
-  --sv-border-primary: #E5E7EB;
-  --sv-border-secondary: #E5E7EB;
-  --sv-border-focus: #0D9488;
+  --sv-border-primary: #E2E8F0;
+  --sv-border-secondary: #E2E8F0;
+  --sv-border-focus: #0891B2;
   --sv-surface-raised: #FFFFFF;
   --sv-surface-overlay: #FFFFFF;
-  --sv-status-success: #059669;
-  --sv-status-success-bg: #F0FDF4;
-  --sv-status-success-border: #A7F3D0;
+  --sv-status-success: #0891B2;
+  --sv-status-success-bg: #ECFEFF;
+  --sv-status-success-border: #A5F3FC;
   --sv-status-warning: #DC2626;
   --sv-status-warning-bg: #FEF2F2;
   --sv-status-warning-border: #FECACA;
-  --sv-status-info: #0D9488;
-  --sv-status-info-bg: #F0FDFA;
-  --sv-status-info-border: #99F6E4;
-  --sv-status-neutral: #6B7280;
-  --sv-status-neutral-bg: #F9FAFB;
-  --sv-status-neutral-border: #E5E7EB;
-  --sv-interactive-primary: #0D9488;
-  --sv-interactive-primary-hover: #0F766E;
-  --sv-interactive-primary-active: #115E59;
-  --sv-interactive-success: #059669;
-  --sv-interactive-success-hover: #047857;
-  --sv-interactive-success-active: #065F46;
+  --sv-status-info: #0891B2;
+  --sv-status-info-bg: #ECFEFF;
+  --sv-status-info-border: #A5F3FC;
+  --sv-status-neutral: #64748B;
+  --sv-status-neutral-bg: #F8FAFC;
+  --sv-status-neutral-border: #E2E8F0;
+  --sv-interactive-primary: #0891B2;
+  --sv-interactive-primary-hover: #0E7490;
+  --sv-interactive-primary-active: #155E75;
+  --sv-interactive-success: #0891B2;
+  --sv-interactive-success-hover: #0E7490;
+  --sv-interactive-success-active: #155E75;
   --sv-interactive-danger: #DC2626;
   --sv-interactive-danger-hover: #B91C1C;
   --sv-interactive-danger-active: #991B1B;
-  --sv-scrollbar-track: #F1F3F5;
-  --sv-scrollbar-thumb: #D1D5DB;
-  --sv-scrollbar-thumb-hover: #9CA3AF;
+  --sv-scrollbar-track: #F1F5F9;
+  --sv-scrollbar-thumb: #CBD5E1;
+  --sv-scrollbar-thumb-hover: #94A3B8;
   --sv-shadow-light: rgba(0, 0, 0, 0.06);
   --sv-shadow-medium: rgba(0, 0, 0, 0.08);
   --sv-shadow-strong: rgba(0, 0, 0, 0.12);
   --sv-gradient-header: #FFFFFF;
   --sv-gradient-footer: #FFFFFF;
   --sv-font-family: "Inter", -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", system-ui, sans-serif;
+
+  --sv-header-gradient: linear-gradient(135deg, rgba(8, 145, 178, 0.05), transparent 60%);
+  --sv-frosted-bg: rgba(255, 255, 255, 0.85);
 }
 
 html[data-color-mode="dark"] {
-  --sv-bg-primary: #0A0A0A;
-  --sv-bg-secondary: #111111;
-  --sv-bg-tertiary: #1A1A1A;
-  --sv-bg-elevated: #1F1F1F;
-  --sv-bg-overlay: rgba(0, 0, 0, 0.7);
-  --sv-bg-hover: #262626;
-  --sv-text-primary: #F9FAFB;
-  --sv-text-secondary: #D1D5DB;
-  --sv-text-subtle: #6B7280;
-  --sv-text-disabled: #4B5563;
-  --sv-text-inverse: #0A0A0A;
-  --sv-border-primary: #2A2A2A;
-  --sv-border-secondary: #2A2A2A;
-  --sv-border-focus: #2DD4BF;
-  --sv-surface-raised: #1F1F1F;
-  --sv-surface-overlay: #1A1A1A;
-  --sv-status-success: #34D399;
-  --sv-status-success-bg: #052E16;
-  --sv-status-success-border: #065F46;
+  --sv-bg-primary: #020617;
+  --sv-bg-secondary: #0F172A;
+  --sv-bg-tertiary: #1E293B;
+  --sv-bg-elevated: #1E293B;
+  --sv-bg-overlay: rgba(2, 6, 23, 0.75);
+  --sv-bg-hover: #334155;
+  --sv-text-primary: #F8FAFC;
+  --sv-text-secondary: #CBD5E1;
+  --sv-text-subtle: #64748B;
+  --sv-text-disabled: #475569;
+  --sv-text-inverse: #FFFFFF;
+  --sv-border-primary: #334155;
+  --sv-border-secondary: #334155;
+  --sv-border-focus: #22D3EE;
+  --sv-surface-raised: #1E293B;
+  --sv-surface-overlay: #1E293B;
+  --sv-status-success: #22D3EE;
+  --sv-status-success-bg: #083344;
+  --sv-status-success-border: #155E75;
   --sv-status-warning: #F87171;
-  --sv-status-warning-bg: #1C0A0A;
-  --sv-status-warning-border: #7F1D1D;
-  --sv-status-info: #2DD4BF;
-  --sv-status-info-bg: #042F2E;
-  --sv-status-info-border: #115E59;
-  --sv-status-neutral: #6B7280;
-  --sv-status-neutral-bg: #1A1A1A;
-  --sv-status-neutral-border: #374151;
-  --sv-interactive-primary: #2DD4BF;
-  --sv-interactive-primary-hover: #5EEAD4;
-  --sv-interactive-primary-active: #99F6E4;
-  --sv-interactive-success: #34D399;
-  --sv-interactive-success-hover: #6EE7B7;
-  --sv-interactive-success-active: #A7F3D0;
+  --sv-status-warning-bg: #2A1215;
+  --sv-status-warning-border: #991B1B;
+  --sv-status-info: #22D3EE;
+  --sv-status-info-bg: #083344;
+  --sv-status-info-border: #155E75;
+  --sv-status-neutral: #64748B;
+  --sv-status-neutral-bg: #1E293B;
+  --sv-status-neutral-border: #334155;
+  --sv-interactive-primary: #22D3EE;
+  --sv-interactive-primary-hover: #0891B2;
+  --sv-interactive-primary-active: #0E7490;
+  --sv-interactive-success: #22D3EE;
+  --sv-interactive-success-hover: #67E8F9;
+  --sv-interactive-success-active: #A5F3FC;
   --sv-interactive-danger: #F87171;
   --sv-interactive-danger-hover: #FCA5A5;
   --sv-interactive-danger-active: #FECACA;
-  --sv-scrollbar-track: #1A1A1A;
-  --sv-scrollbar-thumb: #374151;
-  --sv-scrollbar-thumb-hover: #4B5563;
+  --sv-scrollbar-track: #1E293B;
+  --sv-scrollbar-thumb: #475569;
+  --sv-scrollbar-thumb-hover: #64748B;
   --sv-shadow-light: rgba(0, 0, 0, 0.3);
   --sv-shadow-medium: rgba(0, 0, 0, 0.4);
   --sv-shadow-strong: rgba(0, 0, 0, 0.5);
-  --sv-gradient-header: #0A0A0A;
-  --sv-gradient-footer: #0A0A0A;
+  --sv-gradient-header: #020617;
+  --sv-gradient-footer: #020617;
+
+  --sv-header-gradient: linear-gradient(135deg, rgba(34, 211, 238, 0.06), transparent 60%);
+  --sv-frosted-bg: rgba(2, 6, 23, 0.85);
 }
 
 /* Scrollbar */
@@ -109,9 +115,9 @@ html[data-color-mode="dark"] {
 body {
   margin: 0;
   padding: 0;
-  overflow: hidden;
+  overflow-x: hidden;
   font-family: var(--sv-font-family);
-  background-color: var(--sv-bg-primary);
+  background-color: var(--sv-bg-secondary);
   color: var(--sv-text-primary);
   font-size: 14px;
   line-height: 1.5;
@@ -136,28 +142,43 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 
 /* Admin Container */
 .admin-container {
-  padding: 32px 40px;
-  background-color: var(--sv-bg-primary);
+  padding: 0;
+  background-color: var(--sv-bg-secondary);
   min-height: 100vh;
   font-family: var(--sv-font-family);
+  padding-bottom: 88px;
 }
 
-/* Admin Header */
+/* Admin Header — gradient tint + accent line */
 .admin-header {
-  margin-bottom: 40px;
+  padding: 32px 40px 28px;
+  margin-bottom: 0;
+  background: var(--sv-header-gradient);
+  position: relative;
+}
+
+.admin-header::after {
+  content: "";
+  position: absolute;
+  bottom: 0;
+  left: 40px;
+  right: 40px;
+  height: 2px;
+  background: linear-gradient(90deg, var(--sv-interactive-primary), transparent 70%);
+  border-radius: 1px;
 }
 
 .admin-title {
   color: var(--sv-text-primary);
-  font-size: 32px;
+  font-size: 28px;
   font-weight: 700;
-  margin: 0 0 8px 0;
+  margin: 0 0 6px 0;
   letter-spacing: -0.02em;
 }
 
 .admin-subtitle {
-  color: var(--sv-text-subtle);
-  font-size: 16px;
+  color: var(--sv-text-secondary);
+  font-size: 15px;
   margin: 0;
   line-height: 1.5;
 }
@@ -201,13 +222,22 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 }
 
 /* Alert Messages */
+.alert-message {
+  margin: 24px 40px 0;
+  padding: 14px 20px;
+  border-radius: 10px;
+  font-weight: 500;
+  font-size: 14px;
+  color: var(--sv-text-on-primary);
+}
+
 .alert-success {
   padding: 14px 20px;
   background-color: var(--sv-interactive-primary);
-  color: white;
+  color: var(--sv-text-on-primary);
   border: none;
   border-radius: 10px;
-  margin-bottom: 20px;
+  margin: 24px 40px 0;
   font-weight: 500;
 }
 
@@ -217,87 +247,105 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   color: white;
   border: none;
   border-radius: 10px;
-  margin-bottom: 20px;
+  margin: 24px 40px 0;
   font-weight: 500;
 }
 
-/* Section Headers */
-.section-header {
-  color: var(--sv-text-primary);
-  font-size: 18px;
-  font-weight: 600;
-  border-bottom: none;
-  padding-bottom: 0;
-  margin: 48px 0 24px 0;
-}
-
-.section-header::before {
-  content: "";
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--sv-interactive-primary);
-  display: inline-block;
-  margin-right: 10px;
-  vertical-align: middle;
-}
-
-/* Form Sections */
-.form-section {
-  margin-bottom: 20px;
-  padding: 24px;
-  background-color: var(--sv-bg-primary);
+/* ── Tab Navigation — Pill/Segment Style ──── */
+.tab-navigation {
+  display: inline-flex;
+  background: var(--sv-bg-tertiary);
   border-radius: 10px;
+  padding: 4px;
+  gap: 4px;
   border: none;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+  margin: 28px 40px 0;
+  min-width: auto;
+  overflow-x: auto;
 }
 
-.form-section .admin-subtitle,
-.form-section .space-admin-subtitle {
-  margin-bottom: 16px;
-  font-size: 14px;
-  line-height: 1.4;
-  color: var(--sv-text-subtle);
-}
-
-/* Form Groups */
-.form-group {
-  margin-bottom: 24px;
-}
-
-.form-label {
-  display: block;
-  margin-bottom: 8px;
-  font-weight: 600;
-  color: var(--sv-text-primary);
-  font-size: 14px;
-}
-
-.form-input {
-  border: none;
-  border-bottom: 2px solid var(--sv-border-primary);
-  border-radius: 0;
-  padding: 10px 0;
+.tab-button {
   background: transparent;
-  font-size: 14px;
-  width: 200px;
+  border: none;
+  border-radius: 8px;
+  padding: 10px 20px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--sv-text-secondary);
+  transition: all 200ms cubic-bezier(0.4, 0, 0.2, 1);
+  white-space: nowrap;
+  outline: none !important;
+  flex-shrink: 0;
+}
+
+.tab-button.active {
+  background: var(--sv-interactive-primary);
+  color: var(--sv-text-on-primary);
+  font-weight: 600;
+  box-shadow: 0 2px 8px rgba(8, 145, 178, 0.3);
+}
+
+.tab-button:hover:not(.active) {
   color: var(--sv-text-primary);
-  transition: border-color 200ms cubic-bezier(0.4, 0, 0.2, 1);
+  background-color: var(--sv-bg-hover);
 }
 
-.form-input:focus {
-  outline: none;
-  border-bottom-color: var(--sv-interactive-primary);
+/* ── Tab Content ────────────────────────────── */
+.tab-content {
+  padding: 8px 40px 0;
 }
 
-/* Checkbox as Toggle Switch */
+/* ── Settings Panel (tab body) ──────────────── */
+.settings-panel {
+  padding: 8px 0;
+}
+
+/* ── Settings Row (horizontal: info left, control right) ── */
+.settings-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 24px;
+  transition: background 150ms ease;
+}
+
+.settings-row:hover {
+  background: var(--sv-bg-hover);
+}
+
+.settings-row-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.settings-row-label {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--sv-text-primary);
+  margin: 0 0 2px;
+  line-height: 1.4;
+}
+
+.settings-row-description {
+  font-size: 12px;
+  color: var(--sv-text-secondary);
+  line-height: 1.5;
+  margin: 0;
+}
+
+.settings-row-control {
+  flex-shrink: 0;
+  padding-top: 2px;
+}
+
+/* ── Toggle Switch (reused from form-checkbox) ── */
 .form-checkbox {
   display: flex;
   align-items: center;
-  gap: 12px;
-  margin-bottom: 8px;
-  font-weight: 500;
-  color: var(--sv-text-primary);
+  gap: 0;
+  margin: 0;
   cursor: pointer;
 }
 
@@ -336,65 +384,75 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   transform: translateX(16px);
 }
 
-/* Form Help Text */
-.form-help {
-  color: var(--sv-text-subtle);
-  font-size: 13px;
-  padding: 0;
-  margin-top: 6px;
-  line-height: 1.5;
-  background: none;
+/* ── Form Input (number fields) ─────────────── */
+.form-input {
   border: none;
-  border-left: none;
+  border-bottom: 2px solid var(--sv-border-primary);
   border-radius: 0;
-}
-
-.form-help-highlight {
-  color: var(--sv-interactive-primary);
-  background: none;
-  border-left: none;
-}
-
-/* Duration Display */
-.duration-display {
-  padding: 8px 16px;
-  background-color: var(--sv-bg-tertiary);
-  border-radius: 9999px;
-  color: var(--sv-text-secondary);
-  font-weight: 500;
+  padding: 8px 0;
+  background: transparent;
   font-size: 14px;
-  margin-left: 12px;
-  display: inline-block;
+  font-weight: 500;
+  width: 80px;
+  color: var(--sv-text-primary);
+  transition: border-color 200ms cubic-bezier(0.4, 0, 0.2, 1);
+  text-align: center;
 }
 
-.duration-group {
+.form-input:focus {
+  outline: none;
+  border-bottom-color: var(--sv-interactive-primary);
+}
+
+/* Input unit suffix */
+.input-with-unit {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 6px;
 }
 
-/* Nested Form Controls */
+.input-unit {
+  font-size: 12px;
+  color: var(--sv-text-secondary);
+  font-weight: 500;
+}
+
+/* ── Nested Controls (email sub-toggles) ────── */
 .nested-control {
-  margin-top: 16px;
-  margin-left: 0;
-  padding: 20px;
+  margin: 4px 16px 12px;
+  padding: 4px 0;
   background-color: var(--sv-bg-tertiary);
   border: none;
-  border-radius: 10px;
+  border-radius: 12px;
+  overflow: hidden;
 }
 
-/* Action Buttons */
-.action-buttons {
+.nested-control .settings-row {
+  padding: 12px 20px;
+}
+
+/* ── Floating Action Bar ────────────────────── */
+.action-bar {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  padding: 16px 40px;
+  background: var(--sv-frosted-bg);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-top: 1px solid var(--sv-border-primary);
   display: flex;
+  justify-content: flex-end;
+  align-items: center;
   gap: 12px;
-  margin-top: 48px;
-  padding-top: 0;
-  border-top: none;
+  z-index: 10;
 }
 
+/* ── Buttons ────────────────────────────────── */
 .btn-primary {
   background: var(--sv-interactive-primary);
-  color: white;
+  color: var(--sv-text-on-primary);
   border: none;
   padding: 12px 32px;
   border-radius: 10px;
@@ -442,7 +500,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   transform: scale(1);
 }
 
-/* Dynamic Value */
+/* ── Dynamic Value badge ────────────────────── */
 .dynamic-value {
   font-weight: 600;
   color: var(--sv-interactive-primary-active);

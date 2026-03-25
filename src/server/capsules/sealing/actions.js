@@ -101,6 +101,24 @@ const enumerateDocArtifacts = async (req) => {
           hasLapsed = sealLapsed;
         }
 
+        // Labels via v2 API
+        let labels = [];
+        try {
+          const labelsRes = await asUser().requestConfluence(
+            route`/wiki/api/v2/attachments/${att.id}/labels`,
+          );
+          if (labelsRes.ok) {
+            const labelsData = await labelsRes.json();
+            labels = (labelsData.results || []).map((l) => ({
+              id: l.id,
+              name: l.name,
+              prefix: l.prefix,
+            }));
+          }
+        } catch (e) {
+          console.warn(`[ENUMERATE-DOC-ARTIFACTS] Failed to fetch labels for ${att.id}:`, e);
+        }
+
         return {
           ...att,
           lockStatus: computedSealState,
@@ -108,6 +126,9 @@ const enumerateDocArtifacts = async (req) => {
           expiresAt,
           isExpired: hasLapsed,
           autoUnlockEnabled: autoUnsealActive,
+          labels,
+          comment: att.version?.message || null,
+          versionNumber: att.version?.number || null,
         };
       }),
     );
@@ -160,6 +181,15 @@ const sealArtifact = async (req) => {
   const { attachmentId } = req.payload;
   const operatorAccountId = req.context.accountId;
   console.info(`Sealing artifact ${attachmentId} for operator ${operatorAccountId}`);
+
+  // Guard: reject if already sealed by a different user
+  const existingSeal = await kvs.get(`protection-${attachmentId}`);
+  if (existingSeal && existingSeal.lockedBy && existingSeal.lockedBy !== operatorAccountId) {
+    return {
+      success: false,
+      reason: "Artifact is already sealed by another user",
+    };
+  }
 
   let realmKey =
     req.context.extension?.content?.space?.key ||
@@ -226,6 +256,7 @@ const sealArtifact = async (req) => {
   let artifactName = "Unknown Attachment";
   let fileSize = null;
   let creatorAccountId = null;
+  let sealedVersion = null;
   try {
     const artifactRoute = route`/wiki/api/v2/attachments/${attachmentId}`;
     const artifactResponse = await asUser().requestConfluence(artifactRoute);
@@ -234,6 +265,7 @@ const sealArtifact = async (req) => {
       artifactName = artifactData.title || "Unknown Attachment";
       fileSize = artifactData.fileSize || null;
       creatorAccountId = artifactData.version?.authorId || null;
+      sealedVersion = artifactData.version?.number || null;
     }
   } catch (error) {
     console.warn("Failed to fetch artifact details:", error);
@@ -267,6 +299,7 @@ const sealArtifact = async (req) => {
     contentId: contentId,
     attachmentId: attachmentId,
     attachmentName: artifactName,
+    sealedVersion: sealedVersion,
   };
 
   // Store seal record
@@ -309,11 +342,11 @@ const sealArtifact = async (req) => {
   // Send seal confirmation email
   const bulletinToggles = await resolveBulletinToggles();
 
-  if (!bulletinToggles.ENABLE_EMAIL_NOTIFICATIONS) {
+  if (!bulletinToggles.ENABLE_EMAIL_BULLETINS) {
     console.warn(
       "Email notifications are disabled - skipping seal confirmation email",
     );
-  } else if (!bulletinToggles.ENABLE_LOCK_EXPIRY_REMINDER_EMAIL) {
+  } else if (!bulletinToggles.ENABLE_SEAL_EXPIRY_REMINDER_EMAIL) {
     console.warn("Seal expiry reminder email is disabled - skipping email");
   } else {
     try {
@@ -376,6 +409,8 @@ const sealArtifact = async (req) => {
       console.warn("[SEAL-ARTIFACT] Panel auto-insert failed:", e);
     }
   }
+
+  return { success: true };
 };
 
 /**
@@ -797,9 +832,90 @@ const enumerateOperatorSeals = async (req) => {
   }
 };
 
+/**
+ * Fast path: get all claimed files for a page directly from KVS.
+ * Returns claimed artifacts with seal metadata (no Confluence API call).
+ * The frontend displays these instantly, then backfills with the full list.
+ */
+const enumeratePageSeals = async (req) => {
+  const contentId =
+    req.payload?.pageId ||
+    req.context.extension?.content?.id;
+
+  if (!contentId) {
+    return { claimedArtifacts: [] };
+  }
+
+  try {
+    const operatorAccountId = req.context.accountId;
+    const allSeals = [];
+    let query = kvs
+      .query()
+      .where("key", WhereConditions.beginsWith("protection-"))
+      .limit(100);
+
+    let iterations = 0;
+    do {
+      iterations++;
+      const { results, nextCursor } = await query.getMany();
+      if (results?.length > 0) {
+        allSeals.push(...results);
+      }
+      if (!nextCursor || iterations >= 10) break;
+      query = kvs
+        .query()
+        .where("key", WhereConditions.beginsWith("protection-"))
+        .limit(100)
+        .cursor(nextCursor);
+    } while (true);
+
+    // Filter to seals on this page
+    const pageSeals = allSeals.filter(
+      ({ value }) => value && value.contentId === contentId,
+    );
+
+    const claimedArtifacts = pageSeals.map(({ key, value }) => {
+      const isMine = value.lockedBy === operatorAccountId;
+      const isExpired = value.expiresAt && new Date(value.expiresAt) < new Date();
+      return {
+        id: value.attachmentId || key.replace("protection-", ""),
+        title: value.attachmentName || "Unknown file",
+        lockStatus: isMine ? "HELD_BY_ACTOR" : "HELD",
+        lockedByAccountId: value.lockedBy,
+        lockedByName: value.lockedByName,
+        expiresAt: value.expiresAt || null,
+        isExpired: !!isExpired,
+        lockedOn: value.timestamp || null,
+        // Minimal data — Confluence metadata will be merged later
+        fileSize: null,
+        mediaType: null,
+        labels: [],
+        comment: null,
+        notifyRequested: false,
+      };
+    });
+
+    return { claimedArtifacts };
+  } catch (error) {
+    console.error("[ENUMERATE-PAGE-SEALS] Error:", error);
+    return { claimedArtifacts: [] };
+  }
+};
+
+/**
+ * Return the last-modified timestamp for seal operations.
+ * Used by the inline panel to detect changes made in other surfaces.
+ */
+const checkSealStamp = async () => {
+  const stamp = await kvs.get("protections-last-modified");
+  return { stamp: stamp || 0 };
+};
+
 export const actions = [
   ["seal-artifact", sealArtifact],
   ["unseal-artifact", unsealArtifact],
   ["enumerate-doc-artifacts", enumerateDocArtifacts],
   ["enumerate-operator-seals", enumerateOperatorSeals],
+  ["enumerate-page-seals", enumeratePageSeals],
+  ["check-seal-stamp", checkSealStamp],
 ];
