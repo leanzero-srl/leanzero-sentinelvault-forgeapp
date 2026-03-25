@@ -473,7 +473,6 @@ const registerPanelKey = async (req) => {
   const existing = await kvs.get("macro-extension-key");
   if (existing !== extensionKey) {
     await kvs.set("macro-extension-key", extensionKey);
-    console.info(`[PANEL] Stored extension key: ${extensionKey}`);
   }
 
   return { success: true };
@@ -512,7 +511,6 @@ const discoverPanelKey = async (req) => {
 
     const extensionKey = nodes[0].attrs.extensionKey;
     await kvs.set("macro-extension-key", extensionKey);
-    console.info(`[PANEL] Discovered and stored extension key: ${extensionKey}`);
     return { success: true, extensionKey };
   } catch (error) {
     console.error("[PANEL] Error discovering extension key:", error);

@@ -86,12 +86,8 @@ export async function searchOperatorsByName(query, limit = 50, cloudId) {
   }
 
   try {
-    console.log(`Searching operators with query: ${query}`);
-
     // Use the correct Confluence API endpoint with CQL parameter
     const cqlQuery = `user.fullname~${encodeURIComponent(query)}`;
-
-    console.log(`Using CQL query: ${cqlQuery}`);
 
     const response = await asUser().requestConfluence(
       route`/wiki/rest/api/search/user?cql=${cqlQuery}&limit=${limit}&expand=operations,personalSpace`,
@@ -99,34 +95,18 @@ export async function searchOperatorsByName(query, limit = 50, cloudId) {
 
     if (response.ok) {
       const operators = await response.json();
-      console.log(`Response keys:`, Object.keys(operators));
-      console.log(`Response size:`, operators.size);
-      console.log(`Results length:`, operators.results?.length);
 
       let operatorList = operators.results || [];
       if (!Array.isArray(operatorList)) {
-        console.log(`No results array found in response`);
         operatorList = [];
       }
 
       const formattedOperators = operatorList
-        .map((searchResult, index) => {
-          console.log(`SearchResult ${index} keys:`, Object.keys(searchResult));
-
+        .map((searchResult) => {
           const operator = searchResult.user;
           if (!operator) {
-            console.log(`No operator object found in search result ${index}`);
             return null;
           }
-
-          console.log(`Operator ${index} object:`, {
-            accountId: operator.accountId,
-            userKey: operator.userKey,
-            displayName: operator.displayName,
-            publicName: operator.publicName,
-            email: operator.email,
-            type: operator.type,
-          });
 
           // Handle profile picture URL - make it absolute if needed
           let profilePictureUrl = null;
@@ -147,12 +127,6 @@ export async function searchOperatorsByName(query, limit = 50, cloudId) {
             (accountId ? `User ${accountId.slice(-4)}` : "Unknown User");
           const email = operator.email || null;
 
-          console.log(`Final operator ${index}:`, {
-            accountId,
-            displayName,
-            email,
-          });
-
           return {
             accountId,
             displayName,
@@ -162,10 +136,6 @@ export async function searchOperatorsByName(query, limit = 50, cloudId) {
         })
         .filter((operator) => operator !== null);
 
-      console.log(`Found ${formattedOperators.length} operators for query: ${query}`);
-      if (formattedOperators.length > 0) {
-        console.log(`Sample operator:`, formattedOperators[0]);
-      }
       return formattedOperators;
     }
 
@@ -187,8 +157,6 @@ export async function searchOperatorsByName(query, limit = 50, cloudId) {
  */
 export async function getInitialOperators(cloudId) {
   try {
-    console.log("Fetching initial 10 operators for dropdown");
-
     const cqlQuery = `type=user`;
 
     const response = await asUser().requestConfluence(
@@ -224,7 +192,7 @@ export async function getInitialOperators(cloudId) {
         })
         .filter((operator) => operator !== null);
 
-      console.log(`Found ${formattedOperators.length} initial operators`);
+      // initial operators fetched
       return formattedOperators;
     }
 
