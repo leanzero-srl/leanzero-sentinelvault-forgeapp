@@ -411,6 +411,11 @@ const RealmPolicyDashboard = () => {
               setUserRole("user");
               setActiveTab("my-claims");
               fetchMyClaimedFiles();
+              // Check if this user already has a pending steward request
+              try {
+                const reqCheck = await invoke("check-steward-request", { spaceKey: realmKeyValue });
+                if (reqCheck?.pending) setStewardRequestSent(true);
+              } catch (e) { /* non-critical */ }
             }
           } catch (err) {
             console.warn("Failed to check user role, defaulting to user");
@@ -1786,10 +1791,9 @@ const RealmPolicyDashboard = () => {
                         <div className="steward-avatar">{initials}</div>
                         <span className="steward-name">{request.displayName || "Unknown User"}</span>
                         {requestDate && <span style={{ fontSize: "10px", color: "var(--sv-text-subtle)" }}>{requestDate}</span>}
-                        <span style={{ display: "flex", gap: "4px", marginLeft: "auto" }}>
+                        <span style={{ display: "flex", gap: "6px", marginTop: "4px" }}>
                           <button
                             className="action-btn lock"
-                            style={{ fontSize: "10px", padding: "2px 8px" }}
                             onClick={() => handleApproveRequest(request.accountId)}
                             title="Grant steward access to this user"
                           >
@@ -1797,7 +1801,6 @@ const RealmPolicyDashboard = () => {
                           </button>
                           <button
                             className="action-btn unlock"
-                            style={{ fontSize: "10px", padding: "2px 8px" }}
                             onClick={() => handleDenyRequest(request.accountId)}
                             title="Deny this steward access request"
                           >

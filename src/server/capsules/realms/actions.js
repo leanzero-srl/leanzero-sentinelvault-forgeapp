@@ -390,6 +390,21 @@ const requestStewardAccess = async (req) => {
 };
 
 /**
+ * Check if the current user already has a pending steward request for a space.
+ */
+const checkStewardRequest = async (req) => {
+  const accountId = req.context.accountId;
+  const spaceKey = req.payload?.spaceKey;
+  if (!spaceKey || !accountId) return { pending: false };
+  try {
+    const existing = await kvs.get(`steward-request-${spaceKey}-${accountId}`);
+    return { pending: existing?.status === "pending" };
+  } catch (e) {
+    return { pending: false };
+  }
+};
+
+/**
  * List pending steward requests for a space (steward-only).
  */
 const listStewardRequests = async (req) => {
@@ -491,6 +506,7 @@ export const actions = [
   ["steward-unseal", stewardUnseal],
   ["check-user-role", checkUserRole],
   ["request-steward-access", requestStewardAccess],
+  ["check-steward-request", checkStewardRequest],
   ["list-steward-requests", listStewardRequests],
   ["approve-steward-request", approveStewardRequest],
   ["deny-steward-request", denyStewardRequest],
