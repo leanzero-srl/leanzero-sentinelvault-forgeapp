@@ -248,14 +248,22 @@ const SortPicker = ({ orderField, orderDir, onSort }) => {
   );
 };
 
-const OverlayArtifactCard = ({ artifact, visibleColumns, onSecure, onRelease, onWatch, isWatching, busyAction, formatRemainingTime, formatFileSize }) => {
+const OverlayArtifactCard = ({ artifact, visibleColumns, onSecure, onRelease, onWatch, onRestore, onPurge, isWatching, busyAction, formatRemainingTime, formatFileSize }) => {
   const isSealed = artifact.lockStatus === "HELD" || artifact.lockStatus === "HELD_BY_ACTOR";
   const isSealedByMe = artifact.lockStatus === "HELD_BY_ACTOR";
   const isSealedByOther = artifact.lockStatus === "HELD";
+  const isStale = artifact.isStale === true;
+  const isRecoverable = artifact.staleReason === "trashed";
 
   let statusClass = "unlocked";
   let statusText = "Available";
-  if (artifact.isExpired && isSealed) {
+  if (isStale && isRecoverable) {
+    statusClass = "trashed";
+    statusText = "Trashed";
+  } else if (isStale) {
+    statusClass = "stale";
+    statusText = "Missing";
+  } else if (artifact.isExpired && isSealed) {
     statusClass = "expired";
     statusText = "Overdue";
   } else if (isSealedByMe) {
@@ -269,7 +277,15 @@ const OverlayArtifactCard = ({ artifact, visibleColumns, onSecure, onRelease, on
   // Primary action
   let primaryAction = null;
   if (visibleColumns.actions) {
-    if (!isSealed) {
+    if (isStale && isRecoverable && artifact.allowRestore) {
+      primaryAction = (
+        <button className={`action-btn restore ${busyAction === "restore" ? "is-busy" : ""}`} onClick={() => onRestore(artifact.id)} disabled={busyAction && busyAction !== "restore"} title="Restore this trashed attachment back to the page">
+          {busyAction === "restore" ? <>Restoring<span className="btn-busy-bar" /></> : "Restore"}
+        </button>
+      );
+    } else if (isStale) {
+      primaryAction = null;
+    } else if (!isSealed) {
       primaryAction = (
         <button className={`action-btn lock ${busyAction === "seal" ? "is-busy" : ""}`} onClick={() => onSecure(artifact.id)} disabled={busyAction && busyAction !== "seal"} title="Reserve this file so only you can modify it">
           {busyAction === "seal" ? <>Sealing<span className="btn-busy-bar" /></> : "Seal"}
@@ -325,7 +341,19 @@ const OverlayArtifactCard = ({ artifact, visibleColumns, onSecure, onRelease, on
 
   // Secondary actions
   const secondaryActions = [];
-  if (visibleColumns.watch && isSealedByOther) {
+  if (isStale && artifact.allowPurge) {
+    secondaryActions.push(
+      <button
+        key="purge"
+        className={`action-btn purge ${busyAction === "purge" ? "is-busy" : ""}`}
+        onClick={() => onPurge(artifact.id)}
+        disabled={busyAction && busyAction !== "purge"}
+        title="Remove this stale seal record"
+      >
+        {busyAction === "purge" ? <>Purging<span className="btn-busy-bar" /></> : "Purge"}
+      </button>
+    );
+  } else if (visibleColumns.watch && isSealedByOther) {
     secondaryActions.push(
       <button
         key="watch"
@@ -335,6 +363,19 @@ const OverlayArtifactCard = ({ artifact, visibleColumns, onSecure, onRelease, on
         title={isWatching ? "Stop watching" : "Get notified when relinquished"}
       >
         {busyAction === "watch" ? <>Updating<span className="btn-busy-bar" /></> : (isWatching ? "Watching" : "Watch")}
+      </button>
+    );
+  }
+  if (!isStale && isSealedByMe && artifact.allowPurge) {
+    secondaryActions.push(
+      <button
+        key="purge"
+        className={`action-btn purge ${busyAction === "purge" ? "is-busy" : ""}`}
+        onClick={() => onPurge(artifact.id)}
+        disabled={busyAction && busyAction !== "purge"}
+        title="Remove this seal record permanently"
+      >
+        {busyAction === "purge" ? <>Purging<span className="btn-busy-bar" /></> : "Purge"}
       </button>
     );
   }
@@ -705,6 +746,42 @@ const ArtifactControlPanel = () => {
     }
   };
 
+  const onRestoreFile = async (artifactId) => {
+    setBusyAction({ id: artifactId, action: "restore" });
+    try {
+      const result = await invoke("restore-sealed-artifact", { attachmentId: artifactId });
+      if (result && result.success) {
+        await retrieveFileData();
+      } else {
+        setError(result?.reason || "Restore unsuccessful");
+      }
+    } catch (err) {
+      console.error("Failed to restore artifact:", err);
+      setError("Could not restore file.");
+    } finally {
+      setBusyAction(null);
+    }
+  };
+
+  const onPurgeFile = async (artifactId) => {
+    const artifact = fileList.find((att) => att.id === artifactId);
+    if (!window.confirm(`Remove the seal record for "${artifact?.title || "this file"}"? This cannot be undone.`)) return;
+    setBusyAction({ id: artifactId, action: "purge" });
+    try {
+      const result = await invoke("purge-seal-record", { attachmentId: artifactId });
+      if (result && result.success) {
+        await retrieveFileData();
+      } else {
+        setError(result?.reason || "Cleanup unsuccessful");
+      }
+    } catch (err) {
+      console.error("Failed to purge seal:", err);
+      setError("Could not remove seal record.");
+    } finally {
+      setBusyAction(null);
+    }
+  };
+
   // Check dispatch request status for sealed artifacts
   useEffect(() => {
     const checkDispatchStatus = async () => {
@@ -1040,8 +1117,9 @@ const ArtifactControlPanel = () => {
                   const sortedFiles = arrangeFileList();
                   const isClaimedFile = (a) => a.lockStatus === "HELD" || a.lockStatus === "HELD_BY_ACTOR";
                   const prioritized = [...sortedFiles].sort((a, b) => (isClaimedFile(a) ? 0 : 1) - (isClaimedFile(b) ? 0 : 1));
-                  const claimedFiles = prioritized.filter(isClaimedFile);
-                  const availableFiles = prioritized.filter((a) => !isClaimedFile(a));
+                  const staleFiles = prioritized.filter((a) => a.isStale);
+                  const claimedFiles = prioritized.filter((a) => isClaimedFile(a) && !a.isStale);
+                  const availableFiles = prioritized.filter((a) => !isClaimedFile(a) && !a.isStale);
                   return (
                     <>
                       {claimedFiles.length > 0 && (
@@ -1059,6 +1137,34 @@ const ArtifactControlPanel = () => {
                                 onSecure={onSecureFile}
                                 onRelease={onReleaseFile}
                                 onWatch={onWatchToggle}
+                                onRestore={onRestoreFile}
+                                onPurge={onPurgeFile}
+                                isWatching={watchStatus[artifact.id]}
+                                busyAction={busyAction?.id === artifact.id ? busyAction.action : null}
+                                formatRemainingTime={formatRemainingTime}
+                                formatFileSize={formatFileSize}
+                              />
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      {staleFiles.length > 0 && (
+                        <div className="sv-card-section">
+                          <div className="sv-card-section-header">
+                            <span className="sv-card-section-title">Missing</span>
+                            <span className="sv-card-section-count badge-stale">{staleFiles.length}</span>
+                          </div>
+                          <div className="sv-card-list" data-cols="3">
+                            {staleFiles.map((artifact) => (
+                              <OverlayArtifactCard
+                                key={artifact.id}
+                                artifact={artifact}
+                                visibleColumns={visibleColumns}
+                                onSecure={onSecureFile}
+                                onRelease={onReleaseFile}
+                                onWatch={onWatchToggle}
+                                onRestore={onRestoreFile}
+                                onPurge={onPurgeFile}
                                 isWatching={watchStatus[artifact.id]}
                                 busyAction={busyAction?.id === artifact.id ? busyAction.action : null}
                                 formatRemainingTime={formatRemainingTime}
@@ -1083,6 +1189,8 @@ const ArtifactControlPanel = () => {
                                 onSecure={onSecureFile}
                                 onRelease={onReleaseFile}
                                 onWatch={onWatchToggle}
+                                onRestore={onRestoreFile}
+                                onPurge={onPurgeFile}
                                 isWatching={watchStatus[artifact.id]}
                                 busyAction={busyAction?.id === artifact.id ? busyAction.action : null}
                                 formatRemainingTime={formatRemainingTime}

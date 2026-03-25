@@ -423,6 +423,10 @@ html[data-color-mode="dark"] .artifact-card.status-unlocked { border-left-color:
 html[data-color-mode="dark"] .artifact-card.status-locked-by-me { border-left-color: #818CF8; }
 html[data-color-mode="dark"] .artifact-card.status-locked { border-left-color: #FBBF24; }
 html[data-color-mode="dark"] .artifact-card.status-expired { border-left-color: #F87171; }
+.artifact-card.status-stale { border-left-color: #9CA3AF; }
+.artifact-card.status-trashed { border-left-color: #F59E0B; }
+html[data-color-mode="dark"] .artifact-card.status-stale { border-left-color: #6B7280; }
+html[data-color-mode="dark"] .artifact-card.status-trashed { border-left-color: #FBBF24; }
 
 /* ── Card row layout ──────────────────────────── */
 .card-row {
@@ -541,6 +545,18 @@ html[data-color-mode="dark"] .artifact-card.status-expired { border-left-color: 
   background: var(--sv-status-neutral-bg);
   color: var(--sv-status-neutral);
 }
+.status-lozenge.stale {
+  background: var(--sv-surface-tertiary);
+  color: var(--sv-text-secondary);
+}
+.status-lozenge.trashed {
+  background: #FEF3C7;
+  color: #92400E;
+}
+html[data-color-mode="dark"] .status-lozenge.trashed {
+  background: #78350F;
+  color: #FDE68A;
+}
 
 /* ── Action buttons ────────────────────────────── */
 .action-btn {
@@ -592,6 +608,30 @@ html[data-color-mode="dark"] .artifact-card.status-expired { border-left-color: 
   background: var(--sv-interactive-success);
   color: var(--sv-text-on-primary);
   border-color: var(--sv-interactive-success);
+}
+.action-btn.restore {
+  background: var(--sv-interactive-primary);
+  color: var(--sv-text-on-primary);
+  border-color: var(--sv-interactive-primary);
+}
+.action-btn.restore:hover:not(:disabled) {
+  background: var(--sv-interactive-primary-hover);
+  border-color: var(--sv-interactive-primary-hover);
+}
+.action-btn.purge {
+  background: none;
+  color: var(--sv-interactive-danger);
+  border-color: var(--sv-interactive-danger);
+}
+.action-btn.purge:hover:not(:disabled) {
+  background: rgba(220, 38, 38, 0.08);
+}
+html[data-color-mode="dark"] .action-btn.purge:hover:not(:disabled) {
+  background: rgba(248, 113, 113, 0.1);
+}
+.badge-stale {
+  background: var(--sv-surface-tertiary) !important;
+  color: var(--sv-text-secondary) !important;
 }
 
 /* Label chip */
