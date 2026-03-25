@@ -16,6 +16,7 @@
   --sv-text-subtle: #94A3B8;
   --sv-text-disabled: #CBD5E1;
   --sv-text-inverse: #FFFFFF;
+  --sv-text-on-primary: #FFFFFF;
 
   --sv-border-primary: #E2E8F0;
   --sv-border-secondary: #E2E8F0;
@@ -80,6 +81,7 @@ html[data-color-mode="dark"] {
   --sv-text-subtle: #64748B;
   --sv-text-disabled: #475569;
   --sv-text-inverse: #FFFFFF;
+  --sv-text-on-primary: #FFFFFF;
 
   --sv-border-primary: #334155;
   --sv-border-secondary: #334155;
