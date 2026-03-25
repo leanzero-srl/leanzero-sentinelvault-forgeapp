@@ -37,10 +37,6 @@ const enumerateDocArtifacts = async (req) => {
   }
 
   try {
-    console.info(
-      `[ENUMERATE-DOC-ARTIFACTS] Fetching with pagination: cursor=${cursor || "null"}, limit=${limit}`,
-    );
-
     // Get global policy to check autoUnseal
     const globalPolicy = await kvs.get("admin-settings-global");
     const autoUnsealActive = globalPolicy?.autoUnlockEnabled !== false;
@@ -50,8 +46,6 @@ const enumerateDocArtifacts = async (req) => {
     if (cursor && cursor !== "0") {
       url = route`/wiki/api/v2/pages/${contentId}/attachments?limit=${limit}&cursor=${cursor}`;
     }
-
-    console.log(`[ENUMERATE-DOC-ARTIFACTS] Request URL: ${url}`);
 
     const response = await asUser().requestConfluence(url);
 
@@ -140,9 +134,6 @@ const enumerateDocArtifacts = async (req) => {
       try {
         const urlObj = new URL(data._links.next, "https://example.com");
         nextCursor = urlObj.searchParams.get("cursor");
-        console.log(
-          `[ENUMERATE-DOC-ARTIFACTS] Extracted cursor from _links.next: ${nextCursor || "null"}`,
-        );
       } catch (e) {
         console.warn(
           `[ENUMERATE-DOC-ARTIFACTS] Failed to parse cursor from _links.next: ${data._links.next}`,
@@ -150,10 +141,6 @@ const enumerateDocArtifacts = async (req) => {
         );
       }
     }
-
-    console.info(
-      `[ENUMERATE-DOC-ARTIFACTS] Returning ${artifactsWithSealState.length} attachments, hasMore=${hasMore}, nextCursor=${nextCursor}`,
-    );
 
     return {
       attachments: artifactsWithSealState,

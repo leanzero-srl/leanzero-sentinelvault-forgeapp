@@ -52,10 +52,6 @@ export async function realmScanConsumer(event) {
       const pages = pagesData.results || [];
       totalPagesFetched++;
 
-      console.log(
-        `[REALM-SCAN] Batch ${totalPagesFetched}: ${pages.length} pages`,
-      );
-
       // For each page, fetch artifacts
       for (const page of pages) {
         try {
