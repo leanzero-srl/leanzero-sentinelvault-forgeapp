@@ -370,7 +370,7 @@ const RealmPolicyDashboard = () => {
   // Pending steward requests (steward-only)
   const [pendingRequests, setPendingRequests] = useState([]);
   const [pendingRequestsLoading, setPendingRequestsLoading] = useState(false);
-  const [requestActionBusy, setRequestActionBusy] = useState(null); // accountId of request being processed
+  const [requestActionBusy, setRequestActionBusy] = useState(null); // { id: accountId, action: "approve"|"deny" }
 
   useEffect(() => {
     const bootstrapRealm = async () => {
@@ -578,7 +578,7 @@ const RealmPolicyDashboard = () => {
   };
 
   const handleApproveRequest = async (requestAccountId) => {
-    setRequestActionBusy(requestAccountId);
+    setRequestActionBusy({ id: requestAccountId, action: "approve" });
     try {
       const result = await invoke("approve-steward-request", { requestAccountId, spaceKey: realmKey });
       if (result?.success) {
@@ -604,7 +604,7 @@ const RealmPolicyDashboard = () => {
   };
 
   const handleDenyRequest = async (requestAccountId) => {
-    setRequestActionBusy(requestAccountId);
+    setRequestActionBusy({ id: requestAccountId, action: "deny" });
     try {
       await invoke("deny-steward-request", { requestAccountId, spaceKey: realmKey });
       setPendingRequests((prev) => prev.filter((r) => r.accountId !== requestAccountId));
@@ -1824,22 +1824,26 @@ const RealmPolicyDashboard = () => {
                         <span className="steward-name">{request.displayName || "Unknown User"}</span>
                         {requestDate && <span style={{ fontSize: "10px", color: "var(--sv-text-subtle)" }}>{requestDate}</span>}
                         <span style={{ display: "flex", gap: "6px", marginTop: "4px" }}>
-                          <button
-                            className={`action-btn lock ${requestActionBusy === request.accountId ? "is-busy" : ""}`}
-                            onClick={() => handleApproveRequest(request.accountId)}
-                            disabled={!!requestActionBusy}
-                            title="Grant steward access to this user"
-                          >
-                            {requestActionBusy === request.accountId ? <>Approving<span className="btn-busy-bar" /></> : "Approve"}
-                          </button>
-                          <button
-                            className={`action-btn unlock ${requestActionBusy === request.accountId ? "is-busy" : ""}`}
-                            onClick={() => handleDenyRequest(request.accountId)}
-                            disabled={!!requestActionBusy}
-                            title="Deny this steward access request"
-                          >
-                            {requestActionBusy === request.accountId ? <>Denying<span className="btn-busy-bar" /></> : "Deny"}
-                          </button>
+                          {(!requestActionBusy || requestActionBusy.id !== request.accountId || requestActionBusy.action === "approve") && (
+                            <button
+                              className={`action-btn lock ${requestActionBusy?.id === request.accountId && requestActionBusy.action === "approve" ? "is-busy" : ""}`}
+                              onClick={() => handleApproveRequest(request.accountId)}
+                              disabled={!!requestActionBusy}
+                              title="Grant steward access to this user"
+                            >
+                              {requestActionBusy?.id === request.accountId && requestActionBusy.action === "approve" ? <>Approving<span className="btn-busy-bar" /></> : "Approve"}
+                            </button>
+                          )}
+                          {(!requestActionBusy || requestActionBusy.id !== request.accountId || requestActionBusy.action === "deny") && (
+                            <button
+                              className={`action-btn unlock ${requestActionBusy?.id === request.accountId && requestActionBusy.action === "deny" ? "is-busy" : ""}`}
+                              onClick={() => handleDenyRequest(request.accountId)}
+                              disabled={!!requestActionBusy}
+                              title="Deny this steward access request"
+                            >
+                              {requestActionBusy?.id === request.accountId && requestActionBusy.action === "deny" ? <>Denying<span className="btn-busy-bar" /></> : "Deny"}
+                            </button>
+                          )}
                         </span>
                       </div>
                     );
