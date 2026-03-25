@@ -130,7 +130,7 @@ const SortPicker = ({ orderField, orderDir, onSort }) => {
 
   return (
     <div className="sort-picker" ref={ref}>
-      <button className="column-picker-trigger" onClick={() => setIsOpen(!isOpen)}>
+      <button className="column-picker-trigger" onClick={() => setIsOpen(!isOpen)} title="Change sort order">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <path d="M11 5h10M11 9h7M11 13h4M3 17l3 3 3-3M6 18V4" />
         </svg>
@@ -364,6 +364,10 @@ const RealmPolicyDashboard = () => {
   const [myClaimsLoading, setMyClaimsLoading] = useState(false);
   const [stewardRequestSent, setStewardRequestSent] = useState(false);
 
+  // Pending steward requests (steward-only)
+  const [pendingRequests, setPendingRequests] = useState([]);
+  const [pendingRequestsLoading, setPendingRequestsLoading] = useState(false);
+
   useEffect(() => {
     const bootstrapRealm = async () => {
       try {
@@ -532,6 +536,49 @@ const RealmPolicyDashboard = () => {
       setStewardRequestSent(true);
     } catch (e) {
       console.error("Steward request failed:", e);
+    }
+  };
+
+  const fetchPendingRequests = async () => {
+    if (!realmKey) return;
+    setPendingRequestsLoading(true);
+    try {
+      const result = await invoke("list-steward-requests", { spaceKey: realmKey });
+      setPendingRequests(result?.requests || []);
+    } catch (e) {
+      console.error("Failed to fetch steward requests:", e);
+    } finally {
+      setPendingRequestsLoading(false);
+    }
+  };
+
+  const handleApproveRequest = async (requestAccountId) => {
+    try {
+      const result = await invoke("approve-steward-request", { requestAccountId, spaceKey: realmKey });
+      if (result?.success) {
+        setPendingRequests((prev) => prev.filter((r) => r.accountId !== requestAccountId));
+        setMessage("Steward access granted.");
+        setMessageType("success");
+      } else {
+        setMessage(result?.reason || "Failed to approve request.");
+        setMessageType("error");
+      }
+    } catch (e) {
+      console.error("Approve request failed:", e);
+      setMessage("Failed to approve request.");
+      setMessageType("error");
+    }
+  };
+
+  const handleDenyRequest = async (requestAccountId) => {
+    try {
+      // Denying = deleting the request from KVS without granting access
+      await invoke("deny-steward-request", { requestAccountId, spaceKey: realmKey });
+      setPendingRequests((prev) => prev.filter((r) => r.accountId !== requestAccountId));
+      setMessage("Request denied.");
+      setMessageType("success");
+    } catch (e) {
+      console.error("Deny request failed:", e);
     }
   };
 
@@ -1254,7 +1301,7 @@ const RealmPolicyDashboard = () => {
               Realm Sealed Files
             </button>
             <button className={`tab-button ${activeTab === "permissions" ? "active" : ""}`}
-              onClick={() => setActiveTab("permissions")}>
+              onClick={() => { setActiveTab("permissions"); fetchPendingRequests(); }}>
               Access Control
             </button>
             <button className={`tab-button ${activeTab === "unlock-timeouts" ? "active" : ""}`}
@@ -1321,7 +1368,7 @@ const RealmPolicyDashboard = () => {
         </div>
       )}
 
-      {activeTab === "locked-attachments" && (
+      {activeTab === "locked-attachments" && userRole === "steward" && (
         <div className="tab-content">
           <div className="form-section">
             <h3 className="section-header">
@@ -1407,7 +1454,7 @@ const RealmPolicyDashboard = () => {
         </div>
       )}
 
-      {activeTab === "permissions" && (
+      {activeTab === "permissions" && userRole === "steward" && (
         <div className="tab-content">
           {/* Realm Activation */}
           <div className="settings-card">
@@ -1684,6 +1731,57 @@ const RealmPolicyDashboard = () => {
             </div>
           </div>
 
+          {/* Pending Steward Requests */}
+          <div className="settings-card">
+            <div className="settings-card-header">
+              <h3>Pending Access Requests</h3>
+              <p className="settings-card-desc">
+                Users who have requested steward access for this realm. Approve to grant steward privileges or deny to reject the request.
+              </p>
+            </div>
+            <div className="settings-card-body">
+              {pendingRequestsLoading && (
+                <div style={{ color: "var(--sv-text-subtle)", fontSize: "12px", padding: "8px 0" }}>Loading requests...</div>
+              )}
+              {!pendingRequestsLoading && pendingRequests.length === 0 && (
+                <div style={{ color: "var(--sv-text-subtle)", fontSize: "12px", padding: "8px 0", fontStyle: "italic" }}>No pending requests.</div>
+              )}
+              {!pendingRequestsLoading && pendingRequests.length > 0 && (
+                <div className="steward-grid">
+                  {pendingRequests.map((request) => {
+                    const initials = (request.displayName || "??").split(/\s+/).map(p => p[0]).join("").toUpperCase().slice(0, 2);
+                    const requestDate = request.requestedAt ? new Date(request.requestedAt).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }) : "";
+                    return (
+                      <div key={request.accountId} className="steward-card">
+                        <div className="steward-avatar">{initials}</div>
+                        <span className="steward-name">{request.displayName || "Unknown User"}</span>
+                        {requestDate && <span style={{ fontSize: "10px", color: "var(--sv-text-subtle)" }}>{requestDate}</span>}
+                        <span style={{ display: "flex", gap: "4px", marginLeft: "auto" }}>
+                          <button
+                            className="action-btn lock"
+                            style={{ fontSize: "10px", padding: "2px 8px" }}
+                            onClick={() => handleApproveRequest(request.accountId)}
+                            title="Grant steward access to this user"
+                          >
+                            Approve
+                          </button>
+                          <button
+                            className="action-btn unlock"
+                            style={{ fontSize: "10px", padding: "2px 8px" }}
+                            onClick={() => handleDenyRequest(request.accountId)}
+                            title="Deny this steward access request"
+                          >
+                            Deny
+                          </button>
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+
           {/* Note */}
           <div className="settings-note">
             <strong>Note:</strong> Realm Stewards and Confluence Administrators always have these privileges.
@@ -1696,7 +1794,7 @@ const RealmPolicyDashboard = () => {
         </div>
       )}
 
-      {activeTab === "unlock-timeouts" && (
+      {activeTab === "unlock-timeouts" && userRole === "steward" && (
         <div className="tab-content">
           <div className="settings-panel">
             <div className="settings-row">
@@ -1771,7 +1869,7 @@ const RealmPolicyDashboard = () => {
         </div>
       )}
 
-      {activeTab === "macro-settings" && (
+      {activeTab === "macro-settings" && userRole === "steward" && (
         <div className="tab-content">
           <div className="settings-panel">
             <div className="settings-row">

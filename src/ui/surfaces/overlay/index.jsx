@@ -223,7 +223,7 @@ const SortPicker = ({ orderField, orderDir, onSort }) => {
 
   return (
     <div className="sort-picker" ref={ref}>
-      <button className="column-picker-trigger" onClick={() => setIsOpen(!isOpen)}>
+      <button className="column-picker-trigger" onClick={() => setIsOpen(!isOpen)} title="Change sort order">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <path d="M11 5h10M11 9h7M11 13h4M3 17l3 3 3-3M6 18V4" />
         </svg>
@@ -840,7 +840,7 @@ const ArtifactControlPanel = () => {
     <div className="modal-container">
       <div className="modal-header">
         <h1 className="modal-title">Sentinel Vault</h1>
-        <button onClick={onDismiss} className="modal-close">
+        <button onClick={onDismiss} className="modal-close" title="Close Sentinel Vault overlay">
           ×
         </button>
       </div>
@@ -865,6 +865,7 @@ const ArtifactControlPanel = () => {
         <button
           className="toolbar-refresh"
           onClick={() => retrieveFileData()}
+          title="Refresh file list to show latest changes"
         >
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <polyline points="23 4 23 10 17 10" />
