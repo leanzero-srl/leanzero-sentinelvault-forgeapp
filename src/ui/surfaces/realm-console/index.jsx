@@ -402,6 +402,11 @@ const RealmPolicyDashboard = () => {
             if (roleResult?.role === "steward") {
               setUserRole("steward");
               setActiveTab("locked-attachments");
+              // Pre-fetch pending steward requests so the badge count shows immediately
+              try {
+                const reqResult = await invoke("list-steward-requests", { spaceKey: realmKeyValue });
+                setPendingRequests(reqResult?.requests || []);
+              } catch (e) { /* non-critical */ }
             } else {
               setUserRole("user");
               setActiveTab("my-claims");
@@ -562,6 +567,11 @@ const RealmPolicyDashboard = () => {
       const result = await invoke("approve-steward-request", { requestAccountId, spaceKey: realmKey });
       if (result?.success) {
         setPendingRequests((prev) => prev.filter((r) => r.accountId !== requestAccountId));
+        // Reload realm settings so the new steward appears in the Stewards grid
+        try {
+          const refreshed = await invoke("load-policy", { scope: "space", key: realmKey });
+          setRealmPrefs((prev) => ({ ...prev, adminUsers: refreshed?.adminUsers || prev.adminUsers }));
+        } catch (e) { /* non-critical */ }
         setMessage("Steward access granted.");
         setMessageType("success");
       } else {
@@ -1307,7 +1317,20 @@ const RealmPolicyDashboard = () => {
             </button>
             <button className={`tab-button ${activeTab === "permissions" ? "active" : ""}`}
               onClick={() => { setActiveTab("permissions"); fetchPendingRequests(); }}>
-              Access Control
+              Access Control{pendingRequests.length > 0 && (
+                <span style={{
+                  marginLeft: "6px",
+                  background: "var(--sv-interactive-danger)",
+                  color: "var(--sv-text-inverse)",
+                  borderRadius: "9999px",
+                  padding: "1px 7px",
+                  fontSize: "10px",
+                  fontWeight: 700,
+                  minWidth: "18px",
+                  textAlign: "center",
+                  display: "inline-block",
+                }}>{pendingRequests.length}</span>
+              )}
             </button>
             <button className={`tab-button ${activeTab === "unlock-timeouts" ? "active" : ""}`}
               onClick={() => setActiveTab("unlock-timeouts")}>
