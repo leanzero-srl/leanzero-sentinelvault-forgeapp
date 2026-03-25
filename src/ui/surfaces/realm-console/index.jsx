@@ -530,12 +530,17 @@ const RealmPolicyDashboard = () => {
     }
   };
 
+  const [stewardRequestBusy, setStewardRequestBusy] = useState(false);
+
   const handleRequestSteward = async () => {
+    setStewardRequestBusy(true);
     try {
       await invoke("request-steward-access", { spaceKey: realmKey });
       setStewardRequestSent(true);
     } catch (e) {
       console.error("Steward request failed:", e);
+    } finally {
+      setStewardRequestBusy(false);
     }
   };
 
@@ -1327,7 +1332,9 @@ const RealmPolicyDashboard = () => {
                   As a steward you can view all sealed files and force unseal them when needed.
                 </p>
               </div>
-              <button className="action-btn lock" onClick={handleRequestSteward} title="Ask a space admin to grant you steward permissions">Request Steward Access</button>
+              <button className={`action-btn lock ${stewardRequestBusy ? "is-busy" : ""}`} onClick={handleRequestSteward} disabled={stewardRequestBusy} title="Ask a space admin to grant you steward permissions">
+                {stewardRequestBusy ? <>Requesting<span className="btn-busy-bar" /></> : "Request Steward Access"}
+              </button>
             </div>
           )}
           {stewardRequestSent && (
