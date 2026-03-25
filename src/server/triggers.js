@@ -59,7 +59,6 @@ export async function artifactEventTrigger(event) {
     const sealRecord = await kvs.get(`protection-${artifactId}`);
 
     if (!sealRecord || !sealRecord.lockedBy) {
-      console.log(`Artifact ${artifactId} is not sealed, no action needed`);
       return;
     }
 
@@ -169,66 +168,50 @@ async function handleSealedArtifactEdit(sealRecord, artifactId, contentId, atlas
 
 // --- Handle trashing of a sealed artifact — restore from trash ---
 async function handleSealedArtifactTrash(sealRecord, artifactId, contentId, atlassianId, attachment) {
-  // Unlike edits, we restore even if the seal owner trashed it.
-  // The seal contract means the attachment must not be deletable while sealed.
-  console.log(
-    `Sealed artifact ${artifactId} was trashed by ${atlassianId} - restoring from trash`,
-  );
-
-  // Use contentId from event, fall back to seal record
+  // Restore even if seal owner trashed — seal contract prevents deletion while active
   const pageId = contentId || sealRecord.contentId;
+  const currentVersion = attachment.version?.number;
+  const attachmentTitle = attachment.title || sealRecord.attachmentName || "Unknown";
 
-  // Step 1: Fetch trashed attachment to get its version number
-  const getRoute = route`/wiki/rest/api/content/${artifactId}?status=trashed`;
-  const getResponse = await asApp().requestConfluence(getRoute);
-
-  if (!getResponse.ok) {
-    console.error(
-      `Failed to fetch trashed attachment ${artifactId}: ${getResponse.status}`,
-    );
+  if (!pageId) {
+    console.error(`[TRASH-RESTORE] Cannot restore ${artifactId} — no pageId available`);
     return;
   }
-
-  const trashedContent = await getResponse.json();
-  const currentVersion = trashedContent.version?.number;
 
   if (!currentVersion) {
-    console.error(
-      `Cannot restore attachment ${artifactId} - no version number found in trashed content`,
-    );
+    console.error(`[TRASH-RESTORE] Cannot restore ${artifactId} — no version number in event`);
     return;
   }
 
-  // Step 2: Restore by setting status back to "current"
-  const restoreRoute = route`/wiki/rest/api/content/${artifactId}`;
+  console.warn(`[TRASH-RESTORE] Sealed artifact ${artifactId} trashed by ${atlassianId} — restoring`);
+
+  // Use the v1 attachment properties endpoint with correct required fields
+  const restoreRoute = route`/wiki/rest/api/content/${pageId}/child/attachment/${artifactId}`;
   const restoreResponse = await asApp().requestConfluence(restoreRoute, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       id: artifactId,
+      type: "attachment",
       status: "current",
+      title: attachmentTitle,
       version: { number: currentVersion + 1 },
     }),
   });
 
   if (!restoreResponse.ok) {
     const errorText = await restoreResponse.text();
-    console.error(
-      `Failed to restore trashed attachment ${artifactId}: ${restoreResponse.status} - ${errorText}`,
-    );
+    console.error(`[TRASH-RESTORE] Failed ${artifactId}: ${restoreResponse.status} — ${errorText}`);
     return;
   }
 
-  console.log(
-    `Successfully restored sealed attachment ${artifactId} from trash`,
-  );
+  console.warn(`[TRASH-RESTORE] Restored ${attachmentTitle} (${artifactId})`);
 
   // Touch seal timestamp so frontend polling picks up the change
   await touchSealTimestamp();
 
   // Send violation notifications
-  const artifactName = sealRecord.attachmentName || trashedContent.title || attachment.title || "Unknown Attachment";
-  await sendViolationNotifications(sealRecord, artifactId, pageId, atlassianId, artifactName, "delete");
+  await sendViolationNotifications(sealRecord, artifactId, pageId, atlassianId, attachmentTitle, "delete");
 }
 
 // --- Shared violation notification logic ---
