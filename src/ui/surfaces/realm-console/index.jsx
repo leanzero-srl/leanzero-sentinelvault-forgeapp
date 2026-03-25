@@ -1962,15 +1962,17 @@ const RealmPolicyDashboard = () => {
         </div>
       )}
 
-      <div className="action-bar">
-        <button
-          className="btn-primary"
-          onClick={onSaveRealmPrefs}
-          disabled={loading}
-        >
-          {loading ? "Updating..." : "Apply Configuration"}
-        </button>
-      </div>
+      {userRole === "steward" && (
+        <div className="action-bar">
+          <button
+            className="btn-primary"
+            onClick={onSaveRealmPrefs}
+            disabled={loading}
+          >
+            {loading ? "Updating..." : "Apply Configuration"}
+          </button>
+        </div>
+      )}
     </div>
   );
 };
