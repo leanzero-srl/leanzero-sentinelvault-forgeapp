@@ -81,6 +81,26 @@ const DocumentRibbon = () => {
     init();
   }, [fetchArtifactStats, fetchAlerts]);
 
+  // Poll for seal changes made in other surfaces (inline panel, overlay)
+  useEffect(() => {
+    if (loading || totalCount === 0) return;
+    let lastStamp = null;
+    const poll = async () => {
+      try {
+        const { stamp } = await invoke("check-seal-stamp");
+        if (lastStamp !== null && stamp !== lastStamp) {
+          fetchArtifactStats();
+        }
+        lastStamp = stamp;
+      } catch (e) {
+        // Polling failures are non-critical
+      }
+    };
+    const interval = setInterval(poll, 5000);
+    poll();
+    return () => clearInterval(interval);
+  }, [loading, totalCount, fetchArtifactStats]);
+
   const openManageOverlay = useCallback(() => {
     const overlay = new Modal({
       resource: "overlay",

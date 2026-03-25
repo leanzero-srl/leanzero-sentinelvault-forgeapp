@@ -95,9 +95,12 @@ export async function isOperatorInStewardCohorts(operatorAccountId, realmKey) {
 }
 
 /**
- * Check if operator is a Confluence site administrator
+ * Check if operator is a Confluence site or org administrator.
+ * Org admins, site admins, and application-level admins are all covered —
+ * the Confluence REST API exposes their privileges as operations with
+ * operation === "administer" or targetType === "application".
  * @param {string} operatorAccountId - The operator's account ID
- * @returns {Promise<boolean>} - True if operator is site admin
+ * @returns {Promise<boolean>} - True if operator is site/org admin
  */
 export async function isOperatorSiteAdmin(operatorAccountId) {
   try {
@@ -125,10 +128,32 @@ export async function isOperatorSiteAdmin(operatorAccountId) {
 }
 
 /**
- * Check if operator has steward permission based on global config and operator roles
+ * Check if operator holds the steward role (site admin, realm admin, or in steward cohorts).
+ * This check is independent of the allowAdminOverride toggle — it determines
+ * whether the user should see steward UI (tabs, settings), not whether force-unseal is allowed.
  * @param {string} operatorAccountId - The operator's account ID
  * @param {string} realmKey - The realm key
- * @returns {Promise<boolean>} - True if operator has steward permission
+ * @returns {Promise<boolean>} - True if operator is a steward
+ */
+export async function isOperatorSteward(operatorAccountId, realmKey) {
+  const isSiteAdmin = await isOperatorSiteAdmin(operatorAccountId);
+  if (isSiteAdmin) {
+    return true;
+  }
+
+  const isRealmSteward = await isOperatorRealmSteward(operatorAccountId, realmKey);
+
+  const isInStewardCohorts = await isOperatorInStewardCohorts(operatorAccountId, realmKey);
+
+  return isRealmSteward || isInStewardCohorts;
+}
+
+/**
+ * Check if operator is authorized to perform steward override actions (e.g. force unseal).
+ * This is gated by the global allowAdminOverride toggle.
+ * @param {string} operatorAccountId - The operator's account ID
+ * @param {string} realmKey - The realm key
+ * @returns {Promise<boolean>} - True if operator has steward override permission
  */
 export async function authorizeSteward(operatorAccountId, realmKey) {
   const globalConfig = await kvs.get("admin-settings-global");
@@ -139,15 +164,5 @@ export async function authorizeSteward(operatorAccountId, realmKey) {
     return false;
   }
 
-  const isSiteAdmin = await isOperatorSiteAdmin(operatorAccountId);
-  if (isSiteAdmin) {
-    return true;
-  }
-
-  const isRealmSteward = await isOperatorRealmSteward(operatorAccountId, realmKey);
-
-  const isInStewardCohorts = await isOperatorInStewardCohorts(operatorAccountId, realmKey);
-
-  const result = isRealmSteward || isInStewardCohorts;
-  return result;
+  return isOperatorSteward(operatorAccountId, realmKey);
 }

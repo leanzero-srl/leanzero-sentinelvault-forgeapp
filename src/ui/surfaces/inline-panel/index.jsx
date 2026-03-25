@@ -68,7 +68,7 @@ const LabelPill = ({ label, onRemove }) => (
       <button
         className="label-chip-remove"
         onClick={(e) => { e.stopPropagation(); onRemove(label.name); }}
-        title="Remove tag"
+        title="Remove this label from the file"
       >
         ×
       </button>
@@ -138,7 +138,7 @@ const LabelCluster = ({ labels, artifactId, onRefresh }) => {
         <button
           className="label-add-btn"
           onClick={() => setAdding(true)}
-          title="Add tag"
+          title="Add a label to organize this file"
           disabled={busy}
         >
           +

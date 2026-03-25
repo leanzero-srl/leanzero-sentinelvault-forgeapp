@@ -2,7 +2,7 @@ import { asApp, asUser, route } from "@forge/api";
 import { kvs, WhereConditions } from "@forge/kvs";
 import { Queue } from "@forge/events";
 
-import { authorizeSteward } from "../../shared/steward-checks.js";
+import { authorizeSteward, isOperatorSteward } from "../../shared/steward-checks.js";
 import { removeSealContentProp, touchSealTimestamp } from "../sealing/logic.js";
 import { notifyWatchers } from "../bulletins/logic.js";
 import {
@@ -236,6 +236,13 @@ const stewardUnseal = async (req) => {
   }
 
   await kvs.delete(`protection-${attachmentId}`);
+
+  // Re-verify the seal was actually removed before proceeding
+  const verifyDeleted = await kvs.get(`protection-${attachmentId}`);
+  if (verifyDeleted) {
+    return { success: false, reason: "Seal removal could not be confirmed" };
+  }
+
   await touchSealTimestamp();
 
   if (sealRecord.contentId) {
@@ -335,7 +342,10 @@ const checkUserRole = async (req) => {
   const spaceKey = req.payload?.spaceKey;
   if (!spaceKey || !accountId) return { role: "user" };
   try {
-    const isSteward = await authorizeSteward(accountId, spaceKey);
+    // Use isOperatorSteward (not authorizeSteward) so the role check is
+    // independent of the allowAdminOverride toggle.  Stewards should always
+    // see the steward tabs even when force-unseal is globally disabled.
+    const isSteward = await isOperatorSteward(accountId, spaceKey);
     return { role: isSteward ? "steward" : "user" };
   } catch (e) {
     console.warn("[CHECK-USER-ROLE] Error:", e);
@@ -387,8 +397,8 @@ const listStewardRequests = async (req) => {
   const accountId = req.context.accountId;
   if (!spaceKey) return { requests: [] };
 
-  // Verify caller is steward
-  const isSteward = await authorizeSteward(accountId, spaceKey);
+  // Verify caller is steward (role-based, independent of force-unseal toggle)
+  const isSteward = await isOperatorSteward(accountId, spaceKey);
   if (!isSteward) return { requests: [], reason: "Not authorized" };
 
   try {
@@ -419,8 +429,8 @@ const approveStewardRequest = async (req) => {
 
   if (!requestAccountId || !spaceKey) return { success: false, reason: "Missing params" };
 
-  // Verify caller is steward
-  const isSteward = await authorizeSteward(callerAccountId, spaceKey);
+  // Verify caller is steward (role-based, independent of force-unseal toggle)
+  const isSteward = await isOperatorSteward(callerAccountId, spaceKey);
   if (!isSteward) return { success: false, reason: "Not authorized" };
 
   try {
@@ -450,6 +460,29 @@ const approveStewardRequest = async (req) => {
   }
 };
 
+/**
+ * Deny a pending steward access request (steward-only).
+ */
+const denyStewardRequest = async (req) => {
+  const { requestAccountId, spaceKey } = req.payload;
+  const callerAccountId = req.context.accountId;
+
+  if (!requestAccountId || !spaceKey) return { success: false, reason: "Missing params" };
+
+  // Verify caller is steward (role-based, independent of force-unseal toggle)
+  const isSteward = await isOperatorSteward(callerAccountId, spaceKey);
+  if (!isSteward) return { success: false, reason: "Not authorized" };
+
+  try {
+    const requestKey = `steward-request-${spaceKey}-${requestAccountId}`;
+    await kvs.delete(requestKey);
+    return { success: true };
+  } catch (e) {
+    console.error("[DENY-STEWARD] Error:", e);
+    return { success: false, reason: e.message };
+  }
+};
+
 export const actions = [
   ["identify-realm", identifyRealm],
   ["enumerate-realm-seals", enumerateRealmSeals],
@@ -460,4 +493,5 @@ export const actions = [
   ["request-steward-access", requestStewardAccess],
   ["list-steward-requests", listStewardRequests],
   ["approve-steward-request", approveStewardRequest],
+  ["deny-steward-request", denyStewardRequest],
 ];

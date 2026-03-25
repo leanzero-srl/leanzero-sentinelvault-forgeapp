@@ -452,6 +452,13 @@ const unsealArtifact = async (req) => {
 
   if (canRelease) {
     await kvs.delete(`protection-${attachmentId}`);
+
+    // Re-verify the seal was actually removed before proceeding
+    const verifyDeleted = await kvs.get(`protection-${attachmentId}`);
+    if (verifyDeleted) {
+      return { success: false, reason: "Seal removal could not be confirmed" };
+    }
+
     await touchSealTimestamp();
 
     // Remove content property
