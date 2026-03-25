@@ -61,6 +61,7 @@ modules:
       events:
         - avi:confluence:updated:attachment
         - avi:confluence:trashed:attachment
+        - avi:confluence:deleted:attachment
     - key: app-lifecycle-events
       function: lifecycle-trigger
       events:

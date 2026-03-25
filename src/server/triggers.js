@@ -11,6 +11,7 @@ import {
 import { recordDispatch, postDocFootnote } from "./capsules/bulletins/logic.js";
 import { resolveBulletinToggles } from "./shared/bulletin-flags.js";
 import { touchSealTimestamp } from "./capsules/sealing/logic.js";
+import { removeSealContentProp } from "./capsules/sealing/confluence-sync.js";
 
 // --- Helpers ---
 
@@ -50,6 +51,8 @@ export async function artifactEventTrigger(event) {
     const artifactId = attachment.id;
     const contentId = attachment.container?.id;
 
+    console.warn(`[TRIGGER] ${eventType} for ${artifactId} by ${atlassianId}`);
+
     // Prevent infinite loops - ignore actions made by our own app
     const systemAccountId = await resolveAppAccountId();
     if (systemAccountId && atlassianId === systemAccountId) {
@@ -66,6 +69,8 @@ export async function artifactEventTrigger(event) {
       await handleSealedArtifactEdit(sealRecord, artifactId, contentId, atlassianId, attachment);
     } else if (eventType === "avi:confluence:trashed:attachment") {
       await handleSealedArtifactTrash(sealRecord, artifactId, contentId, atlassianId, attachment);
+    } else if (eventType === "avi:confluence:deleted:attachment") {
+      await handleSealedArtifactDeleted(sealRecord, artifactId, contentId, atlassianId, attachment);
     }
   } catch (error) {
     console.error("Error in artifact event trigger:", error);
@@ -186,6 +191,17 @@ async function handleSealedArtifactTrash(sealRecord, artifactId, contentId, atla
   if (!restoreResponse.ok) {
     const errorText = await restoreResponse.text();
     console.error(`[TRASH-RESTORE] Failed ${artifactId}: ${restoreResponse.status} — ${errorText}`);
+    // Restore failed — clean up seal since attachment is unrecoverable
+    console.warn(`[TRASH-RESTORE] Cleaning up seal for unrestorable attachment ${artifactId}`);
+    await kvs.delete(`protection-${artifactId}`);
+    if (sealRecord.spaceId) {
+      await kvs.delete(`space-protection-${sealRecord.spaceId}-${artifactId}`);
+    }
+    if (pageId) {
+      try { await removeSealContentProp(pageId); } catch (_) { /* best effort */ }
+    }
+    await touchSealTimestamp();
+    await sendViolationNotifications(sealRecord, artifactId, pageId, atlassianId, attachmentTitle, "delete");
     return;
   }
 
@@ -196,6 +212,31 @@ async function handleSealedArtifactTrash(sealRecord, artifactId, contentId, atla
 
   // Send violation notifications
   await sendViolationNotifications(sealRecord, artifactId, pageId, atlassianId, attachmentTitle, "delete");
+}
+
+// --- Handle permanent deletion of a sealed artifact ---
+async function handleSealedArtifactDeleted(sealRecord, artifactId, contentId, atlassianId, attachment) {
+  const pageId = contentId || sealRecord.contentId;
+  const artifactName = attachment.title || sealRecord.attachmentName || "Unknown";
+
+  console.warn(`[SEAL-DELETED] Sealed artifact ${artifactId} permanently deleted by ${atlassianId}`);
+
+  // Send violation notifications before cleanup
+  await sendViolationNotifications(sealRecord, artifactId, pageId, atlassianId, artifactName, "delete");
+
+  // Clean up KVS records since attachment is gone
+  await kvs.delete(`protection-${artifactId}`);
+  if (sealRecord.spaceId) {
+    await kvs.delete(`space-protection-${sealRecord.spaceId}-${artifactId}`);
+  }
+
+  // Remove content property
+  if (pageId) {
+    try { await removeSealContentProp(pageId); } catch (_) { /* best effort */ }
+  }
+
+  await touchSealTimestamp();
+  console.warn(`[SEAL-DELETED] Cleaned up seal records for ${artifactName} (${artifactId})`);
 }
 
 // --- Shared violation notification logic ---

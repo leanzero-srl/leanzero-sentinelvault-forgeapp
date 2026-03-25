@@ -655,11 +655,19 @@ const enumerateOperatorSeals = async (req) => {
             route`/wiki/api/v2/attachments/${artifactId}`,
           );
           if (!artifactResponse.ok) {
-            // Attachment is trashed/deleted — skip it
+            // Attachment is gone — clean up stale seal record
+            await kvs.delete(`protection-${artifactId}`);
+            if (value.spaceId) {
+              await kvs.delete(`space-protection-${value.spaceId}-${artifactId}`);
+            }
             continue;
           }
           const artifactData = await artifactResponse.json();
           if (artifactData.status && artifactData.status !== "current") {
+            await kvs.delete(`protection-${artifactId}`);
+            if (value.spaceId) {
+              await kvs.delete(`space-protection-${value.spaceId}-${artifactId}`);
+            }
             continue;
           }
           artifactTitle = artifactData.title || artifactTitle;
@@ -667,7 +675,11 @@ const enumerateOperatorSeals = async (req) => {
             ? `${Math.round(artifactData.fileSize / 1024)}KB`
             : "Unknown";
         } catch (attErr) {
-          // Can't verify attachment — skip it
+          // Can't verify attachment — clean up and skip
+          await kvs.delete(`protection-${artifactId}`);
+          if (value.spaceId) {
+            await kvs.delete(`space-protection-${value.spaceId}-${artifactId}`);
+          }
           continue;
         }
 
