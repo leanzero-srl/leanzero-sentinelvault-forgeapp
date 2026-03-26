@@ -23,6 +23,9 @@
     "react-dom": "^19.1.1",
     "resend": "^4.1.0"
   },
+  "overrides": {
+    "picomatch": "^4.0.4"
+  },
   "devDependencies": {
     "@babel/core": "^7.22.0",
     "@babel/plugin-bugfix-firefox-class-in-computed-class-key": "^7.28.5",
