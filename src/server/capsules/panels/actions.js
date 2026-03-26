@@ -29,7 +29,7 @@ const enumeratePanelArtifacts = async (req) => {
     const globalPolicy = await kvs.get("admin-settings-global");
     const autoUnsealActive = globalPolicy?.autoUnlockEnabled !== false;
     const allowArtifactDelete =
-      globalPolicy?.allowAttachmentDelete === true;
+      globalPolicy?.allowArtifactDelete === true;
     const allowSealRestore = globalPolicy?.allowSealRestore === true;
     const allowSealPurge = globalPolicy?.allowSealPurge === true;
 
@@ -228,7 +228,7 @@ const deleteArtifact = async (req) => {
 
   // Check global policy
   const globalPolicy = await kvs.get("admin-settings-global");
-  if (globalPolicy?.allowAttachmentDelete !== true) {
+  if (globalPolicy?.allowArtifactDelete !== true) {
     return { success: false, reason: "Attachment deletion is disabled by admin" };
   }
 
