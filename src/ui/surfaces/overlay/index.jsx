@@ -366,7 +366,7 @@ const OverlayArtifactCard = ({ artifact, visibleColumns, onSecure, onRelease, on
       </button>
     );
   }
-  if (!isStale && isSealedByMe && artifact.allowPurge) {
+  if (!isStale && (isSealedByMe || !isSealed) && artifact.allowPurge) {
     secondaryActions.push(
       <button
         key="purge"

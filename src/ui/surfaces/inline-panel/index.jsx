@@ -496,7 +496,7 @@ const ArtifactCard = ({ att, onRefresh, columns }) => {
       }
       // Sealed by someone else — hide the Remove button entirely
     }
-    if (!isStale && isSealedByMe && att.allowPurge) {
+    if (!isStale && (isSealedByMe || !isSealed) && att.allowPurge) {
       secondaryActions.push(
         <button
           key="purge"
