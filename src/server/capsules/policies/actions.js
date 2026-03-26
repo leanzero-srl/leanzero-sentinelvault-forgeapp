@@ -28,7 +28,7 @@ const loadPolicy = async (req) => {
         enableAutoUnlockNotificationEmail: false,
         enablePeriodicReminderEmail: false,
         // Panel settings
-        allowAttachmentDelete: false,
+        allowArtifactDelete: false,
       }
     );
   } else if (scope === "space" && key) {
@@ -134,7 +134,7 @@ const loadGlobalRuleset = async () => {
       enableAutoUnlockNotificationEmail: false,
       enablePeriodicReminderEmail: false,
       // Panel settings
-      allowAttachmentDelete: false,
+      allowArtifactDelete: false,
     }
   );
 };
