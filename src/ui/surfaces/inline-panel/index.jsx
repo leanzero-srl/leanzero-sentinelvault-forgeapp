@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { createRoot } from "react-dom/client";
-import { invoke, view } from "@forge/bridge";
+import { invoke, view, router } from "@forge/bridge";
 import { enablePaletteSync } from "../../kit/palette-sync";
+import ThumbnailPreview from "../../kit/ThumbnailPreview";
 
 // ── Icon components ──────────────────────────────────
 
@@ -264,9 +265,11 @@ const UploadZone = ({ onUploadComplete }) => {
 
 // ── Artifact card component ─────────────────────────
 
-const ArtifactCard = ({ att, onRefresh, columns }) => {
+const ArtifactCard = ({ att, onRefresh, columns, siteUrl, spaceKey, pageId, pageLocation }) => {
   const [actionBusy, setActionBusy] = useState(null);
   const [pendingConfirm, setPendingConfirm] = useState(null); // { action, message }
+  const [expanded, setExpanded] = useState(false);
+  const [cachedPreview, setCachedPreview] = useState(null);
 
   const isSealed = att.lockStatus === "HELD" || att.lockStatus === "HELD_BY_ACTOR";
   const isSealedByMe = att.lockStatus === "HELD_BY_ACTOR";
@@ -274,6 +277,17 @@ const ArtifactCard = ({ att, onRefresh, columns }) => {
   const canUnseal = isSealedByMe;
   const isStale = att.isStale === true;
   const isRecoverable = att.staleReason === "trashed";
+  const isImage = att.mediaType?.startsWith("image/");
+  const downloadHref = siteUrl && pageId && att.title
+    ? `${siteUrl}/wiki/download/attachments/${pageId}/${encodeURIComponent(att.title)}?api=v2`
+    : null;
+  const numericAttId = att.id ? att.id.replace(/^att/, "") : null;
+  const viewUrl = pageLocation && pageId && numericAttId && att.title
+    ? `${pageLocation}?preview=/${pageId}/${numericAttId}/${encodeURIComponent(att.title)}`
+    : null;
+  const propertiesUrl = siteUrl && pageId && att.title
+    ? `${siteUrl}/wiki/pages/editattachment.action?pageId=${pageId}&fileName=${encodeURIComponent(att.title)}&isFromPageView=true`
+    : null;
 
   const handleSeal = async () => {
     setActionBusy("seal");
@@ -524,8 +538,24 @@ const ArtifactCard = ({ att, onRefresh, columns }) => {
       {/* Line 1: filename + status + primary action */}
       <div className="card-row card-row-primary">
         <span className="card-filename">
+          <button
+            className={`card-expand-toggle ${expanded ? "is-expanded" : ""}`}
+            onClick={() => setExpanded((prev) => !prev)}
+            aria-expanded={expanded}
+            title={expanded ? "Collapse details" : "Show details"}
+          >
+            <svg width="12" height="12" viewBox="0 0 12 12">
+              <path d="M3 5l3 3 3-3" stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinecap="round" />
+            </svg>
+          </button>
           <ArtifactTypeIcon mediaType={att.mediaType} />
-          <span className="card-filename-text">{att.title}</span>
+          {downloadHref ? (
+            <a className="card-filename-text card-filename-link" href={downloadHref} onClick={(e) => { e.preventDefault(); router.open(downloadHref); }} title={`Download ${att.title}`}>
+              {att.title}
+            </a>
+          ) : (
+            <span className="card-filename-text">{att.title}</span>
+          )}
         </span>
         <span className="card-row-right">
           {columns.status && (
@@ -568,6 +598,19 @@ const ArtifactCard = ({ att, onRefresh, columns }) => {
             <button className="action-btn confirm-yes" onClick={pendingConfirm.action === "delete" ? executeDelete : executePurge}>Confirm</button>
             <button className="action-btn confirm-no" onClick={() => setPendingConfirm(null)}>Cancel</button>
           </span>
+        </div>
+      )}
+
+      {/* Expand panel: thumbnail + view link */}
+      {expanded && (
+        <div className="card-row card-row-expand">
+          {isImage && <ThumbnailPreview artifactId={att.id} contentId={pageId} mediaType={att.mediaType} fileSize={att.fileSize} cachedDataUri={cachedPreview} onCached={setCachedPreview} />}
+          {(viewUrl || propertiesUrl) && (
+            <div className="card-expand-links">
+              {viewUrl && <a href={viewUrl} onClick={(e) => { e.preventDefault(); router.open(viewUrl); }} className="card-expand-link">View</a>}
+              {propertiesUrl && <a href={propertiesUrl} onClick={(e) => { e.preventDefault(); router.open(propertiesUrl); }} className="card-expand-link">Properties</a>}
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -638,6 +681,9 @@ const ArtifactGridView = () => {
   const [enriching, setEnriching] = useState(false);
   const [error, setError] = useState(null);
   const [pageId, setPageId] = useState(null);
+  const [siteUrl, setSiteUrl] = useState(null);
+  const [spaceKey, setSpaceKey] = useState(null);
+  const [pageLocation, setPageLocation] = useState(null);
   const [isEditing, setIsEditing] = useState(false);
   const [hasMore, setHasMore] = useState(false);
   const [nextCursor, setNextCursor] = useState(null);
@@ -726,6 +772,9 @@ const ArtifactGridView = () => {
       }
 
       setPageId(pid);
+      setSiteUrl(ctx.siteUrl || null);
+      setSpaceKey(ctx.extension?.content?.space?.key || ctx.extension?.space?.key || null);
+      setPageLocation(ctx.extension?.location || null);
       setIsEditing(editing);
 
       // Discover and store extension key from page ADF (one-time discovery)
@@ -820,7 +869,7 @@ const ArtifactGridView = () => {
 
   const renderCards = (files) =>
     files.map((att) => (
-      <ArtifactCard key={att.id} att={att} columns={cols} onRefresh={onRefresh} />
+      <ArtifactCard key={att.id} att={att} columns={cols} onRefresh={onRefresh} siteUrl={siteUrl} spaceKey={spaceKey} pageId={pageId} pageLocation={pageLocation} />
     ));
 
   return (

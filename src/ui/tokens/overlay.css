@@ -1024,6 +1024,91 @@ html[data-color-mode="dark"] .action-btn.purge:hover:not(:disabled) {
   }
 }
 
+/* ── Expand toggle ─────────────────────────────── */
+.card-expand-toggle {
+  background: none;
+  border: none;
+  padding: 2px;
+  cursor: pointer;
+  color: var(--sv-text-subtle);
+  border-radius: 4px;
+  transition: transform 0.15s ease, color 0.15s ease;
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+.card-expand-toggle:hover {
+  color: var(--sv-text-primary);
+  background: var(--sv-bg-hover);
+}
+.card-expand-toggle svg {
+  transform: rotate(-90deg);
+}
+.card-expand-toggle.is-expanded svg {
+  transform: rotate(0deg);
+}
+
+/* ── Expand panel ──────────────────────────────── */
+.card-row-expand {
+  display: flex;
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid var(--sv-border-primary);
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+/* ── Thumbnail ─────────────────────────────────── */
+.card-thumbnail {
+  max-width: 200px;
+  max-height: 140px;
+  border-radius: 4px;
+  border: 1px solid var(--sv-border-primary);
+  object-fit: contain;
+}
+.card-thumbnail-placeholder {
+  width: 200px;
+  height: 60px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  color: var(--sv-text-subtle);
+  border: 1px dashed var(--sv-border-primary);
+  border-radius: 4px;
+}
+
+/* ── Expand links ──────────────────────────────── */
+.card-expand-links {
+  display: flex;
+  gap: 12px;
+  font-size: 12px;
+}
+.card-expand-link {
+  color: var(--sv-interactive-primary);
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.card-expand-link:hover {
+  text-decoration: underline;
+}
+
+/* ── Download link on filename ─────────────────── */
+.card-filename-link {
+  color: var(--sv-text-primary);
+  text-decoration: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.card-filename-link:hover {
+  color: var(--sv-interactive-primary);
+  text-decoration: underline;
+}
+
 /* ── Sort picker ───────────────────────────────── */
 .sort-picker {
   position: relative;
