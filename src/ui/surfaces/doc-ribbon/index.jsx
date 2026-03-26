@@ -156,14 +156,14 @@ const DocumentRibbon = () => {
           {loading ? (
             <span className="ribbon-loading-bar" />
           ) : sealedCount > 0
-            ? `${sealedCount} artifact${sealedCount !== 1 ? "s" : ""} sealed on this page`
+            ? `${sealedCount} attachment${sealedCount !== 1 ? "s" : ""} sealed on this page`
             : totalCount > 0
               ? `${totalCount} attachment${totalCount !== 1 ? "s" : ""} on this page — none sealed`
               : "No attachments on this page"}
         </span>
 
         <button className="ribbon-action" onClick={openManageOverlay}>
-          Manage Artifacts
+          Manage Attachments
         </button>
       </div>
 

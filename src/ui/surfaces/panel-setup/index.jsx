@@ -214,7 +214,7 @@ const GridLayoutEditor = () => {
 
       {/* Upload zone */}
       <div className="mc-section">
-        <div className="mc-section-label">Artifact Upload</div>
+        <div className="mc-section-label">Attachment Upload</div>
         <div
           className="mc-toggle-row"
           onClick={() => {

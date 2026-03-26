@@ -43,6 +43,7 @@ const enumerateDocArtifacts = async (req) => {
     const autoUnsealActive = globalPolicy?.autoUnlockEnabled !== false;
     const allowSealRestore = globalPolicy?.allowSealRestore === true;
     const allowSealPurge = globalPolicy?.allowSealPurge === true;
+    const allowArtifactDelete = globalPolicy?.allowArtifactDelete === true;
 
     // Build URL with cursor if present
     let url = route`/wiki/api/v2/pages/${contentId}/attachments?limit=${limit}`;
@@ -125,6 +126,7 @@ const enumerateDocArtifacts = async (req) => {
           autoUnlockEnabled: autoUnsealActive,
           allowRestore: allowSealRestore,
           allowPurge: allowSealPurge,
+          allowDelete: allowArtifactDelete,
           labels,
           comment: att.version?.message || null,
           versionNumber: att.version?.number || null,
@@ -825,6 +827,7 @@ const enumeratePageSeals = async (req) => {
     const globalPolicy = await kvs.get("admin-settings-global");
     const allowRestore = globalPolicy?.allowSealRestore === true;
     const allowPurge = globalPolicy?.allowSealPurge === true;
+    const allowDelete = globalPolicy?.allowArtifactDelete === true;
 
     const claimedArtifacts = await Promise.all(
       pageSeals.map(async ({ key, value }) => {
@@ -866,6 +869,7 @@ const enumeratePageSeals = async (req) => {
           staleReason,
           allowRestore,
           allowPurge,
+          allowDelete,
           // Minimal data — Confluence metadata will be merged later
           fileSize: null,
           mediaType: null,
@@ -963,6 +967,11 @@ const restoreSealedArtifact = async (req) => {
     const errorText = await restoreRes.text();
     console.error(`[RESTORE] Failed ${attachmentId}: ${restoreRes.status} — ${errorText}`);
     return { success: false, reason: `Restore failed: ${restoreRes.status}` };
+  }
+
+  // Clean up tracking-only records (not real seals) after restore
+  if (sealRecord?.trashedOnly) {
+    await kvs.delete(`protection-${attachmentId}`);
   }
 
   await touchSealTimestamp();

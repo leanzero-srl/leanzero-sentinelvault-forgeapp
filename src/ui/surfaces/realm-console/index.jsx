@@ -1269,7 +1269,7 @@ const RealmPolicyDashboard = () => {
           await fetchReservedFiles(realmKey, realmId);
         }
       } else {
-        setMessage(`Failed to unseal artifact: ${result.reason}`);
+        setMessage(`Failed to unseal attachment: ${result.reason}`);
         setMessageType("error");
       }
     } catch (err) {
