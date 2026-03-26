@@ -38,6 +38,8 @@ const GlobalPolicyEditor = () => {
     enableSealExpiryReminderEmail: true,
     enableAutoUnsealDispatchEmail: true,
     enablePeriodicReminderEmail: true,
+    globalAutoInsertMacro: false,
+    replaceAttachmentsMacro: false,
   });
 
   const [loading, setLoading] = useState(true);
@@ -93,6 +95,10 @@ const GlobalPolicyEditor = () => {
             globalSettings?.enableAutoUnsealDispatchEmail !== false,
           enablePeriodicReminderEmail:
             globalSettings?.enablePeriodicReminderEmail !== false,
+          globalAutoInsertMacro:
+            globalSettings?.globalAutoInsertMacro === true,
+          replaceAttachmentsMacro:
+            globalSettings?.replaceAttachmentsMacro === true,
         });
       } catch (err) {
         setMessage(
@@ -132,6 +138,8 @@ const GlobalPolicyEditor = () => {
           enableAutoUnsealDispatchEmail:
             settings.enableAutoUnsealDispatchEmail,
           enablePeriodicReminderEmail: settings.enablePeriodicReminderEmail,
+          globalAutoInsertMacro: settings.globalAutoInsertMacro,
+          replaceAttachmentsMacro: settings.replaceAttachmentsMacro,
         },
       });
 
@@ -209,8 +217,8 @@ const GlobalPolicyEditor = () => {
         {activeTab === "general" && (
           <div className="settings-panel">
             <SettingsRow
-              label="Standard Seal Period"
-              description="How long attachments are sealed by default (minimum 1 hour). Realms may set their own values."
+              label="Default Seal Duration"
+              description="How long attachments stay sealed by default (minimum 1 hour). Individual realms can override this with their own duration."
             >
               <div className="input-with-unit">
                 <input
@@ -233,8 +241,8 @@ const GlobalPolicyEditor = () => {
             </SettingsRow>
 
             <SettingsRow
-              label="Permit Steward Force-Unseal"
-              description="Let stewards unseal attachments held by other operators."
+              label="Allow Steward Force-Unseal"
+              description="Allow stewards to unseal attachments that were sealed by other users."
             >
               <Toggle
                 checked={settings.allowStewardOverride}
@@ -248,11 +256,11 @@ const GlobalPolicyEditor = () => {
             </SettingsRow>
 
             <SettingsRow
-              label="Enable Expiry Dispatches"
+              label="Enable Seal Expiry Notifications"
               description={
                 settings.autoUnsealEnabled
-                  ? "Operators will receive periodic dispatches when their seals expire, reminding them to unseal attachments. Attachments will not be unsealed automatically."
-                  : "Attachments stay sealed until manually unsealed. Timers display 'Overdue' once the seal period ends."
+                  ? "Users will receive notifications when their seals expire, reminding them to unseal attachments. Attachments are not unsealed automatically."
+                  : "Attachments stay sealed until manually unsealed. Seal timers will show 'Overdue' once the seal duration has passed."
               }
             >
               <Toggle
@@ -267,8 +275,8 @@ const GlobalPolicyEditor = () => {
             </SettingsRow>
 
             <SettingsRow
-              label="Allow Attachment Removal via Inline Panel"
-              description="When active, operators may remove unsealed attachments directly from the Sentinel Vault panel on the page. Removed attachments go to trash and can be recovered. Sealed attachments cannot be removed."
+              label="Allow Attachment Removal from Page"
+              description="When enabled, users can delete unsealed attachments directly from the Sentinel Vault panel in the page banner. Deleted attachments are moved to the trash and can be recovered. Sealed attachments cannot be deleted."
             >
               <Toggle
                 checked={settings.allowArtifactDelete}
@@ -282,8 +290,8 @@ const GlobalPolicyEditor = () => {
             </SettingsRow>
 
             <SettingsRow
-              label="Allow Seal Restore from Panel"
-              description="When active, operators and stewards may attempt to restore trashed attachments that still have seal records. Permanently deleted attachments cannot be restored."
+              label="Allow Attachment Restore from Page"
+              description="When enabled, users and stewards can restore trashed attachments that still have seal data in Sentinel Vault. Permanently deleted attachments cannot be restored."
             >
               <Toggle
                 checked={settings.allowSealRestore}
@@ -297,8 +305,8 @@ const GlobalPolicyEditor = () => {
             </SettingsRow>
 
             <SettingsRow
-              label="Allow Seal Record Cleanup from Panel"
-              description="When active, operators and stewards may remove stale seal records for attachments that no longer exist on the page."
+              label="Allow Seal Cleanup from Page"
+              description="When enabled, users and stewards can remove leftover seal entries for attachments that have been deleted from the page. This cleans up seal data that is no longer needed."
             >
               <Toggle
                 checked={settings.allowSealPurge}
@@ -312,8 +320,8 @@ const GlobalPolicyEditor = () => {
             </SettingsRow>
 
             <SettingsRow
-              label="Protect Embedded Content"
-              description="Automatically revert page edits that remove sealed attachments embedded in the page body."
+              label="Protect Sealed Attachments in Page Body"
+              description="Automatically undo page edits that remove sealed attachments embedded in the page content (such as images or files inserted into the body)."
             >
               <Toggle
                 checked={settings.enableContentProtection}
@@ -326,10 +334,44 @@ const GlobalPolicyEditor = () => {
               />
             </SettingsRow>
 
+            <SettingsRow
+              label="Auto-Insert Macro on Seal"
+              description="When enabled, the Sentinel Vault panel macro is automatically inserted into the page when an attachment is sealed. Individual realms can still disable this in their own settings. When disabled, no auto-insertion happens regardless of realm settings."
+            >
+              <Toggle
+                checked={settings.globalAutoInsertMacro}
+                onChange={(e) =>
+                  setSettings((prev) => ({
+                    ...prev,
+                    globalAutoInsertMacro: e.target.checked,
+                  }))
+                }
+              />
+            </SettingsRow>
+
+            {settings.globalAutoInsertMacro && (
+              <div className="nested-control">
+                <SettingsRow
+                  label="Replace Attachments Macro"
+                  description="When inserting the Sentinel Vault panel, replace the built-in Confluence Attachments macro instead of adding the panel alongside it. If no Attachments macro is found on the page, the panel is inserted at the position configured in realm settings."
+                >
+                  <Toggle
+                    checked={settings.replaceAttachmentsMacro}
+                    onChange={(e) =>
+                      setSettings((prev) => ({
+                        ...prev,
+                        replaceAttachmentsMacro: e.target.checked,
+                      }))
+                    }
+                  />
+                </SettingsRow>
+              </div>
+            )}
+
             {!settings.autoUnsealEnabled && (
               <SettingsRow
-                label="Dispatch Recurrence"
-                description={`Operators receive periodic reminder emails every ${settings.reminderIntervalDays} day${settings.reminderIntervalDays === 1 ? "" : "s"} about their sealed attachments. This prevents forgotten seals when timed unseal is turned off.`}
+                label="Reminder Frequency"
+                description={`Users receive a reminder email every ${settings.reminderIntervalDays} day${settings.reminderIntervalDays === 1 ? "" : "s"} about attachments they have sealed. This helps prevent forgotten seals when automatic expiry notifications are turned off.`}
               >
                 <div className="input-with-unit">
                   <input
@@ -357,8 +399,8 @@ const GlobalPolicyEditor = () => {
         {activeTab === "alerts" && (
           <div className="settings-panel">
             <SettingsRow
-              label="Enable Transient Notices"
-              description="Show brief transient notices to operators when attachment seals are created, unsealed, or when unauthorized access is attempted."
+              label="Enable Pop-up Notifications"
+              description="Show brief pop-up notifications on the page when attachments are sealed, unsealed, or when someone attempts unauthorized access."
             >
               <Toggle
                 checked={settings.enableFlashMessages}
@@ -372,8 +414,8 @@ const GlobalPolicyEditor = () => {
             </SettingsRow>
 
             <SettingsRow
-              label="Enable Document Ribbons"
-              description="Display informational ribbons at the top of Confluence pages when attachments are sealed, showing seal status and expiry details."
+              label="Enable Page Status Banners"
+              description="Display a status banner at the top of Confluence pages when attachments are sealed. The banner shows which attachments are sealed and when each seal expires."
             >
               <Toggle
                 checked={settings.enableDocRibbons}
@@ -387,8 +429,8 @@ const GlobalPolicyEditor = () => {
             </SettingsRow>
 
             <SettingsRow
-              label="Enable Confluence Comments"
-              description="Post native Confluence comment dispatches when attachment seals are created, unsealed, or when unauthorized access is attempted."
+              label="Enable Page Comments"
+              description="Post a Confluence comment on the page when attachments are sealed, unsealed, or when someone attempts unauthorized access. Comments appear in the page's comment section."
             >
               <Toggle
                 checked={settings.enableConfluenceDispatches}
@@ -402,8 +444,8 @@ const GlobalPolicyEditor = () => {
             </SettingsRow>
 
             <SettingsRow
-              label="Enable Email Alerts"
-              description="Send email alerts to operators regarding attachment seals. This master toggle must be on for any email alerts to function."
+              label="Enable Email Notifications"
+              description="Send email notifications to users about their sealed attachments. This is the master switch — it must be on for any of the email options below to work."
             >
               <Toggle
                 checked={settings.enableEmailDispatches}
@@ -420,7 +462,7 @@ const GlobalPolicyEditor = () => {
               <div className="nested-control">
                 <SettingsRow
                   label="Seal Confirmation Emails"
-                  description="Email operators right after they seal an attachment, confirming the seal period and expiry time."
+                  description="Send an email to the user immediately after they seal an attachment, confirming the seal duration and when it expires."
                 >
                   <Toggle
                     checked={settings.enableSealExpiryReminderEmail}
@@ -434,8 +476,8 @@ const GlobalPolicyEditor = () => {
                 </SettingsRow>
 
                 <SettingsRow
-                  label="Expiry Dispatch Emails"
-                  description="Send email dispatches to operators when their attachment seals expire, prompting them to unseal the attachment."
+                  label="Seal Expiry Reminder Emails"
+                  description="Send a reminder email to the user when one of their attachment seals has expired, prompting them to unseal it."
                 >
                   <Toggle
                     checked={settings.enableAutoUnsealDispatchEmail}
@@ -450,7 +492,7 @@ const GlobalPolicyEditor = () => {
 
                 <SettingsRow
                   label="Recurring Reminder Emails"
-                  description="Send recurring reminder emails about sealed attachments when timed unseal is turned off. Frequency is controlled by the Dispatch Recurrence setting."
+                  description="Send recurring reminder emails about sealed attachments when automatic expiry notifications are turned off. Frequency is controlled by the Reminder Frequency setting in the General tab."
                 >
                   <Toggle
                     checked={settings.enablePeriodicReminderEmail}

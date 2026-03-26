@@ -155,7 +155,7 @@ const OperatorTag = ({ accountId }) => {
 
   if (!accountId) return <span>-</span>;
   if (loading) return <span>Resolving...</span>;
-  if (!operatorInfo) return <span>Unknown operator</span>;
+  if (!operatorInfo) return <span>Unknown user</span>;
 
   return (
     <span
@@ -738,7 +738,7 @@ const ArtifactControlPanel = () => {
 
       const result = await invoke("seal-artifact", { attachmentId: artifactId });
       if (result && result.success === false) {
-        setError(result.reason || "Could not seal file.");
+        setError(result.reason || "Could not seal attachment.");
         await retrieveFileData();
         return;
       }
@@ -752,7 +752,7 @@ const ArtifactControlPanel = () => {
       }
     } catch (err) {
       console.error("Failed to seal artifact:", err);
-      setError("Could not seal file.");
+      setError("Could not seal attachment.");
     } finally {
       setBusyAction(null);
     }
@@ -776,7 +776,7 @@ const ArtifactControlPanel = () => {
       }
     } catch (err) {
       console.error("Failed to unseal artifact:", err);
-      setError("Could not relinquish file.");
+      setError("Could not unseal attachment.");
     } finally {
       setBusyAction(null);
     }
@@ -818,7 +818,7 @@ const ArtifactControlPanel = () => {
       }
     } catch (err) {
       console.error("Failed to restore artifact:", err);
-      setError("Could not restore file.");
+      setError("Could not restore attachment.");
     } finally {
       setBusyAction(null);
     }
@@ -846,7 +846,7 @@ const ArtifactControlPanel = () => {
       }
     } catch (err) {
       console.error("Failed to delete attachment:", err);
-      setError("Could not delete file.");
+      setError("Could not delete attachment.");
     } finally {
       setBusyAction(null);
     }
@@ -863,7 +863,7 @@ const ArtifactControlPanel = () => {
       }
     } catch (err) {
       console.error("Failed to purge seal:", err);
-      setError("Could not remove seal record.");
+      setError("Could not remove seal data.");
     } finally {
       setBusyAction(null);
     }

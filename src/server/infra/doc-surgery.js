@@ -369,8 +369,91 @@ export async function removePanelNode(pageId) {
 }
 
 /**
+ * Check if an ADF node is the built-in Confluence Attachments macro
+ */
+function isAttachmentsMacro(node) {
+  return (
+    node.attrs?.extensionType === "com.atlassian.confluence.macro.core" &&
+    node.attrs?.extensionKey === "attachments"
+  );
+}
+
+/**
+ * Replace the built-in Confluence Attachments macro with the Sentinel Vault panel.
+ * Finds the Attachments macro in the page ADF and swaps it in-place.
+ * Returns { success, skipped, fallback, error }
+ *  - success: replacement was made (or panel already exists)
+ *  - skipped: panel already existed, no changes made
+ *  - fallback: no Attachments macro found, caller should use normal insert
+ */
+export async function replacePanelForAttachmentsMacro(pageId, extensionKey, maxRetries = 3) {
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      const { pageData, adfDoc } = await readDocBody(pageId);
+
+      // Skip if panel already exists
+      if (panelExistsInDoc(adfDoc)) {
+        return { success: true, skipped: true };
+      }
+
+      if (!adfDoc.content) {
+        return { success: false, fallback: true };
+      }
+
+      // Find the Attachments macro at the top level
+      const attachmentsIndex = adfDoc.content.findIndex(
+        (node) =>
+          ["extension", "bodiedExtension"].includes(node.type) &&
+          isAttachmentsMacro(node),
+      );
+
+      if (attachmentsIndex === -1) {
+        return { success: false, fallback: true };
+      }
+
+      // Replace in-place
+      adfDoc.content[attachmentsIndex] = buildExtensionNode(extensionKey);
+
+      const putRes = await writeDocBody(
+        pageId,
+        pageData,
+        adfDoc,
+        "Replaced Attachments macro with Sentinel Vault panel",
+      );
+
+      if (putRes.ok) {
+        return { success: true, skipped: false };
+      }
+
+      if (putRes.status === 409) {
+        const delay = Math.pow(2, attempt) * 500;
+        console.warn(
+          `[ADF] Version conflict on page ${pageId}, retrying in ${delay}ms (attempt ${attempt + 1}/${maxRetries})`,
+        );
+        await new Promise((r) => setTimeout(r, delay));
+        continue;
+      }
+
+      const errorText = await putRes.text();
+      return {
+        success: false,
+        error: `Page update failed: ${putRes.status} - ${errorText}`,
+      };
+    } catch (err) {
+      if (attempt === maxRetries - 1) {
+        return { success: false, error: err.message };
+      }
+      const delay = Math.pow(2, attempt) * 500;
+      await new Promise((r) => setTimeout(r, delay));
+    }
+  }
+
+  return { success: false, error: "Max retries exceeded" };
+}
+
+/**
  * Handle auto-insertion of the Sentinel Vault panel when a seal is first created.
- * Checks space settings and page settings before inserting.
+ * Checks global settings, space settings, and page settings before inserting.
  * Called from seal-artifact resolver.
  */
 export async function triggerPanelEmbed(contentId, spaceKey) {
@@ -387,6 +470,32 @@ export async function triggerPanelEmbed(contentId, spaceKey) {
         "[PANEL-AUTO] Could not determine extension key, skipping auto-insert",
       );
       return;
+    }
+
+    // Check global setting for auto-insert (master switch)
+    const globalSettings = await kvs.get("admin-settings-global");
+    if (globalSettings?.globalAutoInsertMacro !== true) {
+      console.info("[PANEL-AUTO] Global auto-insert is disabled, skipping");
+      return;
+    }
+
+    // If replace mode is enabled, try to replace the Attachments macro first
+    if (globalSettings?.replaceAttachmentsMacro === true) {
+      const replaceResult = await replacePanelForAttachmentsMacro(contentId, extensionKey);
+      if (replaceResult.success) {
+        if (replaceResult.skipped) {
+          console.info(`[PANEL-AUTO] Panel already exists on page ${contentId}, skipped`);
+        } else {
+          console.info(`[PANEL-AUTO] Replaced Attachments macro on page ${contentId}`);
+        }
+        return;
+      }
+      if (!replaceResult.fallback) {
+        console.error(`[PANEL-AUTO] Replace failed: ${replaceResult.error}`);
+        return;
+      }
+      // No Attachments macro found — fall through to normal insert
+      console.info("[PANEL-AUTO] No Attachments macro found, falling back to normal insert");
     }
 
     // Check space setting for autoInsertMacro and read position preference
