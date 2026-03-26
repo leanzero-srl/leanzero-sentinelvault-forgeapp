@@ -244,6 +244,7 @@ const sealArtifact = async (req) => {
   let fileSize = null;
   let creatorAccountId = null;
   let sealedVersion = null;
+  let sealedFileId = null;
   try {
     const artifactRoute = route`/wiki/api/v2/attachments/${attachmentId}`;
     const artifactResponse = await asUser().requestConfluence(artifactRoute);
@@ -253,6 +254,7 @@ const sealArtifact = async (req) => {
       fileSize = artifactData.fileSize || null;
       creatorAccountId = artifactData.version?.authorId || null;
       sealedVersion = artifactData.version?.number || null;
+      sealedFileId = artifactData.fileId || null;
     }
   } catch (error) {
     console.warn("Failed to fetch artifact details:", error);
@@ -287,6 +289,7 @@ const sealArtifact = async (req) => {
     attachmentId: attachmentId,
     attachmentName: artifactName,
     sealedVersion: sealedVersion,
+    sealedFileId: sealedFileId,
   };
 
   // Store seal record

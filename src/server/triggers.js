@@ -11,6 +11,7 @@ import {
 import { recordDispatch, postDocFootnote } from "./capsules/bulletins/logic.js";
 import { resolveBulletinToggles } from "./shared/bulletin-flags.js";
 import { touchSealTimestamp, removeSealContentProp } from "./capsules/sealing/logic.js";
+import { readDocBody, readDocBodyAtVersion, writeDocBody, collectMediaFileIds } from "./infra/doc-surgery.js";
 
 // --- Helpers ---
 
@@ -73,6 +74,166 @@ export async function artifactEventTrigger(event) {
     }
   } catch (error) {
     console.error("Error in artifact event trigger:", error);
+  }
+}
+
+// --- Page Content Trigger (Forge Trigger) ---
+// Detects when sealed attachment media references are removed from a page and reverts the change.
+export async function pageContentTrigger(event) {
+  try {
+    const { atlassianId, content } = event;
+    const pageId = content?.id;
+
+    if (!pageId) {
+      console.error("[PAGE-PROTECT] Invalid page event payload — no content.id");
+      return;
+    }
+
+    // Prevent infinite loops — ignore actions made by our own app
+    const systemAccountId = await resolveAppAccountId();
+    if (systemAccountId && atlassianId === systemAccountId) {
+      return;
+    }
+
+    // Check admin toggle — bail if content protection is disabled
+    const globalPolicy = await kvs.get("admin-settings-global");
+    if (globalPolicy?.enableContentProtection === false) {
+      return;
+    }
+
+    // Fast path: check if this page has any seal content properties
+    const propsResponse = await asApp().requestConfluence(
+      route`/wiki/api/v2/pages/${pageId}/properties?key=protection-`,
+    );
+    if (!propsResponse.ok) {
+      return;
+    }
+    const propsData = await propsResponse.json();
+    if (!propsData.results || propsData.results.length === 0) {
+      return;
+    }
+
+    // Query KVS for all seals belonging to this page
+    const { results: allSeals } = await kvs
+      .query()
+      .where("key", WhereConditions.beginsWith("protection-"))
+      .limit(100)
+      .getMany();
+
+    const pageSeals = allSeals.filter(
+      ({ value }) => value?.contentId === pageId && value?.lockedBy,
+    );
+
+    if (pageSeals.length === 0) {
+      return;
+    }
+
+    // Resolve fileIds for each sealed attachment
+    const sealFileMap = []; // { seal, fileId }
+    for (const { value: seal } of pageSeals) {
+      let fileId = seal.sealedFileId || null;
+
+      // Fallback: fetch fileId from attachment API for legacy seals
+      if (!fileId && seal.attachmentId) {
+        try {
+          const attRes = await asApp().requestConfluence(
+            route`/wiki/api/v2/attachments/${seal.attachmentId}`,
+          );
+          if (attRes.ok) {
+            const attData = await attRes.json();
+            fileId = attData.fileId || null;
+          }
+        } catch (_) { /* best effort */ }
+      }
+
+      if (fileId) {
+        sealFileMap.push({ seal, fileId });
+      }
+    }
+
+    if (sealFileMap.length === 0) {
+      return;
+    }
+
+    // Read current page ADF and collect present media fileIds
+    const { pageData, adfDoc } = await readDocBody(pageId);
+    const presentFileIds = collectMediaFileIds(adfDoc);
+
+    // Determine which sealed attachments are missing from the page
+    const violations = sealFileMap.filter(
+      ({ seal, fileId }) =>
+        !presentFileIds.has(fileId) && seal.lockedBy !== atlassianId,
+    );
+
+    if (violations.length === 0) {
+      return;
+    }
+
+    const currentVersion = pageData.version?.number;
+    if (!currentVersion || currentVersion < 2) {
+      console.warn("[PAGE-PROTECT] Cannot revert — page has no previous version");
+      return;
+    }
+
+    // Revert: fetch previous version ADF and write it back
+    console.warn(
+      `[PAGE-PROTECT] ${violations.length} sealed media reference(s) removed from page ${pageId} by ${atlassianId} — reverting`,
+    );
+
+    const MAX_RETRIES = 3;
+    for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+      try {
+        // Re-read current page data on retries to get fresh version number
+        const current = attempt === 0
+          ? { pageData, adfDoc }
+          : await readDocBody(pageId);
+
+        const prevVersion = current.pageData.version.number - 1;
+        if (prevVersion < 1) break;
+
+        const { adfDoc: previousAdf } = await readDocBodyAtVersion(pageId, prevVersion);
+
+        const putRes = await writeDocBody(
+          pageId,
+          current.pageData,
+          previousAdf,
+          "(Sentinel Vault automatically reversed page modifications)",
+        );
+
+        if (putRes.ok) {
+          console.warn(`[PAGE-PROTECT] Reverted page ${pageId} to version ${prevVersion}`);
+          break;
+        }
+
+        if (putRes.status === 409) {
+          const delay = Math.pow(2, attempt) * 500;
+          console.warn(`[PAGE-PROTECT] Version conflict, retrying in ${delay}ms (attempt ${attempt + 1}/${MAX_RETRIES})`);
+          await new Promise((r) => setTimeout(r, delay));
+          continue;
+        }
+
+        const errorText = await putRes.text();
+        console.error(`[PAGE-PROTECT] Failed to revert page: ${putRes.status} — ${errorText}`);
+        break;
+      } catch (err) {
+        if (attempt === MAX_RETRIES - 1) {
+          console.error("[PAGE-PROTECT] Max retries exceeded:", err);
+        } else {
+          const delay = Math.pow(2, attempt) * 500;
+          await new Promise((r) => setTimeout(r, delay));
+        }
+      }
+    }
+
+    // Send violation notifications for each affected seal
+    for (const { seal } of violations) {
+      const artifactName = seal.attachmentName || "Unknown Attachment";
+      await sendViolationNotifications(seal, seal.attachmentId, pageId, atlassianId, artifactName, "content-removal");
+    }
+
+    await touchSealTimestamp();
+  } catch (error) {
+    console.error("[PAGE-PROTECT] Error in page content trigger:", error);
   }
 }
 
@@ -276,7 +437,9 @@ async function sendViolationNotifications(sealRecord, artifactId, contentId, atl
     }
   }
 
-  const dispatchType = actionVerb === "delete" ? "trash-restored" : "edit-reverted";
+  const dispatchType = actionVerb === "delete" ? "trash-restored"
+    : actionVerb === "content-removal" ? "content-reverted"
+    : "edit-reverted";
   const dispatchPayload = {
     id: `notification-${Date.now()}`,
     type: dispatchType,

@@ -159,6 +159,45 @@ export async function readDocBody(pageId) {
 }
 
 /**
+ * Fetch a specific version of a page's ADF body via the v2 API
+ * Returns { pageData, adfDoc } for the requested version
+ */
+export async function readDocBodyAtVersion(pageId, versionNumber) {
+  const response = await asApp().requestConfluence(
+    route`/wiki/api/v2/pages/${pageId}?body-format=atlas_doc_format&version=${versionNumber}`,
+    { headers: { Accept: "application/json" } },
+  );
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(
+      `Failed to fetch page ${pageId} at version ${versionNumber}: ${response.status} - ${errorText}`,
+    );
+  }
+
+  const pageData = await response.json();
+  const adfDoc = JSON.parse(pageData.body.atlas_doc_format.value);
+  return { pageData, adfDoc };
+}
+
+/**
+ * Recursively collect all media file IDs from an ADF document.
+ * Returns a Set of fileId strings used in media nodes (embedded images/files).
+ */
+export function collectMediaFileIds(node, result = new Set()) {
+  if (!node) return result;
+  if (node.type === "media" && node.attrs?.type === "file" && node.attrs?.id) {
+    result.add(node.attrs.id);
+  }
+  if (Array.isArray(node.content)) {
+    for (const child of node.content) {
+      collectMediaFileIds(child, result);
+    }
+  }
+  return result;
+}
+
+/**
  * Write ADF body back to a page via the v2 API
  * body.value MUST be a JSON string (double-stringify pattern)
  */
