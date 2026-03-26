@@ -29,6 +29,9 @@ const loadPolicy = async (req) => {
         enablePeriodicReminderEmail: false,
         // Panel settings
         allowArtifactDelete: false,
+        // Macro auto-insert settings
+        globalAutoInsertMacro: false,
+        replaceAttachmentsMacro: false,
       }
     );
   } else if (scope === "space" && key) {
@@ -135,6 +138,9 @@ const loadGlobalRuleset = async () => {
       enablePeriodicReminderEmail: false,
       // Panel settings
       allowArtifactDelete: false,
+      // Macro auto-insert settings
+      globalAutoInsertMacro: false,
+      replaceAttachmentsMacro: false,
     }
   );
 };

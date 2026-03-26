@@ -503,7 +503,7 @@ const RealmPolicyDashboard = () => {
       setHasMoreTeams(result.hasMore || false);
       setNextTeamsStart(result.nextStart || null);
     } catch (error) {
-      setMessage(`Unable to fetch guild list: ${error.message}`);
+      setMessage(`Unable to fetch guilds: ${error.message}`);
       setMessageType("error");
     }
   };
@@ -1150,17 +1150,17 @@ const RealmPolicyDashboard = () => {
     {
       value: "use-system-default",
       label: "Use System Default",
-      description: "Follows the global system preferences.",
+      description: "This realm follows the global settings configured by your organization's administrators.",
     },
     {
       value: "enabled",
       label: "Active",
-      description: "Sentinel Vault is active for this realm.",
+      description: "Sentinel Vault is enabled for all pages in this realm.",
     },
     {
       value: "disabled",
       label: "Inactive",
-      description: "Sentinel Vault is inactive for this realm.",
+      description: "Sentinel Vault is disabled for this realm. Users cannot seal or unseal attachments.",
     },
   ];
 
@@ -1527,7 +1527,7 @@ const RealmPolicyDashboard = () => {
           <div className="settings-card">
             <div className="settings-card-header">
               <h3>Realm Activation</h3>
-              <p className="settings-card-desc">Configure how Sentinel Vault operates within this realm.</p>
+              <p className="settings-card-desc">Choose whether Sentinel Vault is enabled or disabled for this realm.</p>
             </div>
             <div className="settings-card-body">
               <div className="custom-select-container">
@@ -1570,8 +1570,8 @@ const RealmPolicyDashboard = () => {
             <div className="settings-card-header">
               <h3>Stewards</h3>
               <p className="settings-card-desc">
-                Operators with steward privileges can view all sealed files and force unseal them.
-                Space admins and org admins are automatically stewards.
+                Stewards can view all sealed attachments in this realm and force-unseal them if needed.
+                Space admins and organization admins are stewards automatically.
               </p>
             </div>
             <div className="settings-card-body">
@@ -1725,7 +1725,7 @@ const RealmPolicyDashboard = () => {
               {/* Guilds section */}
               <div className="steward-guilds">
                 <h4 className="steward-guilds-title">Guilds</h4>
-                <p className="steward-guilds-desc">Members of these guilds are automatically stewards.</p>
+                <p className="steward-guilds-desc">Guilds are Confluence groups whose members are automatically granted steward access to this realm.</p>
                 <div className="guild-chips">
                   {realmPrefs.adminGroups.map((group) => (
                     <span key={group} className="guild-chip">
@@ -1803,7 +1803,7 @@ const RealmPolicyDashboard = () => {
             <div className="settings-card-header">
               <h3>Pending Access Requests</h3>
               <p className="settings-card-desc">
-                Users who have requested steward access for this realm. Approve to grant steward privileges or deny to reject the request.
+                Users who have requested steward access to this realm. Use Approve to grant access or Deny to reject the request.
               </p>
             </div>
             <div className="settings-card-body">
@@ -1870,10 +1870,9 @@ const RealmPolicyDashboard = () => {
           <div className="settings-panel">
             <div className="settings-row">
               <div className="settings-row-info">
-                <p className="settings-row-label">Use System Default Timeouts</p>
+                <p className="settings-row-label">Use System Default Seal Duration</p>
                 <p className="settings-row-description">
-                  When enabled, this realm will inherit the global unlock timeout
-                  settings configured by administrators.
+                  When checked, this realm uses the default seal duration set by your organization's administrators.
                 </p>
               </div>
               <div className="settings-row-control">
@@ -1903,13 +1902,13 @@ const RealmPolicyDashboard = () => {
               <div className="nested-control">
                 <div className="settings-row">
                   <div className="settings-row-info">
-                    <p className="settings-row-label">Custom Unlock Duration</p>
+                    <p className="settings-row-label">Custom Seal Duration</p>
                     <p className="settings-row-description">
-                      File seals lapse after{" "}
+                      Seals on attachments in this realm will expire after{" "}
                       <span className="dynamic-value">
                         {realmPrefs.autoUnlockTimeoutHours} hours
-                      </span>{" "}
-                      of inactivity. This overrides the global system settings for
+                      </span>
+                      . This overrides the global default seal duration for
                       this realm only.
                     </p>
                   </div>
@@ -1947,10 +1946,10 @@ const RealmPolicyDashboard = () => {
               <div className="settings-row-info">
                 <p className="settings-row-label">Auto-Insert Macro</p>
                 <p className="settings-row-description">
-                  When enabled, the Sentinel Vault macro will be automatically
-                  inserted into a page in this realm when a file is first sealed.
-                  The macro shows seal status, labels, and actions for all
-                  files on the page. Individual pages can override this setting.
+                  When checked, Sentinel Vault automatically adds its macro to a page
+                  in this realm the first time an attachment is sealed. The macro displays
+                  seal status, labels, and actions for all attachments. This can be
+                  overridden on individual pages.
                 </p>
               </div>
               <div className="settings-row-control">
@@ -1981,9 +1980,9 @@ const RealmPolicyDashboard = () => {
                 <div className="settings-row-info">
                   <p className="settings-row-label">Macro Position</p>
                   <p className="settings-row-description">
-                    Choose where the macro will be placed when it is automatically
-                    inserted into a page. Moving an existing macro must be done
-                    manually through the Confluence editor.
+                    Choose whether the macro is inserted at the top or bottom of the
+                    page content. To move an already-inserted macro, edit the page
+                    in the Confluence editor.
                   </p>
                 </div>
                 <div className="settings-row-control">
