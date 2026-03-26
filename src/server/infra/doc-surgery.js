@@ -198,6 +198,39 @@ export function collectMediaFileIds(node, result = new Set()) {
 }
 
 /**
+ * Given an ADF document and a Set of media file IDs, find and return the
+ * top-level content blocks that contain those media nodes (deep-cloned).
+ * A standalone mediaSingle is returned directly; media nested inside a table
+ * or layout results in the entire containing top-level block being returned.
+ */
+export function extractMediaSingleNodes(adfDoc, targetFileIds) {
+  const matches = [];
+  if (!adfDoc?.content) return matches;
+  for (const block of adfDoc.content) {
+    const ids = collectMediaFileIds(block);
+    for (const id of ids) {
+      if (targetFileIds.has(id)) {
+        matches.push(JSON.parse(JSON.stringify(block)));
+        break; // avoid duplicating the same block
+      }
+    }
+  }
+  return matches;
+}
+
+/**
+ * Append restored media blocks to the end of an ADF document's content array.
+ * Mutates and returns currentAdf.
+ */
+export function spliceMediaNodes(currentAdf, nodesToInsert) {
+  if (!currentAdf.content) currentAdf.content = [];
+  for (const node of nodesToInsert) {
+    currentAdf.content.push(node);
+  }
+  return currentAdf;
+}
+
+/**
  * Write ADF body back to a page via the v2 API
  * body.value MUST be a JSON string (double-stringify pattern)
  */
