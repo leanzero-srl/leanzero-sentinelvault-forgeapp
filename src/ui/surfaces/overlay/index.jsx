@@ -248,8 +248,8 @@ const SortPicker = ({ orderField, orderDir, onSort }) => {
   );
 };
 
-const OverlayArtifactCard = ({ artifact, visibleColumns, onSecure, onRelease, onWatch, onRestore, onPurge, isWatching, busyAction, formatRemainingTime, formatFileSize }) => {
-  const [pendingConfirm, setPendingConfirm] = useState(false);
+const OverlayArtifactCard = ({ artifact, visibleColumns, onSecure, onRelease, onWatch, onRestore, onPurge, onDelete, isWatching, busyAction, formatRemainingTime, formatFileSize }) => {
+  const [pendingConfirm, setPendingConfirm] = useState(null); // "delete" | "purge" | null
   const isSealed = artifact.lockStatus === "HELD" || artifact.lockStatus === "HELD_BY_ACTOR";
   const isSealedByMe = artifact.lockStatus === "HELD_BY_ACTOR";
   const isSealedByOther = artifact.lockStatus === "HELD";
@@ -349,7 +349,7 @@ const OverlayArtifactCard = ({ artifact, visibleColumns, onSecure, onRelease, on
         <button
           key="purge"
           className={`action-btn purge ${busyAction === "purge" ? "is-busy" : ""}`}
-          onClick={() => setPendingConfirm(true)}
+          onClick={() => setPendingConfirm("purge")}
           disabled={busyAction && busyAction !== "purge"}
           title="Permanently delete this attachment"
         >
@@ -364,7 +364,7 @@ const OverlayArtifactCard = ({ artifact, visibleColumns, onSecure, onRelease, on
         <button
           key="purge"
           className={`action-btn purge ${busyAction === "purge" ? "is-busy" : ""}`}
-          onClick={() => setPendingConfirm(true)}
+          onClick={() => setPendingConfirm("purge")}
           disabled={busyAction && busyAction !== "purge"}
           title="Remove this stale record"
         >
@@ -382,6 +382,20 @@ const OverlayArtifactCard = ({ artifact, visibleColumns, onSecure, onRelease, on
         title={isWatching ? "Stop watching" : "Get notified when relinquished"}
       >
         {busyAction === "watch" ? <>Updating<span className="btn-busy-bar" /></> : (isWatching ? "Watching" : "Watch")}
+      </button>
+    );
+  }
+  // Delete button: available on all live items (unsealed or sealed by me)
+  if (!isStale && artifact.allowDelete && (!isSealed || isSealedByMe)) {
+    secondaryActions.push(
+      <button
+        key="delete"
+        className={`action-btn delete ${busyAction === "delete" ? "is-busy" : ""}`}
+        onClick={() => setPendingConfirm("delete")}
+        disabled={busyAction && busyAction !== "delete"}
+        title="Send to trash"
+      >
+        {busyAction === "delete" ? <>Removing<span className="btn-busy-bar" /></> : "Delete"}
       </button>
     );
   }
@@ -434,11 +448,17 @@ const OverlayArtifactCard = ({ artifact, visibleColumns, onSecure, onRelease, on
       {pendingConfirm && (
         <div className="card-row card-confirm-bar">
           <span className="confirm-message">
-            Permanently delete "{artifact.title}"? This cannot be undone.
+            {pendingConfirm === "delete"
+              ? `Remove "${artifact.title}"? It will be sent to the trash.`
+              : `Permanently delete "${artifact.title}"? This cannot be undone.`}
           </span>
           <span className="confirm-actions">
-            <button className="action-btn confirm-yes" onClick={() => { setPendingConfirm(false); onPurge(artifact.id); }}>Confirm</button>
-            <button className="action-btn confirm-no" onClick={() => setPendingConfirm(false)}>Cancel</button>
+            <button className="action-btn confirm-yes" onClick={() => {
+              const action = pendingConfirm;
+              setPendingConfirm(null);
+              action === "delete" ? onDelete(artifact.id) : onPurge(artifact.id);
+            }}>Confirm</button>
+            <button className="action-btn confirm-no" onClick={() => setPendingConfirm(null)}>Cancel</button>
           </span>
         </div>
       )}
@@ -653,6 +673,28 @@ const ArtifactControlPanel = () => {
     initializeComponent();
   }, []);
 
+  // Poll for seal changes made in other surfaces (inline panel, ribbon, etc.)
+  useEffect(() => {
+    let lastStamp = null;
+
+    const poll = async () => {
+      try {
+        const { stamp } = await invoke("check-seal-stamp");
+        if (lastStamp !== null && stamp !== lastStamp) {
+          retrieveFileData();
+        }
+        lastStamp = stamp;
+      } catch (e) {
+        // Polling failures are non-critical
+      }
+    };
+
+    const interval = setInterval(poll, 5000);
+    poll();
+
+    return () => clearInterval(interval);
+  }, []);
+
   // Persist column preferences
   useEffect(() => {
     localStorage.setItem("sv-overlay-columns", JSON.stringify(visibleColumns));
@@ -777,6 +819,34 @@ const ArtifactControlPanel = () => {
     } catch (err) {
       console.error("Failed to restore artifact:", err);
       setError("Could not restore file.");
+    } finally {
+      setBusyAction(null);
+    }
+  };
+
+  const onDeleteFile = async (artifactId) => {
+    setBusyAction({ id: artifactId, action: "delete" });
+    try {
+      const result = await invoke("delete-artifact", { attachmentId: artifactId });
+      if (result && result.success) {
+        // Wait for Confluence to process the trash before re-fetching
+        await new Promise(r => setTimeout(r, 1000));
+        // Re-fetch both seals (to show trashed items) and attachments
+        try {
+          const seals = await invoke("enumerate-page-seals", { pageId: null });
+          if (seals?.claimedArtifacts?.length > 0) {
+            setFileList(seals.claimedArtifacts);
+          } else {
+            setFileList([]);
+          }
+        } catch (_) { /* fall through */ }
+        await retrieveFileData(false, null, true);
+      } else {
+        setError(result?.reason || "Delete unsuccessful");
+      }
+    } catch (err) {
+      console.error("Failed to delete attachment:", err);
+      setError("Could not delete file.");
     } finally {
       setBusyAction(null);
     }
@@ -1156,6 +1226,7 @@ const ArtifactControlPanel = () => {
                                 onWatch={onWatchToggle}
                                 onRestore={onRestoreFile}
                                 onPurge={onPurgeFile}
+                                onDelete={onDeleteFile}
                                 isWatching={watchStatus[artifact.id]}
                                 busyAction={busyAction?.id === artifact.id ? busyAction.action : null}
                                 formatRemainingTime={formatRemainingTime}
@@ -1168,7 +1239,7 @@ const ArtifactControlPanel = () => {
                       {staleFiles.length > 0 && (
                         <div className="sv-card-section">
                           <div className="sv-card-section-header">
-                            <span className="sv-card-section-title">Missing</span>
+                            <span className="sv-card-section-title">Trash</span>
                             <span className="sv-card-section-count badge-stale">{staleFiles.length}</span>
                           </div>
                           <div className="sv-card-list" data-cols="3">
@@ -1182,6 +1253,7 @@ const ArtifactControlPanel = () => {
                                 onWatch={onWatchToggle}
                                 onRestore={onRestoreFile}
                                 onPurge={onPurgeFile}
+                                onDelete={onDeleteFile}
                                 isWatching={watchStatus[artifact.id]}
                                 busyAction={busyAction?.id === artifact.id ? busyAction.action : null}
                                 formatRemainingTime={formatRemainingTime}
@@ -1208,6 +1280,7 @@ const ArtifactControlPanel = () => {
                                 onWatch={onWatchToggle}
                                 onRestore={onRestoreFile}
                                 onPurge={onPurgeFile}
+                                onDelete={onDeleteFile}
                                 isWatching={watchStatus[artifact.id]}
                                 busyAction={busyAction?.id === artifact.id ? busyAction.action : null}
                                 formatRemainingTime={formatRemainingTime}
