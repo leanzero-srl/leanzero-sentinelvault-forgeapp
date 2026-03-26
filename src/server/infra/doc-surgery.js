@@ -199,18 +199,19 @@ export function collectMediaFileIds(node, result = new Set()) {
 
 /**
  * Given an ADF document and a Set of media file IDs, find and return the
- * top-level content blocks that contain those media nodes (deep-cloned).
- * A standalone mediaSingle is returned directly; media nested inside a table
- * or layout results in the entire containing top-level block being returned.
+ * top-level content blocks that contain those media nodes (deep-cloned),
+ * together with their original index in the content array.
+ * Returns [{ node, originalIndex }, ...].
  */
 export function extractMediaSingleNodes(adfDoc, targetFileIds) {
   const matches = [];
   if (!adfDoc?.content) return matches;
-  for (const block of adfDoc.content) {
+  for (let i = 0; i < adfDoc.content.length; i++) {
+    const block = adfDoc.content[i];
     const ids = collectMediaFileIds(block);
     for (const id of ids) {
       if (targetFileIds.has(id)) {
-        matches.push(JSON.parse(JSON.stringify(block)));
+        matches.push({ node: JSON.parse(JSON.stringify(block)), originalIndex: i });
         break; // avoid duplicating the same block
       }
     }
@@ -219,13 +220,17 @@ export function extractMediaSingleNodes(adfDoc, targetFileIds) {
 }
 
 /**
- * Append restored media blocks to the end of an ADF document's content array.
+ * Insert restored media blocks into the ADF document at their original positions.
+ * Processes insertions in descending index order to avoid offset drift.
  * Mutates and returns currentAdf.
  */
-export function spliceMediaNodes(currentAdf, nodesToInsert) {
+export function spliceMediaNodes(currentAdf, entries) {
   if (!currentAdf.content) currentAdf.content = [];
-  for (const node of nodesToInsert) {
-    currentAdf.content.push(node);
+  // Sort descending so earlier splices don't shift later indices
+  const sorted = [...entries].sort((a, b) => b.originalIndex - a.originalIndex);
+  for (const { node, originalIndex } of sorted) {
+    const idx = Math.min(originalIndex, currentAdf.content.length);
+    currentAdf.content.splice(idx, 0, node);
   }
   return currentAdf;
 }

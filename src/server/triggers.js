@@ -196,17 +196,17 @@ export async function pageContentTrigger(event) {
         const { adfDoc: previousAdf } = await readDocBodyAtVersion(pageId, prevVersion);
 
         // Extract only the top-level blocks containing the missing sealed media
-        const restoredNodes = extractMediaSingleNodes(previousAdf, violatedFileIds);
+        const restoredEntries = extractMediaSingleNodes(previousAdf, violatedFileIds);
 
-        if (restoredNodes.length === 0) {
+        if (restoredEntries.length === 0) {
           console.warn(
             `[PAGE-PROTECT] Could not find sealed media in previous version either — skipping`,
           );
           break;
         }
 
-        // Patch the current ADF by appending the restored blocks
-        const patchedAdf = spliceMediaNodes(current.adfDoc, restoredNodes);
+        // Patch the current ADF by inserting the restored blocks at their original positions
+        const patchedAdf = spliceMediaNodes(current.adfDoc, restoredEntries);
 
         const putRes = await writeDocBody(
           pageId,
@@ -217,7 +217,7 @@ export async function pageContentTrigger(event) {
 
         if (putRes.ok) {
           console.warn(
-            `[PAGE-PROTECT] Re-inserted ${restoredNodes.length} media block(s) into page ${pageId}`,
+            `[PAGE-PROTECT] Re-inserted ${restoredEntries.length} media block(s) into page ${pageId}`,
           );
           break;
         }
