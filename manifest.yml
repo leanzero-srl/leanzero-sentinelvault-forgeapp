@@ -47,6 +47,8 @@ modules:
       timeoutSeconds: 900
     - key: seal-index-cron-fn
       handler: boot.sealIndexCron
+    - key: page-content-trigger
+      handler: boot.pageContentTrigger
 
   # Queue consumer for async realm admin scanning
   consumer:
@@ -62,6 +64,10 @@ modules:
         - avi:confluence:updated:attachment
         - avi:confluence:trashed:attachment
         - avi:confluence:deleted:attachment
+    - key: page-content-events
+      function: page-content-trigger
+      events:
+        - avi:confluence:updated:page
     - key: app-lifecycle-events
       function: lifecycle-trigger
       events:

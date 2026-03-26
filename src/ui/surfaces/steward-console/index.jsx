@@ -29,6 +29,7 @@ const GlobalPolicyEditor = () => {
     allowArtifactDelete: false,
     allowSealRestore: false,
     allowSealPurge: false,
+    enableContentProtection: true,
     reminderIntervalDays: 7,
     enableFlashMessages: true,
     enableDocRibbons: true,
@@ -77,6 +78,7 @@ const GlobalPolicyEditor = () => {
           allowArtifactDelete: globalSettings?.allowArtifactDelete === true,
           allowSealRestore: globalSettings?.allowSealRestore === true,
           allowSealPurge: globalSettings?.allowSealPurge === true,
+          enableContentProtection: globalSettings?.enableContentProtection !== false,
           reminderIntervalDays: globalSettings?.reminderIntervalDays || 7,
           enableFlashMessages:
             globalSettings?.enableFlashMessages !== false,
@@ -120,6 +122,7 @@ const GlobalPolicyEditor = () => {
           allowArtifactDelete: settings.allowArtifactDelete,
           allowSealRestore: settings.allowSealRestore,
           allowSealPurge: settings.allowSealPurge,
+          enableContentProtection: settings.enableContentProtection,
           reminderIntervalDays: settings.reminderIntervalDays,
           enableFlashMessages: settings.enableFlashMessages,
           enableDocRibbons: settings.enableDocRibbons,
@@ -303,6 +306,21 @@ const GlobalPolicyEditor = () => {
                   setSettings((prev) => ({
                     ...prev,
                     allowSealPurge: e.target.checked,
+                  }))
+                }
+              />
+            </SettingsRow>
+
+            <SettingsRow
+              label="Protect Embedded Content"
+              description="Automatically revert page edits that remove sealed attachments embedded in the page body."
+            >
+              <Toggle
+                checked={settings.enableContentProtection}
+                onChange={(e) =>
+                  setSettings((prev) => ({
+                    ...prev,
+                    enableContentProtection: e.target.checked,
                   }))
                 }
               />
