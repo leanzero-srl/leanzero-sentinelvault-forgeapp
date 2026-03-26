@@ -547,7 +547,7 @@ export function composeExpiryLayout({
       ${composeTimeline({
         title: "Details",
         items: [
-          { label: "Artifact", value: artifactName, url: artifactUrl },
+          { label: "Attachment", value: artifactName, url: artifactUrl },
           { label: "Page", value: pageTitle, url: pageUrl },
           { label: "Expired on", value: expiryDate },
         ],

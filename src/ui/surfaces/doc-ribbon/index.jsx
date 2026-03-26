@@ -158,8 +158,8 @@ const DocumentRibbon = () => {
           ) : sealedCount > 0
             ? `${sealedCount} artifact${sealedCount !== 1 ? "s" : ""} sealed on this page`
             : totalCount > 0
-              ? `${totalCount} artifact${totalCount !== 1 ? "s" : ""} on this page — none sealed`
-              : "No artifacts attached to this page"}
+              ? `${totalCount} attachment${totalCount !== 1 ? "s" : ""} on this page — none sealed`
+              : "No attachments on this page"}
         </span>
 
         <button className="ribbon-action" onClick={openManageOverlay}>
