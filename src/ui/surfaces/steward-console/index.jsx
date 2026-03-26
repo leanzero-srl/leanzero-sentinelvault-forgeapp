@@ -210,7 +210,7 @@ const GlobalPolicyEditor = () => {
           <div className="settings-panel">
             <SettingsRow
               label="Standard Seal Period"
-              description="How long artifacts are sealed by default (minimum 1 hour). Realms may set their own values."
+              description="How long attachments are sealed by default (minimum 1 hour). Realms may set their own values."
             >
               <div className="input-with-unit">
                 <input
@@ -234,7 +234,7 @@ const GlobalPolicyEditor = () => {
 
             <SettingsRow
               label="Permit Steward Force-Unseal"
-              description="Let stewards unseal artifacts held by other operators."
+              description="Let stewards unseal attachments held by other operators."
             >
               <Toggle
                 checked={settings.allowStewardOverride}
@@ -251,8 +251,8 @@ const GlobalPolicyEditor = () => {
               label="Enable Expiry Dispatches"
               description={
                 settings.autoUnsealEnabled
-                  ? "Operators will receive periodic dispatches when their seals expire, reminding them to unseal artifacts. Artifacts will not be unsealed automatically."
-                  : "Artifacts stay sealed until manually unsealed. Timers display 'Overdue' once the seal period ends."
+                  ? "Operators will receive periodic dispatches when their seals expire, reminding them to unseal attachments. Attachments will not be unsealed automatically."
+                  : "Attachments stay sealed until manually unsealed. Timers display 'Overdue' once the seal period ends."
               }
             >
               <Toggle
@@ -267,8 +267,8 @@ const GlobalPolicyEditor = () => {
             </SettingsRow>
 
             <SettingsRow
-              label="Allow Artifact Removal via Inline Panel"
-              description="When active, operators may remove unsealed artifacts directly from the Sentinel Vault panel on the page. Removed artifacts go to trash and can be recovered. Sealed artifacts cannot be removed."
+              label="Allow Attachment Removal via Inline Panel"
+              description="When active, operators may remove unsealed attachments directly from the Sentinel Vault panel on the page. Removed attachments go to trash and can be recovered. Sealed attachments cannot be removed."
             >
               <Toggle
                 checked={settings.allowArtifactDelete}
@@ -329,7 +329,7 @@ const GlobalPolicyEditor = () => {
             {!settings.autoUnsealEnabled && (
               <SettingsRow
                 label="Dispatch Recurrence"
-                description={`Operators receive periodic reminder emails every ${settings.reminderIntervalDays} day${settings.reminderIntervalDays === 1 ? "" : "s"} about their sealed artifacts. This prevents forgotten seals when timed unseal is turned off.`}
+                description={`Operators receive periodic reminder emails every ${settings.reminderIntervalDays} day${settings.reminderIntervalDays === 1 ? "" : "s"} about their sealed attachments. This prevents forgotten seals when timed unseal is turned off.`}
               >
                 <div className="input-with-unit">
                   <input
@@ -358,7 +358,7 @@ const GlobalPolicyEditor = () => {
           <div className="settings-panel">
             <SettingsRow
               label="Enable Transient Notices"
-              description="Show brief transient notices to operators when artifact seals are created, unsealed, or when unauthorized access is attempted."
+              description="Show brief transient notices to operators when attachment seals are created, unsealed, or when unauthorized access is attempted."
             >
               <Toggle
                 checked={settings.enableFlashMessages}
@@ -373,7 +373,7 @@ const GlobalPolicyEditor = () => {
 
             <SettingsRow
               label="Enable Document Ribbons"
-              description="Display informational ribbons at the top of Confluence pages when artifacts are sealed, showing seal status and expiry details."
+              description="Display informational ribbons at the top of Confluence pages when attachments are sealed, showing seal status and expiry details."
             >
               <Toggle
                 checked={settings.enableDocRibbons}
@@ -388,7 +388,7 @@ const GlobalPolicyEditor = () => {
 
             <SettingsRow
               label="Enable Confluence Comments"
-              description="Post native Confluence comment dispatches when artifact seals are created, unsealed, or when unauthorized access is attempted."
+              description="Post native Confluence comment dispatches when attachment seals are created, unsealed, or when unauthorized access is attempted."
             >
               <Toggle
                 checked={settings.enableConfluenceDispatches}
@@ -403,7 +403,7 @@ const GlobalPolicyEditor = () => {
 
             <SettingsRow
               label="Enable Email Alerts"
-              description="Send email alerts to operators regarding artifact seals. This master toggle must be on for any email alerts to function."
+              description="Send email alerts to operators regarding attachment seals. This master toggle must be on for any email alerts to function."
             >
               <Toggle
                 checked={settings.enableEmailDispatches}
@@ -420,7 +420,7 @@ const GlobalPolicyEditor = () => {
               <div className="nested-control">
                 <SettingsRow
                   label="Seal Confirmation Emails"
-                  description="Email operators right after they seal an artifact, confirming the seal period and expiry time."
+                  description="Email operators right after they seal an attachment, confirming the seal period and expiry time."
                 >
                   <Toggle
                     checked={settings.enableSealExpiryReminderEmail}
@@ -435,7 +435,7 @@ const GlobalPolicyEditor = () => {
 
                 <SettingsRow
                   label="Expiry Dispatch Emails"
-                  description="Send email dispatches to operators when their artifact seals expire, prompting them to unseal the artifact."
+                  description="Send email dispatches to operators when their attachment seals expire, prompting them to unseal the attachment."
                 >
                   <Toggle
                     checked={settings.enableAutoUnsealDispatchEmail}
@@ -450,7 +450,7 @@ const GlobalPolicyEditor = () => {
 
                 <SettingsRow
                   label="Recurring Reminder Emails"
-                  description="Send recurring reminder emails about sealed artifacts when timed unseal is turned off. Frequency is controlled by the Dispatch Recurrence setting."
+                  description="Send recurring reminder emails about sealed attachments when timed unseal is turned off. Frequency is controlled by the Dispatch Recurrence setting."
                 >
                   <Toggle
                     checked={settings.enablePeriodicReminderEmail}

@@ -174,7 +174,7 @@ const sealArtifact = async (req) => {
   if (existingSeal && existingSeal.lockedBy && existingSeal.lockedBy !== operatorAccountId) {
     return {
       success: false,
-      reason: "Artifact is already sealed by another user",
+      reason: "Attachment is already sealed by another user",
     };
   }
 

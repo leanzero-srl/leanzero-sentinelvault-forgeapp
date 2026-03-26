@@ -256,7 +256,7 @@ async function handleSealViolation({
   userAccountId,
   currentVersion,
 }) {
-  const artifactTitle = attachment.title || "Unknown Artifact";
+  const artifactTitle = attachment.title || "Unknown Attachment";
 
   // Get user display names for better notifications
   const [ownerInfo, editorInfo] = await Promise.all([

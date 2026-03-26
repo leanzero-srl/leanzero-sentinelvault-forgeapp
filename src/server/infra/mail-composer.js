@@ -167,7 +167,7 @@ export async function composeMail(type, data) {
         break;
 
       case ALERT_CATEGORIES.AUTO_RELEASE:
-        subject = `Artifact Auto-Released: "${artifactName}"`;
+        subject = `Attachment Auto-Released: "${artifactName}"`;
         html = composeAutoReleaseLayout({
           ...baseTemplateData,
           ownerDisplayName: recipientInfo.displayName,
@@ -185,7 +185,7 @@ export async function composeMail(type, data) {
         break;
 
       case ALERT_CATEGORIES.PERIODIC_REMINDER:
-        subject = `Reminder: Your Artifact "${artifactName}" is Still Sealed`;
+        subject = `Reminder: Your Attachment "${artifactName}" is Still Sealed`;
         html = composePeriodicLayout({
           ...baseTemplateData,
           ownerDisplayName: recipientInfo.displayName,
@@ -195,7 +195,7 @@ export async function composeMail(type, data) {
         break;
 
       case ALERT_CATEGORIES.RELEASE_NOTIFICATION:
-        subject = `Artifact Released: "${artifactName}"`;
+        subject = `Attachment Released: "${artifactName}"`;
         html = composeReleaseNoticeLayout({
           ...baseTemplateData,
           requesterDisplayName: recipientInfo.displayName,
