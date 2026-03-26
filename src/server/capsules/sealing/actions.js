@@ -1004,7 +1004,8 @@ const purgeSealRecord = async (req) => {
 
   const sealRecord = await kvs.get(`protection-${attachmentId}`);
   if (!sealRecord) {
-    return { success: false, reason: "No seal record found" };
+    // No seal record — nothing to purge, treat as success
+    return { success: true };
   }
 
   // Check admin toggle
