@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { createRoot } from "react-dom/client";
-import { invoke, view } from "@forge/bridge";
+import { invoke, view, router } from "@forge/bridge";
 import { enablePaletteSync } from "../../kit/palette-sync";
 import { flashArtifactSealed, flashArtifactUnsealed } from "../../kit/flash-messages";
+import ThumbnailPreview from "../../kit/ThumbnailPreview";
 
 // ── Column definitions ──────────────────────────────────
 const OVERLAY_COLUMNS = [
@@ -248,13 +249,26 @@ const SortPicker = ({ orderField, orderDir, onSort }) => {
   );
 };
 
-const OverlayArtifactCard = ({ artifact, visibleColumns, onSecure, onRelease, onWatch, onRestore, onPurge, onDelete, isWatching, busyAction, formatRemainingTime, formatFileSize }) => {
+const OverlayArtifactCard = ({ artifact, visibleColumns, onSecure, onRelease, onWatch, onRestore, onPurge, onDelete, isWatching, busyAction, formatRemainingTime, formatFileSize, siteUrl, spaceKey, pageId, pageLocation }) => {
   const [pendingConfirm, setPendingConfirm] = useState(null); // "delete" | "purge" | null
+  const [expanded, setExpanded] = useState(false);
+  const [cachedPreview, setCachedPreview] = useState(null);
   const isSealed = artifact.lockStatus === "HELD" || artifact.lockStatus === "HELD_BY_ACTOR";
   const isSealedByMe = artifact.lockStatus === "HELD_BY_ACTOR";
   const isSealedByOther = artifact.lockStatus === "HELD";
   const isStale = artifact.isStale === true;
   const isRecoverable = artifact.staleReason === "trashed";
+  const isImage = artifact.mediaType?.startsWith("image/");
+  const downloadHref = siteUrl && pageId && artifact.title
+    ? `${siteUrl}/wiki/download/attachments/${pageId}/${encodeURIComponent(artifact.title)}?api=v2`
+    : null;
+  const numericAttId = artifact.id ? artifact.id.replace(/^att/, "") : null;
+  const viewUrl = pageLocation && pageId && numericAttId && artifact.title
+    ? `${pageLocation}?preview=/${pageId}/${numericAttId}/${encodeURIComponent(artifact.title)}`
+    : null;
+  const propertiesUrl = siteUrl && pageId && artifact.title
+    ? `${siteUrl}/wiki/pages/editattachment.action?pageId=${pageId}&fileName=${encodeURIComponent(artifact.title)}&isFromPageView=true`
+    : null;
 
   let statusClass = "unlocked";
   let statusText = "Available";
@@ -406,8 +420,24 @@ const OverlayArtifactCard = ({ artifact, visibleColumns, onSecure, onRelease, on
     <div className={`artifact-card status-${statusClass}`}>
       <div className="card-row card-row-primary">
         <span className="card-filename">
+          <button
+            className={`card-expand-toggle ${expanded ? "is-expanded" : ""}`}
+            onClick={() => setExpanded((prev) => !prev)}
+            aria-expanded={expanded}
+            title={expanded ? "Collapse details" : "Show details"}
+          >
+            <svg width="12" height="12" viewBox="0 0 12 12">
+              <path d="M3 5l3 3 3-3" stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinecap="round" />
+            </svg>
+          </button>
           <ArtifactTypeIcon mediaType={artifact.mediaType} />
-          <span className="card-filename-text">{artifact.title}</span>
+          {downloadHref ? (
+            <a className="card-filename-text card-filename-link" href={downloadHref} onClick={(e) => { e.preventDefault(); router.open(downloadHref); }} title={`Download ${artifact.title}`}>
+              {artifact.title}
+            </a>
+          ) : (
+            <span className="card-filename-text">{artifact.title}</span>
+          )}
         </span>
         <span className="card-row-right">
           {visibleColumns.status && (
@@ -462,66 +492,17 @@ const OverlayArtifactCard = ({ artifact, visibleColumns, onSecure, onRelease, on
           </span>
         </div>
       )}
-    </div>
-  );
-};
 
-const MyFileCard = ({ artifact, visibleColumns, onRelease, busyAction, formatRemainingTime, formatReservedDate }) => {
-  const isExpired = artifact.isExpired;
-  const statusClass = isExpired ? "expired" : "locked-by-me";
-  const statusText = isExpired ? "Overdue" : "My Reservation";
-
-  const metaItems = [];
-  if (visibleColumns.location && artifact.pageTitle) {
-    metaItems.push(
-      <span key="loc" className="card-meta-item">
-        {artifact.pageUrl ? (
-          <a href={artifact.pageUrl} target="_top" style={{ color: "var(--sv-interactive-primary)", textDecoration: "none" }}>
-            {artifact.pageTitle}
-          </a>
-        ) : artifact.pageTitle}
-      </span>
-    );
-  }
-  if (visibleColumns.space && (artifact.spaceName || artifact.spaceKey)) {
-    metaItems.push(<span key="space" className="card-meta-item">{artifact.spaceName || artifact.spaceKey}</span>);
-  }
-  if (visibleColumns.claimedOn && artifact.lockedOn) {
-    metaItems.push(<span key="claimed" className="card-meta-item">{formatReservedDate(artifact.lockedOn)}</span>);
-  }
-  if (visibleColumns.lapses) {
-    metaItems.push(<span key="lapses" className="card-meta-item">{formatRemainingTime(artifact)}</span>);
-  }
-
-  const hasSecondLine = metaItems.length > 0;
-
-  return (
-    <div className={`artifact-card status-${statusClass}`}>
-      <div className="card-row card-row-primary">
-        <span className="card-filename">
-          <ArtifactTypeIcon mediaType={artifact.mediaType} />
-          <span className="card-filename-text">{artifact.title}</span>
-        </span>
-        <span className="card-row-right">
-          <span className={`status-lozenge ${statusClass}`}>{statusText}</span>
-          {visibleColumns.actions && (
-            <button className={`action-btn unlock ${busyAction === "unseal" ? "is-busy" : ""}`} onClick={() => onRelease(artifact.id)} disabled={busyAction && busyAction !== "unseal"} title="Release your seal and allow others to modify this file">
-              {busyAction === "unseal" ? <>Releasing<span className="btn-busy-bar" /></> : "Relinquish"}
-            </button>
+      {/* Expand panel: thumbnail + view link */}
+      {expanded && (
+        <div className="card-row card-row-expand">
+          {isImage && pageId && <ThumbnailPreview artifactId={artifact.id} contentId={pageId} mediaType={artifact.mediaType} fileSize={artifact.fileSize} cachedDataUri={cachedPreview} onCached={setCachedPreview} />}
+          {(viewUrl || propertiesUrl) && (
+            <div className="card-expand-links">
+              {viewUrl && <a href={viewUrl} onClick={(e) => { e.preventDefault(); router.open(viewUrl); }} className="card-expand-link">View</a>}
+              {propertiesUrl && <a href={propertiesUrl} onClick={(e) => { e.preventDefault(); router.open(propertiesUrl); }} className="card-expand-link">Properties</a>}
+            </div>
           )}
-        </span>
-      </div>
-      {hasSecondLine && (
-        <div className="card-row card-row-secondary">
-          <span className="card-secondary-left">
-            <span className="card-meta">
-              {metaItems.reduce((acc, item, i) => {
-                if (i > 0) acc.push(<span key={`sep-${i}`} className="card-meta-sep">&middot;</span>);
-                acc.push(item);
-                return acc;
-              }, [])}
-            </span>
-          </span>
         </div>
       )}
     </div>
@@ -546,6 +527,11 @@ const ArtifactControlPanel = () => {
   const [watchStatus, setWatchStatus] = useState({});
   // Track which artifact + action is currently in flight
   const [busyAction, setBusyAction] = useState(null);
+  // Site context for download/preview URLs
+  const [siteUrl, setSiteUrl] = useState(null);
+  const [spaceKey, setSpaceKey] = useState(null);
+  const [pageId, setPageId] = useState(null);
+  const [pageLocation, setPageLocation] = useState(null);
 
   // Column visibility state
   const [visibleColumns, setVisibleColumns] = useState(() =>
@@ -626,6 +612,17 @@ const ArtifactControlPanel = () => {
     // Initialize theme detection and fetch artifacts
     const initializeComponent = async () => {
       await enablePaletteSync();
+
+      // Fetch site context for download/preview URLs
+      try {
+        const ctx = await view.getContext();
+        setSiteUrl(ctx.siteUrl || null);
+        setSpaceKey(ctx.extension?.content?.space?.key || ctx.extension?.space?.key || null);
+        setPageId(ctx.extension?.content?.id || null);
+        setPageLocation(ctx.extension?.location || null);
+      } catch (e) {
+        console.warn("[OVERLAY] Failed to get context:", e);
+      }
 
       // Phase 1: Show claimed files instantly from KVS
       let hasPhase1 = false;
@@ -1231,6 +1228,10 @@ const ArtifactControlPanel = () => {
                                 busyAction={busyAction?.id === artifact.id ? busyAction.action : null}
                                 formatRemainingTime={formatRemainingTime}
                                 formatFileSize={formatFileSize}
+                                siteUrl={siteUrl}
+                                spaceKey={spaceKey}
+                                pageId={pageId}
+                                pageLocation={pageLocation}
                               />
                             ))}
                           </div>
@@ -1258,6 +1259,10 @@ const ArtifactControlPanel = () => {
                                 busyAction={busyAction?.id === artifact.id ? busyAction.action : null}
                                 formatRemainingTime={formatRemainingTime}
                                 formatFileSize={formatFileSize}
+                                siteUrl={siteUrl}
+                                spaceKey={spaceKey}
+                                pageId={pageId}
+                                pageLocation={pageLocation}
                               />
                             ))}
                           </div>
@@ -1285,6 +1290,10 @@ const ArtifactControlPanel = () => {
                                 busyAction={busyAction?.id === artifact.id ? busyAction.action : null}
                                 formatRemainingTime={formatRemainingTime}
                                 formatFileSize={formatFileSize}
+                                siteUrl={siteUrl}
+                                spaceKey={spaceKey}
+                                pageId={pageId}
+                                pageLocation={pageLocation}
                               />
                             ))}
                           </div>

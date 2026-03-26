@@ -11,6 +11,7 @@ import {
   triggerPanelEmbed,
   resolveExtensionKey,
 } from "../../infra/doc-surgery.js";
+import { resolveArtifactPreview } from "../../infra/artifact-fetch.js";
 
 /**
  * Get attachments for a page with seal status, labels, and version comments
@@ -128,6 +129,8 @@ const enumeratePanelArtifacts = async (req) => {
           labels,
           comment,
           notifyRequested: watchRequested,
+          downloadLink: att.downloadLink || att._links?.download || null,
+          webuiLink: att.webuiLink || att._links?.webui || null,
         };
       }),
     );
@@ -555,6 +558,14 @@ const discoverPanelKey = async (req) => {
   }
 };
 
+const resolvePreview = async (req) => {
+  const { artifactId, contentId, mediaType, fileSize } = req.payload;
+  if (!artifactId || !contentId) {
+    return null;
+  }
+  return resolveArtifactPreview(artifactId, contentId, mediaType, fileSize);
+};
+
 export const actions = [
   ["enumerate-panel-artifacts", enumeratePanelArtifacts],
   ["label-artifact", labelArtifact],
@@ -567,4 +578,5 @@ export const actions = [
   ["upload-artifact", uploadArtifact],
   ["register-panel-key", registerPanelKey],
   ["discover-panel-key", discoverPanelKey],
+  ["resolve-artifact-preview", resolvePreview],
 ];

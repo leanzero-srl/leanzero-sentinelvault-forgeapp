@@ -2,8 +2,9 @@
 
 import React, { useState, useEffect, useRef } from "react";
 import { createRoot } from "react-dom/client";
-import { invoke, view } from "@forge/bridge";
+import { invoke, view, router } from "@forge/bridge";
 import { enablePaletteSync } from "../../kit/palette-sync";
+import ThumbnailPreview from "../../kit/ThumbnailPreview";
 import logo from "../../assets/icons/icon.png";
 
 const SkeletonRow = ({ cols = 5 }) => (
@@ -155,9 +156,23 @@ const SortPicker = ({ orderField, orderDir, onSort }) => {
   );
 };
 
-const RealmClaimedCard = ({ artifact, onForceRelease, onWatch, isWatching, forceReleaseActive, visibleColumns, busyAction }) => {
+const RealmClaimedCard = ({ artifact, onForceRelease, onWatch, isWatching, forceReleaseActive, visibleColumns, busyAction, siteUrl }) => {
+  const [expanded, setExpanded] = useState(false);
+  const [cachedPreview, setCachedPreview] = useState(null);
   const statusClass = artifact.isExpired ? "expired" : "locked";
   const statusText = artifact.isExpired ? "Overdue" : "Sealed";
+  const isImage = artifact.mediaType?.startsWith("image/");
+  const numericAttId = artifact.id ? artifact.id.replace(/^att/, "") : null;
+  const downloadHref = siteUrl && artifact.pageId && artifact.title
+    ? `${siteUrl}/wiki/download/attachments/${artifact.pageId}/${encodeURIComponent(artifact.title)}?api=v2`
+    : null;
+  const pageSlug = artifact.pageTitle ? artifact.pageTitle.replace(/\s+/g, "+") : null;
+  const viewUrl = siteUrl && artifact.spaceKey && artifact.pageId && numericAttId && artifact.title && pageSlug
+    ? `${siteUrl}/wiki/spaces/${artifact.spaceKey}/pages/${artifact.pageId}/${pageSlug}?preview=/${artifact.pageId}/${numericAttId}/${encodeURIComponent(artifact.title)}`
+    : null;
+  const propertiesUrl = siteUrl && artifact.pageId && artifact.title
+    ? `${siteUrl}/wiki/pages/editattachment.action?pageId=${artifact.pageId}&fileName=${encodeURIComponent(artifact.title)}&isFromPageView=true`
+    : null;
 
   const vc = visibleColumns || {};
 
@@ -192,8 +207,24 @@ const RealmClaimedCard = ({ artifact, onForceRelease, onWatch, isWatching, force
     <div className={`artifact-card status-${statusClass}`}>
       <div className="card-row card-row-primary">
         <span className="card-filename">
+          <button
+            className={`card-expand-toggle ${expanded ? "is-expanded" : ""}`}
+            onClick={() => setExpanded((prev) => !prev)}
+            aria-expanded={expanded}
+            title={expanded ? "Collapse details" : "Show details"}
+          >
+            <svg width="12" height="12" viewBox="0 0 12 12">
+              <path d="M3 5l3 3 3-3" stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinecap="round" />
+            </svg>
+          </button>
           <ArtifactTypeIcon mediaType={artifact.mediaType} />
-          <span className="card-filename-text">{artifact.title}</span>
+          {downloadHref ? (
+            <a className="card-filename-text card-filename-link" href={downloadHref} onClick={(e) => { e.preventDefault(); router.open(downloadHref); }} title={`Download ${artifact.title}`}>
+              {artifact.title}
+            </a>
+          ) : (
+            <span className="card-filename-text">{artifact.title}</span>
+          )}
         </span>
         <span className="card-row-right">
           {vc.status !== false && (
@@ -226,14 +257,41 @@ const RealmClaimedCard = ({ artifact, onForceRelease, onWatch, isWatching, force
           </span>
         </div>
       )}
+
+      {/* Expand panel: thumbnail + view link */}
+      {expanded && (
+        <div className="card-row card-row-expand">
+          {isImage && artifact.pageId && <ThumbnailPreview artifactId={artifact.id} contentId={artifact.pageId} mediaType={artifact.mediaType} fileSize={artifact.fileSize} cachedDataUri={cachedPreview} onCached={setCachedPreview} />}
+          {(viewUrl || propertiesUrl) && (
+            <div className="card-expand-links">
+              {viewUrl && <a href={viewUrl} onClick={(e) => { e.preventDefault(); router.open(viewUrl); }} className="card-expand-link">View</a>}
+              {propertiesUrl && <a href={propertiesUrl} onClick={(e) => { e.preventDefault(); router.open(propertiesUrl); }} className="card-expand-link">Properties</a>}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 };
 
-const MyClaimedCard = ({ artifact, onRelease, busyAction }) => {
+const MyClaimedCard = ({ artifact, onRelease, busyAction, siteUrl }) => {
+  const [expanded, setExpanded] = useState(false);
+  const [cachedPreview, setCachedPreview] = useState(null);
   const isExpired = artifact.isExpired || (artifact.expiresAt && new Date(artifact.expiresAt) < new Date());
   const statusClass = isExpired ? "expired" : "locked-by-me";
   const statusText = isExpired ? "Overdue" : "My Reservation";
+  const isImage = artifact.mediaType?.startsWith("image/");
+  const numericAttId = artifact.id ? artifact.id.replace(/^att/, "") : null;
+  const downloadHref = siteUrl && artifact.pageId && artifact.title
+    ? `${siteUrl}/wiki/download/attachments/${artifact.pageId}/${encodeURIComponent(artifact.title)}?api=v2`
+    : null;
+  const pageSlug = artifact.pageTitle ? artifact.pageTitle.replace(/\s+/g, "+") : null;
+  const viewUrl = siteUrl && artifact.spaceKey && artifact.pageId && numericAttId && artifact.title && pageSlug
+    ? `${siteUrl}/wiki/spaces/${artifact.spaceKey}/pages/${artifact.pageId}/${pageSlug}?preview=/${artifact.pageId}/${numericAttId}/${encodeURIComponent(artifact.title)}`
+    : null;
+  const propertiesUrl = siteUrl && artifact.pageId && artifact.title
+    ? `${siteUrl}/wiki/pages/editattachment.action?pageId=${artifact.pageId}&fileName=${encodeURIComponent(artifact.title)}&isFromPageView=true`
+    : null;
 
   const metaItems = [];
   if (artifact.pageTitle) metaItems.push(<span key="loc" className="card-meta-item">{artifact.pageTitle}</span>);
@@ -257,8 +315,24 @@ const MyClaimedCard = ({ artifact, onRelease, busyAction }) => {
     <div className={`artifact-card status-${statusClass}`}>
       <div className="card-row card-row-primary">
         <span className="card-filename">
+          <button
+            className={`card-expand-toggle ${expanded ? "is-expanded" : ""}`}
+            onClick={() => setExpanded((prev) => !prev)}
+            aria-expanded={expanded}
+            title={expanded ? "Collapse details" : "Show details"}
+          >
+            <svg width="12" height="12" viewBox="0 0 12 12">
+              <path d="M3 5l3 3 3-3" stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinecap="round" />
+            </svg>
+          </button>
           <ArtifactTypeIcon mediaType={artifact.mediaType} />
-          <span className="card-filename-text">{artifact.title}</span>
+          {downloadHref ? (
+            <a className="card-filename-text card-filename-link" href={downloadHref} onClick={(e) => { e.preventDefault(); router.open(downloadHref); }} title={`Download ${artifact.title}`}>
+              {artifact.title}
+            </a>
+          ) : (
+            <span className="card-filename-text">{artifact.title}</span>
+          )}
         </span>
         <span className="card-row-right">
           <span className={`status-lozenge ${statusClass}`}>{statusText}</span>
@@ -282,6 +356,19 @@ const MyClaimedCard = ({ artifact, onRelease, busyAction }) => {
           </span>
         </div>
       )}
+
+      {/* Expand panel: thumbnail + view link */}
+      {expanded && (
+        <div className="card-row card-row-expand">
+          {isImage && artifact.pageId && <ThumbnailPreview artifactId={artifact.id} contentId={artifact.pageId} mediaType={artifact.mediaType} fileSize={artifact.fileSize} cachedDataUri={cachedPreview} onCached={setCachedPreview} />}
+          {(viewUrl || propertiesUrl) && (
+            <div className="card-expand-links">
+              {viewUrl && <a href={viewUrl} onClick={(e) => { e.preventDefault(); router.open(viewUrl); }} className="card-expand-link">View</a>}
+              {propertiesUrl && <a href={propertiesUrl} onClick={(e) => { e.preventDefault(); router.open(propertiesUrl); }} className="card-expand-link">Properties</a>}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 };
@@ -293,6 +380,7 @@ const RealmPolicyDashboard = () => {
   const [messageType, setMessageType] = useState(null); // 'success' or 'error'
   const [realmKey, setRealmKey] = useState(null);
   const [realmId, setRealmId] = useState(null);
+  const [siteUrl, setSiteUrl] = useState(null);
   const [realmName, setRealmName] = useState("Current Space");
 
   const [realmPrefs, setRealmPrefs] = useState({
@@ -384,6 +472,8 @@ const RealmPolicyDashboard = () => {
         // ACTUAL structure from real context output: context.extension.space.key
         const realmKeyValue = context?.extension?.space?.key;
         const realmIdValue = context?.extension?.space?.id;
+
+        setSiteUrl(context?.siteUrl || null);
 
         if (realmKeyValue && realmIdValue) {
           setRealmKey(realmKeyValue);
@@ -1420,6 +1510,7 @@ const RealmPolicyDashboard = () => {
                   key={artifact.id}
                   artifact={artifact}
                   busyAction={busyAction?.id === artifact.id ? busyAction.action : null}
+                  siteUrl={siteUrl}
                   onRelease={async (id) => {
                     setBusyAction({ id, action: "unseal" });
                     try {
@@ -1485,6 +1576,7 @@ const RealmPolicyDashboard = () => {
                     forceReleaseActive={forceReleaseActive}
                     visibleColumns={realmVisibleColumns}
                     busyAction={busyAction?.id === artifact.id ? busyAction.action : null}
+                    siteUrl={siteUrl}
                   />
                 ))}
               </div>

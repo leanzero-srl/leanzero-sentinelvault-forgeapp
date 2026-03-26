@@ -92,6 +92,8 @@ const enumerateRealmSeals = async (req) => {
         lockedByAccountId: value.lockedBy,
         lockedOn: value.timestamp,
         expiresAt: value.expiresAt,
+        downloadLink: value.downloadLink || null,
+        mediaType: value.mediaType || null,
       };
     });
 

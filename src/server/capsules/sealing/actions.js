@@ -130,6 +130,8 @@ const enumerateDocArtifacts = async (req) => {
           labels,
           comment: att.version?.message || null,
           versionNumber: att.version?.number || null,
+          downloadLink: att.downloadLink || att._links?.download || null,
+          webuiLink: att.webuiLink || att._links?.webui || null,
         };
       }),
     );
@@ -247,6 +249,7 @@ const sealArtifact = async (req) => {
   let creatorAccountId = null;
   let sealedVersion = null;
   let sealedFileId = null;
+  let artifactDownloadLink = null;
   try {
     const artifactRoute = route`/wiki/api/v2/attachments/${attachmentId}`;
     const artifactResponse = await asUser().requestConfluence(artifactRoute);
@@ -257,6 +260,7 @@ const sealArtifact = async (req) => {
       creatorAccountId = artifactData.version?.authorId || null;
       sealedVersion = artifactData.version?.number || null;
       sealedFileId = artifactData.fileId || null;
+      artifactDownloadLink = artifactData.downloadLink || artifactData._links?.download || null;
     }
   } catch (error) {
     console.warn("Failed to fetch artifact details:", error);
@@ -292,6 +296,7 @@ const sealArtifact = async (req) => {
     attachmentName: artifactName,
     sealedVersion: sealedVersion,
     sealedFileId: sealedFileId,
+    downloadLink: artifactDownloadLink,
   };
 
   // Store seal record
@@ -317,6 +322,7 @@ const sealArtifact = async (req) => {
         spaceKey: realmKey || null,
         pageTitle,
         fileSize: fileSize || null,
+        downloadLink: artifactDownloadLink,
         creatorName: null,
         creatorAccountId: creatorAccountId || null,
       });
@@ -659,6 +665,8 @@ const enumerateOperatorSeals = async (req) => {
 
         let artifactTitle = value.attachmentName || "Unknown Attachment";
         let fileSize = "Unknown";
+        let attDownloadLink = null;
+        let attMediaType = null;
 
         try {
           const artifactResponse = await asUser().requestConfluence(
@@ -684,6 +692,8 @@ const enumerateOperatorSeals = async (req) => {
           fileSize = artifactData.fileSize
             ? `${Math.round(artifactData.fileSize / 1024)}KB`
             : "Unknown";
+          attDownloadLink = artifactData.downloadLink || artifactData._links?.download || null;
+          attMediaType = artifactData.mediaType || null;
         } catch (attErr) {
           // Can't verify attachment — clean up and skip
           await kvs.delete(`protection-${artifactId}`);
@@ -746,6 +756,8 @@ const enumerateOperatorSeals = async (req) => {
           expiresAt: value.expiresAt,
           isExpired: sealLapsed,
           autoUnlockEnabled: autoUnsealActive,
+          downloadLink: attDownloadLink,
+          mediaType: attMediaType,
         });
       } catch (sealErr) {
         console.error(`Error processing seal ${key}:`, sealErr);

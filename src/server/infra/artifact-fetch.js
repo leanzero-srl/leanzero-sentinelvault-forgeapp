@@ -456,3 +456,68 @@ export async function downloadArtifactBinary(artifactId, contentId, version) {
     return null;
   }
 }
+
+/**
+ * Resolve a base64 data URI thumbnail for an image attachment.
+ * Used by Custom UI surfaces that cannot load cross-origin images due to Forge CSP.
+ *
+ * @param {string} artifactId - The attachment ID
+ * @param {string} contentId - The parent page/content ID
+ * @param {string} [mediaType] - MIME type (if known, skips metadata fetch)
+ * @param {number} [fileSize] - File size in bytes (if known, skips metadata fetch)
+ * @returns {Promise<{dataUri: string}|null>} Base64 data URI or null
+ */
+export async function resolveArtifactPreview(artifactId, contentId, mediaType, fileSize) {
+  const MAX_PREVIEW_BYTES = 5 * 1024 * 1024; // 5 MB
+
+  try {
+    let resolvedMediaType = mediaType;
+    let resolvedFileSize = fileSize;
+
+    // Only fetch metadata if caller didn't provide mediaType
+    if (!resolvedMediaType) {
+      const metaResponse = await asApp().requestConfluence(
+        route`/wiki/api/v2/attachments/${artifactId}`,
+        { headers: { Accept: "application/json" } },
+      );
+
+      if (!metaResponse.ok) {
+        console.warn(`[PREVIEW] Failed to fetch metadata for ${artifactId}: ${metaResponse.status}`);
+        return null;
+      }
+
+      const meta = await metaResponse.json();
+      resolvedMediaType = meta.mediaType;
+      resolvedFileSize = meta.fileSize;
+    }
+
+    // Only generate previews for images
+    if (!resolvedMediaType || !resolvedMediaType.startsWith("image/")) {
+      return null;
+    }
+
+    // Skip large files
+    if (resolvedFileSize && resolvedFileSize > MAX_PREVIEW_BYTES) {
+      console.warn(`[PREVIEW] Skipping ${artifactId}: file too large (${resolvedFileSize} bytes)`);
+      return null;
+    }
+
+    // Download the image binary via v1 API
+    const downloadRoute = route`/wiki/rest/api/content/${contentId}/child/attachment/${artifactId}/download`;
+    const downloadResponse = await asApp().requestConfluence(downloadRoute);
+
+    if (!downloadResponse.ok) {
+      console.warn(`[PREVIEW] Failed to download ${artifactId}: ${downloadResponse.status}`);
+      return null;
+    }
+
+    const buffer = await downloadResponse.arrayBuffer();
+    const base64 = Buffer.from(buffer).toString("base64");
+    const dataUri = `data:${resolvedMediaType};base64,${base64}`;
+
+    return { dataUri };
+  } catch (error) {
+    console.error(`[PREVIEW] Error generating preview for ${artifactId}:`, error);
+    return null;
+  }
+}
