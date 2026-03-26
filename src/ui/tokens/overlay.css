@@ -629,6 +629,54 @@ html[data-color-mode="dark"] .status-lozenge.trashed {
 html[data-color-mode="dark"] .action-btn.purge:hover:not(:disabled) {
   background: rgba(248, 113, 113, 0.1);
 }
+
+/* Inline confirmation bar */
+.card-confirm-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 4px;
+  padding: 6px 8px;
+  border-radius: 4px;
+  background: var(--sv-surface-secondary, #fff7d6);
+  font-size: 12px;
+}
+.confirm-message {
+  flex: 1;
+  min-width: 0;
+  color: var(--sv-text-secondary, #7f5f01);
+}
+.confirm-actions {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+.action-btn.confirm-yes {
+  background: var(--sv-interactive-danger, #ca3521);
+  color: #fff;
+  border: none;
+  padding: 3px 10px;
+  border-radius: 3px;
+  cursor: pointer;
+  font-size: 11px;
+}
+.action-btn.confirm-yes:hover {
+  filter: brightness(0.9);
+}
+.action-btn.confirm-no {
+  background: transparent;
+  color: var(--sv-text-secondary, #626f86);
+  border: 1px solid var(--sv-border-primary, #dcdfe4);
+  padding: 3px 10px;
+  border-radius: 3px;
+  cursor: pointer;
+  font-size: 11px;
+}
+.action-btn.confirm-no:hover {
+  background: var(--sv-surface-secondary, #f1f2f4);
+}
+
 .badge-stale {
   background: var(--sv-surface-tertiary) !important;
   color: var(--sv-text-secondary) !important;

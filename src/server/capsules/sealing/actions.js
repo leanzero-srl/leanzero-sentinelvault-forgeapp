@@ -893,40 +893,20 @@ const checkSealStamp = async () => {
 };
 
 /**
- * Restore a sealed attachment that was trashed in Confluence.
- * Only works for trashed attachments — permanently deleted ones cannot be recovered.
+ * Restore a trashed attachment back to the page.
+ * Works for any trashed attachment — with or without a seal record.
  */
 const restoreSealedArtifact = async (req) => {
   const { attachmentId } = req.payload;
-  const operatorAccountId = req.context.accountId;
-  const realmKey =
-    req.context.extension?.content?.space?.key ||
-    req.context.extension?.space?.key;
 
   if (!attachmentId) {
     return { success: false, reason: "Missing attachmentId" };
   }
 
-  const sealRecord = await kvs.get(`protection-${attachmentId}`);
-  if (!sealRecord) {
-    return { success: false, reason: "No seal record found" };
-  }
-
   // Check admin toggle
   const globalPolicy = await kvs.get("admin-settings-global");
   if (globalPolicy?.allowSealRestore !== true) {
-    return { success: false, reason: "Seal restore is disabled by admin" };
-  }
-
-  // Permission: owner or steward
-  const isOwner = sealRecord.lockedBy === operatorAccountId;
-  if (!isOwner) {
-    const hasStewardAccess = realmKey
-      ? await authorizeSteward(operatorAccountId, realmKey)
-      : false;
-    if (!hasStewardAccess) {
-      return { success: false, reason: "Only the seal owner or a steward can restore" };
-    }
+    return { success: false, reason: "Restore is disabled by admin" };
   }
 
   // Probe attachment status
@@ -952,10 +932,13 @@ const restoreSealedArtifact = async (req) => {
     return { success: false, reason: `Unexpected attachment status: ${probeData.status}` };
   }
 
-  // Restore from trash
-  const pageId = sealRecord.contentId;
+  // Determine page ID from seal record or attachment container
+  const sealRecord = await kvs.get(`protection-${attachmentId}`);
+  const pageId = sealRecord?.contentId || req.payload?.pageId ||
+    req.context.extension?.content?.id;
+
   if (!pageId) {
-    return { success: false, reason: "Seal record is missing page context — cannot restore" };
+    return { success: false, reason: "Cannot determine parent page — unable to restore" };
   }
 
   const currentVersion = probeData.version?.number;
@@ -971,7 +954,7 @@ const restoreSealedArtifact = async (req) => {
       id: attachmentId,
       type: "attachment",
       status: "current",
-      title: probeData.title || sealRecord.attachmentName || "Unknown",
+      title: probeData.title || sealRecord?.attachmentName || "Unknown",
       version: { number: currentVersion + 1 },
     }),
   });
@@ -983,13 +966,13 @@ const restoreSealedArtifact = async (req) => {
   }
 
   await touchSealTimestamp();
-  console.warn(`[RESTORE] Restored sealed attachment ${attachmentId}`);
+  console.warn(`[RESTORE] Restored attachment ${attachmentId}`);
   return { success: true };
 };
 
 /**
- * Purge a stale seal record for an attachment that may no longer exist.
- * Cleans up KVS keys, content properties, and watcher subscriptions.
+ * Purge an attachment permanently and clean up all seal state.
+ * This is a destructive action — the attachment cannot be recovered.
  */
 const purgeSealRecord = async (req) => {
   const { attachmentId } = req.payload;
@@ -1002,31 +985,63 @@ const purgeSealRecord = async (req) => {
     return { success: false, reason: "Missing attachmentId" };
   }
 
-  const sealRecord = await kvs.get(`protection-${attachmentId}`);
-  if (!sealRecord) {
-    // No seal record — nothing to purge, treat as success
-    return { success: true };
-  }
-
   // Check admin toggle
   const globalPolicy = await kvs.get("admin-settings-global");
   if (globalPolicy?.allowSealPurge !== true) {
-    return { success: false, reason: "Seal record cleanup is disabled by admin" };
+    return { success: false, reason: "Purge is disabled by admin" };
   }
 
-  // Permission: owner or steward
-  const isOwner = sealRecord.lockedBy === operatorAccountId;
-  if (!isOwner) {
-    const hasStewardAccess = realmKey
-      ? await authorizeSteward(operatorAccountId, realmKey)
-      : false;
-    if (!hasStewardAccess) {
-      return { success: false, reason: "Only the seal owner or a steward can purge" };
+  const sealRecord = await kvs.get(`protection-${attachmentId}`);
+
+  // Permission: owner, steward, or no seal (anyone can purge unsealed trashed items)
+  if (sealRecord && sealRecord.lockedBy) {
+    const isOwner = sealRecord.lockedBy === operatorAccountId;
+    if (!isOwner) {
+      const hasStewardAccess = realmKey
+        ? await authorizeSteward(operatorAccountId, realmKey)
+        : false;
+      if (!hasStewardAccess) {
+        return { success: false, reason: "Only the seal owner or a steward can purge" };
+      }
     }
   }
 
-  // Full cleanup via shared utility
-  await purgeAllSealState(attachmentId, sealRecord);
+  // Permanently delete the attachment from Confluence (if it still exists)
+  try {
+    // First check if attachment is trashed — must trash before purging
+    const probeRes = await asApp().requestConfluence(
+      route`/wiki/api/v2/attachments/${attachmentId}`,
+    );
+    if (probeRes.ok) {
+      const probeData = await probeRes.json();
+      if (probeData.status === "current") {
+        // Trash it first
+        const trashRes = await asUser().requestConfluence(
+          route`/wiki/api/v2/attachments/${attachmentId}`,
+          { method: "DELETE" },
+        );
+        if (!trashRes.ok && trashRes.status !== 204) {
+          return { success: false, reason: `Failed to trash attachment: ${trashRes.status}` };
+        }
+      }
+      // Now permanently delete
+      const purgeRes = await asApp().requestConfluence(
+        route`/wiki/api/v2/attachments/${attachmentId}?purge=true`,
+        { method: "DELETE" },
+      );
+      if (!purgeRes.ok && purgeRes.status !== 204 && purgeRes.status !== 404) {
+        console.warn(`[PURGE] Permanent delete returned ${purgeRes.status} for ${attachmentId}`);
+      }
+    }
+    // 404 = already gone — that's fine
+  } catch (err) {
+    console.warn(`[PURGE] Error deleting attachment ${attachmentId}:`, err);
+  }
+
+  // Clean up seal state if present
+  if (sealRecord) {
+    await purgeAllSealState(attachmentId, sealRecord);
+  }
 
   // Clean up watcher subscriptions
   const watchPrefix = `notification-${attachmentId}-`;
@@ -1039,7 +1054,7 @@ const purgeSealRecord = async (req) => {
     await kvs.delete(key);
   }
 
-  console.warn(`[PURGE] Removed seal record for ${sealRecord.attachmentName || attachmentId}`);
+  console.warn(`[PURGE] Permanently removed ${sealRecord?.attachmentName || attachmentId}`);
   return { success: true };
 };
 
