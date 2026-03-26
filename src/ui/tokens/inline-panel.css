@@ -442,6 +442,59 @@ html[data-color-mode="dark"] .artifact-card.status-trashed {
   padding: 3px 8px;
 }
 
+/* Inline confirmation bar */
+.card-confirm-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 4px;
+  padding: 6px 8px;
+  border-radius: 4px;
+  background: var(--ds-background-warning, #fff7d6);
+  font-size: 12px;
+}
+
+.confirm-message {
+  flex: 1;
+  min-width: 0;
+  color: var(--ds-text-warning, #7f5f01);
+}
+
+.confirm-actions {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.action-btn.confirm-yes {
+  background: var(--ds-background-danger-bold, #ca3521);
+  color: var(--ds-text-inverse, #fff);
+  border: none;
+  padding: 3px 10px;
+  border-radius: 3px;
+  cursor: pointer;
+  font-size: 11px;
+}
+
+.action-btn.confirm-yes:hover {
+  background: var(--ds-background-danger-bold-hovered, #ae2a19);
+}
+
+.action-btn.confirm-no {
+  background: transparent;
+  color: var(--ds-text-subtle, #626f86);
+  border: 1px solid var(--ds-border, #dcdfe4);
+  padding: 3px 10px;
+  border-radius: 3px;
+  cursor: pointer;
+  font-size: 11px;
+}
+
+.action-btn.confirm-no:hover {
+  background: var(--ds-background-neutral-hovered, #f1f2f4);
+}
+
 .sv-card-list[data-cols="3"] .user-display {
   font-size: 11px;
 }

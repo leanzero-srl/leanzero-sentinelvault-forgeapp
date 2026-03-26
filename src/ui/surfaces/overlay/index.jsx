@@ -249,6 +249,7 @@ const SortPicker = ({ orderField, orderDir, onSort }) => {
 };
 
 const OverlayArtifactCard = ({ artifact, visibleColumns, onSecure, onRelease, onWatch, onRestore, onPurge, isWatching, busyAction, formatRemainingTime, formatFileSize }) => {
+  const [pendingConfirm, setPendingConfirm] = useState(false);
   const isSealed = artifact.lockStatus === "HELD" || artifact.lockStatus === "HELD_BY_ACTOR";
   const isSealedByMe = artifact.lockStatus === "HELD_BY_ACTOR";
   const isSealedByOther = artifact.lockStatus === "HELD";
@@ -259,7 +260,7 @@ const OverlayArtifactCard = ({ artifact, visibleColumns, onSecure, onRelease, on
   let statusText = "Available";
   if (isStale && isRecoverable) {
     statusClass = "trashed";
-    statusText = "Trashed";
+    statusText = "Trash";
   } else if (isStale) {
     statusClass = "stale";
     statusText = "Missing";
@@ -341,18 +342,36 @@ const OverlayArtifactCard = ({ artifact, visibleColumns, onSecure, onRelease, on
 
   // Secondary actions
   const secondaryActions = [];
-  if (isStale && artifact.allowPurge) {
-    secondaryActions.push(
-      <button
-        key="purge"
-        className={`action-btn purge ${busyAction === "purge" ? "is-busy" : ""}`}
-        onClick={() => onPurge(artifact.id)}
-        disabled={busyAction && busyAction !== "purge"}
-        title="Remove this stale seal record"
-      >
-        {busyAction === "purge" ? <>Purging<span className="btn-busy-bar" /></> : "Purge"}
-      </button>
-    );
+  if (isStale && isRecoverable) {
+    // Trashed: show Purge (permanent delete)
+    if (artifact.allowPurge) {
+      secondaryActions.push(
+        <button
+          key="purge"
+          className={`action-btn purge ${busyAction === "purge" ? "is-busy" : ""}`}
+          onClick={() => setPendingConfirm(true)}
+          disabled={busyAction && busyAction !== "purge"}
+          title="Permanently delete this attachment"
+        >
+          {busyAction === "purge" ? <>Purging<span className="btn-busy-bar" /></> : "Purge"}
+        </button>
+      );
+    }
+  } else if (isStale) {
+    // Permanently deleted — Purge to clean up record
+    if (artifact.allowPurge) {
+      secondaryActions.push(
+        <button
+          key="purge"
+          className={`action-btn purge ${busyAction === "purge" ? "is-busy" : ""}`}
+          onClick={() => setPendingConfirm(true)}
+          disabled={busyAction && busyAction !== "purge"}
+          title="Remove this stale record"
+        >
+          {busyAction === "purge" ? <>Purging<span className="btn-busy-bar" /></> : "Purge"}
+        </button>
+      );
+    }
   } else if (visibleColumns.watch && isSealedByOther) {
     secondaryActions.push(
       <button
@@ -363,19 +382,6 @@ const OverlayArtifactCard = ({ artifact, visibleColumns, onSecure, onRelease, on
         title={isWatching ? "Stop watching" : "Get notified when relinquished"}
       >
         {busyAction === "watch" ? <>Updating<span className="btn-busy-bar" /></> : (isWatching ? "Watching" : "Watch")}
-      </button>
-    );
-  }
-  if (!isStale && (isSealedByMe || !isSealed) && artifact.allowPurge) {
-    secondaryActions.push(
-      <button
-        key="purge"
-        className={`action-btn purge ${busyAction === "purge" ? "is-busy" : ""}`}
-        onClick={() => onPurge(artifact.id)}
-        disabled={busyAction && busyAction !== "purge"}
-        title="Remove this seal record permanently"
-      >
-        {busyAction === "purge" ? <>Purging<span className="btn-busy-bar" /></> : "Purge"}
       </button>
     );
   }
@@ -396,7 +402,7 @@ const OverlayArtifactCard = ({ artifact, visibleColumns, onSecure, onRelease, on
           {primaryAction}
         </span>
       </div>
-      {hasSecondLine && (
+      {hasSecondLine && !pendingConfirm && (
         <div className="card-row card-row-secondary">
           <span className="card-secondary-left">
             {metaItems.length > 0 && (
@@ -421,6 +427,19 @@ const OverlayArtifactCard = ({ artifact, visibleColumns, onSecure, onRelease, on
           {secondaryActions.length > 0 && (
             <span className="card-secondary-right">{secondaryActions}</span>
           )}
+        </div>
+      )}
+
+      {/* Inline confirmation bar */}
+      {pendingConfirm && (
+        <div className="card-row card-confirm-bar">
+          <span className="confirm-message">
+            Permanently delete "{artifact.title}"? This cannot be undone.
+          </span>
+          <span className="confirm-actions">
+            <button className="action-btn confirm-yes" onClick={() => { setPendingConfirm(false); onPurge(artifact.id); }}>Confirm</button>
+            <button className="action-btn confirm-no" onClick={() => setPendingConfirm(false)}>Cancel</button>
+          </span>
         </div>
       )}
     </div>
@@ -764,8 +783,6 @@ const ArtifactControlPanel = () => {
   };
 
   const onPurgeFile = async (artifactId) => {
-    const artifact = fileList.find((att) => att.id === artifactId);
-    if (!window.confirm(`Remove the seal record for "${artifact?.title || "this file"}"? This cannot be undone.`)) return;
     setBusyAction({ id: artifactId, action: "purge" });
     try {
       const result = await invoke("purge-seal-record", { attachmentId: artifactId });

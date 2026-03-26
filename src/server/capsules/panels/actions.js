@@ -215,6 +215,8 @@ const unlabelArtifact = async (req) => {
 
 /**
  * Delete an artifact (moves to trash)
+ * Works for any attachment state: unsealed, sealed (own claim), or stale.
+ * If sealed, removes the seal record first to prevent auto-restore triggers.
  * Conditional on global setting `allowAttachmentDelete`
  */
 const deleteArtifact = async (req) => {
@@ -231,13 +233,28 @@ const deleteArtifact = async (req) => {
   }
 
   try {
-    // Check if artifact is sealed - prevent deleting sealed artifacts
+    // If sealed by current user, remove the seal first to prevent auto-restore
     const sealData = await kvs.get(`protection-${attachmentId}`);
     if (sealData && sealData.lockedBy) {
-      return {
-        success: false,
-        reason: "Cannot delete a locked attachment. Unlock it first.",
-      };
+      if (sealData.lockedBy !== req.context.accountId) {
+        return {
+          success: false,
+          reason: "Cannot delete an attachment sealed by another user.",
+        };
+      }
+      // Remove seal so the trash trigger doesn't auto-restore
+      await kvs.delete(`protection-${attachmentId}`);
+      if (sealData.spaceId) {
+        await kvs.delete(`space-protection-${sealData.spaceId}-${attachmentId}`);
+      }
+      if (sealData.contentId) {
+        try {
+          const { removeSealContentProp } = await import("../sealing/logic.js");
+          await removeSealContentProp(sealData.contentId);
+        } catch (_) { /* best effort */ }
+      }
+      const { touchSealTimestamp } = await import("../sealing/logic.js");
+      await touchSealTimestamp();
     }
 
     const response = await asUser().requestConfluence(

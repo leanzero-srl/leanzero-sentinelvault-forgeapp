@@ -266,6 +266,7 @@ const UploadZone = ({ onUploadComplete }) => {
 
 const ArtifactCard = ({ att, onRefresh, columns }) => {
   const [actionBusy, setActionBusy] = useState(null);
+  const [pendingConfirm, setPendingConfirm] = useState(null); // { action, message }
 
   const isSealed = att.lockStatus === "HELD" || att.lockStatus === "HELD_BY_ACTOR";
   const isSealedByMe = att.lockStatus === "HELD_BY_ACTOR";
@@ -301,8 +302,15 @@ const ArtifactCard = ({ att, onRefresh, columns }) => {
     }
   };
 
-  const handleDelete = async () => {
-    if (!window.confirm(`Remove "${att.title}"? It will be sent to the trash.`)) return;
+  const handleDelete = () => {
+    setPendingConfirm({
+      action: "delete",
+      message: `Remove "${att.title}"? It will be sent to the trash.`,
+    });
+  };
+
+  const executeDelete = async () => {
+    setPendingConfirm(null);
     setActionBusy("delete");
     try {
       const result = await invoke("delete-artifact", { attachmentId: att.id });
@@ -351,8 +359,15 @@ const ArtifactCard = ({ att, onRefresh, columns }) => {
     }
   };
 
-  const handlePurge = async () => {
-    if (!window.confirm(`Remove the seal record for "${att.title}"? This cannot be undone.`)) return;
+  const handlePurge = () => {
+    setPendingConfirm({
+      action: "purge",
+      message: `Permanently delete "${att.title}"? This cannot be undone.`,
+    });
+  };
+
+  const executePurge = async () => {
+    setPendingConfirm(null);
     setActionBusy("purge");
     try {
       const result = await invoke("purge-seal-record", { attachmentId: att.id });
@@ -373,7 +388,7 @@ const ArtifactCard = ({ att, onRefresh, columns }) => {
   let statusText = "Available";
   if (isStale && isRecoverable) {
     statusClass = "trashed";
-    statusText = "Trashed";
+    statusText = "Trash";
   } else if (isStale) {
     statusClass = "stale";
     statusText = "Missing";
@@ -441,19 +456,38 @@ const ArtifactCard = ({ att, onRefresh, columns }) => {
   // Secondary actions (line 2)
   const secondaryActions = [];
   if (columns.actions) {
-    if (isStale && att.allowPurge) {
-      secondaryActions.push(
-        <button
-          key="purge"
-          className={`action-btn purge ${actionBusy === "purge" ? "is-busy" : ""}`}
-          onClick={handlePurge}
-          disabled={actionBusy && actionBusy !== "purge"}
-          title="Remove this stale seal record"
-        >
-          {actionBusy === "purge" ? <>Purging<span className="btn-busy-bar" /></> : "Purge"}
-        </button>
-      );
+    if (isStale && isRecoverable) {
+      // Trashed: show Purge (permanent delete)
+      if (att.allowPurge) {
+        secondaryActions.push(
+          <button
+            key="purge"
+            className={`action-btn purge ${actionBusy === "purge" ? "is-busy" : ""}`}
+            onClick={handlePurge}
+            disabled={actionBusy && actionBusy !== "purge"}
+            title="Permanently delete this attachment"
+          >
+            {actionBusy === "purge" ? <>Purging<span className="btn-busy-bar" /></> : "Purge"}
+          </button>
+        );
+      }
+    } else if (isStale) {
+      // Permanently deleted — show Purge to clean up seal record
+      if (att.allowPurge) {
+        secondaryActions.push(
+          <button
+            key="purge"
+            className={`action-btn purge ${actionBusy === "purge" ? "is-busy" : ""}`}
+            onClick={handlePurge}
+            disabled={actionBusy && actionBusy !== "purge"}
+            title="Remove this stale record"
+          >
+            {actionBusy === "purge" ? <>Purging<span className="btn-busy-bar" /></> : "Purge"}
+          </button>
+        );
+      }
     } else if (isSealedByOther) {
+      // Sealed by someone else — Watch button
       secondaryActions.push(
         <button
           key="watch"
@@ -466,46 +500,17 @@ const ArtifactCard = ({ att, onRefresh, columns }) => {
         </button>
       );
     }
-    if (!isStale && att.allowDelete) {
-      if (!isSealed) {
-        // No seal — show normal delete button
-        secondaryActions.push(
-          <button
-            key="delete"
-            className={`action-btn delete ${actionBusy === "delete" ? "is-busy" : ""}`}
-            onClick={handleDelete}
-            disabled={actionBusy && actionBusy !== "delete"}
-            title="Remove file (sent to trash)"
-          >
-            {actionBusy === "delete" ? <>Removing<span className="btn-busy-bar" /></> : "Remove"}
-          </button>
-        );
-      } else if (isSealedByMe) {
-        // Sealed by current user — show disabled delete with tooltip
-        secondaryActions.push(
-          <span
-            key="delete"
-            className="tooltip-wrapper has-tooltip"
-            data-tooltip="Relinquish seal first to remove"
-          >
-            <button className="action-btn delete" disabled>
-              Remove
-            </button>
-          </span>
-        );
-      }
-      // Sealed by someone else — hide the Remove button entirely
-    }
-    if (!isStale && (isSealedByMe || !isSealed) && att.allowPurge) {
+    // Delete button: available on all live items (unsealed or sealed by me)
+    if (!isStale && att.allowDelete && (!isSealed || isSealedByMe)) {
       secondaryActions.push(
         <button
-          key="purge"
-          className={`action-btn purge ${actionBusy === "purge" ? "is-busy" : ""}`}
-          onClick={handlePurge}
-          disabled={actionBusy && actionBusy !== "purge"}
-          title="Remove this seal record permanently"
+          key="delete"
+          className={`action-btn delete ${actionBusy === "delete" ? "is-busy" : ""}`}
+          onClick={handleDelete}
+          disabled={actionBusy && actionBusy !== "delete"}
+          title="Send to trash"
         >
-          {actionBusy === "purge" ? <>Purging<span className="btn-busy-bar" /></> : "Purge"}
+          {actionBusy === "delete" ? <>Removing<span className="btn-busy-bar" /></> : "Delete"}
         </button>
       );
     }
@@ -531,7 +536,7 @@ const ArtifactCard = ({ att, onRefresh, columns }) => {
       </div>
 
       {/* Line 2: meta + labels + secondary actions */}
-      {hasSecondLine && (
+      {hasSecondLine && !pendingConfirm && (
         <div className="card-row card-row-secondary">
           <span className="card-secondary-left">
             {metaItems.length > 0 && (
@@ -552,6 +557,17 @@ const ArtifactCard = ({ att, onRefresh, columns }) => {
               {secondaryActions}
             </span>
           )}
+        </div>
+      )}
+
+      {/* Inline confirmation bar */}
+      {pendingConfirm && (
+        <div className="card-row card-confirm-bar">
+          <span className="confirm-message">{pendingConfirm.message}</span>
+          <span className="confirm-actions">
+            <button className="action-btn confirm-yes" onClick={pendingConfirm.action === "delete" ? executeDelete : executePurge}>Confirm</button>
+            <button className="action-btn confirm-no" onClick={() => setPendingConfirm(null)}>Cancel</button>
+          </span>
         </div>
       )}
     </div>
