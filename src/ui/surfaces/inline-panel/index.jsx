@@ -687,9 +687,16 @@ const ArtifactGridView = () => {
     }
   }, [panelConfig.rowsPerPage]);
 
-  // Refresh all data
-  const onRefresh = useCallback(() => {
-    if (pageId) retrieveFileData(pageId);
+  // Refresh all data (re-fetch seals + attachments)
+  const onRefresh = useCallback(async () => {
+    if (!pageId) return;
+    try {
+      const seals = await invoke("enumerate-page-seals", { pageId });
+      if (seals?.claimedArtifacts?.length > 0) {
+        setArtifacts(seals.claimedArtifacts);
+      }
+    } catch (_) { /* fall through */ }
+    retrieveFileData(pageId, false, null, true);
   }, [pageId, retrieveFileData]);
 
   // Load more

@@ -233,28 +233,28 @@ const deleteArtifact = async (req) => {
   }
 
   try {
-    // If sealed by current user, remove the seal first to prevent auto-restore
+    // Block deletion of attachments sealed by another user
     const sealData = await kvs.get(`protection-${attachmentId}`);
-    if (sealData && sealData.lockedBy) {
-      if (sealData.lockedBy !== req.context.accountId) {
-        return {
-          success: false,
-          reason: "Cannot delete an attachment sealed by another user.",
-        };
-      }
-      // Remove seal so the trash trigger doesn't auto-restore
-      await kvs.delete(`protection-${attachmentId}`);
-      if (sealData.spaceId) {
-        await kvs.delete(`space-protection-${sealData.spaceId}-${attachmentId}`);
-      }
-      if (sealData.contentId) {
-        try {
-          const { removeSealContentProp } = await import("../sealing/logic.js");
-          await removeSealContentProp(sealData.contentId);
-        } catch (_) { /* best effort */ }
-      }
-      const { touchSealTimestamp } = await import("../sealing/logic.js");
-      await touchSealTimestamp();
+    if (sealData && sealData.lockedBy && sealData.lockedBy !== req.context.accountId) {
+      return {
+        success: false,
+        reason: "Cannot delete an attachment sealed by another user.",
+      };
+    }
+
+    // For unsealed items, fetch metadata before trashing so we can create a tracking record
+    let attTitle = "Unknown Attachment";
+    const isUnsealed = !sealData;
+    if (isUnsealed) {
+      try {
+        const attRes = await asApp().requestConfluence(
+          route`/wiki/api/v2/attachments/${attachmentId}`,
+        );
+        if (attRes.ok) {
+          const attData = await attRes.json();
+          attTitle = attData.title || attTitle;
+        }
+      } catch (_) { /* best effort */ }
     }
 
     const response = await asUser().requestConfluence(
@@ -263,14 +263,30 @@ const deleteArtifact = async (req) => {
     );
 
     if (response.ok || response.status === 204) {
+      // For unsealed items, create a tracking record so trashed item is discoverable
+      if (isUnsealed) {
+        const contentId = req.context.extension?.content?.id;
+        const spaceId = req.context.extension?.content?.space?.id || null;
+        await kvs.set(`protection-${attachmentId}`, {
+          lockedBy: req.context.accountId,
+          timestamp: new Date().toISOString(),
+          contentId,
+          spaceId,
+          attachmentId,
+          attachmentName: attTitle,
+          trashedOnly: true,
+        });
+        const { touchSealTimestamp } = await import("../sealing/logic.js");
+        await touchSealTimestamp();
+      }
       return { success: true };
     }
 
     const errorText = await response.text();
-    console.error(`[PANEL] Failed to delete artifact: ${response.status} - ${errorText}`);
+    console.error(`[PANEL] Failed to delete attachment: ${response.status} - ${errorText}`);
     return { success: false, reason: `API error: ${response.status}` };
   } catch (error) {
-    console.error("[PANEL] Error deleting artifact:", error);
+    console.error("[PANEL] Error deleting attachment:", error);
     return { success: false, reason: error.message };
   }
 };

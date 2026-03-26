@@ -618,6 +618,17 @@ html[data-color-mode="dark"] .status-lozenge.trashed {
   background: var(--sv-interactive-primary-hover);
   border-color: var(--sv-interactive-primary-hover);
 }
+.action-btn.delete {
+  background: none;
+  color: var(--sv-interactive-danger);
+  border-color: var(--sv-interactive-danger);
+}
+.action-btn.delete:hover:not(:disabled) {
+  background: rgba(220, 38, 38, 0.08);
+}
+html[data-color-mode="dark"] .action-btn.delete:hover:not(:disabled) {
+  background: rgba(248, 113, 113, 0.1);
+}
 .action-btn.purge {
   background: none;
   color: var(--sv-interactive-danger);
