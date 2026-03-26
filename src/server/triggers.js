@@ -11,7 +11,7 @@ import {
 import { recordDispatch, postDocFootnote } from "./capsules/bulletins/logic.js";
 import { resolveBulletinToggles } from "./shared/bulletin-flags.js";
 import { touchSealTimestamp, removeSealContentProp } from "./capsules/sealing/logic.js";
-import { readDocBody, readDocBodyAtVersion, writeDocBody, collectMediaFileIds } from "./infra/doc-surgery.js";
+import { readDocBody, readDocBodyAtVersion, writeDocBody, collectMediaFileIds, extractMediaSingleNodes, spliceMediaNodes } from "./infra/doc-surgery.js";
 
 // --- Helpers ---
 
@@ -175,9 +175,11 @@ export async function pageContentTrigger(event) {
       return;
     }
 
-    // Revert: fetch previous version ADF and write it back
+    // Surgically re-insert only the removed sealed media blocks
+    const violatedFileIds = new Set(violations.map(({ fileId }) => fileId));
+
     console.warn(
-      `[PAGE-PROTECT] ${violations.length} sealed media reference(s) removed from page ${pageId} by ${atlassianId} — reverting`,
+      `[PAGE-PROTECT] ${violations.length} sealed media reference(s) removed from page ${pageId} by ${atlassianId} — re-inserting`,
     );
 
     const MAX_RETRIES = 3;
@@ -193,15 +195,30 @@ export async function pageContentTrigger(event) {
 
         const { adfDoc: previousAdf } = await readDocBodyAtVersion(pageId, prevVersion);
 
+        // Extract only the top-level blocks containing the missing sealed media
+        const restoredNodes = extractMediaSingleNodes(previousAdf, violatedFileIds);
+
+        if (restoredNodes.length === 0) {
+          console.warn(
+            `[PAGE-PROTECT] Could not find sealed media in previous version either — skipping`,
+          );
+          break;
+        }
+
+        // Patch the current ADF by appending the restored blocks
+        const patchedAdf = spliceMediaNodes(current.adfDoc, restoredNodes);
+
         const putRes = await writeDocBody(
           pageId,
           current.pageData,
-          previousAdf,
-          "(Sentinel Vault automatically reversed page modifications)",
+          patchedAdf,
+          "(Sentinel Vault restored protected attachment embeds)",
         );
 
         if (putRes.ok) {
-          console.warn(`[PAGE-PROTECT] Reverted page ${pageId} to version ${prevVersion}`);
+          console.warn(
+            `[PAGE-PROTECT] Re-inserted ${restoredNodes.length} media block(s) into page ${pageId}`,
+          );
           break;
         }
 
@@ -213,7 +230,7 @@ export async function pageContentTrigger(event) {
         }
 
         const errorText = await putRes.text();
-        console.error(`[PAGE-PROTECT] Failed to revert page: ${putRes.status} — ${errorText}`);
+        console.error(`[PAGE-PROTECT] Failed to patch page: ${putRes.status} — ${errorText}`);
         break;
       } catch (err) {
         if (attempt === MAX_RETRIES - 1) {
@@ -317,7 +334,10 @@ async function handleSealedArtifactEdit(sealRecord, artifactId, contentId, atlas
 
 // --- Handle trashing of a sealed artifact — restore from trash ---
 async function handleSealedArtifactTrash(sealRecord, artifactId, contentId, atlassianId, attachment) {
-  // Restore even if seal owner trashed — seal contract prevents deletion while active
+  // Allow the seal owner to trash their own sealed attachment
+  if (sealRecord.lockedBy === atlassianId) {
+    return;
+  }
   const pageId = contentId || sealRecord.contentId;
   const currentVersion = attachment.version?.number;
   const attachmentTitle = attachment.title || sealRecord.attachmentName || "Unknown";
