@@ -24,7 +24,8 @@
     "resend": "^4.1.0"
   },
   "overrides": {
-    "picomatch": "^4.0.4"
+    "picomatch": "^4.0.4",
+    "serialize-javascript": "^7.0.3"
   },
   "devDependencies": {
     "@babel/core": "^7.22.0",
