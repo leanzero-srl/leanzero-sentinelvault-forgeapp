@@ -19,10 +19,10 @@ src/
       policies/       actions.js, logic.js
       realms/         actions.js, logic.js, scan-worker.js
     infra/                                  # Cross-cutting infrastructure
-      mail-composer.js                      # Email orchestration (8 types)
-      mail-blueprints.js                    # HTML email templates
-      outbound-mail.js                      # Resend API integration
-      artifact-fetch.js                     # Attachment download URL generation
+      notice-composer.js                    # Notification orchestration (7 types)
+      notice-blueprints.js                  # Storage-format comment body builders
+      outbound-notify.js                    # Confluence comment POST helper
+      artifact-fetch.js                     # Attachment metadata + violation handling
       doc-surgery.js                        # ADF manipulation (panel embed/remove, media protection)
     shared/                                 # Shared utilities and constants
       baseline.js                           # Feature flag defaults, seal duration
@@ -105,10 +105,10 @@ Each surface is a standalone React application bundled by Webpack and served as 
 
 The `infra/` layer provides cross-cutting services used by multiple capsules:
 
-- **mail-composer.js** -- Centralized email orchestration. All emails flow through `composeMail(type, data)` which fetches user profiles and artifact URLs in parallel, selects the HTML template, and dispatches via Resend. Supports 8 email types defined in `ALERT_CATEGORIES`: seal violation, seal created, 50% reminder, auto-release, expiry notification, periodic reminder, release notification, steward override release.
-- **mail-blueprints.js** -- HTML email templates as functions returning markup. Design includes a dark hero header with LeanZero branding, timeline layout, action pills, and color-coded status banners.
-- **outbound-mail.js** -- Resend API client with retry logic (3 retries, exponential backoff starting at 600ms, capped at 5s). Sends from `noreply@leanzero.atlascrafted.com`.
-- **artifact-fetch.js** -- Generates download URLs for attachment versions via the Confluence v2 API. Also provides metadata resolution for page artifacts.
+- **notice-composer.js** -- Centralized native-notification orchestration. All notices flow through `dispatchNotice(type, data)` which resolves the recipient's display name, builds a storage-format comment body, and posts a footer comment via `asApp().requestConfluence()`. Confluence's own notification engine emails the mentioned user (subject to their personal notification preferences). Supports 7 notice types defined in `ALERT_CATEGORIES`: seal violation, seal created, 50% reminder, auto-release / expiry notification, release notification, steward override release. (`PERIODIC_REMINDER` is a defined category but is delivered via banner only.)
+- **notice-blueprints.js** -- Storage-format comment body builders, one per notice type. Each emits Confluence storage XML with `<ac:link><ri:user ri:account-id="..."/></ac:link>` mention tags so Confluence can route the notification email.
+- **outbound-notify.js** -- Confluence footer-comment POST helper with retry logic (3 retries, exponential backoff starting at 600ms, capped at 5s on 429 / 5xx). No external egress — qualifies for the "Runs on Atlassian" badge.
+- **artifact-fetch.js** -- Attachment metadata resolution and violation handling. Detects unauthorized changes, posts a comment, and reverts the attachment to the previous version.
 - **doc-surgery.js** -- ADF (Atlassian Document Format) manipulation utilities:
   - **Panel management**: `triggerPanelEmbed()` auto-inserts the Sentinel Vault macro into page content. `removePanelNode()` removes it when no seals remain. `panelExistsInDoc()` checks for existing panel presence.
   - **Media protection**: `collectMediaFileIds()` extracts all media file IDs from a page. `extractMediaSingleNodes()` finds top-level blocks containing sealed media. `spliceMediaNodes()` re-inserts missing media blocks at their original positions.

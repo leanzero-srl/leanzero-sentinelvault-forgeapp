@@ -21,7 +21,7 @@ Stored in Forge KVS under key: `admin-settings-global`
 | Protect Sealed Attachments in Page Body | `enableContentProtection` | Boolean | On | Automatically undo page edits that remove sealed media embeds (images, file previews) from page content. |
 | Auto-Insert Macro on Seal | `globalAutoInsertMacro` | Boolean | Off | Automatically insert the Sentinel Vault panel macro into the page when an attachment is sealed. Individual realms can disable this. |
 | Replace Attachments Macro | `replaceAttachmentsMacro` | Boolean | Off | When inserting the panel, replace the built-in Confluence Attachments macro. Only visible when auto-insert is enabled. |
-| Reminder Frequency | `reminderIntervalDays` | Integer (days) | 7 | How often to send periodic reminder emails. Only visible when expiry notifications are disabled. |
+| Reminder Frequency | `reminderIntervalDays` | Integer (days) | 7 | How often to record a periodic reminder banner. Only visible when expiry notifications are disabled. |
 
 ### Alerts Tab
 
@@ -30,10 +30,10 @@ Stored in Forge KVS under key: `admin-settings-global`
 | Enable Pop-up Notifications | `enableFlashMessages` | Boolean | On | Show brief in-app popup notifications for seal/unseal actions and unauthorized access attempts. |
 | Enable Page Status Banners | `enableDocRibbons` | Boolean | On | Display a status banner at the top of pages showing sealed attachment info and expiry countdowns. |
 | Enable Page Comments | `enableConfluenceDispatches` | Boolean | On | Post Confluence comments when attachments are sealed, unsealed, or when unauthorized access is attempted. |
-| Enable Email Notifications | `enableEmailDispatches` | Boolean | On | Master toggle for all email types. Must be on for any email sub-option to work. |
-| Seal Confirmation Emails | `enableSealExpiryReminderEmail` | Boolean | On | Send confirmation email after sealing with duration and expiry details. Nested under email master toggle. |
-| Seal Expiry Reminder Emails | `enableAutoUnsealDispatchEmail` | Boolean | On | Send reminder when a seal has expired. Nested under email master toggle. |
-| Recurring Reminder Emails | `enablePeriodicReminderEmail` | Boolean | On | Send periodic reminders when expiry notifications are off. Frequency set by Reminder Frequency in General tab. Nested under email master toggle. |
+| Enable Native Notifications | `enableEmailDispatches` | Boolean | On | Master toggle for all comment-with-mention notices. Confluence's notification engine emails the mentioned user according to their personal preferences. The KVS key is preserved from the previous email-based release for backwards compatibility. Must be on for any sub-option below to work. |
+| Seal Confirmation & Halfway Reminder Notices | `enableSealExpiryReminderEmail` | Boolean | On | Post a comment that mentions the seal owner when a seal is created and at the seal's midpoint. KVS key preserved for backwards compatibility. Nested under master toggle. |
+| Seal Expiry Notices | `enableAutoUnsealDispatchEmail` | Boolean | On | Post a comment that mentions the seal owner when a seal has expired. KVS key preserved for backwards compatibility. Nested under master toggle. |
+| Recurring Reminder Banners | `enablePeriodicReminderEmail` | Boolean | On | Show recurring banners for long-held seals when auto-unseal is disabled. Banner-only — no comment is posted, to avoid page clutter. Frequency set by Reminder Frequency in General tab. KVS key preserved for backwards compatibility. Nested under master toggle. |
 
 ## Realm Console (Space Settings)
 
@@ -82,7 +82,7 @@ Baseline defaults (src/server/shared/baseline.js)
 - Steward delegation (Access Control tab)
 
 **What cannot be overridden at realm level (global only):**
-- All notification toggles (toast, banner, comment, email)
+- All notification toggles (toast, banner, comment, native notifications)
 - Content protection toggle
 - Delete/restore/purge permissions
 - Steward force-unseal permission

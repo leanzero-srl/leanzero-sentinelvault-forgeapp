@@ -444,8 +444,8 @@ const GlobalPolicyEditor = () => {
             </SettingsRow>
 
             <SettingsRow
-              label="Enable Email Notifications"
-              description="Send email notifications to users about their sealed attachments. This is the master switch — it must be on for any of the email options below to work."
+              label="Enable Native Notifications"
+              description="Notify users by posting a Confluence comment that @mentions them. Confluence's own notification engine then emails the user according to their personal notification settings. This is the master switch — it must be on for any of the options below to work."
             >
               <Toggle
                 checked={settings.enableEmailDispatches}
@@ -461,8 +461,8 @@ const GlobalPolicyEditor = () => {
             {settings.enableEmailDispatches && (
               <div className="nested-control">
                 <SettingsRow
-                  label="Seal Confirmation Emails"
-                  description="Send an email to the user immediately after they seal an attachment, confirming the seal duration and when it expires."
+                  label="Seal Confirmation & Halfway Reminder Notices"
+                  description="Post a comment that mentions the seal owner when a seal is created and when it reaches its midpoint."
                 >
                   <Toggle
                     checked={settings.enableSealExpiryReminderEmail}
@@ -476,8 +476,8 @@ const GlobalPolicyEditor = () => {
                 </SettingsRow>
 
                 <SettingsRow
-                  label="Seal Expiry Reminder Emails"
-                  description="Send a reminder email to the user when one of their attachment seals has expired, prompting them to unseal it."
+                  label="Seal Expiry Notices"
+                  description="Post a comment that mentions the seal owner when one of their seals has expired, prompting them to release it."
                 >
                   <Toggle
                     checked={settings.enableAutoUnsealDispatchEmail}
@@ -491,8 +491,8 @@ const GlobalPolicyEditor = () => {
                 </SettingsRow>
 
                 <SettingsRow
-                  label="Recurring Reminder Emails"
-                  description="Send recurring reminder emails about sealed attachments when automatic expiry notifications are turned off. Frequency is controlled by the Reminder Frequency setting in the General tab."
+                  label="Recurring Reminder Banners"
+                  description="Show a recurring banner on pages with long-held seals when automatic expiry is disabled. Frequency is controlled by the Reminder Frequency setting in the General tab. (No comment is posted to avoid page clutter.)"
                 >
                   <Toggle
                     checked={settings.enablePeriodicReminderEmail}

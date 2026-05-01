@@ -115,15 +115,17 @@ The tunnel routes resolver calls to your local code while the UI is served from 
 
 ## Environment Configuration
 
-### Email Notifications (Resend)
+### Notifications
 
-Email notifications require a [Resend](https://resend.com) API key. Set it as a Forge environment variable:
+The app has no external dependencies and requires no environment variables. All notifications are posted as Confluence footer comments with `@mention` of the recipient; Confluence's own notification engine then emails the user according to their personal notification preferences. The app qualifies for the **"Runs on Atlassian"** badge — verify with `forge eligibility`.
+
+If you are upgrading from a Resend-based release, unset the obsolete environment variable on each environment:
 
 ```bash
-forge variables set RESEND_API_KEY <your-api-key>
+forge variables unset RESEND_API_KEY --environment development
+forge variables unset RESEND_API_KEY --environment staging
+forge variables unset RESEND_API_KEY --environment production
 ```
-
-Without this key, email notifications are silently skipped. All other notification channels (toasts, banners, comments) work independently. Emails are sent from `noreply@leanzero.atlascrafted.com`.
 
 ### Feature Flags
 
@@ -133,11 +135,11 @@ Notification channels are controlled by flags in the steward console (global set
 |---|---|---|
 | Pop-up notifications | Enabled | In-app toast messages |
 | Page status banners | Enabled | Page banner alerts |
-| Page comments | Enabled | Footer comments with @mentions |
-| Email notifications | Enabled | All email types (master toggle) |
-| Seal confirmation emails | Enabled | Confirmation and halfway reminder |
-| Seal expiry reminder emails | Enabled | Auto-unseal and expiry notifications |
-| Recurring reminder emails | Enabled | Periodic reminders (when expiry notifications disabled) |
+| Page comments | Enabled | Footer comments authored by the app |
+| Native notifications | Enabled | Master toggle for comment-with-mention notices |
+| Seal confirmation & halfway reminder notices | Enabled | Confirmation and halfway reminder comments |
+| Seal expiry notices | Enabled | Auto-release / expiry comments |
+| Recurring reminder banners | Enabled | Periodic banners for long-held seals (when auto-unseal disabled) |
 
 See [Settings Reference](settings-reference.md) for the complete list of all configurable settings.
 

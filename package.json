@@ -20,8 +20,7 @@
     "@forge/ui": "^1.11.4",
     "form-data": "^4.0.5",
     "react": "^19.1.1",
-    "react-dom": "^19.1.1",
-    "resend": "^4.1.0"
+    "react-dom": "^19.1.1"
   },
   "overrides": {
     "picomatch": "^4.0.4",
