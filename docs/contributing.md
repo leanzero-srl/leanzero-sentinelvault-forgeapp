@@ -51,10 +51,10 @@ All 6 surfaces:
 
 Cross-cutting services live in `src/server/infra/`. These are used by multiple capsules and follow a functional naming convention:
 
-- `mail-composer.js` -- Orchestrates email construction and dispatch
-- `mail-blueprints.js` -- HTML email templates as pure functions
-- `outbound-mail.js` -- External API client (Resend)
-- `artifact-fetch.js` -- Attachment URL and metadata resolution
+- `notice-composer.js` -- Orchestrates notification construction and dispatch
+- `notice-blueprints.js` -- Storage-format comment body builders as pure functions
+- `outbound-notify.js` -- Confluence footer-comment POST helper (no external egress)
+- `artifact-fetch.js` -- Attachment metadata resolution and violation handling
 - `doc-surgery.js` -- ADF (Atlassian Document Format) manipulation
 
 ### CSS Tokens
@@ -67,7 +67,7 @@ Styles use CSS custom properties prefixed with `--sv-` defined in token files un
 
 - Capsule names are singular nouns describing the domain (`sealing`, `bulletins`, `policies`)
 - Surface names match their Forge resource key (`doc-ribbon`, `inline-panel`, `overlay`)
-- Infrastructure files describe their function (`mail-composer`, `artifact-fetch`, `doc-surgery`)
+- Infrastructure files describe their function (`notice-composer`, `artifact-fetch`, `doc-surgery`)
 - KVS keys use lowercase with hyphens (`protection-{id}`, `admin-settings-global`)
 
 ## Build System

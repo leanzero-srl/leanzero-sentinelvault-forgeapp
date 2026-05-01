@@ -3,10 +3,8 @@ import { kvs, WhereConditions } from "@forge/kvs";
 
 import {
   mailHalfwayReminder,
-  mailPeriodicReminder,
   mailExpiryNotice,
-  mailViolationAlert,
-} from "./infra/mail-composer.js";
+} from "./infra/notice-composer.js";
 
 import { recordDispatch, postDocFootnote } from "./capsules/bulletins/logic.js";
 import { resolveBulletinToggles } from "./shared/bulletin-flags.js";
@@ -423,40 +421,6 @@ async function handleSealedArtifactDeleted(sealRecord, artifactId, contentId, at
 async function sendViolationNotifications(sealRecord, artifactId, contentId, atlassianId, artifactName, actionVerb) {
   const bulletinToggles = await resolveBulletinToggles();
 
-  if (bulletinToggles.ENABLE_EMAIL_BULLETINS) {
-    try {
-      const pageResponse = await asApp().requestConfluence(
-        route`/wiki/api/v2/pages/${contentId}`,
-      );
-      let docTitle = "Confluence Page";
-      let pageUrl = "";
-      if (pageResponse.ok) {
-        const pageData = await pageResponse.json();
-        docTitle = pageData.title || "Confluence Page";
-        const baseUrl = pageData._links?.base || "";
-        const webui = pageData._links?.webui || "";
-        pageUrl = baseUrl && webui ? `${baseUrl}${webui}` : "";
-      }
-
-      const emailResult = await mailViolationAlert(
-        sealRecord.lockedBy,
-        atlassianId,
-        artifactId,
-        artifactName,
-        docTitle,
-        pageUrl,
-      );
-
-      if (!emailResult.success) {
-        console.warn(
-          `Failed to send seal violation email: ${emailResult.reason}`,
-        );
-      }
-    } catch (emailError) {
-      console.error("Error sending seal violation email:", emailError);
-    }
-  }
-
   const dispatchType = actionVerb === "delete" ? "trash-restored"
     : actionVerb === "content-removal" ? "content-reverted"
     : "edit-reverted";
@@ -473,13 +437,13 @@ async function sendViolationNotifications(sealRecord, artifactId, contentId, atl
 
   await recordDispatch(dispatchPayload);
 
-  // Send Confluence notification via comment
+  // Post Confluence comment with @mentions of owner and editor.
+  // Confluence's notification engine emails the seal owner.
   await postDocFootnote(
     contentId,
     sealRecord.lockedBy,
     atlassianId,
     artifactName,
-    artifactId,
     actionVerb,
   );
 
@@ -523,8 +487,8 @@ export async function expirySweepTask() {
 
     // Determine if halfway reminders should be sent
     const sendHalfwayAlerts =
-      bulletinToggles.ENABLE_EMAIL_BULLETINS &&
-      bulletinToggles.ENABLE_SEAL_EXPIRY_REMINDER_EMAIL;
+      bulletinToggles.ENABLE_NATIVE_NOTIFICATIONS &&
+      bulletinToggles.ENABLE_HALFWAY_REMINDER_NOTICE;
 
     const { results: activeSeals } = await kvs
       .query()
@@ -563,50 +527,33 @@ export async function expirySweepTask() {
             continue;
           }
 
-          // Send expiry notification email
+          // Post expiry notification comment with @mention of seal owner
           if (
-            bulletinToggles.ENABLE_EMAIL_BULLETINS &&
-            bulletinToggles.ENABLE_AUTO_UNSEAL_BULLETIN_EMAIL &&
+            bulletinToggles.ENABLE_NATIVE_NOTIFICATIONS &&
+            bulletinToggles.ENABLE_EXPIRY_NOTICE &&
             value.contentId
           ) {
             try {
-              const pageResponse = await asApp().requestConfluence(
-                route`/wiki/api/v2/pages/${value.contentId}`,
+              const expiryDate = now.toLocaleDateString("en-US", {
+                year: "numeric",
+                month: "long",
+                day: "numeric",
+              });
+
+              const noticeResult = await mailExpiryNotice(
+                value.lockedBy,
+                value.attachmentName || "Unknown Attachment",
+                value.contentId,
+                expiryDate,
               );
 
-              if (pageResponse.ok) {
-                const pageData = await pageResponse.json();
-                const docTitle = pageData.title || "Unknown Page";
-                const baseUrl = pageData._links?.base || "";
-                const webui = pageData._links?.webui || "";
-                const pageUrl = baseUrl && webui ? `${baseUrl}${webui}` : "";
-
-                const expiryDate = now.toLocaleDateString("en-US", {
-                  year: "numeric",
-                  month: "long",
-                  day: "numeric",
-                });
-
-                const emailResult = await mailExpiryNotice(
-                  value.lockedBy,
-                  artifactId,
-                  value.attachmentName || "Unknown Attachment",
-                  docTitle,
-                  pageUrl,
-                  expiryDate,
+              if (!noticeResult.success) {
+                console.warn(
+                  `Failed to post expiry notice: ${noticeResult.reason}`,
                 );
-
-                if (!emailResult.success) {
-                  console.warn(
-                    `Failed to send expiry notification: ${emailResult.reason}`,
-                  );
-                }
               }
-            } catch (emailError) {
-              console.error(
-                "Error sending expiry notification email:",
-                emailError,
-              );
+            } catch (noticeError) {
+              console.error("Error posting expiry notice:", noticeError);
             }
           }
 
@@ -648,47 +595,33 @@ export async function expirySweepTask() {
           }
 
           try {
-            const pageResponse = await asApp().requestConfluence(
-              route`/wiki/api/v2/pages/${value.contentId}`,
+            const expiryDate = expiresAt.toLocaleDateString("en-US", {
+              year: "numeric",
+              month: "long",
+              day: "numeric",
+              hour: "2-digit",
+              minute: "2-digit",
+            });
+
+            const result = await mailHalfwayReminder(
+              value.lockedBy,
+              value.attachmentName || "Unknown Attachment",
+              value.contentId,
+              expiryDate,
             );
 
-            if (pageResponse.ok) {
-              const pageData = await pageResponse.json();
-              const docTitle = pageData.title || "Unknown Page";
-              const baseUrl = pageData._links?.base || "";
-              const webui = pageData._links?.webui || "";
-              const pageUrl = baseUrl && webui ? `${baseUrl}${webui}` : "";
-
-              const expiryDate = expiresAt.toLocaleDateString("en-US", {
-                year: "numeric",
-                month: "long",
-                day: "numeric",
-                hour: "2-digit",
-                minute: "2-digit",
+            if (result.success) {
+              await kvs.set(halfwayKey, {
+                sentAt: now.toISOString(),
               });
-
-              const result = await mailHalfwayReminder(
-                value.lockedBy,
-                artifactId,
-                value.attachmentName || "Unknown Attachment",
-                docTitle,
-                pageUrl,
-                expiryDate,
+              halfwayAlertsSent++;
+            } else {
+              console.warn(
+                `Failed to post halfway reminder for ${artifactId}: ${result.reason}`,
               );
-
-              if (result.success) {
-                await kvs.set(halfwayKey, {
-                  sentAt: now.toISOString(),
-                });
-                halfwayAlertsSent++;
-              } else {
-                console.warn(
-                  `Failed to send halfway reminder for ${artifactId}: ${result.reason}`,
-                );
-              }
             }
-          } catch (emailError) {
-            console.error("Error sending halfway reminder email:", emailError);
+          } catch (noticeError) {
+            console.error("Error posting halfway reminder:", noticeError);
           }
         }
       } catch (error) {
@@ -715,16 +648,19 @@ export async function expirySweepTask() {
 }
 
 /**
- * Recurring nudge task for sealed artifacts
- * Sends reminder emails every X days when auto-unseal is disabled
+ * Recurring nudge task for long-held seals.
+ *
+ * Records a banner-only dispatch (no comment) every N days while auto-unseal
+ * is disabled. Comments are skipped to avoid cluttering pages with daily
+ * notifications; the banner surfaces on the user's next page visit.
  */
-export async function recurringNudgeTask(request, context) {
+export async function recurringNudgeTask() {
   try {
     const systemPolicy = await kvs.get("admin-settings-global");
     const autoUnsealActive = systemPolicy?.autoUnlockEnabled !== false;
     const nudgeIntervalDays = systemPolicy?.reminderIntervalDays || 7;
 
-    // Only send nudges if auto-unseal is DISABLED
+    // Only nudge when auto-unseal is DISABLED.
     if (autoUnsealActive) {
       return {
         statusCode: 200,
@@ -735,8 +671,8 @@ export async function recurringNudgeTask(request, context) {
 
     const bulletinToggles = await resolveBulletinToggles(systemPolicy);
     if (
-      !bulletinToggles.ENABLE_PERIODIC_REMINDER_EMAIL ||
-      !bulletinToggles.ENABLE_EMAIL_BULLETINS
+      !bulletinToggles.ENABLE_PERIODIC_REMINDER_BANNER ||
+      !bulletinToggles.ENABLE_PAGE_BANNERS
     ) {
       return {
         statusCode: 200,
@@ -774,7 +710,6 @@ export async function recurringNudgeTask(request, context) {
           (now - sealCreatedAt) / (1000 * 60 * 60 * 24),
         );
 
-        // Check if we need to send a nudge
         const nudgeKey = `reminder-sent-${artifactId}`;
         const priorNudgeData = await kvs.get(nudgeKey);
 
@@ -788,58 +723,30 @@ export async function recurringNudgeTask(request, context) {
           continue;
         }
 
-        const artifactIdValue = value.attachmentId || artifactId;
         const artifactName = value.attachmentName || "Unknown Attachment";
         const contentId = value.contentId;
 
-        if (contentId) {
-          try {
-            const pageResponse = await asApp().requestConfluence(
-              route`/wiki/api/v2/pages/${contentId}`,
-            );
-
-            if (pageResponse.ok) {
-              const pageData = await pageResponse.json();
-              const docTitle = pageData.title || "Unknown Page";
-              const baseUrl = pageData._links?.base || "";
-              const webui = pageData._links?.webui || "";
-              const pageUrl = baseUrl && webui ? `${baseUrl}${webui}` : "";
-
-              const sealDate = sealCreatedAt.toLocaleDateString("en-US", {
-                year: "numeric",
-                month: "long",
-                day: "numeric",
-              });
-
-              const result = await mailPeriodicReminder(
-                value.lockedBy,
-                artifactIdValue,
-                artifactName,
-                docTitle,
-                pageUrl,
-                sealDate,
-                daysHeld,
-              );
-              if (result.success) {
-                await kvs.set(nudgeKey, {
-                  sentAt: now.toISOString(),
-                  reminderNumber: (priorNudgeData?.reminderNumber || 0) + 1,
-                });
-
-                nudgeTally.set(
-                  artifactId,
-                  (nudgeTally.get(artifactId) || 0) + 1,
-                );
-              } else {
-                console.warn(
-                  `Failed to send nudge for artifact ${artifactId}: ${result.reason}`,
-                );
-              }
-            }
-          } catch (emailError) {
-            console.error("Error sending recurring nudge email:", emailError);
-          }
+        if (!contentId) {
+          continue;
         }
+
+        await recordDispatch({
+          id: `notification-${Date.now()}-${artifactId}`,
+          type: "periodic-reminder",
+          attachmentId: artifactId,
+          attachmentName: artifactName,
+          ownerAccountId: value.lockedBy,
+          daysSealed: daysHeld,
+          timestamp: Date.now(),
+          pageId: contentId,
+        });
+
+        await kvs.set(nudgeKey, {
+          sentAt: now.toISOString(),
+          reminderNumber: (priorNudgeData?.reminderNumber || 0) + 1,
+        });
+
+        nudgeTally.set(artifactId, (nudgeTally.get(artifactId) || 0) + 1);
       } catch (error) {
         console.error(`Error processing seal ${key} for nudge:`, error);
       }
@@ -850,7 +757,7 @@ export async function recurringNudgeTask(request, context) {
       0,
     );
     if (totalNudges > 0) {
-      console.warn(`[NUDGE] ${totalNudges} reminder emails sent`);
+      console.warn(`[NUDGE] ${totalNudges} periodic-reminder banners recorded`);
     }
     return {
       statusCode: 200,

@@ -8,7 +8,7 @@ import { notifyWatchers } from "../bulletins/logic.js";
 import {
   mailStewardOverrideNotice,
   fetchOperatorProfile,
-} from "../../infra/mail-composer.js";
+} from "../../infra/notice-composer.js";
 
 // Queue for background realm scanning
 const realmScanQueue = new Queue({ key: "realm-audit-queue" });
@@ -283,7 +283,7 @@ const stewardUnseal = async (req) => {
   });
 
   // Notify seal owner that a steward forcefully unsealed their artifact
-  if (sealRecord.lockedBy) {
+  if (sealRecord.lockedBy && sealRecord.contentId) {
     try {
       const stewardInfo = await fetchOperatorProfile(operatorAccountId);
       const unsealDate = new Date().toLocaleDateString("en-US", {
@@ -294,41 +294,18 @@ const stewardUnseal = async (req) => {
         minute: "2-digit",
       });
 
-      let docTitle = "Unknown Page";
-      let pageUrl = "";
-      if (sealRecord.contentId) {
-        try {
-          const pageResponse = await asUser().requestConfluence(
-            route`/wiki/api/v2/pages/${sealRecord.contentId}`,
-          );
-          if (pageResponse.ok) {
-            const pageData = await pageResponse.json();
-            docTitle = pageData.title || "Unknown Page";
-            const baseUrl = pageData._links?.base || "";
-            const webui = pageData._links?.webui || "";
-            pageUrl = baseUrl && webui ? `${baseUrl}${webui}` : "";
-          }
-        } catch (e) {
-          console.warn(
-            "[STEWARD-UNSEAL] Failed to fetch page details for steward override email:",
-            e,
-          );
-        }
-      }
-
       await mailStewardOverrideNotice(
         sealRecord.lockedBy,
+        operatorAccountId,
         stewardInfo.displayName,
-        attachmentId,
         sealRecord.attachmentName || "Unknown Attachment",
-        docTitle,
-        pageUrl,
+        sealRecord.contentId,
         unsealDate,
       );
-    } catch (emailError) {
+    } catch (noticeError) {
       console.error(
-        "[STEWARD-UNSEAL] Failed to send steward override email:",
-        emailError,
+        "[STEWARD-UNSEAL] Failed to post steward override notice:",
+        noticeError,
       );
     }
   }

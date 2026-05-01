@@ -1,66 +1,12 @@
-import api, { asUser, asApp, route } from "@forge/api";
+import { asUser, asApp, route } from "@forge/api";
 import { kvs } from "@forge/kvs";
 import { computeSealStatus, removeSealContentProp, touchSealTimestamp } from "../capsules/sealing/logic.js";
-import { fetchOperatorProfile, mailViolationAlert } from "./mail-composer.js";
+import { fetchOperatorProfile } from "./notice-composer.js";
 import {
   recordDispatch,
   postDocFootnote,
   notifyWatchers,
 } from "../capsules/bulletins/logic.js";
-import { resolveBulletinToggles } from "../shared/bulletin-flags.js";
-
-/**
- * Fetches the full download URL for a specific artifact from Confluence
- * Uses the v2 API which returns downloadLink in the response
- * @param {string} artifactId - The ID of the artifact
- * @returns {Promise<string|null>} - The full download URL or null if not found
- */
-export async function resolveArtifactUrl(artifactId) {
-  try {
-    const response = await asApp().requestConfluence(
-      route`/wiki/api/v2/attachments/${artifactId}`,
-      {
-        headers: {
-          Accept: "application/json",
-        },
-      },
-    );
-
-    if (!response.ok) {
-      console.error(
-        `Failed to fetch artifact ${artifactId}: ${response.status} ${response.statusText}`,
-      );
-      return null;
-    }
-
-    const artifactData = await response.json();
-
-    // The v2 API returns downloadLink directly and _links.download
-    // downloadLink is the relative path, _links.base is the base URL
-    const downloadLink =
-      artifactData?.downloadLink || artifactData?._links?.download;
-    const baseUrl = artifactData?._links?.base;
-
-    if (!downloadLink) {
-      console.warn(`No download link found for artifact ${artifactId}`);
-      return null;
-    }
-
-    // If we have a base URL, construct the full URL
-    // Otherwise return just the download path (which may work in some contexts)
-    if (baseUrl) {
-      return `${baseUrl}${downloadLink}`;
-    }
-
-    return downloadLink;
-  } catch (error) {
-    console.error(
-      `Error fetching artifact download URL for ${artifactId}:`,
-      error,
-    );
-    return null;
-  }
-}
 
 /**
  * Get artifacts for a page with their seal status
@@ -277,38 +223,14 @@ async function handleSealViolation({
     action: "edit_reverted",
   });
 
-  // Send Confluence notification via comment (Option 3)
+  // Post Confluence comment with @mentions of owner and editor.
+  // Confluence's notification engine emails the seal owner.
   await postDocFootnote(
     contentId,
     sealRecord.lockedBy,
     userAccountId,
     artifactTitle,
-    artifactId,
   );
-
-  // Send email notification via Resend (Option 4)
-  const alertConfig = await resolveBulletinToggles();
-  if (alertConfig.ENABLE_EMAIL_BULLETINS) {
-    // Build page URL from available context in the event
-    const siteBaseUrl =
-      attachment.container?._links?.webui ||
-      `https://your-site.atlassian.net/wiki`;
-    const pageUrl = `${siteBaseUrl}/${contentId}`;
-    const emailResult = await mailViolationAlert(
-      sealRecord.lockedBy,
-      userAccountId,
-      artifactId,
-      artifactTitle,
-      "Confluence Page",
-      pageUrl,
-    );
-
-    if (!emailResult.success) {
-      console.warn(
-        `Failed to send seal violation email for artifact ${artifactTitle}: ${emailResult.reason}`,
-      );
-    }
-  }
 
   // Revert the artifact to previous version
   await rollbackArtifact(

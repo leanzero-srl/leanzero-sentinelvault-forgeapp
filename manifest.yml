@@ -2,7 +2,7 @@
 app:
   id: ari:cloud:ecosystem::app/c30bf71e-4287-4872-954d-db49cc68f0ff
   runtime:
-    name: nodejs20.x
+    name: nodejs22.x
 
 modules:
   # Macro module — inline reservation status panel on page content
@@ -121,7 +121,6 @@ resources:
 
 permissions:
   scopes:
-    - read:email-address:confluence
     - read:confluence-content.all
     - read:confluence-content.summary
     - write:confluence-content
@@ -155,9 +154,4 @@ permissions:
     - storage:app
   content:
     styles:
-      - "unsafe-inline"
-  external:
-    fetch:
-      backend:
-        - address: api.atlassian.com
-        - address: api.resend.com
+      - unsafe-inline

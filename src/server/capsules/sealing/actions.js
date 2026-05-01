@@ -11,14 +11,14 @@ import {
   mailSealConfirmation,
   mailStewardOverrideNotice,
   fetchOperatorProfile,
-} from "../../infra/mail-composer.js";
+} from "../../infra/notice-composer.js";
 
 // Import from capsule logic
 import { writeSealContentProp, removeSealContentProp, touchSealTimestamp } from "./logic.js";
 import { purgeAllSealState } from "./confluence-sync.js";
 
 // Import from sibling capsules
-import { recordDispatch, postDocFootnote, notifyWatchers } from "../bulletins/logic.js";
+import { notifyWatchers } from "../bulletins/logic.js";
 import { triggerPanelEmbed, removePanelNode } from "../../infra/doc-surgery.js";
 
 /**
@@ -334,61 +334,44 @@ const sealArtifact = async (req) => {
     }
   }
 
-  // Send seal confirmation email
+  // Post seal confirmation comment with @mention of the sealer.
+  // Confluence's notification engine emails the user.
   const bulletinToggles = await resolveBulletinToggles();
 
-  if (!bulletinToggles.ENABLE_EMAIL_BULLETINS) {
+  if (!bulletinToggles.ENABLE_NATIVE_NOTIFICATIONS) {
     console.warn(
-      "Email notifications are disabled - skipping seal confirmation email",
+      "Native notifications are disabled - skipping seal confirmation",
     );
-  } else if (!bulletinToggles.ENABLE_SEAL_EXPIRY_REMINDER_EMAIL) {
-    console.warn("Seal expiry reminder email is disabled - skipping email");
+  } else if (!bulletinToggles.ENABLE_HALFWAY_REMINDER_NOTICE) {
+    console.warn("Seal confirmation notice is disabled - skipping");
+  } else if (!contentId) {
+    console.warn(
+      `No contentId found for artifact - cannot post comment. Context: ${JSON.stringify(req.context.extension)}`,
+    );
   } else {
     try {
-      if (contentId) {
-        const pageResponse = await asUser().requestConfluence(
-          route`/wiki/api/v2/pages/${contentId}`,
-        );
+      const expiryDate = new Date(expiresAt).toLocaleDateString("en-US", {
+        year: "numeric",
+        month: "long",
+        day: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+      });
 
-        if (pageResponse.ok) {
-          const pageData = await pageResponse.json();
-          const docTitle = pageData.title || "Unknown Page";
-          const baseUrl = pageData._links?.base || "";
-          const webui = pageData._links?.webui || "";
-          const pageUrl = baseUrl && webui ? `${baseUrl}${webui}` : "";
+      const noticeResult = await mailSealConfirmation(
+        operatorAccountId,
+        artifactName,
+        contentId,
+        expiryDate,
+      );
 
-          const expiryDate = new Date(expiresAt).toLocaleDateString("en-US", {
-            year: "numeric",
-            month: "long",
-            day: "numeric",
-            hour: "2-digit",
-            minute: "2-digit",
-          });
-
-          const emailResult = await mailSealConfirmation(
-            operatorAccountId,
-            attachmentId,
-            artifactName,
-            docTitle,
-            pageUrl,
-            expiryDate,
-          );
-
-          if (!emailResult.success) {
-            console.error(
-              `Seal confirmation email failed: ${emailResult.reason}`,
-            );
-          }
-        } else {
-          console.error(`Failed to fetch page details: ${pageResponse.status}`);
-        }
-      } else {
-        console.warn(
-          `No contentId found for artifact - cannot send email. Context: ${JSON.stringify(req.context.extension)}`,
+      if (!noticeResult.success) {
+        console.error(
+          `Seal confirmation notice failed: ${noticeResult.reason}`,
         );
       }
     } catch (error) {
-      console.error("Error sending seal confirmation email:", error);
+      console.error("Error posting seal confirmation notice:", error);
     }
   }
 
@@ -483,7 +466,7 @@ const unsealArtifact = async (req) => {
     });
 
     // Notify seal owner when a steward forcefully unseals their artifact
-    if (releaseReason === "admin override" && sealRecord.lockedBy) {
+    if (releaseReason === "admin override" && sealRecord.lockedBy && sealRecord.contentId) {
       try {
         const stewardInfo = await fetchOperatorProfile(operatorAccountId);
         const unsealDate = new Date().toLocaleDateString("en-US", {
@@ -494,41 +477,18 @@ const unsealArtifact = async (req) => {
           minute: "2-digit",
         });
 
-        let docTitle = "Unknown Page";
-        let pageUrl = "";
-        if (sealRecord.contentId) {
-          try {
-            const pageResponse = await asUser().requestConfluence(
-              route`/wiki/api/v2/pages/${sealRecord.contentId}`,
-            );
-            if (pageResponse.ok) {
-              const pageData = await pageResponse.json();
-              docTitle = pageData.title || "Unknown Page";
-              const baseUrl = pageData._links?.base || "";
-              const webui = pageData._links?.webui || "";
-              pageUrl = baseUrl && webui ? `${baseUrl}${webui}` : "";
-            }
-          } catch (e) {
-            console.warn(
-              "[UNSEAL] Failed to fetch page details for steward override email:",
-              e,
-            );
-          }
-        }
-
         await mailStewardOverrideNotice(
           sealRecord.lockedBy,
+          operatorAccountId,
           stewardInfo.displayName,
-          attachmentId,
           sealRecord.attachmentName || "Unknown Attachment",
-          docTitle,
-          pageUrl,
+          sealRecord.contentId,
           unsealDate,
         );
-      } catch (emailError) {
+      } catch (noticeError) {
         console.error(
-          "[UNSEAL] Failed to send steward override email:",
-          emailError,
+          "[UNSEAL] Failed to post steward override notice:",
+          noticeError,
         );
       }
     }

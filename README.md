@@ -289,13 +289,7 @@ forge register
 
 This updates the `app.id` in `manifest.yml` with your own app ID.
 
-### 3. Set environment variables
-
-```bash
-forge variables set RESEND_API_KEY your-resend-api-key    # optional, for email notifications
-```
-
-### 4. Build the frontends
+### 3. Build the frontends
 
 ```bash
 npm run build
@@ -303,14 +297,14 @@ npm run build
 
 This builds all 6 UI surfaces via Webpack into `static/`.
 
-### 5. Deploy and install
+### 4. Deploy and install
 
 ```bash
 forge deploy
 forge install    # Select your Confluence site when prompted
 ```
 
-### 6. Use it
+### 5. Use it
 
 1. Navigate to any Confluence page with attachments
 2. Insert the **Sentinel Vault** macro from the editor
@@ -358,7 +352,6 @@ The app requests the following Forge permissions:
 | `write:confluence-props` | Write content properties (seal markers) |
 | `read:confluence-content.permission` | Check content permissions |
 | `read:confluence-user` | Resolve user identity for seal ownership |
-| `read:email-address:confluence` | Fetch user email addresses for notifications |
 | `read:confluence-groups` | Resolve group membership for steward guilds |
 | `search:confluence` | CQL queries for sealed attachment discovery |
 | `read:content:confluence` | Read content via v2 API |
@@ -381,7 +374,8 @@ The app requests the following Forge permissions:
 
 External fetch permissions:
 - `api.atlassian.com` -- Confluence Cloud REST API
-- `api.resend.com` -- Email delivery service
+
+The app has no other external dependencies and is eligible for the **"Runs on Atlassian"** Marketplace badge. All notifications are posted as Confluence footer comments with `@mention` of the recipient; Confluence's own notification engine emails the user according to their personal preferences.
 
 ---
 
