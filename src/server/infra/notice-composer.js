@@ -82,22 +82,24 @@ export async function fetchOperatorProfile(accountId) {
  * Build the page URL from a page response.
  */
 async function resolvePageUrl(pageId) {
-  if (!pageId) return { pageTitle: "Unknown Page", pageUrl: "" };
+  if (!pageId) return { pageTitle: "Unknown Page", pageUrl: "", historyUrl: "" };
   try {
     const response = await asApp().requestConfluence(
       route`/wiki/api/v2/pages/${pageId}`,
     );
-    if (!response.ok) return { pageTitle: "Unknown Page", pageUrl: "" };
+    if (!response.ok) return { pageTitle: "Unknown Page", pageUrl: "", historyUrl: "" };
     const data = await response.json();
     const baseUrl = data._links?.base || "";
     const webui = data._links?.webui || "";
     return {
       pageTitle: data.title || "Unknown Page",
       pageUrl: baseUrl && webui ? `${baseUrl}${webui}` : "",
+      // Page version history — where a reverted change can be recovered from.
+      historyUrl: baseUrl ? `${baseUrl}/pages/viewpreviousversions.action?pageId=${pageId}` : "",
     };
   } catch (error) {
     console.warn(`[NOTICE] Failed to fetch page ${pageId}:`, error);
-    return { pageTitle: "Unknown Page", pageUrl: "" };
+    return { pageTitle: "Unknown Page", pageUrl: "", historyUrl: "" };
   }
 }
 
@@ -158,7 +160,7 @@ export async function dispatchNotice(type, data) {
   );
 
   try {
-    const { pageTitle, pageUrl } = await resolvePageUrl(pageId);
+    const { pageTitle, pageUrl, historyUrl } = await resolvePageUrl(pageId);
 
     const blueprintData = {
       ownerAccountId: recipientAccountId,
@@ -166,6 +168,7 @@ export async function dispatchNotice(type, data) {
       artifactName: artifactName || "Unknown Attachment",
       pageTitle,
       pageUrl,
+      historyUrl,
       ...extra,
     };
 
@@ -319,12 +322,13 @@ export async function mailEditRequest(
   requesterName,
   artifactName,
   pageId,
+  reason,
 ) {
   return dispatchNotice(ALERT_CATEGORIES.EDIT_ACCESS_REQUEST, {
     recipientAccountId: ownerAccountId,
     pageId,
     artifactName,
-    extra: { requesterAccountId, requesterName },
+    extra: { requesterAccountId, requesterName, reason },
   });
 }
 

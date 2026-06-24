@@ -37,6 +37,7 @@ export function composeViolationLayout({
   editorAccountId,
   artifactName,
   pageUrl,
+  historyUrl,
   actionVerb = "edit",
 }) {
   const outcome =
@@ -46,9 +47,15 @@ export function composeViolationLayout({
         ? "The page content has been reverted."
         : "The change has been reverted.";
 
+  // Trust: tell the editor their work isn't lost and where to recover it.
+  const recovery = historyUrl
+    ? `<p>If that change was intentional, your version is preserved in the page history — ${`<a href="${escapeXml(historyUrl)}">view previous versions</a>`} to recover it, or request access.</p>`
+    : "";
+
   const storageBody = `
 <p>${HEADER} — <strong>Seal Violation</strong></p>
 <p>${mention(ownerAccountId)} — ${mention(editorAccountId)} attempted to ${escapeXml(actionVerb)} <strong>"${escapeXml(artifactName)}"</strong>. ${escapeXml(outcome)}</p>
+${recovery}
 ${ctaLink(pageUrl, "Open the page")}
 `.trim();
 
@@ -216,15 +223,21 @@ export function composeEditRequestLayout({
   artifactName,
   pageTitle,
   pageUrl,
+  reason,
 }) {
   const requesterLabel = requesterAccountId
     ? mention(requesterAccountId)
     : `<strong>${escapeXml(requesterName || "A user")}</strong>`;
 
+  const reasonLine = reason
+    ? `<p>Reason given: <em>"${escapeXml(reason)}"</em></p>`
+    : "";
+
   const storageBody = `
 <p>${HEADER} — <strong>Edit Access Requested</strong></p>
 <p>${mention(ownerAccountId)} — ${requesterLabel} is requesting permission to edit your sealed file <strong>"${escapeXml(artifactName)}"</strong>${pageTitle ? ` on <em>${escapeXml(pageTitle)}</em>` : ""}.</p>
-<p>Approve or deny this request from the Sentinel Vault space console (Edit Requests).</p>
+${reasonLine}
+<p>Approve or deny from the Sentinel Vault panel on the page, or the space console (Edit Requests).</p>
 ${ctaLink(pageUrl, "Open the page")}
 `.trim();
 

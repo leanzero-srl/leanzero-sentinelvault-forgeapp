@@ -47,6 +47,10 @@ Reporting — the **Validation** group in the panel (the "Issues found" badge + 
 
 ![Validation status in the panel](../media/screenshots/inline-panel.png)
 
+…and a compact status chip on the **page ribbon** (gate mode):
+
+![Validation chip on the page ribbon](../media/screenshots/doc-ribbon.png)
+
 ▶ **Video (Validations + AI authoring tab):** [02-steward-validations-ai.mp4](../media/videos/02-steward-validations-ai.mp4)
 ▶ **Video (Re-check in the panel, in context):** [01-inline-panel-features.mp4](../media/videos/01-inline-panel-features.mp4)
 

@@ -15,8 +15,8 @@ When a file is sealed by someone else, a user can **request edit access** instea
 
 ## Where to find it
 
-- **Request:** open the Sentinel Vault panel on a page → on a file sealed by another user, click **Request Edit**.
-- **Approve/deny:** the owner opens **Realm console → My Sealed Files → Edit Requests** (a badge shows pending requests).
+- **Request:** open the Sentinel Vault panel on a page → on a file sealed by another user, click **Request Edit** → add an optional **reason** → **Send request**.
+- **Approve/deny:** the owner approves in two places — **in the panel itself**, in-place on their sealed file (an "Edit requests (N)" inbox showing each requester’s reason), **or** in **Realm console → My Sealed Files → Edit Requests**.
 
 ## How to test — step by step
 
@@ -40,7 +40,11 @@ Requester side — the **Request Edit** button on a file sealed by another user 
 ![Inline panel with Request Edit](../media/screenshots/inline-panel.png)
 ![Inline panel with Request Edit (dark)](../media/screenshots/inline-panel-dark.png)
 
-Owner side — the **Edit Requests** inbox with Approve / Deny:
+Owner side — approve **in the panel**, in-place on your sealed file (each request shows the requester’s reason):
+
+![Owner Edit Requests inbox in the panel](../media/screenshots/inline-panel.png)
+
+…or in the space console:
 
 ![Realm console Edit Requests inbox](../media/screenshots/realm-console.png)
 

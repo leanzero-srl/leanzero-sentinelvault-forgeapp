@@ -420,6 +420,8 @@ async function runValidationPhase(event, pageId, atlassianId) {
 
   const { passed, violations } = evaluateRules(adfDoc, labels, config.rules);
   const modes = config.modes || { advisory: true, gate: false, revert: false };
+  const base = pageData._links?.base;
+  const historyUrl = base ? `${base}/pages/viewpreviousversions.action?pageId=${pageId}` : "";
 
   if (passed) {
     await setLastGoodVersion(pageId, version);
@@ -453,7 +455,7 @@ async function runValidationPhase(event, pageId, atlassianId) {
         } catch (e) { console.error("[VALIDATE] revert error:", e); break; }
       }
       if (reverted && !modes.advisory) {
-        try { await postValidationComment({ pageId, editorAccountId: atlassianId, violations, reverted: true }); }
+        try { await postValidationComment({ pageId, editorAccountId: atlassianId, violations, reverted: true, historyUrl }); }
         catch (_) { /* best effort */ }
       }
     } else if (!modes.advisory) {

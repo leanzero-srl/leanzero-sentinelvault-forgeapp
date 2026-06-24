@@ -25,7 +25,7 @@ function severityChip(sev) {
 /**
  * Build + post a validation-findings footer comment, mentioning the editor.
  */
-export async function postValidationComment({ pageId, editorAccountId, violations, reverted }) {
+export async function postValidationComment({ pageId, editorAccountId, violations, reverted, historyUrl }) {
   if (!pageId || !violations || violations.length === 0) return { success: false, reason: "Nothing to report" };
 
   const items = violations
@@ -36,10 +36,16 @@ export async function postValidationComment({ pageId, editorAccountId, violation
     ? "Your recent edit did not meet this page's content standards and was reverted to the last compliant version."
     : "Your recent edit does not meet this page's content standards. Please review and update:";
 
+  // Trust: when we reverted, point to where the change can be recovered.
+  const recovery = reverted && historyUrl
+    ? `<p>Your version is preserved in the page history — <a href="${escapeXml(historyUrl)}">view previous versions</a> to recover it.</p>`
+    : "";
+
   const storageBody = `
 <p>${HEADER} — <strong>Content Validation</strong></p>
 <p>${editorAccountId ? mention(editorAccountId) + " — " : ""}${escapeXml(lead)}</p>
 <ul>${items}</ul>
+${recovery}
 `.trim();
 
   return postCommentWithMention({ pageId, storageBody });

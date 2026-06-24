@@ -52,11 +52,12 @@ A standalone Playwright harness (`static/_screenshot-harness/`, mock `@forge/bri
 
 | Surface | Result |
 |---|---|
-| inline-panel | ✓ renders all four features (Edit Requests, Sealed Sections, Validation, AI Review) |
+| inline-panel | ✓ all four features + onboarding explainer + in-panel owner Edit-Requests inbox (with reasons) |
 | steward-console | ✓ General + Validations + AI authoring |
 | realm-console | ✓ Edit Requests inbox + My Sealed Files |
 | section-setup | ✓ Sealed Section macro card |
 | overlay | ✓ attachment management modal |
+| doc-ribbon | ✓ Validation + AI status chips |
 
 Artifacts (committed under [`docs/media/`](media)): 12 screenshots (light + dark × 6) and 5 MP4 walkthroughs. Reproduce:
 

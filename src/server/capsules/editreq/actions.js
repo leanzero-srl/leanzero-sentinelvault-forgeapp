@@ -40,9 +40,10 @@ async function notifyEnabled() {
  * Requester asks the seal owner for edit access to a sealed attachment.
  */
 const requestEditAccess = async (req) => {
-  const { attachmentId } = req.payload || {};
+  const { attachmentId, reason } = req.payload || {};
   const accountId = req.context.accountId;
   if (!attachmentId || !accountId) return { success: false, reason: "Missing context" };
+  const requestReason = typeof reason === "string" ? reason.trim().slice(0, 300) : "";
 
   const seal = await kvs.get(`protection-${attachmentId}`);
   if (!seal || !seal.lockedBy) return { success: false, reason: "This file is not sealed" };
@@ -81,6 +82,7 @@ const requestEditAccess = async (req) => {
     contentId: seal.contentId || null,
     spaceKey: seal.spaceKey || null,
     attachmentName: seal.attachmentName || "Unknown Attachment",
+    reason: requestReason,
     status: "pending",
     requestedAt: new Date().toISOString(),
   });
@@ -89,7 +91,7 @@ const requestEditAccess = async (req) => {
     try {
       await mailEditRequest(
         seal.lockedBy, accountId, requesterName,
-        seal.attachmentName || "Unknown Attachment", seal.contentId,
+        seal.attachmentName || "Unknown Attachment", seal.contentId, requestReason,
       );
     } catch (e) { console.error("[EDIT-REQ] notify owner failed:", e); }
   }

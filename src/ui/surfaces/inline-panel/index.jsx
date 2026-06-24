@@ -272,6 +272,10 @@ const ArtifactCard = ({ att, onRefresh, columns, siteUrl, spaceKey, pageId, page
   const [expanded, setExpanded] = useState(false);
   const [cachedPreview, setCachedPreview] = useState(null);
   const [editStatus, setEditStatus] = useState(att.editStatus || null); // none|pending|granted|denied
+  const [showReason, setShowReason] = useState(false);
+  const [reasonText, setReasonText] = useState("");
+  const [myRequests, setMyRequests] = useState(null); // owner: pending edit requests on this file
+  const [reqBusy, setReqBusy] = useState(null);
 
   const isSealed = att.lockStatus === "HELD" || att.lockStatus === "HELD_BY_ACTOR";
   const isSealedByMe = att.lockStatus === "HELD_BY_ACTOR";
@@ -288,19 +292,44 @@ const ArtifactCard = ({ att, onRefresh, columns, siteUrl, spaceKey, pageId, page
     return () => { cancelled = true; };
   }, [isSealedByOther, att.id, editStatus]);
 
-  const handleRequestEdit = async () => {
+  // Owner: load pending edit requests for this file so they can approve in place.
+  useEffect(() => {
+    let cancelled = false;
+    if (isSealedByMe) {
+      invoke("list-edit-requests", { attachmentId: att.id })
+        .then((r) => { if (!cancelled) setMyRequests(r?.requests || []); })
+        .catch(() => { if (!cancelled) setMyRequests([]); });
+    }
+    return () => { cancelled = true; };
+  }, [isSealedByMe, att.id]);
+
+  const submitEditRequest = async () => {
     setActionBusy("editreq");
     try {
-      const result = await invoke("request-edit-access", { attachmentId: att.id });
+      const result = await invoke("request-edit-access", { attachmentId: att.id, reason: reasonText.trim() });
       if (result && result.success) {
         setEditStatus("pending");
+        setShowReason(false);
+        setReasonText("");
       } else {
-        console.warn("Edit request declined:", result?.reason);
+        setActionError(result?.reason || "Could not send the request");
       }
     } catch (e) {
       console.error("Edit request failed:", e);
     } finally {
       setActionBusy(null);
+    }
+  };
+
+  const resolveEditReq = async (requesterAccountId, action) => {
+    setReqBusy(`${requesterAccountId}:${action}`);
+    try {
+      const r = await invoke(action === "approve" ? "approve-edit-request" : "deny-edit-request", { attachmentId: att.id, requesterAccountId });
+      if (r?.success) setMyRequests((p) => (p || []).filter((x) => x.requesterAccountId !== requesterAccountId));
+    } catch (e) {
+      console.error("Resolve edit request failed:", e);
+    } finally {
+      setReqBusy(null);
     }
   };
   const canUnseal = isSealedByMe;
@@ -564,7 +593,7 @@ const ArtifactCard = ({ att, onRefresh, columns, siteUrl, spaceKey, pageId, page
           <button
             key="editreq"
             className={`action-btn editreq ${actionBusy === "editreq" ? "is-busy" : ""}`}
-            onClick={handleRequestEdit}
+            onClick={() => setShowReason(true)}
             disabled={actionBusy && actionBusy !== "editreq"}
             title="Ask the seal owner for permission to edit this file"
           >
@@ -664,6 +693,51 @@ const ArtifactCard = ({ att, onRefresh, columns, siteUrl, spaceKey, pageId, page
         <div className="card-row card-action-error" role="alert">
           <span className="card-action-error-text">{actionError}</span>
           <button className="card-action-error-dismiss" onClick={() => setActionError(null)} title="Dismiss">&times;</button>
+        </div>
+      )}
+
+      {/* Reason input for an edit request (no native prompt) */}
+      {showReason && (
+        <div className="card-row card-reason-bar">
+          <input
+            type="text"
+            className="card-reason-input"
+            placeholder="Why do you need to edit this file? (optional)"
+            value={reasonText}
+            maxLength={300}
+            autoFocus
+            onChange={(e) => setReasonText(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") submitEditRequest(); if (e.key === "Escape") { setShowReason(false); setReasonText(""); } }}
+          />
+          <span className="confirm-actions">
+            <button className="action-btn editreq" onClick={submitEditRequest} disabled={actionBusy === "editreq"}>
+              {actionBusy === "editreq" ? <>Sending<span className="btn-busy-bar" /></> : "Send request"}
+            </button>
+            <button className="action-btn confirm-no" onClick={() => { setShowReason(false); setReasonText(""); }}>Cancel</button>
+          </span>
+        </div>
+      )}
+
+      {/* Owner: approve/deny pending edit requests for this file, in place */}
+      {isSealedByMe && myRequests && myRequests.length > 0 && (
+        <div className="card-row card-editreq-inbox">
+          <span className="card-editreq-title">Edit requests ({myRequests.length})</span>
+          {myRequests.map((r) => {
+            const name = r.requesterName || "Unknown user";
+            return (
+              <div key={r.requesterAccountId} className="card-editreq-row">
+                <span className="card-editreq-who">{name}{r.reason ? <em className="card-editreq-reason"> — “{r.reason}”</em> : null}</span>
+                <span className="confirm-actions">
+                  <button className="action-btn lock" disabled={!!reqBusy} onClick={() => resolveEditReq(r.requesterAccountId, "approve")}>
+                    {reqBusy === `${r.requesterAccountId}:approve` ? <>Approving<span className="btn-busy-bar" /></> : "Approve"}
+                  </button>
+                  <button className="action-btn unlock" disabled={!!reqBusy} onClick={() => resolveEditReq(r.requesterAccountId, "deny")}>
+                    {reqBusy === `${r.requesterAccountId}:deny` ? <>Denying<span className="btn-busy-bar" /></> : "Deny"}
+                  </button>
+                </span>
+              </div>
+            );
+          })}
         </div>
       )}
 
@@ -1023,6 +1097,41 @@ const SealedSectionsGroup = ({ pageId, onChanged }) => {
   );
 };
 
+// ── Onboarding explainer (dismissible, shown once) ───
+
+const EXPLAINER_KEY = "sv-explainer-dismissed-v1";
+
+const ExplainerBanner = () => {
+  const [dismissed, setDismissed] = useState(true);
+
+  useEffect(() => {
+    try { setDismissed(localStorage.getItem(EXPLAINER_KEY) === "1"); }
+    catch (_) { setDismissed(false); }
+  }, []);
+
+  const dismiss = () => {
+    setDismissed(true);
+    try { localStorage.setItem(EXPLAINER_KEY, "1"); } catch (_) { /* ignore */ }
+  };
+
+  if (dismissed) return null;
+
+  return (
+    <div className="sv-explainer">
+      <div className="sv-explainer-body">
+        <strong>What Sentinel Vault does on this page</strong>
+        <ul className="sv-explainer-list">
+          <li><strong>Seal attachments</strong> — only you (and approved editors) can change a sealed file.</li>
+          <li><strong>Sealed Sections</strong> — lock a heading’s content while the rest of the page stays editable.</li>
+          <li><strong>Validation</strong> — flag pages that miss required content standards.</li>
+          <li><strong>AI Review</strong> — check content against your rules, style, tone &amp; compliance (Runs on Atlassian).</li>
+        </ul>
+      </div>
+      <button className="sv-explainer-dismiss" onClick={dismiss} title="Dismiss">&times;</button>
+    </div>
+  );
+};
+
 // ── Main panel component ─────────────────────────────
 
 const ArtifactGridView = () => {
@@ -1241,6 +1350,9 @@ const ArtifactGridView = () => {
           )}
         </span>
       </div>
+
+      {/* Onboarding explainer (shown once, dismissible) */}
+      {!isEditing && <ExplainerBanner />}
 
       {/* Loading */}
       {loading && <div className="sv-panel-loading">Retrieving files...</div>}
