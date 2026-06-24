@@ -397,6 +397,21 @@ The app has no other external dependencies and is eligible for the **"Runs on At
 
 ## Documentation
 
+Start at the **[docs index](docs/README.md)**.
+
+**Feature guides** (each with step-by-step testing, embedded screenshots, and a walkthrough video):
+
+| Feature | Guide | Demo |
+|---------|-------|------|
+| Edit Requests | [docs/features/edit-requests.md](docs/features/edit-requests.md) | [video](docs/media/videos/03-realm-edit-requests.mp4) |
+| Content Sealing (sections) | [docs/features/content-sealing.md](docs/features/content-sealing.md) | [video](docs/media/videos/01-inline-panel-features.mp4) |
+| Conditions & Validations | [docs/features/conditions-validations.md](docs/features/conditions-validations.md) | [video](docs/media/videos/02-steward-validations-ai.mp4) |
+| Semantic AI Validations | [docs/features/semantic-ai-validations.md](docs/features/semantic-ai-validations.md) | [video](docs/media/videos/01-inline-panel-features.mp4) |
+
+**Testing:** [docs/TESTING.md](docs/TESTING.md) — unit results (65/65), `forge lint`, build, deploy/install (v4.0.0, Runs on Atlassian), frontend render verification, and the per-feature proof matrix. Plus the black-box E2E harness in [test-harness/](test-harness/README.md).
+
+**Reference:**
+
 | Document | Description |
 |----------|-------------|
 | [Architecture](docs/architecture.md) | Project structure, capsule system, data flow, storage model, and performance patterns |
