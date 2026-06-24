@@ -70,6 +70,26 @@ node capture.mjs        # → shots-png/*.png  (light stills)
 THEME=dark node capture.mjs   # dark stills
 ```
 
+## 4b. Live on-instance REST E2E (wolfaenpak)
+
+Run against the deployed dev install with a real API token (`test-harness/.env`, gitignored):
+
+```
+node scripts/live-trigger-e2e.mjs   → 8/8 passed
+node scripts/forge-logs.mjs         → no error signals
+```
+
+`live-trigger-e2e.mjs` creates a throwaway page, reads its ADF, **edits it (firing the
+deployed `avi:confluence:updated:page` trigger)**, probes the `protection-` /
+`section-protection-` / `sentinel-vault-validation` content-property fast-paths, then
+deletes the page. Result: **the deployed app accepts real Confluence events and the
+content-property surface with zero error signals in `forge logs`.**
+
+Scope/limit (honest): REST cannot invoke the UI-only resolvers, so this verifies the
+deployed REST surface + trigger resilience — **not** the seal→revert, section-restore,
+or LLM behaviours, which are exercised via the UI (mock-bridge render harness) and the
+manual matrix below.
+
 ## 5. Black-box E2E harness (`test-harness/`)
 
 Drives the **real** Confluence REST API + reads `forge logs` (never imports the app/KVS). Run against a deployed dev install:
