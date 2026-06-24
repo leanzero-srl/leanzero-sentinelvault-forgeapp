@@ -31,10 +31,15 @@ npm test
 3. Run:
    ```bash
    cd test-harness
-   npm run health        # confirms creds + connectivity
-   npm run seal-e2e      # smoke: page readable, seal property present, no error logs
-   npm run forge-logs    # scans deployed logs for crash/5xx/egress/LLM/parse signals
+   npm run health                       # confirms creds + connectivity
+   node scripts/live-trigger-e2e.mjs    # creates/edits/deletes a real page → fires the deployed trigger
+   npm run seal-e2e                     # smoke: page readable, seal property present, no error logs
+   npm run forge-logs                   # scans deployed logs for crash/5xx/egress/LLM/parse signals
    ```
+
+   `live-trigger-e2e.mjs` verifies the deployed app accepts real Confluence events + the
+   content-property fast-paths with no error signals. REST can't invoke the UI-only
+   resolvers, so seal→revert / section-restore / LLM are exercised via the manual matrix below.
 
 ## Manual E2E verification matrix
 
