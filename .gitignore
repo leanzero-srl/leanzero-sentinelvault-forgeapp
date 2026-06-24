@@ -60,3 +60,7 @@ AGENTS.md
 
 # Local screenshot/video harness tooling (throwaway, like CogniRunner's)
 webpack.screenshot.js
+
+# Track the small committed feature-demo videos used by docs/ (overrides *.mp4 above)
+!docs/media/videos/
+!docs/media/videos/*.mp4
