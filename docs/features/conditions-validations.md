@@ -19,8 +19,9 @@ Pages are validated against admin-configured rules — required headings, requir
 
 ## Where to find it
 
-- **Author rules:** Steward console → **Validations** tab → master toggle, enforcement modes, and a rule list (each rule: type, label, severity, and type-specific config).
-- **See results:** the inline panel shows a **Validation** group (pass/fail badge + violations + **Re-check**) when a gate status exists; advisory issues arrive as a page comment.
+- **Author rules (global):** Steward console → **Validations** tab → master toggle, enforcement modes, and a rule list (each rule: type, label, severity, and type-specific config).
+- **Author rules (per space):** Realm console → **Validations** tab → the same editor, scoped to that space (space rules override global; leave empty to inherit).
+- **See results:** the inline panel shows a **Validation** group (pass/fail badge + violations + **Re-check**) when a gate status exists; advisory issues arrive as a page comment; gate status also shows on the page ribbon.
 
 ## How to test — step by step
 
@@ -42,6 +43,10 @@ Authoring — the **Validations** tab (rule editor + enforcement modes), light +
 
 ![Validations authoring tab](../media/screenshots/steward-validations.png)
 ![Validations authoring tab (dark)](../media/screenshots/steward-validations-dark.png)
+
+The same editor, scoped **per space**, in the Realm console:
+
+![Per-space Validations editor in the realm console](../media/screenshots/realm-validations.png)
 
 Reporting — the **Validation** group in the panel (the "Issues found" badge + violations):
 

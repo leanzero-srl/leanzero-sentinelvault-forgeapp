@@ -1730,3 +1730,33 @@ html[data-color-mode="dark"] .artifact-card.status-expired { border-color: #F871
   color: var(--sv-interactive-primary);
   text-decoration: underline;
 }
+
+/* ── Validations editor (shared kit) ───────────────── */
+.btn-secondary {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 6px 12px; border-radius: 8px; font-size: 12px; font-weight: 600;
+  border: 1px solid var(--sv-border-secondary); background: var(--sv-bg-secondary);
+  color: var(--sv-text-primary); cursor: pointer; font-family: inherit;
+}
+.btn-secondary:hover { border-color: var(--sv-interactive-primary); color: var(--sv-interactive-primary); }
+.val-modes { display: flex; flex-direction: column; gap: 8px; }
+.form-checkbox-inline { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--sv-text-secondary); cursor: pointer; }
+.val-rules { margin-top: 20px; }
+.val-rules-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+.val-rules-title { font-size: 14px; font-weight: 700; color: var(--sv-text-primary); }
+.val-rule-card { display: flex; flex-direction: column; gap: 8px; padding: 12px; border: 1px solid var(--sv-border-secondary); border-radius: 10px; background: var(--sv-bg-secondary); margin-bottom: 10px; }
+.val-rule-row { display: flex; align-items: center; gap: 8px; }
+.val-rule-remove { margin-left: auto; border: none; background: var(--sv-status-warning); color: #fff; border-radius: 6px; width: 24px; height: 24px; font-size: 16px; line-height: 1; cursor: pointer; }
+.val-rule-cfg { display: flex; gap: 8px; }
+.val-rule-cfg .form-input { flex: 1; }
+.mini-select { position: relative; min-width: 180px; }
+.mini-select-value { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 12px; border: 1px solid var(--sv-border-secondary); border-radius: 8px; background: var(--sv-bg-primary); color: var(--sv-text-primary); font-size: 13px; cursor: pointer; }
+.mini-select-arrow { font-size: 9px; color: var(--sv-text-subtle); transition: transform 0.15s; }
+.mini-select-arrow.open { transform: rotate(180deg); }
+.mini-select-menu { position: absolute; top: calc(100% + 4px); left: 0; right: 0; z-index: 20; background: var(--sv-surface-overlay); border: 1px solid var(--sv-border-secondary); border-radius: 8px; box-shadow: 0 4px 16px rgba(15, 23, 42, 0.12); overflow: hidden; }
+.mini-select-opt { padding: 8px 12px; font-size: 13px; color: var(--sv-text-primary); cursor: pointer; }
+.mini-select-opt:hover { background: var(--sv-bg-tertiary); }
+.mini-select-opt.sel { background: var(--sv-status-success-bg); color: var(--sv-status-success); font-weight: 600; }
+.val-ai { margin-top: 24px; padding-top: 16px; border-top: 1px solid var(--sv-border-secondary); }
+.val-ai-badge { font-size: 10px; font-weight: 700; padding: 2px 10px; border-radius: 9999px; background: var(--sv-interactive-primary); color: var(--sv-text-on-primary); }
+.val-textarea { width: 100%; resize: vertical; font-family: inherit; min-width: 260px; }

@@ -18,6 +18,7 @@ import {
   computeSectionRange,
   refreshSectionContentProp,
 } from "./logic.js";
+import { sweepSectionEditAccess } from "../editreq/logic.js";
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const newSectionId = () => {
@@ -249,6 +250,7 @@ const unsealSection = async (req) => {
     try { await kvs.delete(`space-section-protection-${record.spaceId}-${sectionId}`); }
     catch (_) { /* best effort */ }
   }
+  await sweepSectionEditAccess(sectionId);
   await refreshSectionContentProp(pageId);
   await touchSealTimestamp();
   return { success: true };

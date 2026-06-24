@@ -29,7 +29,7 @@ Instead of bring-your-own-key, Semantic AI Validations call **Atlassian-hosted C
 ## What you should see
 
 - A **Semantic AI Validations** config block with a **"Runs on Atlassian"** badge, a Haiku-only model dropdown, the rules/style/tone/compliance fields, and a monthly token budget.
-- An **AI Review** group in the panel: **Run AI review** → **Reviewing…** → a findings list (HIGH/MEDIUM/LOW + excerpt + suggestion), or "No issues found."
+- An **AI Review** group in the panel: **Run AI review** → **Reviewing…** → a findings list (HIGH/MEDIUM/LOW + excerpt + suggestion), or "No issues found." Each finding can be **Dismissed** or marked **False positive** (hidden from future runs, restorable); the group is collapsible.
 - If the model returns unparseable output, no fabricated findings (fail-closed) — an audit row records the parse error instead.
 
 ## Walkthrough — screenshots & video

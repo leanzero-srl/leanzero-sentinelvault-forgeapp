@@ -28,7 +28,7 @@ Confluence has no native section-level edit lock, so Sentinel Vault wraps the ch
 
 ## What you should see
 
-- A **Sealed Sections** group listing each sealed section (title, expiry; **Unseal** for yours, owner chip for others’).
+- A **Sealed Sections** group listing each sealed section (title, expiry; **Unseal** for yours; for a section sealed by someone else, a **Request Edit** button so you can ask the owner for in-place edit access — approved editors’ changes are kept and the seal re-baselines).
 - Non-owner edits to the sealed body are reverted; a footer comment notifies the owner.
 - A no-op editor save (open and re-save with no real change) does **not** trigger a false revert (canonical-hash comparison).
 
