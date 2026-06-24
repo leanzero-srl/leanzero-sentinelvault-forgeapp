@@ -9,7 +9,18 @@ import {
 import { recordDispatch, postDocFootnote } from "./capsules/bulletins/logic.js";
 import { resolveBulletinToggles } from "./shared/bulletin-flags.js";
 import { touchSealTimestamp, removeSealContentProp } from "./capsules/sealing/logic.js";
-import { readDocBody, readDocBodyAtVersion, writeDocBody, collectMediaFileIds, extractMediaSingleNodes, spliceMediaNodes } from "./infra/doc-surgery.js";
+import { getActiveEditGrant, sweepEditAccess } from "./capsules/editreq/logic.js";
+import {
+  resolveEffectiveConfig,
+  writeValidationState,
+  getLastGoodVersion,
+  setLastGoodVersion,
+  wasVersionChecked,
+  markVersionChecked,
+} from "./capsules/validations/logic.js";
+import { evaluateRules } from "./infra/rules-engine.js";
+import { postValidationComment } from "./infra/validation-blueprints.js";
+import { readDocBody, readDocBodyAtVersion, writeDocBody, collectMediaFileIds, extractMediaSingleNodes, spliceMediaNodes, locateBodiedSectionNodes, replaceSectionBody, spliceSectionWrapper, hashAdf } from "./infra/doc-surgery.js";
 
 // --- Helpers ---
 
@@ -76,7 +87,16 @@ export async function artifactEventTrigger(event) {
 }
 
 // --- Page Content Trigger (Forge Trigger) ---
-// Detects when sealed attachment media references are removed from a page and reverts the change.
+// Unified page-body protection pipeline. Multiple features want to inspect and
+// repair the page body on the SAME avi:confluence:(updated|created):page event:
+//   (A) sealed-section restore  (Content Sealing)
+//   (B) sealed-media restore    (attachment embeds)
+//   (C) validation enforcement  (advisory / gate / hard-revert)
+//   (D) Semantic AI validation  (enqueue — manual-first, so disabled here)
+// To avoid 409 storms, ordering hazards and infinite loops, the handler does a
+// SINGLE read -> ordered passes mutate one in-memory ADF -> SINGLE write inside
+// one shared 409-backoff loop. Every write is asApp(), so the app's own re-save
+// re-fires this trigger and is short-circuited by the loop-guard below.
 export async function pageContentTrigger(event) {
   try {
     const { atlassianId, content } = event;
@@ -93,162 +113,377 @@ export async function pageContentTrigger(event) {
       return;
     }
 
-    // Check admin toggle — bail if content protection is disabled
     const globalPolicy = await kvs.get("admin-settings-global");
-    if (globalPolicy?.enableContentProtection === false) {
-      return;
-    }
+    const contentProtectionOn = globalPolicy?.enableContentProtection !== false;
 
-    // Fast path: check if this page has any seal content properties
-    const propsResponse = await asApp().requestConfluence(
-      route`/wiki/api/v2/pages/${pageId}/properties?key=protection-`,
-    );
-    if (!propsResponse.ok) {
-      return;
-    }
-    const propsData = await propsResponse.json();
-    if (!propsData.results || propsData.results.length === 0) {
-      return;
-    }
+    // --- Gather applicable body-protection work via cheap probes (no ADF read) ---
+    const sealFileMap = contentProtectionOn
+      ? await collectMediaSealsForPage(pageId)
+      : [];
+    const sectionSeals = contentProtectionOn
+      ? await collectSectionSealsForPage(pageId)
+      : [];
 
-    // Query KVS for all seals belonging to this page
-    const { results: allSeals } = await kvs
-      .query()
-      .where("key", WhereConditions.beginsWith("protection-"))
-      .limit(100)
-      .getMany();
+    const hasBodyWork = sealFileMap.length > 0 || sectionSeals.length > 0;
 
-    const pageSeals = allSeals.filter(
-      ({ value }) => value?.contentId === pageId && value?.lockedBy,
-    );
-
-    if (pageSeals.length === 0) {
-      return;
-    }
-
-    // Resolve fileIds for each sealed attachment
-    const sealFileMap = []; // { seal, fileId }
-    for (const { value: seal } of pageSeals) {
-      let fileId = seal.sealedFileId || null;
-
-      // Fallback: fetch fileId from attachment API for legacy seals
-      if (!fileId && seal.attachmentId) {
-        try {
-          const attRes = await asApp().requestConfluence(
-            route`/wiki/api/v2/attachments/${seal.attachmentId}`,
-          );
-          if (attRes.ok) {
-            const attData = await attRes.json();
-            fileId = attData.fileId || null;
-          }
-        } catch (_) { /* best effort */ }
-      }
-
-      if (fileId) {
-        sealFileMap.push({ seal, fileId });
-      }
-    }
-
-    if (sealFileMap.length === 0) {
-      return;
-    }
-
-    // Read current page ADF and collect present media fileIds
-    const { pageData, adfDoc } = await readDocBody(pageId);
-    const presentFileIds = collectMediaFileIds(adfDoc);
-
-    // Determine which sealed attachments are missing from the page
-    const violations = sealFileMap.filter(
-      ({ seal, fileId }) =>
-        !presentFileIds.has(fileId) && seal.lockedBy !== atlassianId,
-    );
-
-    if (violations.length === 0) {
-      return;
-    }
-
-    const currentVersion = pageData.version?.number;
-    if (!currentVersion || currentVersion < 2) {
-      console.warn("[PAGE-PROTECT] Cannot revert — page has no previous version");
-      return;
-    }
-
-    // Surgically re-insert only the removed sealed media blocks
-    const violatedFileIds = new Set(violations.map(({ fileId }) => fileId));
-
-    console.warn(
-      `[PAGE-PROTECT] ${violations.length} sealed media reference(s) removed from page ${pageId} by ${atlassianId} — re-inserting`,
-    );
-
+    // --- Single read -> passes -> single write, with shared 409 backoff ---
     const MAX_RETRIES = 3;
-    for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+    const notifyMap = new Map();
+    let anyChange = false;
+
+    for (let attempt = 0; hasBodyWork && attempt < MAX_RETRIES; attempt++) {
+      let ctx;
       try {
-        // Re-read current page data on retries to get fresh version number
-        const current = attempt === 0
-          ? { pageData, adfDoc }
-          : await readDocBody(pageId);
-
-        const prevVersion = current.pageData.version.number - 1;
-        if (prevVersion < 1) break;
-
-        const { adfDoc: previousAdf } = await readDocBodyAtVersion(pageId, prevVersion);
-
-        // Extract only the top-level blocks containing the missing sealed media
-        const restoredEntries = extractMediaSingleNodes(previousAdf, violatedFileIds);
-
-        if (restoredEntries.length === 0) {
-          console.warn(
-            `[PAGE-PROTECT] Could not find sealed media in previous version either — skipping`,
-          );
-          break;
-        }
-
-        // Patch the current ADF by inserting the restored blocks at their original positions
-        const patchedAdf = spliceMediaNodes(current.adfDoc, restoredEntries);
-
-        const putRes = await writeDocBody(
+        const { pageData, adfDoc } = await readDocBody(pageId);
+        ctx = {
           pageId,
-          current.pageData,
-          patchedAdf,
-          "(Sentinel Vault restored protected attachment embeds)",
-        );
-
-        if (putRes.ok) {
-          console.warn(
-            `[PAGE-PROTECT] Re-inserted ${restoredEntries.length} media block(s) into page ${pageId}`,
-          );
-          break;
-        }
-
-        if (putRes.status === 409) {
-          const delay = Math.pow(2, attempt) * 500;
-          console.warn(`[PAGE-PROTECT] Version conflict, retrying in ${delay}ms (attempt ${attempt + 1}/${MAX_RETRIES})`);
-          await new Promise((r) => setTimeout(r, delay));
-          continue;
-        }
-
-        const errorText = await putRes.text();
-        console.error(`[PAGE-PROTECT] Failed to patch page: ${putRes.status} — ${errorText}`);
-        break;
+          atlassianId,
+          pageData,
+          adfDoc,
+          currentVersion: pageData.version?.number,
+          changed: false,
+          notifications: [],
+        };
       } catch (err) {
-        if (attempt === MAX_RETRIES - 1) {
-          console.error("[PAGE-PROTECT] Max retries exceeded:", err);
-        } else {
-          const delay = Math.pow(2, attempt) * 500;
-          await new Promise((r) => setTimeout(r, delay));
-        }
+        console.error("[PAGE-PROTECT] Failed to read page body:", err);
+        break;
       }
+
+      // Pass A: sealed-section restore
+      if (sectionSeals.length > 0) {
+        try { await restoreSealedSectionsPass(ctx, sectionSeals); }
+        catch (e) { console.error("[PAGE-PROTECT] section pass error:", e); }
+      }
+      // Pass B: sealed-media restore
+      if (sealFileMap.length > 0) {
+        try { await restoreMediaPass(ctx, sealFileMap); }
+        catch (e) { console.error("[PAGE-PROTECT] media pass error:", e); }
+      }
+      // Pass C (Phase 4): validation enforcement — slots in here.
+
+      // Accumulate notifications (dedup across retries by type + target).
+      for (const n of ctx.notifications) {
+        notifyMap.set(`${n.type}:${n.targetId || ""}`, n);
+      }
+
+      if (!ctx.changed) {
+        break; // nothing to write this attempt
+      }
+
+      const putRes = await writeDocBody(
+        ctx.pageId,
+        ctx.pageData,
+        ctx.adfDoc,
+        "(Sentinel Vault restored protected content)",
+      );
+
+      if (putRes.ok) {
+        anyChange = true;
+        break;
+      }
+      if (putRes.status === 409) {
+        const delay = Math.pow(2, attempt) * 500;
+        console.warn(`[PAGE-PROTECT] Version conflict, retrying in ${delay}ms (attempt ${attempt + 1}/${MAX_RETRIES})`);
+        await new Promise((r) => setTimeout(r, delay));
+        continue;
+      }
+      const errorText = await putRes.text();
+      console.error(`[PAGE-PROTECT] Failed to patch page: ${putRes.status} — ${errorText}`);
+      break;
     }
 
-    // Send violation notifications for each affected seal
-    for (const { seal } of violations) {
-      const artifactName = seal.attachmentName || "Unknown Attachment";
-      await sendViolationNotifications(seal, seal.attachmentId, pageId, atlassianId, artifactName, "content-removal");
+    // Dispatch notifications once (post-loop), regardless of write success.
+    for (const n of notifyMap.values()) {
+      try { await dispatchPipelineNotification(n); }
+      catch (e) { console.error("[PAGE-PROTECT] notify error:", e); }
     }
 
-    await touchSealTimestamp();
+    if (anyChange) {
+      await touchSealTimestamp();
+    }
+
+    // --- Conditions & Validations phase (independent of seals) ---
+    try {
+      await runValidationPhase(event, pageId, atlassianId);
+    } catch (e) {
+      console.error("[VALIDATE] phase error:", e);
+    }
   } catch (error) {
     console.error("[PAGE-PROTECT] Error in page content trigger:", error);
+  }
+}
+
+// --- Pipeline: gather media seals applicable to a page (cheap, no ADF read) ---
+async function collectMediaSealsForPage(pageId) {
+  // Fast path: does this page carry any seal content properties?
+  const propsResponse = await asApp().requestConfluence(
+    route`/wiki/api/v2/pages/${pageId}/properties?key=protection-`,
+  );
+  if (!propsResponse.ok) return [];
+  const propsData = await propsResponse.json();
+  if (!propsData.results || propsData.results.length === 0) return [];
+
+  const { results: allSeals } = await kvs
+    .query()
+    .where("key", WhereConditions.beginsWith("protection-"))
+    .limit(100)
+    .getMany();
+
+  const pageSeals = allSeals.filter(
+    ({ value }) => value?.contentId === pageId && value?.lockedBy,
+  );
+  if (pageSeals.length === 0) return [];
+
+  const sealFileMap = []; // { seal, fileId }
+  for (const { value: seal } of pageSeals) {
+    let fileId = seal.sealedFileId || null;
+    if (!fileId && seal.attachmentId) {
+      try {
+        const attRes = await asApp().requestConfluence(
+          route`/wiki/api/v2/attachments/${seal.attachmentId}`,
+        );
+        if (attRes.ok) {
+          const attData = await attRes.json();
+          fileId = attData.fileId || null;
+        }
+      } catch (_) { /* best effort */ }
+    }
+    if (fileId) sealFileMap.push({ seal, fileId });
+  }
+  return sealFileMap;
+}
+
+// --- Pipeline pass: re-insert removed sealed media blocks ---
+async function restoreMediaPass(ctx, sealFileMap) {
+  const presentFileIds = collectMediaFileIds(ctx.adfDoc);
+  const violations = sealFileMap.filter(
+    ({ seal, fileId }) =>
+      !presentFileIds.has(fileId) && seal.lockedBy !== ctx.atlassianId,
+  );
+  if (violations.length === 0) return;
+
+  if (!ctx.currentVersion || ctx.currentVersion < 2) {
+    console.warn("[PAGE-PROTECT] Cannot revert media — page has no previous version");
+    return;
+  }
+
+  const violatedFileIds = new Set(violations.map(({ fileId }) => fileId));
+  const prevVersion = ctx.currentVersion - 1;
+  const { adfDoc: previousAdf } = await readDocBodyAtVersion(ctx.pageId, prevVersion);
+  const restoredEntries = extractMediaSingleNodes(previousAdf, violatedFileIds);
+  if (restoredEntries.length === 0) {
+    console.warn("[PAGE-PROTECT] Could not find sealed media in previous version — skipping");
+    return;
+  }
+
+  spliceMediaNodes(ctx.adfDoc, restoredEntries);
+  ctx.changed = true;
+  console.warn(
+    `[PAGE-PROTECT] Re-inserted ${restoredEntries.length} sealed media block(s) into page ${ctx.pageId}`,
+  );
+  for (const { seal } of violations) {
+    ctx.notifications.push({
+      type: "content-removal",
+      targetId: seal.attachmentId,
+      seal,
+      actor: ctx.atlassianId,
+      pageId: ctx.pageId,
+      artifactName: seal.attachmentName || "Unknown Attachment",
+    });
+  }
+}
+
+// --- Pipeline: dispatch a single accumulated notification ---
+async function dispatchPipelineNotification(n) {
+  if (n.type === "content-removal") {
+    await sendViolationNotifications(
+      n.seal, n.seal.attachmentId, n.pageId, n.actor, n.artifactName, "content-removal",
+    );
+  } else if (n.type === "section-revert") {
+    await sendSectionViolationNotifications(n.seal, n.pageId, n.actor, n.kind);
+  }
+}
+
+// --- Pipeline: gather section seals applicable to a page (cheap, no ADF read) ---
+async function collectSectionSealsForPage(pageId) {
+  // Fast path: does this page carry any section-seal content properties?
+  const propsResponse = await asApp().requestConfluence(
+    route`/wiki/api/v2/pages/${pageId}/properties?key=section-protection-`,
+  );
+  if (!propsResponse.ok) return [];
+  const propsData = await propsResponse.json();
+  if (!propsData.results || propsData.results.length === 0) return [];
+
+  // section-protection-{sectionId} primary records (excludes section-snapshot-*
+  // and space-section-protection-* by prefix).
+  const { results } = await kvs
+    .query()
+    .where("key", WhereConditions.beginsWith("section-protection-"))
+    .limit(100)
+    .getMany();
+
+  return results
+    .map(({ value }) => value)
+    .filter((v) => v?.pageId === pageId && v?.lockedBy && v?.sectionId);
+}
+
+// --- Pipeline pass: restore tampered / removed sealed sections ---
+async function restoreSealedSectionsPass(ctx, sectionSeals) {
+  const now = Date.now();
+  const wrappers = new Map();
+  for (const w of locateBodiedSectionNodes(ctx.adfDoc)) {
+    if (w.sectionId) wrappers.set(w.sectionId, w);
+  }
+
+  for (const seal of sectionSeals) {
+    // Owner edits their own sealed section freely.
+    if (seal.lockedBy === ctx.atlassianId) continue;
+    // Expired seals are inert (full auto-unseal handled by the expiry sweep).
+    if (seal.expiresAt && new Date(seal.expiresAt).getTime() <= now) continue;
+
+    const wrapper = wrappers.get(seal.sectionId);
+    const snapshot = await kvs.get(`section-snapshot-${seal.sectionId}`);
+
+    if (!wrapper) {
+      // The entire sealed-section macro was deleted/cut — re-insert it.
+      let entry = null;
+      if (snapshot?.wrapperNode) {
+        entry = {
+          node: snapshot.wrapperNode,
+          originalIndex: typeof snapshot.originalIndex === "number"
+            ? snapshot.originalIndex
+            : ctx.adfDoc.content?.length || 0,
+        };
+      } else if (ctx.currentVersion && ctx.currentVersion >= 2) {
+        // Fallback: pull the wrapper from the previous page version.
+        try {
+          const { adfDoc: prev } = await readDocBodyAtVersion(ctx.pageId, ctx.currentVersion - 1);
+          const prevWrap = locateBodiedSectionNodes(prev).find((w) => w.sectionId === seal.sectionId);
+          if (prevWrap) entry = { node: prevWrap.node, originalIndex: prevWrap.originalIndex };
+        } catch (_) { /* best effort */ }
+      }
+      if (!entry) {
+        console.warn(`[SECTION] Cannot restore removed section ${seal.sectionId} — no snapshot or prior version`);
+        continue;
+      }
+      spliceSectionWrapper(ctx.adfDoc, [entry]);
+      ctx.changed = true;
+      ctx.notifications.push({
+        type: "section-revert", targetId: seal.sectionId,
+        seal, actor: ctx.atlassianId, pageId: ctx.pageId, kind: "removed",
+      });
+      continue;
+    }
+
+    // Wrapper present — compare the canonical hash of its body to the sealed hash.
+    const liveHash = hashAdf(wrapper.node.content);
+    if (seal.contentHash && liveHash === seal.contentHash) continue; // untouched
+
+    // Body was edited — restore the sealed body from the snapshot.
+    if (snapshot?.bodyContent) {
+      const ok = replaceSectionBody(ctx.adfDoc, seal.sectionId, snapshot.bodyContent);
+      if (ok) {
+        ctx.changed = true;
+        ctx.notifications.push({
+          type: "section-revert", targetId: seal.sectionId,
+          seal, actor: ctx.atlassianId, pageId: ctx.pageId, kind: "body-edited",
+        });
+      }
+    } else {
+      console.warn(`[SECTION] Section ${seal.sectionId} body changed but no snapshot to restore from`);
+    }
+  }
+}
+
+// --- Conditions & Validations phase (runs after the body-protection pipeline) ---
+async function runValidationPhase(event, pageId, atlassianId) {
+  const spaceKey =
+    event?.space?.key || event?.content?.space?.key || event?.content?.spaceKey || null;
+
+  const config = await resolveEffectiveConfig(spaceKey);
+  if (!config.enabled || !(config.rules || []).length) return;
+
+  const { pageData, adfDoc } = await readDocBody(pageId);
+
+  // Only enforce on published pages.
+  if (pageData.status && pageData.status !== "current") return;
+
+  const version = pageData.version?.number;
+  if (await wasVersionChecked(pageId, version)) return;
+
+  // Fetch page labels (required-label rule).
+  let labels = [];
+  try {
+    const res = await asApp().requestConfluence(route`/wiki/api/v2/pages/${pageId}/labels`);
+    if (res.ok) { const b = await res.json(); labels = (b.results || []).map((l) => l.name); }
+  } catch (_) { /* best effort */ }
+
+  const { passed, violations } = evaluateRules(adfDoc, labels, config.rules);
+  const modes = config.modes || { advisory: true, gate: false, revert: false };
+
+  if (passed) {
+    await setLastGoodVersion(pageId, version);
+    if (modes.gate) {
+      await writeValidationState(pageId, { state: "passed", violations: [], version, checkedAt: new Date().toISOString() });
+    }
+    await markVersionChecked(pageId, version);
+    return;
+  }
+
+  // Failed.
+  if (modes.advisory) {
+    try { await postValidationComment({ pageId, editorAccountId: atlassianId, violations, reverted: false }); }
+    catch (e) { console.error("[VALIDATE] advisory comment failed:", e); }
+  }
+  if (modes.gate) {
+    await writeValidationState(pageId, { state: "failed", violations, version, checkedAt: new Date().toISOString() });
+  }
+  if (modes.revert) {
+    const lastGood = await getLastGoodVersion(pageId);
+    if (lastGood && version && lastGood < version) {
+      let reverted = false;
+      for (let attempt = 0; attempt < 3; attempt++) {
+        try {
+          const current = await readDocBody(pageId);
+          const { adfDoc: goodAdf } = await readDocBodyAtVersion(pageId, lastGood);
+          const putRes = await writeDocBody(pageId, current.pageData, goodAdf, "(Sentinel Vault reverted non-compliant content)");
+          if (putRes.ok) { reverted = true; break; }
+          if (putRes.status === 409) { await new Promise((r) => setTimeout(r, Math.pow(2, attempt) * 500)); continue; }
+          break;
+        } catch (e) { console.error("[VALIDATE] revert error:", e); break; }
+      }
+      if (reverted && !modes.advisory) {
+        try { await postValidationComment({ pageId, editorAccountId: atlassianId, violations, reverted: true }); }
+        catch (_) { /* best effort */ }
+      }
+    } else if (!modes.advisory) {
+      // No compliant version to revert to (e.g. v1) — fall back to flagging.
+      try { await postValidationComment({ pageId, editorAccountId: atlassianId, violations, reverted: false }); }
+      catch (_) { /* best effort */ }
+    }
+  }
+
+  await markVersionChecked(pageId, version);
+}
+
+// --- Notify the section-seal owner of an unauthorized section change ---
+async function sendSectionViolationNotifications(seal, pageId, actor, kind) {
+  const title = seal.sectionTitle || "a sealed section";
+  const verb = kind === "removed" ? "content-removal" : "edit";
+  await recordDispatch({
+    id: `notification-${Date.now()}`,
+    type: kind === "removed" ? "section-restored" : "section-reverted",
+    sectionId: seal.sectionId,
+    attachmentName: title,
+    ownerAccountId: seal.lockedBy,
+    editorAccountId: actor,
+    timestamp: Date.now(),
+    pageId,
+  });
+  try {
+    await postDocFootnote(pageId, seal.lockedBy, actor, title, verb);
+  } catch (e) {
+    console.error("[SECTION] Failed to post section violation comment:", e);
   }
 }
 
@@ -258,6 +493,35 @@ async function handleSealedArtifactEdit(sealRecord, artifactId, contentId, atlas
 
   // Allow the seal owner to edit their own sealed artifact
   if (sealRecord.lockedBy === atlassianId) {
+    return;
+  }
+
+  // Allow approved editors (Edit Requests) to edit without reverting. Re-baseline
+  // the seal to the new version + fileId so future reverts target the edited
+  // content, and pageContentTrigger's media-presence check keeps matching.
+  const grant = await getActiveEditGrant(artifactId, atlassianId);
+  if (grant) {
+    try {
+      let newFileId = sealRecord.sealedFileId || null;
+      const attRes = await asApp().requestConfluence(
+        route`/wiki/api/v2/attachments/${artifactId}`,
+      );
+      if (attRes.ok) {
+        const attData = await attRes.json();
+        newFileId = attData.fileId || newFileId;
+      }
+      await kvs.set(`protection-${artifactId}`, {
+        ...sealRecord,
+        sealedVersion: currentVersion || sealRecord.sealedVersion,
+        sealedFileId: newFileId,
+      });
+      await touchSealTimestamp();
+      console.warn(
+        `[EDIT-GRANT] Allowed approved edit of ${artifactId} by ${atlassianId} — re-baselined seal to v${currentVersion}`,
+      );
+    } catch (e) {
+      console.error("[EDIT-GRANT] Failed to re-baseline seal after approved edit:", e);
+    }
     return;
   }
 
@@ -412,6 +676,9 @@ async function handleSealedArtifactDeleted(sealRecord, artifactId, contentId, at
   if (pageId) {
     try { await removeSealContentProp(pageId); } catch (_) { /* best effort */ }
   }
+
+  // Clear any Edit Requests / grants tied to this seal
+  await sweepEditAccess(artifactId);
 
   await touchSealTimestamp();
   console.warn(`[SEAL-DELETED] Cleaned up seal records for ${artifactName} (${artifactId})`);

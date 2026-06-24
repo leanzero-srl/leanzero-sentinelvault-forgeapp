@@ -80,4 +80,5 @@ module.exports = [
   createBuildConfig("doc-ribbon",      "./src/ui/surfaces/doc-ribbon/index.jsx",      "static/doc-ribbon",      "doc-ribbon.css"),
   createBuildConfig("inline-panel",    "./src/ui/surfaces/inline-panel/index.jsx",    "static/inline-panel",    "inline-panel.css"),
   createBuildConfig("panel-setup",     "./src/ui/surfaces/panel-setup/index.jsx",     "static/panel-setup",     "panel-setup.css"),
+  createBuildConfig("section-setup",    "./src/ui/surfaces/section-setup/index.jsx",    "static/section-setup",    "section-setup.css"),
 ];

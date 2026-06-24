@@ -4,6 +4,9 @@ import { kvs } from "@forge/kvs";
 const PANEL_KEY_SUFFIX = "/static/sentinel-vault-panel";
 const MACRO_MODULE_KEY = "sentinel-vault-panel";
 
+const SECTION_MACRO_MODULE_KEY = "sentinel-vault-sealed-section";
+export const SEALED_SECTION_KEY_SUFFIX = "/static/sentinel-vault-sealed-section";
+
 /**
  * Check if an extension key matches the panel suffix
  */
@@ -555,4 +558,245 @@ export async function triggerPanelEmbed(contentId, spaceKey) {
   } catch (error) {
     console.error("[PANEL-AUTO] Error in panel auto-insert:", error);
   }
+}
+
+// ===========================================================================
+// Sealed Section helpers (Content Sealing — section-level)
+// ===========================================================================
+
+/**
+ * Check if an extension key belongs to the Sentinel Vault Sealed Section macro.
+ */
+export function isSealedSectionKey(extensionKey) {
+  return extensionKey?.endsWith(SEALED_SECTION_KEY_SUFFIX);
+}
+
+/**
+ * Build the Sealed Section macro extension key from the Forge app context.
+ */
+function buildSealedSectionKeyFromContext() {
+  try {
+    const { appAri, environmentAri } = getAppContext();
+    const appId = appAri?.appId;
+    const envId = environmentAri?.environmentId;
+    if (!appId || !envId) return null;
+    return `${appId}/${envId}/static/${SECTION_MACRO_MODULE_KEY}`;
+  } catch (e) {
+    console.warn("[SECTION] getAppContext() failed:", e);
+    return null;
+  }
+}
+
+/**
+ * Resolve (and cache) the Sealed Section macro extension key.
+ */
+export async function resolveSealedSectionKey() {
+  const cached = await kvs.get("section-macro-extension-key");
+  if (cached) return cached;
+  const key = buildSealedSectionKeyFromContext();
+  if (key) {
+    await kvs.set("section-macro-extension-key", key);
+    return key;
+  }
+  return null;
+}
+
+/**
+ * Read the app-issued sectionId off a Sealed Section wrapper node. Checks the
+ * config parameter locations Forge uses, then falls back to the platform localId.
+ */
+export function getSectionId(node) {
+  return (
+    node?.attrs?.parameters?.guestParams?.sectionId ||
+    node?.attrs?.parameters?.sectionId ||
+    node?.attrs?.localId ||
+    null
+  );
+}
+
+/**
+ * Build a Sealed Section bodied-extension node wrapping the given body content.
+ */
+export function buildSealedSectionNode({ sectionId, extensionKey, bodyContent }) {
+  const parts = extensionKey.split("/");
+  const appId = parts[0];
+  const envId = parts[1];
+  const extensionId = `ari:cloud:ecosystem::extension/${appId}/${envId}${SEALED_SECTION_KEY_SUFFIX}`;
+  return {
+    type: "bodiedExtension",
+    attrs: {
+      extensionType: "com.atlassian.ecosystem",
+      extensionKey,
+      layout: "default",
+      parameters: {
+        extensionId,
+        extensionTitle: "Sentinel Vault Sealed Section",
+        guestParams: { sectionId },
+      },
+    },
+    content: Array.isArray(bodyContent) && bodyContent.length > 0
+      ? bodyContent
+      : [{ type: "paragraph", content: [] }],
+  };
+}
+
+/**
+ * Find all top-level Sealed Section wrappers in a page ADF.
+ * Returns [{ node, sectionId, originalIndex }, ...].
+ */
+export function locateBodiedSectionNodes(adfDoc) {
+  const out = [];
+  if (!adfDoc?.content) return out;
+  for (let i = 0; i < adfDoc.content.length; i++) {
+    const block = adfDoc.content[i];
+    if (block?.type === "bodiedExtension" && isSealedSectionKey(block.attrs?.extensionKey)) {
+      out.push({ node: block, sectionId: getSectionId(block), originalIndex: i });
+    }
+  }
+  return out;
+}
+
+/**
+ * Replace the body content of the top-level Sealed Section wrapper identified by
+ * sectionId with a deep clone of snapshotContent. Mutates adfDoc.
+ * Returns true if a matching wrapper was found and replaced.
+ */
+export function replaceSectionBody(adfDoc, sectionId, snapshotContent) {
+  if (!adfDoc?.content) return false;
+  for (const block of adfDoc.content) {
+    if (
+      block?.type === "bodiedExtension" &&
+      isSealedSectionKey(block.attrs?.extensionKey) &&
+      getSectionId(block) === sectionId
+    ) {
+      block.content = JSON.parse(JSON.stringify(snapshotContent || []));
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Re-insert removed Sealed Section wrapper nodes at their original positions.
+ * Processes insertions in descending index order to avoid offset drift.
+ * Mutates and returns currentAdf. Entries: [{ node, originalIndex }, ...].
+ */
+export function spliceSectionWrapper(currentAdf, entries) {
+  if (!currentAdf.content) currentAdf.content = [];
+  const sorted = [...entries].sort((a, b) => b.originalIndex - a.originalIndex);
+  for (const { node, originalIndex } of sorted) {
+    const idx = Math.min(originalIndex, currentAdf.content.length);
+    currentAdf.content.splice(idx, 0, JSON.parse(JSON.stringify(node)));
+  }
+  return currentAdf;
+}
+
+// Attr keys the Confluence editor regenerates/reorders on save without a real
+// content change. Stripping them before hashing prevents false-positive reverts.
+// HARDEN EMPIRICALLY: round-trip a sealed page through the editor and diff to
+// extend this set if no-op saves still produce a different hash.
+const VOLATILE_ADF_KEYS = new Set(["localId"]);
+
+/**
+ * Deep canonical form of an ADF subtree: sorts every object's keys and drops
+ * volatile keys at any depth, so structurally-identical content hashes equal.
+ */
+export function canonicalizeAdf(value) {
+  if (Array.isArray(value)) return value.map(canonicalizeAdf);
+  if (value && typeof value === "object") {
+    const out = {};
+    for (const k of Object.keys(value).sort()) {
+      if (VOLATILE_ADF_KEYS.has(k)) continue;
+      const v = canonicalizeAdf(value[k]);
+      if (v !== undefined) out[k] = v;
+    }
+    return out;
+  }
+  return value;
+}
+
+/**
+ * Stable FNV-1a 32-bit hash of an ADF subtree's canonical form (8 hex chars).
+ */
+export function hashAdf(node) {
+  const str = JSON.stringify(canonicalizeAdf(node));
+  let h = 0x811c9dc5;
+  for (let i = 0; i < str.length; i++) {
+    h ^= str.charCodeAt(i);
+    h = (h + ((h << 1) + (h << 4) + (h << 7) + (h << 8) + (h << 24))) >>> 0;
+  }
+  return ("0000000" + h.toString(16)).slice(-8);
+}
+
+// ===========================================================================
+// Plain-text + structural walkers (Conditions/Validations + Semantic AI)
+// ===========================================================================
+
+const BLOCK_NODE_TYPES = new Set([
+  "paragraph", "heading", "listItem", "blockquote", "tableCell",
+  "tableHeader", "panel", "taskItem", "decisionItem", "codeBlock",
+]);
+
+/**
+ * Extract plain text from an ADF document for LLM input.
+ * Returns { text, charCount }. Media/extension nodes become a placeholder;
+ * bodied extensions (e.g. sealed sections) are recursed so their text is kept.
+ */
+export function extractPlainText(adfDoc) {
+  let text = "";
+  function walk(node) {
+    if (!node) return;
+    if (node.type === "text" && typeof node.text === "string") { text += node.text; return; }
+    if (node.type === "hardBreak") { text += "\n"; return; }
+    if (["media", "mediaSingle", "mediaGroup", "extension", "inlineExtension"].includes(node.type)) {
+      text += " [embedded object] ";
+      return;
+    }
+    if (Array.isArray(node.content)) {
+      for (const c of node.content) walk(c);
+    }
+    if (BLOCK_NODE_TYPES.has(node.type)) text += "\n";
+  }
+  walk(adfDoc);
+  const trimmed = text.replace(/[ \t]+\n/g, "\n").replace(/\n{3,}/g, "\n\n").trim();
+  return { text: trimmed, charCount: trimmed.length };
+}
+
+/**
+ * Collect all headings as [{ level, text }] in document order.
+ */
+export function collectHeadings(adfDoc) {
+  const out = [];
+  function textOf(n) {
+    let t = "";
+    const collect = (x) => {
+      if (x?.type === "text") t += x.text || "";
+      if (Array.isArray(x?.content)) x.content.forEach(collect);
+    };
+    collect(n);
+    return t.trim();
+  }
+  function walk(node) {
+    if (!node) return;
+    if (node.type === "heading") {
+      out.push({ level: node.attrs?.level || 1, text: textOf(node) });
+    }
+    if (Array.isArray(node.content)) node.content.forEach(walk);
+  }
+  walk(adfDoc);
+  return out;
+}
+
+/**
+ * Count ADF nodes matching a predicate anywhere in the tree.
+ */
+export function countNodes(node, predicate) {
+  let n = 0;
+  function walk(x) {
+    if (!x) return;
+    if (predicate(x)) n++;
+    if (Array.isArray(x.content)) x.content.forEach(walk);
+  }
+  walk(node);
+  return n;
 }

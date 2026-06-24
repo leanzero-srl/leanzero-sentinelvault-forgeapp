@@ -193,16 +193,16 @@ button:focus-visible {
   align-items: center;
   gap: 12px;
   padding: 10px 16px;
-  background: linear-gradient(135deg, #CFFAFE, #ECFEFF);
-  border-left: 3px solid var(--sv-interactive-primary);
+  background: var(--sv-bg-secondary);
+  border: 1px solid var(--sv-interactive-primary);
   box-shadow: 0 1px 4px rgba(8, 145, 178, 0.08), 0 1px 2px rgba(0, 0, 0, 0.04);
   border-radius: 10px;
   margin: 8px 0;
 }
 
 html[data-color-mode="dark"] .ribbon-bar {
-  background: linear-gradient(135deg, #083344, #0A2332);
-  border-left-color: var(--sv-interactive-primary);
+  background: var(--sv-bg-secondary);
+  border-color: var(--sv-interactive-primary);
   box-shadow: 0 1px 4px rgba(34, 211, 238, 0.1), 0 1px 2px rgba(0, 0, 0, 0.2);
 }
 

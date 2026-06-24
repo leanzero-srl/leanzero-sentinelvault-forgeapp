@@ -1,0 +1,124 @@
+/* Sealed Section macro — LeanZero design system (self-contained tokens) */
+
+:root {
+  --sec-bg: #FFFFFF;
+  --sec-bg-subtle: #F8FAFC;
+  --sec-text: #0F172A;
+  --sec-text-secondary: #475569;
+  --sec-border: #E2E8F0;
+  --sec-brand: #0891B2;
+  --sec-brand-strong: #0E7490;
+  --sec-on-brand: #FFFFFF;
+  --sec-shadow: 0 1px 3px rgba(15, 23, 42, 0.08);
+}
+
+html[data-color-mode="dark"] {
+  --sec-bg: #020617;
+  --sec-bg-subtle: #0F172A;
+  --sec-text: #F8FAFC;
+  --sec-text-secondary: #CBD5E1;
+  --sec-border: #334155;
+  --sec-brand: #22D3EE;
+  --sec-brand-strong: #67E8F9;
+  --sec-on-brand: #022F3A;
+  --sec-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  background: transparent;
+  color: var(--sec-text);
+  font-size: 14px;
+  line-height: 20px;
+  -webkit-font-smoothing: antialiased;
+}
+
+#root { width: 100%; }
+
+/* Solid brand chip — strong, saturated (no faded tints, no left rail) */
+.sec-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 9999px;
+  background: var(--sec-brand);
+  color: var(--sec-on-brand);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+/* ── View mode: sealed frame ─────────────────────── */
+.sec-frame {
+  border: 2px solid var(--sec-brand);
+  border-radius: 12px;
+  background: var(--sec-bg);
+  box-shadow: var(--sec-shadow);
+  overflow: hidden;
+}
+.sec-frame.sec-loading {
+  padding: 16px;
+  color: var(--sec-text-secondary);
+  border-style: dashed;
+}
+.sec-frame-head {
+  display: flex;
+  align-items: center;
+  padding: 8px 12px;
+  background: var(--sec-bg-subtle);
+  border-bottom: 1px solid var(--sec-border);
+}
+.sec-body-frame {
+  width: 100%;
+  border: 0;
+  min-height: 80px;
+  display: block;
+}
+.sec-body-fallback {
+  padding: 16px;
+  color: var(--sec-text-secondary);
+  font-size: 13px;
+}
+
+/* ── Config mode ─────────────────────────────────── */
+.sec-config {
+  padding: 20px;
+  background: var(--sec-bg);
+  border-radius: 12px;
+}
+.sec-config-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.sec-config-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--sec-text);
+}
+.sec-config-desc {
+  font-size: 13px;
+  color: var(--sec-text-secondary);
+  margin-bottom: 16px;
+}
+.sec-btn {
+  display: inline-flex;
+  align-items: center;
+  padding: 8px 16px;
+  border-radius: 8px;
+  border: 1px solid var(--sec-brand);
+  background: var(--sec-brand);
+  color: var(--sec-on-brand);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: inherit;
+}
+.sec-btn:hover {
+  background: var(--sec-brand-strong);
+  border-color: var(--sec-brand-strong);
+}

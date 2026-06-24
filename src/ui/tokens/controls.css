@@ -201,16 +201,14 @@ textarea:focus {
   height: 100%;
 }
 
-/* Modal header — gradient tint + accent line */
+/* Modal header — solid surface + solid accent line */
 .modal-header {
   padding: 20px 32px;
   border-bottom: none;
   display: flex;
   justify-content: space-between;
   align-items: center;
-  background: linear-gradient(135deg,
-    color-mix(in srgb, var(--sv-interactive-primary) 8%, var(--sv-bg-primary)),
-    var(--sv-bg-primary));
+  background: var(--sv-bg-primary);
   position: relative;
 }
 
@@ -221,7 +219,7 @@ textarea:focus {
   left: 32px;
   right: 32px;
   height: 2px;
-  background: linear-gradient(90deg, var(--sv-interactive-primary), transparent);
+  background: var(--sv-interactive-primary);
   border-radius: 1px;
 }
 

@@ -268,12 +268,41 @@ const UploadZone = ({ onUploadComplete }) => {
 const ArtifactCard = ({ att, onRefresh, columns, siteUrl, spaceKey, pageId, pageLocation }) => {
   const [actionBusy, setActionBusy] = useState(null);
   const [pendingConfirm, setPendingConfirm] = useState(null); // { action, message }
+  const [actionError, setActionError] = useState(null); // inline error (no native alert)
   const [expanded, setExpanded] = useState(false);
   const [cachedPreview, setCachedPreview] = useState(null);
+  const [editStatus, setEditStatus] = useState(att.editStatus || null); // none|pending|granted|denied
 
   const isSealed = att.lockStatus === "HELD" || att.lockStatus === "HELD_BY_ACTOR";
   const isSealedByMe = att.lockStatus === "HELD_BY_ACTOR";
   const isSealedByOther = att.lockStatus === "HELD";
+
+  // Lazily resolve this user's edit-access status for files sealed by others.
+  useEffect(() => {
+    let cancelled = false;
+    if (isSealedByOther && editStatus === null) {
+      invoke("check-edit-request", { attachmentId: att.id })
+        .then((r) => { if (!cancelled) setEditStatus(r?.status || "none"); })
+        .catch(() => { if (!cancelled) setEditStatus("none"); });
+    }
+    return () => { cancelled = true; };
+  }, [isSealedByOther, att.id, editStatus]);
+
+  const handleRequestEdit = async () => {
+    setActionBusy("editreq");
+    try {
+      const result = await invoke("request-edit-access", { attachmentId: att.id });
+      if (result && result.success) {
+        setEditStatus("pending");
+      } else {
+        console.warn("Edit request declined:", result?.reason);
+      }
+    } catch (e) {
+      console.error("Edit request failed:", e);
+    } finally {
+      setActionBusy(null);
+    }
+  };
   const canUnseal = isSealedByMe;
   const isStale = att.isStale === true;
   const isRecoverable = att.staleReason === "trashed";
@@ -291,10 +320,11 @@ const ArtifactCard = ({ att, onRefresh, columns, siteUrl, spaceKey, pageId, page
 
   const handleSeal = async () => {
     setActionBusy("seal");
+    setActionError(null);
     try {
       const result = await invoke("seal-artifact", { attachmentId: att.id });
       if (result && result.success === false) {
-        alert(result.reason || "Seal unsuccessful");
+        setActionError(result.reason || "Seal unsuccessful");
       }
       onRefresh();
     } catch (e) {
@@ -326,12 +356,13 @@ const ArtifactCard = ({ att, onRefresh, columns, siteUrl, spaceKey, pageId, page
   const executeDelete = async () => {
     setPendingConfirm(null);
     setActionBusy("delete");
+    setActionError(null);
     try {
       const result = await invoke("delete-artifact", { attachmentId: att.id });
       if (result.success) {
         onRefresh();
       } else {
-        alert(result.reason || "Removal unsuccessful");
+        setActionError(result.reason || "Removal unsuccessful");
       }
     } catch (e) {
       console.error("Delete failed:", e);
@@ -359,12 +390,13 @@ const ArtifactCard = ({ att, onRefresh, columns, siteUrl, spaceKey, pageId, page
 
   const handleRestore = async () => {
     setActionBusy("restore");
+    setActionError(null);
     try {
       const result = await invoke("restore-sealed-artifact", { attachmentId: att.id });
       if (result && result.success) {
         onRefresh();
       } else {
-        alert(result?.reason || "Restore unsuccessful");
+        setActionError(result?.reason || "Restore unsuccessful");
       }
     } catch (e) {
       console.error("Restore failed:", e);
@@ -383,12 +415,13 @@ const ArtifactCard = ({ att, onRefresh, columns, siteUrl, spaceKey, pageId, page
   const executePurge = async () => {
     setPendingConfirm(null);
     setActionBusy("purge");
+    setActionError(null);
     try {
       const result = await invoke("purge-seal-record", { attachmentId: att.id });
       if (result && result.success) {
         onRefresh();
       } else {
-        alert(result?.reason || "Cleanup unsuccessful");
+        setActionError(result?.reason || "Cleanup unsuccessful");
       }
     } catch (e) {
       console.error("Purge failed:", e);
@@ -513,6 +546,32 @@ const ArtifactCard = ({ att, onRefresh, columns, siteUrl, spaceKey, pageId, page
           {actionBusy === "watch" ? <>Updating<span className="btn-busy-bar" /></> : (att.notifyRequested ? "Watching" : "Watch")}
         </button>
       );
+      // Edit Requests — ask the seal owner for edit access
+      if (editStatus === "granted") {
+        secondaryActions.push(
+          <span key="editgrant" className="action-btn editgrant" title="The owner approved your edit access">Can Edit</span>
+        );
+      } else if (editStatus === "pending") {
+        secondaryActions.push(
+          <span key="editpending" className="action-btn editpending" title="Edit request awaiting owner approval">Requested</span>
+        );
+      } else if (editStatus === "denied") {
+        secondaryActions.push(
+          <span key="editdenied" className="action-btn editdenied" title="Your edit request was declined">Declined</span>
+        );
+      } else if (editStatus === "none") {
+        secondaryActions.push(
+          <button
+            key="editreq"
+            className={`action-btn editreq ${actionBusy === "editreq" ? "is-busy" : ""}`}
+            onClick={handleRequestEdit}
+            disabled={actionBusy && actionBusy !== "editreq"}
+            title="Ask the seal owner for permission to edit this file"
+          >
+            {actionBusy === "editreq" ? <>Requesting<span className="btn-busy-bar" /></> : "Request Edit"}
+          </button>
+        );
+      }
     }
     // Delete button: available on all live items (unsealed or sealed by me)
     if (!isStale && att.allowDelete && (!isSealed || isSealedByMe)) {
@@ -601,6 +660,13 @@ const ArtifactCard = ({ att, onRefresh, columns, siteUrl, spaceKey, pageId, page
         </div>
       )}
 
+      {actionError && (
+        <div className="card-row card-action-error" role="alert">
+          <span className="card-action-error-text">{actionError}</span>
+          <button className="card-action-error-dismiss" onClick={() => setActionError(null)} title="Dismiss">&times;</button>
+        </div>
+      )}
+
       {/* Expand panel: thumbnail + view link */}
       {expanded && (
         <div className="card-row card-row-expand">
@@ -672,6 +738,290 @@ const SkeletonCard = () => (
     </div>
   </div>
 );
+
+// ── AI Review group (Semantic AI Validations) ────────
+
+const AiReviewGroup = ({ pageId }) => {
+  const [latest, setLatest] = useState(null);
+  const [aiEnabled, setAiEnabled] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState(null);
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!pageId) return;
+    invoke("get-ai-findings", { pageId })
+      .then((r) => { if (!cancelled) { setLatest(r?.findings || null); setAiEnabled(!!r?.aiEnabled); setLoaded(true); } })
+      .catch(() => { if (!cancelled) setLoaded(true); });
+    return () => { cancelled = true; };
+  }, [pageId]);
+
+  const poll = async (taskId, tries = 0) => {
+    if (tries > 40) { setNote("AI review timed out."); setBusy(false); return; }
+    try {
+      const r = await invoke("get-validation-job", { taskId });
+      if (r?.status === "done") {
+        setLatest(r.result || null);
+        if (r.result?.parseError) setNote("The AI response was unreadable; no findings recorded.");
+        setBusy(false);
+        return;
+      }
+      if (r?.status === "error") { setNote(r.error || "AI review failed."); setBusy(false); return; }
+      setTimeout(() => poll(taskId, tries + 1), 1500);
+    } catch (e) {
+      setNote("AI review failed.");
+      setBusy(false);
+    }
+  };
+
+  const run = async () => {
+    setBusy(true);
+    setNote(null);
+    try {
+      const r = await invoke("enqueue-page-validation", { pageId });
+      if (r?.success) {
+        poll(r.taskId);
+      } else {
+        setNote(r?.reason || "Could not start AI review.");
+        setBusy(false);
+      }
+    } catch (e) {
+      setNote("Could not start AI review.");
+      setBusy(false);
+    }
+  };
+
+  if (!pageId || !loaded) return null;
+  // Keep the panel clean: only show when AI is enabled or a prior review exists.
+  if (!aiEnabled && !latest) return null;
+
+  const findings = latest?.findings || [];
+
+  return (
+    <div className="sv-card-section sv-ai-review">
+      <div className="sv-card-section-header">
+        <span className="sv-card-section-title">AI Review</span>
+        {latest && <span className="sv-card-section-count">{findings.length}</span>}
+        <button className="action-btn editreq" style={{ marginLeft: "auto" }} onClick={run} disabled={busy}>
+          {busy ? <>Reviewing<span className="btn-busy-bar" /></> : (latest ? "Re-run AI review" : "Run AI review")}
+        </button>
+      </div>
+      {note && <div className="sv-panel-empty">{note}</div>}
+      {latest && findings.length === 0 && !note && (
+        <div className="sv-val-ok">{latest.summary || "No issues found."}</div>
+      )}
+      {findings.length > 0 && (
+        <ul className="sv-val-list">
+          {findings.map((f, i) => (
+            <li key={i} className={`sv-val-item sv-ai-${f.severity}`}>
+              <strong>{(f.severity || "low").toUpperCase()}</strong>{f.ruleRef ? ` · ${f.ruleRef}` : ""}: {f.explanation}
+              {f.suggestion && <div className="sv-ai-suggest">→ {f.suggestion}</div>}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+};
+
+// ── Validation status group (Conditions & Validations) ──
+
+const ValidationStatus = ({ pageId }) => {
+  const [state, setState] = useState(null);
+  const [result, setResult] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!pageId) return;
+    invoke("get-validation-state", { pageId })
+      .then((r) => { if (!cancelled) { setState(r?.state || null); setLoaded(true); } })
+      .catch(() => { if (!cancelled) setLoaded(true); });
+    return () => { cancelled = true; };
+  }, [pageId]);
+
+  const runNow = async () => {
+    setBusy(true);
+    try {
+      const r = await invoke("validate-page-now", { pageId });
+      setResult(r);
+    } catch (e) {
+      console.error("Validate now failed:", e);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  // Only surface when a gate status exists (keeps pages without validation clean).
+  if (!pageId || !loaded || !state || !state.state) return null;
+
+  const badge = state.state === "passed" ? "Passed" : state.state === "failed" ? "Issues found" : "Awaiting approval";
+  const violations = result ? (result.violations || []) : (state.violations || []);
+
+  return (
+    <div className="sv-card-section sv-validation">
+      <div className="sv-card-section-header">
+        <span className="sv-card-section-title">Validation</span>
+        <span className={`sv-val-badge sv-val-${state.state}`}>{badge}</span>
+        <button className="action-btn watch" style={{ marginLeft: "auto" }} onClick={runNow} disabled={busy}>
+          {busy ? <>Checking<span className="btn-busy-bar" /></> : "Re-check"}
+        </button>
+      </div>
+      {result && result.noRules && <div className="sv-panel-empty">No validation rules configured.</div>}
+      {violations.length === 0 && (result || state.state === "passed") && !result?.noRules && (
+        <div className="sv-val-ok">All checks passed.</div>
+      )}
+      {violations.length > 0 && (
+        <ul className="sv-val-list">
+          {violations.map((v, i) => (
+            <li key={i} className={`sv-val-item sv-val-item-${v.severity}`}>
+              <strong>{v.label}</strong>: {v.message}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+};
+
+// ── Sealed Sections group (Content Sealing) ──────────
+
+const SealedSectionsGroup = ({ pageId, onChanged }) => {
+  const [sections, setSections] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [busy, setBusy] = useState(null);            // sectionId being unsealed
+  const [picking, setPicking] = useState(false);     // heading picker open
+  const [headings, setHeadings] = useState([]);
+  const [headingsLoading, setHeadingsLoading] = useState(false);
+  const [sealingIndex, setSealingIndex] = useState(null);
+
+  const load = useCallback(async () => {
+    if (!pageId) return;
+    setLoading(true);
+    try {
+      const r = await invoke("enumerate-section-seals", { pageId });
+      setSections(r?.sections || []);
+    } catch (e) {
+      console.error("Section seals load failed:", e);
+    } finally {
+      setLoading(false);
+    }
+  }, [pageId]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const openPicker = async () => {
+    setPicking(true);
+    setHeadingsLoading(true);
+    try {
+      const r = await invoke("list-page-headings", { pageId });
+      setHeadings(r?.headings || []);
+    } catch (e) {
+      console.error("List headings failed:", e);
+      setHeadings([]);
+    } finally {
+      setHeadingsLoading(false);
+    }
+  };
+
+  const sealHeading = async (h) => {
+    setSealingIndex(h.index);
+    try {
+      const r = await invoke("seal-section", { pageId, headingIndex: h.index, headingText: h.text });
+      if (r?.success) {
+        setPicking(false);
+        await load();
+        if (onChanged) onChanged();
+      } else {
+        console.warn("seal-section declined:", r?.reason);
+      }
+    } catch (e) {
+      console.error("Seal section failed:", e);
+    } finally {
+      setSealingIndex(null);
+    }
+  };
+
+  const unseal = async (sectionId) => {
+    setBusy(sectionId);
+    try {
+      const r = await invoke("unseal-section", { sectionId });
+      if (r?.success) {
+        await load();
+        if (onChanged) onChanged();
+      }
+    } catch (e) {
+      console.error("Unseal section failed:", e);
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  if (!pageId) return null;
+
+  return (
+    <div className="sv-card-section sv-section-seals">
+      <div className="sv-card-section-header">
+        <span className="sv-card-section-title">Sealed Sections</span>
+        {sections.length > 0 && <span className="sv-card-section-count">{sections.length}</span>}
+        <button
+          className="action-btn lock"
+          style={{ marginLeft: "auto" }}
+          onClick={picking ? () => setPicking(false) : openPicker}
+        >
+          {picking ? "Cancel" : "Seal a section"}
+        </button>
+      </div>
+
+      {picking && (
+        <div className="sv-section-picker">
+          {headingsLoading && <div className="sv-panel-loading">Reading page…</div>}
+          {!headingsLoading && headings.length === 0 && (
+            <div className="sv-panel-empty">No headings to seal. Add a heading, then try again.</div>
+          )}
+          {!headingsLoading && headings.map((h) => (
+            <button
+              key={h.index}
+              className="sv-section-pick-row"
+              disabled={sealingIndex !== null}
+              onClick={() => sealHeading(h)}
+            >
+              <span className="sv-section-pick-level">H{h.level}</span>
+              <span className="sv-section-pick-text">{h.text}</span>
+              <span className="sv-section-pick-cta">{sealingIndex === h.index ? "Sealing…" : "Seal"}</span>
+            </button>
+          ))}
+        </div>
+      )}
+
+      {loading && sections.length === 0 && (
+        <div className="sv-panel-loading">Loading sealed sections…</div>
+      )}
+
+      {sections.map((s) => (
+        <div key={s.sectionId} className="sv-section-row">
+          <span className="sv-section-row-title" title={s.sectionTitle}>{s.sectionTitle}</span>
+          <span className="sv-section-row-meta">
+            {s.isExpired ? "Expired" : (s.expiresAt ? `until ${renderLapseDate(s.expiresAt)}` : "")}
+          </span>
+          {(s.isMine || s.isExpired) ? (
+            <button
+              className={`action-btn unlock ${busy === s.sectionId ? "is-busy" : ""}`}
+              disabled={busy === s.sectionId}
+              onClick={() => unseal(s.sectionId)}
+            >
+              {busy === s.sectionId ? <>Releasing<span className="btn-busy-bar" /></> : "Unseal"}
+            </button>
+          ) : (
+            <span className="sv-section-row-lockedby"><OperatorChip accountId={s.lockedByAccountId} /></span>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+};
 
 // ── Main panel component ─────────────────────────────
 
@@ -958,6 +1308,15 @@ const ArtifactGridView = () => {
           </button>
         </div>
       )}
+
+      {/* Validation status (Conditions & Validations) */}
+      {!loading && !isEditing && <ValidationStatus pageId={pageId} />}
+
+      {/* AI Review (Semantic AI Validations) */}
+      {!loading && !isEditing && <AiReviewGroup pageId={pageId} />}
+
+      {/* Sealed Sections (Content Sealing) */}
+      {!loading && !isEditing && <SealedSectionsGroup pageId={pageId} onChanged={onRefresh} />}
 
       {/* Upload zone */}
       {!loading && panelConfig.showUploadZone && <UploadZone onUploadComplete={onRefresh} />}

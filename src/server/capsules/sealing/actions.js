@@ -19,6 +19,7 @@ import { purgeAllSealState } from "./confluence-sync.js";
 
 // Import from sibling capsules
 import { notifyWatchers } from "../bulletins/logic.js";
+import { sweepEditAccess } from "../editreq/logic.js";
 import { triggerPanelEmbed, removePanelNode } from "../../infra/doc-surgery.js";
 
 /**
@@ -458,6 +459,9 @@ const unsealArtifact = async (req) => {
     for (const { key } of watchEntries) {
       await kvs.delete(key);
     }
+
+    // Clear any Edit Requests / grants tied to this seal
+    await sweepEditAccess(attachmentId);
 
     // Notify watchers
     await notifyWatchers(attachmentId, {
@@ -1034,6 +1038,9 @@ const purgeSealRecord = async (req) => {
   for (const { key } of watchEntries) {
     await kvs.delete(key);
   }
+
+  // Clear any Edit Requests / grants tied to this seal
+  await sweepEditAccess(attachmentId);
 
   console.warn(`[PURGE] Permanently removed ${sealRecord?.attachmentName || attachmentId}`);
   return { success: true };

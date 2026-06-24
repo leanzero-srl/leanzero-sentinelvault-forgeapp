@@ -204,3 +204,76 @@ ${ctaLink(pageUrl, "Open the page")}
     storageBody,
   };
 }
+
+/**
+ * Edit access requested: a user is asking the seal owner for edit rights on a
+ * sealed attachment. Recipient is the owner; the requester is also mentioned.
+ */
+export function composeEditRequestLayout({
+  ownerAccountId,
+  requesterAccountId,
+  requesterName,
+  artifactName,
+  pageTitle,
+  pageUrl,
+}) {
+  const requesterLabel = requesterAccountId
+    ? mention(requesterAccountId)
+    : `<strong>${escapeXml(requesterName || "A user")}</strong>`;
+
+  const storageBody = `
+<p>${HEADER} — <strong>Edit Access Requested</strong></p>
+<p>${mention(ownerAccountId)} — ${requesterLabel} is requesting permission to edit your sealed file <strong>"${escapeXml(artifactName)}"</strong>${pageTitle ? ` on <em>${escapeXml(pageTitle)}</em>` : ""}.</p>
+<p>Approve or deny this request from the Sentinel Vault space console (Edit Requests).</p>
+${ctaLink(pageUrl, "Open the page")}
+`.trim();
+
+  return {
+    summary: `Edit access requested for "${artifactName}"`,
+    storageBody,
+  };
+}
+
+/**
+ * Edit access granted: the seal owner approved a request. Recipient is the
+ * requester (dispatchNotice fills ownerAccountId with the recipient).
+ */
+export function composeEditApprovedLayout({
+  ownerAccountId,
+  artifactName,
+  pageTitle,
+  pageUrl,
+}) {
+  const storageBody = `
+<p>${HEADER} — <strong>Edit Access Granted</strong></p>
+<p>${mention(ownerAccountId)} — your request to edit <strong>"${escapeXml(artifactName)}"</strong>${pageTitle ? ` on <em>${escapeXml(pageTitle)}</em>` : ""} has been approved. You can edit this file until the seal expires; other users remain blocked.</p>
+${ctaLink(pageUrl, "Open the page")}
+`.trim();
+
+  return {
+    summary: `Edit access granted for "${artifactName}"`,
+    storageBody,
+  };
+}
+
+/**
+ * Edit access declined: the seal owner denied a request. Recipient is the
+ * requester.
+ */
+export function composeEditDeniedLayout({
+  ownerAccountId,
+  artifactName,
+  pageTitle,
+  pageUrl,
+}) {
+  const storageBody = `
+<p>${HEADER} — <strong>Edit Access Declined</strong></p>
+<p>${mention(ownerAccountId)} — your request to edit <strong>"${escapeXml(artifactName)}"</strong>${pageTitle ? ` on <em>${escapeXml(pageTitle)}</em>` : ""} was declined by the seal owner.</p>
+${ctaLink(pageUrl, "Open the page")}
+`.trim();
+
+  return {
+    summary: `Edit access declined for "${artifactName}"`,
+    storageBody,
+  };
+}
