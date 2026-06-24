@@ -821,6 +821,8 @@ const AiReviewGroup = ({ pageId }) => {
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState(null);
   const [loaded, setLoaded] = useState(false);
+  const [collapsed, setCollapsed] = useState(false);
+  const [showHidden, setShowHidden] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -830,6 +832,12 @@ const AiReviewGroup = ({ pageId }) => {
       .catch(() => { if (!cancelled) setLoaded(true); });
     return () => { cancelled = true; };
   }, [pageId]);
+
+  const setFindingState = async (fid, state) => {
+    setLatest((prev) => prev ? { ...prev, findings: (prev.findings || []).map((f) => f.id === fid ? { ...f, state } : f) } : prev);
+    try { await invoke("set-ai-finding-state", { pageId, findingId: fid, state }); }
+    catch (e) { console.error("Set finding state failed:", e); }
+  };
 
   const poll = async (taskId, tries = 0) => {
     if (tries > 40) { setNote("AI review timed out."); setBusy(false); return; }
@@ -870,30 +878,59 @@ const AiReviewGroup = ({ pageId }) => {
   // Keep the panel clean: only show when AI is enabled or a prior review exists.
   if (!aiEnabled && !latest) return null;
 
-  const findings = latest?.findings || [];
+  const allFindings = latest?.findings || [];
+  const open = allFindings.filter((f) => f.state !== "dismissed" && f.state !== "false-positive");
+  const hidden = allFindings.filter((f) => f.state === "dismissed" || f.state === "false-positive");
+  const visible = showHidden ? allFindings : open;
 
   return (
     <div className="sv-card-section sv-ai-review">
       <div className="sv-card-section-header">
+        <button className="sv-group-toggle" onClick={() => setCollapsed(!collapsed)} title={collapsed ? "Expand" : "Collapse"}>
+          <span className={`sv-group-caret ${collapsed ? "collapsed" : ""}`}>▾</span>
+        </button>
         <span className="sv-card-section-title">AI Review</span>
-        {latest && <span className="sv-card-section-count">{findings.length}</span>}
+        {latest && <span className="sv-card-section-count">{open.length}</span>}
         <button className="action-btn editreq" style={{ marginLeft: "auto" }} onClick={run} disabled={busy}>
           {busy ? <>Reviewing<span className="btn-busy-bar" /></> : (latest ? "Re-run AI review" : "Run AI review")}
         </button>
       </div>
-      {note && <div className="sv-panel-empty">{note}</div>}
-      {latest && findings.length === 0 && !note && (
-        <div className="sv-val-ok">{latest.summary || "No issues found."}</div>
-      )}
-      {findings.length > 0 && (
-        <ul className="sv-val-list">
-          {findings.map((f, i) => (
-            <li key={i} className={`sv-val-item sv-ai-${f.severity}`}>
-              <strong>{(f.severity || "low").toUpperCase()}</strong>{f.ruleRef ? ` · ${f.ruleRef}` : ""}: {f.explanation}
-              {f.suggestion && <div className="sv-ai-suggest">→ {f.suggestion}</div>}
-            </li>
-          ))}
-        </ul>
+      {!collapsed && (
+        <>
+          {note && <div className="sv-panel-empty">{note}</div>}
+          {latest && open.length === 0 && !showHidden && !note && (
+            <div className="sv-val-ok">{latest.summary || "No open findings."}</div>
+          )}
+          {visible.length > 0 && (
+            <ul className="sv-val-list">
+              {visible.map((f) => (
+                <li key={f.id} className={`sv-val-item sv-ai-${f.severity} ${f.state === "dismissed" || f.state === "false-positive" ? "sv-ai-muted" : ""}`}>
+                  <div>
+                    <strong>{(f.severity || "low").toUpperCase()}</strong>{f.ruleRef ? ` · ${f.ruleRef}` : ""}: {f.explanation}
+                    {f.state === "false-positive" && <span className="sv-ai-tag">false positive</span>}
+                    {f.state === "dismissed" && <span className="sv-ai-tag">dismissed</span>}
+                  </div>
+                  {f.suggestion && <div className="sv-ai-suggest">→ {f.suggestion}</div>}
+                  <div className="sv-ai-actions">
+                    {f.state === "open" || !f.state ? (
+                      <>
+                        <button className="sv-ai-act" onClick={() => setFindingState(f.id, "dismissed")}>Dismiss</button>
+                        <button className="sv-ai-act" onClick={() => setFindingState(f.id, "false-positive")}>False positive</button>
+                      </>
+                    ) : (
+                      <button className="sv-ai-act" onClick={() => setFindingState(f.id, "open")}>Restore</button>
+                    )}
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+          {hidden.length > 0 && (
+            <button className="sv-ai-showhidden" onClick={() => setShowHidden(!showHidden)}>
+              {showHidden ? "Hide dismissed" : `Show ${hidden.length} dismissed`}
+            </button>
+          )}
+        </>
       )}
     </div>
   );
@@ -906,6 +943,7 @@ const ValidationStatus = ({ pageId }) => {
   const [result, setResult] = useState(null);
   const [busy, setBusy] = useState(false);
   const [loaded, setLoaded] = useState(false);
+  const [collapsed, setCollapsed] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -937,30 +975,134 @@ const ValidationStatus = ({ pageId }) => {
   return (
     <div className="sv-card-section sv-validation">
       <div className="sv-card-section-header">
+        <button className="sv-group-toggle" onClick={() => setCollapsed(!collapsed)} title={collapsed ? "Expand" : "Collapse"}>
+          <span className={`sv-group-caret ${collapsed ? "collapsed" : ""}`}>▾</span>
+        </button>
         <span className="sv-card-section-title">Validation</span>
         <span className={`sv-val-badge sv-val-${state.state}`}>{badge}</span>
         <button className="action-btn watch" style={{ marginLeft: "auto" }} onClick={runNow} disabled={busy}>
           {busy ? <>Checking<span className="btn-busy-bar" /></> : "Re-check"}
         </button>
       </div>
-      {result && result.noRules && <div className="sv-panel-empty">No validation rules configured.</div>}
-      {violations.length === 0 && (result || state.state === "passed") && !result?.noRules && (
-        <div className="sv-val-ok">All checks passed.</div>
-      )}
-      {violations.length > 0 && (
-        <ul className="sv-val-list">
-          {violations.map((v, i) => (
-            <li key={i} className={`sv-val-item sv-val-item-${v.severity}`}>
-              <strong>{v.label}</strong>: {v.message}
-            </li>
-          ))}
-        </ul>
+      {!collapsed && (
+        <>
+          {result && result.noRules && <div className="sv-panel-empty">No validation rules configured.</div>}
+          {violations.length === 0 && (result || state.state === "passed") && !result?.noRules && (
+            <div className="sv-val-ok">All checks passed.</div>
+          )}
+          {violations.length > 0 && (
+            <ul className="sv-val-list">
+              {violations.map((v, i) => (
+                <li key={i} className={`sv-val-item sv-val-item-${v.severity}`}>
+                  <strong>{v.label}</strong>: {v.message}
+                </li>
+              ))}
+            </ul>
+          )}
+        </>
       )}
     </div>
   );
 };
 
 // ── Sealed Sections group (Content Sealing) ──────────
+
+// One sealed section: unseal (owner), request edit (others), approve (owner).
+const SectionRow = ({ section: s, onUnseal, unsealing }) => {
+  const [editStatus, setEditStatus] = useState(null); // others' sections
+  const [showReason, setShowReason] = useState(false);
+  const [reasonText, setReasonText] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [requests, setRequests] = useState(null); // owner inbox
+  const [reqBusy, setReqBusy] = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (s.isMine) {
+      invoke("list-section-edit-requests", { sectionId: s.sectionId })
+        .then((r) => { if (!cancelled) setRequests(r?.requests || []); })
+        .catch(() => { if (!cancelled) setRequests([]); });
+    } else if (!s.isExpired) {
+      invoke("check-section-edit", { sectionId: s.sectionId })
+        .then((r) => { if (!cancelled) setEditStatus(r?.status || "none"); })
+        .catch(() => { if (!cancelled) setEditStatus("none"); });
+    }
+    return () => { cancelled = true; };
+  }, [s.sectionId, s.isMine, s.isExpired]);
+
+  const submitReq = async () => {
+    setBusy(true);
+    try {
+      const r = await invoke("request-section-edit", { sectionId: s.sectionId, reason: reasonText.trim() });
+      if (r?.success) { setEditStatus("pending"); setShowReason(false); setReasonText(""); }
+    } catch (e) { console.error("Section edit request failed:", e); }
+    finally { setBusy(false); }
+  };
+
+  const resolve = async (requesterAccountId, action) => {
+    setReqBusy(`${requesterAccountId}:${action}`);
+    try {
+      const r = await invoke(action === "approve" ? "approve-section-edit" : "deny-section-edit", { sectionId: s.sectionId, requesterAccountId });
+      if (r?.success) setRequests((p) => (p || []).filter((x) => x.requesterAccountId !== requesterAccountId));
+    } catch (e) { console.error("Resolve section request failed:", e); }
+    finally { setReqBusy(null); }
+  };
+
+  return (
+    <div className="sv-section-block">
+      <div className="sv-section-row">
+        <span className="sv-section-row-title" title={s.sectionTitle}>{s.sectionTitle}</span>
+        <span className="sv-section-row-meta">{s.isExpired ? "Expired" : (s.expiresAt ? `until ${renderLapseDate(s.expiresAt)}` : "")}</span>
+        {(s.isMine || s.isExpired) ? (
+          <button className={`action-btn unlock ${unsealing ? "is-busy" : ""}`} disabled={unsealing} onClick={() => onUnseal(s.sectionId)}>
+            {unsealing ? <>Releasing<span className="btn-busy-bar" /></> : "Unseal"}
+          </button>
+        ) : editStatus === "granted" ? (
+          <span className="action-btn editgrant" title="The owner approved your edit access">Can Edit</span>
+        ) : editStatus === "pending" ? (
+          <span className="action-btn editpending" title="Awaiting owner approval">Requested</span>
+        ) : editStatus === "denied" ? (
+          <span className="action-btn editdenied" title="Your request was declined">Declined</span>
+        ) : editStatus === "none" ? (
+          <button className="action-btn editreq" onClick={() => setShowReason(true)} title="Ask the owner for permission to edit this section">Request Edit</button>
+        ) : (
+          <span className="sv-section-row-lockedby"><OperatorChip accountId={s.lockedByAccountId} /></span>
+        )}
+      </div>
+      {showReason && (
+        <div className="card-reason-bar">
+          <input
+            className="card-reason-input"
+            placeholder="Why do you need to edit this section? (optional)"
+            value={reasonText}
+            maxLength={300}
+            autoFocus
+            onChange={(e) => setReasonText(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") submitReq(); if (e.key === "Escape") { setShowReason(false); setReasonText(""); } }}
+          />
+          <span className="confirm-actions">
+            <button className="action-btn editreq" onClick={submitReq} disabled={busy}>{busy ? <>Sending<span className="btn-busy-bar" /></> : "Send request"}</button>
+            <button className="action-btn confirm-no" onClick={() => { setShowReason(false); setReasonText(""); }}>Cancel</button>
+          </span>
+        </div>
+      )}
+      {s.isMine && requests && requests.length > 0 && (
+        <div className="card-editreq-inbox">
+          <span className="card-editreq-title">Edit requests ({requests.length})</span>
+          {requests.map((r) => (
+            <div key={r.requesterAccountId} className="card-editreq-row">
+              <span className="card-editreq-who">{r.requesterName || "Unknown user"}{r.reason ? <em className="card-editreq-reason"> — “{r.reason}”</em> : null}</span>
+              <span className="confirm-actions">
+                <button className="action-btn lock" disabled={!!reqBusy} onClick={() => resolve(r.requesterAccountId, "approve")}>{reqBusy === `${r.requesterAccountId}:approve` ? <>Approving<span className="btn-busy-bar" /></> : "Approve"}</button>
+                <button className="action-btn unlock" disabled={!!reqBusy} onClick={() => resolve(r.requesterAccountId, "deny")}>{reqBusy === `${r.requesterAccountId}:deny` ? <>Denying<span className="btn-busy-bar" /></> : "Deny"}</button>
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
 
 const SealedSectionsGroup = ({ pageId, onChanged }) => {
   const [sections, setSections] = useState([]);
@@ -970,6 +1112,7 @@ const SealedSectionsGroup = ({ pageId, onChanged }) => {
   const [headings, setHeadings] = useState([]);
   const [headingsLoading, setHeadingsLoading] = useState(false);
   const [sealingIndex, setSealingIndex] = useState(null);
+  const [collapsed, setCollapsed] = useState(false);
 
   const load = useCallback(async () => {
     if (!pageId) return;
@@ -1038,6 +1181,9 @@ const SealedSectionsGroup = ({ pageId, onChanged }) => {
   return (
     <div className="sv-card-section sv-section-seals">
       <div className="sv-card-section-header">
+        <button className="sv-group-toggle" onClick={() => setCollapsed(!collapsed)} title={collapsed ? "Expand" : "Collapse"}>
+          <span className={`sv-group-caret ${collapsed ? "collapsed" : ""}`}>▾</span>
+        </button>
         <span className="sv-card-section-title">Sealed Sections</span>
         {sections.length > 0 && <span className="sv-card-section-count">{sections.length}</span>}
         <button
@@ -1049,50 +1195,38 @@ const SealedSectionsGroup = ({ pageId, onChanged }) => {
         </button>
       </div>
 
-      {picking && (
-        <div className="sv-section-picker">
-          {headingsLoading && <div className="sv-panel-loading">Reading page…</div>}
-          {!headingsLoading && headings.length === 0 && (
-            <div className="sv-panel-empty">No headings to seal. Add a heading, then try again.</div>
+      {!collapsed && (
+        <>
+          {picking && (
+            <div className="sv-section-picker">
+              {headingsLoading && <div className="sv-panel-loading">Reading page…</div>}
+              {!headingsLoading && headings.length === 0 && (
+                <div className="sv-panel-empty">No headings to seal. Add a heading, then try again.</div>
+              )}
+              {!headingsLoading && headings.map((h) => (
+                <button
+                  key={h.index}
+                  className="sv-section-pick-row"
+                  disabled={sealingIndex !== null}
+                  onClick={() => sealHeading(h)}
+                >
+                  <span className="sv-section-pick-level">H{h.level}</span>
+                  <span className="sv-section-pick-text">{h.text}</span>
+                  <span className="sv-section-pick-cta">{sealingIndex === h.index ? "Sealing…" : "Seal"}</span>
+                </button>
+              ))}
+            </div>
           )}
-          {!headingsLoading && headings.map((h) => (
-            <button
-              key={h.index}
-              className="sv-section-pick-row"
-              disabled={sealingIndex !== null}
-              onClick={() => sealHeading(h)}
-            >
-              <span className="sv-section-pick-level">H{h.level}</span>
-              <span className="sv-section-pick-text">{h.text}</span>
-              <span className="sv-section-pick-cta">{sealingIndex === h.index ? "Sealing…" : "Seal"}</span>
-            </button>
+
+          {loading && sections.length === 0 && (
+            <div className="sv-panel-loading">Loading sealed sections…</div>
+          )}
+
+          {sections.map((s) => (
+            <SectionRow key={s.sectionId} section={s} unsealing={busy === s.sectionId} onUnseal={unseal} />
           ))}
-        </div>
+        </>
       )}
-
-      {loading && sections.length === 0 && (
-        <div className="sv-panel-loading">Loading sealed sections…</div>
-      )}
-
-      {sections.map((s) => (
-        <div key={s.sectionId} className="sv-section-row">
-          <span className="sv-section-row-title" title={s.sectionTitle}>{s.sectionTitle}</span>
-          <span className="sv-section-row-meta">
-            {s.isExpired ? "Expired" : (s.expiresAt ? `until ${renderLapseDate(s.expiresAt)}` : "")}
-          </span>
-          {(s.isMine || s.isExpired) ? (
-            <button
-              className={`action-btn unlock ${busy === s.sectionId ? "is-busy" : ""}`}
-              disabled={busy === s.sectionId}
-              onClick={() => unseal(s.sectionId)}
-            >
-              {busy === s.sectionId ? <>Releasing<span className="btn-busy-bar" /></> : "Unseal"}
-            </button>
-          ) : (
-            <span className="sv-section-row-lockedby"><OperatorChip accountId={s.lockedByAccountId} /></span>
-          )}
-        </div>
-      ))}
     </div>
   );
 };

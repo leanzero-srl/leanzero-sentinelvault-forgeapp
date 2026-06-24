@@ -189,9 +189,21 @@ export function buildValidationPrompt({ ai, pageText, pageTitle }) {
   return { system, user };
 }
 
+// Stable id for a finding so its dismiss/ack state survives re-runs that produce
+// the same finding. FNV-1a over the identifying fields.
+export function findingId(f) {
+  const str = `${f.category || ""}|${f.ruleRef || ""}|${f.excerpt || ""}|${f.explanation || ""}`;
+  let h = 0x811c9dc5;
+  for (let i = 0; i < str.length; i++) {
+    h ^= str.charCodeAt(i);
+    h = (h + ((h << 1) + (h << 4) + (h << 7) + (h << 8) + (h << 24))) >>> 0;
+  }
+  return ("0000000" + h.toString(16)).slice(-8);
+}
+
 /**
  * Clamp parsed model output to the finding schema. Drops malformed entries and
- * caps the count.
+ * caps the count. Each finding gets a stable `id`.
  */
 export function normalizeFindings(parsed) {
   const out = { findings: [], summary: "" };
@@ -205,17 +217,31 @@ export function normalizeFindings(parsed) {
     const excerpt = typeof f.excerpt === "string" ? f.excerpt.slice(0, 200) : "";
     const explanation = typeof f.explanation === "string" ? f.explanation.slice(0, 300) : "";
     if (!excerpt && !explanation) continue; // need at least one to be actionable
-    out.findings.push({
+    const finding = {
       severity: sevSet.has(String(f.severity).toLowerCase()) ? String(f.severity).toLowerCase() : "low",
       category: catSet.has(String(f.category).toLowerCase()) ? String(f.category).toLowerCase() : "rule",
       ruleRef: typeof f.ruleRef === "string" ? f.ruleRef.slice(0, 120) : "",
       excerpt,
       explanation,
       suggestion: typeof f.suggestion === "string" ? f.suggestion.slice(0, 300) : "",
-    });
+    };
+    finding.id = findingId(finding);
+    out.findings.push(finding);
     if (out.findings.length >= 25) break;
   }
   return out;
+}
+
+// --- Per-finding state (dismiss / acknowledge / false-positive) ---
+export async function getFindingStates(pageId) {
+  return (await kvs.get(`ai-finding-state-${pageId}`)) || {};
+}
+export async function setFindingState(pageId, fid, state) {
+  if (!pageId || !fid) return;
+  const states = (await kvs.get(`ai-finding-state-${pageId}`)) || {};
+  if (!state || state === "open") delete states[fid];
+  else states[fid] = state;
+  await kvs.set(`ai-finding-state-${pageId}`, states);
 }
 
 // --- Token usage accounting (per realm per month) ---

@@ -43,3 +43,32 @@ export async function sweepEditAccess(attachmentId) {
     }
   }
 }
+
+// --- Section variants (Content Sealing) ---
+// Keys: section-edit-grant-{sectionId}-{accountId} / section-edit-request-{sectionId}-{accountId}
+
+export async function getActiveSectionEditGrant(sectionId, accountId) {
+  if (!sectionId || !accountId) return null;
+  const grant = await kvs.get(`section-edit-grant-${sectionId}-${accountId}`);
+  if (!grant) return null;
+  if (grant.expiresAt && new Date(grant.expiresAt).getTime() <= Date.now()) return null;
+  return grant;
+}
+
+export async function sweepSectionEditAccess(sectionId) {
+  if (!sectionId) return;
+  for (const prefix of [`section-edit-grant-${sectionId}-`, `section-edit-request-${sectionId}-`]) {
+    try {
+      const { results } = await kvs
+        .query()
+        .where("key", WhereConditions.beginsWith(prefix))
+        .limit(100)
+        .getMany();
+      for (const { key } of results || []) {
+        await kvs.delete(key);
+      }
+    } catch (e) {
+      console.warn(`[EDIT-ACCESS] section sweep failed for ${prefix}:`, e);
+    }
+  }
+}

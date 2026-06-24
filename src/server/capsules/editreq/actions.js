@@ -8,7 +8,7 @@ import {
   mailEditApproved,
   mailEditDenied,
 } from "../../infra/notice-composer.js";
-import { getActiveEditGrant } from "./logic.js";
+import { getActiveEditGrant, getActiveSectionEditGrant } from "./logic.js";
 
 const COOLDOWN_MS = 48 * 60 * 60 * 1000; // 48h after a denial before re-requesting
 
@@ -274,6 +274,124 @@ const listEditGrants = async (req) => {
   return { grants };
 };
 
+// ===========================================================================
+// Section edit requests (Content Sealing) — parallel to the attachment flow
+// ===========================================================================
+
+async function loadSectionForOwnerAction(sectionId, accountId) {
+  const seal = await kvs.get(`section-protection-${sectionId}`);
+  if (!seal || !seal.lockedBy) return { seal: null, authorized: false };
+  let authorized = seal.lockedBy === accountId;
+  if (!authorized) {
+    try { authorized = await authorizeSteward(accountId, seal.spaceKey); } catch (_) { /* deny */ }
+  }
+  return { seal, authorized };
+}
+
+const requestSectionEdit = async (req) => {
+  const { sectionId, reason } = req.payload || {};
+  const accountId = req.context.accountId;
+  if (!sectionId || !accountId) return { success: false, reason: "Missing context" };
+
+  const seal = await kvs.get(`section-protection-${sectionId}`);
+  if (!seal || !seal.lockedBy) return { success: false, reason: "This section is not sealed" };
+  if (seal.lockedBy === accountId) return { success: false, reason: "You own this section" };
+  if (await getActiveSectionEditGrant(sectionId, accountId)) return { success: false, reason: "You already have edit access" };
+
+  const existing = await kvs.get(`section-edit-request-${sectionId}-${accountId}`);
+  if (existing?.status === "pending") return { success: false, reason: "Request already pending" };
+  if (existing?.status === "denied") {
+    const deniedAt = existing.deniedAt ? new Date(existing.deniedAt).getTime() : 0;
+    if (Date.now() - deniedAt < COOLDOWN_MS) return { success: false, reason: "A previous request was declined; try again later" };
+  }
+
+  let requesterName = "Unknown User";
+  try {
+    const userRes = await asApp().requestConfluence(route`/wiki/rest/api/user?accountId=${accountId}`, { headers: { Accept: "application/json" } });
+    if (userRes.ok) { const u = await userRes.json(); requesterName = u.displayName || requesterName; }
+  } catch (_) { /* best effort */ }
+
+  const sectionTitle = seal.sectionTitle || "a sealed section";
+  await kvs.set(`section-edit-request-${sectionId}-${accountId}`, {
+    sectionId, requesterAccountId: accountId, requesterName, ownerAccountId: seal.lockedBy,
+    contentId: seal.pageId || null, spaceKey: seal.spaceKey || null, sectionTitle,
+    reason: typeof reason === "string" ? reason.trim().slice(0, 300) : "",
+    status: "pending", requestedAt: new Date().toISOString(),
+  });
+
+  if (seal.pageId && (await notifyEnabled())) {
+    try { await mailEditRequest(seal.lockedBy, accountId, requesterName, sectionTitle, seal.pageId, reason); }
+    catch (e) { console.error("[SECTION-EDIT-REQ] notify failed:", e); }
+  }
+  return { success: true };
+};
+
+const checkSectionEdit = async (req) => {
+  const { sectionId } = req.payload || {};
+  const accountId = req.context.accountId;
+  if (!sectionId || !accountId) return { status: "none" };
+  if (await getActiveSectionEditGrant(sectionId, accountId)) return { status: "granted" };
+  const existing = await kvs.get(`section-edit-request-${sectionId}-${accountId}`);
+  if (!existing) return { status: "none" };
+  if (existing.status === "pending") return { status: "pending" };
+  if (existing.status === "denied") {
+    const deniedAt = existing.deniedAt ? new Date(existing.deniedAt).getTime() : 0;
+    if (Date.now() - deniedAt >= COOLDOWN_MS) { await kvs.delete(`section-edit-request-${sectionId}-${accountId}`); return { status: "none" }; }
+    return { status: "denied" };
+  }
+  return { status: "none" };
+};
+
+const listSectionEditRequests = async (req) => {
+  const { sectionId } = req.payload || {};
+  const accountId = req.context.accountId;
+  if (!sectionId) return { requests: [] };
+  const { seal, authorized } = await loadSectionForOwnerAction(sectionId, accountId);
+  if (!seal || !authorized) return { requests: [], reason: "Not authorized" };
+  const { results } = await kvs.query().where("key", WhereConditions.beginsWith(`section-edit-request-${sectionId}-`)).limit(50).getMany();
+  return { requests: (results || []).map(({ value }) => value).filter((v) => v?.status === "pending") };
+};
+
+const approveSectionEdit = async (req) => {
+  const { sectionId, requesterAccountId } = req.payload || {};
+  const accountId = req.context.accountId;
+  if (!sectionId || !requesterAccountId) return { success: false, reason: "Missing params" };
+  const { seal, authorized } = await loadSectionForOwnerAction(sectionId, accountId);
+  if (!seal) return { success: false, reason: "Section not found" };
+  if (!authorized) return { success: false, reason: "Not the section owner" };
+
+  const requestKey = `section-edit-request-${sectionId}-${requesterAccountId}`;
+  const request = await kvs.get(requestKey);
+  const grant = { sectionId, editorAccountId: requesterAccountId, editorName: request?.requesterName || "User", grantedBy: accountId, grantedAt: new Date().toISOString(), expiresAt: seal.expiresAt || null };
+  const grantKey = `section-edit-grant-${sectionId}-${requesterAccountId}`;
+  const expiryMs = seal.expiresAt ? new Date(seal.expiresAt).getTime() : 0;
+  if (expiryMs > Date.now()) await kvs.set(grantKey, grant, { expiresAt: expiryMs });
+  else await kvs.set(grantKey, grant);
+  await kvs.delete(requestKey);
+
+  if (seal.pageId && (await notifyEnabled())) {
+    try { await mailEditApproved(requesterAccountId, seal.sectionTitle || "a sealed section", seal.pageId); } catch (_) { /* best effort */ }
+  }
+  return { success: true };
+};
+
+const denySectionEdit = async (req) => {
+  const { sectionId, requesterAccountId } = req.payload || {};
+  const accountId = req.context.accountId;
+  if (!sectionId || !requesterAccountId) return { success: false, reason: "Missing params" };
+  const { seal, authorized } = await loadSectionForOwnerAction(sectionId, accountId);
+  if (!seal) return { success: false, reason: "Section not found" };
+  if (!authorized) return { success: false, reason: "Not the section owner" };
+  const requestKey = `section-edit-request-${sectionId}-${requesterAccountId}`;
+  const existing = await kvs.get(requestKey);
+  if (!existing) return { success: false, reason: "Request not found" };
+  await kvs.set(requestKey, { ...existing, status: "denied", deniedAt: new Date().toISOString() });
+  if (seal.pageId && (await notifyEnabled())) {
+    try { await mailEditDenied(requesterAccountId, seal.sectionTitle || "a sealed section", seal.pageId); } catch (_) { /* best effort */ }
+  }
+  return { success: true };
+};
+
 export const actions = [
   ["request-edit-access", requestEditAccess],
   ["check-edit-request", checkEditRequest],
@@ -283,4 +401,9 @@ export const actions = [
   ["deny-edit-request", denyEditRequest],
   ["revoke-edit-grant", revokeEditGrant],
   ["list-edit-grants", listEditGrants],
+  ["request-section-edit", requestSectionEdit],
+  ["check-section-edit", checkSectionEdit],
+  ["list-section-edit-requests", listSectionEditRequests],
+  ["approve-section-edit", approveSectionEdit],
+  ["deny-section-edit", denySectionEdit],
 ];

@@ -9,7 +9,7 @@ import {
 import { recordDispatch, postDocFootnote } from "./capsules/bulletins/logic.js";
 import { resolveBulletinToggles } from "./shared/bulletin-flags.js";
 import { touchSealTimestamp, removeSealContentProp } from "./capsules/sealing/logic.js";
-import { getActiveEditGrant, sweepEditAccess } from "./capsules/editreq/logic.js";
+import { getActiveEditGrant, sweepEditAccess, getActiveSectionEditGrant } from "./capsules/editreq/logic.js";
 import {
   resolveEffectiveConfig,
   writeValidationState,
@@ -378,6 +378,23 @@ async function restoreSealedSectionsPass(ctx, sectionSeals) {
     // Wrapper present — compare the canonical hash of its body to the sealed hash.
     const liveHash = hashAdf(wrapper.node.content);
     if (seal.contentHash && liveHash === seal.contentHash) continue; // untouched
+
+    // Approved section editor (Edit Requests) — allow the edit and re-baseline so
+    // future reverts compare against the edited content.
+    const sectionGrant = await getActiveSectionEditGrant(seal.sectionId, ctx.atlassianId);
+    if (sectionGrant) {
+      try {
+        const newBody = JSON.parse(JSON.stringify(wrapper.node.content || []));
+        const newHash = hashAdf(newBody);
+        await kvs.set(`section-protection-${seal.sectionId}`, { ...seal, contentHash: newHash });
+        await kvs.set(`section-snapshot-${seal.sectionId}`, {
+          wrapperNode: JSON.parse(JSON.stringify(wrapper.node)),
+          bodyContent: newBody, hash: newHash, version: null, originalIndex: wrapper.originalIndex,
+        });
+        console.warn(`[SECTION] Allowed approved edit of section ${seal.sectionId} by ${ctx.atlassianId} — re-baselined`);
+      } catch (e) { console.error("[SECTION] re-baseline failed:", e); }
+      continue;
+    }
 
     // Body was edited — restore the sealed body from the snapshot.
     if (snapshot?.bodyContent) {

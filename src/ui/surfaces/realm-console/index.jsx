@@ -5,6 +5,7 @@ import { createRoot } from "react-dom/client";
 import { invoke, view, router } from "@forge/bridge";
 import { enablePaletteSync } from "../../kit/palette-sync";
 import ThumbnailPreview from "../../kit/ThumbnailPreview";
+import ValidationsEditor from "../../kit/ValidationsEditor";
 import logo from "../../assets/icons/icon.png";
 
 const SkeletonRow = ({ cols = 5 }) => (
@@ -1504,6 +1505,10 @@ const RealmPolicyDashboard = () => {
               onClick={() => setActiveTab("macro-settings")}>
               Macro
             </button>
+            <button className={`tab-button ${activeTab === "validations" ? "active" : ""}`}
+              onClick={() => setActiveTab("validations")}>
+              Validations
+            </button>
           </>
         )}
       </div>
@@ -2225,7 +2230,13 @@ const RealmPolicyDashboard = () => {
         </div>
       )}
 
-      {userRole === "steward" && (
+      {activeTab === "validations" && userRole === "steward" && (
+        <div className="tab-content">
+          <ValidationsEditor scope="space" spaceKey={realmKey} />
+        </div>
+      )}
+
+      {userRole === "steward" && activeTab !== "validations" && (
         <div className="action-bar">
           <button
             className="btn-primary"

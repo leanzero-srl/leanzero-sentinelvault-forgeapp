@@ -13,6 +13,8 @@ import {
   resolveAiConfig,
   getMonthlyTokenUsage,
   getLatestFindings,
+  getFindingStates,
+  setFindingState,
 } from "./logic.js";
 import { isForgeLlmModelAllowed, FORGE_LLM_DEFAULT_MODEL, listForgeLlmModels } from "../../infra/forge-llm.js";
 
@@ -175,9 +177,22 @@ const getAiFindings = async (req) => {
     req.context.extension?.space?.key ||
     null;
   const findings = await getLatestFindings(pageId);
+  // Attach per-finding state (open/dismissed/false-positive/acknowledged).
+  if (findings && Array.isArray(findings.findings)) {
+    const states = await getFindingStates(pageId);
+    findings.findings = findings.findings.map((f) => ({ ...f, state: states[f.id] || "open" }));
+  }
   let aiEnabled = false;
   try { aiEnabled = (await resolveAiConfig(spaceKey))?.enabled === true; } catch (_) { /* off */ }
   return { findings, aiEnabled };
+};
+
+const setAiFindingState = async (req) => {
+  const { pageId, findingId: fid, state } = req.payload || {};
+  if (!pageId || !fid) return { success: false, reason: "Missing params" };
+  const allowed = new Set(["open", "dismissed", "false-positive", "acknowledged"]);
+  await setFindingState(pageId, fid, allowed.has(state) ? state : "open");
+  return { success: true };
 };
 
 const getValidationAudit = async (req) => {
@@ -200,5 +215,6 @@ export const actions = [
   ["enqueue-page-validation", enqueuePageValidation],
   ["get-validation-job", getValidationJob],
   ["get-ai-findings", getAiFindings],
+  ["set-ai-finding-state", setAiFindingState],
   ["get-validation-audit", getValidationAudit],
 ];

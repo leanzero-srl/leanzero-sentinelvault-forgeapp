@@ -1381,3 +1381,30 @@ html[data-color-mode="dark"] .action-btn.purge:hover:not(:disabled) {
   border: none; background: none; cursor: pointer;
   color: var(--sv-text-subtle); font-size: 18px; line-height: 1; padding: 0 2px;
 }
+
+/* ── AI finding actions + section blocks ───────────── */
+.sv-ai-actions { display: flex; gap: 8px; margin-top: 6px; }
+.sv-ai-act {
+  border: 1px solid var(--sv-border-secondary);
+  background: var(--sv-bg-primary);
+  color: var(--sv-text-secondary);
+  border-radius: 6px;
+  font-size: 11px;
+  padding: 2px 8px;
+  cursor: pointer;
+}
+.sv-ai-act:hover { border-color: var(--sv-interactive-primary); color: var(--sv-interactive-primary); }
+.sv-val-item.sv-ai-muted { opacity: 0.6; }
+.sv-ai-tag {
+  margin-left: 8px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--sv-text-subtle);
+}
+.sv-ai-showhidden {
+  border: none; background: none; cursor: pointer;
+  color: var(--sv-interactive-primary); font-size: 11px; padding: 4px 0; margin-top: 4px;
+}
+.sv-section-block { display: flex; flex-direction: column; }
