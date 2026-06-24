@@ -205,16 +205,14 @@ textarea:focus {
   height: 100%;
 }
 
-/* Modal header — gradient tint + accent line */
+/* Modal header — solid surface + solid accent line */
 .modal-header {
   padding: 20px 32px;
   border-bottom: none;
   display: flex;
   justify-content: space-between;
   align-items: center;
-  background: linear-gradient(135deg,
-    color-mix(in srgb, var(--sv-interactive-primary) 8%, var(--sv-bg-primary)),
-    var(--sv-bg-primary));
+  background: var(--sv-bg-primary);
   position: relative;
 }
 
@@ -225,7 +223,7 @@ textarea:focus {
   left: 32px;
   right: 32px;
   height: 2px;
-  background: linear-gradient(90deg, var(--sv-interactive-primary), transparent);
+  background: var(--sv-interactive-primary);
   border-radius: 1px;
 }
 
@@ -401,7 +399,6 @@ textarea:focus {
 /* ── Artifact card ─────────────────────────────── */
 .artifact-card {
   border: 1px solid var(--sv-border-primary);
-  border-left: 3px solid var(--sv-border-primary);
   border-radius: 8px;
   padding: 10px 16px;
   background: var(--sv-bg-secondary);
@@ -414,19 +411,19 @@ textarea:focus {
   box-shadow: 0 2px 6px var(--sv-shadow-light);
 }
 
-/* Left accent border per status */
-.artifact-card.status-unlocked { border-left-color: #0891B2; }
-.artifact-card.status-locked-by-me { border-left-color: #6366F1; }
-.artifact-card.status-locked { border-left-color: #F59E0B; }
-.artifact-card.status-expired { border-left-color: #EF4444; }
-html[data-color-mode="dark"] .artifact-card.status-unlocked { border-left-color: #22D3EE; }
-html[data-color-mode="dark"] .artifact-card.status-locked-by-me { border-left-color: #818CF8; }
-html[data-color-mode="dark"] .artifact-card.status-locked { border-left-color: #FBBF24; }
-html[data-color-mode="dark"] .artifact-card.status-expired { border-left-color: #F87171; }
-.artifact-card.status-stale { border-left-color: #9CA3AF; }
-.artifact-card.status-trashed { border-left-color: #F59E0B; }
-html[data-color-mode="dark"] .artifact-card.status-stale { border-left-color: #6B7280; }
-html[data-color-mode="dark"] .artifact-card.status-trashed { border-left-color: #FBBF24; }
+/* Status conveyed by a solid full border (+ the status lozenge) — never a left rail */
+.artifact-card.status-unlocked { border-color: #0891B2; }
+.artifact-card.status-locked-by-me { border-color: #6366F1; }
+.artifact-card.status-locked { border-color: #F59E0B; }
+.artifact-card.status-expired { border-color: #EF4444; }
+html[data-color-mode="dark"] .artifact-card.status-unlocked { border-color: #22D3EE; }
+html[data-color-mode="dark"] .artifact-card.status-locked-by-me { border-color: #818CF8; }
+html[data-color-mode="dark"] .artifact-card.status-locked { border-color: #FBBF24; }
+html[data-color-mode="dark"] .artifact-card.status-expired { border-color: #F87171; }
+.artifact-card.status-stale { border-color: #9CA3AF; }
+.artifact-card.status-trashed { border-color: #F59E0B; }
+html[data-color-mode="dark"] .artifact-card.status-stale { border-color: #6B7280; }
+html[data-color-mode="dark"] .artifact-card.status-trashed { border-color: #FBBF24; }
 
 /* ── Card row layout ──────────────────────────── */
 .card-row {
@@ -960,7 +957,7 @@ html[data-color-mode="dark"] .action-btn.purge:hover:not(:disabled) {
 
 /* ── Skeleton card placeholder ─────────────────── */
 .skeleton-card {
-  border-left-color: var(--sv-border-primary) !important;
+  border-color: var(--sv-border-primary) !important;
   pointer-events: none;
 }
 

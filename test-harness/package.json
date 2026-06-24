@@ -1,0 +1,12 @@
+{
+  "name": "sentinel-vault-test-harness",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Black-box E2E harness for Sentinel Vault — drives the real Confluence REST API and reads forge logs (never imports the app or KVS).",
+  "scripts": {
+    "health": "node scripts/health.mjs",
+    "forge-logs": "node scripts/forge-logs.mjs",
+    "seal-e2e": "node scripts/seal-lifecycle-e2e.mjs"
+  }
+}

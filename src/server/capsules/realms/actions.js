@@ -5,6 +5,7 @@ import { Queue } from "@forge/events";
 import { authorizeSteward, isOperatorSteward } from "../../shared/steward-checks.js";
 import { removeSealContentProp, touchSealTimestamp } from "../sealing/logic.js";
 import { notifyWatchers } from "../bulletins/logic.js";
+import { sweepEditAccess } from "../editreq/logic.js";
 import {
   mailStewardOverrideNotice,
   fetchOperatorProfile,
@@ -275,6 +276,9 @@ const stewardUnseal = async (req) => {
   for (const { key } of watchEntries) {
     await kvs.delete(key);
   }
+
+  // Clear any Edit Requests / grants tied to this seal
+  await sweepEditAccess(attachmentId);
 
   // Notify watchers
   await notifyWatchers(attachmentId, {

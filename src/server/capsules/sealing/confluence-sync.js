@@ -1,5 +1,6 @@
 import { kvs } from "@forge/kvs";
 import { writeSealContentProp, removeSealContentProp, touchSealTimestamp } from "./logic.js";
+import { sweepEditAccess } from "../editreq/logic.js";
 
 /**
  * Write a per-artifact realm-seal index key for fast realm-scoped queries.
@@ -116,4 +117,7 @@ export async function purgeAllSealState(artifactId, sealRecord) {
       /* best effort */
     }
   }
+
+  // Clear any Edit Requests / grants tied to this seal
+  await sweepEditAccess(artifactId);
 }

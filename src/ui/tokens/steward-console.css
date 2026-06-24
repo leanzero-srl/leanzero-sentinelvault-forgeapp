@@ -49,7 +49,6 @@
   --sv-gradient-footer: #FFFFFF;
   --sv-font-family: "Inter", -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", system-ui, sans-serif;
 
-  --sv-header-gradient: linear-gradient(135deg, rgba(8, 145, 178, 0.05), transparent 60%);
   --sv-frosted-bg: rgba(255, 255, 255, 0.85);
 }
 
@@ -101,7 +100,6 @@ html[data-color-mode="dark"] {
   --sv-gradient-header: #020617;
   --sv-gradient-footer: #020617;
 
-  --sv-header-gradient: linear-gradient(135deg, rgba(34, 211, 238, 0.06), transparent 60%);
   --sv-frosted-bg: rgba(2, 6, 23, 0.85);
 }
 
@@ -151,11 +149,11 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   padding-bottom: 88px;
 }
 
-/* Admin Header — gradient tint + accent line */
+/* Admin Header — solid surface + solid accent line */
 .admin-header {
   padding: 32px 40px 28px;
   margin-bottom: 0;
-  background: var(--sv-header-gradient);
+  background: var(--sv-bg-primary);
   position: relative;
 }
 
@@ -166,7 +164,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   left: 40px;
   right: 40px;
   height: 2px;
-  background: linear-gradient(90deg, var(--sv-interactive-primary), transparent 70%);
+  background: var(--sv-interactive-primary);
   border-radius: 1px;
 }
 
@@ -511,4 +509,103 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   border-radius: 9999px;
   font-size: 12px;
   display: inline-block;
+}
+
+/* ── Conditions & Validations authoring ───────────── */
+.val-modes { display: flex; flex-direction: column; gap: 8px; }
+.form-checkbox-inline {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--sv-text-secondary);
+  cursor: pointer;
+}
+.val-rules { margin-top: 20px; }
+.val-rules-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+.val-rules-title { font-size: 14px; font-weight: 700; color: var(--sv-text-primary); }
+.val-rule-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--sv-border-secondary);
+  border-radius: 10px;
+  background: var(--sv-bg-secondary);
+  margin-bottom: 10px;
+}
+.val-rule-row { display: flex; align-items: center; gap: 8px; }
+.val-rule-remove {
+  margin-left: auto;
+  border: none;
+  background: var(--sv-status-warning);
+  color: #fff;
+  border-radius: 6px;
+  width: 24px;
+  height: 24px;
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+}
+.val-rule-cfg { display: flex; gap: 8px; }
+.val-rule-cfg .form-input { flex: 1; }
+
+/* Custom dropdown (no native select) */
+.mini-select { position: relative; min-width: 180px; }
+.mini-select-value {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 12px;
+  border: 1px solid var(--sv-border-secondary);
+  border-radius: 8px;
+  background: var(--sv-bg-primary);
+  color: var(--sv-text-primary);
+  font-size: 13px;
+  cursor: pointer;
+}
+.mini-select-arrow { font-size: 9px; color: var(--sv-text-subtle); transition: transform 0.15s; }
+.mini-select-arrow.open { transform: rotate(180deg); }
+.mini-select-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  z-index: 20;
+  background: var(--sv-surface-overlay);
+  border: 1px solid var(--sv-border-secondary);
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(15, 23, 42, 0.12);
+  overflow: hidden;
+}
+.mini-select-opt {
+  padding: 8px 12px;
+  font-size: 13px;
+  color: var(--sv-text-primary);
+  cursor: pointer;
+}
+.mini-select-opt:hover { background: var(--sv-bg-tertiary); }
+.mini-select-opt.sel { background: var(--sv-status-success-bg); color: var(--sv-status-success); font-weight: 600; }
+
+/* ── Semantic AI Validations authoring ────────────── */
+.val-ai { margin-top: 24px; padding-top: 16px; border-top: 1px solid var(--sv-border-secondary); }
+.val-ai-badge {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 10px;
+  border-radius: 9999px;
+  background: var(--sv-interactive-primary);
+  color: var(--sv-text-on-primary);
+}
+.val-textarea {
+  width: 100%;
+  resize: vertical;
+  font-family: inherit;
+  min-width: 260px;
 }

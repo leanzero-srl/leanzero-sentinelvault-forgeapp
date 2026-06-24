@@ -238,7 +238,6 @@ button:focus-visible {
 /* ── Artifact card ─────────────────────────────── */
 .artifact-card {
   border: 1px solid var(--sv-border-primary);
-  border-left: 3px solid var(--sv-border-primary);
   border-radius: 8px;
   padding: 8px 14px;
   background: var(--sv-bg-secondary);
@@ -252,43 +251,43 @@ button:focus-visible {
   box-shadow: 0 2px 6px var(--sv-shadow-light);
 }
 
-/* Left accent border per status */
+/* Status conveyed by a solid full border (+ the status lozenge) — never a left rail */
 .artifact-card.status-unlocked {
-  border-left-color: #0891B2; /* cyan — available, inviting */
+  border-color: #0891B2; /* cyan — available, inviting */
 }
 .artifact-card.status-locked-by-me {
-  border-left-color: #6366F1; /* indigo — yours, distinct from available */
+  border-color: #6366F1; /* indigo — yours, distinct from available */
 }
 .artifact-card.status-locked {
-  border-left-color: #F59E0B; /* amber — someone else holds it */
+  border-color: #F59E0B; /* amber — someone else holds it */
 }
 .artifact-card.status-expired {
-  border-left-color: #EF4444; /* red — overdue, urgent */
+  border-color: #EF4444; /* red — overdue, urgent */
 }
 
 html[data-color-mode="dark"] .artifact-card.status-unlocked {
-  border-left-color: #22D3EE;
+  border-color: #22D3EE;
 }
 html[data-color-mode="dark"] .artifact-card.status-locked-by-me {
-  border-left-color: #818CF8;
+  border-color: #818CF8;
 }
 html[data-color-mode="dark"] .artifact-card.status-locked {
-  border-left-color: #FBBF24;
+  border-color: #FBBF24;
 }
 html[data-color-mode="dark"] .artifact-card.status-expired {
-  border-left-color: #F87171;
+  border-color: #F87171;
 }
 .artifact-card.status-stale {
-  border-left-color: #9CA3AF; /* gray — missing, no urgency */
+  border-color: #9CA3AF; /* gray — missing, no urgency */
 }
 .artifact-card.status-trashed {
-  border-left-color: #F59E0B; /* amber — recoverable */
+  border-color: #F59E0B; /* amber — recoverable */
 }
 html[data-color-mode="dark"] .artifact-card.status-stale {
-  border-left-color: #6B7280;
+  border-color: #6B7280;
 }
 html[data-color-mode="dark"] .artifact-card.status-trashed {
-  border-left-color: #FBBF24;
+  border-color: #FBBF24;
 }
 
 /* ── Card row layout ──────────────────────────── */
@@ -788,6 +787,115 @@ html[data-color-mode="dark"] .status-lozenge.trashed {
   border-color: var(--sv-interactive-success);
 }
 
+/* Edit Requests — request access / status pills */
+.action-btn.editreq {
+  background: #7C3AED;
+  color: #ffffff;
+  border-color: #7C3AED;
+}
+.action-btn.editreq:hover:not(:disabled) {
+  background: #6D28D9;
+  border-color: #6D28D9;
+}
+.action-btn.editpending {
+  background: #F59E0B;
+  color: #1F2937;
+  border-color: #F59E0B;
+  cursor: default;
+}
+.action-btn.editgrant {
+  background: var(--sv-interactive-success);
+  color: var(--sv-text-on-primary);
+  border-color: var(--sv-interactive-success);
+  cursor: default;
+}
+.action-btn.editdenied {
+  background: var(--sv-interactive-danger);
+  color: var(--sv-text-inverse);
+  border-color: var(--sv-interactive-danger);
+  cursor: default;
+}
+
+/* ── Sealed Sections group (Content Sealing) ───────── */
+.sv-section-seals .sv-card-section-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.sv-section-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 8px 0;
+}
+.sv-section-pick-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border: 1px solid var(--sv-border-secondary);
+  border-radius: var(--sv-radius-md, 10px);
+  background: var(--sv-bg-secondary);
+  color: var(--sv-text-primary);
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+}
+.sv-section-pick-row:hover:not(:disabled) {
+  border-color: var(--sv-interactive-primary);
+}
+.sv-section-pick-row:disabled { opacity: 0.5; cursor: not-allowed; }
+.sv-section-pick-level {
+  flex: 0 0 auto;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--sv-text-on-primary);
+  background: var(--sv-interactive-primary);
+  border-radius: 6px;
+  padding: 2px 6px;
+}
+.sv-section-pick-text {
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+}
+.sv-section-pick-cta {
+  flex: 0 0 auto;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--sv-interactive-primary);
+}
+.sv-section-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border: 1px solid var(--sv-border-secondary);
+  border-radius: var(--sv-radius-md, 10px);
+  background: var(--sv-bg-secondary);
+  margin-bottom: 6px;
+}
+.sv-section-row-title {
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--sv-text-primary);
+}
+.sv-section-row-meta {
+  flex: 0 0 auto;
+  font-size: 11px;
+  color: var(--sv-text-subtle);
+}
+.sv-section-row-lockedby {
+  flex: 0 0 auto;
+  font-size: 11px;
+}
+
 .action-btn.delete {
   background: none;
   color: var(--sv-interactive-danger);
@@ -995,7 +1103,7 @@ html[data-color-mode="dark"] .action-btn.purge:hover:not(:disabled) {
 
 /* ── Skeleton card placeholder ─────────────────── */
 .skeleton-card {
-  border-left-color: var(--sv-border-primary) !important;
+  border-color: var(--sv-border-primary) !important;
   pointer-events: none;
 }
 
@@ -1151,4 +1259,63 @@ html[data-color-mode="dark"] .action-btn.purge:hover:not(:disabled) {
 .card-filename-link:hover {
   color: var(--sv-interactive-primary);
   text-decoration: underline;
+}
+
+/* ── Validation status group ───────────────────────── */
+.sv-validation .sv-card-section-header { display: flex; align-items: center; gap: 8px; }
+.sv-val-badge {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 9999px;
+  color: #fff;
+}
+.sv-val-passed { background: var(--sv-interactive-success); }
+.sv-val-failed { background: var(--sv-interactive-danger); }
+.sv-val-awaiting-approval { background: #F59E0B; color: #1F2937; }
+.sv-val-ok { font-size: 12px; color: var(--sv-text-secondary); padding: 4px 0; }
+.sv-val-list { list-style: none; margin: 6px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.sv-val-item {
+  font-size: 12px;
+  color: var(--sv-text-primary);
+  padding: 8px 10px;
+  border: 1px solid var(--sv-border-secondary);
+  border-radius: 8px;
+  background: var(--sv-bg-secondary);
+}
+.sv-val-item-block strong { color: var(--sv-interactive-danger); }
+.sv-val-item-warn strong { color: #B45309; }
+
+/* ── AI Review group ───────────────────────────────── */
+.sv-ai-review .sv-card-section-header { display: flex; align-items: center; gap: 8px; }
+.sv-ai-suggest { margin-top: 4px; font-size: 11px; color: var(--sv-interactive-primary); }
+.sv-val-item.sv-ai-high strong { color: var(--sv-interactive-danger); }
+.sv-val-item.sv-ai-medium strong { color: #B45309; }
+.sv-val-item.sv-ai-low strong { color: var(--sv-text-secondary); }
+
+/* ── Inline action error (replaces native alert) ───── */
+.card-action-error {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 6px;
+  padding: 6px 10px;
+  border: 1px solid var(--sv-interactive-danger);
+  border-radius: 6px;
+  background: var(--sv-bg-secondary);
+}
+.card-action-error-text {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--sv-interactive-danger);
+}
+.card-action-error-dismiss {
+  border: none;
+  background: none;
+  color: var(--sv-interactive-danger);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 2px;
 }

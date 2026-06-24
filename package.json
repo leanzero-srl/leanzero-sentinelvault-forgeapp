@@ -8,13 +8,15 @@
   "scripts": {
     "lint": "eslint src/**/*",
     "build": "webpack --mode production",
-    "dev": "webpack --mode development --watch"
+    "dev": "webpack --mode development --watch",
+    "test": "node test/json-salvage.test.mjs && node test/rules-engine.test.mjs && node test/doc-surgery.test.mjs && node test/validations-logic.test.mjs"
   },
   "dependencies": {
     "@forge/api": "^6.1.1",
     "@forge/bridge": "^5.5.0",
     "@forge/events": "^2.0.17",
     "@forge/kvs": "^1.2.6",
+    "@forge/llm": "^0.6.7",
     "@forge/react": "^11.3.0",
     "@forge/resolver": "^1.7.0",
     "@forge/ui": "^1.11.4",

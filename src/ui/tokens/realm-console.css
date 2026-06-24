@@ -49,7 +49,6 @@
   --sv-gradient-header: #FFFFFF;
   --sv-gradient-footer: #FFFFFF;
   --sv-font-family: "Inter", -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", system-ui, sans-serif;
-  --sv-header-gradient: linear-gradient(135deg, rgba(8, 145, 178, 0.05), transparent 60%);
   --sv-frosted-bg: rgba(255, 255, 255, 0.85);
 }
 
@@ -100,7 +99,6 @@ html[data-color-mode="dark"] {
   --sv-shadow-strong: rgba(0, 0, 0, 0.5);
   --sv-gradient-header: #020617;
   --sv-gradient-footer: #020617;
-  --sv-header-gradient: linear-gradient(135deg, rgba(34, 211, 238, 0.06), transparent 60%);
   --sv-frosted-bg: rgba(2, 6, 23, 0.85);
 }
 
@@ -146,11 +144,11 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   padding-bottom: 88px;
 }
 
-/* Header — gradient tint + accent line */
+/* Header — solid surface + solid accent line */
 .space-admin-header {
   padding: 32px 40px 28px;
   margin-bottom: 0;
-  background: var(--sv-header-gradient);
+  background: var(--sv-bg-primary);
   position: relative;
 }
 
@@ -161,7 +159,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   left: 40px;
   right: 40px;
   height: 2px;
-  background: linear-gradient(90deg, var(--sv-interactive-primary), transparent 70%);
+  background: var(--sv-interactive-primary);
   border-radius: 1px;
 }
 
@@ -928,12 +926,12 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   padding: 12px 16px;
   background-color: var(--sv-bg-tertiary);
   border-radius: 10px;
-  border-left: 3px solid var(--sv-border-primary);
+  border: 1px solid var(--sv-border-primary);
 }
 
 .form-help-highlight {
   background-color: var(--sv-status-info-bg);
-  border-left-color: var(--sv-interactive-primary);
+  border-color: var(--sv-interactive-primary);
   color: var(--sv-interactive-primary);
 }
 
@@ -1152,7 +1150,6 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 
 .artifact-card {
   border: 1px solid var(--sv-border-primary);
-  border-left: 3px solid var(--sv-border-primary);
   border-radius: 8px;
   padding: 10px 16px;
   background: var(--sv-bg-secondary);
@@ -1166,15 +1163,15 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   box-shadow: 0 2px 6px var(--sv-shadow-light);
 }
 
-/* Status accent borders */
-.artifact-card.status-unlocked { border-left-color: #0891B2; }
-.artifact-card.status-locked-by-me { border-left-color: #6366F1; }
-.artifact-card.status-locked { border-left-color: #F59E0B; }
-.artifact-card.status-expired { border-left-color: #EF4444; }
-html[data-color-mode="dark"] .artifact-card.status-unlocked { border-left-color: #22D3EE; }
-html[data-color-mode="dark"] .artifact-card.status-locked-by-me { border-left-color: #818CF8; }
-html[data-color-mode="dark"] .artifact-card.status-locked { border-left-color: #FBBF24; }
-html[data-color-mode="dark"] .artifact-card.status-expired { border-left-color: #F87171; }
+/* Status conveyed by a solid full border (+ the status lozenge) — never a left rail */
+.artifact-card.status-unlocked { border-color: #0891B2; }
+.artifact-card.status-locked-by-me { border-color: #6366F1; }
+.artifact-card.status-locked { border-color: #F59E0B; }
+.artifact-card.status-expired { border-color: #EF4444; }
+html[data-color-mode="dark"] .artifact-card.status-unlocked { border-color: #22D3EE; }
+html[data-color-mode="dark"] .artifact-card.status-locked-by-me { border-color: #818CF8; }
+html[data-color-mode="dark"] .artifact-card.status-locked { border-color: #FBBF24; }
+html[data-color-mode="dark"] .artifact-card.status-expired { border-color: #F87171; }
 
 /* Card row layout */
 .card-row {
@@ -1335,8 +1332,7 @@ html[data-color-mode="dark"] .artifact-card.status-expired { border-left-color: 
   gap: 16px;
   padding: 14px 20px;
   background: var(--sv-bg-secondary);
-  border: 1px solid var(--sv-border-primary);
-  border-left: 3px solid var(--sv-interactive-primary);
+  border: 1px solid var(--sv-interactive-primary);
   border-radius: 8px;
   margin-bottom: 16px;
 }
@@ -1606,8 +1602,7 @@ html[data-color-mode="dark"] .artifact-card.status-expired { border-left-color: 
   font-size: 12px;
   color: var(--sv-text-secondary);
   background: var(--sv-bg-secondary);
-  border: 1px solid var(--sv-border-primary);
-  border-left: 3px solid var(--sv-interactive-primary);
+  border: 1px solid var(--sv-interactive-primary);
   border-radius: 8px;
   margin-bottom: 16px;
 }

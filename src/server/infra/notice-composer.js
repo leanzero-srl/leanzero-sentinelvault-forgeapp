@@ -20,6 +20,9 @@ import {
   composePeriodicLayout,
   composeReleaseNoticeLayout,
   composeStewardOverrideLayout,
+  composeEditRequestLayout,
+  composeEditApprovedLayout,
+  composeEditDeniedLayout,
 } from "./notice-blueprints.js";
 
 export {
@@ -31,6 +34,9 @@ export {
   composePeriodicLayout,
   composeReleaseNoticeLayout,
   composeStewardOverrideLayout,
+  composeEditRequestLayout,
+  composeEditApprovedLayout,
+  composeEditDeniedLayout,
 } from "./notice-blueprints.js";
 
 
@@ -44,6 +50,9 @@ export const ALERT_CATEGORIES = {
   PERIODIC_REMINDER: "periodic_reminder",
   RELEASE_NOTIFICATION: "release_notification",
   STEWARD_OVERRIDE_RELEASE: "steward_override_release",
+  EDIT_ACCESS_REQUEST: "edit_access_request",
+  EDIT_ACCESS_APPROVED: "edit_access_approved",
+  EDIT_ACCESS_DENIED: "edit_access_denied",
 };
 
 /**
@@ -112,6 +121,12 @@ function buildBlueprint(type, data) {
       return composeReleaseNoticeLayout(data);
     case ALERT_CATEGORIES.STEWARD_OVERRIDE_RELEASE:
       return composeStewardOverrideLayout(data);
+    case ALERT_CATEGORIES.EDIT_ACCESS_REQUEST:
+      return composeEditRequestLayout(data);
+    case ALERT_CATEGORIES.EDIT_ACCESS_APPROVED:
+      return composeEditApprovedLayout(data);
+    case ALERT_CATEGORIES.EDIT_ACCESS_DENIED:
+      return composeEditDeniedLayout(data);
     default:
       return null;
   }
@@ -293,5 +308,38 @@ export async function mailStewardOverrideNotice(
     pageId,
     artifactName,
     extra: { stewardAccountId, stewardDisplayName, unlockDate },
+  });
+}
+
+// --- Edit Requests notifications ---
+
+export async function mailEditRequest(
+  ownerAccountId,
+  requesterAccountId,
+  requesterName,
+  artifactName,
+  pageId,
+) {
+  return dispatchNotice(ALERT_CATEGORIES.EDIT_ACCESS_REQUEST, {
+    recipientAccountId: ownerAccountId,
+    pageId,
+    artifactName,
+    extra: { requesterAccountId, requesterName },
+  });
+}
+
+export async function mailEditApproved(requesterAccountId, artifactName, pageId) {
+  return dispatchNotice(ALERT_CATEGORIES.EDIT_ACCESS_APPROVED, {
+    recipientAccountId: requesterAccountId,
+    pageId,
+    artifactName,
+  });
+}
+
+export async function mailEditDenied(requesterAccountId, artifactName, pageId) {
+  return dispatchNotice(ALERT_CATEGORIES.EDIT_ACCESS_DENIED, {
+    recipientAccountId: requesterAccountId,
+    pageId,
+    artifactName,
   });
 }

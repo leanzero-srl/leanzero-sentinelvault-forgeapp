@@ -60,6 +60,22 @@ When a seal violation occurs (or other notable events happen), Sentinel Vault no
 
 Each channel can be independently enabled or disabled at the global level through the steward console.
 
+### Edit Requests
+
+A user can request permission to edit an attachment sealed by someone else, without being granted full steward rights. The **seal owner** approves or denies the request from the Sentinel Vault space console (My Sealed Files → Edit Requests). Approved editors can replace the file until the seal expires; everyone else stays blocked. Grants are scoped to the artifact and are swept automatically when the seal is released, expires, or the attachment is deleted.
+
+### Content Sealing (Sections)
+
+Beyond attachments, you can lock a **section of a Confluence page** -- a heading and its content -- against unauthorized edits. Pick a section from the Sentinel Vault panel's *Sealed Sections* group; the app wraps it in a "Sealed Section" macro carrying a stable id. If anyone other than the owner edits the body or removes the macro, the page-update trigger restores the sealed content from a snapshot (the same detect-and-restore mechanism used for sealed attachment embeds). The owner or a steward can release the section at any time.
+
+### Conditions & Validations
+
+Define rules that Confluence pages are checked against on create and edit -- required headings/tables/labels, heading hierarchy, length limits, and more. Because Forge page events fire **after** a save, enforcement is applied post-save in one of three selectable modes: **advisory** (post a comment listing issues), **gate** (stamp a pass/fail status the panel and ribbon display), and **revert** (restore the last compliant version -- strict, opt-in, may discard work). Rules are authored in the steward console's *Validations* tab.
+
+### Semantic AI Validations (Runs on Atlassian)
+
+AI-powered content review using **Atlassian-hosted Claude via the Forge LLM API** -- no bring-your-own-key, no external API keys, and no data egress, so the app keeps its **"Runs on Atlassian"** badge. Admins configure custom rules, a style guide, tone/voice requirements, and compliance standards; users run a review on demand from the panel's *AI Review* group. Findings (severity, excerpt, explanation, suggestion) are reported in the panel and optionally as an @mention comment to the page author. AI is **off by default**, limited to Claude Haiku for cost control, and bounded by a per-space monthly token budget.
+
 ### Administration
 
 #### Steward Console (Global Settings)

@@ -459,6 +459,10 @@ const RealmPolicyDashboard = () => {
   const [pendingRequests, setPendingRequests] = useState([]);
   const [pendingRequestsLoading, setPendingRequestsLoading] = useState(false);
   const [requestActionBusy, setRequestActionBusy] = useState(null); // { id: accountId, action: "approve"|"deny" }
+  // Edit Requests inbox (owner approves who can edit their sealed attachments)
+  const [editRequests, setEditRequests] = useState([]);
+  const [editRequestsLoading, setEditRequestsLoading] = useState(false);
+  const [editReqBusy, setEditReqBusy] = useState(null); // { id: "artifactId:accountId", action }
 
   useEffect(() => {
     const bootstrapRealm = async () => {
@@ -505,6 +509,7 @@ const RealmPolicyDashboard = () => {
               setUserRole("user");
               setActiveTab("my-claims");
               fetchMyClaimedFiles();
+              fetchMyEditRequests();
               // Check if this user already has a pending or denied steward request
               try {
                 const reqCheck = await invoke("check-steward-request", { spaceKey: realmKeyValue });
@@ -704,6 +709,55 @@ const RealmPolicyDashboard = () => {
       console.error("Deny request failed:", e);
     } finally {
       setRequestActionBusy(null);
+    }
+  };
+
+  // --- Edit Requests inbox (owner approves who can edit their sealed files) ---
+  const fetchMyEditRequests = async () => {
+    setEditRequestsLoading(true);
+    try {
+      const result = await invoke("list-my-edit-requests", {});
+      setEditRequests(result?.requests || []);
+    } catch (e) {
+      console.error("Fetch edit requests failed:", e);
+      setEditRequests([]);
+    } finally {
+      setEditRequestsLoading(false);
+    }
+  };
+
+  const handleApproveEdit = async (artifactId, requesterAccountId) => {
+    setEditReqBusy({ id: `${artifactId}:${requesterAccountId}`, action: "approve" });
+    try {
+      const result = await invoke("approve-edit-request", { attachmentId: artifactId, requesterAccountId });
+      if (result?.success) {
+        setEditRequests((prev) => prev.filter((r) => !(r.artifactId === artifactId && r.requesterAccountId === requesterAccountId)));
+        setMessage("Edit access granted.");
+        setMessageType("success");
+      } else {
+        setMessage(result?.reason || "Could not grant edit access.");
+        setMessageType("error");
+      }
+    } catch (e) {
+      console.error("Approve edit failed:", e);
+    } finally {
+      setEditReqBusy(null);
+    }
+  };
+
+  const handleDenyEdit = async (artifactId, requesterAccountId) => {
+    setEditReqBusy({ id: `${artifactId}:${requesterAccountId}`, action: "deny" });
+    try {
+      const result = await invoke("deny-edit-request", { attachmentId: artifactId, requesterAccountId });
+      if (result?.success) {
+        setEditRequests((prev) => prev.filter((r) => !(r.artifactId === artifactId && r.requesterAccountId === requesterAccountId)));
+        setMessage("Edit request declined.");
+        setMessageType("success");
+      }
+    } catch (e) {
+      console.error("Deny edit failed:", e);
+    } finally {
+      setEditReqBusy(null);
     }
   };
 
@@ -1415,7 +1469,7 @@ const RealmPolicyDashboard = () => {
       <div className="tab-navigation">
         {userRole === "user" && (
           <button className={`tab-button ${activeTab === "my-claims" ? "active" : ""}`}
-            onClick={() => { setActiveTab("my-claims"); fetchMyClaimedFiles(); }}>
+            onClick={() => { setActiveTab("my-claims"); fetchMyClaimedFiles(); fetchMyEditRequests(); }}>
             My Sealed Files
           </button>
         )}
@@ -1471,12 +1525,12 @@ const RealmPolicyDashboard = () => {
             </div>
           )}
           {(stewardRequestSent || stewardRequestStatus === "pending") && (
-            <div className="steward-request-banner" style={{ borderLeftColor: "var(--sv-status-success)" }}>
+            <div className="steward-request-banner" style={{ borderColor: "var(--sv-status-success)" }}>
               <span>Your steward access request has been submitted. A space admin or steward will review it.</span>
             </div>
           )}
           {stewardRequestStatus === "denied" && (
-            <div className="steward-request-banner" style={{ borderLeftColor: "var(--sv-status-warning)" }}>
+            <div className="steward-request-banner" style={{ borderColor: "var(--sv-status-warning)" }}>
               <div>
                 <strong>Your steward access request was denied.</strong>
                 <p style={{ margin: "4px 0 0", fontSize: "12px", color: "var(--sv-text-secondary)" }}>
@@ -1489,6 +1543,60 @@ const RealmPolicyDashboard = () => {
                     return `You can submit a new request in approximately ${hours} hour${hours !== 1 ? "s" : ""}.`;
                   })() : "You may submit a new request after 48 hours."}
                 </p>
+              </div>
+            </div>
+          )}
+
+          {/* Edit Requests inbox — people asking to edit files you have sealed */}
+          {!editRequestsLoading && editRequests.length > 0 && (
+            <div className="settings-card">
+              <div className="settings-card-header">
+                <h3>Edit Requests</h3>
+                <p className="settings-card-desc">
+                  Approve to let a user edit your sealed file without giving them steward access. Access lasts until the seal expires.
+                </p>
+              </div>
+              <div className="settings-card-body">
+                <div className="steward-grid">
+                  {editRequests.map((request) => {
+                    const name = request.requesterName || "Unknown User";
+                    const initials = name.split(/\s+/).map((p) => p[0]).join("").toUpperCase().slice(0, 2);
+                    const busyKey = `${request.artifactId}:${request.requesterAccountId}`;
+                    const reqDate = request.requestedAt ? new Date(request.requestedAt).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }) : "";
+                    return (
+                      <div key={busyKey} className="steward-card">
+                        <div className="steward-avatar">{initials}</div>
+                        <span className="steward-name">{name}</span>
+                        <span style={{ fontSize: "10px", color: "var(--sv-text-subtle)", textAlign: "center" }} title={request.attachmentName}>
+                          {request.attachmentName || "Sealed file"}
+                        </span>
+                        {reqDate && <span style={{ fontSize: "10px", color: "var(--sv-text-subtle)" }}>{reqDate}</span>}
+                        <span style={{ display: "flex", gap: "6px", marginTop: "4px" }}>
+                          {(!editReqBusy || editReqBusy.id !== busyKey || editReqBusy.action === "approve") && (
+                            <button
+                              className={`action-btn lock ${editReqBusy?.id === busyKey && editReqBusy.action === "approve" ? "is-busy" : ""}`}
+                              onClick={() => handleApproveEdit(request.artifactId, request.requesterAccountId)}
+                              disabled={!!editReqBusy}
+                              title="Allow this user to edit the sealed file"
+                            >
+                              {editReqBusy?.id === busyKey && editReqBusy.action === "approve" ? <>Approving<span className="btn-busy-bar" /></> : "Approve"}
+                            </button>
+                          )}
+                          {(!editReqBusy || editReqBusy.id !== busyKey || editReqBusy.action === "deny") && (
+                            <button
+                              className={`action-btn unlock ${editReqBusy?.id === busyKey && editReqBusy.action === "deny" ? "is-busy" : ""}`}
+                              onClick={() => handleDenyEdit(request.artifactId, request.requesterAccountId)}
+                              disabled={!!editReqBusy}
+                              title="Decline this edit request"
+                            >
+                              {editReqBusy?.id === busyKey && editReqBusy.action === "deny" ? <>Denying<span className="btn-busy-bar" /></> : "Deny"}
+                            </button>
+                          )}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
             </div>
           )}

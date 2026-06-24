@@ -5,6 +5,14 @@ app:
     name: nodejs22.x
 
 modules:
+  # Atlassian-hosted LLM (Forge LLMs) — powers Semantic AI Validations with no
+  # external egress, so the app keeps its "Runs on Atlassian" badge. Adding this
+  # module triggers a major version bump + admin re-consent.
+  llm:
+    - key: sentinel-vault-llm
+      model:
+        - claude
+
   # Macro module — inline reservation status panel on page content
   macro:
     - key: sentinel-vault-panel
@@ -19,6 +27,22 @@ modules:
       config:
         resource: panel-setup-ui
         openOnInsert: false
+        viewportSize: medium
+
+    # Bodied macro — wraps a sealed page section. Carries a stable app-issued
+    # sectionId so the page-content trigger can detect tampering and restore it.
+    - key: sentinel-vault-sealed-section
+      resource: section-setup-ui
+      resolver:
+        function: action-router
+      title: Sentinel Vault Sealed Section
+      description: Locks the content inside this section against unauthorized edits
+      layout: bodied
+      categories:
+        - admin
+      config:
+        resource: section-setup-ui
+        openOnInsert: true
         viewportSize: medium
 
   # Page ribbon for reservation notifications
@@ -49,12 +73,20 @@ modules:
       handler: boot.sealIndexCron
     - key: page-content-trigger
       handler: boot.pageContentTrigger
+    - key: ai-validation-fn
+      handler: boot.aiValidationConsumer
+      timeoutSeconds: 120
 
   # Queue consumer for async realm admin scanning
   consumer:
     - key: realm-audit-queue
       queue: realm-audit-queue
       function: realm-scan-consumer-fn
+    # Async consumer for long-running Semantic AI validation (LLM call > 25s
+    # resolver limit). Mirrors the realm-audit-queue pattern.
+    - key: ai-validation-queue
+      queue: ai-validation-queue
+      function: ai-validation-fn
 
   # Attachment events trigger
   trigger:
@@ -68,6 +100,7 @@ modules:
       function: page-content-trigger
       events:
         - avi:confluence:updated:page
+        - avi:confluence:created:page
     - key: app-lifecycle-events
       function: lifecycle-trigger
       events:
@@ -118,6 +151,8 @@ resources:
     path: static/inline-panel
   - key: panel-setup-ui
     path: static/panel-setup
+  - key: section-setup-ui
+    path: static/section-setup
 
 permissions:
   scopes:
@@ -151,6 +186,7 @@ permissions:
     - write:content.restriction:confluence
     - read:content.metadata:confluence
     - read:content.permission:confluence
+    - read:label:confluence
     - storage:app
   content:
     styles:
