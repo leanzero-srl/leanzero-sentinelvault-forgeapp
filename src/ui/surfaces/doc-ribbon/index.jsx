@@ -16,6 +16,8 @@ const DocumentRibbon = () => {
   const [totalCount, setTotalCount] = useState(0);
   const [alerts, setAlerts] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [validationState, setValidationState] = useState(null); // "passed"|"failed"|"awaiting-approval"
+  const [aiCount, setAiCount] = useState(null); // number of latest AI findings, or null
 
   const fetchArtifactStats = useCallback(async () => {
     try {
@@ -72,6 +74,16 @@ const DocumentRibbon = () => {
         if (operatorId) {
           await fetchAlerts(pageId, operatorId);
         }
+
+        // Page-level validation + AI status (best-effort; independent of seals).
+        try {
+          const vs = await invoke("get-validation-state", { pageId });
+          if (vs?.state?.state) setValidationState(vs.state.state);
+        } catch (_) { /* none */ }
+        try {
+          const ai = await invoke("get-ai-findings", { pageId });
+          if (ai?.findings?.findings) setAiCount(ai.findings.findings.length);
+        } catch (_) { /* none */ }
       } catch (err) {
         console.error("Ribbon init error:", err);
       } finally {
@@ -124,8 +136,8 @@ const DocumentRibbon = () => {
     [],
   );
 
-  // Hide ribbon entirely when the page has no artifacts (only after loading)
-  if (!loading && totalCount === 0 && alerts.length === 0) {
+  // Hide ribbon entirely when the page has nothing to report (only after loading)
+  if (!loading && totalCount === 0 && alerts.length === 0 && !validationState && aiCount === null) {
     return null;
   }
 
@@ -161,6 +173,17 @@ const DocumentRibbon = () => {
               ? `${totalCount} attachment${totalCount !== 1 ? "s" : ""} on this page — none sealed`
               : "No attachments on this page"}
         </span>
+
+        {!loading && validationState && (
+          <span className={`ribbon-chip ribbon-chip-${validationState}`} title="Page content validation status">
+            {validationState === "passed" ? "Validation: passed" : validationState === "failed" ? "Validation: issues" : "Validation: awaiting approval"}
+          </span>
+        )}
+        {!loading && aiCount !== null && aiCount > 0 && (
+          <span className="ribbon-chip ribbon-chip-ai" title="AI content review findings">
+            AI review: {aiCount} finding{aiCount !== 1 ? "s" : ""}
+          </span>
+        )}
 
         <button className="ribbon-action" onClick={openManageOverlay}>
           Manage Attachments

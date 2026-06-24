@@ -43,6 +43,10 @@ Results — the **AI Review** group in the panel (HIGH/MEDIUM/LOW findings + sug
 
 ![AI Review findings in the panel](../media/screenshots/inline-panel.png)
 
+…and an "AI review: N findings" chip on the **page ribbon**:
+
+![AI review chip on the page ribbon](../media/screenshots/doc-ribbon.png)
+
 ▶ **Video (Run AI review, in context):** [01-inline-panel-features.mp4](../media/videos/01-inline-panel-features.mp4)
 ▶ **Video (AI config in the Validations tab):** [02-steward-validations-ai.mp4](../media/videos/02-steward-validations-ai.mp4)
 

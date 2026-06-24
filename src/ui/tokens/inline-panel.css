@@ -1319,3 +1319,65 @@ html[data-color-mode="dark"] .action-btn.purge:hover:not(:disabled) {
   cursor: pointer;
   padding: 0 2px;
 }
+
+/* ── Edit-request reason input + owner inbox (in-card) ── */
+.card-reason-bar { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
+.card-reason-input {
+  flex: 1;
+  min-width: 0;
+  padding: 6px 10px;
+  font: inherit;
+  font-size: 12px;
+  color: var(--sv-text-primary);
+  background: var(--sv-bg-primary);
+  border: 1px solid var(--sv-border-secondary);
+  border-radius: 6px;
+}
+.card-reason-input:focus { outline: none; border-color: var(--sv-interactive-primary); }
+.card-editreq-inbox {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 6px;
+  padding: 8px 10px;
+  border: 1px solid var(--sv-interactive-primary);
+  border-radius: 8px;
+  background: var(--sv-bg-secondary);
+}
+.card-editreq-title { font-size: 11px; font-weight: 700; color: var(--sv-interactive-primary); }
+.card-editreq-row { display: flex; align-items: center; gap: 8px; justify-content: space-between; }
+.card-editreq-who { font-size: 12px; color: var(--sv-text-primary); overflow: hidden; text-overflow: ellipsis; }
+.card-editreq-reason { color: var(--sv-text-secondary); font-style: italic; }
+
+/* ── Collapsible group headers ─────────────────────── */
+.sv-group-toggle {
+  border: none;
+  background: none;
+  cursor: pointer;
+  color: var(--sv-text-subtle);
+  font-size: 12px;
+  padding: 2px 4px;
+  display: inline-flex;
+  align-items: center;
+}
+.sv-group-caret { transition: transform 0.15s ease; display: inline-block; }
+.sv-group-caret.collapsed { transform: rotate(-90deg); }
+
+/* ── Onboarding explainer ──────────────────────────── */
+.sv-explainer {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin: 8px 12px 0;
+  padding: 10px 12px;
+  border: 1px solid var(--sv-interactive-primary);
+  border-radius: 10px;
+  background: var(--sv-bg-secondary);
+}
+.sv-explainer-body { flex: 1; font-size: 12px; color: var(--sv-text-secondary); }
+.sv-explainer-body strong { color: var(--sv-text-primary); }
+.sv-explainer-list { margin: 6px 0 0; padding-left: 16px; display: flex; flex-direction: column; gap: 3px; }
+.sv-explainer-dismiss {
+  border: none; background: none; cursor: pointer;
+  color: var(--sv-text-subtle); font-size: 18px; line-height: 1; padding: 0 2px;
+}
