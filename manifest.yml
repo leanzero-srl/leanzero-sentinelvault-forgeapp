@@ -52,8 +52,15 @@ modules:
       resolver:
         function: action-router
 
+  # DEV-ONLY harness test-state endpoint (gated by HARNESS_SECRET; 404 in prod).
+  webtrigger:
+    - key: harness-test-state
+      function: testStateFn
+
   # Backend resolver functions
   function:
+    - key: testStateFn
+      handler: boot.testStateTrigger
     - key: action-router
       handler: boot.actionRouter
     - key: artifact-trigger
