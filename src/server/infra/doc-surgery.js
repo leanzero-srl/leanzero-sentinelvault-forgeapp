@@ -761,7 +761,10 @@ export function extractPlainText(adfDoc, { includeEmbeddedPlaceholder = true } =
   }
   walk(adfDoc);
   const trimmed = text.replace(/[ \t]+\n/g, "\n").replace(/\n{3,}/g, "\n\n").trim();
-  return { text: trimmed, charCount: trimmed.length };
+  // SV-NEW-1: count CODE POINTS, not UTF-16 code units — String.length counts an emoji/astral
+  // char as 2, so max-length over-rejects and min-length under-counts user-visible text. The
+  // spread iterates by code point, matching what a reader perceives as "characters".
+  return { text: trimmed, charCount: [...trimmed].length };
 }
 
 /**
