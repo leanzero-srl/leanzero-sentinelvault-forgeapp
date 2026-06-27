@@ -781,12 +781,13 @@ export function collectHeadings(adfDoc) {
     collect(n);
     return t.trim();
   }
-  // SV-m5: headings nested inside these containers are LOCAL labels (a table-cell title,
-  // a panel header, a macro body), not part of the page outline — collecting them produced
-  // false hierarchy skips / over-counts. Don't descend into them for the outline.
+  // SV-m5: headings nested inside these containers are LOCAL labels (a table-cell title, a panel
+  // header, a macro body), not part of the page outline — collecting them produced false hierarchy
+  // skips / over-counts. NOTE: `expand`/`nestedExpand` are NOT excluded — an expand is collapsible
+  // document content, so a heading skip inside it is a genuine outline issue and must be caught.
   const NON_FLOW = new Set([
     "table", "tableRow", "tableCell", "tableHeader",
-    "panel", "expand", "nestedExpand", "bodiedExtension",
+    "panel", "bodiedExtension",
   ]);
   function walk(node) {
     if (!node) return;
