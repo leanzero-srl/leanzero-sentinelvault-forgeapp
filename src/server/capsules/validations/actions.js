@@ -78,7 +78,8 @@ const validatePageNow = async (req) => {
     return evaluateRules(adfDoc, labels, rules);
   } catch (e) {
     console.error("[VALIDATE-NOW] failed:", e);
-    return { passed: true, violations: [], error: String(e?.message || e) };
+    // SV-m3: do NOT fail open — a page-read error must not render as "all checks passed".
+    return { ok: false, passed: false, violations: [], error: String(e?.message || e), failureReason: "Could not validate this page" };
   }
 };
 

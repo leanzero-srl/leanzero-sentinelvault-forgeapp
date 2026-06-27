@@ -40,9 +40,13 @@ function evalRule(adfDoc, pageLabels, rule) {
       const minCount = cfg.minCount || 1;
       const key = cfg.extensionKey;
       if (!key) return null;
-      const macros = countNodes(adfDoc, (n) =>
-        ["extension", "bodiedExtension", "inlineExtension"].includes(n.type) &&
-        (n.attrs?.extensionKey === key || String(n.attrs?.extensionKey || "").endsWith(key)));
+      const macros = countNodes(adfDoc, (n) => {
+        if (!["extension", "bodiedExtension", "inlineExtension"].includes(n.type)) return false;
+        const ek = String(n.attrs?.extensionKey || "");
+        // SV-m4: anchor the match — `endsWith(key)` over-matched any macro whose key merely
+        // ended with the string (e.g. required-macro "section" matched our sealed-section).
+        return ek === key || ek.split("/").pop() === key || ek.endsWith("/" + key);
+      });
       if (macros < minCount) return `Missing required macro "${key}".`;
       return null;
     }
@@ -67,14 +71,14 @@ function evalRule(adfDoc, pageLabels, rule) {
     case "max-length": {
       const max = cfg.maxChars;
       if (!max) return null;
-      const { charCount } = extractPlainText(adfDoc);
+      const { charCount } = extractPlainText(adfDoc, { includeEmbeddedPlaceholder: false }); // SV-M4
       if (charCount > max) return `Page is too long: ${charCount} characters (max ${max}).`;
       return null;
     }
     case "min-length": {
       const min = cfg.minChars;
       if (!min) return null;
-      const { charCount } = extractPlainText(adfDoc);
+      const { charCount } = extractPlainText(adfDoc, { includeEmbeddedPlaceholder: false }); // SV-M4
       if (charCount < min) return `Page is too short: ${charCount} characters (min ${min}).`;
       return null;
     }
