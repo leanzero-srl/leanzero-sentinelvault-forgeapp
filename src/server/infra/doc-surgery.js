@@ -742,14 +742,16 @@ const BLOCK_NODE_TYPES = new Set([
  * Returns { text, charCount }. Media/extension nodes become a placeholder;
  * bodied extensions (e.g. sealed sections) are recursed so their text is kept.
  */
-export function extractPlainText(adfDoc) {
+export function extractPlainText(adfDoc, { includeEmbeddedPlaceholder = true } = {}) {
   let text = "";
   function walk(node) {
     if (!node) return;
     if (node.type === "text" && typeof node.text === "string") { text += node.text; return; }
     if (node.type === "hardBreak") { text += "\n"; return; }
     if (["media", "mediaSingle", "mediaGroup", "extension", "inlineExtension"].includes(node.type)) {
-      text += " [embedded object] ";
+      // SV-M4: only emit the placeholder for LLM input (default). Length rules pass
+      // includeEmbeddedPlaceholder:false so embeds don't count as ~19 chars of real text.
+      if (includeEmbeddedPlaceholder) text += " [embedded object] ";
       return;
     }
     if (Array.isArray(node.content)) {
@@ -776,12 +778,19 @@ export function collectHeadings(adfDoc) {
     collect(n);
     return t.trim();
   }
+  // SV-m5: headings nested inside these containers are LOCAL labels (a table-cell title,
+  // a panel header, a macro body), not part of the page outline — collecting them produced
+  // false hierarchy skips / over-counts. Don't descend into them for the outline.
+  const NON_FLOW = new Set([
+    "table", "tableRow", "tableCell", "tableHeader",
+    "panel", "expand", "nestedExpand", "bodiedExtension",
+  ]);
   function walk(node) {
     if (!node) return;
     if (node.type === "heading") {
       out.push({ level: node.attrs?.level || 1, text: textOf(node) });
     }
-    if (Array.isArray(node.content)) node.content.forEach(walk);
+    if (Array.isArray(node.content) && !NON_FLOW.has(node.type)) node.content.forEach(walk);
   }
   walk(adfDoc);
   return out;

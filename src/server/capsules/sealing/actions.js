@@ -174,13 +174,20 @@ const sealArtifact = async (req) => {
   const { attachmentId } = req.payload;
   const operatorAccountId = req.context.accountId;
 
-  // Guard: reject if already sealed by a different user
+  // Guard: reject if already sealed by a DIFFERENT user — but treat an EXPIRED seal as
+  // absent (SV-M8). The expiry sweep only notifies and never deletes, so an expired-but-
+  // unswept seal would otherwise block a legitimate re-seal until the sweep runs.
   const existingSeal = await kvs.get(`protection-${attachmentId}`);
   if (existingSeal && existingSeal.lockedBy && existingSeal.lockedBy !== operatorAccountId) {
-    return {
-      success: false,
-      reason: "Attachment is already sealed by another user",
-    };
+    const expired = existingSeal.expiresAt && new Date(existingSeal.expiresAt) < new Date();
+    if (!expired) {
+      return {
+        success: false,
+        reason: "Attachment is already sealed by another user",
+      };
+    }
+    // Expired and not yet swept — clear it and fall through to re-seal.
+    await kvs.delete(`protection-${attachmentId}`).catch(() => {});
   }
 
   let realmKey =
