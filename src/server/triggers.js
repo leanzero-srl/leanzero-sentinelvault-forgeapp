@@ -20,7 +20,7 @@ import {
 } from "./capsules/validations/logic.js";
 import { evaluateRules } from "./infra/rules-engine.js";
 import { postValidationComment } from "./infra/validation-blueprints.js";
-import { readDocBody, readDocBodyAtVersion, writeDocBody, collectMediaFileIds, extractMediaSingleNodes, spliceMediaNodes, locateBodiedSectionNodes, replaceSectionBody, spliceSectionWrapper, hashAdf } from "./infra/doc-surgery.js";
+import { readDocBody, readDocBodyAtVersion, writeDocBody, collectMediaFileIds, extractMediaSingleNodes, spliceMediaNodes, locateBodiedSectionNodes, replaceSectionBody, spliceSectionWrapper, hashAdf, canonicalizeAdf } from "./infra/doc-surgery.js";
 
 // --- Helpers ---
 
@@ -434,7 +434,15 @@ async function restoreSealedSectionsPass(ctx, sectionSeals) {
 
     // Wrapper present — compare the canonical hash of its body to the sealed hash.
     const liveHash = hashAdf(wrapper.node.content);
-    if (seal.contentHash && liveHash === seal.contentHash) continue; // untouched
+    if (seal.contentHash && liveHash === seal.contentHash) {
+      // SV-M7: a 32-bit FNV hash is forgeable, so a matching hash alone is not proof of
+      // integrity. Confirm STRUCTURALLY against the stored snapshot before trusting it.
+      if (!snapshot?.bodyContent ||
+          JSON.stringify(canonicalizeAdf(wrapper.node.content)) === JSON.stringify(canonicalizeAdf(snapshot.bodyContent))) {
+        continue; // genuinely untouched (or no snapshot to compare against)
+      }
+      // hash matched but canonical content differs → forged collision → fall through to restore.
+    }
 
     // Approved section editor (Edit Requests) — allow the edit and re-baseline so
     // future reverts compare against the edited content.
