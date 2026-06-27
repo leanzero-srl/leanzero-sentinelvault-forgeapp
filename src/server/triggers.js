@@ -39,6 +39,9 @@ async function resolveAppAccountId() {
         const myself = await myselfResponse.json();
         systemAccountId = myself.accountId;
         await kvs.set("app-account-id", systemAccountId);
+      } else {
+        // SV-M3: surface a non-ok /user/current so a persistent 401/403/429 is visible.
+        console.error(`[APP-ACCOUNT] /user/current returned ${myselfResponse.status} — app account id unresolved`);
       }
     } catch (e) {
       console.error("Error fetching App Account ID:", e);
@@ -109,7 +112,14 @@ export async function pageContentTrigger(event) {
 
     // Prevent infinite loops — ignore actions made by our own app
     const systemAccountId = await resolveAppAccountId();
-    if (systemAccountId && atlassianId === systemAccountId) {
+    // SV-M3: if we can't resolve our own account id, we cannot distinguish our own restore
+    // re-saves from a real edit. Fail CLOSED — skip body-mutating work this run rather than
+    // risk an unbounded revert / version-churn loop.
+    if (!systemAccountId) {
+      console.error("[PAGE-PROTECT] App account id unresolved — skipping body protection this run (fail-closed).");
+      return;
+    }
+    if (atlassianId === systemAccountId) {
       return;
     }
 
@@ -192,13 +202,14 @@ export async function pageContentTrigger(event) {
       break;
     }
 
-    // Dispatch notifications once (post-loop), regardless of write success.
-    for (const n of notifyMap.values()) {
-      try { await dispatchPipelineNotification(n); }
-      catch (e) { console.error("[PAGE-PROTECT] notify error:", e); }
-    }
-
+    // SV-M2: only notify after a CONFIRMED write. If every attempt 409'd or errored
+    // (anyChange false), the content is still tampered — don't tell the owner it was
+    // "restored/reverted".
     if (anyChange) {
+      for (const n of notifyMap.values()) {
+        try { await dispatchPipelineNotification(n); }
+        catch (e) { console.error("[PAGE-PROTECT] notify error:", e); }
+      }
       await touchSealTimestamp();
     }
 
@@ -268,11 +279,20 @@ async function restoreMediaPass(ctx, sealFileMap) {
   }
 
   const violatedFileIds = new Set(violations.map(({ fileId }) => fileId));
-  const prevVersion = ctx.currentVersion - 1;
-  const { adfDoc: previousAdf } = await readDocBodyAtVersion(ctx.pageId, prevVersion);
-  const restoredEntries = extractMediaSingleNodes(previousAdf, violatedFileIds);
+  // SV-M6: the version still containing the sealed media may not be exactly currentVersion-1
+  // (a second edit or a trigger lag pushes it back), which used to permanently bypass
+  // protection. Walk backward a bounded number of versions until the media block(s) are found.
+  let restoredEntries = [];
+  const MAX_LOOKBACK = 5;
+  for (let v = ctx.currentVersion - 1; v >= 1 && v >= ctx.currentVersion - MAX_LOOKBACK; v--) {
+    try {
+      const { adfDoc: olderAdf } = await readDocBodyAtVersion(ctx.pageId, v);
+      const found = extractMediaSingleNodes(olderAdf, violatedFileIds);
+      if (found.length > 0) { restoredEntries = found; break; }
+    } catch (_) { /* best effort */ }
+  }
   if (restoredEntries.length === 0) {
-    console.warn("[PAGE-PROTECT] Could not find sealed media in previous version — skipping");
+    console.warn("[PAGE-PROTECT] Could not find sealed media in recent versions — skipping");
     return;
   }
 
@@ -328,6 +348,14 @@ async function collectSectionSealsForPage(pageId) {
 }
 
 // --- Pipeline pass: restore tampered / removed sealed sections ---
+// Flatten the visible text of a node (used to anchor a removed section by its heading). SV-m6.
+function sectionHeadingText(node) {
+  let t = "";
+  const walk = (x) => { if (x?.type === "text") t += x.text || ""; if (Array.isArray(x?.content)) x.content.forEach(walk); };
+  walk(node);
+  return t.trim();
+}
+
 async function restoreSealedSectionsPass(ctx, sectionSeals) {
   const now = Date.now();
   const wrappers = new Map();
@@ -336,8 +364,27 @@ async function restoreSealedSectionsPass(ctx, sectionSeals) {
   }
 
   for (const seal of sectionSeals) {
-    // Owner edits their own sealed section freely.
-    if (seal.lockedBy === ctx.atlassianId) continue;
+    // Owner edits their own sealed section freely — but RE-BASELINE the snapshot (SV-M5),
+    // otherwise a later unrelated non-owner save sees the stale hash and reverts the owner's
+    // own edit, destroying it and falsely blaming the non-owner.
+    if (seal.lockedBy === ctx.atlassianId) {
+      const ownWrap = wrappers.get(seal.sectionId);
+      if (ownWrap) {
+        const ownHash = hashAdf(ownWrap.node.content);
+        if (seal.contentHash && ownHash !== seal.contentHash) {
+          try {
+            const newBody = JSON.parse(JSON.stringify(ownWrap.node.content || []));
+            await kvs.set(`section-protection-${seal.sectionId}`, { ...seal, contentHash: ownHash });
+            await kvs.set(`section-snapshot-${seal.sectionId}`, {
+              wrapperNode: JSON.parse(JSON.stringify(ownWrap.node)),
+              bodyContent: newBody, hash: ownHash, version: null, originalIndex: ownWrap.originalIndex,
+            });
+            console.warn(`[SECTION] Owner re-baselined section ${seal.sectionId}`);
+          } catch (e) { console.error("[SECTION] owner re-baseline failed:", e); }
+        }
+      }
+      continue;
+    }
     // Expired seals are inert (full auto-unseal handled by the expiry sweep).
     if (seal.expiresAt && new Date(seal.expiresAt).getTime() <= now) continue;
 
@@ -345,28 +392,38 @@ async function restoreSealedSectionsPass(ctx, sectionSeals) {
     const snapshot = await kvs.get(`section-snapshot-${seal.sectionId}`);
 
     if (!wrapper) {
-      // The entire sealed-section macro was deleted/cut — re-insert it.
-      let entry = null;
-      if (snapshot?.wrapperNode) {
-        entry = {
-          node: snapshot.wrapperNode,
-          originalIndex: typeof snapshot.originalIndex === "number"
-            ? snapshot.originalIndex
-            : ctx.adfDoc.content?.length || 0,
-        };
-      } else if (ctx.currentVersion && ctx.currentVersion >= 2) {
-        // Fallback: pull the wrapper from the previous page version.
+      // The entire sealed-section macro was deleted/cut — re-insert the SEALED wrapper.
+      const restoreNode = snapshot?.wrapperNode || null;
+      // SV-m6: position the restore by ANCHORING to the section's preceding heading (read from
+      // the previous version) rather than the FROZEN seal-time originalIndex, which drops the
+      // wrapper in the wrong place when blocks shifted above it since sealing.
+      let originalIndex = typeof snapshot?.originalIndex === "number"
+        ? snapshot.originalIndex
+        : (ctx.adfDoc.content?.length || 0);
+      let prevNode = null;
+      if (ctx.currentVersion && ctx.currentVersion >= 2) {
         try {
           const { adfDoc: prev } = await readDocBodyAtVersion(ctx.pageId, ctx.currentVersion - 1);
           const prevWrap = locateBodiedSectionNodes(prev).find((w) => w.sectionId === seal.sectionId);
-          if (prevWrap) entry = { node: prevWrap.node, originalIndex: prevWrap.originalIndex };
+          if (prevWrap) {
+            prevNode = prevWrap.node;
+            originalIndex = prevWrap.originalIndex; // recent absolute position (better than seal-time)
+            const before = (prev.content || [])[prevWrap.originalIndex - 1];
+            const anchorText = before?.type === "heading" ? sectionHeadingText(before) : null;
+            if (anchorText) {
+              const cur = ctx.adfDoc.content || [];
+              const at = cur.findIndex((b) => b?.type === "heading" && sectionHeadingText(b) === anchorText);
+              if (at >= 0) originalIndex = at + 1; // insert right after the same heading
+            }
+          }
         } catch (_) { /* best effort */ }
       }
-      if (!entry) {
+      const finalNode = restoreNode || prevNode;
+      if (!finalNode) {
         console.warn(`[SECTION] Cannot restore removed section ${seal.sectionId} — no snapshot or prior version`);
         continue;
       }
-      spliceSectionWrapper(ctx.adfDoc, [entry]);
+      spliceSectionWrapper(ctx.adfDoc, [{ node: finalNode, originalIndex }]);
       ctx.changed = true;
       ctx.notifications.push({
         type: "section-revert", targetId: seal.sectionId,
@@ -426,7 +483,11 @@ async function runValidationPhase(event, pageId, atlassianId) {
   if (pageData.status && pageData.status !== "current") return;
 
   const version = pageData.version?.number;
+  if (!version) return; // SV-m1: an undefined version would bypass dedup entirely
   if (await wasVersionChecked(pageId, version)) return;
+  // SV-m1: claim this version up-front (before any side effect) so a duplicate updated:page
+  // delivery for the same version can't double-post advisory comments / state writes.
+  await markVersionChecked(pageId, version);
 
   // Fetch page labels (required-label rule).
   let labels = [];
@@ -464,9 +525,27 @@ async function runValidationPhase(event, pageId, atlassianId) {
       for (let attempt = 0; attempt < 3; attempt++) {
         try {
           const current = await readDocBody(pageId);
+          // SV-M1: if the page changed since we evaluated it (a concurrent newer save), DON'T
+          // overwrite that content with our last-good body — abort and let the newer version's
+          // own validation pass handle it.
+          if ((current.pageData.version?.number || 0) !== version) {
+            console.warn(`[VALIDATE] page changed during revert (evaluated v${version}, now v${current.pageData.version?.number}) — skipping revert`);
+            break;
+          }
           const { adfDoc: goodAdf } = await readDocBodyAtVersion(pageId, lastGood);
           const putRes = await writeDocBody(pageId, current.pageData, goodAdf, "(Sentinel Vault reverted non-compliant content)");
-          if (putRes.ok) { reverted = true; break; }
+          if (putRes.ok) {
+            reverted = true;
+            // SV-m2: the content is compliant again — reconcile the gate state so the inline
+            // panel / doc ribbon don't keep showing a stale "failed".
+            if (modes.gate) {
+              try {
+                const newVersion = (current.pageData.version?.number || version) + 1;
+                await writeValidationState(pageId, { state: "passed", violations: [], version: newVersion, checkedAt: new Date().toISOString() });
+              } catch (_) { /* best effort */ }
+            }
+            break;
+          }
           if (putRes.status === 409) { await new Promise((r) => setTimeout(r, Math.pow(2, attempt) * 500)); continue; }
           break;
         } catch (e) { console.error("[VALIDATE] revert error:", e); break; }
