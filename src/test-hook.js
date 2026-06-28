@@ -7,6 +7,7 @@
  * and grants — the deterministic state the harness asserts against.
  */
 import { kvs } from "@forge/kvs";
+import { expirySweepTask } from "./server/triggers";
 
 const json = (statusCode, body) => ({
   statusCode,
@@ -48,6 +49,18 @@ export async function testStateTrigger(req) {
       if (!key) return json(400, { error: "key required" });
       await kvs.delete(key);
       return json(200, { deleted: key });
+    }
+    // DEV-ONLY: invoke a scheduled task on demand so the harness can assert the scheduled tier
+    // deterministically (no waiting for the daily/hourly cron).
+    if (what === "invoke") {
+      const fn = q(req, "fn");
+      if (fn === "expirySweep") {
+        const r = await expirySweepTask();
+        let result = null;
+        try { result = JSON.parse(r?.body || "null"); } catch (_) { /* non-JSON */ }
+        return json(200, { invoked: fn, result });
+      }
+      return json(400, { error: `unknown fn=${fn}` });
     }
     return json(400, { error: `unknown what=${what}` });
   } catch (e) {
