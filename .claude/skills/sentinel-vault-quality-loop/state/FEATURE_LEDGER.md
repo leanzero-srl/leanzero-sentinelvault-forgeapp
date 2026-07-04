@@ -3,17 +3,25 @@ status legend: discovered -> researched -> designed -> implemented -> verified |
 
 | # | Feature | Surface | Status | Fn | Distinct | Motion | Perf | A11y | Priority | Branch |
 |---|---------|---------|--------|----|----------|--------|------|------|----------|--------|
-| 1 | Sealed Sections group (picker, seal/unseal, refresh) | Inline panel | discovered | 4 | 3 | 2 | 3 | 3 | 15.0 | — |
+| 42 | Workflow state engine & state chip | Doc ribbon + realm console + backend | discovered | 1 | 1 | 1 | 1 | 1 | 23.0 | — |
+| 43 | Multi-approver transitions & approvals inbox | Realm console + inline panel + comments | discovered | 1 | 1 | 1 | 1 | 1 | 22.0 | — |
+| 45 | Review dates & expiry transitions | Backend → sweep + notices | discovered | 1 | 1 | 1 | 1 | 1 | 22.0 | — |
+| 44 | Enforced Approved state (revert-on-tamper) | Backend → ribbon/comments | discovered | 1 | 1 | 1 | 1 | 1 | 21.0 | — |
+| 48 | Workflow dashboard & CSV export | Realm console (space page) | discovered | 1 | 1 | 1 | 1 | 1 | 21.0 | — |
+| 46 | Transition conditions (rules + AI gate) | Backend + realm console config | discovered | 1 | 1 | 1 | 1 | 1 | 19.0 | — |
+| 47 | Native content-state mirroring | Backend → native status chip | discovered | 1 | 1 | 1 | 1 | 1 | 16.0 | — |
+| 1 | Sealed Sections group (picker, seal/unseal) | Inline panel | discovered | 3 | 3 | 2 | 3 | 3 | 15.6 | — |
 | 2 | Watch / Notify me | Inline panel + overlay + realm console | discovered | 4 | 3 | 2 | 2 | 3 | 14.6 | — |
+| 6 | Edit requests & grants — attachments | Inline panel + realm console | discovered | 3 | 3 | 3 | 2 | 3 | 14.6 | — |
 | 3 | Notifications system (4 channels) | Backend → comments/banners/toasts | discovered | 4 | 3 | 2 | 4 | 3 | 14.4 | — |
 | 4 | Seal / relinquish actions | Inline panel + overlay | discovered | 5 | 4 | 3 | 3 | 3 | 14.2 | — |
 | 5 | Access Control tab (activation, stewards, guilds, pending) | Realm console | discovered | 3 | 3 | 3 | 2 | 2 | 14.2 | — |
-| 6 | Edit requests & grants — attachments | Inline panel + realm console | discovered | 4 | 3 | 3 | 2 | 3 | 14.0 | — |
 | 7 | Validations tab — per-space rules | Realm console | discovered | 4 | 3 | 2 | 4 | 2 | 14.0 | — |
 | 8 | Delete/trash protection engine | Backend → ribbon/comments | discovered | 5 | 3 | 2 | 4 | 3 | 13.8 | — |
-| 9 | Validations tab — global rules + Semantic AI config | Steward console | discovered | 4 | 3 | 2 | 4 | 2 | 13.0 | — |
+| 9 | Validations tab — global rules + Semantic AI config | Steward console | discovered | 3 | 3 | 2 | 4 | 2 | 13.6 | — |
 | 10 | My Sealed Files tab (+ edit-request inbox) | Realm console | discovered | 4 | 3 | 3 | 3 | 2 | 13.0 | — |
 | 11 | Reservation Duration tab | Realm console | discovered | 4 | 3 | 2 | 4 | 2 | 13.0 | — |
+| 21 | Validation group (status, re-check, violations) | Inline panel | discovered | 3 | 4 | 2 | 3 | 3 | 13.0 | — |
 | 12 | Attachment cards & grouping (expand, thumbnails, 2-phase load) | Inline panel | discovered | 5 | 4 | 3 | 2 | 3 | 12.8 | — |
 | 13 | Upload zone (drag-drop, 4 MB) | Inline panel | discovered | 4 | 4 | 3 | 3 | 3 | 12.8 | — |
 | 14 | Doc ribbon (counts, alerts, status chips) | Doc ribbon | discovered | 4 | 4 | 2 | 4 | 3 | 12.8 | — |
@@ -23,7 +31,6 @@ status legend: discovered -> researched -> designed -> implemented -> verified |
 | 18 | Labels (add/remove) | Inline panel + overlay | discovered | 4 | 3 | 2 | 3 | 2 | 12.6 | — |
 | 19 | Realm Sealed Files tab (steward audit view) | Realm console | discovered | 4 | 3 | 3 | 2 | 2 | 12.6 | — |
 | 20 | Delete / restore / purge actions | Inline panel + overlay | discovered | 4 | 3 | 3 | 3 | 3 | 12.4 | — |
-| 21 | Validation group (status, re-check, violations) | Inline panel | discovered | 4 | 4 | 2 | 3 | 3 | 12.4 | — |
 | 22 | Macro tab (auto-insert + position) | Realm console | discovered | 4 | 3 | 2 | 4 | 3 | 12.4 | — |
 | 23 | Sealed-section tamper detection & restore engine | Backend → section macro/comments | discovered | 4 | 3 | 1 | 4 | 3 | 12.0 | — |
 | 24 | Semantic AI validation engine (Forge LLM worker) | Backend → AI Review group | discovered | 4 | 3 | 2 | 3 | 3 | 12.0 | — |
@@ -37,9 +44,9 @@ status legend: discovered -> researched -> designed -> implemented -> verified |
 | 32 | Section edit requests & grants | Inline panel + section macro | discovered | 4 | 3 | 2 | 3 | 3 | 11.0 | — |
 | 33 | Overlay management modal | Overlay | discovered | 4 | 3 | 4 | 2 | 3 | 10.4 | — |
 | 34 | Conditions & Validations engine (advisory/gate/revert) | Backend → panel/ribbon/comments | discovered | 4 | 3 | 2 | 4 | 3 | 10.4 | — |
+| 37 | Realm audit & seal index maintenance | Realm console + backend cron | discovered | 3 | 2 | 2 | 3 | 3 | 10.2 | — |
 | 35 | Onboarding explainer | Inline panel | discovered | 3 | 3 | 1 | 5 | 3 | 10.0 | — |
 | 36 | Live status sync (5s stamp polling) | Ribbon + panel + overlay | discovered | 4 | 3 | 2 | 2 | 3 | 9.6 | — |
-| 37 | Realm audit & seal index maintenance | Realm console + backend cron | discovered | 4 | 2 | 2 | 3 | 3 | 9.6 | — |
 | 38 | Auto-insert / replace-attachments macro | Backend → page ADF | discovered | 4 | 3 | 2 | 4 | 3 | 9.4 | — |
 | 39 | Theming, dark mode & token system | All 7 surfaces | discovered | 4 | 3 | 2 | 4 | 3 | 9.4 | — |
 | 40 | Panel setup (macro preferences dialog) | Panel setup | discovered | 4 | 4 | 4 | 5 | 3 | 9.0 | — |
@@ -47,13 +54,13 @@ status legend: discovered -> researched -> designed -> implemented -> verified |
 
 ---
 
-## 1. Sealed Sections group (picker, seal/unseal, refresh)
-- **Does:** From the panel's Sealed Sections group, a user picks a page heading and seals that heading + its content; the app wraps it in the bodied "Sealed Section" macro with a stable sectionId and snapshots it. Owner/steward can unseal (unwraps in place) or refresh the snapshot after a sanctioned change. "No headings to seal" empty state.
+## 1. Sealed Sections group (picker, seal/unseal)
+- **Does:** From the panel's Sealed Sections group, a user picks a page heading and seals that heading + its content; the app wraps it in the bodied "Sealed Section" macro with a stable sectionId and snapshots it. Owner/steward can unseal (unwraps in place). "No headings to seal" empty state. NO snapshot-refresh control exists in any UI (see notes).
 - **Lives:** `src/ui/surfaces/inline-panel/index.jsx` (SectionRow etc.), `src/ui/tokens/inline-panel.css`; backend `src/server/capsules/section-seals/{actions,logic}.js`, `src/server/infra/doc-surgery.js` (buildSealedSectionNode, computeSectionRange).
-- **Core calls:** `list-page-headings`, `enumerate-section-seals`, `seal-section`, `unseal-section`, `refresh-section-snapshot`.
-- **Baseline:** Fn 4 · Distinct 3 · Motion 2 · Perf 3 · A11y 3.
+- **Core calls:** `list-page-headings`, `enumerate-section-seals`, `seal-section`, `unseal-section`. (`refresh-section-snapshot` resolver exists at `section-seals/actions.js:294` but has ZERO UI callers.)
+- **Baseline:** Fn 3 · Distinct 3 · Motion 2 · Perf 3 · A11y 3.
 - **Impact 5** — content sealing is a headline v4 capability. **Effort 3** — panel group UI plus server wrap/unwrap paths. **Risk 3** — seal-section does live ADF surgery with 409 retries and staleness checks; a wrong range computation mangles pages.
-- **Notes-risks:** Heading pickers are real buttons (good); group collapse carets are unlabeled `▾` text. Section-level N+1 resolver calls per SectionRow contribute to the panel's fan-out. Non-heading blocks seal only themselves — behavior worth surfacing in UI copy.
+- **Notes-risks:** PHANTOM FEATURE (Fn 3 evidence): the snapshot-refresh path is backend-only — SectionRow offers only Unseal / Request Edit (`inline-panel/index.jsx:1051–1104`), yet `docs/features/content-sealing.md` (Troubleshooting) instructs users to "use refresh snapshot", an instruction that cannot be followed anywhere in the product. Either wire a UI affordance or fix the docs. Heading pickers are real buttons (good); group collapse carets are unlabeled `▾` text. Section-level N+1 resolver calls per SectionRow contribute to the panel's fan-out. Non-heading blocks seal only themselves — behavior worth surfacing in UI copy.
 
 ## 2. Watch / Notify me
 - **Does:** Watch a file sealed by someone else; when the seal is released (manual, expiry, steward override) each watcher gets a release notice via comment @mention. Toggle off with "Watching".
@@ -88,12 +95,12 @@ status legend: discovered -> researched -> designed -> implemented -> verified |
 - **Notes-risks:** CONFIRMED latent bug: `findOperators` catch calls `setError(...)` which doesn't exist (realm-console/index.jsx:1136) — operator-search failure throws a ReferenceError (Fn 3 evidence). `enumerate-teams` eagerly fetches up to 200 groups on load; body-wide MutationObservers wire infinite scroll; activation "select" is a div tabIndex=0 with blur-timeout close (A11y 2 evidence).
 
 ## 6. Edit requests & grants — attachments
-- **Does:** Non-owner requests edit access with an optional reason (button cycles Request Edit → Requested → Can Edit / Declined); owner approves/denies from the in-panel inbox or realm console My Sealed Files; stewards can approve. Approved editor's upload is kept and the seal re-baselines to it; revoke restores enforcement. One pending request per file; 48h cooldown after denial; all swept on seal teardown.
+- **Does:** Non-owner requests edit access with an optional reason (button cycles Request Edit → Requested → Can Edit / Declined); owner approves/denies from the in-panel inbox or realm console My Sealed Files; stewards can approve. Approved editor's upload is kept and the seal re-baselines to it. One pending request per file; 48h cooldown after denial; all swept on seal teardown. NO revoke or grant-listing exists in any UI (see notes).
 - **Lives:** `src/ui/surfaces/inline-panel/index.jsx` (reason input, inbox), `realm-console/index.jsx` (inbox); backend `src/server/capsules/editreq/{actions,logic}.js`, re-baseline in `src/server/triggers.js:handleSealedArtifactEdit`.
-- **Core calls:** `request-edit-access`, `check-edit-request`, `list-edit-requests`, `list-my-edit-requests`, `approve-edit-request`, `deny-edit-request`, `revoke-edit-grant`, `list-edit-grants`.
-- **Baseline:** Fn 4 · Distinct 3 · Motion 3 · Perf 2 · A11y 3.
+- **Core calls:** `request-edit-access`, `check-edit-request`, `list-edit-requests`, `list-my-edit-requests`, `approve-edit-request`, `deny-edit-request`. (`revoke-edit-grant` at `editreq/actions.js:402` and `list-edit-grants` exist as resolvers but have ZERO UI callers.)
+- **Baseline:** Fn 3 · Distinct 3 · Motion 3 · Perf 2 · A11y 3.
 - **Impact 5** — the sanctioned-collaboration path that makes sealing livable. **Effort 3** — two inboxes + request states across surfaces. **Risk 4** — grant honor + seal re-baseline is core contract C7; a regression silently reverts approved work or keeps stale baselines. Lower confidence on any change near `getActiveEditGrant`/TTL semantics — flag for extra verification.
-- **Notes-risks:** `check-edit-request` fires per sealed-by-other card (N+1). Reason input has autoFocus + Enter/Escape (good pattern to keep). `list-my-edit-requests` does a full KVS scan.
+- **Notes-risks:** PHANTOM FEATURE (Fn 3 evidence): once approved, a grant cannot be revoked or even listed from any surface — the enforcement-restore half of the lifecycle is UI-missing. `check-edit-request` fires per sealed-by-other card (N+1). Reason input has autoFocus + Enter/Escape (good pattern to keep). `list-my-edit-requests` does a full KVS scan.
 
 ## 7. Validations tab — per-space rules
 - **Does:** Space stewards author page rules scoped to the space (same editor as global); space rules override global; empty = inherit.
@@ -112,12 +119,12 @@ status legend: discovered -> researched -> designed -> implemented -> verified |
 - **Notes-risks:** On failed trash-restore the seal state is deliberately cleaned and a "delete" violation sent — that fallback is contract-adjacent; keep notifications after the outcome is known.
 
 ## 9. Validations tab — global rules + Semantic AI config
-- **Does:** Steward authors tenant-wide page rules (required headings/tables/labels/macros, hierarchy, length limits), picks enforcement mode (Advisory / Gate / Hard revert), and configures Semantic AI review: enable toggle, Haiku-only model dropdown, custom rules, style guide, tone, compliance, severity threshold, notify-author, monthly token budget. "Runs on Atlassian" badge.
+- **Does:** Steward authors tenant-wide page rules (required headings/tables/labels, hierarchy, length limits), picks enforcement mode (Advisory / Gate / Hard revert), and configures Semantic AI review: enable toggle, Haiku-only model dropdown, custom rules, style guide, tone, compliance, severity threshold, notify-author, monthly token budget. "Runs on Atlassian" badge. NO required-macro rule authoring and NO token-usage/audit display exist in any UI (see notes).
 - **Lives:** `src/ui/surfaces/steward-console/index.jsx` (tab shell), shared `src/ui/kit/ValidationsEditor.jsx`; backend `src/server/capsules/validations/actions.js` (`validation-config-global`, Haiku clamp on save).
-- **Core calls:** `load-validation-config`, `store-validation-config`, `list-ai-models`, `get-validation-audit`.
-- **Baseline:** Fn 4 · Distinct 3 · Motion 2 · Perf 4 · A11y 2.
+- **Core calls:** `load-validation-config`, `store-validation-config`, `list-ai-models`. (`get-validation-audit` exists as a resolver but has ZERO UI callers.)
+- **Baseline:** Fn 3 · Distinct 3 · Motion 2 · Perf 4 · A11y 2.
 - **Impact 4** — the control plane for both rule engines. **Effort 3** — dense form; AI block has many fields. **Risk 2** — config shape is stable; the Haiku clamp is enforced at three layers so UI mistakes can't over-spend.
-- **Notes-risks:** Same MiniSelect A11y debt as row 7. Token budget and usage audit are per space — the global tab should make that scoping legible.
+- **Notes-risks:** PHANTOM FEATURES (Fn 3 evidence): (a) the rules engine supports `required-macro` (`rules-engine.js:39`) but `ValidationsEditor.jsx` RULE_TYPES (lines 46–53) offers only 6 types with no macro rule — unauthorable from both the steward and realm tabs; (b) token usage/audit data is invisible in the app, yet `docs/features/semantic-ai-validations.md` step 5 says "Check the monthly token usage in the space console". Same MiniSelect A11y debt as row 7. Token budget and usage audit are per space — the global tab should make that scoping legible.
 
 ## 10. My Sealed Files tab (+ edit-request inbox)
 - **Does:** Any user sees their seals in the space (file, page, seal date, time remaining) with Relinquish; approves/denies incoming edit requests on their files; non-stewards get a Request Steward Access banner with cooldown messaging.
@@ -152,7 +159,7 @@ status legend: discovered -> researched -> designed -> implemented -> verified |
 - **Notes-risks:** 4 MB cap is a resolver-payload constraint; error message clarity matters. Keyboard/SR affordance of the drop zone unverified.
 
 ## 14. Doc ribbon (counts, alerts, status chips)
-- **Does:** Persistent page banner: sealed-count summary, dismissable seal-conflict/expiry alerts addressed to the viewer, validation status chip (gate mode), "AI review: N findings" chip, Manage Attachments button opening the overlay. Hides itself when nothing to report. Gated by Enable Page Status Banners.
+- **Does:** Persistent page banner: sealed-count summary, dismissable seal-conflict/expiry alerts addressed to the viewer, validation status chip (gate mode), "AI review: N findings" chip, Manage Attachments button opening the overlay. Hides itself when nothing to report. NOT gated by Enable Page Status Banners: `ENABLE_PAGE_BANNERS` only gates server-side alert dispatch/recording (`bulletins/logic.js:45`, `triggers.js:1048`) — `doc-ribbon/index.jsx` never loads that toggle, so the bar (counts, chips, Manage Attachments) renders regardless; the toggle only starves it of alert content.
 - **Lives:** `src/ui/surfaces/doc-ribbon/index.jsx` (239), `src/ui/tokens/doc-ribbon.css` (377); opens overlay via `new Modal({ resource:"overlay", size:"max" })`.
 - **Core calls:** init burst of 4 invokes + `check-seal-stamp` 5s poll, `recent-dispatches`, `acknowledge-dispatch`, `get-validation-state`, `get-ai-findings`.
 - **Baseline:** Fn 4 · Distinct 4 · Motion 2 · Perf 4 · A11y 3.
@@ -160,7 +167,7 @@ status legend: discovered -> researched -> designed -> implemented -> verified |
 - **Notes-risks:** Alerts capped to first item with "+N more" and no way to view the rest (Fn gap). Off-token hardcodes: `#7C3AED` AI chip, `#F59E0B/#1F2937` awaiting chip. No reduced-motion guard in its sheet; status chips have no live region (SR-invisible updates); shield SVG lacks aria-hidden.
 
 ## 15. Sealed-section macro surface (config card + view frame)
-- **Does:** On insert: explainer + "Insert section" button. In view mode: "Sealed by Sentinel Vault" badge frame rendering the protected body via ADF-renderer iframe (text fallback states edits auto-revert). Header shows "Sealed by … until …". Sections sealed by others show Request Edit.
+- **Does:** On insert: explainer + "Insert section" button. In view mode: a frame with a static "Sealed by Sentinel Vault" badge (`section-setup/index.jsx:83` — no owner name, no expiry) rendering the protected body via ADF-renderer iframe (text fallback states edits auto-revert). The "Sealed by … until …" meta and the Request Edit affordance for others' sections live in the inline panel's SectionRow (rows 1/32), NOT in this macro frame.
 - **Lives:** `src/ui/surfaces/section-setup/index.jsx` (97), `src/ui/tokens/section-setup.css` (124, own `--sec-*` namespace); manifest bodied macro `sentinel-vault-sealed-section` (same resource for view and config).
 - **Core calls:** context read; ADF renderer iframe (`createAdfRendererIframeProps` best-effort).
 - **Baseline:** Fn 3 · Distinct 4 · Motion 1 · Perf 5 · A11y 4.
@@ -192,12 +199,12 @@ status legend: discovered -> researched -> designed -> implemented -> verified |
 - **Notes-risks:** Add/remove buttons rely on `title` attributes only (A11y 2 evidence); label edit triggers the full-refresh pattern.
 
 ## 19. Realm Sealed Files tab (steward audit view)
-- **Does:** Stewards see all seals in the space: column picker, sort, 3-col cards with expandable thumbnail/download/properties, Force Unseal (needs global allowance), Watch, infinite scroll + Show more, and a realm audit/scan button that rebuilds the index asynchronously with status polling.
+- **Does:** Stewards see all seals in the space: column picker, sort, 3-col cards with expandable thumbnail/download/properties, Force Unseal (needs global allowance), Watch, infinite scroll + Show more. NO audit/scan button renders (see notes) — the steward-facing trigger for the realm audit does not exist in the UI.
 - **Lives:** `src/ui/surfaces/realm-console/index.jsx`, `src/ui/tokens/realm-console.css`; backend `src/server/capsules/realms/actions.js`, index in `space-protection-{spaceId}-*`.
-- **Core calls:** `enumerate-realm-seals` (cursor-paged), `steward-unseal`, `watch-artifact`/`check-watch`, `launch-realm-audit`, `check-audit-status`, `identify-realm`.
+- **Core calls:** `enumerate-realm-seals` (cursor-paged), `steward-unseal`, `watch-artifact`/`check-watch`, `identify-realm`. (`launch-realm-audit`/`check-audit-status` are invoked only from the dead `onReconstructIndex` handler — see notes.)
 - **Baseline:** Fn 4 · Distinct 3 · Motion 3 · Perf 2 · A11y 2.
 - **Impact 4** — the steward's oversight cockpit. **Effort 3** — pickers, infinite scroll, force actions. **Risk 3** — infinite scroll is wired via body-wide MutationObservers (brittle, render-hot); replacing it touches list lifecycle; medium confidence, verify scroll behavior on long lists.
-- **Notes-risks:** `check-watch` N+1 per file on every list change. Force Unseal is double-gated (toggle + steward) per contract C15 — keep both gates visible in UI state.
+- **Notes-risks:** DEAD FRONTEND CODE: `onReconstructIndex` (realm-console/index.jsx:986) and `scanStatus`/`isScanning` (437–438) are defined but referenced by nothing in the file's JSX — no button, no status display; likewise `artifactsPageSize`/`onResultsPerPageChange` (434, 1210) have no rendered control. Do NOT "polish" this phantom UI in an iteration — either render real controls (see row 37) or delete the dead code. `check-watch` N+1 per file on every list change. Force Unseal is double-gated (toggle + steward) per contract C15 — keep both gates visible in UI state.
 
 ## 20. Delete / restore / purge actions
 - **Does:** Delete sends unsealed attachments to trash (refuses files sealed by others); Restore recovers trashed attachments with seal data; Purge permanently removes leftover seal records for deleted files. Each behind its own global toggle, buttons invisible when disabled. Inline confirm bars (no native dialogs).
@@ -208,12 +215,12 @@ status legend: discovered -> researched -> designed -> implemented -> verified |
 - **Notes-risks:** Overlay sleeps 1s arbitrarily after delete. Buttons invisible (not disabled) when toggles are off — documented FAQ item; consider discoverability.
 
 ## 21. Validation group (status, re-check, violations)
-- **Does:** Panel group showing gate status (Passed / Issues found / Awaiting approval), violation list, and a Re-check button; only rendered when a gate status exists; stewards can approve a failed gate.
+- **Does:** Panel group showing gate status (Passed / Issues found / Awaiting approval), violation list, and a Re-check button; only rendered when a gate status exists. NO steward approval affordance exists in any UI (see notes).
 - **Lives:** `src/ui/surfaces/inline-panel/index.jsx`, `src/ui/tokens/inline-panel.css`; backend `src/server/capsules/validations/actions.js`.
-- **Core calls:** `get-validation-state`, `validate-page-now`, `approve-page-gate`.
-- **Baseline:** Fn 4 · Distinct 4 · Motion 2 · Perf 3 · A11y 3.
+- **Core calls:** `get-validation-state`, `validate-page-now`. (`approve-page-gate` resolver registered at `validations/actions.js:214` but has ZERO UI callers.)
+- **Baseline:** Fn 3 · Distinct 4 · Motion 2 · Perf 3 · A11y 3.
 - **Impact 4** — where authors actually see and resolve rule failures. **Effort 3** — states + approval affordance. **Risk 2** — read-mostly; `validate-page-now` is mutation-free and fails closed.
-- **Notes-risks:** Group hidden when no gate status — advisory-mode users never see in-panel results (Fn consideration). `#B45309` medium-severity hex is off-token.
+- **Notes-risks:** PHANTOM FEATURE (Fn 3 evidence): the panel's Validation group renders only a Re-check button (`inline-panel/index.jsx:983–985`) — the "Awaiting approval" state is displayable but UNRESOLVABLE from the UI, and `docs/features/conditions-validations.md` repeats the "a steward can approve" claim. Group hidden when no gate status — advisory-mode users never see in-panel results (Fn consideration). `#B45309` medium-severity hex is off-token.
 
 ## 22. Macro tab (auto-insert + position)
 - **Does:** Space stewards toggle auto-insert of the panel macro on seal and set position (top/bottom, default bottom).
@@ -248,7 +255,7 @@ status legend: discovered -> researched -> designed -> implemented -> verified |
 - **Notes-risks:** Role visibility uses `isOperatorSteward` (ignores override toggle) while force actions use `authorizeSteward` (includes it) — intentional split; keep it.
 
 ## 26. AI Review group (run, findings, dismiss/false-positive)
-- **Does:** Panel group (visible only when AI enabled for the space): Run AI review → "Reviewing…" → findings with severity chips HIGH/MEDIUM/LOW, category, excerpt, explanation, suggestion; per-finding Dismiss / False positive / restore; show-hidden; "No issues found"; collapsible group. Ribbon mirrors a findings-count chip.
+- **Does:** Panel group (visible only when AI enabled for the space): Run AI review → "Reviewing…" → findings rendered as severity (HIGH/MEDIUM/LOW) + ruleRef + explanation + suggestion (`inline-panel/index.jsx:907–913` — no category or excerpt is displayed, even if the model returns them); per-finding Dismiss / False positive / restore; show-hidden; "No issues found"; collapsible group. Ribbon mirrors a findings-count chip.
 - **Lives:** `src/ui/surfaces/inline-panel/index.jsx`, `src/ui/tokens/inline-panel.css` (`#7C3AED` AI purple hardcoded).
 - **Core calls:** `enqueue-page-validation`, `get-validation-job` (poll), `get-ai-findings`, `set-ai-finding-state`.
 - **Baseline:** Fn 5 · Distinct 3 · Motion 3 · Perf 3 · A11y 3.
@@ -269,7 +276,7 @@ status legend: discovered -> researched -> designed -> implemented -> verified |
 - **Core calls:** `load-bulletin-toggles` (ENABLE_TOAST_DISPATCHES), `list-breach-dispatches`.
 - **Baseline:** Fn 4 · Distinct 3 · Motion 3 · Perf 4 · A11y 3.
 - **Impact 3** — immediate feedback channel. **Effort 1** — thin wrapper. **Risk 1** — showFlag API is stable; worst case a missing toast.
-- **Notes-risks:** Toasts may not appear if the page refreshes immediately (documented). Forge-native flags limit styling — distinctiveness ceiling is platform-imposed.
+- **Notes-risks:** Toasts may not appear if the page refreshes immediately (documented). Forge-native flags limit styling — distinctiveness ceiling is platform-imposed. Not in this kit's inventory: the overlay fires its own persistent expired-reservation warning flags directly via showFlag (see row 33 notes).
 
 ## 29. Steward access request workflow
 - **Does:** Non-steward requests elevation from My Sealed Files → pending-confirmation banner → stewards approve/deny in Access Control (approve appends to space adminUsers) → denial = 48h re-request cooldown.
@@ -304,12 +311,12 @@ status legend: discovered -> researched -> designed -> implemented -> verified |
 - **Notes-risks:** No section-level `revoke`/`list-grants` resolvers exist (parity gap with attachments) — a real functional hole to consider designing in.
 
 ## 33. Overlay management modal
-- **Does:** Full-screen management from the ribbon: all page attachments in Sealed/Trash/Available card groups, search, sort (name/status/lapses/created), localStorage column picker, "Show more" pagination, seal/relinquish, watch, delete/purge with inline confirm, restore, inline-macro visibility toggle, refresh, Done.
+- **Does:** Full-screen management from the ribbon: all page attachments in Sealed/Trash/Available card groups, sort (name/status/lapses/created), localStorage column picker, "Show more" pagination, seal/relinquish, watch, delete/purge with inline confirm, restore, inline-macro visibility toggle, refresh, Done. NO search input exists anywhere in the file — the toolbar is only column picker + SortPicker + file count + Refresh (`overlay/index.jsx:1010–1037`).
 - **Lives:** `src/ui/surfaces/overlay/index.jsx` (1396), `src/ui/tokens/overlay.css` (1112), kit flash-messages + ThumbnailPreview. NOTE: `overlay` resource is not referenced by any manifest module — it is opened programmatically from the ribbon.
-- **Core calls:** `enumerate-panel-artifacts`, `seal-artifact`/`unseal-artifact`, `check-watch` (per sealed card), `delete-artifact`, `restore-sealed-artifact`, `purge-seal-record`, `inject-panel`/`extract-panel`/`store-doc-panel-prefs`, `check-seal-stamp` poll.
+- **Core calls:** `enumerate-doc-artifacts` (`overlay/index.jsx:558`), `seal-artifact`/`unseal-artifact`, `check-watch` (per sealed card), `delete-artifact`, `restore-sealed-artifact`, `purge-seal-record`, `check-panel-status` (662) + `store-doc-panel-prefs` (1118) for the macro-visibility toggle, `check-seal-stamp` poll. (`inject-panel`/`extract-panel` are registered resolvers with ZERO UI callers — panel embed runs server-side via `triggerPanelEmbed`, row 38.)
 - **Baseline:** Fn 4 · Distinct 3 · Motion 4 · Perf 2 · A11y 3.
 - **Impact 4** — the power-user management view. **Effort 4** — 1396 lines with inline-style tech debt to unwind. **Risk 3** — effect-loop hazards (`useEffect([fileList])` re-firing watch checks and expiry flags) make refactors easy to get subtly wrong.
-- **Notes-risks:** Macro-visibility banner built from inline styles with hardcoded AUI hexes (`#00875A`, `#DE350B`, `#97A0AF`) and 4% rgba washes — violates the solid-colors design rule; the flagged weakest element. No upload here (panel-only). Leftover console.log noise. Sort options are div-onClick (no keyboard); no focus-visible rule in its sheet.
+- **Notes-risks:** On open, every reservation of yours past expiry raises a PERSISTENT (`isAutoDismiss:false`) "Reservation expired" showFlag (`overlay/index.jsx:897–924`), re-fired on every fileList change — a known annoyance vector not covered by row 28's toast inventory. Missing search on a file list is a real Fn gap for large pages. Macro-visibility banner built from inline styles with hardcoded AUI hexes (`#00875A`, `#DE350B`, `#97A0AF`) and 4% rgba washes — violates the solid-colors design rule; the flagged weakest element. No upload here (panel-only). Leftover console.log noise. Sort options are div-onClick (no keyboard); no focus-visible rule in its sheet.
 
 ## 34. Conditions & Validations engine (advisory/gate/revert)
 - **Does:** Post-save page rule checking (required headings/tables/macros/labels, hierarchy, min/max length in code points) with three enforcement modes: advisory footer comment, gate status stamp (steward-approvable), hard revert to last compliant version (opt-in; aborts if the page version moved).
@@ -317,7 +324,7 @@ status legend: discovered -> researched -> designed -> implemented -> verified |
 - **Core calls:** trigger-side auto path; `validate-page-now` manual path; gate property `sentinel-vault-validation`.
 - **Baseline:** Fn 4 · Distinct 3 · Motion 2 · Perf 4 · A11y 3 (scored via panel group + ribbon chip + comments).
 - **Impact 4** — page-quality governance layer. **Effort 3** — engine + three modes + dedup. **Risk 4** — hard-revert can discard user work; C5/C8 (abort-on-version-move, claim-dedup-first) are the guard rails; only `current` pages, v1 falls back to advisory.
-- **Notes-risks:** Forge events fire post-save — cannot block; messaging must never imply prevention. Warn-severity violations never flip `passed`.
+- **Notes-risks:** Forge events fire post-save — cannot block; messaging must never imply prevention. Warn-severity violations never flip `passed`. The engine's `required-macro` rule type (`rules-engine.js:39`) is UNAUTHORABLE from the shared editor (row 9) — engine-only capability with no UI path to create such a rule.
 
 ## 35. Onboarding explainer
 - **Does:** First-run explanation block in the inline panel introducing the app on pages where users first meet it; dismissible (localStorage).
@@ -336,12 +343,12 @@ status legend: discovered -> researched -> designed -> implemented -> verified |
 - **Notes-risks:** Three concurrent pollers per open page today; a shared poller or jittered/backoff polling is the obvious iteration.
 
 ## 37. Realm audit & seal index maintenance
-- **Does:** Steward-triggered async scan rebuilds the space seal index (status polled, minutes on large spaces); hourly cron re-queues scans per realm only when the seal stamp changed; backfills spaceId on legacy seals and prunes stale index rows.
-- **Lives:** `src/server/capsules/realms/scan-worker.js` (realmScanConsumer 900s, sealIndexCron), status keys `space-scan-status-{spaceId}`; UI button in realm-console Realm Sealed Files tab.
-- **Core calls:** `launch-realm-audit`, `check-audit-status`; scheduled `seal-index-cron`.
-- **Baseline:** Fn 4 · Distinct 2 · Motion 2 · Perf 3 · A11y 3 (scored via console scan UI).
+- **Does:** Backend async scan rebuilds the space seal index (status keys polled, minutes on large spaces); hourly cron re-queues scans per realm only when the seal stamp changed; backfills spaceId on legacy seals and prunes stale index rows. NO steward-facing trigger exists: the realm-console handler that would invoke it is dead code (see row 19), so today only the cron exercises this machinery.
+- **Lives:** `src/server/capsules/realms/scan-worker.js` (realmScanConsumer 900s, sealIndexCron), status keys `space-scan-status-{spaceId}`; the would-be UI hook (`onReconstructIndex`) sits unreferenced in `realm-console/index.jsx:986`.
+- **Core calls:** `launch-realm-audit`, `check-audit-status` (both resolvers real, both UI-unreachable); scheduled `seal-index-cron`.
+- **Baseline:** Fn 3 · Distinct 2 · Motion 2 · Perf 3 · A11y 3 (backend real; the steward-facing scan control does not render).
 - **Impact 3** — keeps the steward view truthful. **Effort 3** — worker + status lifecycle. **Risk 3** — index rebuild deletes stale keys; a scoping bug erases live index entries (steward view goes blind until next scan).
-- **Notes-risks:** Cron change-gate (`protections-last-modified` vs `protections-last-scanned`) is the cost control — preserve it. Scan progress UI (Distinct 2) is bare.
+- **Notes-risks:** PHANTOM UI (Fn 3 evidence): rows 19/37 previously credited a scan button + status polling that nothing renders — an iteration must either wire the dead handler to a real control or remove it. Cron change-gate (`protections-last-modified` vs `protections-last-scanned`) is the cost control — preserve it.
 
 ## 38. Auto-insert / replace-attachments macro
 - **Does:** Sealing on a page without the panel auto-inserts the macro (global + space toggles both required; space sets top/bottom position); optionally replaces the built-in Attachments macro; panel auto-removed when no seals remain; per-page opt-out via page property.
@@ -377,7 +384,57 @@ status legend: discovered -> researched -> designed -> implemented -> verified |
 
 ---
 
+# Capability expansion — Document Workflow Rules (doc-workflow domain pack)
+
+Rows 42–48 are the vetted Comala-style workflow-rules capability (owner directive 2026-07-05). Full specs — data model, resolvers, reuse map, guardrails, adversarial critique — live in [`state/CAPABILITY_EXPANSION.md`](CAPABILITY_EXPANSION.md); the blocks below are ledger summaries. These rows carry the `domain_pack_boost` (+2) baked into their Priority. **Ship order (dependency- and table-stakes-aware, NOT raw priority): 42 → 43 → 44 → 45 → 48 → 47 → 46.** F2–F7 all depend on the F1 (#42) engine, so #42 is unambiguously first.
+
+## 42. Workflow state engine & state chip  *(foundation)*
+- **Does:** A page carries a named workflow state (Draft / In Review / Approved / Expired, steward-definable); shown as a colored chip on the doc ribbon + realm console; rights-holders move states from the panel; every transition logged who/when. Attaches at scale: per-space default, label-filtered, and bulk apply (answers Comala's "3,000 manual copy-pastes" 1★ scar).
+- **Lives (new):** `src/server/capsules/workflow/` (new capsule); config UI in realm/steward console; chip in doc-ribbon. Reuses `resolveEffectiveConfig()`/`writeValidationState()` patterns (`validations/logic.js`), `authorizeSteward()`, registry spread.
+- **Core calls (new):** content property `sentinel-vault-workflow` (NEVER overload `sentinel-vault-validation`); Custom Entity Store `workflowState` entity + `by-state`/`by-due-date`/`by-space` indexes (from day one — hard to migrate later); `workflow-def-global|space-*` KVS config; `workflow-log-{pageId}-{ts}` (NO TTL — compliance artifact).
+- **Baseline:** Fn 1 · Distinct 1 · Motion 1 · Perf 1 · A11y 1 (not built). **Impact 5 · Effort 4 · Risk 2** (+2 pack boost → Priority 23.0).
+- **Guardrails:** no new scope; `contentBylineItem`(static) + storage-entities = manifest additions (minor version); no Preview API. **Confidence HIGH** — pure pattern transcription.
+
+## 43. Multi-approver transitions & approvals inbox
+- **Does:** A transition can require named approvers (users/groups) with any-of / all-of / min-N modes; mention-comment notify; "My approvals" inbox; approve/deny with reason; approvals pinned to page version, flagged stale on change.
+- **Lives (new):** clones editreq lifecycle (`editreq/actions.js`,`logic.js`) re-keyed `workflow-approval-{pageId}-{stateId}-{approvalId}-{approverAccountId}` (NOT under edit-request-* — seal sweeps would delete them); notices via new `ALERT_CATEGORIES` in `notice-composer.js`/`notice-blueprints.js`; `UserPicker` from @forge/react.
+- **Baseline:** all axes 1 (not built). **Impact 5 · Effort 4 · Risk 3** (+2 → Priority 22.0).
+- **Guardrails:** no new scope/module in v1; group fan-out via `read:confluence-groups` (held). **Confidence MED** — proven shape, wide quorum/tie-edge surface (tie→reject).
+
+## 44. Enforced Approved state (revert-on-tamper)  *(the differentiator)*
+- **Does:** A state marked `enforce` records the exact version; later edits by non-approvers auto-revert to it (or "demote" to Draft with banner+comment). The moat: "enforced, not tracked." Claim discipline — sell "reverted within minutes + attested by structural compare," never "the badge can't lie."
+- **Lives:** reuses validation revert machinery (`triggers.js:529-570`), SV-M1 version guard, SV-M2 write-then-announce, SV-M3 ignore-own-writes; NEW `workflowSweep` scheduled fn + `workflow-integrity-notified-{pageId}` dedup (backstop for dropped `updated:page` events). **Who-wins rule (specified in CAPABILITY_EXPANSION §F3):** workflow probe runs FIRST in `pageContentTrigger`; approver set privileged over sealed-section owners; SV-M5 re-baseline suppressed while enforced. Never touches `section-snapshot-*`/`protection-*` seal data.
+- **Baseline:** all axes 1 (not built). **Impact 5 · Effort 4 · Risk 4** (+2 → Priority 21.0).
+- **Guardrails:** no new scope; one `scheduledTrigger` module (minor; verify per-app limit — app runs 3). **Confidence LOW (flagged)** — probe-first short-circuit + SV-M5 suppression is deliberate pipeline surgery in the repo's most delicate file; needs dedicated harness scenarios (tamper-while-approved, approver edit, seal-owner-edits-own-section no-ping-pong, concurrent seal+workflow revert, integrity-sweep catches missed event) before ship.
+
+## 45. Review dates & expiry transitions
+- **Does:** Entering a state can start a review clock (`reviewAfterDays`); on expiry the page auto-transitions (e.g. Approved→Expired), chip changes, watchers get escalating reminders. "Review-date loop with teeth" (Midori only notifies).
+- **Lives:** exact `expirySweepTask()` shape (`triggers.js:846`), ships as a 2nd pass inside F3's `workflowSweep`, queries `by-due-date` index; `invoke(workflowSweep)` test hook; `workflow-review-notified-{pageId}` dedup.
+- **Baseline:** all axes 1 (not built). **Impact 4 · Effort 2 · Risk 2** (+2 → Priority 22.0).
+- **Guardrails:** no new scope/module (sweep ships with F3); no Preview API. **Confidence HIGH** — near-transcription of proven idempotent sweep.
+
+## 46. Transition conditions (rules + AI gate)  *(DEFERRED — ships last, on a demand signal)*
+- **Does:** A transition can require conditions: instant structural rules (`evaluateRules()`) and optionally an async Semantic AI review that blocks until it lands, + AI "what changed since last approved" diff-summary. Egress-free.
+- **Lives:** reuses `rules-engine.js` (pure) + `ai-validation-queue`/`ai-worker.js`/`storeFindings()`; NEW `workflow-transition-pending-{pageId}` with mandatory timeout+fallback.
+- **Baseline:** all axes 1 (not built). **Impact 4 · Effort 3 · Risk 4** (+2 → Priority 19.0).
+- **Guardrails:** @forge/llm (Preview, already accepted; developer-billed since 2026-06 → opt-in per space + daily cap — OPEN QUESTION for owner); **demand-evidence gate before build** (no user review asks for AI gating). **Confidence LOW (flagged)** — async block-until-job-lands has no in-repo precedent.
+
+## 47. Native content-state mirroring  *(BUILD-GATED on a live API spike)*
+- **Does:** When SV changes a page's workflow state, the native Confluence status chip updates to match (visible in editor/header/search). Default off per space. Resolves the two-chips-disagree case.
+- **Lives:** transition side-effect hook in F1 engine; mirror PUT NEVER inside `pageContentTrigger` (async @forge/events job for trigger-driven transitions — single-writer discipline); v1-only `PUT /wiki/rest/api/content/{id}/state` behind an adapter.
+- **Baseline:** all axes 1 (not built). **Impact 3 · Effort 3 · Risk 4** (+2 → Priority 16.0).
+- **Guardrails:** no new scope/module/Preview; **mandatory pre-build spike** (suggested-status gating / per-user custom states / does an app PUT fire tenant Automation rules + burn the 100-exec/mo quota). **Confidence LOW** — feasibility asserted, not verified; version-churn interacts with `approvedVersion`. Two OPEN QUESTIONS for owner (version churn, Automation cascade).
+
+## 48. Workflow dashboard & CSV export
+- **Does:** A realm-console space tab: pages by state, entered-at/by, review-due/overdue highlighting, pending-approvals count, CSV export (also the audit-retention export path for the indefinite `workflow-log-*` history). The per-space oversight view Comala Cloud is weakest at.
+- **Lives:** `confluence:spacePage` (`realm-console`, held); queries F1 `by-state`/`by-due-date` indexes directly (no migration); CQL on `sentinel-vault-workflow`; `listMyEditRequests` cursor pattern.
+- **Baseline:** all axes 1 (not built). **Impact 4 · Effort 3 · Risk 2** (+2 → Priority 21.0).
+- **Guardrails:** no new scope; storage-entities manifest addition (minor); no Preview API. **Confidence HIGH** — read-only surface, unbounded-scan hazard removed by F1 indexes.
+
+---
+
 ## Ledger conventions
-- Baseline scores are grounded in `frontend-surfaces.md` (2026-07-05 read of all 7 surfaces + screenshots); backend-only rows are scored via the surface that exposes them, with axes that don't apply held at neutral 3.
+- Baseline scores are grounded in `frontend-surfaces.md` (2026-07-05 read of all 7 surfaces + screenshots); backend-only rows are scored via the surface that exposes them, with axes that don't apply held at neutral 3. 2026-07-05 adversarial pass corrected phantom-feature claims (rows 1, 6, 9, 14, 15, 19, 21, 26, 33, 37): resolvers with zero UI callers are now annotated as such, and Fn was re-scored where an advertised capability does not exist in the product.
 - Priority = 3·impact + 3·(5 − mean(Fn,Distinct,Motion,Perf,A11y)) − effort − risk (one decimal). Risk in this ledger tracks correctness/confidence risk — the rows where confidence is explicitly LOW (23, 27, 31) touch the revert/restore contracts (C1–C10 in the backend map) and must be harness-verified regardless of where they sit in the ordering.
 - Cross-cutting debts referenced by many rows: token duplication (row 39), N+1 resolver fan-out (rows 2, 6, 12, 19, 33), mouse-only custom dropdowns (rows 5, 7, 9, 10, 11, 19, 29, 33, 40), triple 5s polling (row 36).
+- **Domain pack (doc-workflow):** rows 42–48 are new capability (not-yet-built, all quality axes = 1) and carry the `domain_pack_boost` (+2) baked into Priority per the tuned config. Their Priority uses the same formula (`3·impact + 3·(5−1) − effort − risk`, mean = 1) plus the +2 boost. Because these are new features, "improving" them = building them; the loop treats them as normal iterations. Ship order 42 → 43 → 44 → 45 → 48 → 47 → 46 overrides raw-priority ordering within the pack (dependencies + category table-stakes). Rows 44, 46, 47 are explicitly LOW-confidence (pipeline surgery / no in-repo precedent / unverified feasibility) and get `adversarial_rounds.core_touching_or_perf` scrutiny.
