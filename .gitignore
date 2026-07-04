@@ -53,7 +53,8 @@ Thumbs.db
 
 
 /.forge/
-.claude/
+.claude/*
+!.claude/skills/
 .zed
 AGENTS.md
 *.iml

@@ -6,7 +6,7 @@
   "private": true,
   "homepage": "./",
   "scripts": {
-    "lint": "eslint src/**/*",
+    "lint": "eslint src --ext .js,.jsx",
     "build": "webpack --mode production",
     "dev": "webpack --mode development --watch",
     "test": "node test/json-salvage.test.mjs && node test/rules-engine.test.mjs && node test/doc-surgery.test.mjs && node test/validations-logic.test.mjs"
