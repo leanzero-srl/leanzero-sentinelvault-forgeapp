@@ -8,6 +8,7 @@
     "health": "node scripts/health.mjs",
     "ensure-fixture": "node scripts/ensure-fixture.mjs",
     "forge-logs": "node scripts/forge-logs.mjs",
-    "seal-e2e": "node scripts/seal-lifecycle-e2e.mjs"
+    "seal-e2e": "node scripts/seal-lifecycle-e2e.mjs",
+    "workflow-e2e": "node scripts/workflow-e2e.mjs"
   }
 }
