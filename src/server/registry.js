@@ -10,6 +10,7 @@ import { actions as panelActions } from "./capsules/panels/actions.js";
 import { actions as editReqActions } from "./capsules/editreq/actions.js";
 import { actions as sectionSealActions } from "./capsules/section-seals/actions.js";
 import { actions as validationActions } from "./capsules/validations/actions.js";
+import { actions as workflowActions } from "./capsules/workflow/actions.js";
 
 const router = new Resolver();
 
@@ -24,6 +25,7 @@ const allActions = [
   ...editReqActions,
   ...sectionSealActions,
   ...validationActions,
+  ...workflowActions,
 ];
 
 allActions.forEach(([key, fn]) => router.define(key, fn));
