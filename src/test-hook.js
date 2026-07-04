@@ -8,6 +8,12 @@
  */
 import { kvs } from "@forge/kvs";
 import { expirySweepTask } from "./server/triggers";
+import {
+  assignPageWorkflow,
+  transitionPageWorkflow,
+  getPageWorkflow,
+  getWorkflowLog,
+} from "./server/capsules/workflow/logic.js";
 
 const json = (statusCode, body) => ({
   statusCode,
@@ -58,6 +64,34 @@ export async function testStateTrigger(req) {
         const r = await expirySweepTask();
         let result = null;
         try { result = JSON.parse(r?.body || "null"); } catch (_) { /* non-JSON */ }
+        return json(200, { invoked: fn, result });
+      }
+      // Workflow engine (#42) — drive the real storage/state-machine paths that
+      // REST cannot reach (UI-only resolvers). Dev-gated by the same secret.
+      if (fn === "assignWorkflow") {
+        const r = await assignPageWorkflow({
+          pageId: q(req, "pageId"),
+          spaceKey: q(req, "spaceKey"),
+          actorAccountId: q(req, "actor") || "harness",
+          actorName: q(req, "actorName") || "Harness",
+          workflowId: q(req, "workflowId"),
+        });
+        return json(200, { invoked: fn, result: r });
+      }
+      if (fn === "transitionWorkflow") {
+        const r = await transitionPageWorkflow({
+          pageId: q(req, "pageId"),
+          spaceKey: q(req, "spaceKey"),
+          toStateId: q(req, "to"),
+          actorAccountId: q(req, "actor") || "harness",
+          actorName: q(req, "actorName") || "Harness",
+          reason: q(req, "reason"),
+        });
+        return json(200, { invoked: fn, result: r });
+      }
+      if (fn === "getWorkflow") {
+        const result = await getPageWorkflow(q(req, "pageId"), q(req, "spaceKey"));
+        if (q(req, "withLog")) result.log = await getWorkflowLog(q(req, "pageId"));
         return json(200, { invoked: fn, result });
       }
       return json(400, { error: `unknown fn=${fn}` });

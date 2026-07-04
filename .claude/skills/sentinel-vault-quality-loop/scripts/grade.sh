@@ -20,6 +20,12 @@ forge lint || FAIL=1
 step "E2E health"
 ( cd "$REPO/test-harness" && npm run health ) || FAIL=1
 
+step "E2E seal fixture (prereq for seal-e2e)"
+( cd "$REPO/test-harness" && npm run ensure-fixture ) || FAIL=1
+
+step "E2E workflow engine (#42, assign/transition/log via dev hook)"
+( cd "$REPO/test-harness" && npm run workflow-e2e ) || FAIL=1
+
 step "E2E live trigger exercise (real Confluence events)"
 ( cd "$REPO/test-harness" && node scripts/live-trigger-e2e.mjs ) || FAIL=1
 
