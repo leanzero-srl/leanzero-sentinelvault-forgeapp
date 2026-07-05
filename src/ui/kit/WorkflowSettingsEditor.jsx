@@ -95,13 +95,13 @@ export default function WorkflowSettingsEditor({ spaceKey = null }) {
       {settings.enabled && (
         <div className="nested-control">
           <SettingsRow
-            label="Auto-assign new pages"
-            description="Automatically start the workflow (at its first state) on every new page created in this space."
+            label="Auto-start workflow on new pages"
+            description="Every new page created in this space starts the workflow automatically, at its first state."
           >
-            <Toggle label="Auto-assign new pages" checked={settings.autoAssignNew} onChange={(e) => setSettings((p) => ({ ...p, autoAssignNew: e.target.checked }))} />
+            <Toggle label="Auto-start workflow on new pages" checked={settings.autoAssignNew} onChange={(e) => setSettings((p) => ({ ...p, autoAssignNew: e.target.checked }))} />
           </SettingsRow>
 
-          <SettingsRow label="Workflow" description="The states a page moves through. (A steward-editable workflow builder is planned; this space uses the default approval flow.)">
+          <SettingsRow label="Workflow states" description="The states every page moves through.">
             <div className="wf-state-preview">
               {states.map((s, i) => (
                 <React.Fragment key={s.id}>

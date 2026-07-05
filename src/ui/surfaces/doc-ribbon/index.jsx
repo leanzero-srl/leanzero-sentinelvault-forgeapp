@@ -97,7 +97,9 @@ const WorkflowControl = ({ workflow, pageId, spaceKey, onTransitioned }) => {
         disabled={busy || !canMove}
         title={`${workflow.def?.name || "Workflow"} — ${state.name}${canMove ? " (click to move)" : ""}`}
       >
-        <span className="wf-chip-dot" aria-hidden="true" />
+        <svg className="wf-chip-icon" width="10" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <path d="M4 22V4a1 1 0 0 1 1-1h13l-3 4 3 4H5" />
+        </svg>
         <span className="wf-chip-label">{state.name}</span>
         {canMove && <span className="wf-chip-caret" aria-hidden="true">▾</span>}
       </button>
@@ -326,7 +328,7 @@ const DocumentRibbon = () => {
         )}
         {!loading && aiCount !== null && aiCount > 0 && (
           <span className="ribbon-chip ribbon-chip-ai" title="AI content review findings">
-            AI review: {aiCount} finding{aiCount !== 1 ? "s" : ""}
+            AI check: {aiCount} finding{aiCount !== 1 ? "s" : ""}
           </span>
         )}
 
