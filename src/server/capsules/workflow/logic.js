@@ -285,6 +285,29 @@ export async function transitionPageWorkflow({ pageId, spaceKey, toStateId, acto
   return { success: true, record, state: target, def };
 }
 
+// Bulk-assign the space's workflow to pages that don't have one (one result page
+// per call, ≤25, to stay inside the 25s function budget). Callable by the resolver
+// (after authz) and the dev test-hook. Idempotent: skips pages that already have a workflow.
+export async function bulkAssignPagesInSpace({ spaceKey, spaceId, cursor, actorAccountId }) {
+  if (!spaceKey || !spaceId) return { success: false, reason: "spaceKey and spaceId required" };
+  const listRes = cursor
+    ? await asApp().requestConfluence(route`/wiki/api/v2/spaces/${spaceId}/pages?status=current&limit=25&cursor=${cursor}`)
+    : await asApp().requestConfluence(route`/wiki/api/v2/spaces/${spaceId}/pages?status=current&limit=25`);
+  if (!listRes.ok) return { success: false, reason: `Could not list pages (${listRes.status})` };
+  const body = await listRes.json();
+  const pages = body?.results || [];
+  const settings = await getSpaceWorkflowSettings(spaceKey);
+  let assigned = 0;
+  for (const p of pages) {
+    if (await readPageWorkflow(p.id)) continue; // idempotent
+    const r = await assignPageWorkflow({ pageId: p.id, spaceKey, actorAccountId, workflowId: settings.workflowId, logReason: "bulk-assigned" });
+    if (r.success) assigned += 1;
+  }
+  const nextLink = body?._links?.next;
+  const nextCursor = nextLink ? new URLSearchParams(nextLink.split("?")[1] || "").get("cursor") : null;
+  return { success: true, assigned, scanned: pages.length, capped: !!nextCursor, nextCursor };
+}
+
 // Read model for the UI: current record + available transitions + def.
 export async function getPageWorkflow(pageId, spaceKey) {
   const record = await readPageWorkflow(pageId);

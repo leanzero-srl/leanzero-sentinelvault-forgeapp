@@ -6,6 +6,7 @@ import { invoke, view, router } from "@forge/bridge";
 import { enablePaletteSync } from "../../kit/palette-sync";
 import ThumbnailPreview from "../../kit/ThumbnailPreview";
 import ValidationsEditor from "../../kit/ValidationsEditor";
+import WorkflowSettingsEditor from "../../kit/WorkflowSettingsEditor";
 import logo from "../../assets/icons/icon.png";
 
 const SkeletonRow = ({ cols = 5 }) => (
@@ -1509,6 +1510,10 @@ const RealmPolicyDashboard = () => {
               onClick={() => setActiveTab("validations")}>
               Validations
             </button>
+            <button className={`tab-button ${activeTab === "workflow" ? "active" : ""}`}
+              onClick={() => setActiveTab("workflow")}>
+              Workflow
+            </button>
           </>
         )}
       </div>
@@ -2236,7 +2241,13 @@ const RealmPolicyDashboard = () => {
         </div>
       )}
 
-      {userRole === "steward" && activeTab !== "validations" && (
+      {activeTab === "workflow" && userRole === "steward" && (
+        <div className="tab-content">
+          <WorkflowSettingsEditor spaceKey={realmKey} />
+        </div>
+      )}
+
+      {userRole === "steward" && activeTab !== "validations" && activeTab !== "workflow" && (
         <div className="action-bar">
           <button
             className="btn-primary"

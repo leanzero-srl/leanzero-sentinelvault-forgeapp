@@ -15,9 +15,9 @@ const SettingsRow = ({ label, description, children }) => (
   </div>
 );
 
-const Toggle = ({ checked, onChange }) => (
+const Toggle = ({ checked, onChange, label }) => (
   <label className="form-checkbox">
-    <input type="checkbox" checked={checked} onChange={onChange} />
+    <input type="checkbox" aria-label={label} checked={checked} onChange={onChange} />
   </label>
 );
 
@@ -135,7 +135,7 @@ export default function ValidationsEditor({ scope = "global", spaceKey = null })
   return (
     <div className="settings-panel">
       <SettingsRow label="Enable content validation" description={scopeNote}>
-        <Toggle checked={cfg.enabled} onChange={(e) => setCfg((p) => ({ ...p, enabled: e.target.checked }))} />
+        <Toggle label="Enable content validation" checked={cfg.enabled} onChange={(e) => setCfg((p) => ({ ...p, enabled: e.target.checked }))} />
       </SettingsRow>
 
       <SettingsRow label="Enforcement" description="How non-compliant pages are handled. Forge runs after a page is saved, so enforcement is applied post-save.">
@@ -205,7 +205,7 @@ export default function ValidationsEditor({ scope = "global", spaceKey = null })
         </p>
 
         <SettingsRow label="Enable AI review" description="Allow on-demand AI content review from the Sentinel Vault panel ('Run AI review').">
-          <Toggle checked={cfg.ai.enabled} onChange={(e) => updateAi({ enabled: e.target.checked })} />
+          <Toggle label="Enable AI review" checked={cfg.ai.enabled} onChange={(e) => updateAi({ enabled: e.target.checked })} />
         </SettingsRow>
 
         {cfg.ai.enabled && (
@@ -230,7 +230,7 @@ export default function ValidationsEditor({ scope = "global", spaceKey = null })
               <textarea className="form-input val-textarea" rows={2} value={cfg.ai.compliance} onChange={(e) => updateAi({ compliance: e.target.value })} />
             </SettingsRow>
             <SettingsRow label="Notify page author" description="Post a comment mentioning the author when findings meet the severity threshold.">
-              <Toggle checked={cfg.ai.notifyAuthor} onChange={(e) => updateAi({ notifyAuthor: e.target.checked })} />
+              <Toggle label="Notify page author" checked={cfg.ai.notifyAuthor} onChange={(e) => updateAi({ notifyAuthor: e.target.checked })} />
             </SettingsRow>
             <SettingsRow label="Severity threshold" description="Only notify for findings at or above this severity.">
               <MiniSelect value={cfg.ai.severityThreshold} options={SEVERITY_THRESHOLDS} onChange={(v) => updateAi({ severityThreshold: v })} />
@@ -242,7 +242,7 @@ export default function ValidationsEditor({ scope = "global", spaceKey = null })
         )}
       </div>
 
-      {msg && <div className={msg.type === "success" ? "alert-success" : "alert-error"}>{msg.text}</div>}
+      {msg && <div role="status" aria-live="polite" className={msg.type === "success" ? "alert-success" : "alert-error"}>{msg.text}</div>}
       <div className="action-bar">
         <button className="btn-primary" onClick={save} disabled={saving}>{saving ? "Saving…" : "Save validation rules"}</button>
       </div>
