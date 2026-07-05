@@ -224,6 +224,15 @@ export async function setSpaceWorkflowSettings(spaceKey, settings) {
     autoAssignNew: !!settings?.autoAssignNew,
     workflowId: settings?.workflowId || "default",
   };
+  // Optional approval config for the enforce transition (#43). Shape:
+  // { approvers: [{ type:"user"|"group", id, name }], mode:"any"|"all"|"min", min }.
+  if (settings?.approval && Array.isArray(settings.approval.approvers)) {
+    clean.approval = {
+      approvers: settings.approval.approvers.filter((a) => a && a.id).map((a) => ({ type: a.type || "user", id: a.id, name: a.name || null })),
+      mode: ["any", "all", "min"].includes(settings.approval.mode) ? settings.approval.mode : "any",
+      min: Math.max(1, parseInt(settings.approval.min, 10) || 1),
+    };
+  }
   await kvs.set(`workflow-settings-${sanitize(spaceKey)}`, clean);
   return { success: true, settings: clean };
 }

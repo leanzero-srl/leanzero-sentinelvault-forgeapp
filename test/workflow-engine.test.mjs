@@ -10,6 +10,7 @@ import {
   sanitize,
   shouldAutoAssign,
 } from "../src/server/capsules/workflow/logic.js";
+import { evaluateApproval, resolveApprovers } from "../src/server/capsules/workflow/approvals.js";
 import { eq, ok, report } from "./_assert.mjs";
 
 // --- findState / getInitialState ---
@@ -61,5 +62,29 @@ ok("no auto-assign when page already has workflow", !shouldAutoAssign({ enabled:
 ok("no auto-assign when space disabled", !shouldAutoAssign({ enabled: false, autoAssignNew: true }, false));
 ok("no auto-assign when autoAssignNew off", !shouldAutoAssign({ enabled: true, autoAssignNew: false }, false));
 ok("no auto-assign on null settings", !shouldAutoAssign(null, false));
+
+// --- evaluateApproval (#43 quorum decision) ---
+eq("no approvers -> approved", evaluateApproval("any", 1, []), "approved");
+// any-of
+eq("any: all pending -> pending", evaluateApproval("any", 1, ["pending", "pending"]), "pending");
+eq("any: one approved -> approved", evaluateApproval("any", 1, ["approved", "pending"]), "approved");
+eq("any: all denied -> denied", evaluateApproval("any", 1, ["denied", "denied"]), "denied");
+eq("any: one denied one pending -> pending", evaluateApproval("any", 1, ["denied", "pending"]), "pending");
+// all-of
+eq("all: all approved -> approved", evaluateApproval("all", 1, ["approved", "approved"]), "approved");
+eq("all: one pending -> pending", evaluateApproval("all", 1, ["approved", "pending"]), "pending");
+eq("all: one denied -> denied", evaluateApproval("all", 1, ["approved", "denied"]), "denied");
+// min-N
+eq("min2: one approved -> pending", evaluateApproval("min", 2, ["approved", "pending", "pending"]), "pending");
+eq("min2: two approved -> approved", evaluateApproval("min", 2, ["approved", "approved", "pending"]), "approved");
+eq("min2: unreachable -> denied", evaluateApproval("min", 2, ["approved", "denied", "denied"]), "denied");
+eq("min2: reached despite a denial -> approved", evaluateApproval("min", 2, ["approved", "approved", "denied"]), "approved");
+
+// --- resolveApprovers ---
+eq("resolveApprovers null -> null", resolveApprovers(null), null);
+eq("resolveApprovers empty -> null", resolveApprovers({ approvers: [] }), null);
+eq("resolveApprovers users", resolveApprovers({ approvers: [{ type: "user", id: "a" }, { type: "user", id: "b" }], mode: "all", min: 1 }), { approvers: ["a", "b"], mode: "all", min: 1 });
+eq("resolveApprovers dedups", resolveApprovers({ approvers: [{ id: "a" }, { id: "a" }] }).approvers.length, 1);
+eq("resolveApprovers drops groups in v1", resolveApprovers({ approvers: [{ type: "group", id: "g" }, { type: "user", id: "a" }] }).approvers, ["a"]);
 
 report("workflow-engine");
