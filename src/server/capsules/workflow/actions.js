@@ -15,6 +15,8 @@ import {
   assignPageWorkflow,
   transitionPageWorkflow,
   findState,
+  getSpaceWorkflowSettings,
+  setSpaceWorkflowSettings,
 } from "./logic.js";
 
 const pageIdOf = (req) =>
@@ -106,6 +108,21 @@ const storeConfig = async (req) => {
   return storeWorkflowConfig(scope || "global", key, def);
 };
 
+const getSpaceSettings = async (req) => {
+  const spaceKey = spaceKeyOf(req);
+  const settings = await getSpaceWorkflowSettings(spaceKey);
+  const def = await resolveWorkflowDef(spaceKey);
+  return { settings, def }; // def.states power the read-only preview chips in the config UI
+};
+
+const setSpaceSettings = async (req) => {
+  const spaceKey = spaceKeyOf(req);
+  if (!(await authorizeSteward(req.context?.accountId, spaceKey))) {
+    return { success: false, reason: "Only a realm steward can change workflow settings" };
+  }
+  return setSpaceWorkflowSettings(spaceKey, req.payload?.settings || {});
+};
+
 export const actions = [
   ["get-page-workflow", getWorkflow],
   ["get-workflow-log", getLog],
@@ -113,4 +130,6 @@ export const actions = [
   ["request-transition", requestTransition],
   ["load-workflow-config", loadConfig],
   ["store-workflow-config", storeConfig],
+  ["get-space-workflow-settings", getSpaceSettings],
+  ["set-space-workflow-settings", setSpaceSettings],
 ];
