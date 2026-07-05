@@ -184,7 +184,7 @@ function computeReviewDueAt(state) {
 // --- Orchestration (called by resolvers AND by the dev test-hook with explicit args) ---
 
 // Assign a workflow to a page and set its initial state (idempotent-ish: re-assign resets to initial).
-export async function assignPageWorkflow({ pageId, spaceKey, actorAccountId, actorName, workflowId }) {
+export async function assignPageWorkflow({ pageId, spaceKey, actorAccountId, actorName, workflowId, logReason }) {
   if (!pageId) return { success: false, reason: "pageId required" };
   const def = await resolveWorkflowDef(spaceKey);
   if (workflowId && def.id !== workflowId) {
@@ -204,8 +204,53 @@ export async function assignPageWorkflow({ pageId, spaceKey, actorAccountId, act
     reviewDueAt: computeReviewDueAt(initial),
   };
   await persistState(pageId, record, prev?.stateId);
-  await appendWorkflowLog(pageId, { from: null, to: initial.id, by: actorAccountId || null, byName: actorName || null, reason: "assigned" });
+  await appendWorkflowLog(pageId, { from: null, to: initial.id, by: actorAccountId || null, byName: actorName || null, reason: logReason || "assigned" });
   return { success: true, record, state: initial, def };
+}
+
+// --- Per-space workflow activation settings (at-scale assignment) ---
+
+const DEFAULT_SPACE_SETTINGS = { enabled: false, autoAssignNew: false, workflowId: "default" };
+
+export async function getSpaceWorkflowSettings(spaceKey) {
+  if (!spaceKey) return { ...DEFAULT_SPACE_SETTINGS };
+  return (await kvs.get(`workflow-settings-${sanitize(spaceKey)}`)) || { ...DEFAULT_SPACE_SETTINGS };
+}
+
+export async function setSpaceWorkflowSettings(spaceKey, settings) {
+  if (!spaceKey) return { success: false, reason: "spaceKey required" };
+  const clean = {
+    enabled: !!settings?.enabled,
+    autoAssignNew: !!settings?.autoAssignNew,
+    workflowId: settings?.workflowId || "default",
+  };
+  await kvs.set(`workflow-settings-${sanitize(spaceKey)}`, clean);
+  return { success: true, settings: clean };
+}
+
+// Pure decision (unit-tested): should a page in this space be auto-assigned now?
+export function shouldAutoAssign(settings, hasWorkflow) {
+  return !!(settings?.enabled && settings?.autoAssignNew && !hasWorkflow);
+}
+
+// Trigger-callable: auto-assign the space's workflow to a page that has none, if the
+// space is configured for it. Idempotent (no-op when a workflow already exists).
+export async function autoAssignOnEvent({ pageId, spaceKey, actorAccountId, actorName }) {
+  if (!pageId || !spaceKey) return { assigned: false, reason: "missing page/space" };
+  const settings = await getSpaceWorkflowSettings(spaceKey);
+  if (!settings.enabled || !settings.autoAssignNew) return { assigned: false, reason: "space not auto-assigning" };
+  const existing = await readPageWorkflow(pageId);
+  if (!shouldAutoAssign(settings, !!existing)) return { assigned: false, reason: existing ? "already has workflow" : "disabled" };
+  // Claim a one-shot marker BEFORE the assignment so a duplicate/concurrent created-event
+  // delivery (Forge events are at-least-once) can't double-append to the no-TTL compliance
+  // log. Mirrors the markVersionChecked-before-side-effects pattern the contract requires
+  // for the validation phase (T6/SV-m1). KVS has no CAS, so this narrows the double-fire
+  // window to a single get→set (matching the validation phase's residual limit), not zero.
+  const claimKey = `workflow-autoassigned-${pageId}`;
+  if (await kvs.get(claimKey)) return { assigned: false, reason: "already auto-assigned" };
+  await kvs.set(claimKey, { at: new Date().toISOString(), spaceKey });
+  const res = await assignPageWorkflow({ pageId, spaceKey, actorAccountId, actorName, workflowId: settings.workflowId, logReason: "auto-assigned on create" });
+  return { assigned: !!res.success, reason: res.success ? "auto-assigned" : res.reason, record: res.record };
 }
 
 // Move a page to `toStateId` after validating the edge. Returns {success, reason?, record?}.

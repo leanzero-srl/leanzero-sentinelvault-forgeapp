@@ -8,6 +8,7 @@ import {
   listTransitions,
   validateTransition,
   sanitize,
+  shouldAutoAssign,
 } from "../src/server/capsules/workflow/logic.js";
 import { eq, ok, report } from "./_assert.mjs";
 
@@ -53,5 +54,12 @@ ok("no transition points at an undefined state", DEFAULT_WORKFLOW.transitions.ev
 eq("sanitize passes safe key", sanitize("ENG"), "ENG");
 eq("sanitize replaces slash", sanitize("a/b"), "a_b");
 ok("sanitize keeps # and space (parity with existing capsules)", sanitize("A #1") === "A #1");
+
+// --- shouldAutoAssign (at-scale assignment decision) ---
+ok("auto-assign when enabled+auto and no workflow", shouldAutoAssign({ enabled: true, autoAssignNew: true }, false));
+ok("no auto-assign when page already has workflow", !shouldAutoAssign({ enabled: true, autoAssignNew: true }, true));
+ok("no auto-assign when space disabled", !shouldAutoAssign({ enabled: false, autoAssignNew: true }, false));
+ok("no auto-assign when autoAssignNew off", !shouldAutoAssign({ enabled: true, autoAssignNew: false }, false));
+ok("no auto-assign on null settings", !shouldAutoAssign(null, false));
 
 report("workflow-engine");
