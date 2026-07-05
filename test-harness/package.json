@@ -11,6 +11,7 @@
     "seal-e2e": "node scripts/seal-lifecycle-e2e.mjs",
     "workflow-e2e": "node scripts/workflow-e2e.mjs",
     "workflow-autoassign-e2e": "node scripts/workflow-autoassign-e2e.mjs",
-    "workflow-bulk-e2e": "node scripts/workflow-bulk-e2e.mjs"
+    "workflow-bulk-e2e": "node scripts/workflow-bulk-e2e.mjs",
+    "workflow-approval-e2e": "node scripts/workflow-approval-e2e.mjs"
   }
 }

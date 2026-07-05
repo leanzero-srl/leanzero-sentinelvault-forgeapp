@@ -4,7 +4,7 @@ status legend: discovered -> researched -> designed -> implemented -> verified |
 | # | Feature | Surface | Status | Fn | Distinct | Motion | Perf | A11y | Priority | Branch |
 |---|---------|---------|--------|----|----------|--------|------|------|----------|--------|
 | 42 | Workflow state engine & state chip | Doc ribbon + realm console + backend | verified | 5 | 4 | 4 | 3 | 4 | 23.0 | aql/workflow-state-engine |
-| 43 | Multi-approver transitions & approvals inbox | Realm console + inline panel + comments | discovered | 1 | 1 | 1 | 1 | 1 | 22.0 | — |
+| 43 | Multi-approver transitions & approvals inbox | Realm console + inline panel + comments | implemented (engine verified; inbox+picker UI pending) | 3 | 1 | 1 | 3 | 1 | 22.0 | aql/workflow-state-engine |
 | 45 | Review dates & expiry transitions | Backend → sweep + notices | discovered | 1 | 1 | 1 | 1 | 1 | 22.0 | — |
 | 44 | Enforced Approved state (revert-on-tamper) | Backend → ribbon/comments | discovered | 1 | 1 | 1 | 1 | 1 | 21.0 | — |
 | 48 | Workflow dashboard & CSV export | Realm console (space page) | discovered | 1 | 1 | 1 | 1 | 1 | 21.0 | — |
