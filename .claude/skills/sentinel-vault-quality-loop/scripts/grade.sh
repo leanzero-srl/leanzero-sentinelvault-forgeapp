@@ -29,6 +29,9 @@ step "E2E workflow engine (#42, assign/transition/log via dev hook)"
 step "E2E workflow auto-assign (#42, created:page trigger auto-assigns)"
 ( cd "$REPO/test-harness" && npm run workflow-autoassign-e2e ) || FAIL=1
 
+step "E2E workflow bulk-assign (#42, apply to existing pages)"
+( cd "$REPO/test-harness" && npm run workflow-bulk-e2e ) || FAIL=1
+
 step "E2E live trigger exercise (real Confluence events)"
 ( cd "$REPO/test-harness" && node scripts/live-trigger-e2e.mjs ) || FAIL=1
 
