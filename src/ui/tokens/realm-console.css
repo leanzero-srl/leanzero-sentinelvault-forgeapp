@@ -1778,3 +1778,13 @@ html[data-color-mode="dark"] .artifact-card.status-expired { border-color: #F871
 .wf-state-ai       { background: #7c3aed; }
 .wf-state-seal     { background: #0e7490; }
 html[data-color-mode="dark"] .wf-state-neutral { background: #64748b; }
+
+/* ── Approver picker (#43 workflow settings) ──────────── */
+.wf-userpicker { position: relative; width: 280px; max-width: 100%; }
+.wf-userpicker-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; }
+.wf-userchip { display: inline-flex; align-items: center; gap: 4px; padding: 3px 6px 3px 10px; border-radius: 9999px; background: #1d4ed8; color: #fff; font-size: 12px; font-weight: 600; }
+.wf-userchip-x { border: none; background: transparent; color: #fff; font-size: 15px; line-height: 1; cursor: pointer; padding: 0 2px; opacity: 0.85; }
+.wf-userchip-x:hover { opacity: 1; }
+.wf-userpicker-menu { position: absolute; top: 100%; left: 0; right: 0; z-index: 40; margin-top: 4px; background: var(--sv-surface-overlay, #fff); border: 1px solid var(--sv-border-primary, #E2E8F0); border-radius: 8px; box-shadow: 0 8px 24px var(--sv-shadow-strong, rgba(0, 0, 0, 0.12)); overflow: hidden; }
+.wf-userpicker-opt { display: block; width: 100%; text-align: left; padding: 8px 10px; border: none; background: transparent; font-family: inherit; font-size: 12px; color: var(--sv-text-primary, #0F172A); cursor: pointer; }
+.wf-userpicker-opt:hover, .wf-userpicker-opt:focus-visible { background: var(--sv-bg-hover, #E2E8F0); outline: none; }

@@ -61,6 +61,13 @@ const getWorkflow = async (req) => {
   const pageId = pageIdOf(req);
   if (!pageId) return { assigned: false, reason: "No page context" };
   const result = await getPageWorkflow(pageId, spaceKeyOf(req));
+  // Flag which available transitions require approval (enforce state + approvers
+  // configured) so the ribbon can say "Request approval" instead of "Move to".
+  if (result?.assigned && Array.isArray(result.available)) {
+    const settings = await getSpaceWorkflowSettings(result.record?.spaceKey || spaceKeyOf(req));
+    const hasApprovers = !!resolveApprovers(settings.approval);
+    result.available = result.available.map((s) => ({ ...s, requiresApproval: !!(s.enforce && hasApprovers) }));
+  }
   if (req.payload?.withLog) result.log = await getWorkflowLog(pageId);
   return result;
 };
@@ -155,6 +162,24 @@ const listMyApprovalsAction = async (req) => {
   return { approvals: await listMyApprovals(req.context?.accountId) };
 };
 
+// User search for the approver picker (steward config). Confluence user search.
+const searchUsers = async (req) => {
+  const q = (req.payload?.query || "").trim();
+  if (q.length < 2) return { users: [] };
+  try {
+    const cql = `user.fullname~"${q.replace(/"/g, "")}"`;
+    const res = await asApp().requestConfluence(route`/wiki/rest/api/search/user?cql=${cql}&limit=8`);
+    if (!res.ok) return { users: [] };
+    const body = await res.json();
+    const users = (body?.results || [])
+      .map((r) => ({ accountId: r.user?.accountId, name: r.user?.displayName || r.user?.publicName }))
+      .filter((u) => u.accountId);
+    return { users };
+  } catch (_) {
+    return { users: [] };
+  }
+};
+
 const loadConfig = async (req) => {
   const { scope, key } = req.payload || {};
   return loadWorkflowConfig(scope || "global", key);
@@ -219,4 +244,5 @@ export const actions = [
   ["decide-approval", decideApprovalAction],
   ["get-page-approvals", getPageApprovals],
   ["list-my-approvals", listMyApprovalsAction],
+  ["search-workflow-users", searchUsers],
 ];
