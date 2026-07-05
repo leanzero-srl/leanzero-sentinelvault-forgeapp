@@ -6,10 +6,124 @@
  * Also displays conflict/expiry alerts when relevant.
  */
 
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import { createRoot } from "react-dom/client";
 import { invoke, view, Modal } from "@forge/bridge";
 import { enablePaletteSync } from "../../kit/palette-sync";
+
+/**
+ * Workflow state chip + transition control (#42). Shows the page's current
+ * workflow state as a solid colored pill; if transitions are available, the pill
+ * is a menu button that moves the page along the workflow (custom dropdown — never
+ * a native <select>). Steward-gated transitions (e.g. entering Approved) are
+ * rejected server-side and surfaced inline.
+ */
+const WorkflowControl = ({ workflow, pageId, spaceKey, onTransitioned }) => {
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(null);
+  const [seat, setSeat] = useState(false);
+  const [activeIndex, setActiveIndex] = useState(0);
+  const btnRef = useRef(null);
+  const menuRef = useRef(null);
+  const itemRefs = useRef([]);
+
+  const available = workflow?.available || [];
+  const canMove = available.length > 0;
+
+  // Close on outside click, or when focus leaves both the trigger and the menu.
+  useEffect(() => {
+    if (!menuOpen) return undefined;
+    const outside = (e) => !menuRef.current?.contains(e.target) && !btnRef.current?.contains(e.target);
+    const onDown = (e) => { if (outside(e)) setMenuOpen(false); };
+    const onFocusIn = (e) => { if (outside(e)) setMenuOpen(false); };
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("focusin", onFocusIn);
+    return () => { document.removeEventListener("mousedown", onDown); document.removeEventListener("focusin", onFocusIn); };
+  }, [menuOpen]);
+
+  // ARIA menu pattern: on open, move focus to the first transition.
+  useEffect(() => {
+    if (menuOpen) { setActiveIndex(0); requestAnimationFrame(() => itemRefs.current[0]?.focus()); }
+  }, [menuOpen]);
+
+  const moveActive = useCallback((next) => { setActiveIndex(next); itemRefs.current[next]?.focus(); }, []);
+
+  const onMenuKey = useCallback((e) => {
+    const n = available.length;
+    if (!n) return;
+    switch (e.key) {
+      case "ArrowDown": e.preventDefault(); moveActive((activeIndex + 1) % n); break;
+      case "ArrowUp": e.preventDefault(); moveActive((activeIndex - 1 + n) % n); break;
+      case "Home": e.preventDefault(); moveActive(0); break;
+      case "End": e.preventDefault(); moveActive(n - 1); break;
+      case "Escape": e.preventDefault(); setMenuOpen(false); requestAnimationFrame(() => btnRef.current?.focus()); break;
+      default: break;
+    }
+  }, [available.length, activeIndex, moveActive]);
+
+  const doTransition = useCallback(async (toStateId) => {
+    setBusy(true); setError(null); setMenuOpen(false);
+    try {
+      const res = await invoke("request-transition", { pageId, spaceKey, toStateId });
+      if (res?.success) {
+        await onTransitioned();
+        setSeat(false);
+        requestAnimationFrame(() => setSeat(true)); // seat the newly-rendered state
+      } else {
+        setError(res?.reason || "Transition not allowed");
+      }
+    } catch (_) {
+      setError("Transition failed");
+    } finally {
+      setBusy(false);
+      requestAnimationFrame(() => btnRef.current?.focus()); // return focus to the trigger
+    }
+  }, [pageId, spaceKey, onTransitioned]);
+
+  if (!workflow?.assigned || !workflow.state) return null;
+  const state = workflow.state;
+
+  return (
+    <span className="wf-control">
+      <button
+        ref={btnRef}
+        type="button"
+        className={`wf-chip wf-chip-${state.color || "neutral"}${seat ? " wf-seat" : ""}`}
+        onClick={() => canMove && setMenuOpen((o) => !o)}
+        onAnimationEnd={() => setSeat(false)}
+        aria-haspopup={canMove ? "menu" : undefined}
+        aria-expanded={canMove ? menuOpen : undefined}
+        disabled={busy || !canMove}
+        title={`${workflow.def?.name || "Workflow"} — ${state.name}${canMove ? " (click to move)" : ""}`}
+      >
+        <span className="wf-chip-dot" aria-hidden="true" />
+        <span className="wf-chip-label">{state.name}</span>
+        {canMove && <span className="wf-chip-caret" aria-hidden="true">▾</span>}
+      </button>
+      {menuOpen && (
+        <div className="wf-menu" role="menu" aria-label={`Move ${state.name} to`} ref={menuRef} onKeyDown={onMenuKey}>
+          <div className="wf-menu-head" aria-hidden="true">Move to…</div>
+          {available.map((s, i) => (
+            <button
+              key={s.id}
+              type="button"
+              role="menuitem"
+              tabIndex={i === activeIndex ? 0 : -1}
+              ref={(el) => { itemRefs.current[i] = el; }}
+              className="wf-menu-item"
+              onClick={() => doTransition(s.id)}
+            >
+              <span className={`wf-dot wf-dot-${s.color || "neutral"}`} aria-hidden="true" />
+              {s.name}
+            </button>
+          ))}
+        </div>
+      )}
+      {error && <span className="wf-error" role="alert">{error}</span>}
+    </span>
+  );
+};
 
 const DocumentRibbon = () => {
   const [sealedCount, setSealedCount] = useState(0);
@@ -18,6 +132,19 @@ const DocumentRibbon = () => {
   const [loading, setLoading] = useState(true);
   const [validationState, setValidationState] = useState(null); // "passed"|"failed"|"awaiting-approval"
   const [aiCount, setAiCount] = useState(null); // number of latest AI findings, or null
+  const [workflow, setWorkflow] = useState(null); // { assigned, state, available, def } or null
+  const [pageId, setPageId] = useState(null);
+  const [spaceKey, setSpaceKey] = useState(null);
+
+  const reloadWorkflow = useCallback(async () => {
+    if (!pageId) return;
+    try {
+      const res = await invoke("get-page-workflow", { pageId, spaceKey });
+      setWorkflow(res?.assigned ? res : null);
+    } catch (_) {
+      setWorkflow(null);
+    }
+  }, [pageId, spaceKey]);
 
   const fetchArtifactStats = useCallback(async () => {
     try {
@@ -56,7 +183,8 @@ const DocumentRibbon = () => {
         await enablePaletteSync();
 
         const context = await view.getContext();
-        const pageId = context?.extension?.content?.id || context?.contentId;
+        const ctxPageId = context?.extension?.content?.id || context?.contentId;
+        const ctxSpaceKey = context?.extension?.content?.space?.key || context?.extension?.space?.key || null;
         const contentType = context?.extension?.content?.type;
         const location = context?.extension?.location || "";
         const operatorId = context?.accountId;
@@ -64,24 +192,32 @@ const DocumentRibbon = () => {
         // Only show ribbon on actual content pages (not space apps, settings, or admin pages)
         const isSpaceAppPage = location.includes("/apps/") || location.includes("/settings/");
         const isContentPage = contentType === "page" || contentType === "blogpost";
-        if (!pageId || isSpaceAppPage || (contentType && !isContentPage)) {
+        if (!ctxPageId || isSpaceAppPage || (contentType && !isContentPage)) {
           setLoading(false);
           return;
         }
+        setPageId(ctxPageId);
+        setSpaceKey(ctxSpaceKey);
 
         await fetchArtifactStats();
 
+        // Page workflow state (best-effort; independent of seals).
+        try {
+          const wf = await invoke("get-page-workflow", { pageId: ctxPageId, spaceKey: ctxSpaceKey });
+          if (wf?.assigned) setWorkflow(wf);
+        } catch (_) { /* none */ }
+
         if (operatorId) {
-          await fetchAlerts(pageId, operatorId);
+          await fetchAlerts(ctxPageId, operatorId);
         }
 
         // Page-level validation + AI status (best-effort; independent of seals).
         try {
-          const vs = await invoke("get-validation-state", { pageId });
+          const vs = await invoke("get-validation-state", { pageId: ctxPageId });
           if (vs?.state?.state) setValidationState(vs.state.state);
         } catch (_) { /* none */ }
         try {
-          const ai = await invoke("get-ai-findings", { pageId });
+          const ai = await invoke("get-ai-findings", { pageId: ctxPageId });
           if (ai?.findings?.findings) setAiCount(ai.findings.findings.length);
         } catch (_) { /* none */ }
       } catch (err) {
@@ -137,7 +273,7 @@ const DocumentRibbon = () => {
   );
 
   // Hide ribbon entirely when the page has nothing to report (only after loading)
-  if (!loading && totalCount === 0 && alerts.length === 0 && !validationState && aiCount === null) {
+  if (!loading && totalCount === 0 && alerts.length === 0 && !validationState && aiCount === null && !workflow) {
     return null;
   }
 
@@ -173,6 +309,15 @@ const DocumentRibbon = () => {
               ? `${totalCount} attachment${totalCount !== 1 ? "s" : ""} on this page — none sealed`
               : "No attachments on this page"}
         </span>
+
+        {!loading && workflow && (
+          <WorkflowControl
+            workflow={workflow}
+            pageId={pageId}
+            spaceKey={spaceKey}
+            onTransitioned={reloadWorkflow}
+          />
+        )}
 
         {!loading && validationState && (
           <span className={`ribbon-chip ribbon-chip-${validationState}`} title="Page content validation status">
