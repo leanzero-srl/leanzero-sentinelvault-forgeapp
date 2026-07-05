@@ -1760,3 +1760,21 @@ html[data-color-mode="dark"] .artifact-card.status-expired { border-color: #F871
 .val-ai { margin-top: 24px; padding-top: 16px; border-top: 1px solid var(--sv-border-secondary); }
 .val-ai-badge { font-size: 10px; font-weight: 700; padding: 2px 10px; border-radius: 9999px; background: var(--sv-interactive-primary); color: var(--sv-text-on-primary); }
 .val-textarea { width: 100%; resize: vertical; font-family: inherit; min-width: 260px; }
+
+/* ── Workflow settings — state preview chips (#42) ──────── */
+.wf-state-preview { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+.wf-state-chip {
+  display: inline-flex; align-items: center;
+  padding: 2px 10px; border-radius: 9999px;
+  font-size: 11px; font-weight: 700; line-height: 1.6; color: #ffffff; white-space: nowrap;
+}
+.wf-state-arrow { color: var(--sv-text-subtle, #94A3B8); font-size: 12px; }
+/* Solid, saturated fills; AA ink (amber uses dark ink, matching the ribbon chips). */
+.wf-state-neutral  { background: #475569; }
+.wf-state-info     { background: #1d4ed8; }
+.wf-state-success  { background: #15803d; }
+.wf-state-critical { background: #dc2626; }
+.wf-state-caution  { background: #d97706; color: #1F2937; }
+.wf-state-ai       { background: #7c3aed; }
+.wf-state-seal     { background: #0e7490; }
+html[data-color-mode="dark"] .wf-state-neutral { background: #64748b; }

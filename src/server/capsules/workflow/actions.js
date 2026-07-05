@@ -3,7 +3,7 @@
  * Thin adapters: pull pageId / spaceKey / accountId from `req`, apply authz,
  * delegate to logic.js. Enforcement (#44) and the approver model (#43) land later.
  */
-import { asUser, route } from "@forge/api";
+import { asApp, asUser, route } from "@forge/api";
 
 import { authorizeSteward } from "../../shared/steward-checks.js";
 import {
@@ -17,6 +17,7 @@ import {
   findState,
   getSpaceWorkflowSettings,
   setSpaceWorkflowSettings,
+  bulkAssignPagesInSpace,
 } from "./logic.js";
 
 const pageIdOf = (req) =>
@@ -123,6 +124,28 @@ const setSpaceSettings = async (req) => {
   return setSpaceWorkflowSettings(spaceKey, req.payload?.settings || {});
 };
 
+// Apply the space's workflow to existing pages without one (steward). Resolves the
+// space id, then delegates the bounded scan+assign to the shared logic function.
+const bulkAssign = async (req) => {
+  const spaceKey = spaceKeyOf(req);
+  if (!(await authorizeSteward(req.context?.accountId, spaceKey))) {
+    return { success: false, reason: "Only a realm steward can apply workflows" };
+  }
+  const settings = await getSpaceWorkflowSettings(spaceKey);
+  if (!settings.enabled) return { success: false, reason: "Enable workflow for this space first" };
+
+  let spaceId = req.payload?.spaceId
+    || req.context?.extension?.space?.id
+    || req.context?.extension?.content?.space?.id;
+  if (!spaceId) {
+    const sres = await asApp().requestConfluence(route`/wiki/api/v2/spaces?keys=${spaceKey}`);
+    if (sres.ok) spaceId = (await sres.json())?.results?.[0]?.id;
+  }
+  if (!spaceId) return { success: false, reason: "Could not resolve the space" };
+
+  return bulkAssignPagesInSpace({ spaceKey, spaceId, cursor: req.payload?.cursor || null, actorAccountId: req.context?.accountId });
+};
+
 export const actions = [
   ["get-page-workflow", getWorkflow],
   ["get-workflow-log", getLog],
@@ -132,4 +155,5 @@ export const actions = [
   ["store-workflow-config", storeConfig],
   ["get-space-workflow-settings", getSpaceSettings],
   ["set-space-workflow-settings", setSpaceSettings],
+  ["bulk-assign-workflow", bulkAssign],
 ];

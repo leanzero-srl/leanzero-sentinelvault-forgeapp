@@ -15,6 +15,7 @@ import {
   getWorkflowLog,
   getSpaceWorkflowSettings,
   setSpaceWorkflowSettings,
+  bulkAssignPagesInSpace,
 } from "./server/capsules/workflow/logic.js";
 
 const json = (statusCode, body) => ({
@@ -106,6 +107,15 @@ export async function testStateTrigger(req) {
       }
       if (fn === "getSpaceWorkflowSettings") {
         return json(200, { invoked: fn, result: await getSpaceWorkflowSettings(q(req, "spaceKey")) });
+      }
+      if (fn === "bulkAssignWorkflow") {
+        const r = await bulkAssignPagesInSpace({
+          spaceKey: q(req, "spaceKey"),
+          spaceId: q(req, "spaceId"),
+          cursor: q(req, "cursor") || null,
+          actorAccountId: q(req, "actor") || "harness",
+        });
+        return json(200, { invoked: fn, result: r });
       }
       return json(400, { error: `unknown fn=${fn}` });
     }
