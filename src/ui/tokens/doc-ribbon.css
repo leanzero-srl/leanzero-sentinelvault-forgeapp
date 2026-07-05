@@ -394,6 +394,7 @@ html[data-color-mode="dark"] .sv-text-inverse {
 .wf-chip:not(:disabled):hover { transform: translateY(-1px); }
 .wf-chip:focus-visible { outline: 2px solid var(--sv-border-focus); outline-offset: 2px; }
 .wf-chip-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; opacity: 0.9; }
+.wf-chip-icon { flex: none; opacity: 0.95; margin-top: -1px; } /* flag = "document workflow state" (distinct from the AI/validation status chips) */
 .wf-chip-caret { font-size: 9px; opacity: 0.85; margin-left: 1px; }
 /* Solid, saturated fills; ink chosen for >= WCAG AA on each (amber uses dark ink,
    mirroring the existing .ribbon-chip-awaiting-approval chip). */
