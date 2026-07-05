@@ -18,18 +18,57 @@ import { enablePaletteSync } from "../../kit/palette-sync";
  * a native <select>). Steward-gated transitions (e.g. entering Approved) are
  * rejected server-side and surfaced inline.
  */
-const WorkflowControl = ({ workflow, pageId, spaceKey, onTransitioned }) => {
+const MODE_TEXT = { any: "Any one approver can approve", all: "All approvers must approve", min: "A minimum number must approve" };
+const APPR_STATUS = { approved: "Approved", denied: "Denied", pending: "Pending" };
+
+const WorkflowControl = ({ workflow, approvals, operatorId, pageId, spaceKey, onTransitioned }) => {
   const [menuOpen, setMenuOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
   const [seat, setSeat] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
+  const [panelOpen, setPanelOpen] = useState(false);
+  const [reason, setReason] = useState("");
+  const [decideBusy, setDecideBusy] = useState(false);
+  const [decideMsg, setDecideMsg] = useState(null);
   const btnRef = useRef(null);
   const menuRef = useRef(null);
   const itemRefs = useRef([]);
+  const panelRef = useRef(null);
+  const apprBtnRef = useRef(null);
 
   const available = workflow?.available || [];
   const canMove = available.length > 0;
+  const pendingApproval = approvals?.pending ? approvals : null;
+
+  // Close the approval panel on outside click / Escape.
+  useEffect(() => {
+    if (!panelOpen) return undefined;
+    const outside = (e) => !panelRef.current?.contains(e.target) && !apprBtnRef.current?.contains(e.target);
+    const onDown = (e) => { if (outside(e)) setPanelOpen(false); };
+    const onKey = (e) => { if (e.key === "Escape") { setPanelOpen(false); apprBtnRef.current?.focus(); } };
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => { document.removeEventListener("mousedown", onDown); document.removeEventListener("keydown", onKey); };
+  }, [panelOpen]);
+
+  const doDecide = useCallback(async (decision) => {
+    setDecideBusy(true); setDecideMsg(null);
+    try {
+      const r = await invoke("decide-approval", { pageId, decision, reason });
+      if (r?.success) {
+        setReason("");
+        setPanelOpen(false);
+        await onTransitioned();
+      } else {
+        setDecideMsg(r?.reason || "Could not record your decision.");
+      }
+    } catch (_) {
+      setDecideMsg("Could not record your decision.");
+    } finally {
+      setDecideBusy(false);
+    }
+  }, [pageId, reason, onTransitioned]);
 
   // Close on outside click, or when focus leaves both the trigger and the menu.
   useEffect(() => {
@@ -84,6 +123,87 @@ const WorkflowControl = ({ workflow, pageId, spaceKey, onTransitioned }) => {
   if (!workflow?.assigned || !workflow.state) return null;
   const state = workflow.state;
 
+  // APPROVAL MODE — the page is awaiting sign-off before it can move to the enforce state.
+  if (pendingApproval) {
+    const approverList = pendingApproval.approvers || [];
+    const approvedCount = approverList.filter((a) => a.status === "approved").length;
+    const rawTarget = pendingApproval.toStateId || "";
+    const targetName = workflow.def?.states?.find((s) => s.id === rawTarget)?.name
+      || (rawTarget ? rawTarget.charAt(0).toUpperCase() + rawTarget.slice(1).replace(/_/g, " ") : "the next state");
+    const mine = approverList.find((a) => a.accountId === operatorId);
+    const iCanDecide = mine && mine.status === "pending";
+    const others = approverList.filter((a) => a.accountId !== operatorId);
+    const wouldComplete = pendingApproval.mode === "any"
+      ? true
+      : pendingApproval.mode === "min"
+        ? approvedCount + 1 >= (pendingApproval.min || 1)
+        : others.every((a) => a.status === "approved");
+    return (
+      <span className="wf-control">
+        <button
+          ref={apprBtnRef}
+          type="button"
+          className="wf-chip wf-chip-caution wf-chip-awaiting"
+          onClick={() => setPanelOpen((o) => !o)}
+          aria-haspopup="dialog"
+          aria-expanded={panelOpen}
+          title={`Awaiting approval to move to ${targetName}`}
+        >
+          <svg className="wf-chip-icon" width="10" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M4 22V4a1 1 0 0 1 1-1h13l-3 4 3 4H5" />
+          </svg>
+          <span className="wf-chip-label">{iCanDecide ? "Awaiting your approval" : "Awaiting approval"}</span>
+          <span className="wf-chip-count" aria-hidden="true">{approvedCount} of {approverList.length}</span>
+          <span className="wf-chip-caret" aria-hidden="true">▾</span>
+        </button>
+        {panelOpen && (
+          <div className="wf-appr-panel" role="dialog" aria-label={`Approval to move to ${targetName}`} ref={panelRef}>
+            <div className="wf-appr-head">Approval to move to <strong>{targetName}</strong></div>
+            <div className="wf-appr-sub">
+              Requested by {pendingApproval.requestedByName || "a colleague"} · {MODE_TEXT[pendingApproval.mode] || MODE_TEXT.any}
+              {pendingApproval.mode === "min" ? ` (at least ${pendingApproval.min})` : ""}
+            </div>
+            <div className="wf-appr-progress">{approvedCount} of {approverList.length} approved</div>
+            <ul className="wf-appr-list">
+              {approverList.map((a) => (
+                <li key={a.accountId} className="wf-appr-row">
+                  <span className={`wf-appr-badge wf-appr-${a.status || "pending"}`}>{APPR_STATUS[a.status] || "Pending"}</span>
+                  <span className="wf-appr-name">{a.name || "Approver"}{a.accountId === operatorId ? " (you)" : ""}</span>
+                  {a.reason ? <span className="wf-appr-reason">“{a.reason}”</span> : null}
+                </li>
+              ))}
+            </ul>
+            {iCanDecide ? (
+              <div className="wf-appr-decide">
+                <p className="wf-appr-outcome">
+                  {wouldComplete
+                    ? `You're the deciding approval — approving moves this page to ${targetName}.`
+                    : "Approving records your sign-off; the page moves once the rule is met."}
+                  {" "}Denying keeps it In Review.
+                </p>
+                <textarea
+                  className="wf-appr-reason-input"
+                  rows={2}
+                  placeholder="Add a reason (optional)"
+                  value={reason}
+                  onChange={(e) => setReason(e.target.value)}
+                  aria-label="Reason for your decision"
+                />
+                <div className="wf-appr-actions">
+                  <button type="button" className="wf-appr-approve" onClick={() => doDecide("approved")} disabled={decideBusy}>Approve</button>
+                  <button type="button" className="wf-appr-deny" onClick={() => doDecide("denied")} disabled={decideBusy}>Deny</button>
+                </div>
+              </div>
+            ) : (
+              <div className="wf-appr-note">{mine ? "You have already responded." : "Waiting on the approvers above."}</div>
+            )}
+            {decideMsg && <div className="wf-error" role="alert">{decideMsg}</div>}
+          </div>
+        )}
+      </span>
+    );
+  }
+
   return (
     <span className="wf-control">
       <button
@@ -117,7 +237,7 @@ const WorkflowControl = ({ workflow, pageId, spaceKey, onTransitioned }) => {
               onClick={() => doTransition(s.id)}
             >
               <span className={`wf-dot wf-dot-${s.color || "neutral"}`} aria-hidden="true" />
-              {s.name}
+              {s.requiresApproval ? `Request approval → ${s.name}` : s.name}
             </button>
           ))}
         </div>
@@ -135,6 +255,8 @@ const DocumentRibbon = () => {
   const [validationState, setValidationState] = useState(null); // "passed"|"failed"|"awaiting-approval"
   const [aiCount, setAiCount] = useState(null); // number of latest AI findings, or null
   const [workflow, setWorkflow] = useState(null); // { assigned, state, available, def } or null
+  const [approvals, setApprovals] = useState(null); // { pending, toStateId, approvers, mode, ... } or null
+  const [operatorId, setOperatorId] = useState(null);
   const [pageId, setPageId] = useState(null);
   const [spaceKey, setSpaceKey] = useState(null);
 
@@ -145,6 +267,12 @@ const DocumentRibbon = () => {
       setWorkflow(res?.assigned ? res : null);
     } catch (_) {
       setWorkflow(null);
+    }
+    try {
+      const appr = await invoke("get-page-approvals", { pageId, spaceKey });
+      setApprovals(appr?.pending ? appr : null);
+    } catch (_) {
+      setApprovals(null);
     }
   }, [pageId, spaceKey]);
 
@@ -200,13 +328,18 @@ const DocumentRibbon = () => {
         }
         setPageId(ctxPageId);
         setSpaceKey(ctxSpaceKey);
+        setOperatorId(operatorId || null);
 
         await fetchArtifactStats();
 
-        // Page workflow state (best-effort; independent of seals).
+        // Page workflow state + any pending approval (best-effort; independent of seals).
         try {
           const wf = await invoke("get-page-workflow", { pageId: ctxPageId, spaceKey: ctxSpaceKey });
           if (wf?.assigned) setWorkflow(wf);
+        } catch (_) { /* none */ }
+        try {
+          const appr = await invoke("get-page-approvals", { pageId: ctxPageId, spaceKey: ctxSpaceKey });
+          if (appr?.pending) setApprovals(appr);
         } catch (_) { /* none */ }
 
         if (operatorId) {
@@ -315,6 +448,8 @@ const DocumentRibbon = () => {
         {!loading && workflow && (
           <WorkflowControl
             workflow={workflow}
+            approvals={approvals}
+            operatorId={operatorId}
             pageId={pageId}
             spaceKey={spaceKey}
             onTransitioned={reloadWorkflow}

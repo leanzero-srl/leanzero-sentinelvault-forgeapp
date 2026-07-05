@@ -23,8 +23,83 @@ const Toggle = ({ checked, onChange, label }) => (
   </label>
 );
 
+const MODE_OPTS = [
+  { value: "any", label: "Any one approver can approve" },
+  { value: "all", label: "All approvers must approve" },
+  { value: "min", label: "At least a set number must approve" },
+];
+
+// Small custom select (no native <select>), mirroring ValidationsEditor's MiniSelect.
+const MiniSelect = ({ value, options, onChange, ariaLabel }) => {
+  const [open, setOpen] = useState(false);
+  const current = options.find((o) => o.value === value);
+  return (
+    <div className="mini-select" tabIndex={0} onBlur={() => setTimeout(() => setOpen(false), 150)}>
+      <div className="mini-select-value" onClick={() => setOpen(!open)} role="button" aria-haspopup="listbox" aria-label={ariaLabel}>
+        <span>{current ? current.label : "Select…"}</span>
+        <span className={`mini-select-arrow ${open ? "open" : ""}`}>▼</span>
+      </div>
+      {open && (
+        <div className="mini-select-menu" role="listbox">
+          {options.map((o) => (
+            <div key={o.value} role="option" aria-selected={o.value === value} className={`mini-select-opt ${o.value === value ? "sel" : ""}`} onClick={() => { onChange(o.value); setOpen(false); }}>
+              {o.label}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
+// Search-and-add people picker (no native control). Selected = [{ type, id, name }].
+const UserPicker = ({ selected, onChange }) => {
+  const [query, setQuery] = useState("");
+  const [results, setResults] = useState([]);
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    if (query.trim().length < 2) { setResults([]); setOpen(false); return undefined; }
+    let cancelled = false;
+    const t = setTimeout(async () => {
+      try {
+        const r = await invoke("search-workflow-users", { query });
+        if (!cancelled) { setResults(r?.users || []); setOpen(true); }
+      } catch (_) { /* ignore */ }
+    }, 300);
+    return () => { cancelled = true; clearTimeout(t); };
+  }, [query]);
+  const add = (u) => {
+    if (!selected.find((s) => s.id === u.accountId)) onChange([...selected, { type: "user", id: u.accountId, name: u.name }]);
+    setQuery(""); setResults([]); setOpen(false);
+  };
+  const remove = (id) => onChange(selected.filter((s) => s.id !== id));
+  return (
+    <div className="wf-userpicker">
+      {selected.length > 0 && (
+        <div className="wf-userpicker-chips">
+          {selected.map((s) => (
+            <span key={s.id} className="wf-userchip">
+              {s.name || s.id}
+              <button type="button" className="wf-userchip-x" onClick={() => remove(s.id)} aria-label={`Remove ${s.name || s.id}`}>×</button>
+            </span>
+          ))}
+        </div>
+      )}
+      <input className="form-input" placeholder="Search people to add…" value={query} onChange={(e) => setQuery(e.target.value)} aria-label="Search people to add as approvers" />
+      {open && results.length > 0 && (
+        <div className="wf-userpicker-menu" role="listbox">
+          {results.map((u) => (
+            <button type="button" key={u.accountId} role="option" className="wf-userpicker-opt" onClick={() => add(u)}>{u.name}</button>
+          ))}
+        </div>
+      )}
+      {selected.length === 0 && <p className="settings-row-description" style={{ marginTop: "6px" }}>No approvers yet — the page cannot reach Approved until you add at least one.</p>}
+    </div>
+  );
+};
+
 export default function WorkflowSettingsEditor({ spaceKey = null }) {
-  const [settings, setSettings] = useState({ enabled: false, autoAssignNew: false, workflowId: "default" });
+  const [settings, setSettings] = useState({ enabled: false, autoAssignNew: false, workflowId: "default", approval: null });
   const [def, setDef] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -36,7 +111,7 @@ export default function WorkflowSettingsEditor({ spaceKey = null }) {
     (async () => {
       try {
         const r = await invoke("get-space-workflow-settings", { spaceKey });
-        if (r?.settings) setSettings({ enabled: !!r.settings.enabled, autoAssignNew: !!r.settings.autoAssignNew, workflowId: r.settings.workflowId || "default" });
+        if (r?.settings) setSettings({ enabled: !!r.settings.enabled, autoAssignNew: !!r.settings.autoAssignNew, workflowId: r.settings.workflowId || "default", approval: r.settings.approval || null });
         if (r?.def) setDef(r.def);
       } catch (e) {
         console.error("Load workflow settings failed:", e);
@@ -111,6 +186,47 @@ export default function WorkflowSettingsEditor({ spaceKey = null }) {
               ))}
             </div>
           </SettingsRow>
+
+          <SettingsRow
+            label="Require approval to reach Approved"
+            description="Instead of moving straight to Approved, require the people below to sign off first. Until they do, the page stays In Review and shows “Awaiting approval” on its ribbon."
+          >
+            <Toggle
+              label="Require approval to reach Approved"
+              checked={!!settings.approval}
+              onChange={(e) => setSettings((p) => ({ ...p, approval: e.target.checked ? (p.approval || { approvers: [], mode: "any", min: 1 }) : null }))}
+            />
+          </SettingsRow>
+
+          {settings.approval && (
+            <div className="nested-control">
+              <SettingsRow label="Approvers" description="Who can approve moving a page to Approved.">
+                <UserPicker
+                  selected={settings.approval.approvers || []}
+                  onChange={(approvers) => setSettings((p) => ({ ...p, approval: { ...p.approval, approvers } }))}
+                />
+              </SettingsRow>
+              <SettingsRow label="Decision rule" description="How many of the approvers must approve before the page moves.">
+                <MiniSelect
+                  ariaLabel="Approval decision rule"
+                  value={settings.approval.mode || "any"}
+                  options={MODE_OPTS}
+                  onChange={(mode) => setSettings((p) => ({ ...p, approval: { ...p.approval, mode } }))}
+                />
+              </SettingsRow>
+              {settings.approval.mode === "min" && (
+                <SettingsRow label="Minimum approvals" description="At least this many of the approvers must approve.">
+                  <input
+                    className="form-input"
+                    type="number"
+                    min="1"
+                    value={settings.approval.min || 1}
+                    onChange={(e) => setSettings((p) => ({ ...p, approval: { ...p.approval, min: parseInt(e.target.value, 10) || 1 } }))}
+                  />
+                </SettingsRow>
+              )}
+            </div>
+          )}
 
           <SettingsRow
             label="Apply to existing pages"
