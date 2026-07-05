@@ -18,7 +18,24 @@ import {
   getSpaceWorkflowSettings,
   setSpaceWorkflowSettings,
   bulkAssignPagesInSpace,
+  readPageWorkflow,
+  validateTransition,
 } from "./logic.js";
+import {
+  resolveApprovers,
+  requestApprovalTransition,
+  decideApproval,
+  getPageApprovalStatus,
+  listMyApprovals,
+} from "./approvals.js";
+
+async function fetchPageVersion(pageId) {
+  try {
+    const res = await asApp().requestConfluence(route`/wiki/api/v2/pages/${pageId}`);
+    if (res.ok) return (await res.json())?.version?.number ?? null;
+  } catch (_) { /* best-effort */ }
+  return null;
+}
 
 const pageIdOf = (req) =>
   req.payload?.pageId ||
@@ -73,17 +90,43 @@ const assignWorkflow = async (req) => {
 
 const requestTransition = async (req) => {
   const pageId = pageIdOf(req);
-  const spaceKey = spaceKeyOf(req);
   const actorAccountId = req.context?.accountId;
   const toStateId = req.payload?.toStateId;
-  if (!toStateId) return { success: false, reason: "toStateId required" };
+  if (!pageId || !toStateId) return { success: false, reason: "pageId and toStateId required" };
 
-  // Entering an `enforce`-marked state (e.g. Approved) is steward-gated until the
-  // #43 approver model replaces this guard. Other transitions are open to any actor.
+  // Authoritative space = the page's OWN workflow record, never a caller-supplied
+  // spaceKey (else a steward of space X could drive an enforce transition on a page in
+  // space Y). A transition requires the page to already have a workflow.
+  const current = await readPageWorkflow(pageId);
+  if (!current) return { success: false, reason: "Page has no workflow assigned" };
+  const spaceKey = current.spaceKey || spaceKeyOf(req);
+
+  // Entering an `enforce`-marked state (e.g. Approved): if the space has approvers
+  // configured (#43), open a multi-approver approval instead of transitioning now;
+  // otherwise fall back to the #42 steward gate.
   const def = await resolveWorkflowDef(spaceKey);
   const target = findState(def, toStateId);
-  if (target?.enforce && !(await authorizeSteward(actorAccountId, spaceKey))) {
-    return { success: false, reason: `Entering "${target.name}" requires steward approval` };
+  if (target?.enforce) {
+    const settings = await getSpaceWorkflowSettings(spaceKey);
+    const spec = resolveApprovers(settings.approval);
+    if (spec) {
+      const check = validateTransition(def, current.stateId, toStateId);
+      if (!check.ok) return { success: false, reason: check.reason };
+      // Don't let a re-request silently discard approvers' already-recorded decisions.
+      const existing = await getPageApprovalStatus(pageId);
+      if (existing?.pending && existing.requestedBy !== actorAccountId && !(await authorizeSteward(actorAccountId, spaceKey))) {
+        return { success: false, reason: "An approval is already pending for this page" };
+      }
+      const names = {};
+      (settings.approval.approvers || []).forEach((a) => { if (a.id) names[a.id] = a.name; });
+      return requestApprovalTransition({
+        pageId, toStateId, spaceKey, approvers: spec.approvers, mode: spec.mode, min: spec.min,
+        actorAccountId, actorName: await actorName(), pinnedVersion: await fetchPageVersion(pageId), approverNames: names,
+      });
+    }
+    if (!(await authorizeSteward(actorAccountId, spaceKey))) {
+      return { success: false, reason: `Entering "${target.name}" requires steward approval` };
+    }
   }
   return transitionPageWorkflow({
     pageId,
@@ -93,6 +136,23 @@ const requestTransition = async (req) => {
     actorName: await actorName(),
     reason: req.payload?.reason,
   });
+};
+
+const decideApprovalAction = async (req) => {
+  const pageId = pageIdOf(req);
+  const { decision, reason } = req.payload || {};
+  if (!pageId) return { success: false, reason: "No page context" };
+  return decideApproval({ pageId, approverAccountId: req.context?.accountId, decision, reason, actorName: await actorName() });
+};
+
+const getPageApprovals = async (req) => {
+  const pageId = pageIdOf(req);
+  if (!pageId) return { pending: false };
+  return getPageApprovalStatus(pageId);
+};
+
+const listMyApprovalsAction = async (req) => {
+  return { approvals: await listMyApprovals(req.context?.accountId) };
 };
 
 const loadConfig = async (req) => {
@@ -156,4 +216,7 @@ export const actions = [
   ["get-space-workflow-settings", getSpaceSettings],
   ["set-space-workflow-settings", setSpaceSettings],
   ["bulk-assign-workflow", bulkAssign],
+  ["decide-approval", decideApprovalAction],
+  ["get-page-approvals", getPageApprovals],
+  ["list-my-approvals", listMyApprovalsAction],
 ];

@@ -17,6 +17,11 @@ import {
   setSpaceWorkflowSettings,
   bulkAssignPagesInSpace,
 } from "./server/capsules/workflow/logic.js";
+import {
+  requestApprovalTransition,
+  decideApproval,
+  getPageApprovalStatus,
+} from "./server/capsules/workflow/approvals.js";
 
 const json = (statusCode, body) => ({
   statusCode,
@@ -116,6 +121,27 @@ export async function testStateTrigger(req) {
           actorAccountId: q(req, "actor") || "harness",
         });
         return json(200, { invoked: fn, result: r });
+      }
+      // Approvals (#43): drive the multi-approver flow the resolvers gate on.
+      if (fn === "requestApproval") {
+        const approvers = (q(req, "approvers") || "").split(",").filter(Boolean);
+        const r = await requestApprovalTransition({
+          pageId: q(req, "pageId"), toStateId: q(req, "to"), spaceKey: q(req, "spaceKey"),
+          approvers, mode: q(req, "mode") || "any", min: parseInt(q(req, "min"), 10) || 1,
+          actorAccountId: q(req, "actor") || "harness", actorName: "Harness",
+          pinnedVersion: parseInt(q(req, "pinnedVersion"), 10) || null,
+        });
+        return json(200, { invoked: fn, result: r });
+      }
+      if (fn === "decideApproval") {
+        const r = await decideApproval({
+          pageId: q(req, "pageId"), approverAccountId: q(req, "approver"),
+          decision: q(req, "decision"), reason: q(req, "reason"), actorName: q(req, "approver"),
+        });
+        return json(200, { invoked: fn, result: r });
+      }
+      if (fn === "pageApprovals") {
+        return json(200, { invoked: fn, result: await getPageApprovalStatus(q(req, "pageId")) });
       }
       return json(400, { error: `unknown fn=${fn}` });
     }
