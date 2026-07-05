@@ -19,6 +19,7 @@ import {
   markVersionChecked,
 } from "./capsules/validations/logic.js";
 import { evaluateRules } from "./infra/rules-engine.js";
+import { autoAssignOnEvent } from "./capsules/workflow/logic.js";
 import { postValidationComment } from "./infra/validation-blueprints.js";
 import { readDocBody, readDocBodyAtVersion, writeDocBody, collectMediaFileIds, extractMediaSingleNodes, spliceMediaNodes, locateBodiedSectionNodes, replaceSectionBody, spliceSectionWrapper, hashAdf, canonicalizeAdf } from "./infra/doc-surgery.js";
 
@@ -218,6 +219,21 @@ export async function pageContentTrigger(event) {
       await runValidationPhase(event, pageId, atlassianId);
     } catch (e) {
       console.error("[VALIDATE] phase error:", e);
+    }
+
+    // --- Workflow auto-assign phase (#42; CREATED pages only, independent of seals).
+    // Gated to created:page so "autoAssignNew" means exactly new pages and the log
+    // reason is accurate (existing-page backfill is the job of the explicit bulk-apply).
+    // Idempotent + a one-shot claim marker guards duplicate deliveries; content-property
+    // writes don't re-fire page events (same as the seal props), so no loop. ---
+    try {
+      const isCreate = typeof event?.eventType === "string" && event.eventType.includes("created");
+      const wfSpaceKey = event?.space?.key || event?.content?.space?.key || event?.content?.spaceKey || null;
+      if (isCreate && wfSpaceKey) {
+        await autoAssignOnEvent({ pageId, spaceKey: wfSpaceKey, actorAccountId: atlassianId || null, actorName: null });
+      }
+    } catch (e) {
+      console.error("[WORKFLOW] auto-assign phase error:", e);
     }
   } catch (error) {
     console.error("[PAGE-PROTECT] Error in page content trigger:", error);

@@ -13,6 +13,8 @@ import {
   transitionPageWorkflow,
   getPageWorkflow,
   getWorkflowLog,
+  getSpaceWorkflowSettings,
+  setSpaceWorkflowSettings,
 } from "./server/capsules/workflow/logic.js";
 
 const json = (statusCode, body) => ({
@@ -93,6 +95,17 @@ export async function testStateTrigger(req) {
         const result = await getPageWorkflow(q(req, "pageId"), q(req, "spaceKey"));
         if (q(req, "withLog")) result.log = await getWorkflowLog(q(req, "pageId"));
         return json(200, { invoked: fn, result });
+      }
+      if (fn === "setSpaceWorkflowSettings") {
+        const r = await setSpaceWorkflowSettings(q(req, "spaceKey"), {
+          enabled: q(req, "enabled") === "1",
+          autoAssignNew: q(req, "autoAssignNew") === "1",
+          workflowId: q(req, "workflowId"),
+        });
+        return json(200, { invoked: fn, result: r });
+      }
+      if (fn === "getSpaceWorkflowSettings") {
+        return json(200, { invoked: fn, result: await getSpaceWorkflowSettings(q(req, "spaceKey")) });
       }
       return json(400, { error: `unknown fn=${fn}` });
     }
