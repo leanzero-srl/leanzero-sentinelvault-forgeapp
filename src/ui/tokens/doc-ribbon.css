@@ -375,3 +375,87 @@ html[data-color-mode="dark"] .sv-text-inverse {
 .ribbon-chip-failed { background: var(--sv-interactive-danger); color: var(--sv-text-inverse); }
 .ribbon-chip-awaiting-approval { background: #F59E0B; color: #1F2937; }
 .ribbon-chip-ai { background: #7C3AED; color: #ffffff; }
+
+/* ── Workflow state chip + transition menu (#42) ─────── */
+:root {
+  --sv-ease: cubic-bezier(0.22, 1, 0.36, 1); /* LeanZero house curve */
+  --sv-dur-state: 200ms;
+  --sv-dur-assert: 550ms;
+}
+.wf-control { position: relative; display: inline-flex; align-items: center; gap: 6px; }
+.wf-chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 2px 10px; border: none; border-radius: 9999px;
+  font-family: inherit; font-size: 11px; font-weight: 700; line-height: 1.6;
+  color: #ffffff; cursor: pointer; white-space: nowrap;
+  transition: background-color var(--sv-dur-state) var(--sv-ease), transform 120ms var(--sv-ease);
+}
+.wf-chip:disabled { cursor: default; }
+.wf-chip:not(:disabled):hover { transform: translateY(-1px); }
+.wf-chip:focus-visible { outline: 2px solid var(--sv-border-focus); outline-offset: 2px; }
+.wf-chip-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; opacity: 0.9; }
+.wf-chip-caret { font-size: 9px; opacity: 0.85; margin-left: 1px; }
+/* Solid, saturated fills; ink chosen for >= WCAG AA on each (amber uses dark ink,
+   mirroring the existing .ribbon-chip-awaiting-approval chip). */
+.wf-chip-neutral  { background: #475569; }
+.wf-chip-info     { background: #1d4ed8; }
+.wf-chip-success  { background: #15803d; }
+.wf-chip-critical { background: #dc2626; }
+.wf-chip-caution  { background: #d97706; color: #1F2937; }
+.wf-chip-ai       { background: #7c3aed; }
+.wf-chip-seal     { background: #0e7490; }
+
+/* One-shot "seat into place" on an actively-made transition (motion signature #1, adapted:
+   the new state seats like a stamp into wax — transform only, 60fps). */
+.wf-seat { animation: wf-seat var(--sv-dur-assert) var(--sv-ease); }
+@keyframes wf-seat {
+  0%   { transform: scale(1); }
+  35%  { transform: scale(0.985); } /* signature move #1 seat depth — a firm seat, not a press */
+  100% { transform: scale(1); }
+}
+
+.wf-menu {
+  position: absolute; top: calc(100% + 6px); left: 0; z-index: 40;
+  min-width: 184px; padding: 6px;
+  background: var(--sv-surface-overlay, #ffffff);
+  border: 1px solid var(--sv-border-primary, #E2E8F0);
+  border-radius: 10px;
+  box-shadow: 0 8px 24px var(--sv-shadow-strong, rgba(0, 0, 0, 0.12));
+}
+.wf-menu-head {
+  padding: 4px 8px 6px; font-size: 10px; font-weight: 700; letter-spacing: 0.08em;
+  text-transform: uppercase; color: var(--sv-text-subtle, #94A3B8);
+}
+.wf-menu-item {
+  display: flex; align-items: center; gap: 8px; width: 100%;
+  padding: 7px 8px; border: none; border-radius: 7px; background: transparent;
+  font-family: inherit; font-size: 12px; font-weight: 600;
+  color: var(--sv-text-primary, #0F172A); text-align: left; cursor: pointer;
+  transition: background-color 120ms var(--sv-ease);
+}
+.wf-menu-item:hover { background: var(--sv-bg-hover, #E2E8F0); }
+.wf-menu-item:focus-visible {
+  background: var(--sv-bg-hover, #E2E8F0);
+  outline: 2px solid var(--sv-border-focus);
+  outline-offset: -2px; /* inset so the ring stays inside the padded, rounded menu */
+}
+.wf-dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+.wf-dot-neutral  { background: #475569; }
+.wf-dot-info     { background: #1d4ed8; }
+.wf-dot-success  { background: #15803d; }
+.wf-dot-critical { background: #dc2626; }
+.wf-dot-caution  { background: #d97706; }
+.wf-dot-ai       { background: #7c3aed; }
+.wf-dot-seal     { background: #0e7490; }
+.wf-error { font-size: 11px; font-weight: 600; color: var(--sv-interactive-danger, #dc2626); white-space: nowrap; }
+
+html[data-color-mode="dark"] .wf-chip-neutral { background: #64748b; }
+html[data-color-mode="dark"] .wf-dot-neutral  { background: #64748b; }
+
+/* Reduced-motion: collapse every move to its instant final state (also closes
+   doc-ribbon's previously-missing guard — DESIGN_TOKENS §5.3). */
+@media (prefers-reduced-motion: reduce) {
+  .wf-chip, .wf-menu-item { transition: none; }
+  .wf-chip:not(:disabled):hover { transform: none; }
+  .wf-seat { animation: none; }
+}
