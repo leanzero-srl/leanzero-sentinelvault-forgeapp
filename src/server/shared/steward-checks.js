@@ -7,6 +7,56 @@ import { kvs } from "@forge/kvs";
  * @param {string} realmKey - The realm key to check
  * @returns {Promise<boolean>} - True if operator is realm steward
  */
+// Trigger/scheduled-safe steward check (#44). Inside a Forge trigger there is NO
+// asUser() context, so isOperatorSteward (which relies on asUser) can't evaluate an
+// arbitrary EDITOR. This uses asApp() + the explicit steward list, and is account-specific
+// (the space ADMINISTER check names the subject), so it works in triggers and the sweep.
+export async function isAccountStewardAsApp(accountId, realmKey) {
+  if (!accountId) return false;
+  let realmConfig = null;
+  let globalConfig = null;
+  // 1. Explicitly-listed steward (KVS; works everywhere).
+  try {
+    const sanitized = String(realmKey || "").replace(/[^a-zA-Z0-9:._\s-#]/g, "_");
+    realmConfig = await kvs.get(`admin-settings-space-${sanitized}`);
+    globalConfig = await kvs.get("admin-settings-global");
+    const list = realmConfig?.adminUsers || globalConfig?.adminUsers || [];
+    if (list.some((o) => (typeof o === "string" ? o : o?.accountId) === accountId)) return true;
+  } catch (_) { /* fall through */ }
+  // 2. Steward GROUP cohorts + site/org-admin — mirrors isOperatorSteward's cohort + site-admin
+  //    arms, but via asApp() (no asUser context in a trigger). One user GET, expanded twice.
+  try {
+    const res = await asApp().requestConfluence(
+      route`/wiki/rest/api/user?accountId=${accountId}&expand=groups,operations`,
+    );
+    if (res.ok) {
+      const data = await res.json();
+      const stewardGroups = realmConfig?.adminGroups || globalConfig?.adminGroups || [];
+      if (stewardGroups.length > 0) {
+        const userGroups = (data.groups?.results || []).map((g) => g.name);
+        if (stewardGroups.some((g) => userGroups.includes(g))) return true;
+      }
+      const ops = data.operations || [];
+      if (ops.some((op) => op.operation === "administer" && op.targetType === "application")) return true;
+    }
+  } catch (_) { /* fall through */ }
+  // 3. Space ADMINISTER permission (as app; a site/space admin holds this on the space).
+  try {
+    if (realmKey) {
+      const res = await asApp().requestConfluence(
+        route`/wiki/rest/api/space/${realmKey}/permission/check`,
+        {
+          method: "POST",
+          headers: { Accept: "application/json", "Content-Type": "application/json" },
+          body: JSON.stringify({ subject: { type: "user", identifier: accountId }, permission: "ADMINISTER" }),
+        },
+      );
+      if (res.ok && (await res.json())?.hasPermission === true) return true;
+    }
+  } catch (_) { /* fail-closed toward enforcement */ }
+  return false;
+}
+
 export async function isOperatorRealmSteward(operatorAccountId, realmKey) {
   try {
     const response = await asUser().requestConfluence(

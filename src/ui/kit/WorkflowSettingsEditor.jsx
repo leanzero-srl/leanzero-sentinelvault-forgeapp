@@ -23,6 +23,11 @@ const Toggle = ({ checked, onChange, label }) => (
   </label>
 );
 
+const ENFORCE_MODE_OPTS = [
+  { value: "demote", label: "Move it back to Draft (keeps their edit)" },
+  { value: "revert", label: "Revert to the approved version (discards their edit)" },
+];
+
 const MODE_OPTS = [
   { value: "any", label: "Any one approver can approve" },
   { value: "all", label: "All approvers must approve" },
@@ -144,7 +149,7 @@ const GroupPicker = ({ selected, onChange }) => {
 };
 
 export default function WorkflowSettingsEditor({ spaceKey = null }) {
-  const [settings, setSettings] = useState({ enabled: false, autoAssignNew: false, workflowId: "default", approval: null });
+  const [settings, setSettings] = useState({ enabled: false, autoAssignNew: false, workflowId: "default", approval: null, enforceMode: "demote" });
   const [def, setDef] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -156,7 +161,7 @@ export default function WorkflowSettingsEditor({ spaceKey = null }) {
     (async () => {
       try {
         const r = await invoke("get-space-workflow-settings", { spaceKey });
-        if (r?.settings) setSettings({ enabled: !!r.settings.enabled, autoAssignNew: !!r.settings.autoAssignNew, workflowId: r.settings.workflowId || "default", approval: r.settings.approval || null });
+        if (r?.settings) setSettings({ enabled: !!r.settings.enabled, autoAssignNew: !!r.settings.autoAssignNew, workflowId: r.settings.workflowId || "default", approval: r.settings.approval || null, enforceMode: r.settings.enforceMode === "revert" ? "revert" : "demote" });
         if (r?.def) setDef(r.def);
       } catch (e) {
         console.error("Load workflow settings failed:", e);
@@ -276,8 +281,23 @@ export default function WorkflowSettingsEditor({ spaceKey = null }) {
                   />
                 </SettingsRow>
               )}
+              {(settings.approval.approvers || []).length === 0 && settings.enforceMode === "revert" && (
+                <p className="alert-error" role="alert">No approvers are set, so every non-steward edit to an Approved page would be reverted. Add an approver, or use “Move it back to Draft” below.</p>
+              )}
             </div>
           )}
+
+          <SettingsRow
+            label="If an Approved page is edited by a non-approver"
+            description="Approved is an enforced state. Choose what happens when someone who isn’t an approver (and isn’t a steward) edits an Approved page. “Move to Draft” keeps their edit; “Revert” restores the approved version and is stricter."
+          >
+            <MiniSelect
+              ariaLabel="Enforcement when an approved page is edited"
+              value={settings.enforceMode || "demote"}
+              options={ENFORCE_MODE_OPTS}
+              onChange={(mode) => setSettings((p) => ({ ...p, enforceMode: mode }))}
+            />
+          </SettingsRow>
 
           <SettingsRow
             label="Apply to existing pages"

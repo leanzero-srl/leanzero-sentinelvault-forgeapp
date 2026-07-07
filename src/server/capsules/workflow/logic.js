@@ -102,8 +102,54 @@ export async function readPageWorkflow(pageId) {
   return (await kvs.get(`workflow-state-${pageId}`)) || null;
 }
 
+// Live page version — the ONLY way #44 observes a version (never a pre-pass guess).
+// Returns null on any failure; callers treat null as fail-closed, never "no drift".
+export async function fetchLivePageVersion(pageId) {
+  try {
+    const res = await asApp().requestConfluence(route`/wiki/api/v2/pages/${pageId}`);
+    if (res.ok) return (await res.json())?.version?.number ?? null;
+  } catch (_) { /* fail-closed */ }
+  return null;
+}
+
+// Forward-only re-stamp of approvedVersion (the ONE re-stamp primitive; #44 §1.3).
+// Never drags the baseline backward on a late/re-delivered event.
+export async function restampApprovedVersion(pageId, n) {
+  if (!(typeof n === "number" && n >= 1)) return false;
+  const record = await readPageWorkflow(pageId);
+  if (!record?.enforce) return false;
+  if (record.approvedVersion != null && n <= record.approvedVersion) return false;
+  // Re-read immediately before persist to shrink the lost-update window: a concurrent
+  // demote / leave-enforce (separate invocation) may have flipped this record out of the
+  // enforce state. Persist the FRESH record (mutating only approvedVersion) so we never
+  // clobber a concurrent state change back to enforce with a stale copy.
+  const fresh = await readPageWorkflow(pageId);
+  if (!fresh?.enforce || fresh.stateId !== record.stateId) return false;
+  if (fresh.approvedVersion != null && n <= fresh.approvedVersion) return false;
+  fresh.approvedVersion = n;
+  await persistState(pageId, fresh, fresh.stateId);
+  return true;
+}
+
+// #44 §2.7: when a seal is created on an enforced page, advance the approved baseline to
+// the live version so its body ⊇ the new seal (a whole-page revert then restores the seal
+// instead of stripping it). Best-effort; the sweep reconciles a miss next tick.
+export async function restampIfEnforced(pageId) {
+  try {
+    const wf = await readPageWorkflow(pageId);
+    if (wf?.enforce) {
+      const v = await fetchLivePageVersion(pageId);
+      if (v) return await restampApprovedVersion(pageId, v);
+    }
+  } catch (_) { /* best-effort */ }
+  return false;
+}
+
 async function writeStateContentProp(pageId, record) {
-  const value = { workflowId: record.workflowId, stateId: record.stateId, enteredAt: record.enteredAt };
+  const value = {
+    workflowId: record.workflowId, stateId: record.stateId, enteredAt: record.enteredAt,
+    enforce: record.enforce === true, approvedVersion: record.approvedVersion ?? null,
+  };
   try {
     const getRes = await asApp().requestConfluence(
       route`/wiki/api/v2/pages/${pageId}/properties?key=${WORKFLOW_STATE_PROP}`,
@@ -223,6 +269,9 @@ export async function setSpaceWorkflowSettings(spaceKey, settings) {
     enabled: !!settings?.enabled,
     autoAssignNew: !!settings?.autoAssignNew,
     workflowId: settings?.workflowId || "default",
+    // #44: how an unapproved edit to an enforced Approved page is handled. Default DEMOTE
+    // (provably non-destructive); "revert" (byte-freeze) is opt-in.
+    enforceMode: settings?.enforceMode === "revert" ? "revert" : "demote",
   };
   // Optional approval config for the enforce transition (#43). Shape:
   // { approvers: [{ type:"user"|"group", id, name }], mode:"any"|"all"|"min", min }.
@@ -264,7 +313,7 @@ export async function autoAssignOnEvent({ pageId, spaceKey, actorAccountId, acto
 
 // Move a page to `toStateId` after validating the edge. Returns {success, reason?, record?}.
 // `requireStewardForEnforce` is enforced by the caller (resolver) — logic stays authz-free & testable.
-export async function transitionPageWorkflow({ pageId, spaceKey, toStateId, actorAccountId, actorName, reason }) {
+export async function transitionPageWorkflow({ pageId, spaceKey, toStateId, actorAccountId, actorName, reason, approvers, approvedVersion }) {
   if (!pageId || !toStateId) return { success: false, reason: "pageId and toStateId required" };
   const current = await readPageWorkflow(pageId);
   if (!current) return { success: false, reason: "Page has no workflow assigned" };
@@ -273,6 +322,20 @@ export async function transitionPageWorkflow({ pageId, spaceKey, toStateId, acto
   if (!check.ok) return { success: false, reason: check.reason };
   const target = findState(def, toStateId);
   const enteredAt = new Date().toISOString();
+  // #44: entering an enforce state records the approved baseline (the version the
+  // authority reviewed) + the approver snapshot; leaving/never-entering it clears them.
+  let enforceFields;
+  if (target.enforce) {
+    enforceFields = {
+      enforce: true,
+      approvedVersion: (typeof approvedVersion === "number" && approvedVersion >= 1) ? approvedVersion : null,
+      approvers: Array.isArray(approvers) ? [...new Set(approvers)] : [],
+      approvedAt: enteredAt,
+      approvedBy: actorAccountId || null,
+    };
+  } else {
+    enforceFields = { enforce: false, approvedVersion: null, approvers: [] };
+  }
   const record = {
     ...current,
     workflowId: def.id,
@@ -282,6 +345,7 @@ export async function transitionPageWorkflow({ pageId, spaceKey, toStateId, acto
     enteredByName: actorName || null,
     spaceKey: current.spaceKey || spaceKey || null,
     reviewDueAt: computeReviewDueAt(target),
+    ...enforceFields,
   };
   await persistState(pageId, record, current.stateId);
   await appendWorkflowLog(pageId, {

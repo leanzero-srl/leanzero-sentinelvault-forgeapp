@@ -3,6 +3,7 @@ import { kvs, WhereConditions } from "@forge/kvs";
 
 // Import from shared
 import { BASELINE_HOLD_SPAN } from "../../shared/baseline.js";
+import { restampIfEnforced } from "../workflow/logic.js";
 import { authorizeSteward } from "../../shared/steward-checks.js";
 import { resolveBulletinToggles } from "../../shared/bulletin-flags.js";
 
@@ -310,6 +311,7 @@ const sealArtifact = async (req) => {
   // Store seal record
   await kvs.set(`protection-${attachmentId}`, sealPayload);
   await touchSealTimestamp();
+  if (contentId) await restampIfEnforced(contentId); // #44 §2.7: keep an enforced baseline seal-complete
 
   // Store as content property for CQL searchability
   if (contentId) {

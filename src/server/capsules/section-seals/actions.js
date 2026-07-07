@@ -4,6 +4,7 @@ import { kvs, WhereConditions } from "@forge/kvs";
 import { BASELINE_HOLD_SPAN } from "../../shared/baseline.js";
 import { authorizeSteward } from "../../shared/steward-checks.js";
 import { touchSealTimestamp } from "../sealing/logic.js";
+import { restampIfEnforced } from "../workflow/logic.js";
 import {
   readDocBody,
   writeDocBody,
@@ -203,6 +204,7 @@ const sealSection = async (req) => {
   }
   await refreshSectionContentProp(pageId);
   await touchSealTimestamp();
+  if (pageId) await restampIfEnforced(pageId); // #44 §2.7: keep an enforced baseline seal-complete
   return { success: true, sectionId };
 };
 

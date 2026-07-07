@@ -19,7 +19,13 @@ import {
   markVersionChecked,
 } from "./capsules/validations/logic.js";
 import { evaluateRules } from "./infra/rules-engine.js";
-import { autoAssignOnEvent } from "./capsules/workflow/logic.js";
+import {
+  autoAssignOnEvent, getSpaceWorkflowSettings, resolveWorkflowDef, findState, getInitialState,
+  transitionPageWorkflow, readPageWorkflow, restampApprovedVersion, fetchLivePageVersion,
+} from "./capsules/workflow/logic.js";
+import { resolveApproverIds } from "./capsules/workflow/approvals.js";
+import { postEnforceComment } from "./infra/approval-blueprints.js";
+import { isAccountStewardAsApp } from "./shared/steward-checks.js";
 import { postValidationComment } from "./infra/validation-blueprints.js";
 import { readDocBody, readDocBodyAtVersion, writeDocBody, collectMediaFileIds, extractMediaSingleNodes, spliceMediaNodes, locateBodiedSectionNodes, replaceSectionBody, spliceSectionWrapper, hashAdf, canonicalizeAdf } from "./infra/doc-surgery.js";
 
@@ -135,12 +141,23 @@ export async function pageContentTrigger(event) {
       ? await collectSectionSealsForPage(pageId)
       : [];
 
-    const hasBodyWork = sealFileMap.length > 0 || sectionSeals.length > 0;
+    // #44: enforced Approved-state probe (cheap; no ADF read). May act inline (demote)
+    // or ask for a whole-page revert. See collectWorkflowEnforcementForPage.
+    const enforcement = contentProtectionOn
+      ? await collectWorkflowEnforcementForPage(pageId, atlassianId, content?.version?.number, systemAccountId)
+      : null;
+    const needsRevert = enforcement?.action === "revert";
+
+    const hasBodyWork = sealFileMap.length > 0 || sectionSeals.length > 0 || needsRevert;
 
     // --- Single read -> passes -> single write, with shared 409 backoff ---
     const MAX_RETRIES = 3;
     const notifyMap = new Map();
     let anyChange = false;
+    let writtenVersion = null; // #44: the version an app write actually produced (§2.5)
+    let enforceReverted = false; // #44: a Pass-0 revert actually wrote (for the SV-M2 notice)
+    let enforceRevertVersion = null;
+    let enforceObservedEqual = false; // #44: the revert pass CONFIRMED content-equality (no write needed)
 
     for (let attempt = 0; hasBodyWork && attempt < MAX_RETRIES; attempt++) {
       let ctx;
@@ -153,6 +170,7 @@ export async function pageContentTrigger(event) {
           adfDoc,
           currentVersion: pageData.version?.number,
           changed: false,
+          enforcedRevert: false, // #44: set by Pass 0 to short-circuit A/B + suppress SV-M5
           notifications: [],
         };
       } catch (err) {
@@ -160,13 +178,18 @@ export async function pageContentTrigger(event) {
         break;
       }
 
-      // Pass A: sealed-section restore
-      if (sectionSeals.length > 0) {
+      // Pass 0 (#44): enforced-state whole-page revert — runs FIRST, short-circuits A/B (who-wins).
+      if (enforcement?.action === "revert") {
+        try { await enforceApprovedStatePass(ctx, enforcement); }
+        catch (e) { console.error("[WORKFLOW-ENFORCE] pass error:", e); }
+      }
+      // Pass A: sealed-section restore (suppressed while enforcing — who-wins + SV-M5 suppression)
+      if (!ctx.enforcedRevert && sectionSeals.length > 0) {
         try { await restoreSealedSectionsPass(ctx, sectionSeals); }
         catch (e) { console.error("[PAGE-PROTECT] section pass error:", e); }
       }
       // Pass B: sealed-media restore
-      if (sealFileMap.length > 0) {
+      if (!ctx.enforcedRevert && sealFileMap.length > 0) {
         try { await restoreMediaPass(ctx, sealFileMap); }
         catch (e) { console.error("[PAGE-PROTECT] media pass error:", e); }
       }
@@ -176,6 +199,10 @@ export async function pageContentTrigger(event) {
       for (const n of ctx.notifications) {
         notifyMap.set(`${n.type}:${n.targetId || ""}`, n);
       }
+      // #44: capture a CONFIRMED-equality observation (revert pass found the body already
+      // equal to the baseline) so §2.5 can advance the baseline ONLY on genuine equality,
+      // never on an abort/failed-write path (which must leave approvedVersion untouched).
+      if (ctx.enforceObservedEqual) enforceObservedEqual = true;
 
       if (!ctx.changed) {
         break; // nothing to write this attempt
@@ -185,11 +212,13 @@ export async function pageContentTrigger(event) {
         ctx.pageId,
         ctx.pageData,
         ctx.adfDoc,
-        "(Sentinel Vault restored protected content)",
+        ctx.enforceMessage || "(Sentinel Vault restored protected content)",
       );
 
       if (putRes.ok) {
         anyChange = true;
+        writtenVersion = (ctx.currentVersion || 0) + 1; // #44: the version this PUT created
+        if (ctx.enforcedRevert) { enforceReverted = true; enforceRevertVersion = ctx.enforceRevertTo; }
         break;
       }
       if (putRes.status === 409) {
@@ -212,6 +241,34 @@ export async function pageContentTrigger(event) {
         catch (e) { console.error("[PAGE-PROTECT] notify error:", e); }
       }
       await touchSealTimestamp();
+    }
+
+    // #44: the enforce-revert notice — only after a CONFIRMED write (SV-M2).
+    if (anyChange && enforceReverted) {
+      try { await postEnforceComment(pageId, atlassianId, "revert", { approvedVersion: enforceRevertVersion }); }
+      catch (e) { console.error("[WORKFLOW-ENFORCE] notice error:", e); }
+    }
+
+    // --- #44 reconciliation (§2.5): keep approvedVersion == the last version the app or
+    // a privileged actor actually produced (never a pre-pass guess). Forward-only. ---
+    try {
+      if (enforcement && enforcement.action !== "demote") {
+        let newBaseline = null;
+        if (anyChange && writtenVersion) {
+          newBaseline = writtenVersion; // app wrote (revert, or a seal restore on a privileged edit)
+        } else if (enforcement.action === "privileged") {
+          newBaseline = content?.version?.number || (await fetchLivePageVersion(pageId)); // editor's live version
+        } else if (enforcement.action === "revert" && enforceObservedEqual) {
+          // ONLY when the pass CONFIRMED the body already equals the baseline (no write
+          // needed) do we advance to live. On any abort/failed-write path the body is
+          // still the un-reverted tamper — do NOT launder it into approvedVersion; leave
+          // the baseline at V0 so the hourly sweep re-attempts (fail-closed).
+          newBaseline = await fetchLivePageVersion(pageId);
+        }
+        if (newBaseline) await restampApprovedVersion(pageId, newBaseline).catch(() => {});
+      }
+    } catch (e) {
+      console.error("[WORKFLOW-ENFORCE] reconciliation error:", e);
     }
 
     // --- Conditions & Validations phase (independent of seals) ---
@@ -282,6 +339,7 @@ async function collectMediaSealsForPage(pageId) {
 
 // --- Pipeline pass: re-insert removed sealed media blocks ---
 async function restoreMediaPass(ctx, sealFileMap) {
+  if (ctx.enforcedRevert) return; // #44: an enforce revert already replaced the whole body
   const presentFileIds = collectMediaFileIds(ctx.adfDoc);
   const violations = sealFileMap.filter(
     ({ seal, fileId }) =>
@@ -373,6 +431,7 @@ function sectionHeadingText(node) {
 }
 
 async function restoreSealedSectionsPass(ctx, sectionSeals) {
+  if (ctx.enforcedRevert) return; // #44: suppress SV-M5 re-baseline + restore while enforcing
   const now = Date.now();
   const wrappers = new Map();
   for (const w of locateBodiedSectionNodes(ctx.adfDoc)) {
@@ -491,6 +550,231 @@ async function restoreSealedSectionsPass(ctx, sectionSeals) {
       console.warn(`[SECTION] Section ${seal.sectionId} body changed but no snapshot to restore from`);
     }
   }
+}
+
+// ============================================================================
+// #44 — Enforced Approved state (revert-on-tamper). See F44-DESIGN.md in the skill.
+// ============================================================================
+
+// Cheap probe (§2.1): decides whether an enforced page needs a revert, is a privileged
+// edit, or should be demoted (done inline). NO ADF read on the fast path.
+export async function collectWorkflowEnforcementForPage(pageId, atlassianId, eventVersion, systemAccountId) {
+  // 1. Fast path — content-property probe. Absent/non-enforced -> nothing to do.
+  let prop = null;
+  try {
+    const res = await asApp().requestConfluence(route`/wiki/api/v2/pages/${pageId}/properties?key=sentinel-vault-workflow`);
+    if (res.ok) prop = (await res.json())?.results?.[0]?.value;
+  } catch (_) { return null; }
+  if (!prop || prop.enforce !== true) return null;
+
+  // 2. Authoritative record + re-confirm the state is still an enforce state.
+  const record = await readPageWorkflow(pageId);
+  if (!record?.enforce) return null;
+  const def = await resolveWorkflowDef(record.spaceKey);
+  if (!findState(def, record.stateId)?.enforce) return null;
+
+  // 3. Privileged? snapshot ∩ live-config approvers, OR live steward (§0.D/§0.E).
+  //    If live group-expansion FAILED (outage), trust the snapshot rather than reverting a
+  //    real approver's edit — revocation is only honored when expansion actually succeeds.
+  const settings = await getSpaceWorkflowSettings(record.spaceKey);
+  const liveSpec = await resolveApproverIds(settings.approval);
+  const liveApprovers = liveSpec?.approvers || [];
+  const liveUnresolved = !!liveSpec?.unresolved;
+  const privileged =
+    (Array.isArray(record.approvers) && record.approvers.includes(atlassianId) && (liveApprovers.includes(atlassianId) || liveUnresolved))
+    || await isAccountStewardAsApp(atlassianId, record.spaceKey);
+  if (privileged) return { action: "privileged", record }; // reconciliation (§2.5) advances the baseline
+
+  // 4. Not privileged -> revert (opt-in) or demote (default). CL-5: empty approver set
+  //    + revert downgrades to demote (a misconfig must not blank every non-steward edit).
+  let mode = settings?.enforceMode === "revert" ? "revert" : "demote";
+  if (mode === "revert" && (!Array.isArray(record.approvers) || record.approvers.length === 0)) mode = "demote";
+  if (mode === "revert") return { action: "revert", record, spaceKey: record.spaceKey };
+
+  // DEMOTE inline (§2.6) — no body write, no ADF read, no ping-pong surface.
+  try {
+    const initial = getInitialState(def);
+    const res = await transitionPageWorkflow({
+      pageId, spaceKey: record.spaceKey, toStateId: initial.id,
+      actorAccountId: systemAccountId, actorName: "Sentinel Vault",
+      reason: "auto-demoted: edited by non-approver while Approved",
+    });
+    if (res.success) await postEnforceComment(pageId, atlassianId, "demote").catch(() => {});
+    // #7: the default workflow has an Approved->Draft edge; a custom workflow that lacks one
+    // would leave the page enforced-but-not-demoted — surface it rather than fail silently.
+    else console.error(`[WORKFLOW-ENFORCE] demote of ${pageId} did not apply: ${res.reason}`);
+  } catch (e) { console.error("[WORKFLOW-ENFORCE] demote error:", e); }
+  return { action: "demote" };
+}
+
+// Pass 0 (§2.3): whole-page revert to the approved baseline. Mutates ctx.adfDoc; the
+// shared single writeDocBody performs the one write. Re-reads approvedVersion fresh.
+async function enforceApprovedStatePass(ctx, enf) {
+  const rec = await readPageWorkflow(ctx.pageId);
+  if (!rec?.enforce) return;                          // demoted/left enforce mid-flight
+  const av = rec.approvedVersion;
+  if (!(typeof av === "number" && av >= 1)) return;   // no valid baseline
+  const cur = ctx.currentVersion || 0;
+  if (cur <= av) return;                              // behind/equal — nothing to enforce
+
+  // #6 (TOCTOU): a sanctioned edit may sit between the baseline and the current tamper (a
+  // privileged actor's edit whose reconciliation hasn't advanced approvedVersion yet). Revert
+  // to the HIGHEST privileged-authored version in (av, cur), not blindly to av — otherwise a
+  // concurrent approver edit is destroyed. targetV === av when there's no intervening edit.
+  const targetV = (cur - av > 1) ? await highestSanctionedVersion(ctx.pageId, rec, av, cur) : av;
+
+  const { adfDoc: approvedAdf } = await readDocBodyAtVersion(ctx.pageId, targetV);
+  // CL-1: never let an empty/unreadable baseline blank the page.
+  if (!approvedAdf?.content?.length) {
+    console.error(`[WORKFLOW-ENFORCE] approved v${targetV} body empty/unreadable for ${ctx.pageId} — aborting revert`);
+    return;
+  }
+  // CL-7: hash match is not proof (32-bit FNV) — confirm canonical structures too.
+  if (hashAdf(ctx.adfDoc) === hashAdf(approvedAdf) &&
+      JSON.stringify(canonicalizeAdf(ctx.adfDoc.content)) === JSON.stringify(canonicalizeAdf(approvedAdf.content))) {
+    ctx.enforceObservedEqual = true; // CONFIRMED equality — §2.5 may advance the baseline to live
+    return; // already equal — no body write
+  }
+  ctx.adfDoc.content = approvedAdf.content;           // whole-body replace, in place
+  ctx.changed = true;
+  ctx.enforcedRevert = true;                          // short-circuit A/B + suppress SV-M5
+  ctx.enforceRevertTo = targetV;                      // for the comment copy (§5)
+  ctx.enforceMessage = "(Sentinel Vault reverted unapproved change to the approved version)";
+}
+
+// #6: highest version in (av, cur) authored by a privileged actor (approver-snapshot ∩ live
+// config, or trigger-safe steward) — the last SANCTIONED content to revert to. Returns av if
+// none. One versions GET; only called when intervening versions exist.
+async function highestSanctionedVersion(pageId, record, av, cur) {
+  try {
+    const res = await asApp().requestConfluence(route`/wiki/api/v2/pages/${pageId}/versions?limit=50`);
+    if (!res.ok) return av;
+    const versions = (await res.json())?.results || [];
+    const settings = await getSpaceWorkflowSettings(record.spaceKey);
+    const liveSpec = await resolveApproverIds(settings.approval);
+    const liveApprovers = liveSpec?.approvers || [];
+    const liveUnresolved = !!liveSpec?.unresolved;
+    let best = av;
+    for (const v of versions) {
+      const n = v.number;
+      if (typeof n !== "number" || n <= av || n >= cur || n <= best) continue;
+      const author = v.authorId;
+      const priv = author && (
+        (Array.isArray(record.approvers) && record.approvers.includes(author) && (liveApprovers.includes(author) || liveUnresolved))
+        || await isAccountStewardAsApp(author, record.spaceKey));
+      if (priv) best = n;
+    }
+    return best;
+  } catch (_) { return av; }
+}
+
+// §4.4: author of the current top version (for the sweep's authorized-drift check).
+async function fetchLiveVersionAuthor(pageId) {
+  try {
+    const res = await asApp().requestConfluence(route`/wiki/api/v2/pages/${pageId}/versions?limit=1`);
+    if (res.ok) return (await res.json())?.results?.[0]?.authorId ?? null;
+  } catch (_) { /* fail-closed toward enforcement */ }
+  return null;
+}
+
+// §4.3: standalone revert used by the sweep (not inside the ctx loop). Same 409 backoff.
+export async function sweepRevertToApproved(pageId, record) {
+  const fresh = await readPageWorkflow(pageId);
+  const av = fresh?.approvedVersion;
+  if (!(typeof av === "number" && av >= 1)) return false;
+  let approvedAdf;
+  try { ({ adfDoc: approvedAdf } = await readDocBodyAtVersion(pageId, av)); } catch (_) { return false; }
+  if (!approvedAdf?.content?.length) return false; // CL-1: never blank
+  for (let attempt = 0; attempt < 3; attempt++) {
+    let head;
+    try { head = await readDocBody(pageId); } catch (_) { return false; }
+    if ((head.pageData.version?.number || 0) <= av) return false; // no drift now
+    // Content already equals the baseline (a version bump with no real change) — advance
+    // the baseline to resolve the drift WITHOUT a needless destructive rewrite (mirror the
+    // event-path CL-7 guard). Return true: the drift is reconciled.
+    if (hashAdf(head.adfDoc) === hashAdf(approvedAdf) &&
+        JSON.stringify(canonicalizeAdf(head.adfDoc.content)) === JSON.stringify(canonicalizeAdf(approvedAdf.content))) {
+      await restampApprovedVersion(pageId, head.pageData.version?.number || 0).catch(() => {});
+      return true;
+    }
+    head.adfDoc.content = approvedAdf.content;
+    const putRes = await writeDocBody(pageId, head.pageData, head.adfDoc, "(Sentinel Vault reverted unapproved change to the approved version)");
+    if (putRes.ok) { await restampApprovedVersion(pageId, (head.pageData.version?.number || 0) + 1).catch(() => {}); return true; }
+    if (putRes.status === 409) { await new Promise((r) => setTimeout(r, Math.pow(2, attempt) * 500)); continue; }
+    return false; // SV-M2: don't claim success on a non-409 error
+  }
+  return false;
+}
+
+// §4.2: hourly integrity sweep — the durable backstop for dropped events. Cursor-paginated,
+// author-aware (never reverts an authorized dropped-event edit), self-healing, dedup-guarded.
+export async function workflowSweep() {
+  const systemAccountId = await resolveAppAccountId();
+  if (!systemAccountId) return { body: JSON.stringify({ swept: 0, reason: "no app account" }) };
+  let reverted = 0, demoted = 0, healed = 0;
+  let query = kvs.query().where("key", WhereConditions.beginsWith("workflow-idx-")).limit(100);
+  let iterations = 0;
+  do {
+    const { results, nextCursor } = await query.getMany();
+    for (const { value: idx } of (results || [])) {
+      try {
+        const record = await readPageWorkflow(idx.pageId);
+        if (!record?.enforce) continue;
+        const def = await resolveWorkflowDef(record.spaceKey);
+        if (!findState(def, record.stateId)?.enforce) continue;
+        const live = await fetchLivePageVersion(idx.pageId);
+        if (live == null) continue;
+        // Gap B: a null baseline on an enforced page is a hole — self-heal, don't skip.
+        if (record.approvedVersion == null) {
+          if (await restampApprovedVersion(idx.pageId, live)) healed++;
+          continue;
+        }
+        if (live === record.approvedVersion) {
+          await kvs.delete(`workflow-integrity-notified-${idx.pageId}`).catch(() => {});
+          continue;
+        }
+        // DRIFT. Gap C/CL-3: a dropped event may have been an AUTHORIZED edit — check the author.
+        const author = await fetchLiveVersionAuthor(idx.pageId);
+        const settings = await getSpaceWorkflowSettings(record.spaceKey);
+        const liveSpec = await resolveApproverIds(settings.approval);
+        const liveApprovers = liveSpec?.approvers || [];
+        const liveUnresolved = !!liveSpec?.unresolved;
+        const authorized = author && (
+          (record.approvers.includes(author) && (liveApprovers.includes(author) || liveUnresolved))
+          || await isAccountStewardAsApp(author, record.spaceKey));
+        if (authorized) {
+          if (await restampApprovedVersion(idx.pageId, live)) healed++;
+          await kvs.delete(`workflow-integrity-notified-${idx.pageId}`).catch(() => {});
+          continue;
+        }
+        const mode = settings?.enforceMode || "demote";
+        const alreadyNotified = await kvs.get(`workflow-integrity-notified-${idx.pageId}`);
+        if (mode === "revert" && record.approvers.length > 0) { // CL-5
+          const ok = await sweepRevertToApproved(idx.pageId, record);
+          if (ok) { reverted++; await kvs.delete(`workflow-integrity-notified-${idx.pageId}`).catch(() => {}); }
+          else if (!alreadyNotified) {
+            await postEnforceComment(idx.pageId, record.enteredBy, "revert-failed").catch(() => {});
+            await kvs.set(`workflow-integrity-notified-${idx.pageId}`, { at: new Date().toISOString() });
+          }
+        } else {
+          const initial = getInitialState(def);
+          const res = await transitionPageWorkflow({
+            pageId: idx.pageId, spaceKey: record.spaceKey, toStateId: initial.id,
+            actorAccountId: systemAccountId, actorName: "Sentinel Vault",
+            reason: "auto-demoted by integrity sweep (unauthorized drift)",
+          });
+          if (res.success && !alreadyNotified) {
+            demoted++;
+            await postEnforceComment(idx.pageId, record.enteredBy, "demote").catch(() => {});
+            await kvs.set(`workflow-integrity-notified-${idx.pageId}`, { at: new Date().toISOString() });
+          }
+        }
+      } catch (e) { console.error("[WORKFLOW-SWEEP]", e); }
+    }
+    if (!nextCursor || ++iterations >= 20) break;
+    query = kvs.query().where("key", WhereConditions.beginsWith("workflow-idx-")).limit(100).cursor(nextCursor);
+  } while (true);
+  return { body: JSON.stringify({ reverted, demoted, healed }) };
 }
 
 // --- Conditions & Validations phase (runs after the body-protection pipeline) ---

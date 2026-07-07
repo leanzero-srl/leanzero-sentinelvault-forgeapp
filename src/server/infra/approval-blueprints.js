@@ -37,6 +37,32 @@ export async function notifyApprovalRequested({ pageId, targetName, approvers, r
   }
 }
 
+// #44: enforcement notice. `kind` = "revert" | "demote" | "revert-failed". Every revert
+// notice carries a one-click page-history recovery link (CL-6) and mentions the editor.
+// Claim discipline: "reverted + attested", never "the badge can't be wrong".
+export async function postEnforceComment(pageId, editorId, kind, opts = {}) {
+  if (!pageId) return { success: false };
+  const historyUrl = `/wiki/pages/viewpreviousversions.action?pageId=${pageId}`;
+  const m = editorId ? mention(editorId) + " — " : "";
+  let body;
+  if (kind === "demote") {
+    body = `<p>${HEADER} — <strong>Moved back to Draft</strong></p>
+<p>${m}this page was edited after it was Approved, so Sentinel Vault moved it back to Draft. Re-submit it for approval when the changes are ready.</p>`;
+  } else if (kind === "revert-failed") {
+    body = `<p>${HEADER} — <strong>Enforcement pending</strong></p>
+<p>Sentinel Vault could not re-apply the approved version of this page and will retry automatically. The current content is in the page history — <a href="${escapeXml(historyUrl)}">view previous versions</a>.</p>`;
+  } else {
+    body = `<p>${HEADER} — <strong>Enforced Approved state</strong></p>
+<p>${m}this page is in an enforced Approved state, so your change was reverted to the approved version${opts.approvedVersion ? ` (v${opts.approvedVersion})` : ""}, verified by structural compare. Your edit is preserved in the page history — <a href="${escapeXml(historyUrl)}">view previous versions</a>. To edit an approved page, first request a transition out of Approved.</p>`;
+  }
+  try {
+    return await postCommentWithMention({ pageId, storageBody: body.trim() });
+  } catch (e) {
+    console.error("[APPROVAL-NOTICE] enforce comment failed:", e);
+    return { success: false };
+  }
+}
+
 // Notify the requester that their request was approved or denied.
 export async function notifyApprovalResolved({ pageId, requestedBy, outcome, targetName, deciderName }) {
   if (!pageId || !requestedBy) return { success: false };
