@@ -221,10 +221,12 @@ export async function getWorkflowLog(pageId) {
   return out.sort((a, b) => a.ts - b.ts);
 }
 
-// Compute reviewDueAt (ISO) if the target state defines a review clock.
-function computeReviewDueAt(state) {
-  if (!state || !state.reviewAfterDays) return null;
-  return new Date(Date.now() + state.reviewAfterDays * 24 * 3600 * 1000).toISOString();
+// Compute reviewDueAt (ISO) if the target state defines a review clock. #45: a per-space
+// `overrideDays` (steward-configured) takes precedence over the state's built-in default.
+function computeReviewDueAt(state, overrideDays) {
+  const days = (typeof overrideDays === "number" && overrideDays > 0) ? overrideDays : state?.reviewAfterDays;
+  if (!days) return null;
+  return new Date(Date.now() + days * 24 * 3600 * 1000).toISOString();
 }
 
 // --- Orchestration (called by resolvers AND by the dev test-hook with explicit args) ---
@@ -272,6 +274,10 @@ export async function setSpaceWorkflowSettings(spaceKey, settings) {
     // #44: how an unapproved edit to an enforced Approved page is handled. Default DEMOTE
     // (provably non-destructive); "revert" (byte-freeze) is opt-in.
     enforceMode: settings?.enforceMode === "revert" ? "revert" : "demote",
+    // #45: re-review an Approved page after N days (null = use the workflow default). The
+    // sweep auto-transitions overdue Approved pages to Expired.
+    reviewAfterDays: (typeof settings?.reviewAfterDays === "number" && settings.reviewAfterDays > 0)
+      ? Math.round(settings.reviewAfterDays) : null,
   };
   // Optional approval config for the enforce transition (#43). Shape:
   // { approvers: [{ type:"user"|"group", id, name }], mode:"any"|"all"|"min", min }.
@@ -336,6 +342,11 @@ export async function transitionPageWorkflow({ pageId, spaceKey, toStateId, acto
   } else {
     enforceFields = { enforce: false, approvedVersion: null, approvers: [] };
   }
+  // #45: a review clock uses the steward's per-space override when set (only read settings
+  // when the target state actually has a review clock, to keep other transitions cheap).
+  const reviewOverride = target?.reviewAfterDays
+    ? (await getSpaceWorkflowSettings(current.spaceKey || spaceKey))?.reviewAfterDays
+    : null;
   const record = {
     ...current,
     workflowId: def.id,
@@ -344,7 +355,7 @@ export async function transitionPageWorkflow({ pageId, spaceKey, toStateId, acto
     enteredBy: actorAccountId || null,
     enteredByName: actorName || null,
     spaceKey: current.spaceKey || spaceKey || null,
-    reviewDueAt: computeReviewDueAt(target),
+    reviewDueAt: computeReviewDueAt(target, reviewOverride),
     ...enforceFields,
   };
   await persistState(pageId, record, current.stateId);

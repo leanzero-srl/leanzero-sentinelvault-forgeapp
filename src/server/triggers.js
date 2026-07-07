@@ -711,7 +711,10 @@ export async function sweepRevertToApproved(pageId, record) {
 export async function workflowSweep() {
   const systemAccountId = await resolveAppAccountId();
   if (!systemAccountId) return { body: JSON.stringify({ swept: 0, reason: "no app account" }) };
-  let reverted = 0, demoted = 0, healed = 0;
+  let reverted = 0, demoted = 0, healed = 0, expired = 0;
+  const nowMs = Date.now();
+  const defCache = new Map(); // per-space def cache — most pages in a space share one workflow
+  const defFor = async (sk) => { if (!defCache.has(sk)) defCache.set(sk, await resolveWorkflowDef(sk)); return defCache.get(sk); };
   let query = kvs.query().where("key", WhereConditions.beginsWith("workflow-idx-")).limit(100);
   let iterations = 0;
   do {
@@ -719,8 +722,22 @@ export async function workflowSweep() {
     for (const { value: idx } of (results || [])) {
       try {
         const record = await readPageWorkflow(idx.pageId);
+        if (!record) continue;
+        const def = await defFor(record.spaceKey);
+        // #45 review-expiry (runs FIRST): an Approved page past its review-due date
+        // auto-transitions to Expired + notifies. Leaving Approved also ends enforcement,
+        // so this page needs no enforce processing this tick.
+        if (record.reviewDueAt && findState(def, record.stateId)?.reviewAfterDays &&
+            new Date(record.reviewDueAt).getTime() < nowMs && findState(def, "expired")) {
+          const res = await transitionPageWorkflow({
+            pageId: idx.pageId, spaceKey: record.spaceKey, toStateId: "expired",
+            actorAccountId: systemAccountId, actorName: "Sentinel Vault",
+            reason: "review period elapsed — auto-expired",
+          });
+          if (res.success) { expired++; await postEnforceComment(idx.pageId, record.enteredBy, "expired").catch(() => {}); }
+          continue;
+        }
         if (!record?.enforce) continue;
-        const def = await resolveWorkflowDef(record.spaceKey);
         if (!findState(def, record.stateId)?.enforce) continue;
         const live = await fetchLivePageVersion(idx.pageId);
         if (live == null) continue;
@@ -774,7 +791,7 @@ export async function workflowSweep() {
     if (!nextCursor || ++iterations >= 20) break;
     query = kvs.query().where("key", WhereConditions.beginsWith("workflow-idx-")).limit(100).cursor(nextCursor);
   } while (true);
-  return { body: JSON.stringify({ reverted, demoted, healed }) };
+  return { body: JSON.stringify({ reverted, demoted, healed, expired }) };
 }
 
 // --- Conditions & Validations phase (runs after the body-protection pipeline) ---

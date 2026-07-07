@@ -45,7 +45,10 @@ export async function postEnforceComment(pageId, editorId, kind, opts = {}) {
   const historyUrl = `/wiki/pages/viewpreviousversions.action?pageId=${pageId}`;
   const m = editorId ? mention(editorId) + " — " : "";
   let body;
-  if (kind === "demote") {
+  if (kind === "expired") {
+    body = `<p>${HEADER} — <strong>Approval expired</strong></p>
+<p>${m}this page's review period has elapsed, so Sentinel Vault moved it to Expired. Re-submit it for review to approve it again.</p>`;
+  } else if (kind === "demote") {
     body = `<p>${HEADER} — <strong>Moved back to Draft</strong></p>
 <p>${m}this page was edited after it was Approved, so Sentinel Vault moved it back to Draft. Re-submit it for approval when the changes are ready.</p>`;
   } else if (kind === "revert-failed") {
