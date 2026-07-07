@@ -5,7 +5,7 @@
 import { readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
-import { get, post, del } from "../lib/confluence.mjs";
+import { get, post, del, currentUser } from "../lib/confluence.mjs";
 
 const HARNESS_ROOT = "/Users/mihaiperdum/Projects/Sentinel Vault/test-harness";
 let total = 0, passed = 0;
@@ -62,6 +62,14 @@ try {
   const d4 = (await hook({ what: "invoke", fn: "decideApproval", pageId: p3.id, approver: "acc-STRANGER", decision: "approved" })).result;
   check("a non-approver cannot decide", d4?.success === false);
   check("page still In Review (stranger rejected)", (await stateOf(p3.id)) === "in_review");
+
+  // --- NOTIFICATION: with a REAL approver, requesting approval posts a mention comment ---
+  const me = await currentUser();
+  const pN = await newInReviewPage("HARNESS approval-notify");
+  await hook({ what: "invoke", fn: "requestApproval", pageId: pN.id, spaceKey, to: "approved", toName: "Approved", approvers: me.accountId, mode: "any" });
+  await new Promise((r) => setTimeout(r, 2500));
+  const cmts = await get(`/api/v2/pages/${pN.id}/footer-comments?body-format=storage`).catch(() => null);
+  check("approval request posts a mention comment on the page", (cmts?.results || []).some((c) => JSON.stringify(c).includes("Approval requested")));
 } finally {
   for (const id of pages) { await del(`/api/v2/pages/${id}`).catch(()=>{}); await cleanKeys(id); }
   console.log(`     cleaned up ${pages.length} pages`);
