@@ -830,6 +830,18 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   border-bottom-color: var(--sv-interactive-primary);
 }
 
+/* #45: review-period days input */
+.days-input {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.days-suffix {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--sv-text-secondary);
+}
+
 /* Input with unit suffix */
 .input-with-unit {
   display: flex;

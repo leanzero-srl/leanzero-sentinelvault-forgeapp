@@ -78,6 +78,7 @@ try {
     await kvsSet(`workflow-state-${pC.id}`, { workflowId: "default", stateId: "approved", enteredAt: new Date().toISOString(), enforce: true, approvedVersion: v, approvers, spaceKey });
     await kvsSet(`workflow-idx-${spaceKey}-approved-${pC.id}`, { pageId: pC.id, stateId: "approved", enteredAt: new Date().toISOString() });
     await setEnforceProp(pC.id, v); // the probe fast-path reads the content property
+    await sleep(1500); // content properties are eventually consistent — let the write settle
   };
   await seedApproved("revert", ["acc-A"]);
   check("non-approver + revert mode → action=revert", (await hook({ what: "invoke", fn: "enforceDecision", pageId: pC.id, actor: "acc-STRANGER" })).result?.action === "revert");
@@ -133,6 +134,20 @@ try {
   await hook({ what: "invoke", fn: "workflowSweep" });
   check("sweep adopts a steward-authored drift (re-stamps, no revert)", (await rec(pG.id))?.approvedVersion > vG);
   check("steward-authored content preserved by the sweep", (await bodyOf(pG.id)).includes("steward legit edit"));
+
+  // --- H (#45). Review-date auto-expiry: an Approved page past its review-due date → Expired ---
+  const pH = await mkPage("HARNESS review-expiry", "<p>approved, will expire</p>");
+  await hook({ what: "invoke", fn: "transitionWorkflow", pageId: pH.id, spaceKey, to: "approved", toName: "Approved", approvers: "acc-A", approvedVersion: String(await verOf(pH.id)) });
+  const rH0 = await rec(pH.id);
+  check("Approved page has a reviewDueAt clock", !!rH0?.reviewDueAt);
+  // backdate the review clock into the past, keeping the rest of the record intact
+  await kvsSet(`workflow-state-${pH.id}`, { ...rH0, reviewDueAt: new Date(Date.now() - 86400000).toISOString() });
+  await kvsSet(`workflow-idx-${spaceKey}-approved-${pH.id}`, { pageId: pH.id, stateId: "approved", enteredAt: new Date().toISOString() });
+  const sweepH = await hook({ what: "invoke", fn: "workflowSweep" });
+  check("sweep reports an expiry", (sweepH.result?.expired || 0) >= 1);
+  const rH1 = await rec(pH.id);
+  check("overdue Approved page auto-transitioned to Expired", rH1?.stateId === "expired");
+  check("expiry cleared the review clock + enforcement", rH1?.reviewDueAt == null && rH1?.enforce === false);
 } finally {
   // restore the steward config + reset space settings so nothing leaks into other suites
   if (priorStewardCfg) await kvsSet(stewardKey, priorStewardCfg).catch(() => {});
