@@ -149,7 +149,7 @@ const GroupPicker = ({ selected, onChange }) => {
 };
 
 export default function WorkflowSettingsEditor({ spaceKey = null }) {
-  const [settings, setSettings] = useState({ enabled: false, autoAssignNew: false, workflowId: "default", approval: null, enforceMode: "demote" });
+  const [settings, setSettings] = useState({ enabled: false, autoAssignNew: false, workflowId: "default", approval: null, enforceMode: "demote", reviewAfterDays: null });
   const [def, setDef] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -161,7 +161,7 @@ export default function WorkflowSettingsEditor({ spaceKey = null }) {
     (async () => {
       try {
         const r = await invoke("get-space-workflow-settings", { spaceKey });
-        if (r?.settings) setSettings({ enabled: !!r.settings.enabled, autoAssignNew: !!r.settings.autoAssignNew, workflowId: r.settings.workflowId || "default", approval: r.settings.approval || null, enforceMode: r.settings.enforceMode === "revert" ? "revert" : "demote" });
+        if (r?.settings) setSettings({ enabled: !!r.settings.enabled, autoAssignNew: !!r.settings.autoAssignNew, workflowId: r.settings.workflowId || "default", approval: r.settings.approval || null, enforceMode: r.settings.enforceMode === "revert" ? "revert" : "demote", reviewAfterDays: r.settings.reviewAfterDays ?? null });
         if (r?.def) setDef(r.def);
       } catch (e) {
         console.error("Load workflow settings failed:", e);
@@ -297,6 +297,24 @@ export default function WorkflowSettingsEditor({ spaceKey = null }) {
               options={ENFORCE_MODE_OPTS}
               onChange={(mode) => setSettings((p) => ({ ...p, enforceMode: mode }))}
             />
+          </SettingsRow>
+
+          <SettingsRow
+            label="Re-review Approved pages after"
+            description="Approved pages show a review-due date on their ribbon and are moved to Expired once it passes, so approvals don’t silently go stale. Leave blank to use the workflow default (150 days)."
+          >
+            <div className="days-input">
+              <input
+                className="form-input"
+                type="number"
+                min="1"
+                placeholder="150"
+                aria-label="Re-review Approved pages after this many days"
+                value={settings.reviewAfterDays ?? ""}
+                onChange={(e) => setSettings((p) => ({ ...p, reviewAfterDays: e.target.value === "" ? null : (parseInt(e.target.value, 10) || null) }))}
+              />
+              <span className="days-suffix">days</span>
+            </div>
           </SettingsRow>
 
           <SettingsRow

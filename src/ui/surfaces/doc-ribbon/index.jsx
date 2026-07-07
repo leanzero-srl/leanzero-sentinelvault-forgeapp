@@ -223,6 +223,18 @@ const WorkflowControl = ({ workflow, approvals, operatorId, pageId, spaceKey, on
         <span className="wf-chip-label">{state.name}</span>
         {canMove && <span className="wf-chip-caret" aria-hidden="true">▾</span>}
       </button>
+      {workflow.record?.reviewDueAt && (() => {
+        const dueMs = new Date(workflow.record.reviewDueAt).getTime();
+        const overdue = dueMs < Date.now();
+        return (
+          <span
+            className={`wf-review-due${overdue ? " wf-review-overdue" : ""}`}
+            title={overdue ? "The review period has elapsed — this page will move to Expired." : `Approval is due for re-review on ${new Date(dueMs).toLocaleDateString()}.`}
+          >
+            {overdue ? "Review overdue" : `Review due ${new Date(dueMs).toLocaleDateString(undefined, { month: "short", day: "numeric" })}`}
+          </span>
+        );
+      })()}
       {menuOpen && (
         <div className="wf-menu" role="menu" aria-label={`Move ${state.name} to`} ref={menuRef} onKeyDown={onMenuKey}>
           <div className="wf-menu-head" aria-hidden="true">Move to…</div>

@@ -5,7 +5,7 @@ status legend: discovered -> researched -> designed -> implemented -> verified |
 |---|---------|---------|--------|----|----------|--------|------|------|----------|--------|
 | 42 | Workflow state engine & state chip | Doc ribbon + realm console + backend | verified | 5 | 4 | 4 | 3 | 4 | 23.0 | aql/workflow-state-engine |
 | 43 | Multi-approver transitions & approvals inbox | Realm console + inline panel + comments | verified (flow + notifications + inbox; group-member expansion live-unverified) | 5 | 4 | 3 | 3 | 3 | 22.0 | aql/workflow-state-engine |
-| 45 | Review dates & expiry transitions | Backend → sweep + notices | discovered | 1 | 1 | 1 | 1 | 1 | 22.0 | — |
+| 45 | Review dates & expiry transitions | Backend → sweep + notices | **verified (Fn 9)** | 1 | 1 | 1 | 1 | 1 | 22.0 | auto-expire Approved→Expired in workflowSweep; steward-set review period; ribbon review-due indicator; enforce-e2e 23/23 |
 | 44 | Enforced Approved state (revert-on-tamper) | Backend → ribbon/comments | **verified (Fn 8)** | 1 | 1 | 1 | 1 | 1 | 21.0 | demote default + revert opt-in; enforce-e2e 19/19; design caught 17 gaps + review caught 8 (1 HIGH); grade PASS |
 | 48 | Workflow dashboard & CSV export | Realm console (space page) | discovered | 1 | 1 | 1 | 1 | 1 | 21.0 | — |
 | 46 | Transition conditions (rules + AI gate) | Backend + realm console config | discovered | 1 | 1 | 1 | 1 | 1 | 19.0 | — |
