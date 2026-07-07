@@ -845,7 +845,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 
 /* Settings panel wrapper */
 .settings-panel {
-  padding: 8px 0;
+  padding: 8px 0 96px; /* bottom clearance so the fixed .action-bar never covers the last rows */
 }
 
 .btn {
@@ -1788,3 +1788,24 @@ html[data-color-mode="dark"] .wf-state-neutral { background: #64748b; }
 .wf-userpicker-menu { position: absolute; top: 100%; left: 0; right: 0; z-index: 40; margin-top: 4px; background: var(--sv-surface-overlay, #fff); border: 1px solid var(--sv-border-primary, #E2E8F0); border-radius: 8px; box-shadow: 0 8px 24px var(--sv-shadow-strong, rgba(0, 0, 0, 0.12)); overflow: hidden; }
 .wf-userpicker-opt { display: block; width: 100%; text-align: left; padding: 8px 10px; border: none; background: transparent; font-family: inherit; font-size: 12px; color: var(--sv-text-primary, #0F172A); cursor: pointer; }
 .wf-userpicker-opt:hover, .wf-userpicker-opt:focus-visible { background: var(--sv-bg-hover, #E2E8F0); outline: none; }
+
+/* ── Approvals inbox (#43) ────────────────────────────── */
+.wf-inbox { margin: 0 0 18px; padding: 14px 16px; background: var(--sv-surface-raised, #fff); border: 1px solid #d97706; border-radius: 12px; }
+html[data-color-mode="dark"] .wf-inbox { border-color: #f59e0b; }
+.wf-inbox-head { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+.wf-inbox-title { font-size: 14px; font-weight: 800; color: var(--sv-text-primary, #0F172A); }
+.wf-inbox-count { display: inline-flex; align-items: center; justify-content: center; min-width: 20px; height: 20px; padding: 0 6px; border-radius: 9999px; background: #d97706; color: #fff; font-size: 11px; font-weight: 800; }
+.wf-inbox-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.wf-inbox-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 12px; border-radius: 10px; background: var(--sv-bg-secondary, #F8FAFC); }
+.wf-inbox-info { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.wf-inbox-page { font-size: 13px; font-weight: 700; color: var(--sv-interactive-primary, #0891B2); text-decoration: none; }
+.wf-inbox-page:hover { text-decoration: underline; }
+.wf-inbox-meta { font-size: 11px; color: var(--sv-text-secondary, #475569); }
+.wf-inbox-actions { display: flex; gap: 8px; flex: none; }
+.wf-inbox-approve, .wf-inbox-deny { padding: 7px 14px; border: none; border-radius: 8px; font-family: inherit; font-size: 12px; font-weight: 700; color: #fff; cursor: pointer; }
+.wf-inbox-approve { background: #15803d; }
+.wf-inbox-deny { background: #dc2626; }
+.wf-inbox-approve:hover, .wf-inbox-deny:hover { filter: brightness(1.08); }
+.wf-inbox-approve:disabled, .wf-inbox-deny:disabled { opacity: 0.6; cursor: default; }
+
+.wf-groupchip { background: #7c3aed; }

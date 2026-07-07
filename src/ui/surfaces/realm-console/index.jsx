@@ -7,6 +7,7 @@ import { enablePaletteSync } from "../../kit/palette-sync";
 import ThumbnailPreview from "../../kit/ThumbnailPreview";
 import ValidationsEditor from "../../kit/ValidationsEditor";
 import WorkflowSettingsEditor from "../../kit/WorkflowSettingsEditor";
+import WorkflowInbox from "../../kit/WorkflowInbox";
 import logo from "../../assets/icons/icon.png";
 
 const SkeletonRow = ({ cols = 5 }) => (
@@ -1517,6 +1518,9 @@ const RealmPolicyDashboard = () => {
           </>
         )}
       </div>
+
+      {/* Approvals waiting on the current user (shows on any tab; renders nothing when empty) */}
+      <WorkflowInbox />
 
       {/* Tab Content */}
       {activeTab === "my-claims" && (
