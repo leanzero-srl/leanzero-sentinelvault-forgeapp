@@ -7,7 +7,7 @@
  * and grants — the deterministic state the harness asserts against.
  */
 import { kvs } from "@forge/kvs";
-import { expirySweepTask } from "./server/triggers";
+import { expirySweepTask, workflowSweep, collectWorkflowEnforcementForPage, sweepRevertToApproved } from "./server/triggers";
 import {
   assignPageWorkflow,
   transitionPageWorkflow,
@@ -16,6 +16,7 @@ import {
   getSpaceWorkflowSettings,
   setSpaceWorkflowSettings,
   bulkAssignPagesInSpace,
+  readPageWorkflow,
 } from "./server/capsules/workflow/logic.js";
 import {
   requestApprovalTransition,
@@ -87,6 +88,10 @@ export async function testStateTrigger(req) {
         return json(200, { invoked: fn, result: r });
       }
       if (fn === "transitionWorkflow") {
+        // #44: optional approvers + approvedVersion passthrough so enforce scenarios can
+        // seed the privileged set and baseline deterministically.
+        const apprCsv = q(req, "approvers");
+        const av = q(req, "approvedVersion");
         const r = await transitionPageWorkflow({
           pageId: q(req, "pageId"),
           spaceKey: q(req, "spaceKey"),
@@ -94,8 +99,31 @@ export async function testStateTrigger(req) {
           actorAccountId: q(req, "actor") || "harness",
           actorName: q(req, "actorName") || "Harness",
           reason: q(req, "reason"),
+          approvers: apprCsv ? apprCsv.split(",").filter(Boolean) : undefined,
+          approvedVersion: av != null ? parseInt(av, 10) : undefined,
         });
         return json(200, { invoked: fn, result: r });
+      }
+      if (fn === "workflowSweep") {
+        const r = await workflowSweep();
+        let result = null;
+        try { result = JSON.parse(r?.body || "null"); } catch (_) { /* non-JSON */ }
+        return json(200, { invoked: fn, result });
+      }
+      // #44 test seams — drive the enforcement decision with a SYNTHETIC actor (the
+      // harness's real user is a steward, so a real edit is always privileged).
+      if (fn === "enforceDecision") {
+        const r = await collectWorkflowEnforcementForPage(
+          q(req, "pageId"), q(req, "actor"),
+          q(req, "eventVersion") ? parseInt(q(req, "eventVersion"), 10) : null,
+          q(req, "sysAccount") || "sv-app",
+        );
+        return json(200, { invoked: fn, result: r ? { action: r.action } : { action: null } });
+      }
+      if (fn === "sweepRevert") {
+        const rec = await readPageWorkflow(q(req, "pageId"));
+        const ok = await sweepRevertToApproved(q(req, "pageId"), rec);
+        return json(200, { invoked: fn, result: { reverted: ok } });
       }
       if (fn === "getWorkflow") {
         const result = await getPageWorkflow(q(req, "pageId"), q(req, "spaceKey"));

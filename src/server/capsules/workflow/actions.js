@@ -21,47 +21,16 @@ import {
   bulkAssignPagesInSpace,
   readPageWorkflow,
   validateTransition,
+  fetchLivePageVersion,
 } from "./logic.js";
 import {
   extractApprovalConfig,
+  resolveApproverIds,
   requestApprovalTransition,
   decideApproval,
   getPageApprovalStatus,
   listMyApprovals,
 } from "./approvals.js";
-
-async function fetchPageVersion(pageId) {
-  try {
-    const res = await asApp().requestConfluence(route`/wiki/api/v2/pages/${pageId}`);
-    if (res.ok) return (await res.json())?.version?.number ?? null;
-  } catch (_) { /* best-effort */ }
-  return null;
-}
-
-// Expand a group to its member account ids (best-effort — a group whose members can't
-// be resolved simply contributes no approvers; user approvers are unaffected).
-async function fetchGroupMembers(group) {
-  const ids = [];
-  try {
-    const res = await asApp().requestConfluence(route`/wiki/rest/api/group/member?name=${group.name || group.id}&limit=100`);
-    if (res.ok) {
-      const body = await res.json();
-      for (const u of body?.results || []) if (u.accountId) ids.push(u.accountId);
-    }
-  } catch (_) { /* best-effort */ }
-  return ids;
-}
-
-// Resolve the effective approver id list (users + expanded group members) for a config.
-async function resolveApproverIds(approval) {
-  const plan = extractApprovalConfig(approval);
-  if (!plan) return null;
-  const memberIds = [];
-  for (const g of plan.groups) memberIds.push(...(await fetchGroupMembers(g)));
-  const allIds = [...new Set([...plan.userIds, ...memberIds])];
-  if (!allIds.length) return null;
-  return { approvers: allIds, mode: plan.mode, min: Math.min(allIds.length, plan.min) };
-}
 
 const pageIdOf = (req) =>
   req.payload?.pageId ||
@@ -154,12 +123,25 @@ const requestTransition = async (req) => {
       (settings.approval.approvers || []).forEach((a) => { if (a.id) names[a.id] = a.name; });
       return requestApprovalTransition({
         pageId, toStateId, toStateName: target.name, spaceKey, approvers: spec.approvers, mode: spec.mode, min: spec.min,
-        actorAccountId, actorName: await actorName(), pinnedVersion: await fetchPageVersion(pageId), approverNames: names,
+        actorAccountId, actorName: await actorName(), pinnedVersion: await fetchLivePageVersion(pageId), approverNames: names,
       });
     }
     if (!(await authorizeSteward(actorAccountId, spaceKey))) {
       return { success: false, reason: `Entering "${target.name}" requires steward approval` };
     }
+    // #44 direct steward path (no approvers configured): the steward IS the reviewing
+    // authority acting on what they see now. Capture approvedVersion = live version and
+    // fail CLOSED on null (don't enter a half-enforced state). Snapshot the current
+    // configured approver set (may be []) so the enforce pass knows who may edit.
+    const approvedVersion = await fetchLivePageVersion(pageId);
+    if (approvedVersion == null) {
+      return { success: false, reason: "Could not verify the page version — please retry." };
+    }
+    const snap = (await resolveApproverIds(settings.approval))?.approvers || [];
+    return transitionPageWorkflow({
+      pageId, spaceKey, toStateId, actorAccountId, actorName: await actorName(),
+      reason: req.payload?.reason, approvers: snap, approvedVersion,
+    });
   }
   return transitionPageWorkflow({
     pageId,

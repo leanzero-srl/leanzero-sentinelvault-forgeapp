@@ -12,6 +12,7 @@
     "workflow-e2e": "node scripts/workflow-e2e.mjs",
     "workflow-autoassign-e2e": "node scripts/workflow-autoassign-e2e.mjs",
     "workflow-bulk-e2e": "node scripts/workflow-bulk-e2e.mjs",
-    "workflow-approval-e2e": "node scripts/workflow-approval-e2e.mjs"
+    "workflow-approval-e2e": "node scripts/workflow-approval-e2e.mjs",
+    "workflow-enforce-e2e": "node scripts/workflow-enforce-e2e.mjs"
   }
 }

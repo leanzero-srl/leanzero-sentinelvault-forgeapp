@@ -78,6 +78,8 @@ modules:
       timeoutSeconds: 900
     - key: seal-index-cron-fn
       handler: boot.sealIndexCron
+    - key: workflow-sweep-fn
+      handler: boot.workflowSweep
     - key: page-content-trigger
       handler: boot.pageContentTrigger
     - key: ai-validation-fn
@@ -124,6 +126,9 @@ modules:
       interval: day
     - key: seal-index-cron
       function: seal-index-cron-fn
+      interval: hour
+    - key: workflow-sweep-scheduled
+      function: workflow-sweep-fn
       interval: hour
 
   # Sentinel Vault admin configuration module (Custom UI)
