@@ -126,7 +126,7 @@ export async function testStateTrigger(req) {
       if (fn === "requestApproval") {
         const approvers = (q(req, "approvers") || "").split(",").filter(Boolean);
         const r = await requestApprovalTransition({
-          pageId: q(req, "pageId"), toStateId: q(req, "to"), spaceKey: q(req, "spaceKey"),
+          pageId: q(req, "pageId"), toStateId: q(req, "to"), toStateName: q(req, "toName") || q(req, "to"), spaceKey: q(req, "spaceKey"),
           approvers, mode: q(req, "mode") || "any", min: parseInt(q(req, "min"), 10) || 1,
           actorAccountId: q(req, "actor") || "harness", actorName: "Harness",
           pinnedVersion: parseInt(q(req, "pinnedVersion"), 10) || null,

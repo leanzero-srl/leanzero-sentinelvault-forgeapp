@@ -93,7 +93,52 @@ const UserPicker = ({ selected, onChange }) => {
           ))}
         </div>
       )}
-      {selected.length === 0 && <p className="settings-row-description" style={{ marginTop: "6px" }}>No approvers yet — the page cannot reach Approved until you add at least one.</p>}
+      {selected.length === 0 && <p className="settings-row-description" style={{ marginTop: "6px" }}>No people added.</p>}
+    </div>
+  );
+};
+
+// Search-and-add group picker. Selected = [{ type: "group", id, name }].
+const GroupPicker = ({ selected, onChange }) => {
+  const [query, setQuery] = useState("");
+  const [results, setResults] = useState([]);
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    if (query.trim().length < 1) { setResults([]); setOpen(false); return undefined; }
+    let cancelled = false;
+    const t = setTimeout(async () => {
+      try {
+        const r = await invoke("search-workflow-groups", { query });
+        if (!cancelled) { setResults(r?.groups || []); setOpen(true); }
+      } catch (_) { /* ignore */ }
+    }, 300);
+    return () => { cancelled = true; clearTimeout(t); };
+  }, [query]);
+  const add = (g) => {
+    if (!selected.find((s) => s.id === g.id)) onChange([...selected, { type: "group", id: g.id, name: g.name }]);
+    setQuery(""); setResults([]); setOpen(false);
+  };
+  const remove = (id) => onChange(selected.filter((s) => s.id !== id));
+  return (
+    <div className="wf-userpicker">
+      {selected.length > 0 && (
+        <div className="wf-userpicker-chips">
+          {selected.map((s) => (
+            <span key={s.id} className="wf-userchip wf-groupchip">
+              {s.name || s.id}
+              <button type="button" className="wf-userchip-x" onClick={() => remove(s.id)} aria-label={`Remove ${s.name || s.id}`}>×</button>
+            </span>
+          ))}
+        </div>
+      )}
+      <input className="form-input" placeholder="Search groups to add…" value={query} onChange={(e) => setQuery(e.target.value)} aria-label="Search groups to add as approvers" />
+      {open && results.length > 0 && (
+        <div className="wf-userpicker-menu" role="listbox">
+          {results.map((g) => (
+            <button type="button" key={g.id} role="option" className="wf-userpicker-opt" onClick={() => add(g)}>{g.name}</button>
+          ))}
+        </div>
+      )}
     </div>
   );
 };
@@ -200,10 +245,16 @@ export default function WorkflowSettingsEditor({ spaceKey = null }) {
 
           {settings.approval && (
             <div className="nested-control">
-              <SettingsRow label="Approvers" description="Who can approve moving a page to Approved.">
+              <SettingsRow label="Approvers" description="People who can approve moving a page to Approved.">
                 <UserPicker
-                  selected={settings.approval.approvers || []}
-                  onChange={(approvers) => setSettings((p) => ({ ...p, approval: { ...p.approval, approvers } }))}
+                  selected={(settings.approval.approvers || []).filter((a) => (a.type || "user") === "user")}
+                  onChange={(users) => setSettings((p) => ({ ...p, approval: { ...p.approval, approvers: [...users, ...(p.approval.approvers || []).filter((a) => a.type === "group")] } }))}
+                />
+              </SettingsRow>
+              <SettingsRow label="Approver groups" description="Everyone in these groups is added as an approver (the decision rule then applies to all of them).">
+                <GroupPicker
+                  selected={(settings.approval.approvers || []).filter((a) => a.type === "group")}
+                  onChange={(groups) => setSettings((p) => ({ ...p, approval: { ...p.approval, approvers: [...(p.approval.approvers || []).filter((a) => (a.type || "user") === "user"), ...groups] } }))}
                 />
               </SettingsRow>
               <SettingsRow label="Decision rule" description="How many of the approvers must approve before the page moves.">

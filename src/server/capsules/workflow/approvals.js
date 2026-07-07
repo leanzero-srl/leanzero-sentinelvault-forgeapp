@@ -15,6 +15,7 @@
  */
 import { kvs, WhereConditions } from "@forge/kvs";
 import { transitionPageWorkflow, readPageWorkflow } from "./logic.js";
+import { notifyApprovalRequested, notifyApprovalResolved } from "../../infra/approval-blueprints.js";
 
 const APPROVAL_ID = "approval"; // v1 single default round; schema carries the segment for future named rounds
 
@@ -54,11 +55,21 @@ export function resolveApprovers(approval) {
   return { approvers: uniq, mode: approval.mode || "any", min: Math.min(uniq.length, Math.max(1, approval.min || 1)) };
 }
 
+// Split an approval config into user approvers + group approvers (groups are expanded
+// to member account ids by the caller, which has REST access). Returns null if neither.
+export function extractApprovalConfig(approval) {
+  if (!approval || !Array.isArray(approval.approvers)) return null;
+  const userIds = [...new Set(approval.approvers.filter((a) => a && a.id && (a.type || "user") === "user").map((a) => a.id))];
+  const groups = approval.approvers.filter((a) => a && a.id && a.type === "group").map((a) => ({ id: a.id, name: a.name || a.id }));
+  if (!userIds.length && !groups.length) return null;
+  return { userIds, groups, mode: approval.mode || "any", min: Math.max(1, approval.min || 1) };
+}
+
 const approvalKey = (pageId, stateId, accountId) => `workflow-approval-${pageId}-${stateId}-${APPROVAL_ID}-${accountId}`;
 const pendingKey = (pageId) => `workflow-pending-${pageId}`;
 
 // Open a pending transition + one approval record per approver.
-export async function requestApprovalTransition({ pageId, toStateId, spaceKey, approvers, mode, min, actorAccountId, actorName, pinnedVersion, approverNames }) {
+export async function requestApprovalTransition({ pageId, toStateId, toStateName, spaceKey, approvers, mode, min, actorAccountId, actorName, pinnedVersion, approverNames }) {
   const requestedAt = new Date().toISOString();
   for (const acc of approvers) {
     await kvs.set(approvalKey(pageId, toStateId, acc), {
@@ -67,9 +78,14 @@ export async function requestApprovalTransition({ pageId, toStateId, spaceKey, a
     });
   }
   await kvs.set(pendingKey(pageId), {
-    toStateId, approvalId: APPROVAL_ID, requestedBy: actorAccountId || null, requestedByName: actorName || null,
+    toStateId, toStateName: toStateName || null, approvalId: APPROVAL_ID, requestedBy: actorAccountId || null, requestedByName: actorName || null,
     requestedAt, pinnedVersion, approvers, mode, min, spaceKey: spaceKey || null,
   });
+  // Best-effort: @mention the approvers in a page comment so Confluence emails them.
+  await notifyApprovalRequested({
+    pageId, targetName: toStateName, requestedByName: actorName, mode, min,
+    approvers: approvers.map((id) => ({ id, name: (approverNames && approverNames[id]) || null })),
+  }).catch(() => {});
   return { pending: true, approvers, mode, min };
 }
 
@@ -130,10 +146,12 @@ export async function decideApproval({ pageId, approverAccountId, decision, reas
       reason: `approved (${records.filter((r) => r.status === "approved").length}/${records.length})`,
     });
     await clearPageApprovals(pageId, stateId, approvers);
+    await notifyApprovalResolved({ pageId, requestedBy: pending.requestedBy, outcome: "approved", targetName: pending.toStateName || stateId, deciderName: actorName }).catch(() => {});
     return { success: true, outcome: "approved", transitioned: !!res.success, record: res.record };
   }
   if (outcome === "denied") {
     await clearPageApprovals(pageId, stateId, approvers);
+    await notifyApprovalResolved({ pageId, requestedBy: pending.requestedBy, outcome: "denied", targetName: pending.toStateName || stateId, deciderName: actorName }).catch(() => {});
     return { success: true, outcome: "denied" };
   }
   return { success: true, outcome: "pending" };

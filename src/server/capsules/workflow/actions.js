@@ -4,6 +4,7 @@
  * delegate to logic.js. Enforcement (#44) and the approver model (#43) land later.
  */
 import { asApp, asUser, route } from "@forge/api";
+import { kvs } from "@forge/kvs";
 
 import { authorizeSteward } from "../../shared/steward-checks.js";
 import {
@@ -22,7 +23,7 @@ import {
   validateTransition,
 } from "./logic.js";
 import {
-  resolveApprovers,
+  extractApprovalConfig,
   requestApprovalTransition,
   decideApproval,
   getPageApprovalStatus,
@@ -35,6 +36,31 @@ async function fetchPageVersion(pageId) {
     if (res.ok) return (await res.json())?.version?.number ?? null;
   } catch (_) { /* best-effort */ }
   return null;
+}
+
+// Expand a group to its member account ids (best-effort — a group whose members can't
+// be resolved simply contributes no approvers; user approvers are unaffected).
+async function fetchGroupMembers(group) {
+  const ids = [];
+  try {
+    const res = await asApp().requestConfluence(route`/wiki/rest/api/group/member?name=${group.name || group.id}&limit=100`);
+    if (res.ok) {
+      const body = await res.json();
+      for (const u of body?.results || []) if (u.accountId) ids.push(u.accountId);
+    }
+  } catch (_) { /* best-effort */ }
+  return ids;
+}
+
+// Resolve the effective approver id list (users + expanded group members) for a config.
+async function resolveApproverIds(approval) {
+  const plan = extractApprovalConfig(approval);
+  if (!plan) return null;
+  const memberIds = [];
+  for (const g of plan.groups) memberIds.push(...(await fetchGroupMembers(g)));
+  const allIds = [...new Set([...plan.userIds, ...memberIds])];
+  if (!allIds.length) return null;
+  return { approvers: allIds, mode: plan.mode, min: Math.min(allIds.length, plan.min) };
 }
 
 const pageIdOf = (req) =>
@@ -65,7 +91,7 @@ const getWorkflow = async (req) => {
   // configured) so the ribbon can say "Request approval" instead of "Move to".
   if (result?.assigned && Array.isArray(result.available)) {
     const settings = await getSpaceWorkflowSettings(result.record?.spaceKey || spaceKeyOf(req));
-    const hasApprovers = !!resolveApprovers(settings.approval);
+    const hasApprovers = !!extractApprovalConfig(settings.approval);
     result.available = result.available.map((s) => ({ ...s, requiresApproval: !!(s.enforce && hasApprovers) }));
   }
   if (req.payload?.withLog) result.log = await getWorkflowLog(pageId);
@@ -115,7 +141,7 @@ const requestTransition = async (req) => {
   const target = findState(def, toStateId);
   if (target?.enforce) {
     const settings = await getSpaceWorkflowSettings(spaceKey);
-    const spec = resolveApprovers(settings.approval);
+    const spec = await resolveApproverIds(settings.approval);
     if (spec) {
       const check = validateTransition(def, current.stateId, toStateId);
       if (!check.ok) return { success: false, reason: check.reason };
@@ -127,7 +153,7 @@ const requestTransition = async (req) => {
       const names = {};
       (settings.approval.approvers || []).forEach((a) => { if (a.id) names[a.id] = a.name; });
       return requestApprovalTransition({
-        pageId, toStateId, spaceKey, approvers: spec.approvers, mode: spec.mode, min: spec.min,
+        pageId, toStateId, toStateName: target.name, spaceKey, approvers: spec.approvers, mode: spec.mode, min: spec.min,
         actorAccountId, actorName: await actorName(), pinnedVersion: await fetchPageVersion(pageId), approverNames: names,
       });
     }
@@ -159,7 +185,28 @@ const getPageApprovals = async (req) => {
 };
 
 const listMyApprovalsAction = async (req) => {
-  return { approvals: await listMyApprovals(req.context?.accountId) };
+  const raw = await listMyApprovals(req.context?.accountId);
+  const out = [];
+  for (const r of raw.slice(0, 25)) { // bounded — the inbox is a working list, not a report
+    const pending = await kvs.get(`workflow-pending-${r.pageId}`);
+    if (!pending) continue; // resolved since; skip stale record
+    let pageTitle = null;
+    let spaceKey = null;
+    try {
+      const res = await asApp().requestConfluence(route`/wiki/api/v2/pages/${r.pageId}`);
+      if (res.ok) { const p = await res.json(); pageTitle = p?.title; spaceKey = p?.spaceId; }
+    } catch (_) { /* best-effort */ }
+    out.push({
+      pageId: r.pageId,
+      pageTitle: pageTitle || `Page ${r.pageId}`,
+      spaceKey,
+      toStateName: pending.toStateName || r.stateId,
+      requestedByName: pending.requestedByName || null,
+      requestedAt: r.requestedAt,
+      mode: pending.mode || "any",
+    });
+  }
+  return { approvals: out };
 };
 
 // User search for the approver picker (steward config). Confluence user search.
@@ -177,6 +224,21 @@ const searchUsers = async (req) => {
     return { users };
   } catch (_) {
     return { users: [] };
+  }
+};
+
+// Group search for the approver picker (any member of a chosen group can approve).
+const searchGroups = async (req) => {
+  const q = (req.payload?.query || "").trim();
+  if (q.length < 1) return { groups: [] };
+  try {
+    const res = await asApp().requestConfluence(route`/wiki/rest/api/group/picker?query=${q}&limit=8`);
+    if (!res.ok) return { groups: [] };
+    const body = await res.json();
+    const groups = (body?.results || []).map((g) => ({ id: g.id || g.name, name: g.name })).filter((g) => g.name);
+    return { groups };
+  } catch (_) {
+    return { groups: [] };
   }
 };
 
@@ -245,4 +307,5 @@ export const actions = [
   ["get-page-approvals", getPageApprovals],
   ["list-my-approvals", listMyApprovalsAction],
   ["search-workflow-users", searchUsers],
+  ["search-workflow-groups", searchGroups],
 ];
