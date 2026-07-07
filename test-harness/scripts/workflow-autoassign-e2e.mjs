@@ -75,8 +75,14 @@ try {
   check("auto-assigned to initial state (draft)", rec?.stateId === "draft");
 
   // 4. content property mirror written by the trigger path
-  const props = await get(`/api/v2/pages/${page.id}/properties?key=sentinel-vault-workflow`);
-  check("content property present", props?.results?.[0]?.value?.stateId === "draft");
+  let prop = null;
+  for (let i = 0; i < 4; i++) { // best-effort property write can lag under full-suite load
+    const props = await get(`/api/v2/pages/${page.id}/properties?key=sentinel-vault-workflow`);
+    prop = props?.results?.[0]?.value;
+    if (prop?.stateId === "draft") break;
+    await sleep(1500);
+  }
+  check("content property present", prop?.stateId === "draft");
 
   // 5. log records the auto-assign with its reason
   const wf = await hook({ what: "invoke", fn: "getWorkflow", pageId: page.id, spaceKey, withLog: "1" });

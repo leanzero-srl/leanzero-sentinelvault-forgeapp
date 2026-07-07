@@ -13,8 +13,9 @@
  *   workflow-pending-{pageId}
  *        = { toStateId, approvalId, requestedBy, requestedByName, requestedAt, pinnedVersion, approvers[], mode, min }
  */
+import { asApp, route } from "@forge/api";
 import { kvs, WhereConditions } from "@forge/kvs";
-import { transitionPageWorkflow, readPageWorkflow } from "./logic.js";
+import { transitionPageWorkflow, readPageWorkflow, fetchLivePageVersion } from "./logic.js";
 import { notifyApprovalRequested, notifyApprovalResolved } from "../../infra/approval-blueprints.js";
 
 const APPROVAL_ID = "approval"; // v1 single default round; schema carries the segment for future named rounds
@@ -63,6 +64,43 @@ export function extractApprovalConfig(approval) {
   const groups = approval.approvers.filter((a) => a && a.id && a.type === "group").map((a) => ({ id: a.id, name: a.name || a.id }));
   if (!userIds.length && !groups.length) return null;
   return { userIds, groups, mode: approval.mode || "any", min: Math.max(1, approval.min || 1) };
+}
+
+// Expand a group to its member account ids (best-effort — an unresolvable group adds
+// no approvers; user approvers are unaffected). Lifted here (#44 §1.5) so the trigger
+// can compute the live-config approver intersection too.
+export async function fetchGroupMembers(group) {
+  const ids = [];
+  try {
+    const res = await asApp().requestConfluence(route`/wiki/rest/api/group/member?name=${group.name || group.id}&limit=100`);
+    if (res.ok) {
+      const body = await res.json();
+      for (const u of body?.results || []) if (u.accountId) ids.push(u.accountId);
+      return { ids, ok: true };
+    }
+    return { ids, ok: false }; // non-ok — distinguish an outage from a genuinely empty group
+  } catch (_) {
+    return { ids, ok: false };
+  }
+}
+
+// The effective approver id list (users + expanded group members) for a config.
+// `unresolved: true` when a group expansion FAILED (vs a legitimately empty group) — the
+// enforce path (#44) then trusts the snapshot rather than reverting a real approver's edit
+// during a group-service outage.
+export async function resolveApproverIds(approval) {
+  const plan = extractApprovalConfig(approval);
+  if (!plan) return null;
+  const memberIds = [];
+  let unresolved = false;
+  for (const g of plan.groups) {
+    const r = await fetchGroupMembers(g);
+    memberIds.push(...r.ids);
+    if (!r.ok) unresolved = true;
+  }
+  const allIds = [...new Set([...plan.userIds, ...memberIds])];
+  if (!allIds.length && !unresolved) return null;
+  return { approvers: allIds, mode: plan.mode, min: Math.min(allIds.length || plan.min, plan.min), unresolved };
 }
 
 const approvalKey = (pageId, stateId, accountId) => `workflow-approval-${pageId}-${stateId}-${APPROVAL_ID}-${accountId}`;
@@ -140,10 +178,25 @@ export async function decideApproval({ pageId, approverAccountId, decision, reas
   const outcome = evaluateApproval(pending.mode, pending.min, records.map((r) => r.status || "pending"));
 
   if (outcome === "approved") {
+    // #44 ANCHOR RULE (§1.5): the enforced baseline must be exactly the bytes the quorum
+    // reviewed. Fail CLOSED if we can't verify the version, or if the page drifted during
+    // the approval window (a tamper must not be laundered into the approved baseline).
+    const live = await fetchLivePageVersion(pageId);
+    if (live == null) {
+      // record is set; leave the round pending so a transient GET failure can't half-enforce.
+      return { success: false, reason: "Could not verify the page version — approval not applied, please retry." };
+    }
+    if (pending.pinnedVersion != null && live !== pending.pinnedVersion) {
+      // The page changed since the approvers reviewed it — their votes are stale.
+      await clearPageApprovals(pageId, stateId, approvers);
+      await notifyApprovalResolved({ pageId, requestedBy: pending.requestedBy, outcome: "denied", targetName: pending.toStateName || stateId, deciderName: actorName }).catch(() => {});
+      return { success: true, outcome: "stale", transitioned: false, reason: "Page changed since review — re-approval required." };
+    }
     const res = await transitionPageWorkflow({
       pageId, spaceKey: pending.spaceKey, toStateId: stateId,
       actorAccountId: approverAccountId, actorName,
       reason: `approved (${records.filter((r) => r.status === "approved").length}/${records.length})`,
+      approvers: pending.approvers, approvedVersion: pending.pinnedVersion,
     });
     await clearPageApprovals(pageId, stateId, approvers);
     await notifyApprovalResolved({ pageId, requestedBy: pending.requestedBy, outcome: "approved", targetName: pending.toStateName || stateId, deciderName: actorName }).catch(() => {});
@@ -163,8 +216,9 @@ export async function getPageApprovalStatus(pageId) {
   if (!pending) return { pending: false };
   const records = await readApprovalRecords(pageId, pending.toStateId, pending.approvers);
   const current = await readPageWorkflow(pageId);
-  // staleness is informational (the page changed since approvals were requested)
-  const stale = false; // page-version comparison wired with the inbox UI (#43 iter 6)
+  // #44: staleness — the page changed since the approvers reviewed it, so a completion
+  // now would be blocked at decideApproval (§1.5). Surface it in the inbox/panel.
+  const stale = pending.pinnedVersion != null && (await fetchLivePageVersion(pageId)) !== pending.pinnedVersion;
   return {
     pending: true, toStateId: pending.toStateId, mode: pending.mode, min: pending.min,
     requestedBy: pending.requestedBy, requestedByName: pending.requestedByName, requestedAt: pending.requestedAt,
