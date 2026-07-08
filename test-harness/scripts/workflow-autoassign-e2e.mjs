@@ -84,9 +84,14 @@ try {
   }
   check("content property present", prop?.stateId === "draft");
 
-  // 5. log records the auto-assign with its reason
-  const wf = await hook({ what: "invoke", fn: "getWorkflow", pageId: page.id, spaceKey, withLog: "1" });
-  const log = wf.result?.log || [];
+  // 5. log records the auto-assign with its reason (the log query is eventually consistent → poll)
+  let log = [];
+  for (let i = 0; i < 4; i++) {
+    const wf = await hook({ what: "invoke", fn: "getWorkflow", pageId: page.id, spaceKey, withLog: "1" });
+    log = wf.result?.log || [];
+    if (log.length === 1 && log[0]?.reason === "auto-assigned on create") break;
+    await sleep(1500);
+  }
   check("log shows auto-assign", log.length === 1 && log[0]?.reason === "auto-assigned on create");
 
   // 6. idempotency: a second page event must NOT create a duplicate/second assignment.

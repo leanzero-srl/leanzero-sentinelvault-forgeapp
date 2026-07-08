@@ -149,7 +149,7 @@ const GroupPicker = ({ selected, onChange }) => {
 };
 
 export default function WorkflowSettingsEditor({ spaceKey = null }) {
-  const [settings, setSettings] = useState({ enabled: false, autoAssignNew: false, workflowId: "default", approval: null, enforceMode: "demote", reviewAfterDays: null });
+  const [settings, setSettings] = useState({ enabled: false, autoAssignNew: false, workflowId: "default", approval: null, enforceMode: "demote", reviewAfterDays: null, entryConditions: {} });
   const [def, setDef] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -161,7 +161,7 @@ export default function WorkflowSettingsEditor({ spaceKey = null }) {
     (async () => {
       try {
         const r = await invoke("get-space-workflow-settings", { spaceKey });
-        if (r?.settings) setSettings({ enabled: !!r.settings.enabled, autoAssignNew: !!r.settings.autoAssignNew, workflowId: r.settings.workflowId || "default", approval: r.settings.approval || null, enforceMode: r.settings.enforceMode === "revert" ? "revert" : "demote", reviewAfterDays: r.settings.reviewAfterDays ?? null });
+        if (r?.settings) setSettings({ enabled: !!r.settings.enabled, autoAssignNew: !!r.settings.autoAssignNew, workflowId: r.settings.workflowId || "default", approval: r.settings.approval || null, enforceMode: r.settings.enforceMode === "revert" ? "revert" : "demote", reviewAfterDays: r.settings.reviewAfterDays ?? null, entryConditions: r.settings.entryConditions || {} });
         if (r?.def) setDef(r.def);
       } catch (e) {
         console.error("Load workflow settings failed:", e);
@@ -316,6 +316,41 @@ export default function WorkflowSettingsEditor({ spaceKey = null }) {
               <span className="days-suffix">days</span>
             </div>
           </SettingsRow>
+
+          <SettingsRow
+            label="Require content rules before Approved"
+            description="Before a page can reach Approved, the required headings, tables, labels and length limits set in Validations must all pass. The person moving it sees exactly what's missing and can't proceed until it's fixed."
+          >
+            <Toggle
+              label="Require content rules before Approved"
+              checked={!!settings.entryConditions?.approved?.requireRules}
+              onChange={(e) => setSettings((p) => ({ ...p, entryConditions: { ...p.entryConditions, approved: { requireAi: false, aiThreshold: "medium", onBudgetExhausted: "block", ...(p.entryConditions?.approved || {}), requireRules: e.target.checked } } }))}
+            />
+          </SettingsRow>
+
+          <SettingsRow
+            label="Require an AI content review before Approved"
+            description="An automated review of the page runs before it can be Approved and becomes one more sign-off alongside your reviewers. Uses the AI set up in Validations."
+          >
+            <Toggle
+              label="Require an AI content review before Approved"
+              checked={!!settings.entryConditions?.approved?.requireAi}
+              onChange={(e) => setSettings((p) => ({ ...p, entryConditions: { ...p.entryConditions, approved: { requireRules: false, aiThreshold: "medium", onBudgetExhausted: "block", ...(p.entryConditions?.approved || {}), requireAi: e.target.checked } } }))}
+            />
+          </SettingsRow>
+
+          {settings.entryConditions?.approved?.requireAi && (
+            <div className="nested-control">
+              <SettingsRow label="AI review strictness" description="How strong an issue has to be to block approval.">
+                <MiniSelect
+                  ariaLabel="AI review strictness"
+                  value={settings.entryConditions?.approved?.aiThreshold || "medium"}
+                  options={[{ value: "low", label: "Strict (flag any issue)" }, { value: "medium", label: "Balanced" }, { value: "high", label: "Lenient (serious issues only)" }]}
+                  onChange={(v) => setSettings((p) => ({ ...p, entryConditions: { ...p.entryConditions, approved: { ...(p.entryConditions?.approved || {}), aiThreshold: v } } }))}
+                />
+              </SettingsRow>
+            </div>
+          )}
 
           <SettingsRow
             label="Apply to existing pages"

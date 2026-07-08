@@ -31,7 +31,36 @@ import {
   decideApproval,
   getPageApprovalStatus,
   listMyApprovals,
+  applyAiVerdict,
 } from "./approvals.js";
+import { enqueueAiGate, resolveRules } from "../validations/actions.js";
+import { evaluateRules } from "../../infra/rules-engine.js";
+import { readDocBody } from "../../infra/doc-surgery.js";
+import { fetchPageLabels } from "../../infra/labels.js";
+
+// #46 Part A: content-conditions gate — the space's block-severity validation rules must
+// pass before the page may enter the target state. Reuses evaluateRules verbatim (sync).
+// Returns a block result { success:false, ... } or null (allowed). Fail-closed on a read
+// error (can't verify → don't let content through unchecked; the user can retry).
+// Uses resolveRules (enabled-INDEPENDENT), NOT resolveEffectiveConfig — the transition
+// condition is a deliberate steward action and must NOT silently no-op just because the
+// separate space-wide post-save validation master switch happens to be off.
+async function checkContentConditions(pageId, spaceKey) {
+  const rules = await resolveRules(spaceKey);
+  if (!rules.length) return null; // no authored rules → nothing to gate on
+  let adfDoc;
+  try { ({ adfDoc } = await readDocBody(pageId)); }
+  catch (_) { return { success: false, blocked: true, reason: "Could not read the page to check content conditions — please retry." }; }
+  const labels = await fetchPageLabels(pageId);
+  const { passed, violations } = evaluateRules(adfDoc, labels, rules);
+  if (passed) return null;
+  return {
+    success: false,
+    blocked: true,
+    reason: "This page doesn't yet meet the content requirements for that state.",
+    violations: violations.filter((v) => v.severity === "block"),
+  };
+}
 
 const pageIdOf = (req) =>
   req.payload?.pageId ||
@@ -91,7 +120,7 @@ const assignWorkflow = async (req) => {
   });
 };
 
-const requestTransition = async (req) => {
+export const requestTransition = async (req) => {
   const pageId = pageIdOf(req);
   const actorAccountId = req.context?.accountId;
   const toStateId = req.payload?.toStateId;
@@ -109,36 +138,71 @@ const requestTransition = async (req) => {
   // otherwise fall back to the #42 steward gate.
   const def = await resolveWorkflowDef(spaceKey);
   const target = findState(def, toStateId);
-  if (target?.enforce) {
-    const settings = await getSpaceWorkflowSettings(spaceKey);
-    const spec = await resolveApproverIds(settings.approval);
-    if (spec) {
-      const check = validateTransition(def, current.stateId, toStateId);
-      if (!check.ok) return { success: false, reason: check.reason };
-      // Don't let a re-request silently discard approvers' already-recorded decisions.
-      const existing = await getPageApprovalStatus(pageId);
-      if (existing?.pending && existing.requestedBy !== actorAccountId && !(await authorizeSteward(actorAccountId, spaceKey))) {
-        return { success: false, reason: "An approval is already pending for this page" };
-      }
-      const names = {};
-      (settings.approval.approvers || []).forEach((a) => { if (a.id) names[a.id] = a.name; });
-      return requestApprovalTransition({
-        pageId, toStateId, toStateName: target.name, spaceKey, approvers: spec.approvers, mode: spec.mode, min: spec.min,
-        actorAccountId, actorName: await actorName(), pinnedVersion: await fetchLivePageVersion(pageId), approverNames: names,
-      });
+
+  // #46: transition conditions run BEFORE the enforce/approval branch. Content conditions
+  // are checked synchronously here; if they fail, the move is blocked with the reasons.
+  const wfSettings = await getSpaceWorkflowSettings(spaceKey);
+  const entryCond = wfSettings.entryConditions?.[toStateId];
+  if (entryCond?.requireRules) {
+    const blocked = await checkContentConditions(pageId, spaceKey);
+    if (blocked) return blocked;
+  }
+
+  const needsAi = !!entryCond?.requireAi;
+  const spec = target?.enforce ? await resolveApproverIds(wfSettings.approval) : null;
+
+  // Open a pending transition when there are human approvers (enforce + configured, #43)
+  // AND/OR an AI review condition (#46). The AI rides the SAME pending record as a mandatory
+  // review axis, AND-composed with the human quorum on one pinned version.
+  if (spec || needsAi) {
+    const check = validateTransition(def, current.stateId, toStateId);
+    if (!check.ok) return { success: false, reason: check.reason };
+    // #46 authority: the AI axis AUGMENTS, never replaces, enforce-state authority. An
+    // enforce target with no human approvers still requires the requester to be a steward —
+    // otherwise turning on "require AI review" would DOWNGRADE the gate to "anyone + AI".
+    if (target?.enforce && !(spec?.approvers?.length) && !(await authorizeSteward(actorAccountId, spaceKey))) {
+      return { success: false, reason: `Entering "${target?.name || toStateId}" requires steward approval` };
     }
+    // Don't let a re-request silently discard approvers' / the AI's in-flight review.
+    const existing = await getPageApprovalStatus(pageId);
+    if (existing?.pending && existing.requestedBy !== actorAccountId && !(await authorizeSteward(actorAccountId, spaceKey))) {
+      return { success: false, reason: "An approval is already pending for this page" };
+    }
+    const pinnedVersion = await fetchLivePageVersion(pageId);
+    if (pinnedVersion == null) return { success: false, reason: "Could not verify the page version — please retry." };
+    const names = {};
+    (wfSettings.approval?.approvers || []).forEach((a) => { if (a.id) names[a.id] = a.name; });
+    const result = await requestApprovalTransition({
+      pageId, toStateId, toStateName: target?.name || toStateId, spaceKey,
+      approvers: spec?.approvers || [], mode: spec?.mode || "any", min: spec?.min || 1,
+      actorAccountId, actorName: await actorName(), pinnedVersion, approverNames: names,
+      aiGate: needsAi ? { required: true, threshold: entryCond.aiThreshold } : null,
+    });
+    if (needsAi) {
+      // Enqueue the async review; if it resolved without an LLM call (AI disabled / budget),
+      // apply that verdict immediately so the gate can't hang — and REFLECT the outcome so the
+      // ribbon doesn't show "review in progress" for a page that already moved (or was blocked).
+      const enq = await enqueueAiGate({ pageId, spaceKey, pinnedVersion, threshold: entryCond.aiThreshold, onBudgetExhausted: entryCond.onBudgetExhausted });
+      if (!enq.enqueued && enq.verdict) {
+        const av = await applyAiVerdict(pageId, pinnedVersion, enq.verdict, enq.reason);
+        if (av?.transitioned) return { success: true, transitioned: true, outcome: av.outcome, record: av.record };
+        if (av?.status === "failed") return { success: false, blocked: true, reason: enq.reason || "AI content review did not pass." };
+      }
+    }
+    return result;
+  }
+
+  if (target?.enforce) {
+    // enforce, no approvers, no AI → #42/#44 direct steward gate. The steward IS the reviewing
+    // authority acting on what they see now: capture approvedVersion, fail CLOSED on null.
     if (!(await authorizeSteward(actorAccountId, spaceKey))) {
       return { success: false, reason: `Entering "${target.name}" requires steward approval` };
     }
-    // #44 direct steward path (no approvers configured): the steward IS the reviewing
-    // authority acting on what they see now. Capture approvedVersion = live version and
-    // fail CLOSED on null (don't enter a half-enforced state). Snapshot the current
-    // configured approver set (may be []) so the enforce pass knows who may edit.
     const approvedVersion = await fetchLivePageVersion(pageId);
     if (approvedVersion == null) {
       return { success: false, reason: "Could not verify the page version — please retry." };
     }
-    const snap = (await resolveApproverIds(settings.approval))?.approvers || [];
+    const snap = (await resolveApproverIds(wfSettings.approval))?.approvers || [];
     return transitionPageWorkflow({
       pageId, spaceKey, toStateId, actorAccountId, actorName: await actorName(),
       reason: req.payload?.reason, approvers: snap, approvedVersion,
@@ -173,6 +237,8 @@ const listMyApprovalsAction = async (req) => {
   for (const r of raw.slice(0, 25)) { // bounded — the inbox is a working list, not a report
     const pending = await kvs.get(`workflow-pending-${r.pageId}`);
     if (!pending) continue; // resolved since; skip stale record
+    if (pending.aiGate?.status === "failed") continue; // #46: AI review blocked it — the
+    // requester must revise + re-request; don't nag approvers with a currently-blocked item
     let pageTitle = null;
     let spaceKey = null;
     try {

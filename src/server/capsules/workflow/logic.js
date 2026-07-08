@@ -271,6 +271,24 @@ export async function getSpaceWorkflowSettings(spaceKey) {
   return (await kvs.get(`workflow-settings-${sanitize(spaceKey)}`)) || { ...DEFAULT_SPACE_SETTINGS };
 }
 
+// #46: normalize the per-target-state transition-condition map. Only keeps a state's
+// entry when it actually requires something (content rules and/or AI review).
+function sanitizeEntryConditions(ec) {
+  if (!ec || typeof ec !== "object") return {};
+  const out = {};
+  for (const [stateId, cond] of Object.entries(ec)) {
+    if (!cond || typeof cond !== "object") continue;
+    const clean = {
+      requireRules: cond.requireRules === true,
+      requireAi: cond.requireAi === true,
+      aiThreshold: ["low", "medium", "high"].includes(cond.aiThreshold) ? cond.aiThreshold : "medium",
+      onBudgetExhausted: cond.onBudgetExhausted === "allow" ? "allow" : "block",
+    };
+    if (clean.requireRules || clean.requireAi) out[stateId] = clean;
+  }
+  return out;
+}
+
 export async function setSpaceWorkflowSettings(spaceKey, settings) {
   if (!spaceKey) return { success: false, reason: "spaceKey required" };
   const clean = {
@@ -284,6 +302,9 @@ export async function setSpaceWorkflowSettings(spaceKey, settings) {
     // sweep auto-transitions overdue Approved pages to Expired.
     reviewAfterDays: (typeof settings?.reviewAfterDays === "number" && settings.reviewAfterDays > 0)
       ? Math.round(settings.reviewAfterDays) : null,
+    // #46: per-target-state transition conditions. { <stateId>: { requireRules, requireAi,
+    // aiThreshold, onBudgetExhausted } } — reuses the space validation ruleset (rulesRef "space").
+    entryConditions: sanitizeEntryConditions(settings?.entryConditions),
   };
   // Optional approval config for the enforce transition (#43). Shape:
   // { approvers: [{ type:"user"|"group", id, name }], mode:"any"|"all"|"min", min }.
