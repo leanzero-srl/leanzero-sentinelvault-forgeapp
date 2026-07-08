@@ -23,6 +23,12 @@ step "E2E health"
 step "E2E seal fixture (prereq for seal-e2e)"
 ( cd "$REPO/test-harness" && npm run ensure-fixture ) || FAIL=1
 
+# Run the seal REVERT test EARLY — it depends on timely delivery of an async attachment
+# product-trigger, which backs up at the tail of a heavy suite. Running it before the
+# workflow E2Es keeps the trigger queue clear so the revert fires promptly.
+step "E2E seal REVERT (audit A5 — the flagship seal->tamper->assert-revert path)"
+( cd "$REPO/test-harness" && npm run seal-revert-e2e ) || FAIL=1
+
 step "E2E workflow engine (#42, assign/transition/log via dev hook)"
 ( cd "$REPO/test-harness" && npm run workflow-e2e ) || FAIL=1
 
