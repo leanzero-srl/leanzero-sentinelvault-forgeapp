@@ -1245,13 +1245,21 @@ export async function expirySweepTask() {
       bulletinToggles.ENABLE_NATIVE_NOTIFICATIONS &&
       bulletinToggles.ENABLE_HALFWAY_REMINDER_NOTICE;
 
-    const { results: activeSeals } = await kvs
-      .query()
-      .where("key", WhereConditions.beginsWith("protection-"))
-      .limit(100)
-      .getMany();
+    // audit C1: cursor-paginate — a single limit(100) meant expiry + 50% notices were never
+    // processed for seals beyond the first 100 instance-wide (a permanent blind spot).
+    const activeSeals = [];
+    {
+      let sq = kvs.query().where("key", WhereConditions.beginsWith("protection-")).limit(100);
+      let si = 0;
+      do {
+        const { results, nextCursor } = await sq.getMany();
+        for (const e of results || []) activeSeals.push(e);
+        if (!nextCursor || ++si >= 50) break;
+        sq = kvs.query().where("key", WhereConditions.beginsWith("protection-")).limit(100).cursor(nextCursor);
+      } while (true);
+    }
 
-    if (!activeSeals || activeSeals.length === 0) {
+    if (!activeSeals.length) {
       return {
         statusCode: 200,
         headers: {},
@@ -1436,11 +1444,18 @@ export async function recurringNudgeTask() {
       };
     }
 
-    const { results: activeSeals } = await kvs
-      .query()
-      .where("key", WhereConditions.beginsWith("protection-"))
-      .limit(100)
-      .getMany();
+    // audit C1: cursor-paginate — periodic reminders were never sent for seals beyond 100.
+    const activeSeals = [];
+    {
+      let sq = kvs.query().where("key", WhereConditions.beginsWith("protection-")).limit(100);
+      let si = 0;
+      do {
+        const { results, nextCursor } = await sq.getMany();
+        for (const e of results || []) activeSeals.push(e);
+        if (!nextCursor || ++si >= 50) break;
+        sq = kvs.query().where("key", WhereConditions.beginsWith("protection-")).limit(100).cursor(nextCursor);
+      } while (true);
+    }
 
     if (activeSeals.length === 0) {
       return {

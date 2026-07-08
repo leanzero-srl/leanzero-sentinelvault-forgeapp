@@ -1,5 +1,11 @@
 # Sentinel Vault — Adversarial Audit Synthesis (SYNTHESIZER)
 
+> **REMEDIATION STATUS (2026-07-08, branch `aql/workflow-state-engine`).**
+> **FIXED + verified (full grade PASS):** A1 (policies authz + merge), A2 (webtrigger split → `scripts/deploy-prod.sh`), A3 (3 phantom fail-open toggles), A4 (nested-media duplication — 10 unit assertions), A5 (real seal→revert E2E, wired into the grade), B1+B2 (attachment revert retry + loud failure), B3 (uninstall cursor), B4 (collector cursor-paginate), B5 (AI prompt-injection fence), B6 (approvePageGate/enqueuePageValidation IDOR), C1 (expiry-sweep + nudge cursor).
+> **REMAINING (ranked):** C2 (enumerateOperatorSeals offset-vs-cursor), C3 (expired attachment seal keeps reverting), C4 (transient trash-restore fail hard-deletes the seal), C5 (dedup flags no TTL), C6 (space rules REPLACE global — verify intent first), C7 (LLM truncation undetected — verify `finish_reason` shape), D1–D8 (hardening). The proper O(1) per-page seal INDEX (the durable B4/C1 fix) is the next design task. Honest limitation: A1/A3/B6 authz can't be positively driven from the harness (asUser has no webtrigger context — same as #44); verified by inspection (mirror the proven gate) + no legit-flow regression.
+
+
+
 Six lenses, 33 raw findings, deduped to 26 distinct defects. Ranked by **IMPACT × CONFIDENCE**, not effort. Where my confidence in the *diagnosis* or the *fix* is lower, it is flagged inline.
 
 Legend: **Impact** = blast radius on the app's trust promise. **Conf** = how sure I am the defect is real and the fix is safe. Confidence is HIGH unless flagged.
