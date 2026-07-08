@@ -10,6 +10,9 @@ import {
   extractPlainText,
   collectHeadings,
   countNodes,
+  extractMediaSingleNodes,
+  spliceMediaNodes,
+  collectMediaFileIds,
 } from "../src/server/infra/doc-surgery.js";
 import { eq, ok, report } from "./_assert.mjs";
 
@@ -65,5 +68,45 @@ eq("collectHeadings level/text", hs[1], { level: 2, text: "B" });
 
 // countNodes
 eq("countNodes tables", countNodes({ type: "doc", content: [{ type: "table" }, para("x"), { type: "table" }] }, (n) => n.type === "table"), 2);
+
+// --- audit A4: sealed-media restore must NOT duplicate a containing block ---
+const mediaNode = (id) => ({ type: "media", attrs: { type: "file", id } });
+const mediaSingle = (id) => ({ type: "mediaSingle", attrs: { layout: "center" }, content: [mediaNode(id)] });
+const cell = (content) => ({ type: "tableCell", content });
+const tableWithMedia = (id) => ({
+  type: "table",
+  content: [{ type: "tableRow", content: [cell([mediaSingle(id)]), cell([para("keep-this-cell")])] }],
+});
+
+// (1) bare top-level mediaSingle → extracted node is the mediaSingle itself
+{
+  const doc = { type: "doc", content: [para("intro"), mediaSingle("fileA")] };
+  const got = extractMediaSingleNodes(doc, new Set(["fileA"]));
+  eq("A4 bare: one match", got.length, 1);
+  eq("A4 bare: node is a mediaSingle", got[0].node.type, "mediaSingle");
+  ok("A4 bare: media id preserved", collectMediaFileIds(got[0].node).has("fileA"));
+}
+
+// (2) media nested in a TABLE → extract the mediaSingle, NOT the whole table
+{
+  const doc = { type: "doc", content: [tableWithMedia("fileB")] };
+  const got = extractMediaSingleNodes(doc, new Set(["fileB"]));
+  eq("A4 nested: one match", got.length, 1);
+  eq("A4 nested: extracts a mediaSingle (not the table)", got[0].node.type, "mediaSingle");
+  eq("A4 nested: result contains NO table nodes", countNodes(got[0].node, (n) => n.type === "table"), 0);
+  eq("A4 nested: does NOT drag the other cell's text", extractPlainText(got[0].node).text.includes("keep-this-cell"), false);
+}
+
+// (3) splicing the restore into the current doc must NOT duplicate the surviving table
+{
+  const older = { type: "doc", content: [tableWithMedia("fileC")] };
+  const restore = extractMediaSingleNodes(older, new Set(["fileC"]));
+  // current doc: the user kept the (edited) table but removed the sealed image from it
+  const current = { type: "doc", content: [{ type: "table", content: [{ type: "tableRow", content: [cell([para("edited")]), cell([para("keep-this-cell")])] }] }] };
+  spliceMediaNodes(current, restore);
+  eq("A4 splice: still exactly ONE table (no duplication)", countNodes(current, (n) => n.type === "table"), 1);
+  ok("A4 splice: the sealed media is restored", collectMediaFileIds(current).has("fileC"));
+  eq("A4 splice: exactly one mediaSingle added", countNodes(current, (n) => n.type === "mediaSingle"), 1);
+}
 
 report("doc-surgery");
