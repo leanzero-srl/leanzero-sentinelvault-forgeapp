@@ -44,6 +44,10 @@ const WorkflowControl = ({ workflow, approvals, operatorId, pageId, spaceKey, on
   // Close the approval panel on outside click / Escape.
   useEffect(() => {
     if (!panelOpen) return undefined;
+    // a11y: move focus INTO the dialog on open so it's announced (aria-label) and keyboard
+    // users land inside it — a role="dialog" that never receives focus is an SR defect.
+    // Focus the container (not a control) to avoid accidental Approve/Deny activation.
+    requestAnimationFrame(() => panelRef.current?.focus());
     const outside = (e) => !panelRef.current?.contains(e.target) && !apprBtnRef.current?.contains(e.target);
     const onDown = (e) => { if (outside(e)) setPanelOpen(false); };
     const onKey = (e) => { if (e.key === "Escape") { setPanelOpen(false); apprBtnRef.current?.focus(); } };
@@ -161,7 +165,7 @@ const WorkflowControl = ({ workflow, approvals, operatorId, pageId, spaceKey, on
           <span className="wf-chip-caret" aria-hidden="true">▾</span>
         </button>
         {panelOpen && (
-          <div className="wf-appr-panel" role="dialog" aria-label={`Approval to move to ${targetName}`} ref={panelRef}>
+          <div className="wf-appr-panel" role="dialog" aria-label={`Approval to move to ${targetName}`} ref={panelRef} tabIndex={-1}>
             <div className="wf-appr-head">Approval to move to <strong>{targetName}</strong></div>
             <div className="wf-appr-sub">
               Requested by {pendingApproval.requestedByName || "a colleague"} · {MODE_TEXT[pendingApproval.mode] || MODE_TEXT.any}

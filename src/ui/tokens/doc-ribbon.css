@@ -489,6 +489,10 @@ html[data-color-mode="dark"] .wf-dot-neutral  { background: #64748b; }
   color: var(--sv-text-primary, #0F172A);
   cursor: default;
 }
+/* a11y: the dialog container is focused programmatically on open (never tab-reached), so its
+   own outline would be noise — the panel appearing + the inner controls' focus rings are the
+   visible cues (standard dialog pattern). */
+.wf-appr-panel:focus { outline: none; }
 .wf-appr-head { font-size: 13px; font-weight: 700; }
 .wf-appr-head strong { font-weight: 800; }
 .wf-appr-sub { margin-top: 3px; font-size: 11px; color: var(--sv-text-secondary, #475569); line-height: 1.4; }
