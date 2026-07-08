@@ -105,12 +105,16 @@ const WorkflowControl = ({ workflow, approvals, operatorId, pageId, spaceKey, on
     setBusy(true); setError(null); setMenuOpen(false);
     try {
       const res = await invoke("request-transition", { pageId, spaceKey, toStateId });
-      if (res?.success) {
+      // A pending result (approval and/or AI review opened) is NOT an error — reload so the
+      // ribbon renders the awaiting state.
+      if (res?.success || res?.pending) {
         await onTransitioned();
         setSeat(false);
         requestAnimationFrame(() => setSeat(true)); // seat the newly-rendered state
       } else {
-        setError(res?.reason || "Transition not allowed");
+        // #46: a blocked transition names exactly what's missing (content conditions).
+        const reasons = (res?.violations || []).map((v) => v.message || v.label).filter(Boolean);
+        setError(reasons.length ? `${res?.reason || "Blocked"} — ${reasons.join("; ")}` : (res?.reason || "Transition not allowed"));
       }
     } catch (_) {
       setError("Transition failed");
@@ -172,6 +176,15 @@ const WorkflowControl = ({ workflow, approvals, operatorId, pageId, spaceKey, on
                   {a.reason ? <span className="wf-appr-reason">“{a.reason}”</span> : null}
                 </li>
               ))}
+              {pendingApproval.aiGate && (
+                <li className="wf-appr-row">
+                  <span className={`wf-appr-badge wf-appr-${pendingApproval.aiGate.status === "passed" ? "approved" : pendingApproval.aiGate.status === "failed" ? "denied" : "pending"}`}>
+                    {pendingApproval.aiGate.status === "passed" ? "Passed" : pendingApproval.aiGate.status === "failed" ? "Issues" : "Reviewing"}
+                  </span>
+                  <span className="wf-appr-name">AI content review</span>
+                  {pendingApproval.aiGate.reason ? <span className="wf-appr-reason">“{pendingApproval.aiGate.reason}”</span> : null}
+                </li>
+              )}
             </ul>
             {iCanDecide ? (
               <div className="wf-appr-decide">

@@ -19,11 +19,12 @@ import {
   markVersionChecked,
 } from "./capsules/validations/logic.js";
 import { evaluateRules } from "./infra/rules-engine.js";
+import { fetchPageLabels } from "./infra/labels.js";
 import {
   autoAssignOnEvent, getSpaceWorkflowSettings, resolveWorkflowDef, findState, getInitialState,
   transitionPageWorkflow, readPageWorkflow, restampApprovedVersion, fetchLivePageVersion,
 } from "./capsules/workflow/logic.js";
-import { resolveApproverIds } from "./capsules/workflow/approvals.js";
+import { resolveApproverIds, applyAiVerdict } from "./capsules/workflow/approvals.js";
 import { postEnforceComment } from "./infra/approval-blueprints.js";
 import { isAccountStewardAsApp } from "./shared/steward-checks.js";
 import { postValidationComment } from "./infra/validation-blueprints.js";
@@ -792,7 +793,31 @@ export async function workflowSweep() {
     if (!nextCursor || ++iterations >= 20) break;
     query = kvs.query().where("key", WhereConditions.beginsWith("workflow-idx-")).limit(100).cursor(nextCursor);
   } while (true);
-  return { body: JSON.stringify({ reverted, demoted, healed, expired }) };
+
+  // #46 reaper: fail a transition AI review whose worker delivery never arrived (the pending
+  // record's only TTL). CAS-guarded in applyAiVerdict — a late worker that already wrote a
+  // verdict is a no-op. Timeout = 15 min; older enqueuedAt still pending → terminal failed.
+  let aiTimedOut = 0;
+  const AI_GATE_TIMEOUT_MS = 15 * 60 * 1000;
+  let pq = kvs.query().where("key", WhereConditions.beginsWith("workflow-pending-")).limit(100);
+  let piter = 0;
+  do {
+    const { results, nextCursor } = await pq.getMany();
+    for (const { key, value: pend } of (results || [])) {
+      try {
+        if (pend?.aiGate?.required && pend.aiGate.status === "pending"
+            && typeof pend.aiGate.enqueuedAt === "number" && (nowMs - pend.aiGate.enqueuedAt) > AI_GATE_TIMEOUT_MS) {
+          const pageId = String(key).replace(/^workflow-pending-/, "");
+          const r = await applyAiVerdict(pageId, null, "failed", "AI review timed out — please re-request.");
+          if (r?.applied) aiTimedOut++;
+        }
+      } catch (e) { console.error("[WORKFLOW-SWEEP] ai-reaper", e); }
+    }
+    if (!nextCursor || ++piter >= 20) break;
+    pq = kvs.query().where("key", WhereConditions.beginsWith("workflow-pending-")).limit(100).cursor(nextCursor);
+  } while (true);
+
+  return { body: JSON.stringify({ reverted, demoted, healed, expired, aiTimedOut }) };
 }
 
 // --- Conditions & Validations phase (runs after the body-protection pipeline) ---
@@ -815,12 +840,8 @@ async function runValidationPhase(event, pageId, atlassianId) {
   // delivery for the same version can't double-post advisory comments / state writes.
   await markVersionChecked(pageId, version);
 
-  // Fetch page labels (required-label rule).
-  let labels = [];
-  try {
-    const res = await asApp().requestConfluence(route`/wiki/api/v2/pages/${pageId}/labels`);
-    if (res.ok) { const b = await res.json(); labels = (b.results || []).map((l) => l.name); }
-  } catch (_) { /* best effort */ }
+  // Fetch page labels (required-label rule) — shared helper (#46 reuse).
+  const labels = await fetchPageLabels(pageId);
 
   const { passed, violations } = evaluateRules(adfDoc, labels, config.rules);
   const modes = config.modes || { advisory: true, gate: false, revert: false };

@@ -1,8 +1,9 @@
 import { kvs } from "@forge/kvs";
 
-import { readDocBody, extractPlainText } from "../../infra/doc-surgery.js";
+import { readDocBody, readDocBodyAtVersion, extractPlainText } from "../../infra/doc-surgery.js";
 import { runForgeLlmJson, isForgeLlmModelAllowed, FORGE_LLM_DEFAULT_MODEL } from "../../infra/forge-llm.js";
 import { postAiFindingsComment } from "../../infra/validation-blueprints.js";
+import { applyAiVerdict } from "../workflow/approvals.js";
 import {
   resolveAiConfig,
   buildValidationPrompt,
@@ -12,12 +13,57 @@ import {
   storeFindings,
 } from "./logic.js";
 
+// #46 Part B: gate-mode review. Scores the PINNED version (the bytes the humans reviewed and
+// #44 will enforce), then writes a terminal verdict onto the pending aiGate via applyAiVerdict.
+// Fail-closed: an LLM/parse/read failure is a terminal FAILED (retry), NEVER a swallow that
+// leaves the gate hanging forever.
+async function handleGateReview(body) {
+  const { pageId, spaceKey, realmKey, pinnedVersion, threshold } = body;
+  try {
+    const ai = await resolveAiConfig(spaceKey);
+    if (!ai || ai.enabled !== true) {
+      await applyAiVerdict(pageId, pinnedVersion, "passed", "AI review isn't enabled — condition skipped.");
+      return;
+    }
+    let model = ai.model || FORGE_LLM_DEFAULT_MODEL;
+    if (!isForgeLlmModelAllowed(model)) model = FORGE_LLM_DEFAULT_MODEL;
+    const { adfDoc, pageData } = pinnedVersion
+      ? await readDocBodyAtVersion(pageId, pinnedVersion)
+      : await readDocBody(pageId);
+    const pageTitle = pageData?.title || "Untitled";
+    let { text } = extractPlainText(adfDoc);
+    const maxChars = ai.maxChars || 40000;
+    if (text.length > maxChars) text = text.slice(0, maxChars);
+    const { system, user } = buildValidationPrompt({ ai, pageText: text, pageTitle });
+    const res = await runForgeLlmJson({ model, system, user });
+    if (res.usage) await accrueTokenUsage(realmKey || spaceKey, res.usage);
+    if (!res.ok || !res.parsed) {
+      await applyAiVerdict(pageId, pinnedVersion, "failed", "AI review failed — please retry.");
+      return;
+    }
+    const norm = normalizeFindings(res.parsed);
+    const bar = severityRank(threshold || "medium");
+    const blocking = norm.findings.filter((f) => severityRank(f.severity) >= bar);
+    const status = blocking.length === 0 ? "passed" : "failed";
+    const reason = status === "failed"
+      ? `${blocking.length} issue(s): ${blocking.slice(0, 3).map((f) => f.ruleRef || f.explanation || f.severity).join("; ")}`
+      : null;
+    await applyAiVerdict(pageId, pinnedVersion, status, reason);
+  } catch (e) {
+    console.error("[AI-GATE] review error:", e);
+    try { await applyAiVerdict(pageId, pinnedVersion, "failed", "AI review error — please retry."); } catch (_) { /* best effort */ }
+  }
+}
+
 // Async consumer for Semantic AI validation jobs. The Forge LLM call can exceed
 // the 25s resolver limit, so it runs on the ai-validation-queue (120s function).
 // Uses Atlassian-hosted Claude via @forge/llm — no external egress.
 //
 // event.body: { taskId, pageId, spaceKey, realmKey, requestedBy }
 export async function aiValidationConsumer(event) {
+  // #46: transition-condition review rides the same queue with mode "gate".
+  if (event?.body?.mode === "gate") return await handleGateReview(event.body);
+
   const { taskId, pageId, spaceKey, realmKey, requestedBy } = event?.body || {};
   if (!taskId || !pageId) {
     console.error("[AI-VALIDATE] missing taskId or pageId in event body");

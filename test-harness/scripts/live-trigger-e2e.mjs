@@ -33,8 +33,14 @@ try {
   check("created test page", !!pageId);
   console.log(`     page ${pageId}`);
 
-  // 3. Read it back as ADF (the format the app's trigger reads).
-  const adf = await get(`/api/v2/pages/${pageId}?body-format=atlas_doc_format`);
+  // 3. Read it back as ADF (the format the app's trigger reads). A just-created page can
+  // 404 on a lagging read replica (eventual consistency) — retry briefly.
+  let adf = null;
+  for (let i = 0; i < 5; i++) {
+    try { adf = await get(`/api/v2/pages/${pageId}?body-format=atlas_doc_format`); if (adf?.body) break; }
+    catch (_) { /* replica lag */ }
+    await sleep(1500);
+  }
   check("page readable as ADF", !!adf?.body?.atlas_doc_format?.value);
 
   // 4. Edit it → fires avi:confluence:updated:page on the deployed app.
