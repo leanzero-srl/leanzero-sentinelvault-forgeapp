@@ -124,8 +124,11 @@ export default function ValidationsEditor({ scope = "global", spaceKey = null })
     setSaving(true);
     setMsg(null);
     try {
-      await invoke("store-validation-config", { scope, key: spaceKey, data: cfg });
-      setMsg({ type: "success", text: "Validation rules saved." });
+      // it16: surface a resolver rejection (returns { success:false, reason }) instead of a
+      // blind "saved".
+      const r = await invoke("store-validation-config", { scope, key: spaceKey, data: cfg });
+      if (r?.success) setMsg({ type: "success", text: "Validation rules saved." });
+      else setMsg({ type: "error", text: r?.reason || "Could not save validation rules." });
     } catch (e) {
       setMsg({ type: "error", text: "Could not save validation rules." });
     } finally {
