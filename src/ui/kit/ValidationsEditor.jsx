@@ -136,7 +136,7 @@ export default function ValidationsEditor({ scope = "global", spaceKey = null })
   if (loading) return <div className="settings-panel">Loading…</div>;
 
   const scopeNote = scope === "space"
-    ? "These rules apply to this space. If set, they override the global rules; leave empty to inherit global."
+    ? "These rules apply to this space, on top of the organisation's required (blocking) global rules — which always apply. Your rules replace the advisory global rules; leave empty to inherit all global rules."
     : "Master switch. When on, pages are validated on create and edit against the rules below.";
 
   return (
@@ -162,19 +162,20 @@ export default function ValidationsEditor({ scope = "global", spaceKey = null })
         </div>
       </SettingsRow>
 
-      {scope === "space" && Array.isArray(globalRules) && globalRules.length > 0 && (
-        cfg.rules.length > 0 ? (
-          <p className="alert-error" role="status">
-            These space rules <strong>replace all {globalRules.length} global rule(s)</strong> for this space
-            {globalRules.filter((r) => r.severity === "block").length > 0
-              ? `, including ${globalRules.filter((r) => r.severity === "block").length} required (blocking) global rule(s) that will NOT apply here.`
-              : "."}
-            {" "}Clear the rules below to inherit the global rules instead.
+      {scope === "space" && Array.isArray(globalRules) && globalRules.length > 0 && (() => {
+        const blockCount = globalRules.filter((r) => r.severity === "block").length;
+        const warnCount = globalRules.length - blockCount;
+        if (cfg.rules.length === 0) {
+          return <p className="settings-row-description" role="status">This space inherits all {globalRules.length} global rule(s). Add a rule to customise — your rules are added on top of the {blockCount} required global rule(s), which always apply.</p>;
+        }
+        return (
+          <p className="settings-row-description" role="status">
+            {blockCount > 0
+              ? <>The <strong>{blockCount} required (blocking) global rule(s) always apply here</strong> — your rules below are added on top.{warnCount > 0 ? ` The ${warnCount} advisory global rule(s) are replaced by your rules.` : ""}</>
+              : <>Your space rules replace the {warnCount} advisory global rule(s). Leave empty to inherit them.</>}
           </p>
-        ) : (
-          <p className="settings-row-description">This space inherits the {globalRules.length} global rule(s). Add a rule below to override them for this space.</p>
-        )
-      )}
+        );
+      })()}
 
       <div className="val-rules">
         <div className="val-rules-head">
