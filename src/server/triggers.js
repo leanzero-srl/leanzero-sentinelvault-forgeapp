@@ -986,57 +986,82 @@ async function handleSealedArtifactEdit(sealRecord, artifactId, contentId, atlas
     return;
   }
 
-  // Get artifact details to obtain the filename for re-upload
-  const artifactRoute = route`/wiki/api/v2/attachments/${artifactId}`;
-  const artifactResponse = await asApp().requestConfluence(artifactRoute);
+  // Get the filename for re-upload (best-effort — fall back to the event's fileName so a
+  // transient details-GET failure doesn't abort the revert).
+  let artifactName = attachment?.fileName || "attachment";
+  try {
+    const ar = await asApp().requestConfluence(route`/wiki/api/v2/attachments/${artifactId}`);
+    if (ar.ok) artifactName = (await ar.json())?.title || artifactName;
+  } catch (_) { /* fall back to event fileName */ }
 
-  if (!artifactResponse.ok) {
-    console.error(
-      `Failed to get artifact details: ${artifactResponse.status}`,
-    );
+  // audit B1/B2: retry the download+re-upload; on definitive failure, notify LOUDLY instead
+  // of returning silently (the seal is a fail-OPEN otherwise — a single 429/5xx blip would
+  // permanently let the tampered version stand with the owner believing it was protected).
+  const revert = await revertAttachmentToVersion(contentId, artifactId, artifactName, targetVersion);
+  if (!revert.ok) {
+    console.error(`[EDIT-REVERT] FAILED to enforce seal on "${artifactName}" -> v${targetVersion} (${revert.stage} ${revert.status || revert.error || ""}) — the tampered version is LIVE; notifying owner.`);
+    await notifyAttachmentRevertFailed(sealRecord, artifactId, contentId, atlassianId, artifactName).catch(() => {});
     return;
   }
 
-  const artifactDetails = await artifactResponse.json();
-
-  // Download the sealed version
-  const downloadRoute = route`/wiki/rest/api/content/${contentId}/child/attachment/${artifactId}/download?version=${targetVersion}`;
-  const downloadResponse = await asApp().requestConfluence(downloadRoute);
-
-  if (!downloadResponse.ok) {
-    console.error(
-      `Failed to download previous version: ${downloadResponse.status}`,
-    );
-    return;
-  }
-
-  // Re-upload the previous version
-  const fileBuffer = await downloadResponse.arrayBuffer();
-  const formData = new FormData();
-  formData.append("file", new Blob([fileBuffer]), artifactDetails.title);
-  formData.append(
-    "comment",
-    "(Sentinel Vault automatically reversed modifications)",
-  );
-  formData.append("minorEdit", "true");
-
-  const updateRoute = route`/wiki/rest/api/content/${contentId}/child/attachment/${artifactId}/data`;
-  const updateResponse = await asApp().requestConfluence(updateRoute, {
-    method: "POST",
-    headers: { "X-Atlassian-Token": "nocheck" },
-    body: formData,
-  });
-
-  if (!updateResponse.ok) {
-    console.error(`Failed to revert artifact: ${updateResponse.status}`);
-    return;
-  }
-
-  console.warn(`[EDIT-REVERT] Reverted ${artifactDetails.title} to v${targetVersion}`);
-
-  // Send seal violation email to the seal owner
-  const artifactName = artifactDetails.title || attachment.fileName;
+  console.warn(`[EDIT-REVERT] Reverted ${artifactName} to v${targetVersion}`);
   await sendViolationNotifications(sealRecord, artifactId, contentId, atlassianId, artifactName, "edit");
+}
+
+// audit B1/B2: attachment revert with bounded 429/5xx backoff. A single transient failure
+// must not silently bypass a seal (there is no attachment-side sweep backstop). Returns
+// { ok } | { ok:false, stage, status?, error? }.
+async function revertAttachmentToVersion(contentId, artifactId, title, targetVersion) {
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const backoff = () => new Promise((r) => setTimeout(r, Math.pow(2, attempt) * 500));
+    try {
+      const dl = await asApp().requestConfluence(
+        route`/wiki/rest/api/content/${contentId}/child/attachment/${artifactId}/download?version=${targetVersion}`,
+      );
+      if (!dl.ok) {
+        if ((dl.status === 429 || dl.status >= 500) && attempt < 2) { await backoff(); continue; }
+        return { ok: false, stage: "download", status: dl.status };
+      }
+      const fileBuffer = await dl.arrayBuffer();
+      const formData = new FormData();
+      formData.append("file", new Blob([fileBuffer]), title);
+      formData.append("comment", "(Sentinel Vault automatically reversed modifications)");
+      formData.append("minorEdit", "true");
+      const up = await asApp().requestConfluence(
+        route`/wiki/rest/api/content/${contentId}/child/attachment/${artifactId}/data`,
+        { method: "POST", headers: { "X-Atlassian-Token": "nocheck" }, body: formData },
+      );
+      if (!up.ok) {
+        if ((up.status === 429 || up.status >= 500) && attempt < 2) { await backoff(); continue; }
+        return { ok: false, stage: "upload", status: up.status };
+      }
+      return { ok: true };
+    } catch (e) {
+      if (attempt < 2) { await backoff(); continue; }
+      return { ok: false, stage: "exception", error: String(e?.message || e) };
+    }
+  }
+  return { ok: false, stage: "exhausted" };
+}
+
+// audit B1: surface a failed attachment revert (owner comment + a distinct dispatch) rather
+// than failing silently. Best-effort; never throws into the trigger.
+async function notifyAttachmentRevertFailed(sealRecord, artifactId, contentId, atlassianId, artifactName) {
+  try {
+    await recordDispatch({
+      id: `revert-failed-${Date.now()}`,
+      type: "revert-failed",
+      attachmentId: artifactId,
+      attachmentName: artifactName,
+      ownerAccountId: sealRecord.lockedBy,
+      editorAccountId: atlassianId,
+      timestamp: Date.now(),
+      pageId: contentId,
+    });
+  } catch (_) { /* best-effort */ }
+  try {
+    await postDocFootnote(contentId, sealRecord.lockedBy, atlassianId, artifactName, "revert-failed");
+  } catch (_) { /* best-effort */ }
 }
 
 // --- Handle trashing of a sealed artifact — restore from trash ---
@@ -1171,10 +1196,17 @@ async function sendViolationNotifications(sealRecord, artifactId, contentId, atl
 export async function lifecycleTrigger(event) {
   try {
     if (event.eventType === "avi:forge:uninstalled:app") {
-      const { results: keys } = await kvs.query().limit(1000).getMany();
-      for (const { key } of keys) {
-        await kvs.delete(key);
-      }
+      // audit B3: cursor-paginate to exhaustion — a single limit(1000) getMany() left every
+      // key past the first 1000 behind (incl. never-TTL'd workflow-log-* compliance history
+      // and page snapshots) — a data-retention leak on any mature tenant.
+      let query = kvs.query().limit(250);
+      let iterations = 0;
+      do {
+        const { results, nextCursor } = await query.getMany();
+        for (const { key } of results || []) await kvs.delete(key).catch(() => {});
+        if (!nextCursor || ++iterations >= 400) break; // 400×250 = 100k keys, a runaway backstop
+        query = kvs.query().limit(250).cursor(nextCursor);
+      } while (true);
     }
   } catch (error) {
     console.error("Error cleaning up storage:", error);

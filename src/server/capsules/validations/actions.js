@@ -1,8 +1,19 @@
+import { asApp, route } from "@forge/api";
 import { kvs } from "@forge/kvs";
 import { Queue } from "@forge/events";
 import { fetchPageLabels } from "../../infra/labels.js";
 
 import { authorizeSteward } from "../../shared/steward-checks.js";
+
+// audit B6: resolve a page's REAL space key from its id (never trust a caller-supplied
+// spaceKey for authorization — else a steward of space A could act on a page in space B).
+async function resolvePageSpaceKey(pageId) {
+  try {
+    const res = await asApp().requestConfluence(route`/wiki/rest/api/content/${pageId}?expand=space`);
+    if (res.ok) return (await res.json())?.space?.key || null;
+  } catch (_) { /* deny on failure */ }
+  return null;
+}
 import { readDocBody } from "../../infra/doc-surgery.js";
 import { evaluateRules } from "../../infra/rules-engine.js";
 import {
@@ -87,15 +98,14 @@ const getValidationState = async (req) => {
 const approvePageGate = async (req) => {
   const pageId = req.payload?.pageId || req.context.extension?.content?.id;
   const accountId = req.context.accountId;
-  const spaceKey =
-    req.payload?.spaceKey ||
-    req.context.extension?.content?.space?.key ||
-    req.context.extension?.space?.key;
   if (!pageId) return { success: false, reason: "No page" };
 
+  // audit B6: authorize against the page's REAL space (resolved from the id), NOT the
+  // caller-supplied spaceKey — else a steward of any space could clear any page's gate.
+  const spaceKey = await resolvePageSpaceKey(pageId);
   let allowed = false;
-  try { allowed = await authorizeSteward(accountId, spaceKey); } catch (_) { /* deny */ }
-  if (!allowed) return { success: false, reason: "Only a steward can approve this page" };
+  try { allowed = !!spaceKey && await authorizeSteward(accountId, spaceKey); } catch (_) { /* deny */ }
+  if (!allowed) return { success: false, reason: "Only a steward of this page's space can approve it" };
 
   await writeValidationState(pageId, {
     state: "passed",
@@ -118,13 +128,16 @@ const listAiModels = async () => {
  */
 const enqueuePageValidation = async (req) => {
   const pageId = req.payload?.pageId || req.context.extension?.content?.id;
-  const spaceKey =
-    req.payload?.spaceKey ||
-    req.context.extension?.content?.space?.key ||
-    req.context.extension?.space?.key ||
-    null;
   const accountId = req.context.accountId;
   if (!pageId) return { success: false, reason: "No page" };
+
+  // audit B6: resolve the page's REAL space + require a steward of it — a manual AI review
+  // spends the space's token budget, so it must not be triggerable by anyone against any
+  // space's budget via a caller-supplied spaceKey.
+  const spaceKey = await resolvePageSpaceKey(pageId);
+  let allowed = false;
+  try { allowed = !!spaceKey && await authorizeSteward(accountId, spaceKey); } catch (_) { /* deny */ }
+  if (!allowed) return { success: false, reason: "Only a steward of this page's space can run an AI review" };
 
   const ai = await resolveAiConfig(spaceKey);
   if (!ai || ai.enabled !== true) {
