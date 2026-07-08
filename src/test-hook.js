@@ -24,6 +24,7 @@ import {
   getPageApprovalStatus,
 } from "./server/capsules/workflow/approvals.js";
 import { getWorkflowDashboard } from "./server/capsules/workflow/actions.js";
+import { mirrorNativeState, readNativeState, clearNativeState } from "./server/capsules/workflow/native-state.js";
 
 const json = (statusCode, body) => ({
   statusCode,
@@ -129,6 +130,13 @@ export async function testStateTrigger(req) {
       if (fn === "dashboard") {
         const r = await getWorkflowDashboard({ payload: { spaceKey: q(req, "spaceKey") } });
         return json(200, { invoked: fn, result: r });
+      }
+      if (fn === "nativeState") {
+        const pageId = q(req, "pageId");
+        if (q(req, "clear")) await clearNativeState(pageId);
+        else if (q(req, "state")) await mirrorNativeState(pageId, q(req, "state"));
+        const current = await readNativeState(pageId);
+        return json(200, { invoked: fn, result: { current } });
       }
       if (fn === "getWorkflow") {
         const result = await getPageWorkflow(q(req, "pageId"), q(req, "spaceKey"));
