@@ -32,6 +32,13 @@ eq("unknown category -> rule", norm.findings[1].category, "rule");
 const many = { findings: Array.from({ length: 40 }, (_, i) => ({ severity: "low", excerpt: `e${i}`, explanation: "x" })) };
 eq("capped at 25", normalizeFindings(many).findings.length, 25);
 
+// audit D4: a real finding with only a ruleRef (no excerpt/explanation) must be KEPT — it was
+// silently dropped before, which for the AI gate is a false PASS. A totally-empty one still drops.
+const d4 = normalizeFindings({ findings: [{ severity: "high", category: "compliance", ruleRef: "PII policy" }] });
+eq("D4: ruleRef-only finding kept", d4.findings.length, 1);
+ok("D4: fallback explanation added", d4.findings[0].explanation.length > 0);
+eq("D4: totally-empty finding still dropped", normalizeFindings({ findings: [{ foo: 1 }] }).findings.length, 0);
+
 // null / garbage
 eq("null parse -> empty", normalizeFindings(null), { findings: [], summary: "" });
 

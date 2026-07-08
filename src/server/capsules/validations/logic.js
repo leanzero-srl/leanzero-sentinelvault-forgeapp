@@ -223,14 +223,19 @@ export function normalizeFindings(parsed) {
     if (!f || typeof f !== "object") continue;
     const excerpt = typeof f.excerpt === "string" ? f.excerpt.slice(0, 200) : "";
     const explanation = typeof f.explanation === "string" ? f.explanation.slice(0, 300) : "";
-    if (!excerpt && !explanation) continue; // need at least one to be actionable
+    const ruleRef = typeof f.ruleRef === "string" ? f.ruleRef.slice(0, 120) : "";
+    const suggestion = typeof f.suggestion === "string" ? f.suggestion.slice(0, 300) : "";
+    // audit D4: drop ONLY a completely-empty finding. Previously a real violation carrying a
+    // ruleRef or suggestion (but no excerpt/explanation) was silently discarded — which for the
+    // AI gate is a false PASS. Keep it with a fallback explanation.
+    if (!excerpt && !explanation && !ruleRef && !suggestion) continue;
     const finding = {
       severity: sevSet.has(String(f.severity).toLowerCase()) ? String(f.severity).toLowerCase() : "low",
       category: catSet.has(String(f.category).toLowerCase()) ? String(f.category).toLowerCase() : "rule",
-      ruleRef: typeof f.ruleRef === "string" ? f.ruleRef.slice(0, 120) : "",
+      ruleRef,
       excerpt,
-      explanation,
-      suggestion: typeof f.suggestion === "string" ? f.suggestion.slice(0, 300) : "",
+      explanation: explanation || (ruleRef ? `Flagged: ${ruleRef}` : "Flagged by the AI review."),
+      suggestion,
     };
     finding.id = findingId(finding);
     out.findings.push(finding);
