@@ -206,19 +206,36 @@ export function collectMediaFileIds(node, result = new Set()) {
  * together with their original index in the content array.
  * Returns [{ node, originalIndex }, ...].
  */
+// audit A4: restore ONLY the sealed media (its enclosing mediaSingle), NEVER the whole
+// top-level block. When a sealed image is nested in a table/layout/expand, cloning the whole
+// block and splicing it duplicated the entire container alongside the user's edited one —
+// silent page corruption. We now extract the mediaSingle wrapping each target fileId
+// (wherever it is nested) and return it, positioned at its top-level block index. A bare
+// top-level mediaSingle is unchanged (it IS its own mediaSingle); nested media is restored as
+// a clean top-level mediaSingle — the sealed media is back (protection holds) with zero
+// duplication of surrounding content.
 export function extractMediaSingleNodes(adfDoc, targetFileIds) {
   const matches = [];
   if (!adfDoc?.content) return matches;
-  for (let i = 0; i < adfDoc.content.length; i++) {
-    const block = adfDoc.content[i];
-    const ids = collectMediaFileIds(block);
-    for (const id of ids) {
-      if (targetFileIds.has(id)) {
-        matches.push({ node: JSON.parse(JSON.stringify(block)), originalIndex: i });
-        break; // avoid duplicating the same block
-      }
+  const seen = new Set();
+  const visit = (node, topIndex, msAncestor) => {
+    if (!node) return;
+    const ms = node.type === "mediaSingle" ? node : msAncestor;
+    if (
+      node.type === "media" && node.attrs?.type === "file" &&
+      node.attrs?.id && targetFileIds.has(node.attrs.id) && !seen.has(node.attrs.id)
+    ) {
+      seen.add(node.attrs.id);
+      // Prefer the enclosing mediaSingle (preserves its layout attrs); else wrap the bare
+      // media node in a fresh, valid top-level mediaSingle.
+      const restored = ms
+        ? JSON.parse(JSON.stringify(ms))
+        : { type: "mediaSingle", attrs: { layout: "center" }, content: [JSON.parse(JSON.stringify(node))] };
+      matches.push({ node: restored, originalIndex: topIndex });
     }
-  }
+    if (Array.isArray(node.content)) for (const c of node.content) visit(c, topIndex, ms);
+  };
+  for (let i = 0; i < adfDoc.content.length; i++) visit(adfDoc.content[i], i, null);
   return matches;
 }
 
