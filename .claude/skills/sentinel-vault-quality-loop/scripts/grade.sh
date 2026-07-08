@@ -29,6 +29,9 @@ step "E2E seal fixture (prereq for seal-e2e)"
 step "E2E seal REVERT (audit A5 — the flagship seal->tamper->assert-revert path)"
 ( cd "$REPO/test-harness" && npm run seal-revert-e2e ) || FAIL=1
 
+step "E2E edit-grant revoke (audit D5 — list + revoke granted edit access)"
+( cd "$REPO/test-harness" && npm run editgrant-revoke-e2e ) || FAIL=1
+
 step "E2E workflow engine (#42, assign/transition/log via dev hook)"
 ( cd "$REPO/test-harness" && npm run workflow-e2e ) || FAIL=1
 

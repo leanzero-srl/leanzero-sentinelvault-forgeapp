@@ -276,6 +276,8 @@ const ArtifactCard = ({ att, onRefresh, columns, siteUrl, spaceKey, pageId, page
   const [reasonText, setReasonText] = useState("");
   const [myRequests, setMyRequests] = useState(null); // owner: pending edit requests on this file
   const [reqBusy, setReqBusy] = useState(null);
+  const [myGrants, setMyGrants] = useState(null); // audit D5: owner — active granted editors
+  const [grantBusy, setGrantBusy] = useState(null);
 
   const isSealed = att.lockStatus === "HELD" || att.lockStatus === "HELD_BY_ACTOR";
   const isSealedByMe = att.lockStatus === "HELD_BY_ACTOR";
@@ -299,9 +301,26 @@ const ArtifactCard = ({ att, onRefresh, columns, siteUrl, spaceKey, pageId, page
       invoke("list-edit-requests", { attachmentId: att.id })
         .then((r) => { if (!cancelled) setMyRequests(r?.requests || []); })
         .catch(() => { if (!cancelled) setMyRequests([]); });
+      // audit D5: also load the ACTIVE granted editors so the owner can REVOKE access —
+      // previously an approved grant was permanent with no surface to take it back.
+      invoke("list-edit-grants", { attachmentId: att.id })
+        .then((r) => { if (!cancelled) setMyGrants(r?.grants || []); })
+        .catch(() => { if (!cancelled) setMyGrants([]); });
     }
     return () => { cancelled = true; };
   }, [isSealedByMe, att.id]);
+
+  const revokeGrant = async (editorAccountId) => {
+    setGrantBusy(editorAccountId);
+    try {
+      const r = await invoke("revoke-edit-grant", { attachmentId: att.id, editorAccountId });
+      if (r?.success) setMyGrants((p) => (p || []).filter((g) => g.editorAccountId !== editorAccountId));
+    } catch (e) {
+      console.error("Revoke edit grant failed:", e);
+    } finally {
+      setGrantBusy(null);
+    }
+  };
 
   const submitEditRequest = async () => {
     setActionBusy("editreq");
@@ -733,6 +752,26 @@ const ArtifactCard = ({ att, onRefresh, columns, siteUrl, spaceKey, pageId, page
                   </button>
                   <button className="action-btn unlock" disabled={!!reqBusy} onClick={() => resolveEditReq(r.requesterAccountId, "deny")}>
                     {reqBusy === `${r.requesterAccountId}:deny` ? <>Denying<span className="btn-busy-bar" /></> : "Deny"}
+                  </button>
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Owner: active granted editors — revoke access in place (audit D5) */}
+      {isSealedByMe && myGrants && myGrants.length > 0 && (
+        <div className="card-row card-editreq-inbox">
+          <span className="card-editreq-title">Editors with access ({myGrants.length})</span>
+          {myGrants.map((g) => {
+            const name = g.editorName || "Unknown user";
+            return (
+              <div key={g.editorAccountId} className="card-editreq-row">
+                <span className="card-editreq-who">{name}{g.grantedAt ? <em className="card-editreq-reason"> — since {new Date(g.grantedAt).toLocaleDateString()}</em> : null}</span>
+                <span className="confirm-actions">
+                  <button className="action-btn unlock" disabled={grantBusy === g.editorAccountId} onClick={() => revokeGrant(g.editorAccountId)}>
+                    {grantBusy === g.editorAccountId ? <>Revoking<span className="btn-busy-bar" /></> : "Revoke"}
                   </button>
                 </span>
               </div>
