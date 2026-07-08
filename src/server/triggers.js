@@ -308,15 +308,22 @@ async function collectMediaSealsForPage(pageId) {
   const propsData = await propsResponse.json();
   if (!propsData.results || propsData.results.length === 0) return [];
 
-  const { results: allSeals } = await kvs
-    .query()
-    .where("key", WhereConditions.beginsWith("protection-"))
-    .limit(100)
-    .getMany();
-
-  const pageSeals = allSeals.filter(
-    ({ value }) => value?.contentId === pageId && value?.lockedBy,
-  );
+  // audit B4: cursor-paginate — a single limit(100) over the instance-wide protection-*
+  // records silently DROPPED a page's seal once >100 seals existed anywhere, so a tamper on
+  // page 101+ was never reverted and no error was raised. This scan only runs on a page that
+  // already carries the seal content-property (a minority of pages). (A per-page seal index
+  // is the proper O(1) fix; this raises the bound from 100 to ~5000 with high confidence.)
+  const pageSeals = [];
+  let sealQuery = kvs.query().where("key", WhereConditions.beginsWith("protection-")).limit(100);
+  let sealIters = 0;
+  do {
+    const { results, nextCursor } = await sealQuery.getMany();
+    for (const entry of results || []) {
+      if (entry.value?.contentId === pageId && entry.value?.lockedBy) pageSeals.push(entry);
+    }
+    if (!nextCursor || ++sealIters >= 50) break;
+    sealQuery = kvs.query().where("key", WhereConditions.beginsWith("protection-")).limit(100).cursor(nextCursor);
+  } while (true);
   if (pageSeals.length === 0) return [];
 
   const sealFileMap = []; // { seal, fileId }
@@ -410,16 +417,20 @@ async function collectSectionSealsForPage(pageId) {
   if (!propsData.results || propsData.results.length === 0) return [];
 
   // section-protection-{sectionId} primary records (excludes section-snapshot-*
-  // and space-section-protection-* by prefix).
-  const { results } = await kvs
-    .query()
-    .where("key", WhereConditions.beginsWith("section-protection-"))
-    .limit(100)
-    .getMany();
-
-  return results
-    .map(({ value }) => value)
-    .filter((v) => v?.pageId === pageId && v?.lockedBy && v?.sectionId);
+  // and space-section-protection-* by prefix). audit B4: cursor-paginate — a single
+  // limit(100) silently dropped a page's sealed section once >100 sections existed anywhere.
+  const out = [];
+  let q = kvs.query().where("key", WhereConditions.beginsWith("section-protection-")).limit(100);
+  let iters = 0;
+  do {
+    const { results, nextCursor } = await q.getMany();
+    for (const { value: v } of results || []) {
+      if (v?.pageId === pageId && v?.lockedBy && v?.sectionId) out.push(v);
+    }
+    if (!nextCursor || ++iters >= 50) break;
+    q = kvs.query().where("key", WhereConditions.beginsWith("section-protection-")).limit(100).cursor(nextCursor);
+  } while (true);
+  return out;
 }
 
 // --- Pipeline pass: restore tampered / removed sealed sections ---
