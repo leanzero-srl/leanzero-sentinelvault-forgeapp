@@ -123,7 +123,7 @@ const GlobalPolicyEditor = () => {
       setMessage(null);
       setMessageType(null);
 
-      await invoke("store-policy", {
+      const saveResult = await invoke("store-policy", {
         scope: "global",
         data: {
           // audit A3: write the ENGINE's real keys so these controls actually take effect.
@@ -148,8 +148,15 @@ const GlobalPolicyEditor = () => {
         },
       });
 
-      setMessage("Preferences updated successfully!");
-      setMessageType("success");
+      // it16: store-policy returns { success:false, reason } on an authz denial (audit A1)
+      // rather than throwing — a blind success message would falsely claim the save persisted.
+      if (saveResult?.success) {
+        setMessage("Preferences updated successfully!");
+        setMessageType("success");
+      } else {
+        setMessage(saveResult?.reason || "Unable to save preferences. Verify your access rights.");
+        setMessageType("error");
+      }
     } catch (err) {
       setMessage(
         "Unable to save preferences. Verify your access rights.",
