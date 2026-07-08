@@ -89,11 +89,13 @@ try {
   const log = wf.result?.log || [];
   check("log shows auto-assign", log.length === 1 && log[0]?.reason === "auto-assigned on create");
 
-  // 6. idempotency: a second page event must NOT create a duplicate/second assignment
+  // 6. idempotency: a second page event must NOT create a duplicate/second assignment.
+  // Read the live version (the #47 native-state mirror bumps it on assign) and increment.
+  const curVer = (await get(`/api/v2/pages/${page.id}`))?.version?.number || 1;
   await put(`/api/v2/pages/${page.id}`, {
     id: page.id, status: "current", title: page.title,
     body: { representation: "storage", value: "<p>auto-assign e2e edited</p>" },
-    version: { number: 2 },
+    version: { number: curVer + 1 },
   });
   await sleep(8000);
   const wf2 = await hook({ what: "invoke", fn: "getWorkflow", pageId: page.id, spaceKey, withLog: "1" });

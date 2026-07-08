@@ -12,6 +12,7 @@
  */
 import { asApp, route } from "@forge/api";
 import { kvs, WhereConditions } from "@forge/kvs";
+import { mirrorNativeState } from "./native-state.js";
 
 export const WORKFLOW_STATE_PROP = "sentinel-vault-workflow";
 
@@ -196,6 +197,11 @@ async function persistState(pageId, record, prevStateId) {
     reviewDueAt: record.reviewDueAt || null,
   });
   await writeStateContentProp(pageId, record);
+  // #47: mirror onto the native content-status pill — ONLY on a genuine state change
+  // (the mirror PUT bumps the page version; a restamp keeps the same state, so skip it).
+  if (!prevStateId || prevStateId !== record.stateId) {
+    await mirrorNativeState(pageId, record.stateId);
+  }
 }
 
 export async function appendWorkflowLog(pageId, entry) {

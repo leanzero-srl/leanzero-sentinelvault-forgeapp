@@ -757,7 +757,8 @@ export async function workflowSweep() {
         const liveApprovers = liveSpec?.approvers || [];
         const liveUnresolved = !!liveSpec?.unresolved;
         const authorized = author && (
-          (record.approvers.includes(author) && (liveApprovers.includes(author) || liveUnresolved))
+          author === systemAccountId // the app's own version bumps (native-state mirror, revert) are never tampers
+          || (record.approvers.includes(author) && (liveApprovers.includes(author) || liveUnresolved))
           || await isAccountStewardAsApp(author, record.spaceKey));
         if (authorized) {
           if (await restampApprovedVersion(idx.pageId, live)) healed++;
