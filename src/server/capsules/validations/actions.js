@@ -26,6 +26,7 @@ import {
   getLatestFindings,
   getFindingStates,
   setFindingState,
+  mergeEffectiveRules,
 } from "./logic.js";
 import { isForgeLlmModelAllowed, FORGE_LLM_DEFAULT_MODEL, listForgeLlmModels } from "../../infra/forge-llm.js";
 
@@ -41,7 +42,9 @@ const sanitize = (key) => String(key).replace(/[^a-zA-Z0-9:._\s-#]/g, "_");
 export async function resolveRules(spaceKey) {
   const global = (await kvs.get("validation-config-global")) || {};
   const space = spaceKey ? await kvs.get(`validation-config-space-${sanitize(spaceKey)}`) : null;
-  return (space?.rules && space.rules.length) ? space.rules : (global.rules || []);
+  // audit C6: apply the global block-severity compliance floor here too (this feeds the
+  // transition gate), so a space can't drop an org-mandatory rule from the gate either.
+  return mergeEffectiveRules(global.rules, space?.rules);
 }
 
 const loadConfig = async (req) => {

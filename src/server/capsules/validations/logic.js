@@ -52,6 +52,18 @@ export async function storeValidationConfig(scope, key, data) {
  * master switch; a space config refines rules/modes/ai when present.
  * Returns { enabled:false } when validation is globally off.
  */
+// audit C6 (compliance floor): global BLOCK-severity rules ALWAYS apply — a space can't
+// silently drop an org-mandatory (blocking) rule. A space's own rules are ADDED on top (and
+// replace advisory/warn global rules). An empty space rule list inherits ALL global rules.
+export function mergeEffectiveRules(globalRules, spaceRules) {
+  const global = Array.isArray(globalRules) ? globalRules : [];
+  const space = Array.isArray(spaceRules) ? spaceRules : [];
+  if (space.length === 0) return global; // no space rules → inherit everything (block + warn)
+  const floor = global.filter((r) => r?.severity === "block");
+  const floorIds = new Set(floor.map((r) => r.id));
+  return [...floor, ...space.filter((r) => !floorIds.has(r.id))];
+}
+
 export async function resolveEffectiveConfig(spaceKey) {
   const global = await kvs.get("validation-config-global");
   if (!global || global.enabled !== true) return { enabled: false };
@@ -61,7 +73,7 @@ export async function resolveEffectiveConfig(spaceKey) {
     space = await kvs.get(`validation-config-space-${sanitize(spaceKey)}`);
   }
 
-  const rules = (space?.rules && space.rules.length) ? space.rules : (global.rules || []);
+  const rules = mergeEffectiveRules(global.rules, space?.rules);
   const modes = space?.modes || global.modes || { advisory: true, gate: false, revert: false };
   const ai = space?.ai && space.ai.enabled !== undefined ? space.ai : (global.ai || {});
 

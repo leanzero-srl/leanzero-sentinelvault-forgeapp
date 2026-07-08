@@ -175,7 +175,6 @@ permissions:
     - readonly:content.attachment:confluence
     - read:confluence-space.summary
     - read:space:confluence
-    - write:confluence-space
     - read:confluence-props
     - write:confluence-props
     - read:confluence-content.permission

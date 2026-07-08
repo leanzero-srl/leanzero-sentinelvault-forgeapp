@@ -2,6 +2,7 @@ import {
   normalizeFindings,
   buildValidationPrompt,
   severityRank,
+  mergeEffectiveRules,
 } from "../src/server/capsules/validations/logic.js";
 import { computeSectionRange } from "../src/server/capsules/section-seals/logic.js";
 import { eq, ok, report } from "./_assert.mjs";
@@ -68,5 +69,26 @@ const content = [
 ];
 eq("section range stops at next H2", computeSectionRange(content, 0), { start: 0, end: 4 });
 eq("non-heading seals single block", computeSectionRange(content, 1), { start: 1, end: 2 });
+
+// audit C6: global block-severity rules are a compliance FLOOR — always applied; space rules
+// add on top and replace only the advisory (warn) global rules.
+{
+  const global = [
+    { id: "g-pii", severity: "block", type: "required-label" },
+    { id: "g-style", severity: "warn", type: "required-heading" },
+  ];
+  const space = [{ id: "s-table", severity: "block", type: "required-table" }];
+  // empty space → inherit ALL global (block + warn)
+  eq("C6 empty space inherits all global", mergeEffectiveRules(global, []).length, 2);
+  // space with rules → global BLOCK floor + space rules (global WARN dropped)
+  const merged = mergeEffectiveRules(global, space);
+  ok("C6 floor: global block rule always present", merged.some((r) => r.id === "g-pii"));
+  ok("C6 space rule added", merged.some((r) => r.id === "s-table"));
+  ok("C6 advisory global rule replaced", !merged.some((r) => r.id === "g-style"));
+  // a space rule can't override a global block rule's id (floor wins)
+  const collide = mergeEffectiveRules(global, [{ id: "g-pii", severity: "warn", type: "min-length" }]);
+  eq("C6 floor id-collision keeps the global block rule", collide.filter((r) => r.id === "g-pii").length, 1);
+  eq("C6 floor id-collision: kept rule is still block", collide.find((r) => r.id === "g-pii").severity, "block");
+}
 
 report("validations-logic");
