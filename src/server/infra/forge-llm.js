@@ -101,10 +101,17 @@ export const callForgeLlmChat = async ({ model, messages, jsonMode, maxTokens = 
     }
     const inputTokens = response?.usage?.input_tokens || 0;
     const outputTokens = response?.usage?.output_tokens || 0;
+    // audit C7: detect an output-length truncation (defensive across OpenAI `finish_reason`
+    // and Anthropic `stop_reason` shapes) — a cut-off response yields salvaged partial JSON
+    // that can DROP findings, so a gate must not trust it.
+    const finishReason = choice.finish_reason || choice.stop_reason || response?.stop_reason || null;
+    const truncated = finishReason === "length" || finishReason === "max_tokens";
     return {
       ok: true,
       status: 200,
       content: content ?? null,
+      finishReason,
+      truncated,
       usage: {
         inputTokens,
         outputTokens,
@@ -145,7 +152,7 @@ export const runForgeLlmJson = async ({ model, system, user, maxTokens }) => {
     return { ok: false, parsed: null, raw: null, usage: result.usage, error: result.error };
   }
   const parsed = parseAIJson(result.content);
-  return { ok: true, parsed, raw: result.content, usage: result.usage };
+  return { ok: true, parsed, raw: result.content, usage: result.usage, truncated: !!result.truncated, finishReason: result.finishReason || null };
 };
 
 /**
