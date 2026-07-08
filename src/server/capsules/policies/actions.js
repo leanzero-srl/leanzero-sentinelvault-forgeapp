@@ -2,6 +2,17 @@ import { kvs, WhereConditions } from "@forge/kvs";
 
 // Import from shared
 import { BASELINE_HOLD_SPAN } from "../../shared/baseline.js";
+import { isOperatorSteward, isOperatorSiteAdmin } from "../../shared/steward-checks.js";
+
+// SECURITY (audit A1): these resolvers write admin-settings-* — including the steward list
+// (adminUsers) and the force-override toggle — so an UNGATED write is a full privilege
+// escalation (any reader could make themselves a steward/admin). Gate every write, mirroring
+// realms/actions.js:approveStewardRequest. A site-admin may bootstrap a brand-new space's
+// first steward, so space writes accept steward-OF-that-space OR site-admin.
+const DENY = { success: false, reason: "Not authorized — steward or admin access required." };
+const canWriteGlobal = async (accountId) => !!accountId && (await isOperatorSiteAdmin(accountId));
+const canWriteSpace = async (accountId, key) =>
+  !!accountId && ((await isOperatorSteward(accountId, key)) || (await isOperatorSiteAdmin(accountId)));
 
 /**
  * Get admin settings (unified function for global and realm)
@@ -58,8 +69,10 @@ const loadPolicy = async (req) => {
  */
 const storePolicy = async (req) => {
   const { scope, key, data } = req.payload;
+  const caller = req.context?.accountId;
 
   if (scope === "global") {
+    if (!(await canWriteGlobal(caller))) return DENY;
     const currentRuleset = await kvs.get("admin-settings-global");
     const currentAutoUnsealActive =
       currentRuleset?.autoUnlockEnabled !== false;
@@ -107,11 +120,16 @@ const storePolicy = async (req) => {
       data.autoUnlockPausedAt = null;
     }
 
-    await kvs.set("admin-settings-global", data);
+    // audit A3: MERGE, don't overwrite — a partial settings save (e.g. the toggles) must not
+    // drop keys it omits (notably the steward list `adminUsers`/`adminGroups`, or the
+    // pause/resume `autoUnlockPausedAt`).
+    await kvs.set("admin-settings-global", { ...(currentRuleset || {}), ...data });
     return { success: true };
   } else if (scope === "space" && key) {
+    if (!(await canWriteSpace(caller, key))) return DENY;
     const sanitizedRealmKey = key.replace(/[^a-zA-Z0-9:._\s-#]/g, "_");
-    await kvs.set(`admin-settings-space-${sanitizedRealmKey}`, data);
+    const currentSpace = await kvs.get(`admin-settings-space-${sanitizedRealmKey}`);
+    await kvs.set(`admin-settings-space-${sanitizedRealmKey}`, { ...(currentSpace || {}), ...data });
     return { success: true };
   }
 
@@ -150,6 +168,7 @@ const loadGlobalRuleset = async () => {
  */
 const storeGlobalRuleset = async (req) => {
   const { settings } = req.payload;
+  if (!(await canWriteGlobal(req.context?.accountId))) return DENY;
   await kvs.set("admin-settings-global", settings);
   return { success: true };
 };
@@ -174,6 +193,7 @@ const loadRealmRuleset = async (req) => {
  */
 const storeRealmRuleset = async (req) => {
   const { spaceKey, settings } = req.payload;
+  if (!(await canWriteSpace(req.context?.accountId, spaceKey))) return DENY;
   const sanitizedRealmKey = spaceKey.replace(/[^a-zA-Z0-9:._\s-#]/g, "_");
   await kvs.set(`admin-settings-space-${sanitizedRealmKey}`, settings);
   return { success: true };
@@ -211,6 +231,7 @@ const enumerateRealmRulesets = async () => {
  */
 const discardRealmRuleset = async (req) => {
   const { spaceKey } = req.payload;
+  if (!(await canWriteSpace(req.context?.accountId, spaceKey))) return DENY;
   const sanitizedRealmKey = spaceKey.replace(/[^a-zA-Z0-9:._\s-#]/g, "_");
   await kvs.delete(`admin-settings-space-${sanitizedRealmKey}`);
   return { success: true };
