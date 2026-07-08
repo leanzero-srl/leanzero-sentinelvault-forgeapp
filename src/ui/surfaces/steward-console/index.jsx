@@ -73,11 +73,14 @@ const GlobalPolicyEditor = () => {
         }
 
         setSettings({
+          // audit A3: read the ENGINE's real keys (defaultLockDuration / allowAdminOverride /
+          // autoUnlockEnabled) — the UI previously read defaultSealDuration/allowStewardOverride/
+          // autoUnsealEnabled, which the engine never writes or reads, so these controls were inert.
           defaultSealDurationHours: Math.round(
-            (globalSettings?.defaultSealDuration || 86400) / 3600,
+            (globalSettings?.defaultLockDuration || 86400) / 3600,
           ),
-          allowStewardOverride: globalSettings?.allowStewardOverride || false,
-          autoUnsealEnabled: globalSettings?.autoUnsealEnabled !== false,
+          allowStewardOverride: globalSettings?.allowAdminOverride !== false,
+          autoUnsealEnabled: globalSettings?.autoUnlockEnabled !== false,
           allowArtifactDelete: globalSettings?.allowArtifactDelete === true,
           allowSealRestore: globalSettings?.allowSealRestore === true,
           allowSealPurge: globalSettings?.allowSealPurge === true,
@@ -123,9 +126,10 @@ const GlobalPolicyEditor = () => {
       await invoke("store-policy", {
         scope: "global",
         data: {
-          defaultSealDuration: settings.defaultSealDurationHours * 3600,
-          allowStewardOverride: settings.allowStewardOverride,
-          autoUnsealEnabled: settings.autoUnsealEnabled,
+          // audit A3: write the ENGINE's real keys so these controls actually take effect.
+          defaultLockDuration: settings.defaultSealDurationHours * 3600,
+          allowAdminOverride: settings.allowStewardOverride,
+          autoUnlockEnabled: settings.autoUnsealEnabled,
           allowArtifactDelete: settings.allowArtifactDelete,
           allowSealRestore: settings.allowSealRestore,
           allowSealPurge: settings.allowSealPurge,
