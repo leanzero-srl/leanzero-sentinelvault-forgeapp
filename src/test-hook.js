@@ -26,6 +26,7 @@ import {
 import { getWorkflowDashboard, requestTransition } from "./server/capsules/workflow/actions.js";
 import { applyAiVerdict } from "./server/capsules/workflow/approvals.js";
 import { mirrorNativeState, readNativeState, clearNativeState } from "./server/capsules/workflow/native-state.js";
+import { revokeEditGrant, listEditGrants } from "./server/capsules/editreq/actions.js";
 
 const json = (statusCode, body) => ({
   statusCode,
@@ -149,6 +150,14 @@ export async function testStateTrigger(req) {
           q(req, "status"),
           q(req, "reason") || null,
         );
+        return json(200, { invoked: fn, result: r });
+      }
+      if (fn === "listEditGrants") {
+        const r = await listEditGrants({ payload: { attachmentId: q(req, "att") }, context: { accountId: q(req, "actor") } });
+        return json(200, { invoked: fn, result: r });
+      }
+      if (fn === "revokeEditGrant") {
+        const r = await revokeEditGrant({ payload: { attachmentId: q(req, "att"), editorAccountId: q(req, "editor") }, context: { accountId: q(req, "actor") } });
         return json(200, { invoked: fn, result: r });
       }
       if (fn === "nativeState") {

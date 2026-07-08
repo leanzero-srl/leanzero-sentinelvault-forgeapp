@@ -240,7 +240,7 @@ const denyEditRequest = async (req) => {
 /**
  * Revoke an active edit grant (owner/steward).
  */
-const revokeEditGrant = async (req) => {
+export const revokeEditGrant = async (req) => {
   const { attachmentId, editorAccountId } = req.payload || {};
   const accountId = req.context.accountId;
   if (!attachmentId || !editorAccountId) return { success: false, reason: "Missing params" };
@@ -255,7 +255,7 @@ const revokeEditGrant = async (req) => {
 /**
  * List active editors for an attachment (owner/steward).
  */
-const listEditGrants = async (req) => {
+export const listEditGrants = async (req) => {
   const { attachmentId } = req.payload || {};
   const accountId = req.context.accountId;
   if (!attachmentId) return { grants: [] };
