@@ -82,6 +82,7 @@ export default function ValidationsEditor({ scope = "global", spaceKey = null })
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState(null);
   const [aiModels, setAiModels] = useState([]);
+  const [globalRules, setGlobalRules] = useState(null); // audit C6: for the informed-override note
 
   useEffect(() => {
     (async () => {
@@ -94,6 +95,12 @@ export default function ValidationsEditor({ scope = "global", spaceKey = null })
             rules: r.rules || [],
             ai: { ...DEFAULT_AI, ...(r.ai || {}) },
           });
+        }
+        // C6: a space that SETS rules overrides global entirely (documented) — so surface
+        // exactly what would be dropped, especially required (block-severity) global rules.
+        if (scope === "space") {
+          const g = await invoke("load-validation-config", { scope: "global" });
+          setGlobalRules(Array.isArray(g?.rules) ? g.rules : []);
         }
       } catch (e) {
         console.error("Load validation config failed:", e);
@@ -154,6 +161,20 @@ export default function ValidationsEditor({ scope = "global", spaceKey = null })
           </label>
         </div>
       </SettingsRow>
+
+      {scope === "space" && Array.isArray(globalRules) && globalRules.length > 0 && (
+        cfg.rules.length > 0 ? (
+          <p className="alert-error" role="status">
+            These space rules <strong>replace all {globalRules.length} global rule(s)</strong> for this space
+            {globalRules.filter((r) => r.severity === "block").length > 0
+              ? `, including ${globalRules.filter((r) => r.severity === "block").length} required (blocking) global rule(s) that will NOT apply here.`
+              : "."}
+            {" "}Clear the rules below to inherit the global rules instead.
+          </p>
+        ) : (
+          <p className="settings-row-description">This space inherits the {globalRules.length} global rule(s). Add a rule below to override them for this space.</p>
+        )
+      )}
 
       <div className="val-rules">
         <div className="val-rules-head">
