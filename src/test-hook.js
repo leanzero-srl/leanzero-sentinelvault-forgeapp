@@ -23,7 +23,8 @@ import {
   decideApproval,
   getPageApprovalStatus,
 } from "./server/capsules/workflow/approvals.js";
-import { getWorkflowDashboard } from "./server/capsules/workflow/actions.js";
+import { getWorkflowDashboard, requestTransition } from "./server/capsules/workflow/actions.js";
+import { applyAiVerdict } from "./server/capsules/workflow/approvals.js";
 import { mirrorNativeState, readNativeState, clearNativeState } from "./server/capsules/workflow/native-state.js";
 
 const json = (statusCode, body) => ({
@@ -129,6 +130,25 @@ export async function testStateTrigger(req) {
       }
       if (fn === "dashboard") {
         const r = await getWorkflowDashboard({ payload: { spaceKey: q(req, "spaceKey") } });
+        return json(200, { invoked: fn, result: r });
+      }
+      if (fn === "reqTransition") {
+        // #46: drive the GATED transition resolver (content conditions + AI axis), not the
+        // raw engine — so the harness exercises the entryConditions gate.
+        const r = await requestTransition({
+          payload: { pageId: q(req, "pageId"), toStateId: q(req, "to"), spaceKey: q(req, "spaceKey") },
+          context: { accountId: q(req, "actor") || "harness" },
+        });
+        return json(200, { invoked: fn, result: r });
+      }
+      if (fn === "aiVerdict") {
+        // #46: simulate the async worker's verdict landing (deterministic — bypasses the LLM).
+        const r = await applyAiVerdict(
+          q(req, "pageId"),
+          q(req, "version") ? parseInt(q(req, "version"), 10) : null,
+          q(req, "status"),
+          q(req, "reason") || null,
+        );
         return json(200, { invoked: fn, result: r });
       }
       if (fn === "nativeState") {

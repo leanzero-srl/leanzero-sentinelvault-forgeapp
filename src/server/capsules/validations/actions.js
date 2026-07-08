@@ -1,6 +1,6 @@
-import { asApp, route } from "@forge/api";
 import { kvs } from "@forge/kvs";
 import { Queue } from "@forge/events";
+import { fetchPageLabels } from "../../infra/labels.js";
 
 import { authorizeSteward } from "../../shared/steward-checks.js";
 import { readDocBody } from "../../infra/doc-surgery.js";
@@ -22,22 +22,12 @@ const aiQueue = new Queue({ key: "ai-validation-queue" });
 
 const sanitize = (key) => String(key).replace(/[^a-zA-Z0-9:._\s-#]/g, "_");
 
-async function fetchPageLabels(pageId) {
-  try {
-    const res = await asApp().requestConfluence(route`/wiki/api/v2/pages/${pageId}/labels`);
-    if (!res.ok) return [];
-    const body = await res.json();
-    return (body.results || []).map((l) => l.name);
-  } catch (_) {
-    return [];
-  }
-}
 
 /**
  * Merge global + space validation rules (manual check uses rules regardless of
  * the global enabled flag).
  */
-async function resolveRules(spaceKey) {
+export async function resolveRules(spaceKey) {
   const global = (await kvs.get("validation-config-global")) || {};
   const space = spaceKey ? await kvs.get(`validation-config-space-${sanitize(spaceKey)}`) : null;
   return (space?.rules && space.rules.length) ? space.rules : (global.rules || []);
@@ -154,6 +144,28 @@ const enqueuePageValidation = async (req) => {
   await aiQueue.push({ body: { taskId, pageId, spaceKey, realmKey: spaceKey, requestedBy: accountId } });
   return { success: true, taskId };
 };
+
+// #46: enqueue an AI transition-condition review (mode "gate"). Returns { enqueued } when a
+// job was pushed, or { enqueued:false, verdict, reason } when it resolved WITHOUT an LLM call
+// (AI disabled → skip; budget exhausted → block/allow per onBudgetExhausted). The caller then
+// applies that verdict to the pending aiGate immediately.
+export async function enqueueAiGate({ pageId, spaceKey, pinnedVersion, threshold, onBudgetExhausted }) {
+  const ai = await resolveAiConfig(spaceKey);
+  if (!ai || ai.enabled !== true) {
+    return { enqueued: false, verdict: "passed", reason: "AI review isn't enabled — condition skipped." };
+  }
+  if (ai.monthlyTokenBudget && ai.monthlyTokenBudget > 0) {
+    const used = await getMonthlyTokenUsage(spaceKey);
+    if (used >= ai.monthlyTokenBudget) {
+      return onBudgetExhausted === "allow"
+        ? { enqueued: false, verdict: "passed", reason: "AI budget exhausted — allowed with a warning." }
+        : { enqueued: false, verdict: "failed", reason: "This space has reached its monthly AI budget." };
+    }
+  }
+  const taskId = `aigate_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  await aiQueue.push({ body: { taskId, pageId, spaceKey, realmKey: spaceKey, mode: "gate", pinnedVersion, threshold } });
+  return { enqueued: true, taskId };
+}
 
 /**
  * Poll an AI validation job; deletes the status row once terminal.

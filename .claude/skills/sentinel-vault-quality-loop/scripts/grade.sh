@@ -38,6 +38,9 @@ step "E2E workflow approvals (#43, multi-approver transitions)"
 step "E2E workflow enforce (#44, revert-on-tamper / demote / sweep)"
 ( cd "$REPO/test-harness" && npm run workflow-enforce-e2e ) || FAIL=1
 
+step "E2E workflow conditions (#46, content gate + AI review axis)"
+( cd "$REPO/test-harness" && npm run workflow-conditions-e2e ) || FAIL=1
+
 step "E2E live trigger exercise (real Confluence events)"
 ( cd "$REPO/test-harness" && node scripts/live-trigger-e2e.mjs ) || FAIL=1
 
