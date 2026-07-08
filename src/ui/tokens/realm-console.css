@@ -1791,6 +1791,54 @@ html[data-color-mode="dark"] .artifact-card.status-expired { border-color: #F871
 .wf-state-seal     { background: #0e7490; }
 html[data-color-mode="dark"] .wf-state-neutral { background: #64748b; }
 
+/* ── Workflow dashboard (#48) ─────────────────────────── */
+.wf-dash { margin-bottom: 36px; }
+.wf-dash-loading { font-size: 13px; color: var(--sv-text-secondary); padding: 16px 0; }
+.wf-dash-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 18px; }
+.wf-dash-title { font-size: 18px; font-weight: 700; margin: 0; color: var(--sv-text-primary); }
+.wf-dash-sub { font-size: 13px; color: var(--sv-text-secondary); margin: 3px 0 0; }
+.wf-dash-export {
+  flex-shrink: 0;
+  border: none;
+  border-radius: 8px;
+  padding: 9px 16px;
+  background: var(--sv-interactive-primary, #0e7490);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: filter 160ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+.wf-dash-export:hover { filter: brightness(1.08); }
+.wf-dash-stats { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 22px; }
+.wf-dash-stat {
+  display: flex;
+  flex-direction: column;
+  min-width: 104px;
+  padding: 14px 18px;
+  border-radius: 12px;
+  color: #fff;
+}
+.wf-dash-stat.wf-state-caution { color: #1F2937; }
+.wf-dash-stat-overdue { background: #dc2626; color: #fff; }
+.wf-dash-stat-count { font-size: 30px; font-weight: 800; line-height: 1; }
+.wf-dash-stat-label { font-size: 12px; font-weight: 700; margin-top: 7px; letter-spacing: 0.01em; }
+.wf-dash-table-wrap { overflow-x: auto; }
+.wf-dash-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.wf-dash-table th {
+  text-align: left;
+  font-weight: 700;
+  color: var(--sv-text-secondary);
+  padding: 8px 12px;
+  border-bottom: 2px solid var(--sv-border-primary);
+  white-space: nowrap;
+}
+.wf-dash-table td { padding: 11px 12px; border-bottom: 1px solid var(--sv-border-subtle, #E2E8F0); color: var(--sv-text-primary); vertical-align: middle; }
+.wf-dash-page a { color: var(--sv-interactive-primary, #0e7490); text-decoration: none; font-weight: 600; }
+.wf-dash-page a:hover { text-decoration: underline; }
+.wf-dash-overdue { color: #dc2626; font-weight: 700; }
+.wf-dash-note { font-size: 12px; color: var(--sv-text-secondary); margin-top: 14px; }
+
 /* ── Approver picker (#43 workflow settings) ──────────── */
 .wf-userpicker { position: relative; width: 280px; max-width: 100%; }
 .wf-userpicker-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; }
