@@ -9,6 +9,7 @@
     "ensure-fixture": "node scripts/ensure-fixture.mjs",
     "forge-logs": "node scripts/forge-logs.mjs",
     "seal-e2e": "node scripts/seal-lifecycle-e2e.mjs",
+    "seal-revert-e2e": "node scripts/seal-revert-e2e.mjs",
     "workflow-e2e": "node scripts/workflow-e2e.mjs",
     "workflow-autoassign-e2e": "node scripts/workflow-autoassign-e2e.mjs",
     "workflow-bulk-e2e": "node scripts/workflow-bulk-e2e.mjs",
