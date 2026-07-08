@@ -952,6 +952,13 @@ async function handleSealedArtifactEdit(sealRecord, artifactId, contentId, atlas
     return;
   }
 
+  // audit C3: an EXPIRED (but not-yet-swept) seal must stop enforcing — otherwise a dead seal
+  // keeps reverting everyone's edits, denying service. Sections already guard this
+  // (restoreSealedSectionsPass); attachments did not.
+  if (sealRecord.expiresAt && new Date(sealRecord.expiresAt).getTime() <= Date.now()) {
+    return;
+  }
+
   // Allow approved editors (Edit Requests) to edit without reverting. Re-baseline
   // the seal to the new version + fileId so future reverts target the edited
   // content, and pageContentTrigger's media-presence check keeps matching.
@@ -1099,32 +1106,32 @@ async function handleSealedArtifactTrash(sealRecord, artifactId, contentId, atla
 
   // Use the v1 attachment properties endpoint with correct required fields
   const restoreRoute = route`/wiki/rest/api/content/${pageId}/child/attachment/${artifactId}`;
-  const restoreResponse = await asApp().requestConfluence(restoreRoute, {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      id: artifactId,
-      type: "attachment",
-      status: "current",
-      title: attachmentTitle,
-      version: { number: currentVersion + 1 },
-    }),
+  const restoreBody = JSON.stringify({
+    id: artifactId, type: "attachment", status: "current", title: attachmentTitle,
+    version: { number: currentVersion + 1 },
   });
+  // audit C4: retry the restore on a transient failure; a single 429/5xx must not be treated
+  // as "unrecoverable".
+  let restoreOk = false, lastStatus = 0;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const restoreResponse = await asApp().requestConfluence(restoreRoute, {
+      method: "PUT", headers: { "Content-Type": "application/json" }, body: restoreBody,
+    });
+    if (restoreResponse.ok) { restoreOk = true; break; }
+    lastStatus = restoreResponse.status;
+    if ((restoreResponse.status === 429 || restoreResponse.status >= 500) && attempt < 2) {
+      await new Promise((r) => setTimeout(r, Math.pow(2, attempt) * 500)); continue;
+    }
+    console.error(`[TRASH-RESTORE] Failed ${artifactId}: ${restoreResponse.status} — ${(await restoreResponse.text()).slice(0, 200)}`);
+    break;
+  }
 
-  if (!restoreResponse.ok) {
-    const errorText = await restoreResponse.text();
-    console.error(`[TRASH-RESTORE] Failed ${artifactId}: ${restoreResponse.status} — ${errorText}`);
-    // Restore failed — clean up seal since attachment is unrecoverable
-    console.warn(`[TRASH-RESTORE] Cleaning up seal for unrestorable attachment ${artifactId}`);
-    await kvs.delete(`protection-${artifactId}`);
-    if (sealRecord.spaceId) {
-      await kvs.delete(`space-protection-${sealRecord.spaceId}-${artifactId}`);
-    }
-    if (pageId) {
-      try { await removeSealContentProp(pageId); } catch (_) { /* best effort */ }
-    }
-    await touchSealTimestamp();
-    await sendViolationNotifications(sealRecord, artifactId, pageId, atlassianId, attachmentTitle, "delete");
+  if (!restoreOk) {
+    // audit C4: do NOT hard-delete the seal on a restore failure — the attachment is still in
+    // TRASH and recoverable, so deleting the seal permanently strips protection AND the old code
+    // emailed a false "deleted". Keep the seal; tell the owner the restore could not be applied.
+    console.error(`[TRASH-RESTORE] Could not restore ${artifactId} (last status ${lastStatus}) — KEEPING the seal (attachment recoverable from trash); notifying.`);
+    await notifyAttachmentRevertFailed(sealRecord, artifactId, pageId, atlassianId, attachmentTitle).catch(() => {});
     return;
   }
 
@@ -1321,10 +1328,12 @@ export async function expirySweepTask() {
           }
 
           // Store dedup flag so we don't re-notify
+          // audit C5: TTL the dedup flag so it can't accumulate forever nor suppress the
+          // notice when the same attachment is re-sealed later (flag dies with the seal +7d).
           await kvs.set(dedupKey, {
             sentAt: now.toISOString(),
             attachmentId: artifactId,
-          });
+          }, { expiresAt: expiresAt.getTime() + 7 * 86400000 });
 
           // Store dispatch event for page banner
           await recordDispatch({
@@ -1376,7 +1385,7 @@ export async function expirySweepTask() {
             if (result.success) {
               await kvs.set(halfwayKey, {
                 sentAt: now.toISOString(),
-              });
+              }, { expiresAt: expiresAt.getTime() + 7 * 86400000 }); // audit C5: die with the seal
               halfwayAlertsSent++;
             } else {
               console.warn(
@@ -1511,10 +1520,13 @@ export async function recurringNudgeTask() {
           pageId: contentId,
         });
 
+        // audit C5: TTL the nudge dedup flag to the seal's lifetime (+7d) so it neither
+        // accumulates forever nor suppresses reminders when the attachment is re-sealed.
+        const nudgeTtl = (value?.expiresAt ? new Date(value.expiresAt).getTime() : Date.now() + 365 * 86400000) + 7 * 86400000;
         await kvs.set(nudgeKey, {
           sentAt: now.toISOString(),
           reminderNumber: (priorNudgeData?.reminderNumber || 0) + 1,
-        });
+        }, { expiresAt: nudgeTtl });
 
         nudgeTally.set(artifactId, (nudgeTally.get(artifactId) || 0) + 1);
       } catch (error) {

@@ -560,8 +560,13 @@ const enumerateOperatorSeals = async (req) => {
     // Query all seals from KVS with pagination
     const allSeals = [];
 
-    const start = cursor !== null ? parseInt(cursor, 10) : 0;
-    let kvsCursor = start > 0 ? cursor : null;
+    // audit C2: the incoming `cursor` is a numeric RESULT offset (see the slice + String(start+limit)
+    // nextCursor below), NOT an opaque KVS cursor. Feeding it to query.cursor() threw
+    // (invalid cursor) and made page 2+ of "my sealed files" return EMPTY. The KVS scan must
+    // always start fresh; the offset only slices the filtered+sorted result.
+    const parsedStart = parseInt(cursor, 10);
+    const start = Number.isFinite(parsedStart) && parsedStart > 0 ? parsedStart : 0;
+    let kvsCursor = null;
     let iteration = 0;
     const maxIterations = 10;
 
