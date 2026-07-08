@@ -89,6 +89,19 @@ try {
   const vStable = await attVersion(attId);
   await sleep(6000);
   check("no revert loop — attachment version is stable after enforcement", (await attVersion(attId)) === vStable);
+
+  // TRASH → RESTORE (audit C4): trashing a sealed attachment fires trashed:attachment; the app
+  // must RESTORE it from trash (and, per C4, retry rather than hard-delete the seal on a blip).
+  await del(`/rest/api/content/${attId}`); // v1 → moves the attachment to trash
+  await sleep(2000);
+  let restored = false;
+  for (let i = 0; i < 30; i++) {
+    await sleep(4000);
+    const a = await get(`/api/v2/attachments/${attId}`).catch(() => null);
+    if (a?.status === "current") { restored = true; break; }
+  }
+  check("SEAL ENFORCED — trashed sealed attachment was restored from trash (C4)", restored);
+  check("seal record survived the trash+restore (not hard-deleted)", !!(await hook({ what: "kvs", key: `protection-${attId}` })).value);
 } finally {
   if (page) await del(`/api/v2/pages/${page.id}`).catch(() => {});
   if (attId) {
