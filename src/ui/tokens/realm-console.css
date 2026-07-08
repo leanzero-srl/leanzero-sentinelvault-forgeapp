@@ -140,7 +140,6 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   font-family: var(--sv-font-family);
   background-color: var(--sv-bg-secondary);
   min-height: 100vh;
-  min-width: 800px;
   padding-bottom: 88px;
 }
 
@@ -226,7 +225,12 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   border: none;
   margin: 28px 40px 0;
   min-width: auto;
-  overflow-x: auto;
+  /* responsive (it15): inline-flex shrink-wraps, so overflow-x:auto never fires and the tab
+     row forces horizontal BODY scroll below ~860px. Cap the row to its available width (minus
+     the 40px side margins) and let tabs WRAP — at wide widths content < cap so the pill still
+     hugs the tabs unchanged; narrow widths wrap instead of overflowing. */
+  flex-wrap: wrap;
+  max-width: calc(100% - 80px);
 }
 
 .tab-button {
@@ -368,7 +372,6 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   border-radius: 10px;
   border: none;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
-  min-width: 500px;
 }
 
 .permission-section h4 {
@@ -628,7 +631,6 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   border-radius: 10px;
   border: none;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
-  min-width: 500px;
 }
 
 .form-section .space-admin-subtitle {
@@ -739,6 +741,13 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 
 .settings-row:hover {
   background: var(--sv-bg-hover);
+}
+
+/* responsive (it15): below the phone breakpoint, STACK the 2-column settings rows — otherwise
+   the label block (flex:1, min-width:0) collapses to ~1 word/line and the control collides
+   with it. Pairs with the min-width removals that let the console reflow to ~320px (WCAG 1.4.10). */
+@media (max-width: 640px) {
+  .settings-row { flex-direction: column; align-items: flex-start; gap: 10px; }
 }
 
 .settings-row-info {

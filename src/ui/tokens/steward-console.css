@@ -261,7 +261,10 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   border: none;
   margin: 28px 40px 0;
   min-width: auto;
-  overflow-x: auto;
+  /* responsive (it15): see realm-console.css — cap to available width + wrap so the tab row
+     never forces horizontal body scroll at narrow widths; wide-width pill is unchanged. */
+  flex-wrap: wrap;
+  max-width: calc(100% - 80px);
 }
 
 .tab-button {
@@ -313,6 +316,12 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 
 .settings-row:hover {
   background: var(--sv-bg-hover);
+}
+
+/* responsive (it15): stack the 2-column settings rows below the phone breakpoint (see
+   realm-console.css) so labels stay readable and controls don't collide at narrow widths. */
+@media (max-width: 640px) {
+  .settings-row { flex-direction: column; align-items: flex-start; gap: 10px; }
 }
 
 .settings-row-info {
