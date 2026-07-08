@@ -8,6 +8,7 @@ import ThumbnailPreview from "../../kit/ThumbnailPreview";
 import ValidationsEditor from "../../kit/ValidationsEditor";
 import WorkflowSettingsEditor from "../../kit/WorkflowSettingsEditor";
 import WorkflowInbox from "../../kit/WorkflowInbox";
+import { WorkflowDashboard } from "../../kit/WorkflowDashboard";
 import logo from "../../assets/icons/icon.png";
 
 const SkeletonRow = ({ cols = 5 }) => (
@@ -2247,6 +2248,7 @@ const RealmPolicyDashboard = () => {
 
       {activeTab === "workflow" && userRole === "steward" && (
         <div className="tab-content">
+          <WorkflowDashboard spaceKey={realmKey} />
           <WorkflowSettingsEditor spaceKey={realmKey} />
         </div>
       )}

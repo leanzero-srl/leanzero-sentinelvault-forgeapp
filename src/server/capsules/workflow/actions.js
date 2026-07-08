@@ -4,7 +4,7 @@
  * delegate to logic.js. Enforcement (#44) and the approver model (#43) land later.
  */
 import { asApp, asUser, route } from "@forge/api";
-import { kvs } from "@forge/kvs";
+import { kvs, WhereConditions } from "@forge/kvs";
 
 import { authorizeSteward } from "../../shared/steward-checks.js";
 import {
@@ -22,6 +22,7 @@ import {
   readPageWorkflow,
   validateTransition,
   fetchLivePageVersion,
+  sanitize,
 } from "./logic.js";
 import {
   extractApprovalConfig,
@@ -275,8 +276,70 @@ const bulkAssign = async (req) => {
   return bulkAssignPagesInSpace({ spaceKey, spaceId, cursor: req.payload?.cursor || null, actorAccountId: req.context?.accountId });
 };
 
+// #48: workflow dashboard for a space — state distribution + a recent-pages table.
+// Counts + overdue are EXACT from the by-state index (which carries reviewDueAt); only
+// titles are fetched (bounded + parallel). Read-only; the UI generates the CSV client-side.
+const LIST_CAP = 100;
+export const getWorkflowDashboard = async (req) => {
+  const spaceKey = spaceKeyOf(req);
+  if (!spaceKey) return { error: "No space context" };
+  const prefix = `workflow-idx-${sanitize(spaceKey)}-`;
+  const entries = [];
+  let cursor = null;
+  for (let i = 0; i < 30; i++) { // bounded; ~3000 pages max
+    let q = kvs.query().where("key", WhereConditions.beginsWith(prefix)).limit(100);
+    if (cursor) q = q.cursor(cursor);
+    const { results, nextCursor } = await q.getMany();
+    for (const { value } of results || []) if (value?.pageId) entries.push(value);
+    cursor = nextCursor;
+    if (!cursor) break;
+  }
+  const now = Date.now();
+  const def = await resolveWorkflowDef(spaceKey);
+  const counts = {};
+  let overdue = 0;
+  for (const e of entries) {
+    counts[e.stateId] = (counts[e.stateId] || 0) + 1;
+    if (e.stateId === "approved" && e.reviewDueAt && new Date(e.reviewDueAt).getTime() < now) overdue++;
+  }
+  // Most-recently-changed first, bounded — then fetch titles in parallel.
+  const list = entries
+    .slice()
+    .sort((a, b) => String(b.enteredAt || "").localeCompare(String(a.enteredAt || "")))
+    .slice(0, LIST_CAP);
+  const titles = await Promise.all(list.map(async (e) => {
+    try {
+      const res = await asApp().requestConfluence(route`/wiki/api/v2/pages/${e.pageId}`);
+      if (res.ok) { const p = await res.json(); return { id: e.pageId, title: p?.title || null, url: p?._links?.webui || null }; }
+    } catch (_) { /* best-effort */ }
+    return { id: e.pageId, title: null, url: null };
+  }));
+  const titleMap = Object.fromEntries(titles.map((t) => [t.id, t]));
+  const stateName = (id) => def?.states?.find((s) => s.id === id)?.name || id;
+  const pages = list.map((e) => ({
+    pageId: e.pageId,
+    title: titleMap[e.pageId]?.title || `(page ${e.pageId})`,
+    url: titleMap[e.pageId]?.url || null,
+    stateId: e.stateId,
+    stateName: stateName(e.stateId),
+    enteredAt: e.enteredAt || null,
+    reviewDueAt: e.reviewDueAt || null,
+    overdue: e.stateId === "approved" && e.reviewDueAt && new Date(e.reviewDueAt).getTime() < now,
+  }));
+  return {
+    spaceKey,
+    total: entries.length,
+    truncated: entries.length > LIST_CAP,
+    listCap: LIST_CAP,
+    overdue,
+    states: (def?.states || []).map((s) => ({ id: s.id, name: s.name, color: s.color, count: counts[s.id] || 0 })),
+    pages,
+  };
+};
+
 export const actions = [
   ["get-page-workflow", getWorkflow],
+  ["get-workflow-dashboard", getWorkflowDashboard],
   ["get-workflow-log", getLog],
   ["assign-workflow", assignWorkflow],
   ["request-transition", requestTransition],

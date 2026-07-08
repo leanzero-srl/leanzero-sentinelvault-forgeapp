@@ -23,6 +23,7 @@ import {
   decideApproval,
   getPageApprovalStatus,
 } from "./server/capsules/workflow/approvals.js";
+import { getWorkflowDashboard } from "./server/capsules/workflow/actions.js";
 
 const json = (statusCode, body) => ({
   statusCode,
@@ -124,6 +125,10 @@ export async function testStateTrigger(req) {
         const rec = await readPageWorkflow(q(req, "pageId"));
         const ok = await sweepRevertToApproved(q(req, "pageId"), rec);
         return json(200, { invoked: fn, result: { reverted: ok } });
+      }
+      if (fn === "dashboard") {
+        const r = await getWorkflowDashboard({ payload: { spaceKey: q(req, "spaceKey") } });
+        return json(200, { invoked: fn, result: r });
       }
       if (fn === "getWorkflow") {
         const result = await getPageWorkflow(q(req, "pageId"), q(req, "spaceKey"));
