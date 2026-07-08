@@ -41,6 +41,11 @@ async function handleGateReview(body) {
       await applyAiVerdict(pageId, pinnedVersion, "failed", "AI review failed — please retry.");
       return;
     }
+    // audit C7: a truncated LLM response can drop findings — never grant a gate PASS on it.
+    if (res.truncated) {
+      await applyAiVerdict(pageId, pinnedVersion, "failed", "AI review was cut off (too long) — please retry.");
+      return;
+    }
     const norm = normalizeFindings(res.parsed);
     const bar = severityRank(threshold || "medium");
     const blocking = norm.findings.filter((f) => severityRank(f.severity) >= bar);
