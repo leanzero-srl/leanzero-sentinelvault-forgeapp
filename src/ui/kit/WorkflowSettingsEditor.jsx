@@ -175,8 +175,12 @@ export default function WorkflowSettingsEditor({ spaceKey = null }) {
     setSaving(true);
     setMsg(null);
     try {
-      await invoke("set-space-workflow-settings", { spaceKey, settings });
-      setMsg({ type: "success", text: "Workflow settings saved." });
+      // it16: check the resolver's success — set-space-workflow-settings returns
+      // { success:false, reason } (e.g. a non-steward) rather than throwing, so a blind
+      // "saved" would be a false success.
+      const r = await invoke("set-space-workflow-settings", { spaceKey, settings });
+      if (r?.success) setMsg({ type: "success", text: "Workflow settings saved." });
+      else setMsg({ type: "error", text: r?.reason || "Could not save workflow settings." });
     } catch (e) {
       setMsg({ type: "error", text: "Could not save workflow settings." });
     } finally {

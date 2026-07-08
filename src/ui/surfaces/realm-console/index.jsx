@@ -1060,14 +1060,21 @@ const RealmPolicyDashboard = () => {
         throw new Error("Realm key is missing - cannot save settings");
       }
 
-      await invoke("store-policy", {
+      // it16: store-policy returns { success:false, reason } on an authz denial (audit A1)
+      // rather than throwing — check it so a rejected save isn't reported as "updated".
+      const saveResult = await invoke("store-policy", {
         scope: "space",
         key: realmKey,
         data: realmPrefs,
       });
 
-      setMessage("Realm preferences updated!");
-      setMessageType("success");
+      if (saveResult?.success) {
+        setMessage("Realm preferences updated!");
+        setMessageType("success");
+      } else {
+        setMessage(saveResult?.reason || "Could not save realm settings.");
+        setMessageType("error");
+      }
     } catch (err) {
       console.error("Failed to save realm settings:", err);
       setMessage(`Could not save realm settings: ${err.message}`);
