@@ -9,7 +9,7 @@ status legend: discovered -> researched -> designed -> implemented -> verified |
 | 44 | Enforced Approved state (revert-on-tamper) | Backend → ribbon/comments | **verified (Fn 8)** | 1 | 1 | 1 | 1 | 1 | 21.0 | demote default + revert opt-in; enforce-e2e 19/19; design caught 17 gaps + review caught 8 (1 HIGH); grade PASS |
 | 48 | Workflow dashboard & CSV export | Realm console (space page) | **verified (Fn 10)** | 1 | 1 | 1 | 1 | 1 | 21.0 | state distribution + overdue + recent-pages table + client CSV; counts exact from by-state index; enforce-e2e 27/27 |
 | 46 | Transition conditions (rules + AI gate) | Backend + realm console config | discovered | 1 | 1 | 1 | 1 | 1 | 19.0 | — |
-| 47 | Native content-state mirroring | Backend → native status chip | discovered | 1 | 1 | 1 | 1 | 1 | 16.0 | — |
+| 47 | Native content-state mirroring | Backend → native status chip | **verified (Fn 11)** | 1 | 1 | 1 | 1 | 1 | 16.0 | PUT /content/{id}/state — LIVE-CONFIRMED writable (hex color, idempotent no-bump); mirrored from persistState; sweep author=app fix so the version bump doesn't trip #44; enforce-e2e 30/30 |
 | 1 | Sealed Sections group (picker, seal/unseal) | Inline panel | discovered | 3 | 3 | 2 | 3 | 3 | 15.6 | — |
 | 2 | Watch / Notify me | Inline panel + overlay + realm console | discovered | 4 | 3 | 2 | 2 | 3 | 14.6 | — |
 | 6 | Edit requests & grants — attachments | Inline panel + realm console | discovered | 3 | 3 | 3 | 2 | 3 | 14.6 | — |
