@@ -14,6 +14,10 @@ import {
 // Queue for background realm scanning
 const realmScanQueue = new Queue({ key: "realm-audit-queue" });
 
+// audit D7: sanitize a space key for use in a KVS key (a personal `~`-space key would
+// otherwise throw). Matches the regex admin-settings-space-* already uses.
+const skKey = (k) => String(k).replace(/[^a-zA-Z0-9:._\s-#]/g, "_");
+
 /**
  * Get realm information by realm key
  */
@@ -358,7 +362,7 @@ const requestStewardAccess = async (req) => {
       }
     } catch (e) { /* ignore */ }
 
-    await kvs.set(`steward-request-${spaceKey}-${accountId}`, {
+    await kvs.set(`steward-request-${skKey(spaceKey)}-${accountId}`, {
       accountId,
       displayName,
       spaceKey,
@@ -380,7 +384,7 @@ const checkStewardRequest = async (req) => {
   const spaceKey = req.payload?.spaceKey;
   if (!spaceKey || !accountId) return { status: "none" };
   try {
-    const existing = await kvs.get(`steward-request-${spaceKey}-${accountId}`);
+    const existing = await kvs.get(`steward-request-${skKey(spaceKey)}-${accountId}`);
     if (!existing) return { status: "none" };
     if (existing.status === "pending") return { status: "pending" };
     if (existing.status === "denied") {
@@ -388,7 +392,7 @@ const checkStewardRequest = async (req) => {
       const cooldownMs = 48 * 60 * 60 * 1000; // 48 hours
       if (deniedAt && (Date.now() - deniedAt.getTime()) >= cooldownMs) {
         // Cooldown elapsed — clear the denied record so user can retry
-        await kvs.delete(`steward-request-${spaceKey}-${accountId}`);
+        await kvs.delete(`steward-request-${skKey(spaceKey)}-${accountId}`);
         return { status: "none" };
       }
       return { status: "denied", deniedAt: existing.deniedAt };
@@ -412,7 +416,7 @@ const listStewardRequests = async (req) => {
   if (!isSteward) return { requests: [], reason: "Not authorized" };
 
   try {
-    const prefix = `steward-request-${spaceKey}-`;
+    const prefix = `steward-request-${skKey(spaceKey)}-`;
     const allRequests = [];
     let query = kvs.query().where("key", WhereConditions.beginsWith(prefix)).limit(50);
     const { results } = await query.getMany();
@@ -445,7 +449,7 @@ const approveStewardRequest = async (req) => {
 
   try {
     // Get request data
-    const requestKey = `steward-request-${spaceKey}-${requestAccountId}`;
+    const requestKey = `steward-request-${skKey(spaceKey)}-${requestAccountId}`;
     const requestData = await kvs.get(requestKey);
     if (!requestData) return { success: false, reason: "Request not found" };
 
@@ -484,7 +488,7 @@ const denyStewardRequest = async (req) => {
   if (!isSteward) return { success: false, reason: "Not authorized" };
 
   try {
-    const requestKey = `steward-request-${spaceKey}-${requestAccountId}`;
+    const requestKey = `steward-request-${skKey(spaceKey)}-${requestAccountId}`;
     const existing = await kvs.get(requestKey);
     if (!existing) return { success: false, reason: "Request not found" };
     // Mark as denied with timestamp so the user can retry after 48 hours
