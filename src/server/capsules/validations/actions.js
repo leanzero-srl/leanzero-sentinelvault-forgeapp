@@ -3,7 +3,7 @@ import { kvs } from "@forge/kvs";
 import { Queue } from "@forge/events";
 import { fetchPageLabels } from "../../infra/labels.js";
 
-import { authorizeSteward } from "../../shared/steward-checks.js";
+import { authorizeSteward, isOperatorSteward, isOperatorSiteAdmin } from "../../shared/steward-checks.js";
 
 // audit B6: resolve a page's REAL space key from its id (never trust a caller-supplied
 // spaceKey for authorization — else a steward of space A could act on a page in space B).
@@ -55,6 +55,16 @@ const loadConfig = async (req) => {
 const storeConfig = async (req) => {
   const { scope, key, data } = req.payload || {};
   if (!data) return { success: false, reason: "No data" };
+  // it17 (authz): gate config writes — this ruleset drives org-wide compliance (incl. the C6
+  // block-severity floor) and the AI budget/prompt, so an ungated write let any reader rewrite
+  // or disable it. Mirrors store-policy (audit A1): global config → site admin; space config →
+  // steward of that space (isOperatorSteward already allows site admins). Returns {success:false}
+  // (not a throw), which the it16 UI fix surfaces as an error banner.
+  const caller = req.context?.accountId;
+  const authorized = !!caller && ((scope === "space" && key)
+    ? await isOperatorSteward(caller, key)
+    : await isOperatorSiteAdmin(caller));
+  if (!authorized) return { success: false, reason: "Not authorized — steward or admin access required." };
   // Cost backstop: never persist a non-Haiku AI model.
   if (data.ai && data.ai.model && !isForgeLlmModelAllowed(data.ai.model)) {
     data.ai.model = FORGE_LLM_DEFAULT_MODEL;
