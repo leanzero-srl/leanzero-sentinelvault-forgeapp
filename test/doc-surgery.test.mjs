@@ -133,4 +133,12 @@ const tableWithMedia = (id) => ({
   eq("it23: newest version alone yields only fileA", extractMediaSingleNodes(vNewer, new Set(["fileA", "fileB"])).length, 1);
 }
 
+// (5) it24: hashAdf must not throw on undefined content (a malformed/empty sealed wrapper) —
+// that would abort the whole enforcement pass and skip every remaining seal on the page.
+{
+  eq("it24: hashAdf(undefined) → sentinel, no throw", hashAdf(undefined), "00000000");
+  ok("it24: a real body never collides with the nullish sentinel", hashAdf({ type: "doc", content: [para("x")] }) !== "00000000");
+  ok("it24: different sealed bodies → different hashes (both detectable as tampered)", hashAdf([para("A")]) !== hashAdf([para("B")]));
+}
+
 report("doc-surgery");
