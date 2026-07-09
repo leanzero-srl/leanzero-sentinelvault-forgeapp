@@ -141,4 +141,22 @@ const tableWithMedia = (id) => ({
   ok("it24: different sealed bodies → different hashes (both detectable as tampered)", hashAdf([para("A")]) !== hashAdf([para("B")]));
 }
 
+// (6) it25 (R3-F2): a sealed section MOVED into a container (expand/layout/table cell) must
+// still be LOCATED (deep scan) — else it reads as "removed" → a phantom top-level clone is
+// spliced in and the nested copy becomes a permanent tamper blind spot. The located node is a
+// LIVE reference, so the restore pass body-checks + restores it in place (no deep-remove).
+{
+  const nestedWrapper = buildSealedSectionNode({ sectionId: "sec-nested", extensionKey: EXT_KEY, bodyContent: [para("nested body")] });
+  const nestedDoc = { type: "doc", content: [para("top"), { type: "expand", attrs: { title: "More" }, content: [nestedWrapper] }] };
+  const deep = locateBodiedSectionNodes(nestedDoc);
+  eq("it25: nested sealed section IS located (not treated as removed)", deep.length, 1);
+  eq("it25: nested section keeps its sectionId", deep[0].sectionId, "sec-nested");
+  eq("it25: nested originalIndex = top-level ancestor index", deep[0].originalIndex, 1);
+  // the located node is a live reference — mutating it restores IN PLACE (how the pass works).
+  deep[0].node.content = [para("restored-in-place")];
+  eq("it25: mutating the located node restores in place", nestedDoc.content[1].content[0].content[0].content[0].text, "restored-in-place");
+  // a genuinely-removed section is still NOT found (→ the removed branch re-inserts it).
+  eq("it25: a doc without the section locates nothing", locateBodiedSectionNodes({ type: "doc", content: [para("only text")] }).length, 0);
+}
+
 report("doc-surgery");
