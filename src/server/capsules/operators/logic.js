@@ -49,7 +49,7 @@ export async function identifyOperatorById(accountId, cloudId) {
  */
 export async function getRealmInfo(realmKey) {
   if (!realmKey) {
-    throw new Error("Realm key is required");
+    throw new Error("Space key is required");
   }
 
   try {
