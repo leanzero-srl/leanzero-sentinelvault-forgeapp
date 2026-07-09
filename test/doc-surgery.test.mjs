@@ -109,4 +109,28 @@ const tableWithMedia = (id) => ({
   eq("A4 splice: exactly one mediaSingle added", countNodes(current, (n) => n.type === "mediaSingle"), 1);
 }
 
+// (4) it23: multi-version media restore must ACCUMULATE across versions, not stop at the first.
+// Two sealed files last existed in DIFFERENT older versions (B deleted earlier than A); the
+// walk-back in restoreMediaPass must restore BOTH — the old `break`-on-first-non-empty dropped B.
+{
+  const vNewer = { type: "doc", content: [mediaSingle("fileA"), para("text")] }; // A present, B already gone
+  const vOlder = { type: "doc", content: [mediaSingle("fileA"), mediaSingle("fileB")] }; // both present
+  const stillNeeded = new Set(["fileA", "fileB"]);
+  const restored = [];
+  for (const doc of [vNewer, vOlder]) { // newest → oldest, mirroring the pass
+    if (stillNeeded.size === 0) break;
+    for (const entry of extractMediaSingleNodes(doc, stillNeeded)) {
+      restored.push(entry);
+      for (const fid of collectMediaFileIds(entry.node)) stillNeeded.delete(fid);
+    }
+  }
+  eq("it23: both sealed media restored across versions", restored.length, 2);
+  const ids = new Set(restored.flatMap((e) => [...collectMediaFileIds(e.node)]));
+  ok("it23: fileA restored (from the newer version)", ids.has("fileA"));
+  ok("it23: fileB restored (from the OLDER version — not dropped)", ids.has("fileB"));
+  eq("it23: still-needed set emptied", stillNeeded.size, 0);
+  // demonstrate why the old break was a bypass: the newest version alone yields only fileA.
+  eq("it23: newest version alone yields only fileA", extractMediaSingleNodes(vNewer, new Set(["fileA", "fileB"])).length, 1);
+}
+
 report("doc-surgery");
