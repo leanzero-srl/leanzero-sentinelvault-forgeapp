@@ -569,13 +569,13 @@ const RealmPolicyDashboard = () => {
           console.error("No realm key found in context.extension.space.key");
           console.error("Extension object:", context?.extension);
           setMessage(
-            "Unable to determine realm identifier. Review console for specifics.",
+            "Unable to determine space identifier. Review console for specifics.",
           );
           setMessageType("error");
         }
       } catch (err) {
         console.error("Failed to initialize realm console:", err);
-        setMessage(`Realm settings could not be loaded: ${err.message}`);
+        setMessage(`Space settings could not be loaded: ${err.message}`);
         setMessageType("error");
       } finally {
         setLoading(false);
@@ -602,7 +602,7 @@ const RealmPolicyDashboard = () => {
       setHasMoreTeams(result.hasMore || false);
       setNextTeamsStart(result.nextStart || null);
     } catch (error) {
-      setMessage(`Unable to fetch guilds: ${error.message}`);
+      setMessage(`Unable to fetch groups: ${error.message}`);
       setMessageType("error");
     }
   };
@@ -1057,7 +1057,7 @@ const RealmPolicyDashboard = () => {
       setMessageType(null);
 
       if (!realmKey) {
-        throw new Error("Realm key is missing - cannot save settings");
+        throw new Error("Space key is missing - cannot save settings");
       }
 
       // it16: store-policy returns { success:false, reason } on an authz denial (audit A1)
@@ -1069,15 +1069,15 @@ const RealmPolicyDashboard = () => {
       });
 
       if (saveResult?.success) {
-        setMessage("Realm preferences updated!");
+        setMessage("Space preferences updated!");
         setMessageType("success");
       } else {
-        setMessage(saveResult?.reason || "Could not save realm settings.");
+        setMessage(saveResult?.reason || "Could not save space settings.");
         setMessageType("error");
       }
     } catch (err) {
       console.error("Failed to save realm settings:", err);
-      setMessage(`Could not save realm settings: ${err.message}`);
+      setMessage(`Could not save space settings: ${err.message}`);
       setMessageType("error");
     } finally {
       setLoading(false);
@@ -1305,17 +1305,17 @@ const RealmPolicyDashboard = () => {
     {
       value: "use-system-default",
       label: "Use System Default",
-      description: "This realm follows the global settings configured by your organization's administrators.",
+      description: "This space follows the global settings configured by your organization's administrators.",
     },
     {
       value: "enabled",
       label: "Active",
-      description: "Sentinel Vault is enabled for all pages in this realm.",
+      description: "Sentinel Vault is enabled for all pages in this space.",
     },
     {
       value: "disabled",
       label: "Inactive",
-      description: "Sentinel Vault is disabled for this realm. Users cannot seal or unseal attachments.",
+      description: "Sentinel Vault is disabled for this space. Users cannot seal or unseal attachments.",
     },
   ];
 
@@ -1439,9 +1439,9 @@ const RealmPolicyDashboard = () => {
     return (
       <div className="loading-container">
         <div className="loading-spinner"></div>
-        <h2 className="loading-title">Preparing Realm Settings</h2>
+        <h2 className="loading-title">Preparing Space Settings</h2>
         <p className="loading-text">
-          Retrieving realm preferences and sealed files...
+          Retrieving space preferences and sealed files...
         </p>
       </div>
     );
@@ -1457,10 +1457,10 @@ const RealmPolicyDashboard = () => {
             style={{ height: "32px", width: "auto" }}
           />
           <div>
-            <h1 className="space-admin-title">Realm Preferences</h1>
+            <h1 className="space-admin-title">Space Preferences</h1>
             <p className="space-admin-subtitle">
               Manage Sentinel Vault preferences and access control for this
-              realm.
+              space.
             </p>
           </div>
         </div>
@@ -1488,7 +1488,7 @@ const RealmPolicyDashboard = () => {
           <>
             <button className={`tab-button ${activeTab === "locked-attachments" ? "active" : ""}`}
               onClick={() => setActiveTab("locked-attachments")}>
-              Realm Sealed Files
+              Sealed Files
             </button>
             <button className={`tab-button ${activeTab === "permissions" ? "active" : ""}`}
               onClick={() => { setActiveTab("permissions"); fetchPendingRequests(); }}>
@@ -1660,10 +1660,10 @@ const RealmPolicyDashboard = () => {
         <div className="tab-content">
           <div className="form-section">
             <h3 className="section-header">
-              Realm Sealed Files in {realmName}
+              Sealed Files in {realmName}
             </h3>
             <p className="space-admin-subtitle">
-              Review and track all sealed files in this realm. Sealed
+              Review and track all sealed files in this space. Sealed
               files are shielded from unauthorized changes.
             </p>
           </div>
@@ -1748,8 +1748,8 @@ const RealmPolicyDashboard = () => {
           {/* Realm Activation */}
           <div className="settings-card">
             <div className="settings-card-header">
-              <h3>Realm Activation</h3>
-              <p className="settings-card-desc">Choose whether Sentinel Vault is enabled or disabled for this realm.</p>
+              <h3>Space Activation</h3>
+              <p className="settings-card-desc">Choose whether Sentinel Vault is enabled or disabled for this space.</p>
             </div>
             <div className="settings-card-body">
               <div className="custom-select-container">
@@ -1792,7 +1792,7 @@ const RealmPolicyDashboard = () => {
             <div className="settings-card-header">
               <h3>Stewards</h3>
               <p className="settings-card-desc">
-                Stewards can view all sealed attachments in this realm and force-unseal them if needed.
+                Stewards can view all sealed attachments in this space and force-unseal them if needed.
                 Space admins and organization admins are stewards automatically.
               </p>
             </div>
@@ -1946,8 +1946,8 @@ const RealmPolicyDashboard = () => {
 
               {/* Guilds section */}
               <div className="steward-guilds">
-                <h4 className="steward-guilds-title">Guilds</h4>
-                <p className="steward-guilds-desc">Guilds are Confluence groups whose members are automatically granted steward access to this realm.</p>
+                <h4 className="steward-guilds-title">Groups</h4>
+                <p className="steward-guilds-desc">Members of these Confluence groups are automatically granted steward access to this space.</p>
                 <div className="guild-chips">
                   {realmPrefs.adminGroups.map((group) => (
                     <span key={group} className="guild-chip">
@@ -1956,7 +1956,7 @@ const RealmPolicyDashboard = () => {
                     </span>
                   ))}
                   <button className="guild-chip guild-chip-add" onClick={() => { setShowGuildSearch(!showGuildSearch); }}>
-                    + Add Guild
+                    + Add Group
                   </button>
                 </div>
 
@@ -1972,7 +1972,7 @@ const RealmPolicyDashboard = () => {
                         <input
                           type="text"
                           className="search-input"
-                          placeholder="Type to search and select guilds..."
+                          placeholder="Type to search and select groups..."
                           value={teamSearchTerm}
                           onChange={onTeamSearch}
                           onFocus={() => { setShowTeamDropdown(true); }}
@@ -1985,8 +1985,8 @@ const RealmPolicyDashboard = () => {
                               <div className="search-result">
                                 <span style={{ color: "var(--sv-text-subtle)", fontStyle: "italic" }}>
                                   {teamSearchTerm
-                                    ? `No guilds found matching "${teamSearchTerm}"`
-                                    : "All available guilds are already selected"}
+                                    ? `No groups found matching "${teamSearchTerm}"`
+                                    : "All available groups are already selected"}
                                 </span>
                               </div>
                             ) : (
@@ -2004,7 +2004,7 @@ const RealmPolicyDashboard = () => {
                                 {!isLoadingMoreTeams && !hasMoreTeams && filteredTeams().length > 0 && (
                                   <div className="search-result">
                                     <div style={{ display: "flex", justifyContent: "center", padding: "12px", color: "var(--sv-text-subtle)", fontStyle: "italic", fontSize: "12px" }}>
-                                      All guilds loaded
+                                      All groups loaded
                                     </div>
                                   </div>
                                 )}
@@ -2025,7 +2025,7 @@ const RealmPolicyDashboard = () => {
             <div className="settings-card-header">
               <h3>Pending Access Requests</h3>
               <p className="settings-card-desc">
-                Users who have requested steward access to this realm. Use Approve to grant access or Deny to reject the request.
+                Users who have requested steward access to this space. Use Approve to grant access or Deny to reject the request.
               </p>
             </div>
             <div className="settings-card-body">
@@ -2077,7 +2077,7 @@ const RealmPolicyDashboard = () => {
 
           {/* Note */}
           <div className="settings-note">
-            <strong>Note:</strong> Realm Stewards and Confluence Administrators always have these privileges.
+            <strong>Note:</strong> Space Stewards and Confluence Administrators always have these privileges.
           </div>
 
           {/* Save button */}
@@ -2094,7 +2094,7 @@ const RealmPolicyDashboard = () => {
               <div className="settings-row-info">
                 <p className="settings-row-label">Use System Default Seal Duration</p>
                 <p className="settings-row-description">
-                  When checked, this realm uses the default seal duration set by your organization's administrators.
+                  When checked, this space uses the default seal duration set by your organization's administrators.
                 </p>
               </div>
               <div className="settings-row-control">
@@ -2126,12 +2126,12 @@ const RealmPolicyDashboard = () => {
                   <div className="settings-row-info">
                     <p className="settings-row-label">Custom Seal Duration</p>
                     <p className="settings-row-description">
-                      Seals on attachments in this realm will expire after{" "}
+                      Seals on attachments in this space will expire after{" "}
                       <span className="dynamic-value">
                         {realmPrefs.autoUnlockTimeoutHours} hours
                       </span>
                       . This overrides the global default seal duration for
-                      this realm only.
+                      this space only.
                     </p>
                   </div>
                   <div className="settings-row-control">
@@ -2169,7 +2169,7 @@ const RealmPolicyDashboard = () => {
                 <p className="settings-row-label">Auto-Insert Macro</p>
                 <p className="settings-row-description">
                   When checked, Sentinel Vault automatically adds its macro to a page
-                  in this realm the first time an attachment is sealed. The macro displays
+                  in this space the first time an attachment is sealed. The macro displays
                   seal status, labels, and actions for all attachments. This can be
                   overridden on individual pages.
                 </p>

@@ -109,7 +109,7 @@ const assignWorkflow = async (req) => {
   const actorAccountId = req.context?.accountId;
   // Assigning a workflow is a steward act in v1 (per-page-owner assignment arrives with #43).
   if (!(await authorizeSteward(actorAccountId, spaceKey))) {
-    return { success: false, reason: "Only a realm steward can assign a workflow" };
+    return { success: false, reason: "Only a space steward can assign a workflow" };
   }
   return assignPageWorkflow({
     pageId,
@@ -300,7 +300,7 @@ const storeConfig = async (req) => {
   const { scope, key, def } = req.payload || {};
   const realmKey = key || spaceKeyOf(req);
   if (!(await authorizeSteward(req.context?.accountId, realmKey))) {
-    return { success: false, reason: "Only a realm steward can edit workflow definitions" };
+    return { success: false, reason: "Only a space steward can edit workflow definitions" };
   }
   return storeWorkflowConfig(scope || "global", key, def);
 };
@@ -315,7 +315,7 @@ const getSpaceSettings = async (req) => {
 const setSpaceSettings = async (req) => {
   const spaceKey = spaceKeyOf(req);
   if (!(await authorizeSteward(req.context?.accountId, spaceKey))) {
-    return { success: false, reason: "Only a realm steward can change workflow settings" };
+    return { success: false, reason: "Only a space steward can change workflow settings" };
   }
   return setSpaceWorkflowSettings(spaceKey, req.payload?.settings || {});
 };
@@ -325,7 +325,7 @@ const setSpaceSettings = async (req) => {
 const bulkAssign = async (req) => {
   const spaceKey = spaceKeyOf(req);
   if (!(await authorizeSteward(req.context?.accountId, spaceKey))) {
-    return { success: false, reason: "Only a realm steward can apply workflows" };
+    return { success: false, reason: "Only a space steward can apply workflows" };
   }
   const settings = await getSpaceWorkflowSettings(spaceKey);
   if (!settings.enabled) return { success: false, reason: "Enable workflow for this space first" };

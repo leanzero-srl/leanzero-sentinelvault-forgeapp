@@ -47,7 +47,7 @@ const GlobalPolicyEditor = () => {
   const [message, setMessage] = useState(null);
   const [messageType, setMessageType] = useState(null);
   const [currentRealmKey, setCurrentRealmKey] = useState(null);
-  const [currentRealmName, setCurrentRealmName] = useState("Current Realm");
+  const [currentRealmName, setCurrentRealmName] = useState("Current Space");
 
   useEffect(() => {
     const fetchPreferences = async () => {
@@ -68,7 +68,7 @@ const GlobalPolicyEditor = () => {
         if (realmKey) {
           setCurrentRealmKey(realmKey);
           setCurrentRealmName(
-            context.extension.content.space?.name || "Current Realm",
+            context.extension.content.space?.name || "Current Space",
           );
         }
 
@@ -192,7 +192,7 @@ const GlobalPolicyEditor = () => {
             <h1 className="admin-title">System-Wide Preferences</h1>
             <p className="admin-subtitle">
               Manage global preferences for Sentinel Vault across every
-              realm
+              space
             </p>
           </div>
         </div>
@@ -236,7 +236,7 @@ const GlobalPolicyEditor = () => {
           <div className="settings-panel">
             <SettingsRow
               label="Default Seal Duration"
-              description="How long attachments stay sealed by default (minimum 1 hour). Individual realms can override this with their own duration."
+              description="How long attachments stay sealed by default (minimum 1 hour). Individual spaces can override this with their own duration."
             >
               <div className="input-with-unit">
                 <input
@@ -354,7 +354,7 @@ const GlobalPolicyEditor = () => {
 
             <SettingsRow
               label="Auto-Insert Macro on Seal"
-              description="When enabled, the Sentinel Vault panel macro is automatically inserted into the page when an attachment is sealed. Individual realms can still disable this in their own settings. When disabled, no auto-insertion happens regardless of realm settings."
+              description="When enabled, the Sentinel Vault panel macro is automatically inserted into the page when an attachment is sealed. Individual spaces can still disable this in their own settings. When disabled, no auto-insertion happens regardless of space settings."
             >
               <Toggle
                 checked={settings.globalAutoInsertMacro}
@@ -371,7 +371,7 @@ const GlobalPolicyEditor = () => {
               <div className="nested-control">
                 <SettingsRow
                   label="Replace Attachments Macro"
-                  description="When inserting the Sentinel Vault panel, replace the built-in Confluence Attachments macro instead of adding the panel alongside it. If no Attachments macro is found on the page, the panel is inserted at the position configured in realm settings."
+                  description="When inserting the Sentinel Vault panel, replace the built-in Confluence Attachments macro instead of adding the panel alongside it. If no Attachments macro is found on the page, the panel is inserted at the position configured in space settings."
                 >
                   <Toggle
                     checked={settings.replaceAttachmentsMacro}

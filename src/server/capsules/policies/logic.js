@@ -16,7 +16,7 @@ function getPolicyStorageKey(scope, realmKey) {
     const sanitizedKey = realmKey.replace(/[^a-zA-Z0-9:._\s-#]/g, "_");
     return `admin-settings-space-${sanitizedKey}`;
   } else {
-    throw new Error("Invalid scope or missing realm key");
+    throw new Error("Invalid scope or missing space key");
   }
 }
 
