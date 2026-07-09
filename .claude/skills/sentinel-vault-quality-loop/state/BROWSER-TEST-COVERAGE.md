@@ -5,8 +5,18 @@ Goal: a comprehensive DEEP browser suite (forge-live-harness, real Confluence on
 ## Specs today (`~/Projects/forge-live-harness/scenarios/sentinel-vault/`)
 - `realm-console-deep.spec.ts` ✅ — loads past spinner (it26 hang guard) + walks all 6 tabs asserting content.
 - `steward-console-deep.spec.ts` ✅ — loads past spinner + walks General/Alerts/Validations + a save.
+- `page-seal-state.spec.ts` ✅ — DEV doc-ribbon banner on the fixture page correctly reports the sealed attachment (env-scoped to dev; ignores the prod install).
 - render smokes (`realm.spec.ts`,`admin-render.spec.ts`) — SHALLOW ("not blank"); keep as quick smoke, do NOT rely on them.
 - REST/hook specs (validation, gate-revert, sealed-section, sealed-media, trash, expiry-sweep) — deep BACKEND, no browser.
+
+## ⚠️ TEST-ENV GOTCHA (it27) — wolfaenpak has TWO installs of Sentinel Vault
+The test site runs BOTH the **dev** install (env `17516615-12ef-4790-8ce2-29151b7ee9ac`) AND the
+**prod** install (env `31eb89a3-9342-4489-b531-34ef0b19d722`). On any page-context surface
+(doc-ribbon pageBanner, inline-panel macro) BOTH render, each reading its OWN separate storage —
+so you see two banners with different seal counts (dev sees the dev seal → "1 sealed"; prod's
+storage is empty → "none sealed"). This is NOT an app bug. Page-context specs MUST filter iframes
+by the dev env id (`iframe[src*="17516615"]`) to test the app-under-test; otherwise the prod
+install confounds the assertion. (This resolved the it26 "contradictory seal count" LEAD.)
 
 ## STEWARD / ADMIN journeys (Confluence space-page + global-settings)
 - ✅ Space console loads (all tabs render) · ✅ Global console loads (all tabs render).
@@ -35,5 +45,5 @@ Goal: a comprehensive DEEP browser suite (forge-live-harness, real Confluence on
 
 ## FINDINGS from the live hunt (it26+)
 - FIXED: validation rule Label + config inputs clipped to 80px (`.val-rule-card > .form-input` full-width) — live-verified 873px.
-- LEAD (investigate): the doc-ribbon pageBanner ("N sealed on this page") and the inline-panel macro ("N on this page — none sealed") show CONTRADICTORY seal counts for the same attachment on the fixture page (265912321). Could be different scopes (sealed-by-others vs your-seals) or a real data-consistency bug — build a page journey that seals an attachment and asserts BOTH the banner and panel agree.
+- RESOLVED (it27, NOT a bug): the "contradictory seal count" was the dev+prod dual-install (see GOTCHA above) — two doc-ribbon banners from two installs reading separate storage, not one inconsistent component. Confirmed via iframe env ids: banner with env `17516615` (dev) = "1 sealed" (correct); banner with env `31eb89a3` (prod) = "none sealed" (prod storage empty). Guarded by `page-seal-state.spec.ts`.
 - NOISE (not ours): `Uncaught Error: undefined missing ac/create` + some 404s on the page are atlassian-CONNECT/host, not this Forge app.
