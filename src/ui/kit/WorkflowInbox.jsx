@@ -56,8 +56,8 @@ export default function WorkflowInbox() {
               <span className="wf-inbox-meta">Move to <strong>{it.toStateName}</strong>{it.requestedByName ? ` · requested by ${it.requestedByName}` : ""}</span>
             </div>
             <div className="wf-inbox-actions">
-              <button type="button" className="wf-inbox-approve" onClick={() => decide(it.pageId, "approved")} disabled={busy === it.pageId}>Approve</button>
-              <button type="button" className="wf-inbox-deny" onClick={() => decide(it.pageId, "denied")} disabled={busy === it.pageId}>Deny</button>
+              <button type="button" className="wf-inbox-approve" aria-label={`Approve moving ${it.pageTitle} to ${it.toStateName}`} onClick={() => decide(it.pageId, "approved")} disabled={busy === it.pageId}>Approve</button>
+              <button type="button" className="wf-inbox-deny" aria-label={`Deny moving ${it.pageTitle} to ${it.toStateName}`} onClick={() => decide(it.pageId, "denied")} disabled={busy === it.pageId}>Deny</button>
             </div>
           </li>
         ))}
