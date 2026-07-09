@@ -361,16 +361,24 @@ async function restoreMediaPass(ctx, sealFileMap) {
   }
 
   const violatedFileIds = new Set(violations.map(({ fileId }) => fileId));
-  // SV-M6: the version still containing the sealed media may not be exactly currentVersion-1
-  // (a second edit or a trigger lag pushes it back), which used to permanently bypass
-  // protection. Walk backward a bounded number of versions until the media block(s) are found.
-  let restoredEntries = [];
+  // SV-M6 + it23: the version still containing each sealed media may not be exactly
+  // currentVersion-1 (a second edit or a trigger lag pushes it back), AND different violated
+  // files may last exist in DIFFERENT older versions. Walk backward a bounded number of
+  // versions and ACCUMULATE — restoring each file from the most-recent version that still had
+  // it, shrinking the still-needed set until it's empty. (The old code broke on the FIRST
+  // version yielding ANY media, so a file deleted in an earlier version was never restored —
+  // a silent, permanent protection bypass once it fell past MAX_LOOKBACK.)
+  const restoredEntries = [];
+  const stillNeeded = new Set(violatedFileIds);
   const MAX_LOOKBACK = 5;
-  for (let v = ctx.currentVersion - 1; v >= 1 && v >= ctx.currentVersion - MAX_LOOKBACK; v--) {
+  for (let v = ctx.currentVersion - 1; v >= 1 && v >= ctx.currentVersion - MAX_LOOKBACK && stillNeeded.size > 0; v--) {
     try {
       const { adfDoc: olderAdf } = await readDocBodyAtVersion(ctx.pageId, v);
-      const found = extractMediaSingleNodes(olderAdf, violatedFileIds);
-      if (found.length > 0) { restoredEntries = found; break; }
+      const found = extractMediaSingleNodes(olderAdf, stillNeeded);
+      for (const entry of found) {
+        restoredEntries.push(entry);
+        for (const fid of collectMediaFileIds(entry.node)) stillNeeded.delete(fid);
+      }
     } catch (_) { /* best effort */ }
   }
   if (restoredEntries.length === 0) {
