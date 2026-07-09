@@ -664,12 +664,20 @@ export function buildSealedSectionNode({ sectionId, extensionKey, bodyContent })
 export function locateBodiedSectionNodes(adfDoc) {
   const out = [];
   if (!adfDoc?.content) return out;
-  for (let i = 0; i < adfDoc.content.length; i++) {
-    const block = adfDoc.content[i];
-    if (block?.type === "bodiedExtension" && isSealedSectionKey(block.attrs?.extensionKey)) {
-      out.push({ node: block, sectionId: getSectionId(block), originalIndex: i });
+  // it25 (R3-F2): scan DEEPLY. A sealed section moved into a layout column / expand / table cell
+  // must still be found — otherwise it reads as "removed", a phantom top-level clone is spliced
+  // in, AND the nested copy becomes a permanent tamper blind spot. The seal protects CONTENT, so
+  // a moved section is body-checked IN PLACE (the restore pass mutates node.content — a live ref
+  // at any depth). originalIndex is the TOP-LEVEL ancestor index — used only to position a
+  // re-insert if the section is FULLY removed.
+  const visit = (node, topIndex) => {
+    if (!node || typeof node !== "object") return;
+    if (node.type === "bodiedExtension" && isSealedSectionKey(node.attrs?.extensionKey)) {
+      out.push({ node, sectionId: getSectionId(node), originalIndex: topIndex });
     }
-  }
+    if (Array.isArray(node.content)) for (const c of node.content) visit(c, topIndex);
+  };
+  for (let i = 0; i < adfDoc.content.length; i++) visit(adfDoc.content[i], i);
   return out;
 }
 
