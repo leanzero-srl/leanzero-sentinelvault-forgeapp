@@ -26,7 +26,11 @@ export function WorkflowDashboard({ spaceKey }) {
   }, [spaceKey]);
 
   if (loading) return <div className="wf-dash-loading">Loading workflow status…</div>;
-  if (!data || data.error || data.total === 0) return null; // nothing to report
+  // it18: surface a load failure instead of silently vanishing (matches the panel's error
+  // pattern + the it16 error-surfacing direction). Empty (total 0) stays quiet by design —
+  // like the approvals inbox, the dashboard doesn't clutter a space with nothing to report.
+  if (data?.error) return <div className="wf-dash-error" role="status">Couldn’t load workflow status right now. Reload the page to try again.</div>;
+  if (!data || data.total === 0) return null;
 
   const colorOf = Object.fromEntries((data.states || []).map((s) => [s.id, s.color || "neutral"]));
   const download = () => {
