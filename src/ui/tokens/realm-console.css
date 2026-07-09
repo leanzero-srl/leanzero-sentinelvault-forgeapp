@@ -1770,6 +1770,10 @@ html[data-color-mode="dark"] .artifact-card.status-expired { border-color: #F871
 .val-rule-remove { margin-left: auto; border: none; background: var(--sv-status-warning); color: #fff; border-radius: 6px; width: 24px; height: 24px; font-size: 16px; line-height: 1; cursor: pointer; }
 .val-rule-cfg { display: flex; gap: 8px; }
 .val-rule-cfg .form-input { flex: 1; }
+/* it26 (live-browser bug): the rule LABEL + standalone config inputs are direct children of
+   the card, so they inherited the base .form-input width:80px and clipped their placeholders
+   ("Label (shown in the report)" → "Label (show"). Make direct-child inputs full-width. */
+.val-rule-card > .form-input { width: 100%; box-sizing: border-box; }
 .mini-select { position: relative; min-width: 180px; }
 .mini-select-value { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 12px; border: 1px solid var(--sv-border-secondary); border-radius: 8px; background: var(--sv-bg-primary); color: var(--sv-text-primary); font-size: 13px; cursor: pointer; }
 .mini-select-arrow { font-size: 9px; color: var(--sv-text-subtle); transition: transform 0.15s; }
