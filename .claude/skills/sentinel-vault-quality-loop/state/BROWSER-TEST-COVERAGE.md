@@ -8,6 +8,7 @@ Goal: a comprehensive DEEP browser suite (forge-live-harness, real Confluence on
 - `page-seal-state.spec.ts` ✅ — DEV doc-ribbon banner on the fixture page correctly reports the sealed attachment (env-scoped to dev; ignores the prod install).
 - `realm-reservation-persist.spec.ts` ✅ — change space seal duration → Apply (success banner) → reload → value persists (store-policy → KVS round-trip; guards silent-save-fail + reload-staleness).
 - `realm-validation-crud.spec.ts` ✅ — add a validation rule → Save → reload persists → delete → Save → reload gone (store-validation-config CRUD round-trip; self-cleaning).
+- `page-seal-unseal.spec.ts` ✅ — open the doc-ribbon "Manage Attachments" Modal → Relinquish (unseal-artifact) → card flips to Seal → re-Seal (seal-artifact) → flips back. Reversible (restores fixture). Core operator seal lifecycle through real resolvers. GOTCHA: the inline-panel macro ALSO renders artifact cards behind the modal — target the modal by largest bounding box.
 - render smokes (`realm.spec.ts`,`admin-render.spec.ts`) — SHALLOW ("not blank"); keep as quick smoke, do NOT rely on them.
 - REST/hook specs (validation, gate-revert, sealed-section, sealed-media, trash, expiry-sweep) — deep BACKEND, no browser.
 
@@ -29,7 +30,7 @@ install confounds the assertion. (This resolved the it26 "contradictory seal cou
 - ✅ Reservation Duration: toggle off system-default → set a custom duration → save → reload persists (`realm-reservation-persist.spec.ts`, it27).
 
 ## OPERATOR / USER journeys (on a page: doc-ribbon pageBanner + inline-panel macro)
-- ⬜ Seal an attachment (inline-panel): seal → chip shows sealed → set duration/comment/labels → unseal → relinquish. As owner vs non-owner.
+- 🟡 Seal an attachment (Manage Attachments Modal): Relinquish → re-Seal round-trip DONE (`page-seal-unseal.spec.ts`, it28). STILL ⬜: seal a FRESH/available attachment, set duration/comment/labels, as owner vs non-owner. NOTE: the inline-panel MACRO renders artifact cards in the page body (it lazy-loads — earlier thought absent) → the panel seal/unseal journey + the ribbon-vs-panel comparison are now buildable.
 - ⬜ Edit requests: non-owner "Request Edit" → owner sees request in panel → Approve / Deny / Revoke (it14/D5 UI) → the editor gains/loses access.
 - ⬜ Sealed sections: seal a heading's section → the section-setup UI → (backend tamper→revert already REST-covered).
 - ⬜ Validation surfacing on a page: violating edit → advisory comment / gate fail / revert (REST-covered; add a UI check of the panel's validation state + AI findings dismiss/false-positive buttons).
@@ -49,3 +50,5 @@ install confounds the assertion. (This resolved the it26 "contradictory seal cou
 - FIXED: validation rule Label + config inputs clipped to 80px (`.val-rule-card > .form-input` full-width) — live-verified 873px.
 - RESOLVED (it27, NOT a bug): the "contradictory seal count" was the dev+prod dual-install (see GOTCHA above) — two doc-ribbon banners from two installs reading separate storage, not one inconsistent component. Confirmed via iframe env ids: banner with env `17516615` (dev) = "1 sealed" (correct); banner with env `31eb89a3` (prod) = "none sealed" (prod storage empty). Guarded by `page-seal-state.spec.ts`.
 - NOISE (not ours): `Uncaught Error: undefined missing ac/create` + some 404s on the page are atlassian-CONNECT/host, not this Forge app.
+- FIXED (it28, found via the seal journey): the overlay's `formatRemainingTime` showed raw hours ("8643h 56m") with no day rollup — unreadable. Added the day rollup (mirrors realm-console's formatter) → now "360d 3h" / "3d 0h". Live-verified in the overlay PNG.
+- FOLLOW-UP (same bug, different surface): realm-console `index.jsx` lines 204 + ~314 render seal "lapses" as raw `{hours}h {mins}m` (no day rollup) while its OWN `formatRemainingTime` (line ~1349) DOES roll up — an internal inconsistency. Next tick: converge all three on one shared helper (preserve the Overdue warning-color span at line ~206). Needs its own live verify (a long-expiry seal shown in a console tab).
