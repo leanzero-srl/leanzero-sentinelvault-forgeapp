@@ -1803,6 +1803,9 @@ html[data-color-mode="dark"] .wf-state-neutral { background: #64748b; }
 /* ── Workflow dashboard (#48) ─────────────────────────── */
 .wf-dash { margin-bottom: 36px; }
 .wf-dash-loading { font-size: 13px; color: var(--sv-text-secondary); padding: 16px 0; }
+/* it18: load-failure notice — solid saturated red text (no washed tint, no rail), lighter than
+   the full .alert-error bar since this is a transient read-only reporting widget. */
+.wf-dash-error { font-size: 13px; font-weight: 600; color: var(--sv-interactive-danger, #dc2626); padding: 16px 0; }
 .wf-dash-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 18px; }
 .wf-dash-title { font-size: 18px; font-weight: 700; margin: 0; color: var(--sv-text-primary); }
 .wf-dash-sub { font-size: 13px; color: var(--sv-text-secondary); margin: 3px 0 0; }
