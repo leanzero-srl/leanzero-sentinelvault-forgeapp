@@ -9,7 +9,7 @@ import { kvs, WhereConditions } from "@forge/kvs";
  */
 export async function resolveRealm(realmKey) {
   if (!realmKey) {
-    throw new Error("Realm key is required");
+    throw new Error("Space key is required");
   }
 
   try {
@@ -45,7 +45,7 @@ export async function resolveRealm(realmKey) {
  */
 export async function listRealmSeals(realmId, cursor = null, limit = 50) {
   if (!realmId) {
-    throw new Error("Realm ID is required");
+    throw new Error("Space ID is required");
   }
 
   try {
@@ -111,7 +111,7 @@ export async function listRealmSeals(realmId, cursor = null, limit = 50) {
  */
 export async function initiateRealmSweep(realmKey, realmId, scanQueue) {
   if (!realmKey || !realmId) {
-    throw new Error("Realm key and realm ID are required");
+    throw new Error("Space key and space ID are required");
   }
 
   // Check if a scan is already in progress
@@ -150,7 +150,7 @@ export async function initiateRealmSweep(realmKey, realmId, scanQueue) {
  */
 export async function pollSweepProgress(realmId) {
   if (!realmId) {
-    throw new Error("Realm ID is required");
+    throw new Error("Space ID is required");
   }
 
   const status = await kvs.get(`space-scan-status-${realmId}`);
