@@ -936,6 +936,11 @@ const ArtifactControlPanel = () => {
     const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
     const diffMinutes = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
 
+    // Roll up to days for long seals so this reads "360d 3h", never "8643h 56m" (nobody
+    // parses time in thousands of hours). Mirrors realm-console's formatRemainingTime.
+    if (diffHours > 24) {
+      return `${Math.floor(diffHours / 24)}d ${diffHours % 24}h`;
+    }
     if (diffHours > 0) {
       return `${diffHours}h ${diffMinutes}m`;
     }
