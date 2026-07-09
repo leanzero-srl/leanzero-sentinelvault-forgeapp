@@ -563,6 +563,9 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 }
 .val-rule-cfg { display: flex; gap: 8px; }
 .val-rule-cfg .form-input { flex: 1; }
+/* it26 (live-browser bug): rule LABEL + standalone config inputs are direct children of the
+   card, inheriting the base .form-input width:80px and clipping placeholders. Full-width them. */
+.val-rule-card > .form-input { width: 100%; box-sizing: border-box; }
 
 /* Custom dropdown (no native select) */
 .mini-select { position: relative; min-width: 180px; }
