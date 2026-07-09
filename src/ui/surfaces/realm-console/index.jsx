@@ -8,6 +8,7 @@ import ThumbnailPreview from "../../kit/ThumbnailPreview";
 import ValidationsEditor from "../../kit/ValidationsEditor";
 import WorkflowSettingsEditor from "../../kit/WorkflowSettingsEditor";
 import WorkflowInbox from "../../kit/WorkflowInbox";
+import { formatRemaining } from "../../kit/format-duration";
 import { WorkflowDashboard } from "../../kit/WorkflowDashboard";
 import logo from "../../assets/icons/icon.png";
 
@@ -193,18 +194,12 @@ const RealmClaimedCard = ({ artifact, onForceRelease, onWatch, isWatching, force
     const d = new Date(artifact.lockedOn);
     metaItems.push(<span key="date" className="card-meta-item">{d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}</span>);
   }
-  // Lapses
+  // Lapses (rolls up to days for long seals — shared formatter)
   if (vc.lapses !== false && artifact.expiresAt) {
-    const now = new Date();
-    const exp = new Date(artifact.expiresAt);
-    const diff = exp - now;
-    if (diff > 0) {
-      const hours = Math.floor(diff / 3600000);
-      const mins = Math.floor((diff % 3600000) / 60000);
-      metaItems.push(<span key="lapses" className="card-meta-item">{hours}h {mins}m</span>);
-    } else {
-      metaItems.push(<span key="lapses" className="card-meta-item" style={{ color: "var(--sv-status-warning)" }}>Overdue</span>);
-    }
+    const label = formatRemaining(artifact.expiresAt);
+    metaItems.push(
+      <span key="lapses" className="card-meta-item" style={label === "Overdue" ? { color: "var(--sv-status-warning)" } : undefined}>{label}</span>,
+    );
   }
 
   return (
@@ -304,15 +299,8 @@ const MyClaimedCard = ({ artifact, onRelease, busyAction, siteUrl }) => {
     const d = new Date(artifact.lockedOn);
     metaItems.push(<span key="date" className="card-meta-item">{d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}</span>);
   }
-  if (artifact.expiresAt) {
-    const now = new Date();
-    const exp = new Date(artifact.expiresAt);
-    const diff = exp - now;
-    if (diff > 0) {
-      const hours = Math.floor(diff / 3600000);
-      const mins = Math.floor((diff % 3600000) / 60000);
-      metaItems.push(<span key="lapses" className="card-meta-item">{hours}h {mins}m</span>);
-    }
+  if (artifact.expiresAt && new Date(artifact.expiresAt) > new Date()) {
+    metaItems.push(<span key="lapses" className="card-meta-item">{formatRemaining(artifact.expiresAt)}</span>);
   }
 
   return (
