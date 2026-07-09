@@ -28,7 +28,7 @@ import { resolveApproverIds, applyAiVerdict } from "./capsules/workflow/approval
 import { postEnforceComment } from "./infra/approval-blueprints.js";
 import { isAccountStewardAsApp } from "./shared/steward-checks.js";
 import { postValidationComment } from "./infra/validation-blueprints.js";
-import { readDocBody, readDocBodyAtVersion, writeDocBody, collectMediaFileIds, extractMediaSingleNodes, spliceMediaNodes, locateBodiedSectionNodes, replaceSectionBody, spliceSectionWrapper, hashAdf, canonicalizeAdf } from "./infra/doc-surgery.js";
+import { readDocBody, readDocBodyAtVersion, writeDocBody, collectMediaFileIds, extractMediaSingleNodes, spliceMediaNodes, locateBodiedSectionNodes, spliceSectionWrapper, hashAdf, canonicalizeAdf } from "./infra/doc-surgery.js";
 
 // --- Helpers ---
 
@@ -453,9 +453,17 @@ function sectionHeadingText(node) {
 async function restoreSealedSectionsPass(ctx, sectionSeals) {
   if (ctx.enforcedRevert) return; // #44: suppress SV-M5 re-baseline + restore while enforcing
   const now = Date.now();
-  const wrappers = new Map();
+  // it24 (R3-F1): group ALL wrappers per sectionId, not a last-wins Map. A page can hold
+  // DUPLICATE sealed sections (copy-paste, or an attacker PUT-ing ADF with two same-sectionId
+  // bodiedExtensions via REST). A Map hid all but one copy, so detection read one copy while
+  // replaceSectionBody rewrote the FIRST scan-match — a tamper on a non-selected copy was
+  // missed, and restore rewrote the wrong (pristine) copy with a false "reverted" notice.
+  const wrappersById = new Map();
   for (const w of locateBodiedSectionNodes(ctx.adfDoc)) {
-    if (w.sectionId) wrappers.set(w.sectionId, w);
+    if (!w.sectionId) continue;
+    const list = wrappersById.get(w.sectionId) || [];
+    list.push(w);
+    wrappersById.set(w.sectionId, list);
   }
 
   for (const seal of sectionSeals) {
@@ -463,7 +471,7 @@ async function restoreSealedSectionsPass(ctx, sectionSeals) {
     // otherwise a later unrelated non-owner save sees the stale hash and reverts the owner's
     // own edit, destroying it and falsely blaming the non-owner.
     if (seal.lockedBy === ctx.atlassianId) {
-      const ownWrap = wrappers.get(seal.sectionId);
+      const ownWrap = (wrappersById.get(seal.sectionId) || [])[0];
       if (ownWrap) {
         const ownHash = hashAdf(ownWrap.node.content);
         if (seal.contentHash && ownHash !== seal.contentHash) {
@@ -483,10 +491,10 @@ async function restoreSealedSectionsPass(ctx, sectionSeals) {
     // Expired seals are inert (full auto-unseal handled by the expiry sweep).
     if (seal.expiresAt && new Date(seal.expiresAt).getTime() <= now) continue;
 
-    const wrapper = wrappers.get(seal.sectionId);
+    const wrapperList = wrappersById.get(seal.sectionId) || [];
     const snapshot = await kvs.get(`section-snapshot-${seal.sectionId}`);
 
-    if (!wrapper) {
+    if (wrapperList.length === 0) {
       // The entire sealed-section macro was deleted/cut — re-insert the SEALED wrapper.
       const restoreNode = snapshot?.wrapperNode || null;
       // SV-m6: position the restore by ANCHORING to the section's preceding heading (read from
@@ -527,45 +535,47 @@ async function restoreSealedSectionsPass(ctx, sectionSeals) {
       continue;
     }
 
-    // Wrapper present — compare the canonical hash of its body to the sealed hash.
-    const liveHash = hashAdf(wrapper.node.content);
-    if (seal.contentHash && liveHash === seal.contentHash) {
-      // SV-M7: a 32-bit FNV hash is forgeable, so a matching hash alone is not proof of
-      // integrity. Confirm STRUCTURALLY against the stored snapshot before trusting it.
-      if (!snapshot?.bodyContent ||
-          JSON.stringify(canonicalizeAdf(wrapper.node.content)) === JSON.stringify(canonicalizeAdf(snapshot.bodyContent))) {
-        continue; // genuinely untouched (or no snapshot to compare against)
-      }
-      // hash matched but canonical content differs → forged collision → fall through to restore.
-    }
+    // it24 (R3-F1): one or MORE copies of the sealed section are present. Compare EVERY copy to
+    // the sealed baseline — the old Map-based code inspected only one, so a tamper on another
+    // copy was missed, and replaceSectionBody rewrote the FIRST scan-match (not the copy it
+    // inspected), so a tampered non-first copy survived with a false "reverted" notice.
+    const isUntouched = (node) => {
+      if (!(seal.contentHash && hashAdf(node.content) === seal.contentHash)) return false;
+      // SV-M7: a matching 32-bit hash is not proof — confirm STRUCTURALLY against the snapshot.
+      return !snapshot?.bodyContent ||
+        JSON.stringify(canonicalizeAdf(node.content)) === JSON.stringify(canonicalizeAdf(snapshot.bodyContent));
+    };
+    const changedWrappers = wrapperList.filter((w) => !isUntouched(w.node));
+    if (changedWrappers.length === 0) continue; // every copy matches the seal — untouched
 
-    // Approved section editor (Edit Requests) — allow the edit and re-baseline so
-    // future reverts compare against the edited content.
+    // Approved section editor (Edit Requests) — allow the edit and re-baseline from the edited copy.
     const sectionGrant = await getActiveSectionEditGrant(seal.sectionId, ctx.atlassianId);
     if (sectionGrant) {
       try {
-        const newBody = JSON.parse(JSON.stringify(wrapper.node.content || []));
+        const edited = changedWrappers[0];
+        const newBody = JSON.parse(JSON.stringify(edited.node.content || []));
         const newHash = hashAdf(newBody);
         await kvs.set(`section-protection-${seal.sectionId}`, { ...seal, contentHash: newHash });
         await kvs.set(`section-snapshot-${seal.sectionId}`, {
-          wrapperNode: JSON.parse(JSON.stringify(wrapper.node)),
-          bodyContent: newBody, hash: newHash, version: null, originalIndex: wrapper.originalIndex,
+          wrapperNode: JSON.parse(JSON.stringify(edited.node)),
+          bodyContent: newBody, hash: newHash, version: null, originalIndex: edited.originalIndex,
         });
         console.warn(`[SECTION] Allowed approved edit of section ${seal.sectionId} by ${ctx.atlassianId} — re-baselined`);
       } catch (e) { console.error("[SECTION] re-baseline failed:", e); }
       continue;
     }
 
-    // Body was edited — restore the sealed body from the snapshot.
+    // Body edited by a non-authorized user — restore the sealed body into EVERY differing copy,
+    // mutating the exact nodes we inspected (no first-vs-last desync).
     if (snapshot?.bodyContent) {
-      const ok = replaceSectionBody(ctx.adfDoc, seal.sectionId, snapshot.bodyContent);
-      if (ok) {
-        ctx.changed = true;
-        ctx.notifications.push({
-          type: "section-revert", targetId: seal.sectionId,
-          seal, actor: ctx.atlassianId, pageId: ctx.pageId, kind: "body-edited",
-        });
+      for (const w of changedWrappers) {
+        w.node.content = JSON.parse(JSON.stringify(snapshot.bodyContent));
       }
+      ctx.changed = true;
+      ctx.notifications.push({
+        type: "section-revert", targetId: seal.sectionId,
+        seal, actor: ctx.atlassianId, pageId: ctx.pageId, kind: "body-edited",
+      });
     } else {
       console.warn(`[SECTION] Section ${seal.sectionId} body changed but no snapshot to restore from`);
     }

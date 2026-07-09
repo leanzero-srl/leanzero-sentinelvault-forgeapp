@@ -737,6 +737,11 @@ export function canonicalizeAdf(value) {
  */
 export function hashAdf(node) {
   const str = JSON.stringify(canonicalizeAdf(node));
+  // it24: nullish content (a malformed/empty wrapper) makes JSON.stringify return `undefined`,
+  // and `.length` on that throws — which would abort the whole enforcement pass and skip every
+  // remaining seal on the page. Return a stable sentinel instead; it won't match any real
+  // contentHash, so the copy is treated as CHANGED and restored (fail-closed, not fail-open).
+  if (typeof str !== "string") return "00000000";
   let h = 0x811c9dc5;
   for (let i = 0; i < str.length; i++) {
     h ^= str.charCodeAt(i);
