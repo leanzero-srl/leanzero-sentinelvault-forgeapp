@@ -552,19 +552,20 @@ const RealmPolicyDashboard = () => {
             adminGroups: settings?.adminGroups || [],
             autoInsertMacro: settings?.autoInsertMacro !== false,
           });
-          await fetchReservedFiles(realmKeyValue, realmIdValue);
-
-          // AUTOMATICALLY fetch all teams from Confluence when page loads
-          await fetchAllTeams();
-
-          // Load initial operators for dropdown
-          await fetchInitialOperators();
-
-          // Check if steward override is enabled
-          await checkStewardOverrideStatus();
-
-          // Fetch my claimed files for default tab
-          await fetchMyClaimedFiles();
+          // it26 (LIVE-BROWSER FIX): the essential data (space key, role, policy) is loaded —
+          // RENDER the console NOW. The seals list + the group/user dropdown pre-fills are
+          // SECONDARY; awaiting them blocked first paint, so a slow or HANGING Confluence
+          // user/group search (enumerate-operators/enumerate-teams) left the whole console
+          // stuck FOREVER on the "Preparing…" spinner in real Confluence — invisible to the
+          // mock screenshot harness. Load them in the background; each already self-handles errors.
+          setLoading(false);
+          Promise.allSettled([
+            fetchReservedFiles(realmKeyValue, realmIdValue),
+            fetchAllTeams(),
+            fetchInitialOperators(),
+            checkStewardOverrideStatus(),
+            fetchMyClaimedFiles(),
+          ]);
         } else {
           console.error("No realm key found in context.extension.space.key");
           console.error("Extension object:", context?.extension);
