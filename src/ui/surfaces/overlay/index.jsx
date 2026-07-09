@@ -4,6 +4,7 @@ import { invoke, view, router } from "@forge/bridge";
 import { enablePaletteSync } from "../../kit/palette-sync";
 import { flashArtifactSealed, flashArtifactUnsealed } from "../../kit/flash-messages";
 import ThumbnailPreview from "../../kit/ThumbnailPreview";
+import { formatRemaining } from "../../kit/format-duration";
 
 // ── Column definitions ──────────────────────────────────
 const OVERLAY_COLUMNS = [
@@ -923,29 +924,8 @@ const ArtifactControlPanel = () => {
     checkExpiredArtifacts();
   }, [fileList]);
 
-  const formatRemainingTime = (artifact) => {
-    if (!artifact.expiresAt) return "-";
-    const expiresDate = new Date(artifact.expiresAt);
-    const now = new Date();
-    const diffMs = expiresDate - now;
-
-    if (diffMs <= 0) {
-      return "Overdue";
-    }
-
-    const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
-    const diffMinutes = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
-
-    // Roll up to days for long seals so this reads "360d 3h", never "8643h 56m" (nobody
-    // parses time in thousands of hours). Mirrors realm-console's formatRemainingTime.
-    if (diffHours > 24) {
-      return `${Math.floor(diffHours / 24)}d ${diffHours % 24}h`;
-    }
-    if (diffHours > 0) {
-      return `${diffHours}h ${diffMinutes}m`;
-    }
-    return `${diffMinutes}m`;
-  };
+  // Seal countdown — the shared formatter (rolls up to days; "-" when no expiry).
+  const formatRemainingTime = (artifact) => formatRemaining(artifact.expiresAt);
 
   const onReorderColumn = (field) => {
     if (orderByField === field) {
