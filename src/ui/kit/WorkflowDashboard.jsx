@@ -73,7 +73,7 @@ export function WorkflowDashboard({ spaceKey }) {
       <div className="wf-dash-table-wrap">
         <table className="wf-dash-table">
           <thead>
-            <tr><th>Page</th><th>State</th><th>Entered</th><th>Review due</th></tr>
+            <tr><th scope="col">Page</th><th scope="col">State</th><th scope="col">Entered</th><th scope="col">Review due</th></tr>
           </thead>
           <tbody>
             {data.pages.map((p) => (
