@@ -6,6 +6,7 @@ Goal: a comprehensive DEEP browser suite (forge-live-harness, real Confluence on
 - `realm-console-deep.spec.ts` ✅ — loads past spinner (it26 hang guard) + walks all 6 tabs asserting content.
 - `steward-console-deep.spec.ts` ✅ — loads past spinner + walks General/Alerts/Validations + a save.
 - `page-seal-state.spec.ts` ✅ — DEV doc-ribbon banner on the fixture page correctly reports the sealed attachment (env-scoped to dev; ignores the prod install).
+- `realm-reservation-persist.spec.ts` ✅ — change space seal duration → Apply (success banner) → reload → value persists (store-policy → KVS round-trip; guards silent-save-fail + reload-staleness).
 - render smokes (`realm.spec.ts`,`admin-render.spec.ts`) — SHALLOW ("not blank"); keep as quick smoke, do NOT rely on them.
 - REST/hook specs (validation, gate-revert, sealed-section, sealed-media, trash, expiry-sweep) — deep BACKEND, no browser.
 
@@ -24,7 +25,7 @@ install confounds the assertion. (This resolved the it26 "contradictory seal cou
 - ⬜ Access Control: add operator (user picker) → save → reload persists; remove operator; add group (picker) → save; remove group; approve a steward request; deny; the "request steward access" path as a NON-steward.
 - ⬜ Validations: add EACH rule type (required-heading/table/label, max/min-length) → configure → save → reload persists; the C6 override banner (block-floor vs advisory); toggle each enforcement mode; AI config (model/budget/prompts) save; delete a rule.
 - ⬜ Workflow: enable → configure states → add approvers (people picker) + groups → decision rule (any/all/min) → enforce mode → review period → content conditions (rules/AI) → Apply to existing → dashboard counts → Export CSV (verified downloads). Save + reload persistence.
-- ⬜ Reservation Duration: toggle off system-default → set a custom duration → save → reload persists.
+- ✅ Reservation Duration: toggle off system-default → set a custom duration → save → reload persists (`realm-reservation-persist.spec.ts`, it27).
 
 ## OPERATOR / USER journeys (on a page: doc-ribbon pageBanner + inline-panel macro)
 - ⬜ Seal an attachment (inline-panel): seal → chip shows sealed → set duration/comment/labels → unseal → relinquish. As owner vs non-owner.
