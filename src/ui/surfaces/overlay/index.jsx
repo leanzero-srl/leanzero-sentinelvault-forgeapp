@@ -292,7 +292,11 @@ const OverlayArtifactCard = ({ artifact, visibleColumns, onSecure, onRelease, on
     statusText = "Overdue";
   } else if (isSealedByMe) {
     statusClass = "locked-by-me";
-    statusText = "Yours";
+    // it37: converge on the app's dominant ownership term. "Reservation" is the pervasive
+    // metaphor (Reservation Duration, Reservation cleared, "Reserve this file"), and the held
+    // state reads "My Reservation" in the inline-panel + realm-console; only this overlay said
+    // "Yours". Align the outlier (same .status-lozenge.locked-by-me styling as the panel).
+    statusText = "My Reservation";
   } else if (isSealed) {
     statusClass = "locked";
     statusText = "Sealed";
