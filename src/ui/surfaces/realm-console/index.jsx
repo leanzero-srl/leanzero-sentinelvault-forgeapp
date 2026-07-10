@@ -2068,11 +2068,9 @@ const RealmPolicyDashboard = () => {
           <div className="settings-note">
             <strong>Note:</strong> Space Stewards and Confluence Administrators always have these privileges.
           </div>
-
-          {/* Save button */}
-          <div className="action-bar">
-            <button className="btn-primary" onClick={onSaveRealmPrefs}>Apply Configuration</button>
-          </div>
+          {/* it48: removed a duplicate "Apply Configuration" action-bar here — the generic
+              steward action-bar below (activeTab !== validations/workflow) already renders one
+              for this tab, so two identical Save buttons were stacking at the same position. */}
         </div>
       )}
 
