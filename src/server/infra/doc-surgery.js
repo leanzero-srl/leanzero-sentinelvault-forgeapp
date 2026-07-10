@@ -632,6 +632,19 @@ export function getSectionId(node) {
 }
 
 /**
+ * A bodiedExtension MUST have non-empty content — Confluence's ADF validation rejects
+ * `content: []` and 400s the whole-page PUT. Represent an empty sealed body as one empty
+ * paragraph. Shared by buildSealedSectionNode (build) AND the restore pass (triggers.js), so
+ * an empty-baseline section never gets restored to invalid ADF that fails the whole write
+ * (which would drop EVERY sibling section's restore on that page). — it40 (R3-F5)
+ */
+export function nonEmptySectionBody(bodyContent) {
+  return Array.isArray(bodyContent) && bodyContent.length > 0
+    ? bodyContent
+    : [{ type: "paragraph", content: [] }];
+}
+
+/**
  * Build a Sealed Section bodied-extension node wrapping the given body content.
  */
 export function buildSealedSectionNode({ sectionId, extensionKey, bodyContent }) {
@@ -651,9 +664,7 @@ export function buildSealedSectionNode({ sectionId, extensionKey, bodyContent })
         guestParams: { sectionId },
       },
     },
-    content: Array.isArray(bodyContent) && bodyContent.length > 0
-      ? bodyContent
-      : [{ type: "paragraph", content: [] }],
+    content: nonEmptySectionBody(bodyContent),
   };
 }
 
