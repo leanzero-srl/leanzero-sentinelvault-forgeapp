@@ -2,6 +2,7 @@ import {
   canonicalizeAdf,
   hashAdf,
   buildSealedSectionNode,
+  nonEmptySectionBody,
   isSealedSectionKey,
   getSectionId,
   locateBodiedSectionNodes,
@@ -157,6 +158,12 @@ const tableWithMedia = (id) => ({
   eq("it25: mutating the located node restores in place", nestedDoc.content[1].content[0].content[0].content[0].text, "restored-in-place");
   // a genuinely-removed section is still NOT found (→ the removed branch re-inserts it).
   eq("it25: a doc without the section locates nothing", locateBodiedSectionNodes({ type: "doc", content: [para("only text")] }).length, 0);
+
+  // it40 (R3-F5): a bodiedExtension must never get content:[] (invalid ADF → whole-page PUT 400s).
+  eq("it40: empty [] body → one empty paragraph (not invalid empty content)", JSON.stringify(nonEmptySectionBody([])), JSON.stringify([{ type: "paragraph", content: [] }]));
+  eq("it40: null/undefined body → one empty paragraph", JSON.stringify(nonEmptySectionBody(null)), JSON.stringify([{ type: "paragraph", content: [] }]));
+  eq("it40: non-empty body is returned unchanged", JSON.stringify(nonEmptySectionBody([para("keep me")])), JSON.stringify([para("keep me")]));
+  eq("it40: buildSealedSectionNode never emits empty content (empty body → paragraph guard)", buildSealedSectionNode({ sectionId: "s", extensionKey: "a/b/static/sentinel-vault-sealed-section", bodyContent: [] }).content.length, 1);
 }
 
 report("doc-surgery");
