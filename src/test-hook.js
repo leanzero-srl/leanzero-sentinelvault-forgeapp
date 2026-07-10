@@ -27,6 +27,9 @@ import { getWorkflowDashboard, requestTransition } from "./server/capsules/workf
 import { applyAiVerdict } from "./server/capsules/workflow/approvals.js";
 import { mirrorNativeState, readNativeState, clearNativeState } from "./server/capsules/workflow/native-state.js";
 import { revokeEditGrant, listEditGrants } from "./server/capsules/editreq/actions.js";
+// it46: destructive-action permission-matrix seams (Queue/LLM-free modules — safe to import).
+import { deleteArtifact } from "./server/capsules/panels/actions.js";
+import { purgeSealRecord } from "./server/capsules/sealing/actions.js";
 
 const json = (statusCode, body) => ({
   statusCode,
@@ -212,6 +215,16 @@ export async function testStateTrigger(req) {
       }
       if (fn === "pageApprovals") {
         return json(200, { invoked: fn, result: await getPageApprovalStatus(q(req, "pageId")) });
+      }
+      // it46: destructive gated actions — drive the PERMISSION MATRIX with a synthetic actor +
+      // a FAKE att id (denials return before any REST; a fake id 404s on the REST probe → no-op).
+      if (fn === "deleteArtifact") {
+        const r = await deleteArtifact({ payload: { attachmentId: q(req, "att") }, context: { accountId: q(req, "actor") || "harness" } });
+        return json(200, { invoked: fn, result: r });
+      }
+      if (fn === "purgeSealRecord") {
+        const r = await purgeSealRecord({ payload: { attachmentId: q(req, "att") }, context: { accountId: q(req, "actor") || "harness" } });
+        return json(200, { invoked: fn, result: r });
       }
       return json(400, { error: `unknown fn=${fn}` });
     }

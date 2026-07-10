@@ -222,7 +222,7 @@ const unlabelArtifact = async (req) => {
  * If sealed, removes the seal record first to prevent auto-restore triggers.
  * Conditional on global setting `allowAttachmentDelete`
  */
-const deleteArtifact = async (req) => {
+export const deleteArtifact = async (req) => {
   const { attachmentId } = req.payload;
 
   if (!attachmentId) {
