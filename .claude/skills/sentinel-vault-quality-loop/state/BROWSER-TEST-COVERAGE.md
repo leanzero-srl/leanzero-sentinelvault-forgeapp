@@ -45,7 +45,7 @@ install confounds the assertion. (This resolved the it26 "contradictory seal cou
 - ⬜ BOUNDARY inputs: 0 / negative / huge seal duration + token budget; very long labels; unicode/emoji in rule labels; a rule with no config.
 - ⬜ RESPONSIVE: 360/768px on the consoles (it15 — re-verify LIVE, the mock proved built-bundle only).
 - ⬜ ROLE views: steward vs non-steward vs org-admin render the correct tabs/controls.
-- 🟡 ACCESSIBILITY (was workflow-only, it21/22): FIXED it35 — the overlay's sort-picker was mouse-only (options were clickable divs, no keyboard/role) → now role=listbox/option + tabIndex + Enter/Space; close button was named "×" → aria-label. Live-verified. STILL ⬜: a11y sweep of the inline-panel + doc-ribbon (icon-only buttons, custom dropdowns, focus), and the overlay column-picker keyboard nav (native checkboxes are OK, but arrow-key roving not implemented).
+- 🟡 ACCESSIBILITY (was workflow-only, it21/22): FIXED it35 (overlay: sort-picker keyboard + close aria-label) + it36 (inline-panel: label +/× buttons got aria-labels — symbol glyphs were the accessible name; live-verified add="Add a label"). doc-ribbon AUDITED CLEAN it36 (buttons have text or it2 menu roles; no mouse-only divs). STILL ⬜: the overlay column-picker arrow-key roving (native checkboxes work, but no roving focus); a scripted a11y assertion isn't in the permanent suite yet (verified ad-hoc each time) — consider a permanent `a11y.spec.ts`.
 - ⬜ DEPLOY-STATE guard: assert the served title is "Space Preferences" (catches un-upgraded install / stale deploy — it26).
 
 ## FINDINGS from the live hunt (it26+)
