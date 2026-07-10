@@ -28,7 +28,7 @@ import { resolveApproverIds, applyAiVerdict } from "./capsules/workflow/approval
 import { postEnforceComment } from "./infra/approval-blueprints.js";
 import { isAccountStewardAsApp } from "./shared/steward-checks.js";
 import { postValidationComment } from "./infra/validation-blueprints.js";
-import { readDocBody, readDocBodyAtVersion, writeDocBody, collectMediaFileIds, extractMediaSingleNodes, spliceMediaNodes, locateBodiedSectionNodes, spliceSectionWrapper, hashAdf, canonicalizeAdf } from "./infra/doc-surgery.js";
+import { readDocBody, readDocBodyAtVersion, writeDocBody, collectMediaFileIds, extractMediaSingleNodes, spliceMediaNodes, locateBodiedSectionNodes, spliceSectionWrapper, hashAdf, canonicalizeAdf, nonEmptySectionBody } from "./infra/doc-surgery.js";
 
 // --- Helpers ---
 
@@ -568,8 +568,11 @@ async function restoreSealedSectionsPass(ctx, sectionSeals) {
     // Body edited by a non-authorized user — restore the sealed body into EVERY differing copy,
     // mutating the exact nodes we inspected (no first-vs-last desync).
     if (snapshot?.bodyContent) {
+      // it40 (R3-F5): an empty-baseline snapshot ([]) is truthy, so guard it — restoring
+      // content:[] is invalid ADF that 400s the whole-page PUT, dropping EVERY sibling
+      // section's restore on this page. nonEmptySectionBody → one empty paragraph.
       for (const w of changedWrappers) {
-        w.node.content = JSON.parse(JSON.stringify(snapshot.bodyContent));
+        w.node.content = nonEmptySectionBody(JSON.parse(JSON.stringify(snapshot.bodyContent)));
       }
       ctx.changed = true;
       ctx.notifications.push({
