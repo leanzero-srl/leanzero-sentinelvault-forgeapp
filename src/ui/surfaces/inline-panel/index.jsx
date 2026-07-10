@@ -70,6 +70,7 @@ const LabelPill = ({ label, onRemove }) => (
         className="label-chip-remove"
         onClick={(e) => { e.stopPropagation(); onRemove(label.name); }}
         title="Remove this label from the file"
+        aria-label={`Remove label ${label.name}`}
       >
         ×
       </button>
@@ -141,6 +142,7 @@ const LabelCluster = ({ labels, artifactId, onRefresh }) => {
           onClick={() => setAdding(true)}
           title="Add a label to organize this file"
           disabled={busy}
+          aria-label="Add a label"
         >
           +
         </button>
