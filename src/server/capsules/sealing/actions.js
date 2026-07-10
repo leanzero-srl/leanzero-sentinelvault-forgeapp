@@ -973,7 +973,7 @@ const restoreSealedArtifact = async (req) => {
  * Purge an attachment permanently and clean up all seal state.
  * This is a destructive action — the attachment cannot be recovered.
  */
-const purgeSealRecord = async (req) => {
+export const purgeSealRecord = async (req) => {
   const { attachmentId } = req.payload;
   const operatorAccountId = req.context.accountId;
   const realmKey =
