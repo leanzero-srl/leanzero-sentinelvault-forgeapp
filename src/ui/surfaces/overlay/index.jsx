@@ -61,6 +61,8 @@ const ColumnPicker = ({ columns, visible, onChange, isOpen, onToggle }) => {
         className="column-picker-trigger"
         onClick={() => onToggle(!isOpen)}
         title="Choose which columns to display"
+        aria-haspopup="true"
+        aria-expanded={isOpen}
       >
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <circle cx="12" cy="12" r="3" />
@@ -225,20 +227,26 @@ const SortPicker = ({ orderField, orderDir, onSort }) => {
 
   return (
     <div className="sort-picker" ref={ref}>
-      <button className="column-picker-trigger" onClick={() => setIsOpen(!isOpen)} title="Change sort order">
+      <button className="column-picker-trigger" onClick={() => setIsOpen(!isOpen)} title="Change sort order" aria-haspopup="listbox" aria-expanded={isOpen} aria-label="Change sort order">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <path d="M11 5h10M11 9h7M11 13h4M3 17l3 3 3-3M6 18V4" />
         </svg>
         {currentLabel} {arrow}
       </button>
       {isOpen && (
-        <div className="column-picker-dropdown">
+        <div className="column-picker-dropdown" role="listbox" aria-label="Sort files by">
           {fields.map((f) => (
+            // a11y (it35): the sort options were mouse-only clickable divs (no role/tabIndex/key
+            // handler) → keyboard + screen-reader users couldn't sort. Focusable option semantics.
             <div
               key={f.key}
+              role="option"
+              aria-selected={f.key === orderField}
+              tabIndex={0}
               className={`column-picker-option ${f.key === orderField ? "selected" : ""}`}
               style={{ cursor: "pointer", fontWeight: f.key === orderField ? 600 : 400 }}
               onClick={() => { onSort(f.key); setIsOpen(false); }}
+              onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onSort(f.key); setIsOpen(false); } }}
             >
               <span>{f.label}</span>
               {f.key === orderField && <span style={{ marginLeft: "auto", fontSize: "11px" }}>{arrow}</span>}
@@ -986,7 +994,7 @@ const ArtifactControlPanel = () => {
     <div className="modal-container">
       <div className="modal-header">
         <h1 className="modal-title">Sentinel Vault</h1>
-        <button onClick={onDismiss} className="modal-close" title="Close Sentinel Vault overlay">
+        <button onClick={onDismiss} className="modal-close" title="Close Sentinel Vault overlay" aria-label="Close Sentinel Vault overlay">
           ×
         </button>
       </div>
