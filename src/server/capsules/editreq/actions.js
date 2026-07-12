@@ -180,6 +180,8 @@ const approveEditRequest = async (req) => {
   const { seal, authorized } = await loadSealForOwnerAction(attachmentId, accountId);
   if (!seal) return { success: false, reason: "Seal not found" };
   if (!authorized) return { success: false, reason: "Not the seal owner" };
+  // it54: an EXPIRED seal is inert — approving it would only mint a dead, never-reaped grant. Reject.
+  if (seal.expiresAt && new Date(seal.expiresAt).getTime() <= Date.now()) return { success: false, reason: "This seal has expired" };
 
   const requestKey = `edit-request-${attachmentId}-${requesterAccountId}`;
   const request = await kvs.get(requestKey);
@@ -362,6 +364,10 @@ export const approveSectionEdit = async (req) => {
   const { seal, authorized } = await loadSectionForOwnerAction(sectionId, accountId);
   if (!seal) return { success: false, reason: "Section not found" };
   if (!authorized) return { success: false, reason: "Not the section owner" };
+  // it54: an EXPIRED seal is inert (the section is no longer protected) — approving it would only
+  // mint a dead, never-reaped grant (grant.expiresAt in the past → getActiveSectionEditGrant returns
+  // null). Reject instead of leaking a zombie record.
+  if (seal.expiresAt && new Date(seal.expiresAt).getTime() <= Date.now()) return { success: false, reason: "This section's seal has expired" };
 
   const requestKey = `section-edit-request-${sectionId}-${requesterAccountId}`;
   const request = await kvs.get(requestKey);
