@@ -27,6 +27,14 @@ import { getWorkflowDashboard, requestTransition } from "./server/capsules/workf
 import { applyAiVerdict } from "./server/capsules/workflow/approvals.js";
 import { mirrorNativeState, readNativeState, clearNativeState } from "./server/capsules/workflow/native-state.js";
 import { revokeEditGrant, listEditGrants } from "./server/capsules/editreq/actions.js";
+// #6: section edit-access request/approve/deny seams (editreq is Queue/LLM-free — import-safe).
+import {
+  requestSectionEdit,
+  checkSectionEdit,
+  listSectionEditRequests,
+  approveSectionEdit,
+  denySectionEdit,
+} from "./server/capsules/editreq/actions.js";
 // it46: destructive-action permission-matrix seams (Queue/LLM-free modules — safe to import).
 import { deleteArtifact } from "./server/capsules/panels/actions.js";
 import { purgeSealRecord } from "./server/capsules/sealing/actions.js";
@@ -161,6 +169,28 @@ export async function testStateTrigger(req) {
       }
       if (fn === "revokeEditGrant") {
         const r = await revokeEditGrant({ payload: { attachmentId: q(req, "att"), editorAccountId: q(req, "editor") }, context: { accountId: q(req, "actor") } });
+        return json(200, { invoked: fn, result: r });
+      }
+      // #6: section edit-access flow — drive the request/approve/deny resolvers with synthetic
+      // actors (the owner/requester paths need distinct accountIds a single REST user can't supply).
+      if (fn === "requestSectionEdit") {
+        const r = await requestSectionEdit({ payload: { sectionId: q(req, "section"), reason: q(req, "reason") }, context: { accountId: q(req, "actor") } });
+        return json(200, { invoked: fn, result: r });
+      }
+      if (fn === "checkSectionEdit") {
+        const r = await checkSectionEdit({ payload: { sectionId: q(req, "section") }, context: { accountId: q(req, "actor") } });
+        return json(200, { invoked: fn, result: r });
+      }
+      if (fn === "listSectionEditRequests") {
+        const r = await listSectionEditRequests({ payload: { sectionId: q(req, "section") }, context: { accountId: q(req, "actor") } });
+        return json(200, { invoked: fn, result: r });
+      }
+      if (fn === "approveSectionEdit") {
+        const r = await approveSectionEdit({ payload: { sectionId: q(req, "section"), requesterAccountId: q(req, "requester") }, context: { accountId: q(req, "actor") } });
+        return json(200, { invoked: fn, result: r });
+      }
+      if (fn === "denySectionEdit") {
+        const r = await denySectionEdit({ payload: { sectionId: q(req, "section"), requesterAccountId: q(req, "requester") }, context: { accountId: q(req, "actor") } });
         return json(200, { invoked: fn, result: r });
       }
       if (fn === "nativeState") {
