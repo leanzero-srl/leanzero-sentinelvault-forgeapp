@@ -15,7 +15,7 @@ const loadBulletinToggles = async () => {
 /**
  * Get recent dispatches for page banner
  */
-const recentDispatches = async (req) => {
+export const recentDispatches = async (req) => {
   const { pageId } = req.payload;
 
   try {
@@ -44,7 +44,7 @@ const recentDispatches = async (req) => {
 /**
  * Get dispatches for current operator
  */
-const operatorDispatches = async (req) => {
+export const operatorDispatches = async (req) => {
   const operatorAccountId = req.context.accountId;
 
   try {
@@ -74,7 +74,7 @@ const operatorDispatches = async (req) => {
 /**
  * Acknowledge (dismiss) a specific dispatch
  */
-const acknowledgeDispatch = async (req) => {
+export const acknowledgeDispatch = async (req) => {
   const { notificationId } = req.payload;
 
   try {
@@ -102,7 +102,7 @@ const acknowledgeDispatch = async (req) => {
 /**
  * Request notification when artifact is unsealed (watch)
  */
-const watchArtifact = async (req) => {
+export const watchArtifact = async (req) => {
   const { attachmentId } = req.payload;
   const { accountId } = req.context;
 
@@ -134,7 +134,7 @@ const watchArtifact = async (req) => {
 /**
  * Check if operator has requested notification for an artifact
  */
-const checkWatch = async (req) => {
+export const checkWatch = async (req) => {
   const { attachmentId } = req.payload;
   const { accountId } = req.context;
 
@@ -158,7 +158,7 @@ const checkWatch = async (req) => {
 /**
  * Cancel watch request for an artifact
  */
-const unwatchArtifact = async (req) => {
+export const unwatchArtifact = async (req) => {
   const { attachmentId } = req.payload;
   const { accountId } = req.context;
 
@@ -211,7 +211,7 @@ const flushOperatorDispatches = async (req) => {
 /**
  * List breach dispatches for the current operator
  */
-const listBreachDispatches = async (req) => {
+export const listBreachDispatches = async (req) => {
   const operatorAccountId = req.context.accountId;
 
   try {
