@@ -35,6 +35,17 @@ import {
   approveSectionEdit,
   denySectionEdit,
 } from "./server/capsules/editreq/actions.js";
+// #13: watch/bulletins capsule seams (bulletins/actions.js → @forge/kvs + bulletin-flags → baseline;
+// all Queue/LLM-free → it17-safe).
+import {
+  watchArtifact,
+  checkWatch,
+  unwatchArtifact,
+  acknowledgeDispatch,
+  operatorDispatches,
+  recentDispatches,
+  listBreachDispatches,
+} from "./server/capsules/bulletins/actions.js";
 // it46: destructive-action permission-matrix seams (Queue/LLM-free modules — safe to import).
 import { deleteArtifact } from "./server/capsules/panels/actions.js";
 import { purgeSealRecord } from "./server/capsules/sealing/actions.js";
@@ -191,6 +202,35 @@ export async function testStateTrigger(req) {
       }
       if (fn === "denySectionEdit") {
         const r = await denySectionEdit({ payload: { sectionId: q(req, "section"), requesterAccountId: q(req, "requester") }, context: { accountId: q(req, "actor") } });
+        return json(200, { invoked: fn, result: r });
+      }
+      // #13: watch / bulletin-dispatch flow (synthetic actor + attachment/notification ids).
+      if (fn === "watchArtifact") {
+        const r = await watchArtifact({ payload: { attachmentId: q(req, "att") }, context: { accountId: q(req, "actor") } });
+        return json(200, { invoked: fn, result: r });
+      }
+      if (fn === "checkWatch") {
+        const r = await checkWatch({ payload: { attachmentId: q(req, "att") }, context: { accountId: q(req, "actor") } });
+        return json(200, { invoked: fn, result: r });
+      }
+      if (fn === "unwatchArtifact") {
+        const r = await unwatchArtifact({ payload: { attachmentId: q(req, "att") }, context: { accountId: q(req, "actor") } });
+        return json(200, { invoked: fn, result: r });
+      }
+      if (fn === "acknowledgeDispatch") {
+        const r = await acknowledgeDispatch({ payload: { notificationId: q(req, "nid") }, context: { accountId: q(req, "actor") } });
+        return json(200, { invoked: fn, result: r });
+      }
+      if (fn === "operatorDispatches") {
+        const r = await operatorDispatches({ payload: {}, context: { accountId: q(req, "actor") } });
+        return json(200, { invoked: fn, result: r });
+      }
+      if (fn === "recentDispatches") {
+        const r = await recentDispatches({ payload: { pageId: q(req, "pageId") }, context: { accountId: q(req, "actor") } });
+        return json(200, { invoked: fn, result: r });
+      }
+      if (fn === "listBreachDispatches") {
+        const r = await listBreachDispatches({ payload: {}, context: { accountId: q(req, "actor") } });
         return json(200, { invoked: fn, result: r });
       }
       if (fn === "nativeState") {
