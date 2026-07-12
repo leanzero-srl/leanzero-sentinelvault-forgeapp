@@ -64,6 +64,20 @@ export function mergeEffectiveRules(globalRules, spaceRules) {
   return [...floor, ...space.filter((r) => !floorIds.has(r.id))];
 }
 
+// audit C6 (compliance floor) EXTENDED from rules to enforcement MODES (it50): the org's global
+// gate/revert/advisory ALWAYS apply — a space may only STRENGTHEN (turn a mode ON), never turn OFF
+// a mode the org mandated (else an advisory-only space silently defeats an org-mandated blocking
+// rule, the very thing mergeEffectiveRules preserves). All three modes are a UNION of global+space.
+export function mergeEffectiveModes(globalModes, spaceModes) {
+  const g = globalModes || { advisory: true, gate: false, revert: false };
+  const s = spaceModes || null;
+  return {
+    advisory: !!(g.advisory || (s && s.advisory)),
+    gate: !!(g.gate || (s && s.gate)),
+    revert: !!(g.revert || (s && s.revert)),
+  };
+}
+
 export async function resolveEffectiveConfig(spaceKey) {
   const global = await kvs.get("validation-config-global");
   if (!global || global.enabled !== true) return { enabled: false };
@@ -72,9 +86,14 @@ export async function resolveEffectiveConfig(spaceKey) {
   if (spaceKey) {
     space = await kvs.get(`validation-config-space-${sanitize(spaceKey)}`);
   }
+  // it50: a DISABLED space config must not alter global behavior AT ALL — treat it as no config
+  // so the space inherits full global enforcement (modes AND rules). Fixes the it49 shadow bug
+  // where a dormant `enabled:false` shell (persisted just by opening the console Validations tab)
+  // silently downgraded global gate/revert/advisory.
+  if (space && space.enabled === false) space = null;
 
   const rules = mergeEffectiveRules(global.rules, space?.rules);
-  const modes = space?.modes || global.modes || { advisory: true, gate: false, revert: false };
+  const modes = mergeEffectiveModes(global.modes, space?.modes);
   const ai = space?.ai && space.ai.enabled !== undefined ? space.ai : (global.ai || {});
 
   return { enabled: true, modes, rules, ai };

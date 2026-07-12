@@ -3,6 +3,7 @@ import {
   buildValidationPrompt,
   severityRank,
   mergeEffectiveRules,
+  mergeEffectiveModes,
 } from "../src/server/capsules/validations/logic.js";
 import { computeSectionRange } from "../src/server/capsules/section-seals/logic.js";
 import { eq, ok, report } from "./_assert.mjs";
@@ -89,6 +90,25 @@ eq("non-heading seals single block", computeSectionRange(content, 1), { start: 1
   const collide = mergeEffectiveRules(global, [{ id: "g-pii", severity: "warn", type: "min-length" }]);
   eq("C6 floor id-collision keeps the global block rule", collide.filter((r) => r.id === "g-pii").length, 1);
   eq("C6 floor id-collision: kept rule is still block", collide.find((r) => r.id === "g-pii").severity, "block");
+}
+
+// it50: C6 compliance floor EXTENDED to enforcement MODES — a space may only STRENGTHEN, never
+// weaken, the org's modes; all three modes are a UNION of global + space.
+{
+  const M = (advisory, gate, revert) => ({ advisory, gate, revert });
+  eq("modes: null/null -> safe advisory default", mergeEffectiveModes(null, null), M(true, false, false));
+  eq("modes: no space -> global passthrough", mergeEffectiveModes(M(false, true, true), null), M(false, true, true));
+  // CORE it49/it50 bug: an advisory-only space CANNOT drop the org's mandated gate/revert
+  eq("modes: advisory-only space can't drop global gate/revert", mergeEffectiveModes(M(false, true, true), M(true, false, false)), M(true, true, true));
+  // a space MAY strengthen a global advisory-only mandate by adding gate/revert
+  eq("modes: space can strengthen global advisory-only", mergeEffectiveModes(M(true, false, false), M(false, true, true)), M(true, true, true));
+  // ADVISORY = UNION: a space CANNOT suppress the org's advisory comments
+  eq("modes: space can't suppress global advisory", mergeEffectiveModes(M(true, false, false), M(false, false, false)), M(true, false, false));
+  eq("modes: space can add advisory to global", mergeEffectiveModes(M(false, false, false), M(true, false, false)), M(true, false, false));
+  // defensive: a malformed/partial space object keeps the global floor intact, no crash
+  eq("modes: empty space object keeps the global floor", mergeEffectiveModes(M(false, true, true), {}), M(false, true, true));
+  // defensive: a partial global (missing revert key) coerces to false, no NaN/undefined leak
+  eq("modes: partial global coerces missing keys to false", mergeEffectiveModes({ advisory: true, gate: false }, null), M(true, false, false));
 }
 
 report("validations-logic");

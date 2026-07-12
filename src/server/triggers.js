@@ -890,7 +890,10 @@ async function runValidationPhase(event, pageId, atlassianId) {
   }
 
   // Failed.
-  if (modes.advisory) {
+  // it50: when revert mode is also on, DON'T post the pre-revert "review and update" advisory here —
+  // the revert path below posts the single coherent "was reverted / recover from history" comment.
+  // (Otherwise the author sees a "review and update" comment for content that was just rolled back.)
+  if (modes.advisory && !modes.revert) {
     try { await postValidationComment({ pageId, editorAccountId: atlassianId, violations, reverted: false }); }
     catch (e) { console.error("[VALIDATE] advisory comment failed:", e); }
   }
@@ -929,12 +932,16 @@ async function runValidationPhase(event, pageId, atlassianId) {
           break;
         } catch (e) { console.error("[VALIDATE] revert error:", e); break; }
       }
-      if (reverted && !modes.advisory) {
+      // it50: always surface the reverted:true comment (with the history recovery link) on a
+      // successful revert — even under advisory mode (the pre-revert advisory is suppressed above),
+      // so the author always learns their edit was rolled back and how to recover it.
+      if (reverted) {
         try { await postValidationComment({ pageId, editorAccountId: atlassianId, violations, reverted: true, historyUrl }); }
         catch (_) { /* best effort */ }
       }
-    } else if (!modes.advisory) {
-      // No compliant version to revert to (e.g. v1) — fall back to flagging.
+    } else {
+      // No compliant version to revert to (e.g. v1) — flag once. The pre-revert advisory is
+      // suppressed under revert mode, so this is the author's single notice. it50.
       try { await postValidationComment({ pageId, editorAccountId: atlassianId, violations, reverted: false }); }
       catch (_) { /* best effort */ }
     }
