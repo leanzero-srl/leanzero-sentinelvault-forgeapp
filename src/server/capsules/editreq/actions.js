@@ -288,7 +288,7 @@ async function loadSectionForOwnerAction(sectionId, accountId) {
   return { seal, authorized };
 }
 
-const requestSectionEdit = async (req) => {
+export const requestSectionEdit = async (req) => {
   const { sectionId, reason } = req.payload || {};
   const accountId = req.context.accountId;
   if (!sectionId || !accountId) return { success: false, reason: "Missing context" };
@@ -326,7 +326,7 @@ const requestSectionEdit = async (req) => {
   return { success: true };
 };
 
-const checkSectionEdit = async (req) => {
+export const checkSectionEdit = async (req) => {
   const { sectionId } = req.payload || {};
   const accountId = req.context.accountId;
   if (!sectionId || !accountId) return { status: "none" };
@@ -342,7 +342,7 @@ const checkSectionEdit = async (req) => {
   return { status: "none" };
 };
 
-const listSectionEditRequests = async (req) => {
+export const listSectionEditRequests = async (req) => {
   const { sectionId } = req.payload || {};
   const accountId = req.context.accountId;
   if (!sectionId) return { requests: [] };
@@ -352,7 +352,7 @@ const listSectionEditRequests = async (req) => {
   return { requests: (results || []).map(({ value }) => value).filter((v) => v?.status === "pending") };
 };
 
-const approveSectionEdit = async (req) => {
+export const approveSectionEdit = async (req) => {
   const { sectionId, requesterAccountId } = req.payload || {};
   const accountId = req.context.accountId;
   if (!sectionId || !requesterAccountId) return { success: false, reason: "Missing params" };
@@ -375,7 +375,7 @@ const approveSectionEdit = async (req) => {
   return { success: true };
 };
 
-const denySectionEdit = async (req) => {
+export const denySectionEdit = async (req) => {
   const { sectionId, requesterAccountId } = req.payload || {};
   const accountId = req.context.accountId;
   if (!sectionId || !requesterAccountId) return { success: false, reason: "Missing params" };
