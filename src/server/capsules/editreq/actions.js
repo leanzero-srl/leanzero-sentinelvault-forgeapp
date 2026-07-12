@@ -183,6 +183,9 @@ const approveEditRequest = async (req) => {
 
   const requestKey = `edit-request-${attachmentId}-${requesterAccountId}`;
   const request = await kvs.get(requestKey);
+  // it51: approve only an EXISTING request (parity with denyEditRequest) — otherwise an owner/steward
+  // could mint an edit grant for a user who never requested, with no request/audit trail.
+  if (!request) return { success: false, reason: "Request not found" };
   const editorName = request?.requesterName || "User";
 
   const grant = {
@@ -362,6 +365,9 @@ export const approveSectionEdit = async (req) => {
 
   const requestKey = `section-edit-request-${sectionId}-${requesterAccountId}`;
   const request = await kvs.get(requestKey);
+  // it51: approve only an EXISTING request (parity with denySectionEdit) — otherwise an owner/steward
+  // could mint a grant for a user who never requested, with no request/audit trail.
+  if (!request) return { success: false, reason: "Request not found" };
   const grant = { sectionId, editorAccountId: requesterAccountId, editorName: request?.requesterName || "User", grantedBy: accountId, grantedAt: new Date().toISOString(), expiresAt: seal.expiresAt || null };
   const grantKey = `section-edit-grant-${sectionId}-${requesterAccountId}`;
   const expiryMs = seal.expiresAt ? new Date(seal.expiresAt).getTime() : 0;
