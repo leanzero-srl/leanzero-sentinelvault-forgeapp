@@ -560,7 +560,16 @@ async function restoreSealedSectionsPass(ctx, sectionSeals) {
           wrapperNode: JSON.parse(JSON.stringify(edited.node)),
           bodyContent: newBody, hash: newHash, version: null, originalIndex: edited.originalIndex,
         });
-        console.warn(`[SECTION] Allowed approved edit of section ${seal.sectionId} by ${ctx.atlassianId} — re-baselined`);
+        // it52: converge any OTHER same-sectionId copies to the accepted body + write the page, so a
+        // duplicate copy tampered in the SAME save can't survive undetected (and can't later be
+        // promoted to the seal baseline once the accepted copy matches). Parity with the restore
+        // branch below, which loops ALL changedWrappers for exactly this duplicate-tamper vector
+        // (it24/it40). Single-copy edits (the common case) skip the loop → behavior unchanged.
+        for (let ci = 1; ci < changedWrappers.length; ci++) {
+          changedWrappers[ci].node.content = nonEmptySectionBody(JSON.parse(JSON.stringify(newBody)));
+          ctx.changed = true;
+        }
+        console.warn(`[SECTION] Allowed approved edit of section ${seal.sectionId} by ${ctx.atlassianId} — re-baselined (${changedWrappers.length} cop${changedWrappers.length === 1 ? "y" : "ies"})`);
       } catch (e) { console.error("[SECTION] re-baseline failed:", e); }
       continue;
     }
