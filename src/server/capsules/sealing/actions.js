@@ -2,7 +2,7 @@ import { asUser, asApp, route } from "@forge/api";
 import { kvs, WhereConditions } from "@forge/kvs";
 
 // Import from shared
-import { BASELINE_HOLD_SPAN } from "../../shared/baseline.js";
+import { BASELINE_HOLD_SPAN, sanitizeHoldDuration } from "../../shared/baseline.js";
 import { restampIfEnforced } from "../workflow/logic.js";
 import { authorizeSteward } from "../../shared/steward-checks.js";
 import { resolveBulletinToggles } from "../../shared/bulletin-flags.js";
@@ -187,8 +187,12 @@ const sealArtifact = async (req) => {
         reason: "Attachment is already sealed by another user",
       };
     }
-    // Expired and not yet swept — clear it and fall through to re-seal.
+    // Expired and not yet swept — clear it AND sweep the prior owner's edit-access records (it55;
+    // parity with every other teardown — unseal/purge). editreq records carry no TTL, so without
+    // this a stale denied/pending edit-request from the old owner leaks into the new owner's fresh
+    // seal (blocking a requester, or surfacing a phantom request the new owner could approve).
     await kvs.delete(`protection-${attachmentId}`).catch(() => {});
+    await sweepEditAccess(attachmentId).catch(() => {});
   }
 
   let realmKey =
@@ -203,7 +207,9 @@ const sealArtifact = async (req) => {
     req.context.extension?.content?.id ||
     req.context.extension?.content?.content?.id;
 
-  let holdPeriod = req.payload.lockDuration || BASELINE_HOLD_SPAN;
+  // it55: sanitize the API-only lockDuration (negative → past expiresAt / "sealed" but unprotected;
+  // string/NaN/huge → Date crash). The policy chain below still overrides this default.
+  let holdPeriod = sanitizeHoldDuration(req.payload.lockDuration, BASELINE_HOLD_SPAN);
 
   if (realmKey) {
     const sanitizedRealmKey = realmKey.replace(/[^a-zA-Z0-9:._\s-#]/g, "_");
