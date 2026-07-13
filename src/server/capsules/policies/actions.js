@@ -94,28 +94,26 @@ const storePolicy = async (req) => {
         `Auto-unseal was paused for ${Math.round(pauseDuration / 1000)} seconds`,
       );
 
-      // Extend all seal expiry times by pause duration
-      const { results: seals } = await kvs
-        .query()
-        .where("key", WhereConditions.beginsWith("protection-"))
-        .limit(100)
-        .getMany();
-
-      for (const { key: sealKey, value } of seals) {
-        if (value && value.expiresAt) {
-          const oldExpiresAt = new Date(value.expiresAt).getTime();
-          const newExpiresAt = oldExpiresAt + pauseDuration;
-
-          await kvs.set(sealKey, {
-            ...value,
-            expiresAt: new Date(newExpiresAt).toISOString(),
-          });
-
-          console.info(
-            `Extended seal ${sealKey.replace("protection-", "")}: expiresAt += ${Math.round(pauseDuration / 1000)}s`,
-          );
+      // Extend all seal expiry times by the pause duration.
+      // it55: cursor-paginate — a single limit(100) getMany() silently missed every seal beyond the
+      // first 100, so on an instance with >100 seals those would keep their original expiresAt and
+      // auto-unseal early by the whole pause duration. Loop the cursor (same pattern as the expiry
+      // sweep / recurring-nudge, triggers.js). Cap iterations as a runaway guard.
+      let sq = kvs.query().where("key", WhereConditions.beginsWith("protection-")).limit(100);
+      let extended = 0;
+      for (let si = 0; si < 200; si++) {
+        const { results: seals, nextCursor } = await sq.getMany();
+        for (const { key: sealKey, value } of seals || []) {
+          if (value && value.expiresAt) {
+            const newExpiresAt = new Date(value.expiresAt).getTime() + pauseDuration;
+            await kvs.set(sealKey, { ...value, expiresAt: new Date(newExpiresAt).toISOString() });
+            extended++;
+          }
         }
+        if (!nextCursor) break;
+        sq = kvs.query().where("key", WhereConditions.beginsWith("protection-")).limit(100).cursor(nextCursor);
       }
+      console.info(`Auto-unseal resume: extended ${extended} seal(s) by ${Math.round(pauseDuration / 1000)}s`);
 
       data.autoUnlockPausedAt = null;
     }

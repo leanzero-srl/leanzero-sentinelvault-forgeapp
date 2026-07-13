@@ -35,3 +35,18 @@ export const WEBHOOK_STORAGE_KEY = "confluence-webhook-id";
  * Default seal duration in seconds (2 days / 48 hours)
  */
 export const BASELINE_HOLD_SPAN = 2 * 24 * 60 * 60;
+
+/**
+ * it55: sanitize a (dev/API-only) `lockDuration` payload into a safe seal hold span (seconds).
+ * The seal UI never sends lockDuration, but a direct `seal-artifact` invocation could pass a
+ * negative value (→ a PAST expiresAt: a "sealed" record with ZERO protection, returned as success),
+ * a non-numeric string (→ NaN → `new Date(...).toISOString()` throws a 500), or an absurd value
+ * (→ exceeds the JS Date ±8.64e15ms range → also throws). Accept only a positive, finite, sane
+ * number of seconds; otherwise fall back to the baseline hold span.
+ */
+export function sanitizeHoldDuration(raw, baseline = BASELINE_HOLD_SPAN) {
+  const MAX_HOLD_SECONDS = 100 * 365 * 24 * 60 * 60; // 100 years — safely inside the Date range
+  return typeof raw === "number" && Number.isFinite(raw) && raw > 0 && raw <= MAX_HOLD_SECONDS
+    ? Math.floor(raw)
+    : baseline;
+}
