@@ -621,10 +621,9 @@ html[data-color-mode="dark"] .status-lozenge.trashed {
   border-color: var(--sv-interactive-danger);
 }
 .action-btn.delete:hover:not(:disabled) {
-  background: rgba(220, 38, 38, 0.08);
-}
-html[data-color-mode="dark"] .action-btn.delete:hover:not(:disabled) {
-  background: rgba(248, 113, 113, 0.1);
+  /* it57: solid danger hover (rule-b: no faded tints); the danger token is theme-reactive */
+  background: var(--sv-interactive-danger);
+  color: #ffffff;
 }
 .action-btn.purge {
   background: none;
@@ -632,10 +631,9 @@ html[data-color-mode="dark"] .action-btn.delete:hover:not(:disabled) {
   border-color: var(--sv-interactive-danger);
 }
 .action-btn.purge:hover:not(:disabled) {
-  background: rgba(220, 38, 38, 0.08);
-}
-html[data-color-mode="dark"] .action-btn.purge:hover:not(:disabled) {
-  background: rgba(248, 113, 113, 0.1);
+  /* it57: solid danger hover (rule-b: no faded tints); the danger token is theme-reactive */
+  background: var(--sv-interactive-danger);
+  color: #ffffff;
 }
 
 /* Inline confirmation bar */
