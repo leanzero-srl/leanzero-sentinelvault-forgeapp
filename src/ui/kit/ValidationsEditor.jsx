@@ -238,7 +238,11 @@ export default function ValidationsEditor({ scope = "global", spaceKey = null })
             <SettingsRow label="Model" description="Only Claude Haiku is offered to control token cost.">
               <MiniSelect
                 value={cfg.ai.model}
-                options={(aiModels.length ? aiModels : [cfg.ai.model]).map((m) => ({ value: m, label: m }))}
+                options={(aiModels.length ? aiModels : [cfg.ai.model]).map((m) => ({
+                  value: m,
+                  // it57: friendly label instead of the raw model id (e.g. "claude-haiku-4-5-20251001")
+                  label: /haiku/i.test(m) ? "Claude Haiku (low cost)" : /sonnet/i.test(m) ? "Claude Sonnet" : /opus/i.test(m) ? "Claude Opus" : m,
+                }))}
                 onChange={(v) => updateAi({ model: v })}
               />
             </SettingsRow>

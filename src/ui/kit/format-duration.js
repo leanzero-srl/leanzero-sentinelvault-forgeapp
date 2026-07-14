@@ -18,3 +18,16 @@ export function formatRemaining(expiresAt) {
   if (hours > 0) return `${hours}h ${minutes}m`;
   return `${minutes}m`;
 }
+
+// it57: human-readable rendering of a fixed DURATION given in whole hours (for config INPUTS like the
+// seal hold period), so a steward setting "720" sees "= 30 days" instead of parsing raw hours.
+// Not a countdown (see formatRemaining). 720 → "30 days", 48 → "2 days", 27 → "1 day 3h", 6 → "6 hours".
+export function formatDurationHours(hours) {
+  const h = Number(hours);
+  if (!Number.isFinite(h) || h <= 0) return "";
+  if (h < 24) return `${h} hour${h === 1 ? "" : "s"}`;
+  const days = Math.floor(h / 24);
+  const rem = Math.round(h % 24);
+  const dPart = `${days} day${days === 1 ? "" : "s"}`;
+  return rem === 0 ? dPart : `${dPart} ${rem}h`;
+}
