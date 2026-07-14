@@ -3,6 +3,7 @@ import { kvs, WhereConditions } from "@forge/kvs";
 
 // Import from shared
 import { BASELINE_HOLD_SPAN, sanitizeHoldDuration } from "../../shared/baseline.js";
+import { keysetPage, encodeKeysetCursor, decodeKeysetCursor } from "../../shared/pagination.js";
 import { restampIfEnforced } from "../workflow/logic.js";
 import { authorizeSteward } from "../../shared/steward-checks.js";
 import { resolveBulletinToggles } from "../../shared/bulletin-flags.js";
@@ -566,12 +567,11 @@ const enumerateOperatorSeals = async (req) => {
     // Query all seals from KVS with pagination
     const allSeals = [];
 
-    // audit C2: the incoming `cursor` is a numeric RESULT offset (see the slice + String(start+limit)
-    // nextCursor below), NOT an opaque KVS cursor. Feeding it to query.cursor() threw
-    // (invalid cursor) and made page 2+ of "my sealed files" return EMPTY. The KVS scan must
-    // always start fresh; the offset only slices the filtered+sorted result.
-    const parsedStart = parseInt(cursor, 10);
-    const start = Number.isFinite(parsedStart) && parsedStart > 0 ? parsedStart : 0;
+    // it56: the incoming `cursor` is a stable KEYSET anchor (`t|id`) over the filtered+sorted result,
+    // NOT an opaque KVS cursor (the KVS scan always starts fresh below) and NOT a numeric OFFSET —
+    // the offset dup'd/skipped items under concurrent seal/unseal (audit C2 / it55 finding). An old
+    // numeric cursor decodes to null → a one-time reset to page 1 on deploy (harmless).
+    const pageCursor = decodeKeysetCursor(cursor);
     let kvsCursor = null;
     let iteration = 0;
     const maxIterations = 10;
@@ -748,22 +748,14 @@ const enumerateOperatorSeals = async (req) => {
       }
     }
 
-    // Sort by sealed date (most recent first)
-    sealedArtifacts.sort(
-      (a, b) => new Date(b.lockedOn) - new Date(a.lockedOn),
-    );
-
-    const total = sealedArtifacts.length;
-
-    // Paginate on client side after getting ALL seals from KVS
-    const paginatedArtifacts = sealedArtifacts.slice(start, start + limit);
-    const hasMore = total > start + limit;
-    const nextCursor = hasMore ? String(start + limit) : null;
+    // it56: stable keyset pagination (sort by lockedOn desc, id desc; then SEEK past the anchor)
+    // over the filtered result — no dup/skip under concurrent seal/unseal.
+    const { page, hasMore, nextCursor, total } = keysetPage(sealedArtifacts, pageCursor, limit);
 
     return {
-      attachments: paginatedArtifacts,
+      attachments: page,
       hasMore,
-      nextCursor,
+      nextCursor: encodeKeysetCursor(nextCursor),
       total,
     };
   } catch (error) {
