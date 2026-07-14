@@ -192,7 +192,8 @@ const SkeletonCard = () => (
 const ArtifactTypeIcon = ({ mediaType }) => {
   const isImage = mediaType?.startsWith("image/");
   const isPdf = mediaType === "application/pdf";
-  const color = isImage ? "#36B37E" : isPdf ? "#FF5630" : "var(--sv-text-subtle)";
+  // it57: off-palette green/orange → neutral tokens (the icon shape differentiates the file type).
+  const color = isImage || isPdf ? "var(--sv-text-secondary)" : "var(--sv-text-subtle)";
   return (
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" className="file-icon">
       <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8l-6-6z" stroke={color} strokeWidth="1.5" />
@@ -1038,11 +1039,8 @@ const ArtifactControlPanel = () => {
         style={{
           padding: "12px 16px",
           borderBottom: "1px solid var(--sv-border-primary)",
-          background: !panelConfigReady
-            ? "var(--sv-bg-secondary)"
-            : panelHidden
-              ? "rgba(222, 53, 11, 0.04)"
-              : "rgba(0, 135, 90, 0.04)",
+          // it57: no faded state-wash (rule-b) — neutral surface; the dot + text + button carry state.
+          background: "var(--sv-bg-secondary)",
         }}
       >
         <div
@@ -1068,11 +1066,10 @@ const ArtifactControlPanel = () => {
                   width: "8px",
                   height: "8px",
                   borderRadius: "50%",
-                  background: !panelConfigReady
-                    ? "#97A0AF"
-                    : panelHidden
-                      ? "#DE350B"
-                      : "#00875A",
+                  // it57: token-based (dark-safe) — solid teal when the macro is visible, muted otherwise.
+                  background: panelConfigReady && !panelHidden
+                    ? "var(--sv-interactive-success)"
+                    : "var(--sv-text-subtle)",
                   flexShrink: 0,
                 }}
               />
@@ -1124,21 +1121,18 @@ const ArtifactControlPanel = () => {
               }
             }}
             style={{
-              background: !panelConfigReady
-                ? "transparent"
-                : panelHidden
-                  ? "#00875A"
-                  : "transparent",
+              // it57: solid primary (teal) CTA to show the macro; secondary outline to hide. No green.
+              background: panelConfigReady && panelHidden
+                ? "var(--sv-interactive-primary)"
+                : "transparent",
               color: !panelConfigReady
                 ? "var(--sv-text-subtle)"
                 : panelHidden
-                  ? "#fff"
+                  ? "#ffffff"
                   : "var(--sv-text-secondary)",
-              border: !panelConfigReady
-                ? "1px solid var(--sv-border-secondary)"
-                : panelHidden
-                  ? "1px solid #00875A"
-                  : "1px solid var(--sv-border-secondary)",
+              border: panelConfigReady && panelHidden
+                ? "1px solid var(--sv-interactive-primary)"
+                : "1px solid var(--sv-border-secondary)",
               padding: "6px 14px",
               borderRadius: "3px",
               fontSize: "12px",

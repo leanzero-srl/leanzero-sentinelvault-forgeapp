@@ -42,7 +42,8 @@ const SkeletonCard = () => (
 const ArtifactTypeIcon = ({ mediaType }) => {
   const isImage = mediaType?.startsWith("image/");
   const isPdf = mediaType === "application/pdf";
-  const color = isImage ? "#36B37E" : isPdf ? "#FF5630" : "var(--sv-text-subtle)";
+  // it57: off-palette green/orange → neutral tokens (the icon shape differentiates the file type).
+  const color = isImage || isPdf ? "var(--sv-text-secondary)" : "var(--sv-text-subtle)";
   return (
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" className="file-icon">
       <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8l-6-6z" stroke={color} strokeWidth="1.5" />
