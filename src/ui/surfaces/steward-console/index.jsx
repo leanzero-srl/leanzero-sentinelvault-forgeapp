@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import { invoke, view } from "@forge/bridge";
 import { enablePaletteSync } from "../../kit/palette-sync";
 import ValidationsEditor from "../../kit/ValidationsEditor";
+import { formatDurationHours } from "../../kit/format-duration";
 import logo from "../../assets/icons/icon.png";
 
 const SettingsRow = ({ label, description, children }) => (
@@ -255,6 +256,11 @@ const GlobalPolicyEditor = () => {
                   min="1"
                 />
                 <span className="input-unit">hrs</span>
+                {settings.defaultSealDurationHours >= 24 && (
+                  <span style={{ marginLeft: "8px", fontSize: "12px", color: "var(--sv-text-subtle)", whiteSpace: "nowrap" }}>
+                    = {formatDurationHours(settings.defaultSealDurationHours)}
+                  </span>
+                )}
               </div>
             </SettingsRow>
 
