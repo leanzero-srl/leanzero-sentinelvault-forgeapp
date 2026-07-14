@@ -9,7 +9,7 @@
     "lint": "eslint src --ext .js,.jsx",
     "build": "webpack --mode production",
     "dev": "webpack --mode development --watch",
-    "test": "node test/json-salvage.test.mjs && node test/rules-engine.test.mjs && node test/doc-surgery.test.mjs && node test/validations-logic.test.mjs && node test/workflow-engine.test.mjs && node test/adf-perf.test.mjs && node test/sealing-logic.test.mjs"
+    "test": "node test/json-salvage.test.mjs && node test/rules-engine.test.mjs && node test/doc-surgery.test.mjs && node test/validations-logic.test.mjs && node test/workflow-engine.test.mjs && node test/adf-perf.test.mjs && node test/sealing-logic.test.mjs && node test/pagination.test.mjs"
   },
   "dependencies": {
     "@forge/api": "^6.1.1",
