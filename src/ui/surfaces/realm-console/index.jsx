@@ -1132,7 +1132,11 @@ const RealmPolicyDashboard = () => {
     } catch (error) {
       setOperatorResults([]);
       setShowOperatorDropdown(false);
-      setError(`Operator search failed: ${error.message}`);
+      // it57: was `setError(...)` — an UNDEFINED setter in this component (state is message/
+      // messageType), so any search-operators rejection threw ReferenceError and unmounted the whole
+      // console. Route through the real error channel.
+      setMessage(`Operator search failed: ${error.message}`);
+      setMessageType("error");
       setHasMoreOperators(false);
       setNextOperatorsStart(null);
     } finally {
