@@ -8,7 +8,7 @@ import ThumbnailPreview from "../../kit/ThumbnailPreview";
 import ValidationsEditor from "../../kit/ValidationsEditor";
 import WorkflowSettingsEditor from "../../kit/WorkflowSettingsEditor";
 import WorkflowInbox from "../../kit/WorkflowInbox";
-import { formatRemaining } from "../../kit/format-duration";
+import { formatRemaining, formatDurationHours } from "../../kit/format-duration";
 import { WorkflowDashboard } from "../../kit/WorkflowDashboard";
 import logo from "../../assets/icons/icon.png";
 
@@ -1556,7 +1556,7 @@ const RealmPolicyDashboard = () => {
                     const remaining = retryTime - Date.now();
                     if (remaining <= 0) return "You can submit a new request now.";
                     const hours = Math.ceil(remaining / 3600000);
-                    return `You can submit a new request in approximately ${hours} hour${hours !== 1 ? "s" : ""}.`;
+                    return `You can submit a new request in about ${formatDurationHours(hours)}.`;
                   })() : "You may submit a new request after 48 hours."}
                 </p>
               </div>
@@ -2121,6 +2121,7 @@ const RealmPolicyDashboard = () => {
                       Seals on attachments in this space will expire after{" "}
                       <span className="dynamic-value">
                         {realmPrefs.autoUnlockTimeoutHours} hours
+                        {realmPrefs.autoUnlockTimeoutHours >= 24 ? ` (${formatDurationHours(realmPrefs.autoUnlockTimeoutHours)})` : ""}
                       </span>
                       . This overrides the global default seal duration for
                       this space only.
