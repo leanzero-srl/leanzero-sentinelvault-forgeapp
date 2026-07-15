@@ -64,7 +64,7 @@ import {
 } from "./server/capsules/realms/actions.js";
 // it46: destructive-action permission-matrix seams (Queue/LLM-free modules — safe to import).
 import { deleteArtifact } from "./server/capsules/panels/actions.js";
-import { purgeSealRecord } from "./server/capsules/sealing/actions.js";
+import { purgeSealRecord, restoreSealedArtifact } from "./server/capsules/sealing/actions.js";
 
 const json = (statusCode, body) => ({
   statusCode,
@@ -344,6 +344,11 @@ export async function testStateTrigger(req) {
       }
       if (fn === "purgeSealRecord") {
         const r = await purgeSealRecord({ payload: { attachmentId: q(req, "att") }, context: { accountId: q(req, "actor") || "harness" } });
+        return json(200, { invoked: fn, result: r });
+      }
+      // B8: restore-sealed-artifact gate + unrecoverable path (fake att id → 404 probe → no real restore).
+      if (fn === "restoreSealedArtifact") {
+        const r = await restoreSealedArtifact({ payload: { attachmentId: q(req, "att") }, context: { accountId: q(req, "actor") || "harness" } });
         return json(200, { invoked: fn, result: r });
       }
       return json(400, { error: `unknown fn=${fn}` });
