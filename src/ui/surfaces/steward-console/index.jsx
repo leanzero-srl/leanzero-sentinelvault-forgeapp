@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import { invoke, view } from "@forge/bridge";
 import { enablePaletteSync } from "../../kit/palette-sync";
 import ValidationsEditor from "../../kit/ValidationsEditor";
+import LicenseBanner from "../../kit/LicenseBanner";
 import { formatDurationHours } from "../../kit/format-duration";
 import logo from "../../assets/icons/icon.png";
 
@@ -198,6 +199,8 @@ const GlobalPolicyEditor = () => {
           </div>
         </div>
       </div>
+
+      <LicenseBanner />
 
       {message && (
         <div
