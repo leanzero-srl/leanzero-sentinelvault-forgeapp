@@ -998,16 +998,20 @@ export const purgeSealRecord = async (req) => {
 
   const sealRecord = await kvs.get(`protection-${attachmentId}`);
 
-  // Permission: owner, steward, or no seal (anyone can purge unsealed trashed items)
-  if (sealRecord && sealRecord.lockedBy) {
-    const isOwner = sealRecord.lockedBy === operatorAccountId;
-    if (!isOwner) {
-      const hasStewardAccess = realmKey
-        ? await authorizeSteward(operatorAccountId, realmKey)
-        : false;
-      if (!hasStewardAccess) {
-        return { success: false, reason: "Only the seal owner or a steward can purge" };
-      }
+  // audit C2: the owner/steward gate now covers the NO-SEAL path too. Purge is a PERMANENT,
+  // unrecoverable delete (`?purge=true` below). Previously this block was wrapped in
+  // `if (sealRecord && sealRecord.lockedBy)`, so when no seal record existed the ONLY gate was the
+  // global allowSealPurge toggle → ANY user could permanently purge ANY attachment by id (it46).
+  // Require owner-or-steward UNCONDITIONALLY. realmKey falls back to the seal record's own spaceKey
+  // when the calling surface lacks page/space context, so a legitimate steward isn't wrongly denied.
+  const effectiveRealmKey = realmKey || sealRecord?.spaceKey || null;
+  const isOwner = !!sealRecord?.lockedBy && sealRecord.lockedBy === operatorAccountId;
+  if (!isOwner) {
+    const hasStewardAccess = effectiveRealmKey
+      ? await authorizeSteward(operatorAccountId, effectiveRealmKey)
+      : false;
+    if (!hasStewardAccess) {
+      return { success: false, reason: "Only the seal owner or a steward can purge" };
     }
   }
 

@@ -71,8 +71,6 @@ modules:
       handler: boot.expirySweepTask
     - key: recurring-nudge-task
       handler: boot.recurringNudgeTask
-    - key: halfway-check-task
-      handler: boot.halfwayCheckTask
     - key: realm-scan-consumer-fn
       handler: boot.realmScanConsumer
       timeoutSeconds: 900
