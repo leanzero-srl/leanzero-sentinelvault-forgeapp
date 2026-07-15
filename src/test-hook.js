@@ -26,7 +26,6 @@ import {
 } from "./server/capsules/workflow/approvals.js";
 import { getWorkflowDashboard, requestTransition } from "./server/capsules/workflow/actions.js";
 import { applyAiVerdict } from "./server/capsules/workflow/approvals.js";
-import { mirrorNativeState, readNativeState, clearNativeState } from "./server/capsules/workflow/native-state.js";
 import { revokeEditGrant, listEditGrants } from "./server/capsules/editreq/actions.js";
 // #6: section edit-access request/approve/deny seams (editreq is Queue/LLM-free — import-safe).
 import {
@@ -77,6 +76,8 @@ import {
 // B15: cross-space ruleset enumeration — now site-admin gated (was ungated → leaked every space's
 // steward list). policies/actions.js is Queue/LLM-free → import-safe.
 import { enumerateRealmRulesets } from "./server/capsules/policies/actions.js";
+// C1: license read-through (dev-safe, fail-open). Drives a synthetic context.license.
+import { checkLicense } from "./server/capsules/entitlements/actions.js";
 
 const json = (statusCode, body) => ({
   statusCode,
@@ -295,13 +296,6 @@ export async function testStateTrigger(req) {
         const r = await checkStewardRequest({ payload: { spaceKey: q(req, "spaceKey") }, context: { accountId: q(req, "actor") } });
         return json(200, { invoked: fn, result: r });
       }
-      if (fn === "nativeState") {
-        const pageId = q(req, "pageId");
-        if (q(req, "clear")) await clearNativeState(pageId);
-        else if (q(req, "state")) await mirrorNativeState(pageId, q(req, "state"));
-        const current = await readNativeState(pageId);
-        return json(200, { invoked: fn, result: { current } });
-      }
       if (fn === "getWorkflow") {
         const result = await getPageWorkflow(q(req, "pageId"), q(req, "spaceKey"));
         if (q(req, "withLog")) result.log = await getWorkflowLog(q(req, "pageId"));
@@ -419,6 +413,14 @@ export async function testStateTrigger(req) {
       }
       // B14-A (#7): save-time dead-end warning. Writes to a THROWAWAY space key (caller cleans up via
       // what=delete). `stuck=1` → a def where Approved is a target with no outgoing edge → warning.
+      // C1: license read-through. lic=none → context.license undefined → isLicensed true (dev never
+      // locked out); lic=inactive → active:false → isLicensed false + unlicensedButAllowed; lic=active → true.
+      if (fn === "checkLicense") {
+        const lic = q(req, "lic");
+        const license = lic === "none" || !lic ? undefined : { active: lic === "active" };
+        const r = await checkLicense({ context: { license } });
+        return json(200, { invoked: fn, result: r });
+      }
       if (fn === "storeWorkflowConfigProbe") {
         const stuck = !!q(req, "stuck");
         const def = stuck

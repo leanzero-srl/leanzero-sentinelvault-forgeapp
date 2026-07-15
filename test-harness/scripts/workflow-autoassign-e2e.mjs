@@ -95,7 +95,7 @@ try {
   check("log shows auto-assign", log.length === 1 && log[0]?.reason === "auto-assigned on create");
 
   // 6. idempotency: a second page event must NOT create a duplicate/second assignment.
-  // Read the live version (the #47 native-state mirror bumps it on assign) and increment.
+  // Read the live version and increment (robust to any app-authored version bump).
   const curVer = (await get(`/api/v2/pages/${page.id}`))?.version?.number || 1;
   await put(`/api/v2/pages/${page.id}`, {
     id: page.id, status: "current", title: page.title,

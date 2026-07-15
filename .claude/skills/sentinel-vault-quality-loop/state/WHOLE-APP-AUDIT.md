@@ -167,3 +167,23 @@ Closed the longer-tail batch. All live-verified via the dev testhook; commits un
 - `app-account-id` cache never invalidated / `artifactEventTrigger` self-revert asymmetry — diagnose first.
 - "Operator" rename — deferred (separate call).
 - **5b (from §5)** native content-state pill no-op — repair vs remove #47 — owner call.
+
+---
+
+## 7. Owner-decision register — RESOLVED (C1–C6, 2026-07-15)
+
+Owner said "fix all". Investigated all six via a parallel workflow, then implemented + live-verified.
+
+**C2 — FIXED, SECURITY (HIGH).** `purgeSealRecord` (sealing/actions.js) gated the no-seal path only by the global `allowSealPurge` toggle — so with purge enabled, ANY user could PERMANENTLY purge ANY attachment by id. Hoisted the owner/steward gate OUT of the `if (sealRecord && lockedBy)` guard so it applies unconditionally, with a `sealRecord?.spaceKey` fallback for realmKey. Live: no-seal non-steward → denied; a real WFH steward → still allowed (no over-tighten).
+
+**C3 — DONE, dead-code removal (HIGH).** `halfwayCheckTask` was a no-op merged into expirySweepTask. Removed from triggers.js + boot.js + the orphaned `manifest.yml` function entry (function-only — NO scope/module change; deploy validated clean).
+
+**C4 — FIXED, latent revert-loop (HIGH).** `artifactEventTrigger` failed OPEN when the app account id was unresolved (`if (systemAccountId && atlassianId === systemAccountId)`) — in the fresh-install / persistent-`/user/current`-failure window, the app's own revert re-save isn't recognised as self → unbounded revert/version-churn loop. Now fails CLOSED, mirroring pageContentTrigger's accepted SV-M3 guard. (The `app-account-id` cache "never invalidated" concern is BENIGN — the id is immutable per-install and KVS is wiped on uninstall; no fix needed, documented.)
+
+**C1 — FIXED, stub replaced (HIGH).** `check-license` was a hardcoded `{isLicensed:true}` lie. Now reads `req.context.license.active`, biased FAIL-OPEN (`active !== false`) so a dev/harness install (where `context.license` is undefined) is never locked out; reports unlicensed only on an explicit `active===false`. Zero consumers today → no behavior change, just stops lying. Live-verified all three cases. NOTE: actually turning ON gating needs `app.licensing.enabled` in the manifest + a paid listing = a SEPARATE scope decision, deliberately NOT bundled.
+
+**C5 — DONE, terminology (Option A).** "Operator" was a stale, overloaded synonym for "user" that clashed with the surrounding "Steward" copy (6 user-facing strings in realm-console). Renamed the action to "Add Steward" and the directory-search copy to "user/users" (the searched people are candidates, not stewards yet). Copy-only, one file; internal identifiers / resolver keys / the operators capsule left untouched (contract stability). Live-verified in-browser (Add Steward card + "search for users" placeholder render; console stays mounted).
+
+**C6 — REMOVED #47 native content-status pill (evidence-based).** The going-in "v1 endpoint is 410 Gone" hypothesis was WRONG — live probes proved the v1 content-state API is fully alive as-app (PUT of an existing space state → 200, persists). The REAL cause of the silent no-op: `mirrorNativeState` PUTs app-specific CUSTOM states ("Draft/In Review/Approved/Expired") that must be created on the fly, and that create **409-conflicts** — while the function **swallows every error**, so it silently set nothing (read-back always null, live-confirmed). Decision = REMOVE (not "API gone"): the projection was non-functional + unreliable, needlessly writes app custom states into customer spaces, and is redundant with the app's own authoritative doc-ribbon chip. Deleted native-state.js + its import/call site in logic.js + the test-hook seam; preserved the triggers.js app-account tamper guard (still needed for revert version bumps). Workflow transitions verified unaffected (workflow-e2e 13/13). If a native pill is ever wanted, it must be built as a real feature (provision the space's states, map to them, surface failures — not swallow them).
+
+Owner-decision items still deferred: `app.licensing.enabled` manifest enablement (scope/pricing decision, separate from C1).

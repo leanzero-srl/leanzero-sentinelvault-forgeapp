@@ -1138,7 +1138,7 @@ const RealmPolicyDashboard = () => {
       // it57: was `setError(...)` — an UNDEFINED setter in this component (state is message/
       // messageType), so any search-operators rejection threw ReferenceError and unmounted the whole
       // console. Route through the real error channel.
-      setMessage(`Operator search failed: ${error.message}`);
+      setMessage(`User search failed: ${error.message}`);
       setMessageType("error");
       setHasMoreOperators(false);
       setNextOperatorsStart(null);
@@ -1790,7 +1790,7 @@ const RealmPolicyDashboard = () => {
                 {/* Add Operator card */}
                 <div className="steward-card steward-card-add" onClick={() => { setShowOperatorSearch(!showOperatorSearch); }}>
                   <div className="steward-avatar steward-avatar-add">+</div>
-                  <span className="steward-name">Add Operator</span>
+                  <span className="steward-name">Add Steward</span>
                 </div>
               </div>
 
@@ -1800,7 +1800,7 @@ const RealmPolicyDashboard = () => {
                   <input
                     type="text"
                     className="search-input"
-                    placeholder="Type to search for operators..."
+                    placeholder="Type to search for users..."
                     value={operatorQuery}
                     onChange={onOperatorSearch}
                     onFocus={() => {
@@ -1864,7 +1864,7 @@ const RealmPolicyDashboard = () => {
                           {!isLoadingMoreOperators && !hasMoreOperators && (
                             <div className="search-result">
                               <div style={{ display: "flex", justifyContent: "center", padding: "12px", color: "var(--sv-text-subtle)", fontStyle: "italic", fontSize: "12px" }}>
-                                All operators loaded
+                                All users loaded
                               </div>
                             </div>
                           )}
@@ -1872,7 +1872,7 @@ const RealmPolicyDashboard = () => {
                       ) : operatorQuery ? (
                         <div className="search-result">
                           <span style={{ color: "var(--sv-text-subtle)", fontStyle: "italic" }}>
-                            No operators found for &quot;{operatorQuery}&quot;
+                            No users found for &quot;{operatorQuery}&quot;
                           </span>
                         </div>
                       ) : null}
@@ -1883,7 +1883,7 @@ const RealmPolicyDashboard = () => {
                     <div className="search-dropdown">
                       <div className="search-result" style={{ backgroundColor: "var(--sv-bg-tertiary)", cursor: "default" }}>
                         <span style={{ color: "var(--sv-text-subtle)", fontStyle: "italic", fontSize: "11px" }}>
-                          Recent operators (type to search for more):
+                          Recent users (type to search for more):
                         </span>
                       </div>
                       {operatorResults.map((operator) => {
