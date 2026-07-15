@@ -621,3 +621,21 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   font-family: inherit;
   min-width: 260px;
 }
+
+/* Licensing nag banner — SOLID amber ("billing attention" hue, distinct from the teal primary and
+   red danger), white text, full rounded card, NO left rail, NO faded tint. Solid fill → readable on
+   light + dark. Non-blocking: it only signals, never gates functionality. */
+.license-banner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  margin: 0 0 16px 0;
+  border-radius: 8px;
+  background: #B45309;
+  color: #FFFFFF;
+  font-weight: 600;
+  font-size: 13px;
+  line-height: 1.45;
+}
+.license-banner-text { flex: 1; }
