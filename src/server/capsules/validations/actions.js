@@ -7,10 +7,22 @@ import { authorizeSteward, isOperatorSteward, isOperatorSiteAdmin } from "../../
 
 // audit B6: resolve a page's REAL space key from its id (never trust a caller-supplied
 // spaceKey for authorization — else a steward of space A could act on a page in space B).
+//
+// B11 (LIVE-VERIFIED BUG FIX): the old v1 read — `/wiki/rest/api/content/{id}?expand=space` —
+// now returns **HTTP 410 Gone** for the Forge app on EVERY page (the v1 Confluence content GET
+// endpoints were sunset for apps). That made this return null for all pages, so BOTH callers
+// (approvePageGate + enqueuePageValidation) denied EVERY steward ("Only a steward of this page's
+// space can…") — page-gate approval and manual AI review were silently broken in production.
+// Fix: resolve via the v2 API the rest of the app already uses — page → spaceId → space key.
 async function resolvePageSpaceKey(pageId) {
   try {
-    const res = await asApp().requestConfluence(route`/wiki/rest/api/content/${pageId}?expand=space`);
-    if (res.ok) return (await res.json())?.space?.key || null;
+    const pres = await asApp().requestConfluence(route`/wiki/api/v2/pages/${pageId}`);
+    if (!pres.ok) return null;
+    const spaceId = (await pres.json())?.spaceId;
+    if (!spaceId) return null;
+    const sres = await asApp().requestConfluence(route`/wiki/api/v2/spaces/${spaceId}`);
+    if (!sres.ok) return null;
+    return (await sres.json())?.key || null;
   } catch (_) { /* deny on failure */ }
   return null;
 }
@@ -30,7 +42,8 @@ import {
 } from "./logic.js";
 import { isForgeLlmModelAllowed, FORGE_LLM_DEFAULT_MODEL, listForgeLlmModels } from "../../infra/forge-llm.js";
 
-const aiQueue = new Queue({ key: "ai-validation-queue" });
+// it57: ai-validation-queue is constructed LAZILY at push time (see enqueue paths below) so this
+// module is import-safe for the dev test-hook (no Queue at module load — the it17 trap).
 
 const sanitize = (key) => String(key).replace(/[^a-zA-Z0-9:._\s-#]/g, "_");
 
@@ -139,7 +152,7 @@ const listAiModels = async () => {
 /**
  * Enqueue a manual AI review of a page. Returns a taskId the UI polls.
  */
-const enqueuePageValidation = async (req) => {
+export const enqueuePageValidation = async (req) => {
   const pageId = req.payload?.pageId || req.context.extension?.content?.id;
   const accountId = req.context.accountId;
   if (!pageId) return { success: false, reason: "No page" };
@@ -167,7 +180,7 @@ const enqueuePageValidation = async (req) => {
 
   const taskId = `aival_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
   await kvs.set(`ai-validation-status-${taskId}`, { status: "queued", pageId }, { expiresAt: Date.now() + 3600000 });
-  await aiQueue.push({ body: { taskId, pageId, spaceKey, realmKey: spaceKey, requestedBy: accountId } });
+  await new Queue({ key: "ai-validation-queue" }).push({ body: { taskId, pageId, spaceKey, realmKey: spaceKey, requestedBy: accountId } });
   return { success: true, taskId };
 };
 
@@ -189,14 +202,14 @@ export async function enqueueAiGate({ pageId, spaceKey, pinnedVersion, threshold
     }
   }
   const taskId = `aigate_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-  await aiQueue.push({ body: { taskId, pageId, spaceKey, realmKey: spaceKey, mode: "gate", pinnedVersion, threshold } });
+  await new Queue({ key: "ai-validation-queue" }).push({ body: { taskId, pageId, spaceKey, realmKey: spaceKey, mode: "gate", pinnedVersion, threshold } });
   return { enqueued: true, taskId };
 }
 
 /**
  * Poll an AI validation job; deletes the status row once terminal.
  */
-const getValidationJob = async (req) => {
+export const getValidationJob = async (req) => {
   const { taskId } = req.payload || {};
   if (!taskId) return { status: "unknown" };
   const row = await kvs.get(`ai-validation-status-${taskId}`);
@@ -207,7 +220,7 @@ const getValidationJob = async (req) => {
   return row;
 };
 
-const getAiFindings = async (req) => {
+export const getAiFindings = async (req) => {
   const pageId = req.payload?.pageId || req.context.extension?.content?.id;
   if (!pageId) return { findings: null, aiEnabled: false };
   const spaceKey =

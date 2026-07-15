@@ -65,6 +65,14 @@ import {
 // it46: destructive-action permission-matrix seams (Queue/LLM-free modules — safe to import).
 import { deleteArtifact } from "./server/capsules/panels/actions.js";
 import { purgeSealRecord, restoreSealedArtifact } from "./server/capsules/sealing/actions.js";
+// B11: live AI validation pipeline. validations/actions.js is import-safe after the it57 lazy-Queue
+// refactor (ai-validation-queue is now built at push time, not module load — the it17 trap). The real
+// Forge LLM runs in the queue consumer; the enqueue/poll/findings resolvers are the driveable seam.
+import {
+  enqueuePageValidation,
+  getValidationJob,
+  getAiFindings,
+} from "./server/capsules/validations/actions.js";
 
 const json = (statusCode, body) => ({
   statusCode,
@@ -349,6 +357,20 @@ export async function testStateTrigger(req) {
       // B8: restore-sealed-artifact gate + unrecoverable path (fake att id → 404 probe → no real restore).
       if (fn === "restoreSealedArtifact") {
         const r = await restoreSealedArtifact({ payload: { attachmentId: q(req, "att") }, context: { accountId: q(req, "actor") || "harness" } });
+        return json(200, { invoked: fn, result: r });
+      }
+      // B11: live AI validation. enqueue authorizes against the page's REAL space (steward-gated) →
+      // pass a real steward's accountId as actor. The queue consumer runs the real Forge LLM (Haiku).
+      if (fn === "enqueuePageValidation") {
+        const r = await enqueuePageValidation({ payload: { pageId: q(req, "page"), spaceKey: q(req, "space") }, context: { accountId: q(req, "actor") } });
+        return json(200, { invoked: fn, result: r });
+      }
+      if (fn === "getValidationJob") {
+        const r = await getValidationJob({ payload: { taskId: q(req, "task") } });
+        return json(200, { invoked: fn, result: r });
+      }
+      if (fn === "getAiFindings") {
+        const r = await getAiFindings({ payload: { pageId: q(req, "page"), spaceKey: q(req, "space") } });
         return json(200, { invoked: fn, result: r });
       }
       return json(400, { error: `unknown fn=${fn}` });
