@@ -540,6 +540,8 @@ const RealmPolicyDashboard = () => {
             adminUsers: settings?.adminUsers || [],
             adminGroups: settings?.adminGroups || [],
             autoInsertMacro: settings?.autoInsertMacro !== false,
+            // it57: was never loaded → the saved insert position silently reset to "bottom" on every reload.
+            macroInsertPosition: settings?.macroInsertPosition || "bottom",
           });
           // it26 (LIVE-BROWSER FIX): the essential data (space key, role, policy) is loaded —
           // RENDER the console NOW. The seals list + the group/user dropdown pre-fills are
@@ -1327,27 +1329,7 @@ const RealmPolicyDashboard = () => {
     );
   };
 
-  const formatCountdown = (expiresAt) => {
-    if (!expiresAt) return "Never";
-
-    const now = new Date();
-    const expiry = new Date(expiresAt);
-    const timeLeft = expiry - now;
-
-    if (timeLeft <= 0) return "Overdue";
-
-    const hours = Math.floor(timeLeft / (1000 * 60 * 60));
-    const minutes = Math.floor((timeLeft % (1000 * 60 * 60)) / (1000 * 60));
-
-    if (hours > 24) {
-      const days = Math.floor(hours / 24);
-      return `${days}d ${hours % 24}h`;
-    } else if (hours > 0) {
-      return `${hours}h ${minutes}m`;
-    } else {
-      return `${minutes}m`;
-    }
-  };
+  // it57: removed the dead local formatCountdown — superseded by the shared formatRemaining (kit/format-duration).
 
   const onWatchToggle = async (artifactId) => {
     setBusyAction({ id: artifactId, action: "watch" });
