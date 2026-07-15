@@ -1182,14 +1182,24 @@ async function handleSealedArtifactTrash(sealRecord, artifactId, contentId, atla
 }
 
 // --- Handle permanent deletion of a sealed artifact ---
-async function handleSealedArtifactDeleted(sealRecord, artifactId, contentId, atlassianId, attachment) {
+// B13: exported so the permanent-delete cleanup can be exercised directly (the trigger only fires on a
+// real avi:confluence:deleted:attachment, which a harness can't emit). Signature unchanged; the internal
+// caller in artifactEventTrigger is unaffected.
+export async function handleSealedArtifactDeleted(sealRecord, artifactId, contentId, atlassianId, attachment) {
   const pageId = contentId || sealRecord.contentId;
   const artifactName = attachment.title || sealRecord.attachmentName || "Unknown";
 
   console.warn(`[SEAL-DELETED] Sealed artifact ${artifactId} permanently deleted by ${atlassianId}`);
 
-  // Send violation notifications before cleanup
-  await sendViolationNotifications(sealRecord, artifactId, pageId, atlassianId, artifactName, "delete");
+  // B13 (ordering fix): the final notice is BEST-EFFORT — a notification failure MUST NOT abort the
+  // record purge below. Previously an unguarded throw here (e.g. postDocFootnote 4xx/5xx on a since-gone
+  // page) skipped every kvs.delete, leaving protection-*/space-protection-*/edit-grant-* ORPHANED with
+  // no retry — so the (now-deleted) attachment read as "still sealed" forever. Wrap it; always clean up.
+  try {
+    await sendViolationNotifications(sealRecord, artifactId, pageId, atlassianId, artifactName, "delete");
+  } catch (e) {
+    console.error("[SEAL-DELETED] final notice failed (continuing cleanup):", e);
+  }
 
   // Clean up KVS records since attachment is gone
   await kvs.delete(`protection-${artifactId}`);
