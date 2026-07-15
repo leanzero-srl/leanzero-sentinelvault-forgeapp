@@ -17,6 +17,7 @@ import {
   setSpaceWorkflowSettings,
   bulkAssignPagesInSpace,
   readPageWorkflow,
+  storeWorkflowConfig,
 } from "./server/capsules/workflow/logic.js";
 import {
   requestApprovalTransition,
@@ -414,6 +415,16 @@ export async function testStateTrigger(req) {
           return json(200, { invoked: fn, result: { refused: "auto-unseal disabled — would scan; guard-only seam refuses" } });
         }
         const r = await recurringNudgeTask();
+        return json(200, { invoked: fn, result: r });
+      }
+      // B14-A (#7): save-time dead-end warning. Writes to a THROWAWAY space key (caller cleans up via
+      // what=delete). `stuck=1` → a def where Approved is a target with no outgoing edge → warning.
+      if (fn === "storeWorkflowConfigProbe") {
+        const stuck = !!q(req, "stuck");
+        const def = stuck
+          ? { id: "probe", name: "Probe", states: [{ id: "draft", name: "Draft", initial: true }, { id: "approved", name: "Approved" }], transitions: [{ from: "draft", to: "approved" }] }
+          : { id: "probe", name: "Probe", states: [{ id: "draft", name: "Draft", initial: true }, { id: "approved", name: "Approved" }], transitions: [{ from: "draft", to: "approved" }, { from: "approved", to: "draft" }] };
+        const r = await storeWorkflowConfig("space", q(req, "key") || "B14PROBE", def);
         return json(200, { invoked: fn, result: r });
       }
       return json(400, { error: `unknown fn=${fn}` });

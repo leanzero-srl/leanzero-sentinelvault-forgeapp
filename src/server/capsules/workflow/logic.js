@@ -61,6 +61,18 @@ export function listTransitions(def, fromStateId) {
     .map((t) => t.to);
 }
 
+// B14 (#7): a "dead-end" state is one a page can ENTER (it is the target of some transition) but can
+// never LEAVE (it has no outgoing transition). A page that lands there is silently stranded — the ribbon
+// shows a disabled state pill with no available move and no explanation. Returns the stuck state ids so
+// storeWorkflowConfig can WARN the steward at save time (non-blocking: a truly terminal state may be
+// intentional). The built-in DEFAULT_WORKFLOW has none — this only guards hand-authored custom defs.
+export function findDeadEndStates(def) {
+  if (!def || !Array.isArray(def.states) || !Array.isArray(def.transitions)) return [];
+  const hasOutgoing = new Set(def.transitions.filter((t) => findState(def, t.to)).map((t) => t.from));
+  const isTarget = new Set(def.transitions.filter((t) => findState(def, t.to)).map((t) => t.to));
+  return def.states.filter((s) => isTarget.has(s.id) && !hasOutgoing.has(s.id)).map((s) => s.id);
+}
+
 // { ok, reason } — is moving from→to allowed by this definition?
 export function validateTransition(def, fromStateId, toStateId) {
   if (!def) return { ok: false, reason: "No workflow definition" };
@@ -93,6 +105,13 @@ export async function storeWorkflowConfig(scope, key, def) {
   }
   const storeKey = scope === "space" ? `workflow-def-space-${sanitize(key)}` : "workflow-def-global";
   await kvs.set(storeKey, def);
+  // B14 (#7): surface the "silent stuck" — warn (don't block) when the saved def has states a page can
+  // enter but never leave, so the steward knows before pages strand there.
+  const deadEnds = findDeadEndStates(def);
+  if (deadEnds.length) {
+    const names = deadEnds.map((id) => findState(def, id)?.name || id);
+    return { success: true, warning: `These states have no way out — a page that reaches them will be stuck with no available transition: ${names.join(", ")}. Add an outgoing transition (e.g. back to Draft) unless a state is meant to be final.` };
+  }
   return { success: true };
 }
 
