@@ -888,7 +888,7 @@ const checkSealStamp = async () => {
  * Restore a trashed attachment back to the page.
  * Works for any trashed attachment — with or without a seal record.
  */
-const restoreSealedArtifact = async (req) => {
+export const restoreSealedArtifact = async (req) => {
   const { attachmentId } = req.payload;
 
   if (!attachmentId) {

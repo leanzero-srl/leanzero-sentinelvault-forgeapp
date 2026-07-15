@@ -1,5 +1,6 @@
 import { asUser, asApp, route } from "@forge/api";
 import { kvs } from "@forge/kvs";
+import { withinUploadSizeLimit, MAX_UPLOAD_LABEL } from "../../shared/upload-limits.js";
 
 import {
   insertPanelNode,
@@ -460,11 +461,10 @@ const uploadArtifact = async (req) => {
     return { success: false, reason: "Missing file data" };
   }
 
-  // Validate file size
-  const estimatedBytes = fileDataBase64.length * 0.75;
-  const MAX_FILE_SIZE = 4 * 1024 * 1024; // 4MB
-  if (estimatedBytes > MAX_FILE_SIZE) {
-    return { success: false, reason: "File too large. Maximum size is 4 MB." };
+  // it57: validate the RAW (decoded) file size via the shared helper — the 4 MB limit is on the
+  // decoded bytes, not the ~33%-larger base64 string; the limit + label live together so they stay in sync.
+  if (!withinUploadSizeLimit(fileDataBase64.length)) {
+    return { success: false, reason: `File too large. Maximum size is ${MAX_UPLOAD_LABEL}.` };
   }
 
   try {
