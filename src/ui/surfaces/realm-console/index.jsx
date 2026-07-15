@@ -8,6 +8,7 @@ import ThumbnailPreview from "../../kit/ThumbnailPreview";
 import ValidationsEditor from "../../kit/ValidationsEditor";
 import WorkflowSettingsEditor from "../../kit/WorkflowSettingsEditor";
 import WorkflowInbox from "../../kit/WorkflowInbox";
+import LicenseBanner from "../../kit/LicenseBanner";
 import { formatRemaining, formatDurationHours } from "../../kit/format-duration";
 import { WorkflowDashboard } from "../../kit/WorkflowDashboard";
 import logo from "../../assets/icons/icon.png";
@@ -1441,6 +1442,8 @@ const RealmPolicyDashboard = () => {
           </div>
         </div>
       </div>
+
+      <LicenseBanner />
 
       {message && (
         <div
