@@ -12,7 +12,8 @@ import {
 } from "../../infra/notice-composer.js";
 
 // Queue for background realm scanning
-const realmScanQueue = new Queue({ key: "realm-audit-queue" });
+// it57: realm-audit-queue is constructed lazily at push time (see launch-realm-audit) so this module
+// is import-safe for the dev test-hook (no Queue at module load — the it17 trap).
 
 // audit D7: sanitize a space key for use in a KVS key (a personal `~`-space key would
 // otherwise throw). Matches the regex admin-settings-space-* already uses.
@@ -148,8 +149,10 @@ const launchRealmAudit = async (req) => {
     spaceId,
   });
 
-  // Push to the async queue
-  await realmScanQueue.push({
+  // Push to the async queue. it57: instantiate LAZILY here (not at module load) so importing this
+  // capsule doesn't construct a Queue at load — which broke the dev test-hook bundle (it17) and
+  // blocked wiring the realms resolvers (check-user-role / steward-request flow) for testing.
+  await new Queue({ key: "realm-audit-queue" }).push({
     body: { jobId, spaceKey, spaceId },
   });
 
@@ -324,7 +327,7 @@ const stewardUnseal = async (req) => {
 /**
  * Check if the current user is a steward for the given space.
  */
-const checkUserRole = async (req) => {
+export const checkUserRole = async (req) => {
   const accountId = req.context.accountId;
   const spaceKey = req.payload?.spaceKey;
   if (!spaceKey || !accountId) return { role: "user" };
@@ -343,7 +346,7 @@ const checkUserRole = async (req) => {
 /**
  * User requests to become a steward for a space.
  */
-const requestStewardAccess = async (req) => {
+export const requestStewardAccess = async (req) => {
   const accountId = req.context.accountId;
   const spaceKey = req.payload?.spaceKey;
   if (!spaceKey || !accountId) return { success: false, reason: "Missing context" };
@@ -379,7 +382,7 @@ const requestStewardAccess = async (req) => {
 /**
  * Check if the current user already has a pending or denied steward request for a space.
  */
-const checkStewardRequest = async (req) => {
+export const checkStewardRequest = async (req) => {
   const accountId = req.context.accountId;
   const spaceKey = req.payload?.spaceKey;
   if (!spaceKey || !accountId) return { status: "none" };
