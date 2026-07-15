@@ -75,7 +75,17 @@ export async function artifactEventTrigger(event) {
 
     // Prevent infinite loops - ignore actions made by our own app
     const systemAccountId = await resolveAppAccountId();
-    if (systemAccountId && atlassianId === systemAccountId) {
+    // audit C4: fail CLOSED, mirroring pageContentTrigger's SV-M3 guard. When our own account id
+    // can't be resolved we can't tell our own revert re-saves from a real edit — the OLD guard
+    // (`if (systemAccountId && ...)`) fell OPEN and kept enforcing, so in the narrow window where the
+    // id is unresolved (fresh-install race / persistent /user/current 401/429) our own revert write
+    // re-fires this trigger and is NOT recognised as self → an unbounded revert / version-churn loop.
+    // Skip enforcement this run instead (briefly-unprotected is safer than a runaway loop).
+    if (!systemAccountId) {
+      console.error("[TRIGGER] App account id unresolved — skipping artifact enforcement this run (fail-closed).");
+      return;
+    }
+    if (atlassianId === systemAccountId) {
       return;
     }
 
@@ -799,7 +809,7 @@ export async function workflowSweep() {
         const liveApprovers = liveSpec?.approvers || [];
         const liveUnresolved = !!liveSpec?.unresolved;
         const authorized = author && (
-          author === systemAccountId // the app's own version bumps (native-state mirror, revert) are never tampers
+          author === systemAccountId // the app's own version bumps (revert re-saves) are never tampers
           || (record.approvers.includes(author) && (liveApprovers.includes(author) || liveUnresolved))
           || await isAccountStewardAsApp(author, record.spaceKey));
         if (authorized) {
@@ -1603,7 +1613,3 @@ export async function recurringNudgeTask() {
   }
 }
 
-// halfwayCheckTask merged into expirySweepTask. Kept as no-op for manifest compatibility.
-export async function halfwayCheckTask() {
-  return { statusCode: 200, headers: {}, body: JSON.stringify({ reminderCount: 0 }) };
-}

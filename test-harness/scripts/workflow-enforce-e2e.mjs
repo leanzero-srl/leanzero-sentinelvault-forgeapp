@@ -149,17 +149,17 @@ try {
   check("overdue Approved page auto-transitioned to Expired", rH1?.stateId === "expired");
   check("expiry cleared the review clock + enforcement", rH1?.reviewDueAt == null && rH1?.enforce === false);
 
-  // --- J (#47). Native content-state mirror + its version bump must NOT trip #44's sweep ---
-  const pJ = await mkPage("HARNESS native-mirror", "<p>approved content J</p>");
+  // --- J (#44). A legitimately Approved page must SURVIVE the sweep (no false demote). ---
+  // (Was the #47 native content-state mirror test; the mirror was REMOVED in audit C6 because it was
+  // a silent no-op. The sweep-survival assertion is what still matters and is kept.)
+  const pJ = await mkPage("HARNESS approved-sweep", "<p>approved content J</p>");
   const vJ = await verOf(pJ.id);
   await hook({ what: "invoke", fn: "transitionWorkflow", pageId: pJ.id, spaceKey, to: "approved", toName: "Approved", approvers: "acc-A", approvedVersion: String(vJ) });
   await sleep(1500);
-  const nativeJ = (await hook({ what: "invoke", fn: "nativeState", pageId: pJ.id })).result?.current;
-  check("workflow state mirrored to the native content-status pill", nativeJ?.name === "Approved");
-  check("mirror published a new page version", (await verOf(pJ.id)) > vJ);
+  check("page transitioned to Approved", (await rec(pJ.id))?.stateId === "approved");
   await kvsSet(`workflow-idx-${spaceKey}-approved-${pJ.id}`, { pageId: pJ.id, stateId: "approved", enteredAt: new Date().toISOString() });
   await hook({ what: "invoke", fn: "workflowSweep" });
-  check("mirror's app-authored version bump did NOT demote the Approved page", (await rec(pJ.id))?.stateId === "approved");
+  check("workflowSweep did NOT demote the Approved page", (await rec(pJ.id))?.stateId === "approved");
 
   // --- I (#48). Workflow dashboard: state distribution + overdue count from the by-state index ---
   const DS = "DASHTEST";

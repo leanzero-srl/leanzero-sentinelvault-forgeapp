@@ -12,7 +12,6 @@
  */
 import { asApp, route } from "@forge/api";
 import { kvs, WhereConditions } from "@forge/kvs";
-import { mirrorNativeState } from "./native-state.js";
 
 export const WORKFLOW_STATE_PROP = "sentinel-vault-workflow";
 
@@ -216,11 +215,15 @@ async function persistState(pageId, record, prevStateId) {
     reviewDueAt: record.reviewDueAt || null,
   });
   await writeStateContentProp(pageId, record);
-  // #47: mirror onto the native content-status pill — ONLY on a genuine state change
-  // (the mirror PUT bumps the page version; a restamp keeps the same state, so skip it).
-  if (!prevStateId || prevStateId !== record.stateId) {
-    await mirrorNativeState(pageId, record.stateId);
-  }
+  // audit C6: the #47 native content-status pill projection was REMOVED. Live-verified it was a SILENT
+  // NO-OP: mirrorNativeState set nothing (a read-back always returned null) while swallowing every
+  // error, and the underlying PUT that creates a per-space custom content state ("Draft/In Review/…")
+  // 409-conflicts — so it could not be made reliable without pre-provisioning + failure surfacing, and
+  // it needlessly writes app-specific custom states into a customer's space. It was also redundant with
+  // the app's own authoritative doc-ribbon state chip. State stays fully visible via the ribbon +
+  // content property. (The v1 content-state REST API is NOT gone — this is a reliability/UX call, not a
+  // dead-endpoint one. If a native pill is wanted later, do it as a real feature: provision the space's
+  // content states once, map to them, and surface failures instead of swallowing them.)
 }
 
 export async function appendWorkflowLog(pageId, entry) {
