@@ -59,7 +59,7 @@ async function resolveHoldPeriod(realmKey, override) {
  * List top-level headings for the section picker, plus whether any sealed
  * sections already exist on the page.
  */
-const listPageHeadings = async (req) => {
+export const listPageHeadings = async (req) => {
   const pageId = req.payload?.pageId || req.context.extension?.content?.id;
   if (!pageId) return { headings: [], hasSealedSections: false };
   try {
@@ -85,7 +85,7 @@ const listPageHeadings = async (req) => {
 /**
  * List sealed sections on a page (for the inline-panel "Sealed Sections" group).
  */
-const enumerateSectionSeals = async (req) => {
+export const enumerateSectionSeals = async (req) => {
   const pageId = req.payload?.pageId || req.context.extension?.content?.id;
   const operatorAccountId = req.context.accountId;
   if (!pageId) return { sections: [] };
@@ -119,7 +119,7 @@ const enumerateSectionSeals = async (req) => {
  * snapshot it, and record the seal. The app's own page write is ignored by the
  * page-content trigger's loop-guard.
  */
-const sealSection = async (req) => {
+export const sealSection = async (req) => {
   const { pageId: payloadPageId, headingIndex, headingText, lockDuration } = req.payload || {};
   const operatorAccountId = req.context.accountId;
   const pageId = payloadPageId || req.context.extension?.content?.id;
@@ -212,7 +212,7 @@ const sealSection = async (req) => {
  * Unseal a section: unwrap the macro (restore body to the page) and clear records.
  * Owner or steward.
  */
-const unsealSection = async (req) => {
+export const unsealSection = async (req) => {
   const { sectionId } = req.payload || {};
   const operatorAccountId = req.context.accountId;
   const realmKey =
