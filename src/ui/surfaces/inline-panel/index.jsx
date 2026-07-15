@@ -495,7 +495,7 @@ const ArtifactCard = ({ att, onRefresh, columns, siteUrl, spaceKey, pageId, page
     statusText = "Overdue";
   } else if (isSealedByMe) {
     statusClass = "locked-by-me";
-    statusText = "My Reservation";
+    statusText = "My Seal";
   } else if (isSealed) {
     statusClass = "locked";
     statusText = "Sealed";
@@ -545,7 +545,7 @@ const ArtifactCard = ({ att, onRefresh, columns, siteUrl, spaceKey, pageId, page
     } else if (canUnseal) {
       primaryActionBtn = (
         <button className={`action-btn unlock ${actionBusy === "unseal" ? "is-busy" : ""}`} onClick={handleUnseal} disabled={actionBusy && actionBusy !== "unseal"} title="Release your seal and allow others to modify this file">
-          {actionBusy === "unseal" ? <>Releasing<span className="btn-busy-bar" /></> : "Relinquish"}
+          {actionBusy === "unseal" ? <>Unsealing<span className="btn-busy-bar" /></> : "Unseal"}
         </button>
       );
     }
@@ -1483,7 +1483,7 @@ const ArtifactGridView = () => {
           </span>
         </div>
         <div className="sv-panel-editor-msg">
-          Reservation controls are accessible in view mode.
+          Seal controls are accessible in view mode.
         </div>
       </div>
     );
