@@ -54,6 +54,14 @@ import {
   sealSection,
   unsealSection,
 } from "./server/capsules/section-seals/actions.js";
+// B7: plain-user persona resolvers (realms/actions.js is now import-safe after the it57 lazy-Queue
+// refactor). check-user-role returns "user" for a synthetic actor (asUser has no webtrigger context);
+// the steward-request flow is asApp + KVS.
+import {
+  checkUserRole,
+  requestStewardAccess,
+  checkStewardRequest,
+} from "./server/capsules/realms/actions.js";
 // it46: destructive-action permission-matrix seams (Queue/LLM-free modules — safe to import).
 import { deleteArtifact } from "./server/capsules/panels/actions.js";
 import { purgeSealRecord } from "./server/capsules/sealing/actions.js";
@@ -260,6 +268,19 @@ export async function testStateTrigger(req) {
       }
       if (fn === "unsealSection") {
         const r = await unsealSection({ payload: { sectionId: q(req, "section") }, context: { accountId: q(req, "actor") } });
+        return json(200, { invoked: fn, result: r });
+      }
+      // B7: plain-user persona — role gate + steward-request flow with a synthetic non-steward actor.
+      if (fn === "checkUserRole") {
+        const r = await checkUserRole({ payload: { spaceKey: q(req, "spaceKey") }, context: { accountId: q(req, "actor") } });
+        return json(200, { invoked: fn, result: r });
+      }
+      if (fn === "requestStewardAccess") {
+        const r = await requestStewardAccess({ payload: { spaceKey: q(req, "spaceKey") }, context: { accountId: q(req, "actor") } });
+        return json(200, { invoked: fn, result: r });
+      }
+      if (fn === "checkStewardRequest") {
+        const r = await checkStewardRequest({ payload: { spaceKey: q(req, "spaceKey") }, context: { accountId: q(req, "actor") } });
         return json(200, { invoked: fn, result: r });
       }
       if (fn === "nativeState") {
