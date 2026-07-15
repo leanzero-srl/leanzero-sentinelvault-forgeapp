@@ -241,6 +241,14 @@ const sealArtifact = async (req) => {
     }
   }
 
+  // B14 (it55 completion): the policy chain above may OVERRIDE holdPeriod with a STORED policy value
+  // (autoUnlockTimeoutHours / defaultLockDuration) that store-policy persists RAW — never bounds-checked
+  // (the it55 guard lives in the dead policies/logic.js:savePolicyRuleset, which nothing calls). So a
+  // negative/zero/absurd/NaN stored value would flow straight into expiresAt: a past date (attachment
+  // reads "sealed" but is already expired → unprotected) or an overflowing/NaN Date. Re-run the FINAL
+  // holdPeriod through the same clamp as the API-only path above — defense-in-depth at the seal boundary,
+  // independent of whether store-time validation ever lands.
+  holdPeriod = sanitizeHoldDuration(holdPeriod, BASELINE_HOLD_SPAN);
   const expiresAt = new Date(Date.now() + holdPeriod * 1000).toISOString();
 
   // Fetch current operator's email and display name

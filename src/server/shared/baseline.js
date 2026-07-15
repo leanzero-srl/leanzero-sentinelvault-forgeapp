@@ -37,6 +37,19 @@ export const WEBHOOK_STORAGE_KEY = "confluence-webhook-id";
 export const BASELINE_HOLD_SPAN = 2 * 24 * 60 * 60;
 
 /**
+ * Upper bound for a seal hold span (100 years — safely inside the JS Date ±8.64e15ms range).
+ */
+export const MAX_HOLD_SECONDS = 100 * 365 * 24 * 60 * 60;
+
+/**
+ * B14: is `raw` a valid, in-bounds seal hold span in seconds? Used to VALIDATE stored policy values
+ * (store-policy) so an admin gets immediate feedback, alongside the seal-time clamp (sanitizeHoldDuration).
+ */
+export function withinHoldBounds(raw) {
+  return typeof raw === "number" && Number.isFinite(raw) && raw > 0 && raw <= MAX_HOLD_SECONDS;
+}
+
+/**
  * it55: sanitize a (dev/API-only) `lockDuration` payload into a safe seal hold span (seconds).
  * The seal UI never sends lockDuration, but a direct `seal-artifact` invocation could pass a
  * negative value (→ a PAST expiresAt: a "sealed" record with ZERO protection, returned as success),
@@ -45,8 +58,5 @@ export const BASELINE_HOLD_SPAN = 2 * 24 * 60 * 60;
  * number of seconds; otherwise fall back to the baseline hold span.
  */
 export function sanitizeHoldDuration(raw, baseline = BASELINE_HOLD_SPAN) {
-  const MAX_HOLD_SECONDS = 100 * 365 * 24 * 60 * 60; // 100 years — safely inside the Date range
-  return typeof raw === "number" && Number.isFinite(raw) && raw > 0 && raw <= MAX_HOLD_SECONDS
-    ? Math.floor(raw)
-    : baseline;
+  return withinHoldBounds(raw) ? Math.floor(raw) : baseline;
 }

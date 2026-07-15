@@ -1,4 +1,4 @@
-import { sanitizeHoldDuration, BASELINE_HOLD_SPAN } from "../src/server/shared/baseline.js";
+import { sanitizeHoldDuration, BASELINE_HOLD_SPAN, MAX_HOLD_SECONDS, withinHoldBounds } from "../src/server/shared/baseline.js";
 import { eq, ok, report } from "./_assert.mjs";
 
 // it55: sanitizeHoldDuration hardens the API-only lockDuration payload. The seal UI never sends it,
@@ -30,5 +30,23 @@ const future = Date.now() + sanitizeHoldDuration(-3600, B) * 1000;
 ok("sanitized negative duration still yields a FUTURE expiresAt", future > Date.now());
 // default baseline arg works
 eq("default baseline arg used when omitted", sanitizeHoldDuration(-1), B);
+
+// B14: withinHoldBounds — the store-policy WRITE-boundary validator (immediate admin feedback), and
+// the shared predicate sanitizeHoldDuration now delegates to. Same accept/reject envelope.
+eq("MAX_HOLD_SECONDS is 100 years", MAX_HOLD_SECONDS, MAX);
+ok("withinHoldBounds accepts a positive in-range value", withinHoldBounds(3600));
+ok("withinHoldBounds accepts exactly MAX", withinHoldBounds(MAX));
+ok("withinHoldBounds accepts 1s", withinHoldBounds(1));
+ok("withinHoldBounds rejects zero", !withinHoldBounds(0));
+ok("withinHoldBounds rejects negative", !withinHoldBounds(-1));
+ok("withinHoldBounds rejects NaN", !withinHoldBounds(NaN));
+ok("withinHoldBounds rejects Infinity", !withinHoldBounds(Infinity));
+ok("withinHoldBounds rejects a numeric string", !withinHoldBounds("3600"));
+ok("withinHoldBounds rejects just over MAX", !withinHoldBounds(MAX + 1));
+ok("withinHoldBounds rejects undefined", !withinHoldBounds(undefined));
+ok("withinHoldBounds rejects null", !withinHoldBounds(null));
+// the store-policy semantics: autoUnlockTimeoutHours is HOURS → checked as hours*3600 seconds
+ok("24h (86400s) is a valid auto-unseal timeout", withinHoldBounds(24 * 3600));
+ok("a negative hours value is rejected", !withinHoldBounds(-5 * 3600));
 
 report("sealing-logic");
