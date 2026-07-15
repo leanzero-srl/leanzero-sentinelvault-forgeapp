@@ -9,6 +9,7 @@ import {
   validateTransition,
   sanitize,
   shouldAutoAssign,
+  findDeadEndStates,
 } from "../src/server/capsules/workflow/logic.js";
 import { evaluateApproval, resolveApprovers } from "../src/server/capsules/workflow/approvals.js";
 import { eq, ok, report } from "./_assert.mjs";
@@ -86,5 +87,35 @@ eq("resolveApprovers empty -> null", resolveApprovers({ approvers: [] }), null);
 eq("resolveApprovers users", resolveApprovers({ approvers: [{ type: "user", id: "a" }, { type: "user", id: "b" }], mode: "all", min: 1 }), { approvers: ["a", "b"], mode: "all", min: 1 });
 eq("resolveApprovers dedups", resolveApprovers({ approvers: [{ id: "a" }, { id: "a" }] }).approvers.length, 1);
 eq("resolveApprovers drops groups in v1", resolveApprovers({ approvers: [{ type: "group", id: "g" }, { type: "user", id: "a" }] }).approvers, ["a"]);
+
+// B14 (#7): findDeadEndStates — a state a page can enter but never leave (silent stuck).
+eq("DEFAULT_WORKFLOW has NO dead-end states", findDeadEndStates(DEFAULT_WORKFLOW).length, 0);
+{
+  // approved is a transition target but has no outgoing edge → stuck
+  const stuckDef = {
+    id: "stuck", name: "Stuck", states: [
+      { id: "draft", name: "Draft", initial: true },
+      { id: "approved", name: "Approved" },
+    ],
+    transitions: [{ from: "draft", to: "approved" }],
+  };
+  const dead = findDeadEndStates(stuckDef);
+  eq("a target state with no outgoing edge is flagged", dead.length, 1);
+  ok("the flagged dead-end is 'approved'", dead.includes("approved"));
+}
+{
+  // an unreachable island state (never a target) is NOT a dead-end — a page can't get there
+  const islandDef = {
+    id: "island", name: "Island", states: [
+      { id: "draft", name: "Draft", initial: true },
+      { id: "review", name: "Review" },
+      { id: "orphan", name: "Orphan" },
+    ],
+    transitions: [{ from: "draft", to: "review" }, { from: "review", to: "draft" }],
+  };
+  eq("an unreachable island is not counted as a dead-end", findDeadEndStates(islandDef).length, 0);
+}
+eq("findDeadEndStates tolerates a malformed def", findDeadEndStates(null).length, 0);
+eq("findDeadEndStates tolerates missing transitions", findDeadEndStates({ states: [{ id: "a" }] }).length, 0);
 
 report("workflow-engine");
