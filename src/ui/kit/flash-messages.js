@@ -94,7 +94,7 @@ export function flashEditBlocked(editorName, artifactName) {
 export function flashArtifactUnsealed(artifactName) {
   return showFlag({
     id: "seal-released-" + Date.now(),
-    title: "Reservation cleared",
+    title: "Unsealed",
     description: `"${artifactName}" is now open for modifications.`,
     type: "success",
     appearance: "success",

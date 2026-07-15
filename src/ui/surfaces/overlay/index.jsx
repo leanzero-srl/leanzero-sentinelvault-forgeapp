@@ -11,8 +11,8 @@ const OVERLAY_COLUMNS = [
   { key: "name",      label: "Name",                 defaultOn: true,  alwaysOn: true },
   { key: "status",    label: "Status",               defaultOn: true },
   { key: "heldBy",    label: "Held by",              defaultOn: true },
-  { key: "lapses",    label: "Lapses",               defaultOn: true },
-  { key: "watch",     label: "Watch for Relinquish", defaultOn: true },
+  { key: "lapses",    label: "Expires",               defaultOn: true },
+  { key: "watch",     label: "Watch for Unseal", defaultOn: true },
   { key: "actions",   label: "Actions",              defaultOn: true,  alwaysOn: true },
   { key: "fileSize",  label: "File Size",            defaultOn: false },
   { key: "fileType",  label: "File Type",            defaultOn: false },
@@ -205,7 +205,7 @@ const ArtifactTypeIcon = ({ mediaType }) => {
 const SORT_FIELDS = [
   { key: "title", label: "Name" },
   { key: "lockStatus", label: "Status" },
-  { key: "expiresAt", label: "Lapses" },
+  { key: "expiresAt", label: "Expires" },
   { key: "createdAt", label: "Created" },
 ];
 
@@ -297,7 +297,7 @@ const OverlayArtifactCard = ({ artifact, visibleColumns, onSecure, onRelease, on
     // metaphor (Reservation Duration, Reservation cleared, "Reserve this file"), and the held
     // state reads "My Reservation" in the inline-panel + realm-console; only this overlay said
     // "Yours". Align the outlier (same .status-lozenge.locked-by-me styling as the panel).
-    statusText = "My Reservation";
+    statusText = "My Seal";
   } else if (isSealed) {
     statusClass = "locked";
     statusText = "Sealed";
@@ -323,7 +323,7 @@ const OverlayArtifactCard = ({ artifact, visibleColumns, onSecure, onRelease, on
     } else if (isSealedByMe) {
       primaryAction = (
         <button className={`action-btn unlock ${busyAction === "unseal" ? "is-busy" : ""}`} onClick={() => onRelease(artifact.id)} disabled={busyAction && busyAction !== "unseal"} title="Release your seal and allow others to modify this file">
-          {busyAction === "unseal" ? <>Releasing<span className="btn-busy-bar" /></> : "Relinquish"}
+          {busyAction === "unseal" ? <>Unsealing<span className="btn-busy-bar" /></> : "Unseal"}
         </button>
       );
     }
@@ -921,8 +921,8 @@ const ArtifactControlPanel = () => {
           for (const artifact of expiredArtifacts) {
             showFlag({
               id: "expiry-notice-" + artifact.id,
-              title: "Reservation expired",
-              description: `Your reservation on "${artifact.title}" has expired. Relinquish it when you are finished.`,
+              title: "Seal expired",
+              description: `Your seal on "${artifact.title}" has expired. Unseal it when you are finished.`,
               type: "warning",
               appearance: "warning",
               isAutoDismiss: false,
