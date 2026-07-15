@@ -103,7 +103,7 @@ const REALM_COLUMNS = [
   { key: "location", label: "Location",  defaultOn: true },
   { key: "fileSize", label: "File Size", defaultOn: false },
   { key: "sealedOn", label: "Sealed on", defaultOn: false },
-  { key: "lapses",   label: "Lapses",    defaultOn: true },
+  { key: "lapses",   label: "Expires",    defaultOn: true },
   { key: "actions",  label: "Actions",   defaultOn: true, alwaysOn: true },
 ];
 
@@ -112,7 +112,7 @@ const REALM_SORT_FIELDS = [
   { key: "lockedBy", label: "Sealed by" },
   { key: "pageTitle", label: "Location" },
   { key: "lockedOn", label: "Sealed on" },
-  { key: "expiresAt", label: "Lapses" },
+  { key: "expiresAt", label: "Expires" },
 ];
 
 const buildDefaults = (cols) =>
@@ -279,7 +279,7 @@ const MyClaimedCard = ({ artifact, onRelease, busyAction, siteUrl }) => {
   const [cachedPreview, setCachedPreview] = useState(null);
   const isExpired = artifact.isExpired || (artifact.expiresAt && new Date(artifact.expiresAt) < new Date());
   const statusClass = isExpired ? "expired" : "locked-by-me";
-  const statusText = isExpired ? "Overdue" : "My Reservation";
+  const statusText = isExpired ? "Overdue" : "My Seal";
   const isImage = artifact.mediaType?.startsWith("image/");
   const numericAttId = artifact.id ? artifact.id.replace(/^att/, "") : null;
   const downloadHref = siteUrl && artifact.pageId && artifact.title
@@ -331,7 +331,7 @@ const MyClaimedCard = ({ artifact, onRelease, busyAction, siteUrl }) => {
           <span className={`status-lozenge ${statusClass}`}>{statusText}</span>
           {onRelease && (
             <button className={`action-btn unlock ${busyAction === "unseal" ? "is-busy" : ""}`} onClick={() => onRelease(artifact.id)} disabled={busyAction && busyAction !== "unseal"} title="Release your seal and allow others to modify this file">
-              {busyAction === "unseal" ? <>Releasing<span className="btn-busy-bar" /></> : "Relinquish"}
+              {busyAction === "unseal" ? <>Unsealing<span className="btn-busy-bar" /></> : "Unseal"}
             </button>
           )}
         </span>
@@ -1503,7 +1503,7 @@ const RealmPolicyDashboard = () => {
             </button>
             <button className={`tab-button ${activeTab === "unlock-timeouts" ? "active" : ""}`}
               onClick={() => setActiveTab("unlock-timeouts")}>
-              Reservation Duration
+              Seal Duration
             </button>
             <button className={`tab-button ${activeTab === "macro-settings" ? "active" : ""}`}
               onClick={() => setActiveTab("macro-settings")}>
