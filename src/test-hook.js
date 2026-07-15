@@ -46,6 +46,14 @@ import {
   recentDispatches,
   listBreachDispatches,
 } from "./server/capsules/bulletins/actions.js";
+// B6: section-seal CREATION resolvers (section-seals imports workflow/logic + sealing/logic, both
+// already in the hook bundle → no new problematic deps; the page read/write is asApp).
+import {
+  listPageHeadings,
+  enumerateSectionSeals,
+  sealSection,
+  unsealSection,
+} from "./server/capsules/section-seals/actions.js";
 // it46: destructive-action permission-matrix seams (Queue/LLM-free modules — safe to import).
 import { deleteArtifact } from "./server/capsules/panels/actions.js";
 import { purgeSealRecord } from "./server/capsules/sealing/actions.js";
@@ -231,6 +239,27 @@ export async function testStateTrigger(req) {
       }
       if (fn === "listBreachDispatches") {
         const r = await listBreachDispatches({ payload: {}, context: { accountId: q(req, "actor") } });
+        return json(200, { invoked: fn, result: r });
+      }
+      // B6: section-seal creation flow — drive the real resolvers (create/seal/unseal a section on a
+      // DISPOSABLE page) with a synthetic actor; the page read/write is asApp so it works here.
+      if (fn === "listPageHeadings") {
+        const r = await listPageHeadings({ payload: { pageId: q(req, "pageId") }, context: { accountId: q(req, "actor") } });
+        return json(200, { invoked: fn, result: r });
+      }
+      if (fn === "enumerateSectionSeals") {
+        const r = await enumerateSectionSeals({ payload: { pageId: q(req, "pageId") }, context: { accountId: q(req, "actor") } });
+        return json(200, { invoked: fn, result: r });
+      }
+      if (fn === "sealSection") {
+        const r = await sealSection({
+          payload: { pageId: q(req, "pageId"), headingIndex: q(req, "hi") != null ? parseInt(q(req, "hi"), 10) : null, headingText: q(req, "htext"), lockDuration: q(req, "dur") != null ? parseInt(q(req, "dur"), 10) : undefined },
+          context: { accountId: q(req, "actor") },
+        });
+        return json(200, { invoked: fn, result: r });
+      }
+      if (fn === "unsealSection") {
+        const r = await unsealSection({ payload: { sectionId: q(req, "section") }, context: { accountId: q(req, "actor") } });
         return json(200, { invoked: fn, result: r });
       }
       if (fn === "nativeState") {
