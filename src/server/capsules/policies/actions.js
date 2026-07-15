@@ -1,7 +1,7 @@
 import { kvs, WhereConditions } from "@forge/kvs";
 
 // Import from shared
-import { BASELINE_HOLD_SPAN } from "../../shared/baseline.js";
+import { BASELINE_HOLD_SPAN, MAX_HOLD_SECONDS, withinHoldBounds } from "../../shared/baseline.js";
 import { isOperatorSteward, isOperatorSiteAdmin } from "../../shared/steward-checks.js";
 
 // SECURITY (audit A1): these resolvers write admin-settings-* — including the steward list
@@ -70,6 +70,17 @@ const loadPolicy = async (req) => {
 const storePolicy = async (req) => {
   const { scope, key, data } = req.payload;
   const caller = req.context?.accountId;
+
+  // B14: validate seal-duration bounds at the WRITE boundary (the it55 guard lived in the dead
+  // policies/logic.js:savePolicyRuleset). null = "unset / inherit" so only a present non-null numeric
+  // value is checked. defaultLockDuration is SECONDS; autoUnlockTimeoutHours is HOURS. The seal path
+  // also clamps (sanitizeHoldDuration) as a backstop; this just gives the admin immediate feedback.
+  if (data && data.defaultLockDuration != null && !withinHoldBounds(data.defaultLockDuration)) {
+    return { success: false, reason: `Default seal duration must be a positive number of seconds up to ${MAX_HOLD_SECONDS}.` };
+  }
+  if (data && data.autoUnlockTimeoutHours != null && !withinHoldBounds(data.autoUnlockTimeoutHours * 3600)) {
+    return { success: false, reason: `Auto-unseal timeout must be a positive number of hours up to ${Math.floor(MAX_HOLD_SECONDS / 3600)}.` };
+  }
 
   if (scope === "global") {
     if (!(await canWriteGlobal(caller))) return DENY;
@@ -200,7 +211,14 @@ const storeRealmRuleset = async (req) => {
 /**
  * Get all realm settings (for realm admin page)
  */
-const enumerateRealmRulesets = async () => {
+// SECURITY (audit B15): this CROSS-SPACE enumeration returns every space's admin-settings —
+// including each space's steward list (adminUsers) + policy. It was ungated (the handler didn't
+// even accept `req`), so ANY logged-in user could name the action via the router and harvest the
+// steward/admin roster for the whole site. Gate it like the write siblings, but with the GLOBAL
+// (site-admin) gate — a steward of one space must not read other spaces' rosters. Deny → [] so a
+// non-admin caller degrades to "no realms" rather than an error (mirrors the catch below).
+export const enumerateRealmRulesets = async (req) => {
+  if (!(await canWriteGlobal(req?.context?.accountId))) return [];
   try {
     const { results: keys } = await kvs
       .query()

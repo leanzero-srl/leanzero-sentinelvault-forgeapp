@@ -7,7 +7,7 @@
  * and grants — the deterministic state the harness asserts against.
  */
 import { kvs } from "@forge/kvs";
-import { expirySweepTask, workflowSweep, collectWorkflowEnforcementForPage, sweepRevertToApproved } from "./server/triggers";
+import { expirySweepTask, workflowSweep, collectWorkflowEnforcementForPage, sweepRevertToApproved, handleSealedArtifactDeleted, lifecycleTrigger, recurringNudgeTask } from "./server/triggers";
 import {
   assignPageWorkflow,
   transitionPageWorkflow,
@@ -73,6 +73,9 @@ import {
   getValidationJob,
   getAiFindings,
 } from "./server/capsules/validations/actions.js";
+// B15: cross-space ruleset enumeration — now site-admin gated (was ungated → leaked every space's
+// steward list). policies/actions.js is Queue/LLM-free → import-safe.
+import { enumerateRealmRulesets } from "./server/capsules/policies/actions.js";
 
 const json = (statusCode, body) => ({
   statusCode,
@@ -371,6 +374,46 @@ export async function testStateTrigger(req) {
       }
       if (fn === "getAiFindings") {
         const r = await getAiFindings({ payload: { pageId: q(req, "page"), spaceKey: q(req, "space") } });
+        return json(200, { invoked: fn, result: r });
+      }
+      // B15: the cross-space ruleset enumeration is now site-admin gated. In the webtrigger asUser
+      // has no session, so canWriteGlobal is always false → a non-site-admin caller gets []. The
+      // e2e pairs this with a `what=kvs` check that admin-settings-space-* is non-empty, proving the
+      // [] comes from the gate suppressing real data (the leak is closed), not from an empty store.
+      if (fn === "enumerateRealmRulesets") {
+        const r = await enumerateRealmRulesets({ context: { accountId: q(req, "actor") } });
+        return json(200, { invoked: fn, result: r });
+      }
+      // B13: permanent-delete cleanup. Mirrors the real trigger: read the seeded seal record from
+      // KVS (protection-{att}), then run the cleanup. Pass a FAKE pageId so the final notice fails
+      // (postDocFootnote 4xx) — the ordering fix means the KVS purge STILL runs (regression guard).
+      if (fn === "handleSealedArtifactDeleted") {
+        const att = q(req, "att");
+        const sealRecord = await kvs.get(`protection-${att}`);
+        if (!sealRecord) return json(200, { invoked: fn, result: { skipped: "no seal record" } });
+        await handleSealedArtifactDeleted(
+          sealRecord, att, q(req, "page") || sealRecord.contentId,
+          q(req, "actor") || "harness-deleter",
+          { title: sealRecord.attachmentName || "seal-me.txt" },
+        );
+        return json(200, { invoked: fn, result: { ran: true } });
+      }
+      // B12 (guard-only): lifecycleTrigger mass-deletes the ENTIRE KVS on uninstall. A NON-uninstall
+      // event must skip the whole body (triggers.js eventType guard). The e2e seeds a canary key,
+      // fires an "installed" event here, and asserts the canary survives (the wipe did NOT run).
+      if (fn === "lifecycleGuard") {
+        await lifecycleTrigger({ eventType: q(req, "event") || "avi:forge:installed:app" });
+        return json(200, { invoked: fn, result: { ran: true } });
+      }
+      // B12 (guard-only): recurringNudgeTask early-returns {reminderCount:0} when auto-unseal is
+      // ACTIVE (autoUnlockEnabled !== false), BEFORE the instance-wide seal scan. Self-guard here so
+      // this seam can NEVER reach the invasive scan branch: refuse unless auto-unseal is active.
+      if (fn === "recurringNudgeGuard") {
+        const g = await kvs.get("admin-settings-global");
+        if (g && g.autoUnlockEnabled === false) {
+          return json(200, { invoked: fn, result: { refused: "auto-unseal disabled — would scan; guard-only seam refuses" } });
+        }
+        const r = await recurringNudgeTask();
         return json(200, { invoked: fn, result: r });
       }
       return json(400, { error: `unknown fn=${fn}` });
