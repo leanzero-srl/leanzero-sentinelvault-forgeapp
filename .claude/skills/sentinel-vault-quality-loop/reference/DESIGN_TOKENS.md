@@ -117,7 +117,7 @@ iframes.
 
 - **Family:** `--sv-font-family: "Inter", -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", system-ui, sans-serif`. Inter is named first but NOT bundled — in the Forge iframe it falls through to the system stack. Remediation option: bundle Inter woff2 inside each static resource with a local `@font-face` (CSP allows same-origin assets; external fonts/CDN forbidden). Confidence medium until verified in a deployed iframe.
 - **Brand editorial weights (light mode):** h1 900/-0.028em, h2 800/-0.022em, h3 700/-0.015em; dark mode one step lighter; buttons semibold. App currently uses none of these.
-- **Signature device:** monospace uppercase eyebrows / §-markers, 10–11px, 0.18–0.25em tracking, font-black in light mode (live on leanzero.atlascrafted.com as `§01`, `LZ·/OVERVIEW·REV 2.6`). Absent from the app.
+- **Signature device:** monospace uppercase eyebrows / §-markers, 10–11px, 0.18–0.25em tracking, font-black in light mode (live on leanzero.net as `§01`, `LZ·/OVERVIEW·REV 2.6`). Absent from the app.
 - **Body:** 14px / 1.5, antialiased.
 - **Spacing (8px base):** `--sv-space-1..8` = 4, 8, 12, 16, 24, 32, 48, 64px. Defined only in foundation.css and consumed by nothing else — the other 8 sheets use raw px.
 - **Radius:** `--sv-radius-sm 6px`, `-md 10px`, `-lg 16px`, `-full 9999px` (surfaces mostly hardcode raw values).
