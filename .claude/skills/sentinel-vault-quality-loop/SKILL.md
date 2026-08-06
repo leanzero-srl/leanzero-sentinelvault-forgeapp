@@ -19,7 +19,7 @@ profiles:
   platform: forge
   brand:
     id: leanzero
-    live_site: https://leanzero.atlascrafted.com     # leanzero.net is an unrelated placeholder — never reference it
+    live_site: https://leanzero.net                  # moved here 2026-08-01; atlascrafted 301s in and is NOT the canonical host
     theme_paths:
       - src/ui/tokens/foundation.css                 # + per-surface token css in src/ui/tokens/
     canonical_brand_doc: ~/.claude/skills/leanzero-management/references/brand.md   # exact palette/type/motion
