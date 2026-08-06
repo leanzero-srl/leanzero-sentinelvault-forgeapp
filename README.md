@@ -2,7 +2,7 @@
 
 **Attachment protection and concurrent edit prevention for Confluence.**
 
-Part of the [LeanZero](https://leanzero.atlascrafted.com) ecosystem.
+Part of the [LeanZero](https://leanzero.net) ecosystem.
 
 Sentinel Vault is an Atlassian Forge app that brings **file locking, real-time violation detection, and automatic reversion** to Confluence Cloud attachments. When a user seals an attachment, nobody else can modify it -- and if they try, Sentinel Vault automatically restores the previous version and notifies everyone involved.
 
@@ -442,14 +442,14 @@ See [Contributing](docs/contributing.md) for detailed conventions and testing gu
 
 ## LeanZero Ecosystem
 
-Sentinel Vault is part of the **[LeanZero](https://leanzero.atlascrafted.com)** family of Atlassian Forge apps:
+Sentinel Vault is part of the **[LeanZero](https://leanzero.net)** family of Atlassian Forge apps:
 
 | App | Platform | Purpose |
 |-----|----------|---------|
 | **[CogniRunner](https://github.com/leanzero-srl/leanzero-cognirunner-forgeapp)** | Jira | AI-powered semantic workflow validation |
 | **Sentinel Vault** | Confluence | Attachment protection and concurrent edit prevention |
 
-Built by [LeanZero](https://leanzero.atlascrafted.com) -- intelligent tooling for Atlassian Cloud.
+Built by [LeanZero](https://leanzero.net) -- intelligent tooling for Atlassian Cloud.
 
 ---
 
@@ -459,4 +459,4 @@ MIT
 
 ---
 
-Part of [LeanZero](https://leanzero.atlascrafted.com) by Mihai Perdum.
+Part of [LeanZero](https://leanzero.net) by Mihai Perdum.
