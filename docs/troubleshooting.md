@@ -49,7 +49,7 @@ Both conditions must be met:
 2. Check that **Enable Email Notifications** (master toggle) is on in the steward console Alerts tab
 3. Check that the specific email sub-type is also enabled
 4. Check `forge logs` for `[EMAIL]` prefixed log entries for send attempts and failures
-5. Verify the sender domain (`leanzero.atlascrafted.com`) is verified in Resend
+5. Verify the sender domain (`leanzero.net`) is verified in Resend
 
 **Duplicate email notifications:**
 Check if deduplication keys are being written correctly. The system uses KVS keys like `expiry-notified-{artifactId}` and `fifty-percent-reminder-sent-{artifactId}` to prevent duplicates. If these keys are being cleared prematurely, duplicates may occur.
