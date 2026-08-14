@@ -17,6 +17,8 @@ import {
 
 // Import from capsule logic
 import { writeSealContentProp, removeSealContentProp, touchSealTimestamp } from "./logic.js";
+import { readDocBody } from "../../infra/doc-surgery.js";
+import { findSealedMediaSingle, capturePresentation } from "../../infra/media-presentation.js";
 import { purgeAllSealState } from "./confluence-sync.js";
 
 // Import from sibling capsules
@@ -306,6 +308,19 @@ const sealArtifact = async (req) => {
     }
   }
 
+  // Fix 6 (STRICT presentation seal): capture the on-page presentation baseline at seal time
+  // from a SERVER READ of the ADF (normalization-consistent with later trigger reads). Failure
+  // → no baseline → attr protection simply skipped for this seal (fail-open, logged).
+  let mediaBaseline = null;
+  if (contentId && sealedFileId) {
+    try {
+      const { adfDoc } = await readDocBody(contentId);
+      mediaBaseline = capturePresentation(findSealedMediaSingle(adfDoc, sealedFileId));
+    } catch (e) {
+      console.warn(`[SEAL] presentation-baseline capture failed for ${attachmentId} (attr protection inactive):`, e?.message);
+    }
+  }
+
   const sealPayload = {
     lockedBy: operatorAccountId,
     lockedByEmail: operatorEmail,
@@ -321,6 +336,7 @@ const sealArtifact = async (req) => {
     sealedVersion: sealedVersion,
     sealedFileId: sealedFileId,
     downloadLink: artifactDownloadLink,
+    mediaBaseline,
   };
 
   // Store seal record

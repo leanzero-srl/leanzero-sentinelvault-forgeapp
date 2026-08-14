@@ -30,6 +30,7 @@ import { isAccountStewardAsApp } from "./shared/steward-checks.js";
 import { postValidationComment } from "./infra/validation-blueprints.js";
 import { readDocBody, readDocBodyAtVersion, writeDocBody, collectMediaFileIds, extractMediaSingleNodes, spliceMediaNodes, locateBodiedSectionNodes, spliceSectionWrapper, hashAdf, canonicalizeAdf, nonEmptySectionBody } from "./infra/doc-surgery.js";
 import { probeAttachmentStatus, restoreAttachmentFromTrash, decideMediaRestoreAction, confirmAttachmentPurged } from "./infra/attachment-status.js";
+import { findSealedMediaSingle, capturePresentation, presentationDiffers, applyPresentation } from "./infra/media-presentation.js";
 
 // --- Fix 3 (CORE T6 extension): cross-run violation-comment dedup ---
 // K1: `violation-noticed-{pageId}-{targetId}-{class}`, TTL 24h, claimed BEFORE the footer
@@ -40,7 +41,7 @@ import { probeAttachmentStatus, restoreAttachmentFromTrash, decideMediaRestoreAc
 // clears the markers so a genuinely NEW tamper comments afresh. KVS has no CAS — the tiny
 // concurrent double-claim window is the same one T6 already accepts.
 const VIOLATION_NOTICE_TTL_MS = 24 * 3600 * 1000;
-const DEDUPED_NOTICE_CLASSES = ["content-removal", "delete", "revert-failed"];
+const DEDUPED_NOTICE_CLASSES = ["content-removal", "delete", "revert-failed", "layout-changed"];
 async function claimViolationNotice(pageId, targetId, klass) {
   if (!DEDUPED_NOTICE_CLASSES.includes(klass)) return true;
   const key = `violation-noticed-${pageId}-${targetId}-${klass}`;
@@ -222,6 +223,12 @@ export async function pageContentTrigger(event) {
           changed: false,
           enforcedRevert: false, // #44: set by Pass 0 to short-circuit A/B + suppress SV-M5
           notifications: [],
+          // Fix 6: presentation-seal enforcement is ON by default (owner decision: STRICT —
+          // sealing an image also seals its on-page presentation). Rollout is inherently
+          // bounded: only seals created after this ship carry a mediaBaseline; legacy seals
+          // are skipped. The flag remains an explicit opt-out. Shadow+strict were both
+          // live-verified (drift detection exact; revert to baseline; one deduped comment).
+          enforceMediaAttrs: globalPolicy?.enforceMediaPresentation !== false,
         };
       } catch (err) {
         console.error("[PAGE-PROTECT] Failed to read page body:", err);
@@ -421,6 +428,48 @@ async function collectMediaSealsForPage(pageId) {
 async function restoreMediaPass(ctx, sealFileMap, probeCache = new Map()) {
   if (ctx.enforcedRevert) return; // #44: an enforce revert already replaced the whole body
   const presentFileIds = collectMediaFileIds(ctx.adfDoc);
+
+  // --- Fix 6: STRICT presentation seal (attrs) — for sealed media still PRESENT on the page.
+  // Protect-list comparison only (layout/width/widthType + media width/height) → immune to
+  // editor attr-regen noise; legacy seals without a baseline are skipped. SHADOW mode (log,
+  // no write) unless the global `enforceMediaPresentation` flag is true — flip after soak.
+  for (const { seal, fileId } of sealFileMap) {
+    if (!presentFileIds.has(fileId) || !seal.mediaBaseline) continue;
+    try {
+      const node = findSealedMediaSingle(ctx.adfDoc, fileId);
+      if (!node) continue;
+      const current = capturePresentation(node);
+      if (!presentationDiffers(seal.mediaBaseline, current)) continue;
+      const isOwner = seal.lockedBy === ctx.atlassianId;
+      const grant = isOwner ? null : await getActiveEditGrant(seal.attachmentId, ctx.atlassianId);
+      if (isOwner || grant) {
+        // Authorized presentation change → re-baseline the seal to the new look.
+        await kvs.set(`protection-${seal.attachmentId}`, { ...seal, mediaBaseline: current });
+        seal.mediaBaseline = current;
+        console.warn(`[MEDIA-ATTRS] re-baselined sealed ${seal.attachmentId} presentation (authorized ${isOwner ? "owner" : "grantee"} change)`);
+        continue;
+      }
+      if (!ctx.enforceMediaAttrs) {
+        console.warn(`[MEDIA-ATTRS] SHADOW: presentation drift on sealed ${seal.attachmentId} by ${ctx.atlassianId}: ${JSON.stringify(seal.mediaBaseline)} -> ${JSON.stringify(current)} (not enforcing)`);
+        continue;
+      }
+      if (applyPresentation(node, seal.mediaBaseline)) {
+        ctx.changed = true;
+        console.warn(`[MEDIA-ATTRS] restored sealed presentation of ${seal.attachmentId} (non-owner change by ${ctx.atlassianId})`);
+        ctx.notifications.push({
+          type: "layout-changed",
+          targetId: seal.attachmentId,
+          seal,
+          actor: ctx.atlassianId,
+          pageId: ctx.pageId,
+          artifactName: seal.attachmentName || "Unknown Attachment",
+        });
+      }
+    } catch (e) {
+      console.error(`[MEDIA-ATTRS] attr check failed for ${seal.attachmentId} (skipping):`, e);
+    }
+  }
+
   const violations = sealFileMap.filter(
     ({ seal, fileId }) =>
       !presentFileIds.has(fileId) && seal.lockedBy !== ctx.atlassianId,
@@ -580,6 +629,11 @@ async function dispatchPipelineNotification(n) {
   if (n.type === "content-removal") {
     await sendViolationNotifications(
       n.seal, n.seal.attachmentId, n.pageId, n.actor, n.artifactName, "content-removal",
+    );
+  } else if (n.type === "layout-changed") {
+    // Fix 6: sealed presentation restored (deduped like content-removal).
+    await sendViolationNotifications(
+      n.seal, n.seal.attachmentId, n.pageId, n.actor, n.artifactName, "layout-changed",
     );
   } else if (n.type === "section-revert") {
     await sendSectionViolationNotifications(n.seal, n.pageId, n.actor, n.kind);
@@ -1440,6 +1494,7 @@ async function sendViolationNotifications(sealRecord, artifactId, contentId, atl
   const dispatchType = actionVerb === "delete" ? "trash-restored"
     : actionVerb === "content-removal" ? "content-reverted"
     : actionVerb === "permanently-deleted" ? "seal-released"
+    : actionVerb === "layout-changed" ? "presentation-restored"
     : "edit-reverted";
   const dispatchPayload = {
     id: `notification-${Date.now()}`,
