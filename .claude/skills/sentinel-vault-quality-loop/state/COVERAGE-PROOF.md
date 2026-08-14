@@ -1,9 +1,9 @@
 # Coverage Proof — Sentinel Vault
 
-Generated 2026-08-14T17:13:59.459Z by `scripts/coverage-proof.mjs` (parsed inventory — never hand-maintained; do not edit).
+Generated 2026-08-14T17:17:51.670Z by `scripts/coverage-proof.mjs` (parsed inventory — never hand-maintained; do not edit).
 
-**177 inventory items** — 94 string-verified, 0 annotated, 83 gaps.
-Evidence: 75 files (harness specs, app e2e scripts, unit tests).
+**177 inventory items** — 95 string-verified, 0 annotated, 82 gaps.
+Evidence: 76 files (harness specs, app e2e scripts, unit tests).
 
 ## manifest/confluence:globalSettings (1 items, 0 gaps)
 
@@ -166,7 +166,7 @@ Evidence: 75 files (harness specs, app e2e scripts, unit tests).
 |---|---|---|
 | `heartbeat` | **GAP** | — |
 
-## resolver/sealing (8 items, 4 gaps)
+## resolver/sealing (8 items, 3 gaps)
 
 | Item | Coverage | Evidence |
 |---|---|---|
@@ -174,7 +174,7 @@ Evidence: 75 files (harness specs, app e2e scripts, unit tests).
 | `unseal-artifact` | string-verified | harness/page-seal-unseal.spec.ts |
 | `enumerate-doc-artifacts` | **GAP** | — |
 | `enumerate-operator-seals` | **GAP** | — |
-| `enumerate-page-seals` | **GAP** | — |
+| `enumerate-page-seals` | string-verified | harness/sealed-delete-restore-journey.spec.ts |
 | `check-seal-stamp` | **GAP** | — |
 | `restore-sealed-artifact` | string-verified | harness/restore-gate.spec.ts |
 | `purge-seal-record` | string-verified | harness/destructive-actions-perm.spec.ts |
@@ -286,9 +286,9 @@ Evidence: 75 files (harness specs, app e2e scripts, unit tests).
 | Item | Coverage | Evidence |
 |---|---|---|
 | `version` | string-verified | harness/deploy-state-guard.spec.ts |
-| `kvs` | string-verified | harness/ai-validation-live.spec.ts, harness/destructive-actions-perm.spec.ts, harness/expiry-sweep.spec.ts, harness/gate-revert.spec.ts, harness/media-attr-matrix.spec.ts, harness/page-editrequest-approve.spec.ts … +31 more |
-| `set` | string-verified | harness/ai-validation-live.spec.ts, harness/destructive-actions-perm.spec.ts, harness/expiry-sweep.spec.ts, harness/gate-revert.spec.ts, harness/license-banner.spec.ts, harness/media-attr-matrix.spec.ts … +28 more |
-| `delete` | string-verified | harness/ai-validation-live.spec.ts, harness/destructive-actions-perm.spec.ts, harness/expiry-sweep.spec.ts, harness/gate-revert.spec.ts, harness/license-banner.spec.ts, harness/media-attr-matrix.spec.ts … +34 more |
-| `query` | string-verified | harness/realm-stale-badge.spec.ts, harness/ribbon-approval-dialog.spec.ts |
+| `kvs` | string-verified | harness/ai-validation-live.spec.ts, harness/destructive-actions-perm.spec.ts, harness/expiry-sweep.spec.ts, harness/gate-revert.spec.ts, harness/media-attr-matrix.spec.ts, harness/page-editrequest-approve.spec.ts … +32 more |
+| `set` | string-verified | harness/ai-validation-live.spec.ts, harness/destructive-actions-perm.spec.ts, harness/expiry-sweep.spec.ts, harness/gate-revert.spec.ts, harness/license-banner.spec.ts, harness/media-attr-matrix.spec.ts … +29 more |
+| `delete` | string-verified | harness/ai-validation-live.spec.ts, harness/destructive-actions-perm.spec.ts, harness/expiry-sweep.spec.ts, harness/gate-revert.spec.ts, harness/license-banner.spec.ts, harness/media-attr-matrix.spec.ts … +35 more |
+| `query` | string-verified | harness/realm-stale-badge.spec.ts, harness/ribbon-approval-dialog.spec.ts, harness/sealed-delete-restore-journey.spec.ts |
 | `invoke` | string-verified | harness/ai-validation-live.spec.ts, harness/destructive-actions-perm.spec.ts, harness/expiry-sweep.spec.ts, harness/license-banner.spec.ts, harness/page-ribbon-workflow.spec.ts, harness/page-section-editrequest.spec.ts … +16 more |
 
