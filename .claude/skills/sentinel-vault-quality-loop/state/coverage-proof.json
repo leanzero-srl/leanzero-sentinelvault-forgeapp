@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-08-14T17:13:59.459Z",
+  "generatedAt": "2026-08-14T17:17:51.670Z",
   "appRoot": "/Users/mihaiperdum/Projects/Sentinel Vault",
   "harnessRoot": "/Users/mihaiperdum/Projects/forge-live-harness",
   "evidenceFiles": [
@@ -36,6 +36,7 @@
     "harness/ribbon-approval-dialog.spec.ts",
     "harness/ruleset-enum-gate.spec.ts",
     "harness/sealed-artifact-trash.spec.ts",
+    "harness/sealed-delete-restore-journey.spec.ts",
     "harness/sealed-image-ui-delete.spec.ts",
     "harness/sealed-media-attrs.spec.ts",
     "harness/sealed-media.spec.ts",
@@ -81,9 +82,9 @@
   ],
   "counts": {
     "total": 177,
-    "stringVerified": 94,
+    "stringVerified": 95,
     "annotated": 0,
-    "gaps": 83
+    "gaps": 82
   },
   "items": [
     {
@@ -640,8 +641,10 @@
       "id": "resolver:enumerate-page-seals",
       "short": "enumerate-page-seals",
       "group": "resolver/sealing",
-      "tier": "uncovered",
-      "coveredBy": [],
+      "tier": "string-verified",
+      "coveredBy": [
+        "harness/sealed-delete-restore-journey.spec.ts"
+      ],
       "annotatedBy": []
     },
     {
@@ -980,6 +983,7 @@
         "harness/ribbon-approval-dialog.spec.ts",
         "harness/ruleset-enum-gate.spec.ts",
         "harness/sealed-artifact-trash.spec.ts",
+        "harness/sealed-delete-restore-journey.spec.ts",
         "harness/sealed-image-ui-delete.spec.ts",
         "harness/sealed-section.spec.ts",
         "harness/space-access-persist.spec.ts",
@@ -1025,6 +1029,7 @@
         "harness/restore-gate.spec.ts",
         "harness/revert-destructive.spec.ts",
         "harness/sealed-artifact-trash.spec.ts",
+        "harness/sealed-delete-restore-journey.spec.ts",
         "harness/sealed-image-ui-delete.spec.ts",
         "harness/sealed-media-attrs.spec.ts",
         "harness/sealed-media.spec.ts",
@@ -1070,6 +1075,7 @@
         "harness/revert-destructive.spec.ts",
         "harness/ribbon-approval-dialog.spec.ts",
         "harness/sealed-artifact-trash.spec.ts",
+        "harness/sealed-delete-restore-journey.spec.ts",
         "harness/sealed-image-ui-delete.spec.ts",
         "harness/sealed-media-attrs.spec.ts",
         "harness/sealed-media.spec.ts",
@@ -1102,7 +1108,8 @@
       "tier": "string-verified",
       "coveredBy": [
         "harness/realm-stale-badge.spec.ts",
-        "harness/ribbon-approval-dialog.spec.ts"
+        "harness/ribbon-approval-dialog.spec.ts",
+        "harness/sealed-delete-restore-journey.spec.ts"
       ],
       "annotatedBy": []
     },
