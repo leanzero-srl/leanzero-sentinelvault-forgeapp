@@ -32,6 +32,27 @@ function ctaLink(url, text) {
 /**
  * Seal violation: someone modified or deleted a sealed file.
  */
+// Human phrasing per action verb — the raw verb identifiers ("content-removal",
+// "revert-failed") used to be interpolated verbatim ("attempted to content-removal").
+const VERB_PHRASES = {
+  edit: "edit",
+  delete: "delete",
+  "content-removal": "remove",
+  "permanently-deleted": "permanently delete",
+  "revert-failed": "modify",
+  "layout-changed": "change the presentation of",
+};
+
+// Truthful outcome per verb. "delete" previously claimed "restored" even on the
+// PERMANENT-delete path (incident 2026-07-22 review) — that path now has its own verb.
+const VERB_OUTCOMES = {
+  delete: "The attachment has been restored from the trash.",
+  "content-removal": "The page content has been reverted.",
+  "permanently-deleted": "It cannot be restored — the file is permanently gone and the seal has been released.",
+  "revert-failed": "Sentinel Vault could NOT automatically restore it. Please review the page and recover the file from the trash or version history if needed.",
+  "layout-changed": "The sealed presentation has been restored.",
+};
+
 export function composeViolationLayout({
   ownerAccountId,
   editorAccountId,
@@ -40,21 +61,23 @@ export function composeViolationLayout({
   historyUrl,
   actionVerb = "edit",
 }) {
-  const outcome =
-    actionVerb === "delete"
-      ? "The attachment has been restored."
-      : actionVerb === "content-removal"
-        ? "The page content has been reverted."
-        : "The change has been reverted.";
+  const verbPhrase = VERB_PHRASES[actionVerb] || VERB_PHRASES.edit;
+  const outcome = VERB_OUTCOMES[actionVerb] || "The change has been reverted.";
 
   // Trust: tell the editor their work isn't lost and where to recover it.
   const recovery = historyUrl
     ? `<p>If that change was intentional, your version is preserved in the page history — ${`<a href="${escapeXml(historyUrl)}">view previous versions</a>`} to recover it, or request access.</p>`
     : "";
 
+  // Vet F4: with NO editor (a purge discovered by probe, not witnessed as an event), state the
+  // fact without accusing whoever happened to touch the page.
+  const attemptLine = editorAccountId
+    ? `${mention(editorAccountId)} attempted to ${escapeXml(verbPhrase)} <strong>"${escapeXml(artifactName)}"</strong>.`
+    : `your sealed file <strong>"${escapeXml(artifactName)}"</strong> ${actionVerb === "permanently-deleted" ? "was permanently deleted" : "was modified"}.`;
+
   const storageBody = `
 <p>${HEADER} — <strong>Seal Violation</strong></p>
-<p>${mention(ownerAccountId)} — ${mention(editorAccountId)} attempted to ${escapeXml(actionVerb)} <strong>"${escapeXml(artifactName)}"</strong>. ${escapeXml(outcome)}</p>
+<p>${mention(ownerAccountId)} — ${attemptLine} ${escapeXml(outcome)}</p>
 ${recovery}
 ${ctaLink(pageUrl, "Open the page")}
 `.trim();

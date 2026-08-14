@@ -29,7 +29,35 @@ import { postEnforceComment } from "./infra/approval-blueprints.js";
 import { isAccountStewardAsApp } from "./shared/steward-checks.js";
 import { postValidationComment } from "./infra/validation-blueprints.js";
 import { readDocBody, readDocBodyAtVersion, writeDocBody, collectMediaFileIds, extractMediaSingleNodes, spliceMediaNodes, locateBodiedSectionNodes, spliceSectionWrapper, hashAdf, canonicalizeAdf, nonEmptySectionBody } from "./infra/doc-surgery.js";
-import { probeAttachmentStatus, restoreAttachmentFromTrash } from "./infra/attachment-status.js";
+import { probeAttachmentStatus, restoreAttachmentFromTrash, decideMediaRestoreAction, confirmAttachmentPurged } from "./infra/attachment-status.js";
+
+// --- Fix 3 (CORE T6 extension): cross-run violation-comment dedup ---
+// K1: `violation-noticed-{pageId}-{targetId}-{class}`, TTL 24h, claimed BEFORE the footer
+// comment (the markVersionChecked pattern). Kills the incident-2026-07-22 spam loop: a stale
+// editor draft re-publishing every few minutes re-ran the restore and re-posted an identical
+// comment each time. The bulletin/dispatch record still fires PER OCCURRENCE (the console
+// timeline stays truthful); only the page comment is deduped. A clean save (no violations)
+// clears the markers so a genuinely NEW tamper comments afresh. KVS has no CAS — the tiny
+// concurrent double-claim window is the same one T6 already accepts.
+const VIOLATION_NOTICE_TTL_MS = 24 * 3600 * 1000;
+const DEDUPED_NOTICE_CLASSES = ["content-removal", "delete", "revert-failed"];
+async function claimViolationNotice(pageId, targetId, klass) {
+  if (!DEDUPED_NOTICE_CLASSES.includes(klass)) return true;
+  const key = `violation-noticed-${pageId}-${targetId}-${klass}`;
+  try {
+    if (await kvs.get(key)) return false;
+    await kvs.set(key, { at: new Date().toISOString() }, { expiresAt: Date.now() + VIOLATION_NOTICE_TTL_MS });
+    return true;
+  } catch (e) {
+    console.error("[NOTICE-DEDUP] marker claim failed — notifying anyway:", e);
+    return true; // marker infra failure must not suppress a real violation notice
+  }
+}
+async function clearViolationNotices(pageId, targetId) {
+  for (const klass of DEDUPED_NOTICE_CLASSES) {
+    await kvs.delete(`violation-noticed-${pageId}-${targetId}-${klass}`).catch(() => {});
+  }
+}
 
 // --- Helpers ---
 
@@ -93,6 +121,13 @@ export async function artifactEventTrigger(event) {
     const sealRecord = await kvs.get(`protection-${artifactId}`);
 
     if (!sealRecord || !sealRecord.lockedBy) {
+      return;
+    }
+
+    // S7: trashedOnly TRACKING records are NOT seals — they must never trigger edit-revert or
+    // trash-restore (vet finding: a panel-deleted unsealed attachment would get un-deleted).
+    // Permanent delete still cleans the dangling record up.
+    if (sealRecord.trashedOnly && eventType !== "avi:confluence:deleted:attachment") {
       return;
     }
 
@@ -165,6 +200,9 @@ export async function pageContentTrigger(event) {
     // --- Single read -> passes -> single write, with shared 409 backoff ---
     const MAX_RETRIES = 3;
     const notifyMap = new Map();
+    // Fix 1: attachment-layer resolutions for the media pass, cached ACROSS 409 retries so a
+    // retry never re-probes, re-restores, re-cleans or re-notifies the same attachment.
+    const mediaProbeCache = new Map();
     let anyChange = false;
     let writtenVersion = null; // #44: the version an app write actually produced (§2.5)
     let enforceReverted = false; // #44: a Pass-0 revert actually wrote (for the SV-M2 notice)
@@ -202,12 +240,17 @@ export async function pageContentTrigger(event) {
       }
       // Pass B: sealed-media restore
       if (!ctx.enforcedRevert && sealFileMap.length > 0) {
-        try { await restoreMediaPass(ctx, sealFileMap); }
+        try { await restoreMediaPass(ctx, sealFileMap, mediaProbeCache); }
         catch (e) { console.error("[PAGE-PROTECT] media pass error:", e); }
       }
       // Pass C (Phase 4): validation enforcement — slots in here.
 
-      // Accumulate notifications (dedup across retries by type + target).
+      // Rebuild the notify set from THIS attempt only (vet F3: a 409'd attempt's entries must
+      // not survive into the dispatch — attempt 2's recompute may legitimately drop a seal to
+      // the revert-failed branch, and dispatching the stale attempt-1 "reverted" claim beside
+      // it is a false statement). Only the attempt that actually WRITES is dispatched (SV-M2),
+      // and on success we break immediately, so last-attempt-wins is exactly right.
+      notifyMap.clear();
       for (const n of ctx.notifications) {
         notifyMap.set(`${n.type}:${n.targetId || ""}`, n);
       }
@@ -330,7 +373,16 @@ async function collectMediaSealsForPage(pageId) {
   do {
     const { results, nextCursor } = await sealQuery.getMany();
     for (const entry of results || []) {
-      if (entry.value?.contentId === pageId && entry.value?.lockedBy) pageSeals.push(entry);
+      if (entry.value?.contentId === pageId && entry.value?.lockedBy) {
+        // S7 (vet finding): trashedOnly TRACKING records are NOT seals — enforcing one here
+        // would UN-DELETE a deliberately panel-deleted unsealed attachment.
+        if (entry.value?.trashedOnly) continue;
+        // Expired seals are inert on the media pass too (§6 parity with sections and the
+        // edit/trash handlers) — a dead seal must not keep reverting page edits.
+        const exp = entry.value?.expiresAt;
+        if (exp && new Date(exp).getTime() <= Date.now()) continue;
+        pageSeals.push(entry);
+      }
     }
     if (!nextCursor || ++sealIters >= 50) break;
     sealQuery = kvs.query().where("key", WhereConditions.beginsWith("protection-")).limit(100).cursor(nextCursor);
@@ -357,21 +409,114 @@ async function collectMediaSealsForPage(pageId) {
 }
 
 // --- Pipeline pass: re-insert removed sealed media blocks ---
-async function restoreMediaPass(ctx, sealFileMap) {
+// Fix 1 (incident 2026-07-22): the ADF layer and the attachment layer are now UNIFIED.
+// Before re-splicing a sealed media node, the pass probes the attachment itself:
+//   current  → splice (the pre-fix path)
+//   trashed  → restore the attachment from trash FIRST, then splice — the old code re-inserted
+//              a node pointing at a trashed file, which renders NOTHING while the comment
+//              claimed "reverted" (the owner had to un-trash it by hand on 07-22)
+//   deleted  → never splice a dead node; run the permanent-delete cleanup + honest notice
+//   unknown  → splice (fail toward the pre-fix behavior)
+// Resolutions are cached in `probeCache` across 409 retries (no re-probe/re-restore/re-notify).
+async function restoreMediaPass(ctx, sealFileMap, probeCache = new Map()) {
   if (ctx.enforcedRevert) return; // #44: an enforce revert already replaced the whole body
   const presentFileIds = collectMediaFileIds(ctx.adfDoc);
   const violations = sealFileMap.filter(
     ({ seal, fileId }) =>
       !presentFileIds.has(fileId) && seal.lockedBy !== ctx.atlassianId,
   );
-  if (violations.length === 0) return;
+  if (violations.length === 0) {
+    // Fix 3: a clean save clears the comment-dedup markers — the NEXT tamper on this page is
+    // a genuinely new incident and must produce a fresh comment.
+    for (const { seal } of sealFileMap) {
+      if (seal.attachmentId) await clearViolationNotices(ctx.pageId, seal.attachmentId);
+    }
+    return;
+  }
+
+  // --- Attachment-layer triage (Fix 1) ---
+  const MAX_PROBES = 15; // bound REST cost on pathological pages; overflow → "unknown" → splice
+  let probesUsed = 0;
+  const spliceable = []; // violations whose attachment renders (current, restored, or unknown)
+  for (const violation of violations) {
+    const attId = violation.seal.attachmentId;
+    let resolution = attId ? probeCache.get(attId) : null;
+    if (!resolution) {
+      let probe = { status: "unknown", version: null };
+      let budgetSkipped = true;
+      if (attId && probesUsed < MAX_PROBES) {
+        probesUsed++;
+        budgetSkipped = false;
+        probe = await probeAttachmentStatus(attId);
+      }
+      resolution = { action: decideMediaRestoreAction(probe.status), probe, notified: false };
+      if (resolution.action === "cleanup") {
+        // Vet F1 (lens 3): a SINGLE 404 must never license the destructive branch — a
+        // trash-propagation window or container visibility can 404 a live attachment.
+        // Corroborate on two API surfaces after a settle delay; unconfirmed → treat as trashed.
+        const purged = await confirmAttachmentPurged(attId);
+        if (!purged) resolution.action = "restore-splice";
+      }
+      if (resolution.action === "restore-splice") {
+        const r = await restoreAttachmentFromTrash({
+          attachmentId: attId,
+          pageId: ctx.pageId,
+          title: violation.seal.attachmentName,
+          currentVersion: probe.version,
+        });
+        if (r.ok) {
+          console.warn(`[PAGE-PROTECT] Un-trashed sealed attachment ${attId} before re-splice`);
+          resolution.action = "splice";
+        } else if (r.status === "deleted" && (await confirmAttachmentPurged(attId))) {
+          resolution.action = "cleanup";
+        } else {
+          resolution.action = "restore-failed";
+        }
+      }
+      // Cache only real, keyed resolutions: a falsy attId would collide under one key, and a
+      // budget-skipped "unknown" would freeze splice-forever across retries for no reason.
+      if (attId && !budgetSkipped) probeCache.set(attId, resolution);
+    }
+
+    if (resolution.action === "cleanup") {
+      if (!resolution.notified) {
+        resolution.notified = true;
+        // Attachment permanently gone (double-confirmed): S3 cleanup (purges the seal triad +
+        // honest "cannot be restored" notice). Direct call — there is no page write to ride.
+        // Vet F4: actor is NULL — the current page editor did not perform the purge; the
+        // notice must state the fact without accusing whoever happened to edit the page.
+        try {
+          await handleSealedArtifactDeleted(
+            violation.seal, attId, ctx.pageId, null,
+            { title: violation.seal.attachmentName || "Unknown Attachment" },
+          );
+        } catch (e) { console.error("[PAGE-PROTECT] cleanup for deleted attachment failed:", e); }
+      }
+      continue;
+    }
+    if (resolution.action === "restore-failed") {
+      if (!resolution.notified) {
+        resolution.notified = true;
+        // Attachment still in trash and the un-trash failed: keep the seal (audit C4),
+        // never splice a dead node, tell the owner honestly.
+        console.error(`[PAGE-PROTECT] Sealed attachment ${attId} is in trash and could not be restored — notifying owner`);
+        await notifyAttachmentRevertFailed(
+          violation.seal, attId, ctx.pageId, ctx.atlassianId,
+          violation.seal.attachmentName || "Unknown Attachment",
+        ).catch(() => {});
+      }
+      continue;
+    }
+    spliceable.push(violation);
+  }
+  if (spliceable.length === 0) return;
 
   if (!ctx.currentVersion || ctx.currentVersion < 2) {
     console.warn("[PAGE-PROTECT] Cannot revert media — page has no previous version");
     return;
   }
 
-  const violatedFileIds = new Set(violations.map(({ fileId }) => fileId));
+  const violatedFileIds = new Set(spliceable.map(({ fileId }) => fileId));
   // SV-M6 + it23: the version still containing each sealed media may not be exactly
   // currentVersion-1 (a second edit or a trigger lag pushes it back), AND different violated
   // files may last exist in DIFFERENT older versions. Walk backward a bounded number of
@@ -392,25 +537,41 @@ async function restoreMediaPass(ctx, sealFileMap) {
       }
     } catch (_) { /* best effort */ }
   }
-  if (restoredEntries.length === 0) {
-    console.warn("[PAGE-PROTECT] Could not find sealed media in recent versions — skipping");
-    return;
+
+  if (restoredEntries.length > 0) {
+    spliceMediaNodes(ctx.adfDoc, restoredEntries);
+    ctx.changed = true;
+    console.warn(
+      `[PAGE-PROTECT] Re-inserted ${restoredEntries.length} sealed media block(s) into page ${ctx.pageId}`,
+    );
   }
 
-  spliceMediaNodes(ctx.adfDoc, restoredEntries);
-  ctx.changed = true;
-  console.warn(
-    `[PAGE-PROTECT] Re-inserted ${restoredEntries.length} sealed media block(s) into page ${ctx.pageId}`,
-  );
-  for (const { seal } of violations) {
-    ctx.notifications.push({
-      type: "content-removal",
-      targetId: seal.attachmentId,
-      seal,
-      actor: ctx.atlassianId,
-      pageId: ctx.pageId,
-      artifactName: seal.attachmentName || "Unknown Attachment",
-    });
+  for (const { seal, fileId } of spliceable) {
+    if (!stillNeeded.has(fileId)) {
+      // This seal's media WAS found and re-spliced — the "reverted" claim is true for it.
+      // (Pre-fix code notified for EVERY violation whenever ANY entry was restored — an
+      // overclaim for the ones the lookback never found.)
+      ctx.notifications.push({
+        type: "content-removal",
+        targetId: seal.attachmentId,
+        seal,
+        actor: ctx.atlassianId,
+        pageId: ctx.pageId,
+        artifactName: seal.attachmentName || "Unknown Attachment",
+      });
+    } else {
+      // Fix 4: MAX_LOOKBACK exhausted — the embed location is lost (the attachment itself is
+      // fine). Loud + honest instead of the old silent skip; keep the seal; once per run.
+      const resolution = probeCache.get(seal.attachmentId);
+      if (resolution && !resolution.notified) {
+        resolution.notified = true;
+        console.warn(`[PAGE-PROTECT] Could not find sealed media ${seal.attachmentId} within ${MAX_LOOKBACK} prior versions — notifying owner (embed location lost)`);
+        await notifyAttachmentRevertFailed(
+          seal, seal.attachmentId, ctx.pageId, ctx.atlassianId,
+          seal.attachmentName || "Unknown Attachment",
+        ).catch(() => {});
+      }
+    }
   }
 }
 
@@ -1126,7 +1287,11 @@ async function notifyAttachmentRevertFailed(sealRecord, artifactId, contentId, a
     });
   } catch (_) { /* best-effort */ }
   try {
-    await postDocFootnote(contentId, sealRecord.lockedBy, atlassianId, artifactName, "revert-failed");
+    // Fix 3: the revert-failed comment is deduped too — a persistently unrestorable attachment
+    // would otherwise re-comment on every page edit (vet F5 / the incident's own spam shape).
+    if (await claimViolationNotice(contentId, artifactId, "revert-failed")) {
+      await postDocFootnote(contentId, sealRecord.lockedBy, atlassianId, artifactName, "revert-failed");
+    }
   } catch (_) { /* best-effort */ }
 }
 
@@ -1154,8 +1319,9 @@ export async function handleSealedArtifactTrash(sealRecord, artifactId, contentI
   if (!currentVersion || !pageId) {
     const probe = await probeAttachmentStatus(artifactId);
     if (probe.status === "current") return; // already restored by a concurrent run/user
-    if (probe.status === "deleted") {
-      // Trash event raced a purge — treat as the permanent-delete path (cleanup + honest notice).
+    if (probe.status === "deleted" && (await confirmAttachmentPurged(artifactId))) {
+      // Trash event raced a purge (double-confirmed — a single transient 404 must never
+      // trigger the destructive cleanup): permanent-delete path + honest notice.
       await handleSealedArtifactDeleted(sealRecord, artifactId, pageId, atlassianId, attachment);
       return;
     }
@@ -1177,7 +1343,7 @@ export async function handleSealedArtifactTrash(sealRecord, artifactId, contentI
   });
 
   if (!restore.ok) {
-    if (restore.status === "deleted") {
+    if (restore.status === "deleted" && (await confirmAttachmentPurged(artifactId))) {
       await handleSealedArtifactDeleted(sealRecord, artifactId, pageId, atlassianId, attachment);
       return;
     }
@@ -1215,7 +1381,9 @@ export async function handleSealedArtifactDeleted(sealRecord, artifactId, conten
   // page) skipped every kvs.delete, leaving protection-*/space-protection-*/edit-grant-* ORPHANED with
   // no retry — so the (now-deleted) attachment read as "still sealed" forever. Wrap it; always clean up.
   try {
-    await sendViolationNotifications(sealRecord, artifactId, pageId, atlassianId, artifactName, "delete");
+    // Fix 1 copy: its own verb — the generic "delete" layout claimed "has been restored",
+    // false on THIS (permanent) path.
+    await sendViolationNotifications(sealRecord, artifactId, pageId, atlassianId, artifactName, "permanently-deleted");
   } catch (e) {
     console.error("[SEAL-DELETED] final notice failed (continuing cleanup):", e);
   }
@@ -1226,9 +1394,17 @@ export async function handleSealedArtifactDeleted(sealRecord, artifactId, conten
     await kvs.delete(`space-protection-${sealRecord.spaceId}-${artifactId}`);
   }
 
-  // Remove content property
+  // Remove content property — ONLY when this was the page's last live seal (vet F2: the
+  // `protection-` property is ONE per page and gates the media fast path; removing it while
+  // other seals still point at this page silently disables their protection).
   if (pageId) {
-    try { await removeSealContentProp(pageId); } catch (_) { /* best effort */ }
+    try {
+      if (!(await pageHasOtherLiveSeals(pageId, artifactId))) {
+        await removeSealContentProp(pageId);
+      } else {
+        console.warn(`[SEAL-DELETED] keeping the protection- content property on ${pageId} — other seals still target this page`);
+      }
+    } catch (_) { /* best effort */ }
   }
 
   // Clear any Edit Requests / grants tied to this seal
@@ -1238,12 +1414,32 @@ export async function handleSealedArtifactDeleted(sealRecord, artifactId, conten
   console.warn(`[SEAL-DELETED] Cleaned up seal records for ${artifactName} (${artifactId})`);
 }
 
+// Vet F2 helper: does any OTHER protection record still target this page? Excludes the record
+// being deleted by id (the KVS query is eventually consistent and may still return it) and
+// trashedOnly tracking records (S7 — they are not seals and don't need the fast-path gate).
+async function pageHasOtherLiveSeals(pageId, excludeArtifactId) {
+  let query = kvs.query().where("key", WhereConditions.beginsWith("protection-")).limit(100);
+  let iters = 0;
+  do {
+    const { results, nextCursor } = await query.getMany();
+    for (const entry of results || []) {
+      const v = entry.value;
+      if (v?.contentId === pageId && v?.lockedBy && !v?.trashedOnly && v?.attachmentId !== excludeArtifactId) {
+        return true;
+      }
+    }
+    if (!nextCursor || ++iters >= 50) return false;
+    query = kvs.query().where("key", WhereConditions.beginsWith("protection-")).limit(100).cursor(nextCursor);
+  } while (true);
+}
+
 // --- Shared violation notification logic ---
 async function sendViolationNotifications(sealRecord, artifactId, contentId, atlassianId, artifactName, actionVerb) {
   const bulletinToggles = await resolveBulletinToggles();
 
   const dispatchType = actionVerb === "delete" ? "trash-restored"
     : actionVerb === "content-removal" ? "content-reverted"
+    : actionVerb === "permanently-deleted" ? "seal-released"
     : "edit-reverted";
   const dispatchPayload = {
     id: `notification-${Date.now()}`,
@@ -1260,13 +1456,17 @@ async function sendViolationNotifications(sealRecord, artifactId, contentId, atl
 
   // Post Confluence comment with @mentions of owner and editor.
   // Confluence's notification engine emails the seal owner.
-  await postDocFootnote(
-    contentId,
-    sealRecord.lockedBy,
-    atlassianId,
-    artifactName,
-    actionVerb,
-  );
+  // Fix 3: at most one comment per (page, attachment, class) per 24h / until a clean save —
+  // the dispatch record above still fires per occurrence.
+  if (await claimViolationNotice(contentId, artifactId, actionVerb)) {
+    await postDocFootnote(
+      contentId,
+      sealRecord.lockedBy,
+      atlassianId,
+      artifactName,
+      actionVerb,
+    );
+  }
 
   if (bulletinToggles?.ENABLE_TOAST_DISPATCHES) {
     const violationKey = `violation-alert-${sealRecord.lockedBy}-${artifactId}-${Date.now()}`;
