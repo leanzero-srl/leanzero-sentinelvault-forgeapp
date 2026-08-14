@@ -11,6 +11,11 @@ cd "$REPO" || exit 2
 echo "=== frontend build (mandatory after UI/CSS changes) ==="
 npm run build || exit 1
 
+# Re-stamp src/build-info.js right before deploy so the BACKEND bundle carries the current
+# git SHA even if the build step above ever changes (npm prebuild also runs it — belt+braces).
+echo "=== gen build-info (deploy staleness stamp) ==="
+node scripts/gen-build-info.mjs || exit 1
+
 echo "=== forge deploy -e development ==="
 forge deploy -e development || exit 1
 

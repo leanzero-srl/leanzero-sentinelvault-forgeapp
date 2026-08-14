@@ -22,7 +22,26 @@ const loadSession = async (req) => {
  * hard-block — otherwise a dev/harness install (or an explicit inactive license) would be locked out.
  */
 export const checkLicense = async (req) => {
-  const active = req?.context?.license?.active; // true | false | undefined
+  let active = req?.context?.license?.active; // true | false | undefined
+
+  // HARNESS SEAM (dev-only — HARNESS_SECRET is set ONLY in the development environment, so this
+  // branch is dead code in prod): the real-wiring license E2E needs to force the licensed/unlicensed
+  // state through the REAL invoke chain (browser → resolver → checkLicense), and `context.license`
+  // cannot be faked from outside on a dev install (Forge never populates it there). The harness
+  // seeds `harness-license-override` = { active: true|false } via the test-state webtrigger and this
+  // override wins over the platform value. Any read failure falls through to the platform license —
+  // the fail-open bias below is preserved either way.
+  if (process.env.HARNESS_SECRET) {
+    try {
+      const override = await kvs.get("harness-license-override");
+      if (override && typeof override.active === "boolean") {
+        active = override.active;
+      }
+    } catch (_) {
+      // fall through to the platform license (fail-open)
+    }
+  }
+
   return {
     isLicensed: active !== false,
     active: active ?? null,

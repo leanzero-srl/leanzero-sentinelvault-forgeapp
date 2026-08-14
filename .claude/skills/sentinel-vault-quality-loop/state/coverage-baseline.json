@@ -1,0 +1,338 @@
+{
+  "createdAt": "2026-08-14T17:13:59.459Z",
+  "note": "auto-created on first --check run; each entry is an accepted gap",
+  "gaps": [
+    {
+      "item": "resolver:load-bulletin-toggles",
+      "reason": "unreviewed-baseline"
+    },
+    {
+      "item": "resolver:recent-dispatches",
+      "reason": "unreviewed-baseline"
+    },
+    {
+      "item": "resolver:operator-dispatches",
+      "reason": "unreviewed-baseline"
+    },
+    {
+      "item": "resolver:acknowledge-dispatch",
+      "reason": "unreviewed-baseline"
+    },
+    {
+      "item": "resolver:watch-artifact",
+      "reason": "unreviewed-baseline"
+    },
+    {
+      "item": "resolver:check-watch",
+      "reason": "unreviewed-baseline"
+    },
+    {
+      "item": "resolver:unwatch-artifact",
+      "reason": "unreviewed-baseline"
+    },
+    {
+      "item": "resolver:flush-operator-dispatches",
+      "reason": "unreviewed-baseline"
+    },
+    {
+      "item": "resolver:list-breach-dispatches",
+      "reason": "unreviewed-baseline"
+    },
+    {
+      "item": "resolver:request-edit-access",
+      "reason": "unreviewed-baseline"
+    },
+    {
+      "item": "resolver:check-edit-request",
+      "reason": "unreviewed-baseline"
+    },
+    {
+      "item": "resolver:list-edit-requests",
+      "reason": "unreviewed-baseline"
+    },
+    {
+      "item": "resolver:list-my-edit-requests",
+      "reason": "unreviewed-baseline"
+    },
+    {
+      "item": "resolver:approve-edit-request",
+      "reason": "unreviewed-baseline"
+    },
+    {
+      "item": "resolver:deny-edit-request",
+      "reason": "unreviewed-baseline"
+    },
+    {
+      "item": "resolver:revoke-edit-grant",
+      "reason": "unreviewed-baseline"
+    },
+    {
+      "item": "resolver:list-edit-grants",
+      "reason": "unreviewed-baseline"
+    },
+    {
+      "item": "resolver:request-section-edit",
+      "reason": "unreviewed-baseline"
+    },
+    {
+      "item": "resolver:check-section-edit",
+      "reason": "unreviewed-baseline"
+    },
+    {
+      "item": "resolver:list-section-edit-requests",
+      "reason": "unreviewed-baseline"
+    },
+    {
+      "item": "resolver:approve-section-edit",
+      "reason": "unreviewed-baseline"
+    },
+    {
+      "item": "resolver:deny-section-edit",
+      "reason": "unreviewed-baseline"
+    },
+    {
+      "item": "resolver:load-session",
+      "reason": "unreviewed-baseline"
+    },
+    {
+      "item": "resolver:identify-operator",
+      "reason": "unreviewed-baseline"
+    },
+    {
+      "item": "resolver:current-operator",
+      "reason": "unreviewed-baseline"
+    },
+    {
+      "item": "resolver:enumerate-operators",
+      "reason": "unreviewed-baseline"
+    },
+    {
+      "item": "resolver:enumerate-teams",
+      "reason": "unreviewed-baseline"
+    },
+    {
+      "item": "resolver:enumerate-panel-artifacts",
+      "reason": "unreviewed-baseline"
+    },
+    {
+      "item": "resolver:label-artifact",
+      "reason": "unreviewed-baseline"
+    },
+    {
+      "item": "resolver:unlabel-artifact",
+      "reason": "unreviewed-baseline"
+    },
+    {
+      "item": "resolver:inject-panel",
+      "reason": "unreviewed-baseline"
+    },
+    {
+      "item": "resolver:extract-panel",
+      "reason": "unreviewed-baseline"
+    },
+    {
+      "item": "resolver:check-panel-status",
+      "reason": "unreviewed-baseline"
+    },
+    {
+      "item": "resolver:store-doc-panel-prefs",
+      "reason": "unreviewed-baseline"
+    },
+    {
+      "item": "resolver:register-panel-key",
+      "reason": "unreviewed-baseline"
+    },
+    {
+      "item": "resolver:discover-panel-key",
+      "reason": "unreviewed-baseline"
+    },
+    {
+      "item": "resolver:resolve-artifact-preview",
+      "reason": "unreviewed-baseline"
+    },
+    {
+      "item": "resolver:load-global-ruleset",
+      "reason": "unreviewed-baseline"
+    },
+    {
+      "item": "resolver:store-global-ruleset",
+      "reason": "unreviewed-baseline"
+    },
+    {
+      "item": "resolver:load-realm-ruleset",
+      "reason": "unreviewed-baseline"
+    },
+    {
+      "item": "resolver:store-realm-ruleset",
+      "reason": "unreviewed-baseline"
+    },
+    {
+      "item": "resolver:discard-realm-ruleset",
+      "reason": "unreviewed-baseline"
+    },
+    {
+      "item": "resolver:identify-realm",
+      "reason": "unreviewed-baseline"
+    },
+    {
+      "item": "resolver:enumerate-realm-seals",
+      "reason": "unreviewed-baseline"
+    },
+    {
+      "item": "resolver:launch-realm-audit",
+      "reason": "unreviewed-baseline"
+    },
+    {
+      "item": "resolver:check-audit-status",
+      "reason": "unreviewed-baseline"
+    },
+    {
+      "item": "resolver:request-steward-access",
+      "reason": "unreviewed-baseline"
+    },
+    {
+      "item": "resolver:check-steward-request",
+      "reason": "unreviewed-baseline"
+    },
+    {
+      "item": "resolver:approve-steward-request",
+      "reason": "unreviewed-baseline"
+    },
+    {
+      "item": "resolver:deny-steward-request",
+      "reason": "unreviewed-baseline"
+    },
+    {
+      "item": "resolver:enumerate-doc-artifacts",
+      "reason": "unreviewed-baseline"
+    },
+    {
+      "item": "resolver:enumerate-operator-seals",
+      "reason": "unreviewed-baseline"
+    },
+    {
+      "item": "resolver:enumerate-page-seals",
+      "reason": "unreviewed-baseline"
+    },
+    {
+      "item": "resolver:check-seal-stamp",
+      "reason": "unreviewed-baseline"
+    },
+    {
+      "item": "resolver:enumerate-section-seals",
+      "reason": "unreviewed-baseline"
+    },
+    {
+      "item": "resolver:refresh-section-snapshot",
+      "reason": "unreviewed-baseline"
+    },
+    {
+      "item": "resolver:load-validation-config",
+      "reason": "unreviewed-baseline"
+    },
+    {
+      "item": "resolver:validate-page-now",
+      "reason": "unreviewed-baseline"
+    },
+    {
+      "item": "resolver:get-validation-state",
+      "reason": "unreviewed-baseline"
+    },
+    {
+      "item": "resolver:approve-page-gate",
+      "reason": "unreviewed-baseline"
+    },
+    {
+      "item": "resolver:list-ai-models",
+      "reason": "unreviewed-baseline"
+    },
+    {
+      "item": "resolver:get-validation-job",
+      "reason": "unreviewed-baseline"
+    },
+    {
+      "item": "resolver:get-ai-findings",
+      "reason": "unreviewed-baseline"
+    },
+    {
+      "item": "resolver:set-ai-finding-state",
+      "reason": "unreviewed-baseline"
+    },
+    {
+      "item": "resolver:get-validation-audit",
+      "reason": "unreviewed-baseline"
+    },
+    {
+      "item": "resolver:get-workflow-dashboard",
+      "reason": "unreviewed-baseline"
+    },
+    {
+      "item": "resolver:get-workflow-log",
+      "reason": "unreviewed-baseline"
+    },
+    {
+      "item": "resolver:assign-workflow",
+      "reason": "unreviewed-baseline"
+    },
+    {
+      "item": "resolver:request-transition",
+      "reason": "unreviewed-baseline"
+    },
+    {
+      "item": "resolver:load-workflow-config",
+      "reason": "unreviewed-baseline"
+    },
+    {
+      "item": "resolver:store-workflow-config",
+      "reason": "unreviewed-baseline"
+    },
+    {
+      "item": "resolver:get-space-workflow-settings",
+      "reason": "unreviewed-baseline"
+    },
+    {
+      "item": "resolver:bulk-assign-workflow",
+      "reason": "unreviewed-baseline"
+    },
+    {
+      "item": "resolver:list-my-approvals",
+      "reason": "unreviewed-baseline"
+    },
+    {
+      "item": "resolver:search-workflow-users",
+      "reason": "unreviewed-baseline"
+    },
+    {
+      "item": "resolver:search-workflow-groups",
+      "reason": "unreviewed-baseline"
+    },
+    {
+      "item": "resolver:heartbeat",
+      "reason": "unreviewed-baseline"
+    },
+    {
+      "item": "testhook:fn:enumerateSectionSeals",
+      "reason": "unreviewed-baseline"
+    },
+    {
+      "item": "testhook:fn:probeAttachment",
+      "reason": "unreviewed-baseline"
+    },
+    {
+      "item": "manifest:confluence:pageBanner:sentinel-vault-ribbon",
+      "reason": "unreviewed-baseline"
+    },
+    {
+      "item": "manifest:consumer:ai-validation-queue",
+      "reason": "unreviewed-baseline"
+    },
+    {
+      "item": "event:avi:confluence:created:page",
+      "reason": "unreviewed-baseline"
+    },
+    {
+      "item": "manifest:scheduledTrigger:expiry-sweep-scheduled",
+      "reason": "unreviewed-baseline"
+    }
+  ]
+}
