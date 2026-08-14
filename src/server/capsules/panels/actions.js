@@ -282,6 +282,16 @@ export const deleteArtifact = async (req) => {
         });
         const { touchSealTimestamp } = await import("../sealing/logic.js");
         await touchSealTimestamp();
+      } else if (sealData.lockedBy === req.context.accountId && !sealData.trashedOnly) {
+        // Hunt F2: deleting your OWN sealed file releases the seal — convert the live record
+        // to an inert S7 trashedOnly tracking record HERE, not only in the trash trigger (the
+        // trashed:attachment event can drop). A live seal left behind would let the next
+        // non-owner page save un-trash this deliberate delete and blame a bystander.
+        // Merge onto a fresh read — the trash trigger's own conversion can race this write.
+        const freshSeal = (await kvs.get(`protection-${attachmentId}`)) || sealData;
+        await kvs.set(`protection-${attachmentId}`, { ...freshSeal, trashedOnly: true });
+        const { touchSealTimestamp } = await import("../sealing/logic.js");
+        await touchSealTimestamp();
       }
       return { success: true };
     }

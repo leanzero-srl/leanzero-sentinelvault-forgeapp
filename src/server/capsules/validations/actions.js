@@ -4,6 +4,7 @@ import { Queue } from "@forge/events";
 import { fetchPageLabels } from "../../infra/labels.js";
 
 import { authorizeSteward, isOperatorSteward, isOperatorSiteAdmin } from "../../shared/steward-checks.js";
+import { setWithTtl } from "../../shared/kvs-ttl.js";
 
 // audit B6: resolve a page's REAL space key from its id (never trust a caller-supplied
 // spaceKey for authorization — else a steward of space A could act on a page in space B).
@@ -179,7 +180,7 @@ export const enqueuePageValidation = async (req) => {
   }
 
   const taskId = `aival_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-  await kvs.set(`ai-validation-status-${taskId}`, { status: "queued", pageId }, { expiresAt: Date.now() + 3600000 });
+  await setWithTtl(`ai-validation-status-${taskId}`, { status: "queued", pageId }, 3600000);
   await new Queue({ key: "ai-validation-queue" }).push({ body: { taskId, pageId, spaceKey, realmKey: spaceKey, requestedBy: accountId } });
   return { success: true, taskId };
 };

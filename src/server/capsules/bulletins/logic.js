@@ -1,6 +1,7 @@
 import { kvs, WhereConditions } from "@forge/kvs";
 import { mailReleaseNotice, mailViolationAlert } from "../../infra/notice-composer.js";
 import { resolveBulletinToggles } from "../../shared/bulletin-flags.js";
+import { setWithTtl } from "../../shared/kvs-ttl.js";
 
 /**
  * Post a Confluence footer comment with mentions of the seal owner and the
@@ -22,10 +23,12 @@ export async function postDocFootnote(
 ) {
   const bulletinConfig = await resolveBulletinToggles();
   if (!bulletinConfig.ENABLE_CONFLUENCE_BULLETINS) {
-    return;
+    return { success: false, gated: true };
   }
 
-  await mailViolationAlert(
+  // Return the post result so postDedupedFootnote (triggers.js) can RELEASE its dedup marker
+  // when the comment did not actually land (hunt H1-F5 claim-ordering discipline).
+  return await mailViolationAlert(
     ownerAccountId,
     editorAccountId,
     artifactName,
@@ -50,29 +53,29 @@ export async function recordDispatch(eventData) {
   try {
     const dispatchId = `notification-${Date.now()}-${Math.random().toString(36).substring(2, 11)}`;
 
-    await kvs.set(
+    await setWithTtl(
       dispatchId,
       {
         ...eventData,
         timestamp: new Date().toISOString(),
       },
-      { expiresAt: Date.now() + 300000 },
+      300000,
     );
 
     const recentBulletins = (await kvs.get("recent-notifications")) || {
       events: [],
     };
+    // Hunt H1-F7: id/timestamp LAST — callers pass an eventData.id built from Date.now()
+    // alone, which collides across same-ms dispatches; the random-suffixed dispatchId wins.
     recentBulletins.events.unshift({
-      id: dispatchId,
       ...eventData,
+      id: dispatchId,
       timestamp: new Date().toISOString(),
     });
 
     recentBulletins.events = recentBulletins.events.slice(0, 10);
 
-    await kvs.set("recent-notifications", recentBulletins, {
-      expiresAt: Date.now() + 3600000,
-    });
+    await setWithTtl("recent-notifications", recentBulletins, 3600000);
   } catch (error) {
     console.error("Error storing dispatch event:", error);
   }
@@ -146,6 +149,9 @@ export async function notifyWatchers(
 
         if (noticeResult.success) {
           result.sent++;
+          // Hunt H1-F10: consume the watch request only when the notice actually went
+          // out — a transient failure keeps it for a later retry (the 7d TTL bounds it).
+          await kvs.delete(key);
         } else {
           result.failed++;
           console.warn(
@@ -158,8 +164,6 @@ export async function notifyWatchers(
           `[NOTIFY-ME] Error notifying ${value.accountId}:`,
           noticeError,
         );
-      } finally {
-        await kvs.delete(key);
       }
     }
 

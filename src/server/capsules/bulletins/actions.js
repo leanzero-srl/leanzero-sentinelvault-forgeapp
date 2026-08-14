@@ -1,5 +1,6 @@
 import { kvs, WhereConditions } from "@forge/kvs";
 import { resolveBulletinToggles } from "../../shared/bulletin-flags.js";
+import { setWithTtl } from "../../shared/kvs-ttl.js";
 
 /**
  * Get bulletin toggle flags
@@ -17,6 +18,7 @@ const loadBulletinToggles = async () => {
  */
 export const recentDispatches = async (req) => {
   const { pageId } = req.payload;
+  const requesterAccountId = req.context.accountId;
 
   try {
     const recentNotifications = (await kvs.get("recent-notifications")) || {
@@ -26,6 +28,15 @@ export const recentDispatches = async (req) => {
     let events = recentNotifications.events || [];
     if (pageId) {
       events = events.filter((event) => event.pageId === pageId);
+    } else {
+      // Hunt H1-F8: without a pageId this would hand any authenticated user the
+      // instance-wide feed (names, page ids, accountIds). Scope to the requester's
+      // own events, mirroring operatorDispatches.
+      events = events.filter(
+        (event) =>
+          event.ownerAccountId === requesterAccountId ||
+          event.editorAccountId === requesterAccountId,
+      );
     }
 
     return {
@@ -75,18 +86,32 @@ export const operatorDispatches = async (req) => {
  * Acknowledge (dismiss) a specific dispatch
  */
 export const acknowledgeDispatch = async (req) => {
-  const { notificationId } = req.payload;
+  // Hunt H1-F3: the ribbon sends dispatchId, older callers notificationId — accept both.
+  const { notificationId, dispatchId } = req.payload;
+  const targetId = notificationId || dispatchId;
+  const requesterAccountId = req.context.accountId;
+
+  if (!targetId) {
+    return { success: false };
+  }
 
   try {
     const recentNotifications = (await kvs.get("recent-notifications")) || {
       events: [],
     };
 
+    // Hunt H1-F8 (dismissal half): only the event's owner/editor may dismiss it —
+    // keep everything else, including a matching id the requester doesn't own.
     recentNotifications.events = recentNotifications.events.filter(
-      (event) => event.id !== notificationId,
+      (event) =>
+        event.id !== targetId ||
+        (event.ownerAccountId !== requesterAccountId &&
+          event.editorAccountId !== requesterAccountId),
     );
 
-    await kvs.set("recent-notifications", recentNotifications);
+    // Re-apply recordDispatch's 1h retention — a plain set would make the dismissal
+    // rewrite permanent (H1-F3).
+    await setWithTtl("recent-notifications", recentNotifications, 3600000);
 
     return {
       success: true,
@@ -114,9 +139,7 @@ export const watchArtifact = async (req) => {
       requestedAt: Date.now(),
     };
 
-    await kvs.set(watchKey, watchData, {
-      expiresAt: Date.now() + 7 * 24 * 3600 * 1000,
-    });
+    await setWithTtl(watchKey, watchData, 7 * 24 * 3600 * 1000);
 
     return {
       success: true,
@@ -186,7 +209,9 @@ const flushOperatorDispatches = async (req) => {
   const operatorAccountId = req.context.accountId;
 
   try {
-    const alertPrefix = `alert-${operatorAccountId}-`;
+    // Hunt H1-F9: alert keys are written as violation-alert-{accountId}-… (triggers.js) —
+    // the old `alert-` prefix matched nothing, making this action a permanent no-op.
+    const alertPrefix = `violation-alert-${operatorAccountId}-`;
     const { results: alerts } = await kvs
       .query()
       .where("key", WhereConditions.beginsWith(alertPrefix))

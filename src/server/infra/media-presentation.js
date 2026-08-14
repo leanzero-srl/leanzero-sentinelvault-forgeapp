@@ -13,6 +13,23 @@
  * Zero imports — unit-testable in plain node.
  */
 
+/** Deep-find ALL mediaSingle wrappers whose media child references fileId (LIVE refs, document
+ * order). Hunt F7: copy-paste duplicates share the fileId — the attr pass must check and
+ * restore EVERY copy, not just the first depth-first match. */
+export function findAllSealedMediaSingles(node, fileId, out = []) {
+  if (!node || typeof node !== "object") return out;
+  if (node.type === "mediaSingle") {
+    for (const child of node.content || []) {
+      if (child?.type === "media" && child.attrs?.id === fileId) {
+        out.push(node);
+        break;
+      }
+    }
+  }
+  for (const child of node.content || []) findAllSealedMediaSingles(child, fileId, out);
+  return out;
+}
+
 /** Deep-find the mediaSingle wrapper whose media child references fileId. Returns the LIVE ref. */
 export function findSealedMediaSingle(node, fileId) {
   if (!node || typeof node !== "object") return null;

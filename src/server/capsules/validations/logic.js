@@ -1,5 +1,6 @@
 import { kvs } from "@forge/kvs";
 import { asApp, route } from "@forge/api";
+import { setWithTtl, setUntil } from "../../shared/kvs-ttl.js";
 
 // Conditions & Validations — config + state storage.
 //
@@ -176,7 +177,7 @@ export async function wasVersionChecked(pageId, version) {
 }
 export async function markVersionChecked(pageId, version) {
   if (!version) return;
-  await kvs.set(`validation-checked-${pageId}-${version}`, true, { expiresAt: Date.now() + 30 * 24 * 3600 * 1000 });
+  await setWithTtl(`validation-checked-${pageId}-${version}`, true, 30 * 24 * 3600 * 1000);
 }
 
 // ===========================================================================
@@ -305,14 +306,14 @@ export async function accrueTokenUsage(realmKey, usage) {
   cur.outputTokens += usage?.outputTokens || 0;
   cur.totalTokens += usage?.totalTokens || 0;
   cur.runs += 1;
-  await kvs.set(key, cur, { expiresAt: Date.now() + 120 * 24 * 3600 * 1000 });
+  await setWithTtl(key, cur, 120 * 24 * 3600 * 1000);
   return cur;
 }
 
 // --- AI findings storage ---
 export async function storeFindings(pageId, payload) {
   const ts = Date.now();
-  await kvs.set(`ai-finding-${pageId}-${ts}`, payload, { expiresAt: ts + 90 * 24 * 3600 * 1000 });
+  await setUntil(`ai-finding-${pageId}-${ts}`, payload, ts + 90 * 24 * 3600 * 1000);
   await kvs.set(`ai-latest-${pageId}`, payload);
 }
 export async function getLatestFindings(pageId) {
