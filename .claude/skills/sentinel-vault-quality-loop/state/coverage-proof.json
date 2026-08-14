@@ -1,0 +1,1867 @@
+{
+  "generatedAt": "2026-08-14T17:13:59.459Z",
+  "appRoot": "/Users/mihaiperdum/Projects/Sentinel Vault",
+  "harnessRoot": "/Users/mihaiperdum/Projects/forge-live-harness",
+  "evidenceFiles": [
+    "harness/a11y.spec.ts",
+    "harness/admin-render.spec.ts",
+    "harness/ai-validation-live.spec.ts",
+    "harness/deploy-state-guard.spec.ts",
+    "harness/destructive-actions-perm.spec.ts",
+    "harness/expiry-sweep.spec.ts",
+    "harness/full-app-walkthrough.spec.ts",
+    "harness/gate-revert.spec.ts",
+    "harness/license-banner.spec.ts",
+    "harness/media-attr-matrix.spec.ts",
+    "harness/page-editrequest-approve.spec.ts",
+    "harness/page-editrequest-deny-revoke.spec.ts",
+    "harness/page-inline-panel.spec.ts",
+    "harness/page-ribbon-workflow.spec.ts",
+    "harness/page-seal-state.spec.ts",
+    "harness/page-seal-unseal.spec.ts",
+    "harness/page-section-editrequest.spec.ts",
+    "harness/page-section-seal-create.spec.ts",
+    "harness/page-watch-dispatch.spec.ts",
+    "harness/perm-delete-cleanup.spec.ts",
+    "harness/realm-console-deep.spec.ts",
+    "harness/realm-operator-search.spec.ts",
+    "harness/realm-plainuser-gate.spec.ts",
+    "harness/realm-reservation-persist.spec.ts",
+    "harness/realm-stale-badge.spec.ts",
+    "harness/realm-validation-crud.spec.ts",
+    "harness/realm-workflow-persist.spec.ts",
+    "harness/realm.spec.ts",
+    "harness/restore-gate.spec.ts",
+    "harness/revert-destructive.spec.ts",
+    "harness/ribbon-approval-dialog.spec.ts",
+    "harness/ruleset-enum-gate.spec.ts",
+    "harness/sealed-artifact-trash.spec.ts",
+    "harness/sealed-image-ui-delete.spec.ts",
+    "harness/sealed-media-attrs.spec.ts",
+    "harness/sealed-media.spec.ts",
+    "harness/sealed-section.spec.ts",
+    "harness/space-access-persist.spec.ts",
+    "harness/steward-console-deep.spec.ts",
+    "harness/steward-force-unseal.spec.ts",
+    "harness/steward-global-persist.spec.ts",
+    "harness/steward-grant-roundtrip.spec.ts",
+    "harness/trigger-guards.spec.ts",
+    "harness/upload-boundary-live.spec.ts",
+    "harness/validation-eval.spec.ts",
+    "harness/validation-space-floor.spec.ts",
+    "harness/validation.spec.ts",
+    "harness/violation-dedup.spec.ts",
+    "harness/workflow-deadend-warn.spec.ts",
+    "e2e/editgrant-revoke-e2e.mjs",
+    "e2e/ensure-fixture.mjs",
+    "e2e/forge-logs.mjs",
+    "e2e/health.mjs",
+    "e2e/live-trigger-e2e.mjs",
+    "e2e/seal-lifecycle-e2e.mjs",
+    "e2e/seal-revert-e2e.mjs",
+    "e2e/workflow-approval-e2e.mjs",
+    "e2e/workflow-autoassign-e2e.mjs",
+    "e2e/workflow-bulk-e2e.mjs",
+    "e2e/workflow-conditions-e2e.mjs",
+    "e2e/workflow-e2e.mjs",
+    "e2e/workflow-enforce-e2e.mjs",
+    "unit/adf-perf.test.mjs",
+    "unit/doc-surgery.test.mjs",
+    "unit/format-duration.test.mjs",
+    "unit/json-salvage.test.mjs",
+    "unit/license.test.mjs",
+    "unit/media-presentation.test.mjs",
+    "unit/media-restore.test.mjs",
+    "unit/pagination.test.mjs",
+    "unit/rules-engine.test.mjs",
+    "unit/sealing-logic.test.mjs",
+    "unit/upload-limits.test.mjs",
+    "unit/validations-logic.test.mjs",
+    "unit/workflow-engine.test.mjs"
+  ],
+  "counts": {
+    "total": 177,
+    "stringVerified": 94,
+    "annotated": 0,
+    "gaps": 83
+  },
+  "items": [
+    {
+      "id": "resolver:load-bulletin-toggles",
+      "short": "load-bulletin-toggles",
+      "group": "resolver/bulletins",
+      "tier": "uncovered",
+      "coveredBy": [],
+      "annotatedBy": []
+    },
+    {
+      "id": "resolver:recent-dispatches",
+      "short": "recent-dispatches",
+      "group": "resolver/bulletins",
+      "tier": "uncovered",
+      "coveredBy": [],
+      "annotatedBy": []
+    },
+    {
+      "id": "resolver:operator-dispatches",
+      "short": "operator-dispatches",
+      "group": "resolver/bulletins",
+      "tier": "uncovered",
+      "coveredBy": [],
+      "annotatedBy": []
+    },
+    {
+      "id": "resolver:acknowledge-dispatch",
+      "short": "acknowledge-dispatch",
+      "group": "resolver/bulletins",
+      "tier": "uncovered",
+      "coveredBy": [],
+      "annotatedBy": []
+    },
+    {
+      "id": "resolver:watch-artifact",
+      "short": "watch-artifact",
+      "group": "resolver/bulletins",
+      "tier": "uncovered",
+      "coveredBy": [],
+      "annotatedBy": []
+    },
+    {
+      "id": "resolver:check-watch",
+      "short": "check-watch",
+      "group": "resolver/bulletins",
+      "tier": "uncovered",
+      "coveredBy": [],
+      "annotatedBy": []
+    },
+    {
+      "id": "resolver:unwatch-artifact",
+      "short": "unwatch-artifact",
+      "group": "resolver/bulletins",
+      "tier": "uncovered",
+      "coveredBy": [],
+      "annotatedBy": []
+    },
+    {
+      "id": "resolver:flush-operator-dispatches",
+      "short": "flush-operator-dispatches",
+      "group": "resolver/bulletins",
+      "tier": "uncovered",
+      "coveredBy": [],
+      "annotatedBy": []
+    },
+    {
+      "id": "resolver:list-breach-dispatches",
+      "short": "list-breach-dispatches",
+      "group": "resolver/bulletins",
+      "tier": "uncovered",
+      "coveredBy": [],
+      "annotatedBy": []
+    },
+    {
+      "id": "resolver:request-edit-access",
+      "short": "request-edit-access",
+      "group": "resolver/editreq",
+      "tier": "uncovered",
+      "coveredBy": [],
+      "annotatedBy": []
+    },
+    {
+      "id": "resolver:check-edit-request",
+      "short": "check-edit-request",
+      "group": "resolver/editreq",
+      "tier": "uncovered",
+      "coveredBy": [],
+      "annotatedBy": []
+    },
+    {
+      "id": "resolver:list-edit-requests",
+      "short": "list-edit-requests",
+      "group": "resolver/editreq",
+      "tier": "uncovered",
+      "coveredBy": [],
+      "annotatedBy": []
+    },
+    {
+      "id": "resolver:list-my-edit-requests",
+      "short": "list-my-edit-requests",
+      "group": "resolver/editreq",
+      "tier": "uncovered",
+      "coveredBy": [],
+      "annotatedBy": []
+    },
+    {
+      "id": "resolver:approve-edit-request",
+      "short": "approve-edit-request",
+      "group": "resolver/editreq",
+      "tier": "uncovered",
+      "coveredBy": [],
+      "annotatedBy": []
+    },
+    {
+      "id": "resolver:deny-edit-request",
+      "short": "deny-edit-request",
+      "group": "resolver/editreq",
+      "tier": "uncovered",
+      "coveredBy": [],
+      "annotatedBy": []
+    },
+    {
+      "id": "resolver:revoke-edit-grant",
+      "short": "revoke-edit-grant",
+      "group": "resolver/editreq",
+      "tier": "uncovered",
+      "coveredBy": [],
+      "annotatedBy": []
+    },
+    {
+      "id": "resolver:list-edit-grants",
+      "short": "list-edit-grants",
+      "group": "resolver/editreq",
+      "tier": "uncovered",
+      "coveredBy": [],
+      "annotatedBy": []
+    },
+    {
+      "id": "resolver:request-section-edit",
+      "short": "request-section-edit",
+      "group": "resolver/editreq",
+      "tier": "uncovered",
+      "coveredBy": [],
+      "annotatedBy": []
+    },
+    {
+      "id": "resolver:check-section-edit",
+      "short": "check-section-edit",
+      "group": "resolver/editreq",
+      "tier": "uncovered",
+      "coveredBy": [],
+      "annotatedBy": []
+    },
+    {
+      "id": "resolver:list-section-edit-requests",
+      "short": "list-section-edit-requests",
+      "group": "resolver/editreq",
+      "tier": "uncovered",
+      "coveredBy": [],
+      "annotatedBy": []
+    },
+    {
+      "id": "resolver:approve-section-edit",
+      "short": "approve-section-edit",
+      "group": "resolver/editreq",
+      "tier": "uncovered",
+      "coveredBy": [],
+      "annotatedBy": []
+    },
+    {
+      "id": "resolver:deny-section-edit",
+      "short": "deny-section-edit",
+      "group": "resolver/editreq",
+      "tier": "uncovered",
+      "coveredBy": [],
+      "annotatedBy": []
+    },
+    {
+      "id": "resolver:load-session",
+      "short": "load-session",
+      "group": "resolver/entitlements",
+      "tier": "uncovered",
+      "coveredBy": [],
+      "annotatedBy": []
+    },
+    {
+      "id": "resolver:check-license",
+      "short": "check-license",
+      "group": "resolver/entitlements",
+      "tier": "string-verified",
+      "coveredBy": [
+        "harness/license-banner.spec.ts"
+      ],
+      "annotatedBy": []
+    },
+    {
+      "id": "resolver:steward-override-enabled",
+      "short": "steward-override-enabled",
+      "group": "resolver/entitlements",
+      "tier": "string-verified",
+      "coveredBy": [
+        "harness/steward-force-unseal.spec.ts"
+      ],
+      "annotatedBy": []
+    },
+    {
+      "id": "resolver:identify-operator",
+      "short": "identify-operator",
+      "group": "resolver/operators",
+      "tier": "uncovered",
+      "coveredBy": [],
+      "annotatedBy": []
+    },
+    {
+      "id": "resolver:search-operators",
+      "short": "search-operators",
+      "group": "resolver/operators",
+      "tier": "string-verified",
+      "coveredBy": [
+        "harness/realm-operator-search.spec.ts"
+      ],
+      "annotatedBy": []
+    },
+    {
+      "id": "resolver:current-operator",
+      "short": "current-operator",
+      "group": "resolver/operators",
+      "tier": "uncovered",
+      "coveredBy": [],
+      "annotatedBy": []
+    },
+    {
+      "id": "resolver:enumerate-operators",
+      "short": "enumerate-operators",
+      "group": "resolver/operators",
+      "tier": "uncovered",
+      "coveredBy": [],
+      "annotatedBy": []
+    },
+    {
+      "id": "resolver:enumerate-teams",
+      "short": "enumerate-teams",
+      "group": "resolver/operators",
+      "tier": "uncovered",
+      "coveredBy": [],
+      "annotatedBy": []
+    },
+    {
+      "id": "resolver:enumerate-panel-artifacts",
+      "short": "enumerate-panel-artifacts",
+      "group": "resolver/panels",
+      "tier": "uncovered",
+      "coveredBy": [],
+      "annotatedBy": []
+    },
+    {
+      "id": "resolver:label-artifact",
+      "short": "label-artifact",
+      "group": "resolver/panels",
+      "tier": "uncovered",
+      "coveredBy": [],
+      "annotatedBy": []
+    },
+    {
+      "id": "resolver:unlabel-artifact",
+      "short": "unlabel-artifact",
+      "group": "resolver/panels",
+      "tier": "uncovered",
+      "coveredBy": [],
+      "annotatedBy": []
+    },
+    {
+      "id": "resolver:delete-artifact",
+      "short": "delete-artifact",
+      "group": "resolver/panels",
+      "tier": "string-verified",
+      "coveredBy": [
+        "harness/destructive-actions-perm.spec.ts"
+      ],
+      "annotatedBy": []
+    },
+    {
+      "id": "resolver:inject-panel",
+      "short": "inject-panel",
+      "group": "resolver/panels",
+      "tier": "uncovered",
+      "coveredBy": [],
+      "annotatedBy": []
+    },
+    {
+      "id": "resolver:extract-panel",
+      "short": "extract-panel",
+      "group": "resolver/panels",
+      "tier": "uncovered",
+      "coveredBy": [],
+      "annotatedBy": []
+    },
+    {
+      "id": "resolver:check-panel-status",
+      "short": "check-panel-status",
+      "group": "resolver/panels",
+      "tier": "uncovered",
+      "coveredBy": [],
+      "annotatedBy": []
+    },
+    {
+      "id": "resolver:store-doc-panel-prefs",
+      "short": "store-doc-panel-prefs",
+      "group": "resolver/panels",
+      "tier": "uncovered",
+      "coveredBy": [],
+      "annotatedBy": []
+    },
+    {
+      "id": "resolver:upload-artifact",
+      "short": "upload-artifact",
+      "group": "resolver/panels",
+      "tier": "string-verified",
+      "coveredBy": [
+        "harness/upload-boundary-live.spec.ts"
+      ],
+      "annotatedBy": []
+    },
+    {
+      "id": "resolver:register-panel-key",
+      "short": "register-panel-key",
+      "group": "resolver/panels",
+      "tier": "uncovered",
+      "coveredBy": [],
+      "annotatedBy": []
+    },
+    {
+      "id": "resolver:discover-panel-key",
+      "short": "discover-panel-key",
+      "group": "resolver/panels",
+      "tier": "uncovered",
+      "coveredBy": [],
+      "annotatedBy": []
+    },
+    {
+      "id": "resolver:resolve-artifact-preview",
+      "short": "resolve-artifact-preview",
+      "group": "resolver/panels",
+      "tier": "uncovered",
+      "coveredBy": [],
+      "annotatedBy": []
+    },
+    {
+      "id": "resolver:load-policy",
+      "short": "load-policy",
+      "group": "resolver/policies",
+      "tier": "string-verified",
+      "coveredBy": [
+        "harness/steward-global-persist.spec.ts"
+      ],
+      "annotatedBy": []
+    },
+    {
+      "id": "resolver:store-policy",
+      "short": "store-policy",
+      "group": "resolver/policies",
+      "tier": "string-verified",
+      "coveredBy": [
+        "harness/realm-reservation-persist.spec.ts",
+        "harness/space-access-persist.spec.ts",
+        "harness/steward-global-persist.spec.ts",
+        "unit/sealing-logic.test.mjs"
+      ],
+      "annotatedBy": []
+    },
+    {
+      "id": "resolver:load-global-ruleset",
+      "short": "load-global-ruleset",
+      "group": "resolver/policies",
+      "tier": "uncovered",
+      "coveredBy": [],
+      "annotatedBy": []
+    },
+    {
+      "id": "resolver:store-global-ruleset",
+      "short": "store-global-ruleset",
+      "group": "resolver/policies",
+      "tier": "uncovered",
+      "coveredBy": [],
+      "annotatedBy": []
+    },
+    {
+      "id": "resolver:load-realm-ruleset",
+      "short": "load-realm-ruleset",
+      "group": "resolver/policies",
+      "tier": "uncovered",
+      "coveredBy": [],
+      "annotatedBy": []
+    },
+    {
+      "id": "resolver:store-realm-ruleset",
+      "short": "store-realm-ruleset",
+      "group": "resolver/policies",
+      "tier": "uncovered",
+      "coveredBy": [],
+      "annotatedBy": []
+    },
+    {
+      "id": "resolver:enumerate-realm-rulesets",
+      "short": "enumerate-realm-rulesets",
+      "group": "resolver/policies",
+      "tier": "string-verified",
+      "coveredBy": [
+        "harness/ruleset-enum-gate.spec.ts"
+      ],
+      "annotatedBy": []
+    },
+    {
+      "id": "resolver:discard-realm-ruleset",
+      "short": "discard-realm-ruleset",
+      "group": "resolver/policies",
+      "tier": "uncovered",
+      "coveredBy": [],
+      "annotatedBy": []
+    },
+    {
+      "id": "resolver:identify-realm",
+      "short": "identify-realm",
+      "group": "resolver/realms",
+      "tier": "uncovered",
+      "coveredBy": [],
+      "annotatedBy": []
+    },
+    {
+      "id": "resolver:enumerate-realm-seals",
+      "short": "enumerate-realm-seals",
+      "group": "resolver/realms",
+      "tier": "uncovered",
+      "coveredBy": [],
+      "annotatedBy": []
+    },
+    {
+      "id": "resolver:launch-realm-audit",
+      "short": "launch-realm-audit",
+      "group": "resolver/realms",
+      "tier": "uncovered",
+      "coveredBy": [],
+      "annotatedBy": []
+    },
+    {
+      "id": "resolver:check-audit-status",
+      "short": "check-audit-status",
+      "group": "resolver/realms",
+      "tier": "uncovered",
+      "coveredBy": [],
+      "annotatedBy": []
+    },
+    {
+      "id": "resolver:steward-unseal",
+      "short": "steward-unseal",
+      "group": "resolver/realms",
+      "tier": "string-verified",
+      "coveredBy": [
+        "harness/steward-force-unseal.spec.ts"
+      ],
+      "annotatedBy": []
+    },
+    {
+      "id": "resolver:check-user-role",
+      "short": "check-user-role",
+      "group": "resolver/realms",
+      "tier": "string-verified",
+      "coveredBy": [
+        "harness/realm-plainuser-gate.spec.ts"
+      ],
+      "annotatedBy": []
+    },
+    {
+      "id": "resolver:request-steward-access",
+      "short": "request-steward-access",
+      "group": "resolver/realms",
+      "tier": "uncovered",
+      "coveredBy": [],
+      "annotatedBy": []
+    },
+    {
+      "id": "resolver:check-steward-request",
+      "short": "check-steward-request",
+      "group": "resolver/realms",
+      "tier": "uncovered",
+      "coveredBy": [],
+      "annotatedBy": []
+    },
+    {
+      "id": "resolver:list-steward-requests",
+      "short": "list-steward-requests",
+      "group": "resolver/realms",
+      "tier": "string-verified",
+      "coveredBy": [
+        "harness/steward-grant-roundtrip.spec.ts"
+      ],
+      "annotatedBy": []
+    },
+    {
+      "id": "resolver:approve-steward-request",
+      "short": "approve-steward-request",
+      "group": "resolver/realms",
+      "tier": "uncovered",
+      "coveredBy": [],
+      "annotatedBy": []
+    },
+    {
+      "id": "resolver:deny-steward-request",
+      "short": "deny-steward-request",
+      "group": "resolver/realms",
+      "tier": "uncovered",
+      "coveredBy": [],
+      "annotatedBy": []
+    },
+    {
+      "id": "resolver:seal-artifact",
+      "short": "seal-artifact",
+      "group": "resolver/sealing",
+      "tier": "string-verified",
+      "coveredBy": [
+        "harness/page-seal-unseal.spec.ts",
+        "unit/sealing-logic.test.mjs"
+      ],
+      "annotatedBy": []
+    },
+    {
+      "id": "resolver:unseal-artifact",
+      "short": "unseal-artifact",
+      "group": "resolver/sealing",
+      "tier": "string-verified",
+      "coveredBy": [
+        "harness/page-seal-unseal.spec.ts"
+      ],
+      "annotatedBy": []
+    },
+    {
+      "id": "resolver:enumerate-doc-artifacts",
+      "short": "enumerate-doc-artifacts",
+      "group": "resolver/sealing",
+      "tier": "uncovered",
+      "coveredBy": [],
+      "annotatedBy": []
+    },
+    {
+      "id": "resolver:enumerate-operator-seals",
+      "short": "enumerate-operator-seals",
+      "group": "resolver/sealing",
+      "tier": "uncovered",
+      "coveredBy": [],
+      "annotatedBy": []
+    },
+    {
+      "id": "resolver:enumerate-page-seals",
+      "short": "enumerate-page-seals",
+      "group": "resolver/sealing",
+      "tier": "uncovered",
+      "coveredBy": [],
+      "annotatedBy": []
+    },
+    {
+      "id": "resolver:check-seal-stamp",
+      "short": "check-seal-stamp",
+      "group": "resolver/sealing",
+      "tier": "uncovered",
+      "coveredBy": [],
+      "annotatedBy": []
+    },
+    {
+      "id": "resolver:restore-sealed-artifact",
+      "short": "restore-sealed-artifact",
+      "group": "resolver/sealing",
+      "tier": "string-verified",
+      "coveredBy": [
+        "harness/restore-gate.spec.ts"
+      ],
+      "annotatedBy": []
+    },
+    {
+      "id": "resolver:purge-seal-record",
+      "short": "purge-seal-record",
+      "group": "resolver/sealing",
+      "tier": "string-verified",
+      "coveredBy": [
+        "harness/destructive-actions-perm.spec.ts"
+      ],
+      "annotatedBy": []
+    },
+    {
+      "id": "resolver:list-page-headings",
+      "short": "list-page-headings",
+      "group": "resolver/section-seals",
+      "tier": "string-verified",
+      "coveredBy": [
+        "harness/page-section-seal-create.spec.ts"
+      ],
+      "annotatedBy": []
+    },
+    {
+      "id": "resolver:enumerate-section-seals",
+      "short": "enumerate-section-seals",
+      "group": "resolver/section-seals",
+      "tier": "uncovered",
+      "coveredBy": [],
+      "annotatedBy": []
+    },
+    {
+      "id": "resolver:seal-section",
+      "short": "seal-section",
+      "group": "resolver/section-seals",
+      "tier": "string-verified",
+      "coveredBy": [
+        "harness/page-section-seal-create.spec.ts"
+      ],
+      "annotatedBy": []
+    },
+    {
+      "id": "resolver:unseal-section",
+      "short": "unseal-section",
+      "group": "resolver/section-seals",
+      "tier": "string-verified",
+      "coveredBy": [
+        "harness/page-section-seal-create.spec.ts"
+      ],
+      "annotatedBy": []
+    },
+    {
+      "id": "resolver:refresh-section-snapshot",
+      "short": "refresh-section-snapshot",
+      "group": "resolver/section-seals",
+      "tier": "uncovered",
+      "coveredBy": [],
+      "annotatedBy": []
+    },
+    {
+      "id": "resolver:load-validation-config",
+      "short": "load-validation-config",
+      "group": "resolver/validations",
+      "tier": "uncovered",
+      "coveredBy": [],
+      "annotatedBy": []
+    },
+    {
+      "id": "resolver:store-validation-config",
+      "short": "store-validation-config",
+      "group": "resolver/validations",
+      "tier": "string-verified",
+      "coveredBy": [
+        "harness/realm-validation-crud.spec.ts"
+      ],
+      "annotatedBy": []
+    },
+    {
+      "id": "resolver:validate-page-now",
+      "short": "validate-page-now",
+      "group": "resolver/validations",
+      "tier": "uncovered",
+      "coveredBy": [],
+      "annotatedBy": []
+    },
+    {
+      "id": "resolver:get-validation-state",
+      "short": "get-validation-state",
+      "group": "resolver/validations",
+      "tier": "uncovered",
+      "coveredBy": [],
+      "annotatedBy": []
+    },
+    {
+      "id": "resolver:approve-page-gate",
+      "short": "approve-page-gate",
+      "group": "resolver/validations",
+      "tier": "uncovered",
+      "coveredBy": [],
+      "annotatedBy": []
+    },
+    {
+      "id": "resolver:list-ai-models",
+      "short": "list-ai-models",
+      "group": "resolver/validations",
+      "tier": "uncovered",
+      "coveredBy": [],
+      "annotatedBy": []
+    },
+    {
+      "id": "resolver:enqueue-page-validation",
+      "short": "enqueue-page-validation",
+      "group": "resolver/validations",
+      "tier": "string-verified",
+      "coveredBy": [
+        "harness/ai-validation-live.spec.ts"
+      ],
+      "annotatedBy": []
+    },
+    {
+      "id": "resolver:get-validation-job",
+      "short": "get-validation-job",
+      "group": "resolver/validations",
+      "tier": "uncovered",
+      "coveredBy": [],
+      "annotatedBy": []
+    },
+    {
+      "id": "resolver:get-ai-findings",
+      "short": "get-ai-findings",
+      "group": "resolver/validations",
+      "tier": "uncovered",
+      "coveredBy": [],
+      "annotatedBy": []
+    },
+    {
+      "id": "resolver:set-ai-finding-state",
+      "short": "set-ai-finding-state",
+      "group": "resolver/validations",
+      "tier": "uncovered",
+      "coveredBy": [],
+      "annotatedBy": []
+    },
+    {
+      "id": "resolver:get-validation-audit",
+      "short": "get-validation-audit",
+      "group": "resolver/validations",
+      "tier": "uncovered",
+      "coveredBy": [],
+      "annotatedBy": []
+    },
+    {
+      "id": "resolver:get-page-workflow",
+      "short": "get-page-workflow",
+      "group": "resolver/workflow",
+      "tier": "string-verified",
+      "coveredBy": [
+        "harness/page-ribbon-workflow.spec.ts"
+      ],
+      "annotatedBy": []
+    },
+    {
+      "id": "resolver:get-workflow-dashboard",
+      "short": "get-workflow-dashboard",
+      "group": "resolver/workflow",
+      "tier": "uncovered",
+      "coveredBy": [],
+      "annotatedBy": []
+    },
+    {
+      "id": "resolver:get-workflow-log",
+      "short": "get-workflow-log",
+      "group": "resolver/workflow",
+      "tier": "uncovered",
+      "coveredBy": [],
+      "annotatedBy": []
+    },
+    {
+      "id": "resolver:assign-workflow",
+      "short": "assign-workflow",
+      "group": "resolver/workflow",
+      "tier": "uncovered",
+      "coveredBy": [],
+      "annotatedBy": []
+    },
+    {
+      "id": "resolver:request-transition",
+      "short": "request-transition",
+      "group": "resolver/workflow",
+      "tier": "uncovered",
+      "coveredBy": [],
+      "annotatedBy": []
+    },
+    {
+      "id": "resolver:load-workflow-config",
+      "short": "load-workflow-config",
+      "group": "resolver/workflow",
+      "tier": "uncovered",
+      "coveredBy": [],
+      "annotatedBy": []
+    },
+    {
+      "id": "resolver:store-workflow-config",
+      "short": "store-workflow-config",
+      "group": "resolver/workflow",
+      "tier": "uncovered",
+      "coveredBy": [],
+      "annotatedBy": []
+    },
+    {
+      "id": "resolver:get-space-workflow-settings",
+      "short": "get-space-workflow-settings",
+      "group": "resolver/workflow",
+      "tier": "uncovered",
+      "coveredBy": [],
+      "annotatedBy": []
+    },
+    {
+      "id": "resolver:set-space-workflow-settings",
+      "short": "set-space-workflow-settings",
+      "group": "resolver/workflow",
+      "tier": "string-verified",
+      "coveredBy": [
+        "harness/realm-workflow-persist.spec.ts"
+      ],
+      "annotatedBy": []
+    },
+    {
+      "id": "resolver:bulk-assign-workflow",
+      "short": "bulk-assign-workflow",
+      "group": "resolver/workflow",
+      "tier": "uncovered",
+      "coveredBy": [],
+      "annotatedBy": []
+    },
+    {
+      "id": "resolver:decide-approval",
+      "short": "decide-approval",
+      "group": "resolver/workflow",
+      "tier": "string-verified",
+      "coveredBy": [
+        "harness/page-ribbon-workflow.spec.ts",
+        "harness/ribbon-approval-dialog.spec.ts"
+      ],
+      "annotatedBy": []
+    },
+    {
+      "id": "resolver:get-page-approvals",
+      "short": "get-page-approvals",
+      "group": "resolver/workflow",
+      "tier": "string-verified",
+      "coveredBy": [
+        "harness/ribbon-approval-dialog.spec.ts"
+      ],
+      "annotatedBy": []
+    },
+    {
+      "id": "resolver:list-my-approvals",
+      "short": "list-my-approvals",
+      "group": "resolver/workflow",
+      "tier": "uncovered",
+      "coveredBy": [],
+      "annotatedBy": []
+    },
+    {
+      "id": "resolver:search-workflow-users",
+      "short": "search-workflow-users",
+      "group": "resolver/workflow",
+      "tier": "uncovered",
+      "coveredBy": [],
+      "annotatedBy": []
+    },
+    {
+      "id": "resolver:search-workflow-groups",
+      "short": "search-workflow-groups",
+      "group": "resolver/workflow",
+      "tier": "uncovered",
+      "coveredBy": [],
+      "annotatedBy": []
+    },
+    {
+      "id": "resolver:heartbeat",
+      "short": "heartbeat",
+      "group": "resolver/registry",
+      "tier": "uncovered",
+      "coveredBy": [],
+      "annotatedBy": []
+    },
+    {
+      "id": "testhook:what:version",
+      "short": "version",
+      "group": "testhook/what-verbs",
+      "tier": "string-verified",
+      "coveredBy": [
+        "harness/deploy-state-guard.spec.ts"
+      ],
+      "annotatedBy": []
+    },
+    {
+      "id": "testhook:what:kvs",
+      "short": "kvs",
+      "group": "testhook/what-verbs",
+      "tier": "string-verified",
+      "coveredBy": [
+        "harness/ai-validation-live.spec.ts",
+        "harness/destructive-actions-perm.spec.ts",
+        "harness/expiry-sweep.spec.ts",
+        "harness/gate-revert.spec.ts",
+        "harness/media-attr-matrix.spec.ts",
+        "harness/page-editrequest-approve.spec.ts",
+        "harness/page-editrequest-deny-revoke.spec.ts",
+        "harness/page-section-editrequest.spec.ts",
+        "harness/page-section-seal-create.spec.ts",
+        "harness/page-watch-dispatch.spec.ts",
+        "harness/perm-delete-cleanup.spec.ts",
+        "harness/realm-plainuser-gate.spec.ts",
+        "harness/restore-gate.spec.ts",
+        "harness/revert-destructive.spec.ts",
+        "harness/ribbon-approval-dialog.spec.ts",
+        "harness/ruleset-enum-gate.spec.ts",
+        "harness/sealed-artifact-trash.spec.ts",
+        "harness/sealed-image-ui-delete.spec.ts",
+        "harness/sealed-section.spec.ts",
+        "harness/space-access-persist.spec.ts",
+        "harness/steward-force-unseal.spec.ts",
+        "harness/steward-global-persist.spec.ts",
+        "harness/steward-grant-roundtrip.spec.ts",
+        "harness/trigger-guards.spec.ts",
+        "harness/validation-eval.spec.ts",
+        "harness/validation-space-floor.spec.ts",
+        "harness/validation.spec.ts",
+        "harness/violation-dedup.spec.ts",
+        "e2e/editgrant-revoke-e2e.mjs",
+        "e2e/ensure-fixture.mjs",
+        "e2e/seal-revert-e2e.mjs",
+        "e2e/workflow-approval-e2e.mjs",
+        "e2e/workflow-autoassign-e2e.mjs",
+        "e2e/workflow-bulk-e2e.mjs",
+        "e2e/workflow-conditions-e2e.mjs",
+        "e2e/workflow-e2e.mjs",
+        "e2e/workflow-enforce-e2e.mjs"
+      ],
+      "annotatedBy": []
+    },
+    {
+      "id": "testhook:what:set",
+      "short": "set",
+      "group": "testhook/what-verbs",
+      "tier": "string-verified",
+      "coveredBy": [
+        "harness/ai-validation-live.spec.ts",
+        "harness/destructive-actions-perm.spec.ts",
+        "harness/expiry-sweep.spec.ts",
+        "harness/gate-revert.spec.ts",
+        "harness/license-banner.spec.ts",
+        "harness/media-attr-matrix.spec.ts",
+        "harness/page-editrequest-approve.spec.ts",
+        "harness/page-editrequest-deny-revoke.spec.ts",
+        "harness/page-section-editrequest.spec.ts",
+        "harness/page-watch-dispatch.spec.ts",
+        "harness/perm-delete-cleanup.spec.ts",
+        "harness/realm-plainuser-gate.spec.ts",
+        "harness/realm-stale-badge.spec.ts",
+        "harness/restore-gate.spec.ts",
+        "harness/revert-destructive.spec.ts",
+        "harness/sealed-artifact-trash.spec.ts",
+        "harness/sealed-image-ui-delete.spec.ts",
+        "harness/sealed-media-attrs.spec.ts",
+        "harness/sealed-media.spec.ts",
+        "harness/sealed-section.spec.ts",
+        "harness/space-access-persist.spec.ts",
+        "harness/steward-force-unseal.spec.ts",
+        "harness/steward-global-persist.spec.ts",
+        "harness/steward-grant-roundtrip.spec.ts",
+        "harness/trigger-guards.spec.ts",
+        "harness/validation-eval.spec.ts",
+        "harness/validation-space-floor.spec.ts",
+        "harness/validation.spec.ts",
+        "harness/violation-dedup.spec.ts",
+        "e2e/editgrant-revoke-e2e.mjs",
+        "e2e/ensure-fixture.mjs",
+        "e2e/seal-revert-e2e.mjs",
+        "e2e/workflow-conditions-e2e.mjs",
+        "e2e/workflow-enforce-e2e.mjs"
+      ],
+      "annotatedBy": []
+    },
+    {
+      "id": "testhook:what:delete",
+      "short": "delete",
+      "group": "testhook/what-verbs",
+      "tier": "string-verified",
+      "coveredBy": [
+        "harness/ai-validation-live.spec.ts",
+        "harness/destructive-actions-perm.spec.ts",
+        "harness/expiry-sweep.spec.ts",
+        "harness/gate-revert.spec.ts",
+        "harness/license-banner.spec.ts",
+        "harness/media-attr-matrix.spec.ts",
+        "harness/page-editrequest-approve.spec.ts",
+        "harness/page-editrequest-deny-revoke.spec.ts",
+        "harness/page-ribbon-workflow.spec.ts",
+        "harness/page-section-editrequest.spec.ts",
+        "harness/page-section-seal-create.spec.ts",
+        "harness/page-watch-dispatch.spec.ts",
+        "harness/perm-delete-cleanup.spec.ts",
+        "harness/realm-plainuser-gate.spec.ts",
+        "harness/realm-stale-badge.spec.ts",
+        "harness/revert-destructive.spec.ts",
+        "harness/ribbon-approval-dialog.spec.ts",
+        "harness/sealed-artifact-trash.spec.ts",
+        "harness/sealed-image-ui-delete.spec.ts",
+        "harness/sealed-media-attrs.spec.ts",
+        "harness/sealed-media.spec.ts",
+        "harness/sealed-section.spec.ts",
+        "harness/space-access-persist.spec.ts",
+        "harness/steward-force-unseal.spec.ts",
+        "harness/steward-global-persist.spec.ts",
+        "harness/steward-grant-roundtrip.spec.ts",
+        "harness/trigger-guards.spec.ts",
+        "harness/validation-eval.spec.ts",
+        "harness/validation-space-floor.spec.ts",
+        "harness/validation.spec.ts",
+        "harness/violation-dedup.spec.ts",
+        "harness/workflow-deadend-warn.spec.ts",
+        "e2e/editgrant-revoke-e2e.mjs",
+        "e2e/seal-revert-e2e.mjs",
+        "e2e/workflow-approval-e2e.mjs",
+        "e2e/workflow-autoassign-e2e.mjs",
+        "e2e/workflow-bulk-e2e.mjs",
+        "e2e/workflow-conditions-e2e.mjs",
+        "e2e/workflow-e2e.mjs",
+        "e2e/workflow-enforce-e2e.mjs"
+      ],
+      "annotatedBy": []
+    },
+    {
+      "id": "testhook:what:query",
+      "short": "query",
+      "group": "testhook/what-verbs",
+      "tier": "string-verified",
+      "coveredBy": [
+        "harness/realm-stale-badge.spec.ts",
+        "harness/ribbon-approval-dialog.spec.ts"
+      ],
+      "annotatedBy": []
+    },
+    {
+      "id": "testhook:what:invoke",
+      "short": "invoke",
+      "group": "testhook/what-verbs",
+      "tier": "string-verified",
+      "coveredBy": [
+        "harness/ai-validation-live.spec.ts",
+        "harness/destructive-actions-perm.spec.ts",
+        "harness/expiry-sweep.spec.ts",
+        "harness/license-banner.spec.ts",
+        "harness/page-ribbon-workflow.spec.ts",
+        "harness/page-section-editrequest.spec.ts",
+        "harness/page-section-seal-create.spec.ts",
+        "harness/page-watch-dispatch.spec.ts",
+        "harness/perm-delete-cleanup.spec.ts",
+        "harness/realm-plainuser-gate.spec.ts",
+        "harness/restore-gate.spec.ts",
+        "harness/ribbon-approval-dialog.spec.ts",
+        "harness/ruleset-enum-gate.spec.ts",
+        "harness/trigger-guards.spec.ts",
+        "harness/workflow-deadend-warn.spec.ts",
+        "e2e/editgrant-revoke-e2e.mjs",
+        "e2e/workflow-approval-e2e.mjs",
+        "e2e/workflow-autoassign-e2e.mjs",
+        "e2e/workflow-bulk-e2e.mjs",
+        "e2e/workflow-conditions-e2e.mjs",
+        "e2e/workflow-e2e.mjs",
+        "e2e/workflow-enforce-e2e.mjs"
+      ],
+      "annotatedBy": []
+    },
+    {
+      "id": "testhook:fn:expirySweep",
+      "short": "expirySweep",
+      "group": "testhook/invoke-seams",
+      "tier": "string-verified",
+      "coveredBy": [
+        "harness/expiry-sweep.spec.ts"
+      ],
+      "annotatedBy": []
+    },
+    {
+      "id": "testhook:fn:assignWorkflow",
+      "short": "assignWorkflow",
+      "group": "testhook/invoke-seams",
+      "tier": "string-verified",
+      "coveredBy": [
+        "harness/page-ribbon-workflow.spec.ts",
+        "harness/ribbon-approval-dialog.spec.ts",
+        "e2e/workflow-approval-e2e.mjs",
+        "e2e/workflow-conditions-e2e.mjs",
+        "e2e/workflow-e2e.mjs",
+        "e2e/workflow-enforce-e2e.mjs"
+      ],
+      "annotatedBy": []
+    },
+    {
+      "id": "testhook:fn:transitionWorkflow",
+      "short": "transitionWorkflow",
+      "group": "testhook/invoke-seams",
+      "tier": "string-verified",
+      "coveredBy": [
+        "harness/ribbon-approval-dialog.spec.ts",
+        "e2e/workflow-approval-e2e.mjs",
+        "e2e/workflow-conditions-e2e.mjs",
+        "e2e/workflow-e2e.mjs",
+        "e2e/workflow-enforce-e2e.mjs"
+      ],
+      "annotatedBy": []
+    },
+    {
+      "id": "testhook:fn:workflowSweep",
+      "short": "workflowSweep",
+      "group": "testhook/invoke-seams",
+      "tier": "string-verified",
+      "coveredBy": [
+        "e2e/workflow-conditions-e2e.mjs",
+        "e2e/workflow-enforce-e2e.mjs"
+      ],
+      "annotatedBy": []
+    },
+    {
+      "id": "testhook:fn:enforceDecision",
+      "short": "enforceDecision",
+      "group": "testhook/invoke-seams",
+      "tier": "string-verified",
+      "coveredBy": [
+        "e2e/workflow-enforce-e2e.mjs"
+      ],
+      "annotatedBy": []
+    },
+    {
+      "id": "testhook:fn:sweepRevert",
+      "short": "sweepRevert",
+      "group": "testhook/invoke-seams",
+      "tier": "string-verified",
+      "coveredBy": [
+        "e2e/workflow-enforce-e2e.mjs"
+      ],
+      "annotatedBy": []
+    },
+    {
+      "id": "testhook:fn:dashboard",
+      "short": "dashboard",
+      "group": "testhook/invoke-seams",
+      "tier": "string-verified",
+      "coveredBy": [
+        "e2e/workflow-enforce-e2e.mjs"
+      ],
+      "annotatedBy": []
+    },
+    {
+      "id": "testhook:fn:reqTransition",
+      "short": "reqTransition",
+      "group": "testhook/invoke-seams",
+      "tier": "string-verified",
+      "coveredBy": [
+        "e2e/workflow-conditions-e2e.mjs"
+      ],
+      "annotatedBy": []
+    },
+    {
+      "id": "testhook:fn:aiVerdict",
+      "short": "aiVerdict",
+      "group": "testhook/invoke-seams",
+      "tier": "string-verified",
+      "coveredBy": [
+        "e2e/workflow-conditions-e2e.mjs"
+      ],
+      "annotatedBy": []
+    },
+    {
+      "id": "testhook:fn:listEditGrants",
+      "short": "listEditGrants",
+      "group": "testhook/invoke-seams",
+      "tier": "string-verified",
+      "coveredBy": [
+        "e2e/editgrant-revoke-e2e.mjs"
+      ],
+      "annotatedBy": []
+    },
+    {
+      "id": "testhook:fn:revokeEditGrant",
+      "short": "revokeEditGrant",
+      "group": "testhook/invoke-seams",
+      "tier": "string-verified",
+      "coveredBy": [
+        "e2e/editgrant-revoke-e2e.mjs"
+      ],
+      "annotatedBy": []
+    },
+    {
+      "id": "testhook:fn:requestSectionEdit",
+      "short": "requestSectionEdit",
+      "group": "testhook/invoke-seams",
+      "tier": "string-verified",
+      "coveredBy": [
+        "harness/page-section-editrequest.spec.ts"
+      ],
+      "annotatedBy": []
+    },
+    {
+      "id": "testhook:fn:checkSectionEdit",
+      "short": "checkSectionEdit",
+      "group": "testhook/invoke-seams",
+      "tier": "string-verified",
+      "coveredBy": [
+        "harness/page-section-editrequest.spec.ts"
+      ],
+      "annotatedBy": []
+    },
+    {
+      "id": "testhook:fn:listSectionEditRequests",
+      "short": "listSectionEditRequests",
+      "group": "testhook/invoke-seams",
+      "tier": "string-verified",
+      "coveredBy": [
+        "harness/page-section-editrequest.spec.ts"
+      ],
+      "annotatedBy": []
+    },
+    {
+      "id": "testhook:fn:approveSectionEdit",
+      "short": "approveSectionEdit",
+      "group": "testhook/invoke-seams",
+      "tier": "string-verified",
+      "coveredBy": [
+        "harness/page-section-editrequest.spec.ts"
+      ],
+      "annotatedBy": []
+    },
+    {
+      "id": "testhook:fn:denySectionEdit",
+      "short": "denySectionEdit",
+      "group": "testhook/invoke-seams",
+      "tier": "string-verified",
+      "coveredBy": [
+        "harness/page-section-editrequest.spec.ts"
+      ],
+      "annotatedBy": []
+    },
+    {
+      "id": "testhook:fn:watchArtifact",
+      "short": "watchArtifact",
+      "group": "testhook/invoke-seams",
+      "tier": "string-verified",
+      "coveredBy": [
+        "harness/page-watch-dispatch.spec.ts"
+      ],
+      "annotatedBy": []
+    },
+    {
+      "id": "testhook:fn:checkWatch",
+      "short": "checkWatch",
+      "group": "testhook/invoke-seams",
+      "tier": "string-verified",
+      "coveredBy": [
+        "harness/page-watch-dispatch.spec.ts"
+      ],
+      "annotatedBy": []
+    },
+    {
+      "id": "testhook:fn:unwatchArtifact",
+      "short": "unwatchArtifact",
+      "group": "testhook/invoke-seams",
+      "tier": "string-verified",
+      "coveredBy": [
+        "harness/page-watch-dispatch.spec.ts"
+      ],
+      "annotatedBy": []
+    },
+    {
+      "id": "testhook:fn:acknowledgeDispatch",
+      "short": "acknowledgeDispatch",
+      "group": "testhook/invoke-seams",
+      "tier": "string-verified",
+      "coveredBy": [
+        "harness/page-watch-dispatch.spec.ts"
+      ],
+      "annotatedBy": []
+    },
+    {
+      "id": "testhook:fn:operatorDispatches",
+      "short": "operatorDispatches",
+      "group": "testhook/invoke-seams",
+      "tier": "string-verified",
+      "coveredBy": [
+        "harness/page-watch-dispatch.spec.ts"
+      ],
+      "annotatedBy": []
+    },
+    {
+      "id": "testhook:fn:recentDispatches",
+      "short": "recentDispatches",
+      "group": "testhook/invoke-seams",
+      "tier": "string-verified",
+      "coveredBy": [
+        "harness/page-watch-dispatch.spec.ts"
+      ],
+      "annotatedBy": []
+    },
+    {
+      "id": "testhook:fn:listBreachDispatches",
+      "short": "listBreachDispatches",
+      "group": "testhook/invoke-seams",
+      "tier": "string-verified",
+      "coveredBy": [
+        "harness/page-watch-dispatch.spec.ts"
+      ],
+      "annotatedBy": []
+    },
+    {
+      "id": "testhook:fn:listPageHeadings",
+      "short": "listPageHeadings",
+      "group": "testhook/invoke-seams",
+      "tier": "string-verified",
+      "coveredBy": [
+        "harness/page-section-seal-create.spec.ts"
+      ],
+      "annotatedBy": []
+    },
+    {
+      "id": "testhook:fn:enumerateSectionSeals",
+      "short": "enumerateSectionSeals",
+      "group": "testhook/invoke-seams",
+      "tier": "uncovered",
+      "coveredBy": [],
+      "annotatedBy": []
+    },
+    {
+      "id": "testhook:fn:sealSection",
+      "short": "sealSection",
+      "group": "testhook/invoke-seams",
+      "tier": "string-verified",
+      "coveredBy": [
+        "harness/page-section-seal-create.spec.ts"
+      ],
+      "annotatedBy": []
+    },
+    {
+      "id": "testhook:fn:unsealSection",
+      "short": "unsealSection",
+      "group": "testhook/invoke-seams",
+      "tier": "string-verified",
+      "coveredBy": [
+        "harness/page-section-seal-create.spec.ts"
+      ],
+      "annotatedBy": []
+    },
+    {
+      "id": "testhook:fn:checkUserRole",
+      "short": "checkUserRole",
+      "group": "testhook/invoke-seams",
+      "tier": "string-verified",
+      "coveredBy": [
+        "harness/realm-plainuser-gate.spec.ts"
+      ],
+      "annotatedBy": []
+    },
+    {
+      "id": "testhook:fn:requestStewardAccess",
+      "short": "requestStewardAccess",
+      "group": "testhook/invoke-seams",
+      "tier": "string-verified",
+      "coveredBy": [
+        "harness/realm-plainuser-gate.spec.ts"
+      ],
+      "annotatedBy": []
+    },
+    {
+      "id": "testhook:fn:checkStewardRequest",
+      "short": "checkStewardRequest",
+      "group": "testhook/invoke-seams",
+      "tier": "string-verified",
+      "coveredBy": [
+        "harness/realm-plainuser-gate.spec.ts"
+      ],
+      "annotatedBy": []
+    },
+    {
+      "id": "testhook:fn:getWorkflow",
+      "short": "getWorkflow",
+      "group": "testhook/invoke-seams",
+      "tier": "string-verified",
+      "coveredBy": [
+        "e2e/workflow-autoassign-e2e.mjs",
+        "e2e/workflow-bulk-e2e.mjs",
+        "e2e/workflow-e2e.mjs"
+      ],
+      "annotatedBy": []
+    },
+    {
+      "id": "testhook:fn:setSpaceWorkflowSettings",
+      "short": "setSpaceWorkflowSettings",
+      "group": "testhook/invoke-seams",
+      "tier": "string-verified",
+      "coveredBy": [
+        "e2e/workflow-autoassign-e2e.mjs",
+        "e2e/workflow-bulk-e2e.mjs",
+        "e2e/workflow-enforce-e2e.mjs"
+      ],
+      "annotatedBy": []
+    },
+    {
+      "id": "testhook:fn:getSpaceWorkflowSettings",
+      "short": "getSpaceWorkflowSettings",
+      "group": "testhook/invoke-seams",
+      "tier": "string-verified",
+      "coveredBy": [
+        "e2e/workflow-autoassign-e2e.mjs"
+      ],
+      "annotatedBy": []
+    },
+    {
+      "id": "testhook:fn:bulkAssignWorkflow",
+      "short": "bulkAssignWorkflow",
+      "group": "testhook/invoke-seams",
+      "tier": "string-verified",
+      "coveredBy": [
+        "e2e/workflow-bulk-e2e.mjs"
+      ],
+      "annotatedBy": []
+    },
+    {
+      "id": "testhook:fn:requestApproval",
+      "short": "requestApproval",
+      "group": "testhook/invoke-seams",
+      "tier": "string-verified",
+      "coveredBy": [
+        "harness/ribbon-approval-dialog.spec.ts",
+        "e2e/workflow-approval-e2e.mjs"
+      ],
+      "annotatedBy": []
+    },
+    {
+      "id": "testhook:fn:decideApproval",
+      "short": "decideApproval",
+      "group": "testhook/invoke-seams",
+      "tier": "string-verified",
+      "coveredBy": [
+        "e2e/workflow-approval-e2e.mjs",
+        "e2e/workflow-conditions-e2e.mjs"
+      ],
+      "annotatedBy": []
+    },
+    {
+      "id": "testhook:fn:pageApprovals",
+      "short": "pageApprovals",
+      "group": "testhook/invoke-seams",
+      "tier": "string-verified",
+      "coveredBy": [
+        "e2e/workflow-approval-e2e.mjs"
+      ],
+      "annotatedBy": []
+    },
+    {
+      "id": "testhook:fn:deleteArtifact",
+      "short": "deleteArtifact",
+      "group": "testhook/invoke-seams",
+      "tier": "string-verified",
+      "coveredBy": [
+        "harness/destructive-actions-perm.spec.ts"
+      ],
+      "annotatedBy": []
+    },
+    {
+      "id": "testhook:fn:purgeSealRecord",
+      "short": "purgeSealRecord",
+      "group": "testhook/invoke-seams",
+      "tier": "string-verified",
+      "coveredBy": [
+        "harness/destructive-actions-perm.spec.ts"
+      ],
+      "annotatedBy": []
+    },
+    {
+      "id": "testhook:fn:restoreSealedArtifact",
+      "short": "restoreSealedArtifact",
+      "group": "testhook/invoke-seams",
+      "tier": "string-verified",
+      "coveredBy": [
+        "harness/restore-gate.spec.ts"
+      ],
+      "annotatedBy": []
+    },
+    {
+      "id": "testhook:fn:enqueuePageValidation",
+      "short": "enqueuePageValidation",
+      "group": "testhook/invoke-seams",
+      "tier": "string-verified",
+      "coveredBy": [
+        "harness/ai-validation-live.spec.ts"
+      ],
+      "annotatedBy": []
+    },
+    {
+      "id": "testhook:fn:getValidationJob",
+      "short": "getValidationJob",
+      "group": "testhook/invoke-seams",
+      "tier": "string-verified",
+      "coveredBy": [
+        "harness/ai-validation-live.spec.ts"
+      ],
+      "annotatedBy": []
+    },
+    {
+      "id": "testhook:fn:getAiFindings",
+      "short": "getAiFindings",
+      "group": "testhook/invoke-seams",
+      "tier": "string-verified",
+      "coveredBy": [
+        "harness/ai-validation-live.spec.ts"
+      ],
+      "annotatedBy": []
+    },
+    {
+      "id": "testhook:fn:enumerateRealmRulesets",
+      "short": "enumerateRealmRulesets",
+      "group": "testhook/invoke-seams",
+      "tier": "string-verified",
+      "coveredBy": [
+        "harness/ruleset-enum-gate.spec.ts"
+      ],
+      "annotatedBy": []
+    },
+    {
+      "id": "testhook:fn:handleSealedArtifactDeleted",
+      "short": "handleSealedArtifactDeleted",
+      "group": "testhook/invoke-seams",
+      "tier": "string-verified",
+      "coveredBy": [
+        "harness/perm-delete-cleanup.spec.ts"
+      ],
+      "annotatedBy": []
+    },
+    {
+      "id": "testhook:fn:probeAttachment",
+      "short": "probeAttachment",
+      "group": "testhook/invoke-seams",
+      "tier": "uncovered",
+      "coveredBy": [],
+      "annotatedBy": []
+    },
+    {
+      "id": "testhook:fn:handleSealedArtifactTrash",
+      "short": "handleSealedArtifactTrash",
+      "group": "testhook/invoke-seams",
+      "tier": "string-verified",
+      "coveredBy": [
+        "harness/sealed-artifact-trash.spec.ts"
+      ],
+      "annotatedBy": []
+    },
+    {
+      "id": "testhook:fn:lifecycleGuard",
+      "short": "lifecycleGuard",
+      "group": "testhook/invoke-seams",
+      "tier": "string-verified",
+      "coveredBy": [
+        "harness/trigger-guards.spec.ts"
+      ],
+      "annotatedBy": []
+    },
+    {
+      "id": "testhook:fn:recurringNudgeGuard",
+      "short": "recurringNudgeGuard",
+      "group": "testhook/invoke-seams",
+      "tier": "string-verified",
+      "coveredBy": [
+        "harness/trigger-guards.spec.ts"
+      ],
+      "annotatedBy": []
+    },
+    {
+      "id": "testhook:fn:checkLicense",
+      "short": "checkLicense",
+      "group": "testhook/invoke-seams",
+      "tier": "string-verified",
+      "coveredBy": [
+        "harness/license-banner.spec.ts",
+        "unit/license.test.mjs"
+      ],
+      "annotatedBy": []
+    },
+    {
+      "id": "testhook:fn:storeWorkflowConfigProbe",
+      "short": "storeWorkflowConfigProbe",
+      "group": "testhook/invoke-seams",
+      "tier": "string-verified",
+      "coveredBy": [
+        "harness/workflow-deadend-warn.spec.ts"
+      ],
+      "annotatedBy": []
+    },
+    {
+      "id": "manifest:macro:sentinel-vault-panel",
+      "short": "sentinel-vault-panel",
+      "group": "manifest/macro",
+      "tier": "string-verified",
+      "coveredBy": [
+        "harness/upload-boundary-live.spec.ts",
+        "harness/validation-eval.spec.ts"
+      ],
+      "annotatedBy": []
+    },
+    {
+      "id": "manifest:macro:sentinel-vault-sealed-section",
+      "short": "sentinel-vault-sealed-section",
+      "group": "manifest/macro",
+      "tier": "string-verified",
+      "coveredBy": [
+        "harness/sealed-section.spec.ts",
+        "harness/validation-eval.spec.ts",
+        "unit/doc-surgery.test.mjs"
+      ],
+      "annotatedBy": []
+    },
+    {
+      "id": "manifest:confluence:pageBanner:sentinel-vault-ribbon",
+      "short": "sentinel-vault-ribbon",
+      "group": "manifest/confluence:pageBanner",
+      "tier": "uncovered",
+      "coveredBy": [],
+      "annotatedBy": []
+    },
+    {
+      "id": "manifest:webtrigger:harness-test-state",
+      "short": "harness-test-state",
+      "group": "manifest/webtrigger",
+      "tier": "string-verified",
+      "coveredBy": [
+        "e2e/ensure-fixture.mjs",
+        "e2e/workflow-e2e.mjs"
+      ],
+      "annotatedBy": []
+    },
+    {
+      "id": "manifest:consumer:realm-audit-queue",
+      "short": "realm-audit-queue",
+      "group": "manifest/consumer",
+      "tier": "string-verified",
+      "coveredBy": [
+        "harness/trigger-guards.spec.ts"
+      ],
+      "annotatedBy": []
+    },
+    {
+      "id": "manifest:consumer:ai-validation-queue",
+      "short": "ai-validation-queue",
+      "group": "manifest/consumer",
+      "tier": "uncovered",
+      "coveredBy": [],
+      "annotatedBy": []
+    },
+    {
+      "id": "event:avi:confluence:updated:attachment",
+      "short": "avi:confluence:updated:attachment",
+      "group": "manifest/trigger-events",
+      "tier": "string-verified",
+      "coveredBy": [
+        "e2e/seal-revert-e2e.mjs"
+      ],
+      "annotatedBy": []
+    },
+    {
+      "id": "event:avi:confluence:trashed:attachment",
+      "short": "avi:confluence:trashed:attachment",
+      "group": "manifest/trigger-events",
+      "tier": "string-verified",
+      "coveredBy": [
+        "harness/sealed-artifact-trash.spec.ts"
+      ],
+      "annotatedBy": []
+    },
+    {
+      "id": "event:avi:confluence:deleted:attachment",
+      "short": "avi:confluence:deleted:attachment",
+      "group": "manifest/trigger-events",
+      "tier": "string-verified",
+      "coveredBy": [
+        "harness/perm-delete-cleanup.spec.ts"
+      ],
+      "annotatedBy": []
+    },
+    {
+      "id": "event:avi:confluence:updated:page",
+      "short": "avi:confluence:updated:page",
+      "group": "manifest/trigger-events",
+      "tier": "string-verified",
+      "coveredBy": [
+        "e2e/live-trigger-e2e.mjs"
+      ],
+      "annotatedBy": []
+    },
+    {
+      "id": "event:avi:confluence:created:page",
+      "short": "avi:confluence:created:page",
+      "group": "manifest/trigger-events",
+      "tier": "uncovered",
+      "coveredBy": [],
+      "annotatedBy": []
+    },
+    {
+      "id": "event:avi:forge:installed:app",
+      "short": "avi:forge:installed:app",
+      "group": "manifest/trigger-events",
+      "tier": "string-verified",
+      "coveredBy": [
+        "harness/trigger-guards.spec.ts"
+      ],
+      "annotatedBy": []
+    },
+    {
+      "id": "event:avi:forge:uninstalled:app",
+      "short": "avi:forge:uninstalled:app",
+      "group": "manifest/trigger-events",
+      "tier": "string-verified",
+      "coveredBy": [
+        "harness/trigger-guards.spec.ts"
+      ],
+      "annotatedBy": []
+    },
+    {
+      "id": "manifest:scheduledTrigger:expiry-sweep-scheduled",
+      "short": "expiry-sweep-scheduled",
+      "group": "manifest/scheduledTrigger",
+      "tier": "uncovered",
+      "coveredBy": [],
+      "annotatedBy": []
+    },
+    {
+      "id": "manifest:scheduledTrigger:recurring-nudge-scheduled",
+      "short": "recurring-nudge-scheduled",
+      "group": "manifest/scheduledTrigger",
+      "tier": "string-verified",
+      "coveredBy": [
+        "harness/trigger-guards.spec.ts"
+      ],
+      "annotatedBy": []
+    },
+    {
+      "id": "manifest:scheduledTrigger:seal-index-cron",
+      "short": "seal-index-cron",
+      "group": "manifest/scheduledTrigger",
+      "tier": "string-verified",
+      "coveredBy": [
+        "harness/trigger-guards.spec.ts"
+      ],
+      "annotatedBy": []
+    },
+    {
+      "id": "manifest:scheduledTrigger:workflow-sweep-scheduled",
+      "short": "workflow-sweep-scheduled",
+      "group": "manifest/scheduledTrigger",
+      "tier": "string-verified",
+      "coveredBy": [
+        "e2e/workflow-conditions-e2e.mjs",
+        "e2e/workflow-enforce-e2e.mjs"
+      ],
+      "annotatedBy": []
+    },
+    {
+      "id": "manifest:confluence:globalSettings:steward-console",
+      "short": "steward-console",
+      "group": "manifest/confluence:globalSettings",
+      "tier": "string-verified",
+      "coveredBy": [
+        "harness/admin-render.spec.ts",
+        "harness/full-app-walkthrough.spec.ts",
+        "harness/steward-console-deep.spec.ts"
+      ],
+      "annotatedBy": []
+    },
+    {
+      "id": "manifest:confluence:spacePage:realm-console",
+      "short": "realm-console",
+      "group": "manifest/confluence:spacePage",
+      "tier": "string-verified",
+      "coveredBy": [
+        "harness/deploy-state-guard.spec.ts",
+        "harness/full-app-walkthrough.spec.ts",
+        "harness/realm-console-deep.spec.ts",
+        "harness/realm-operator-search.spec.ts",
+        "harness/realm-plainuser-gate.spec.ts",
+        "harness/realm-reservation-persist.spec.ts",
+        "harness/realm-stale-badge.spec.ts",
+        "harness/realm-validation-crud.spec.ts",
+        "harness/realm-workflow-persist.spec.ts",
+        "harness/realm.spec.ts",
+        "harness/space-access-persist.spec.ts",
+        "harness/steward-force-unseal.spec.ts",
+        "harness/steward-grant-roundtrip.spec.ts"
+      ],
+      "annotatedBy": []
+    }
+  ],
+  "invalidClaims": [],
+  "warnings": []
+}

@@ -12,6 +12,7 @@ import LicenseBanner from "../../kit/LicenseBanner";
 import { formatRemaining, formatDurationHours } from "../../kit/format-duration";
 import { WorkflowDashboard } from "../../kit/WorkflowDashboard";
 import logo from "../../assets/icons/icon.png";
+import { BUILD_INFO } from "../../../build-info.js";
 
 const SkeletonRow = ({ cols = 5 }) => (
   <tr className="skeleton-row">
@@ -1431,7 +1432,9 @@ const RealmPolicyDashboard = () => {
   }
 
   return (
-    <div className="space-admin-container">
+    // data-sv-build: deploy-staleness stamp (webpack inlines BUILD_INFO at build time) — lets the
+    // harness assert the SERVED frontend matches the deployed backend (`what=version`), the it26 trap.
+    <div className="space-admin-container" data-sv-build={BUILD_INFO.gitSha}>
       <div className="space-admin-header">
         <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
           <img

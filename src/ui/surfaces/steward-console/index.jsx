@@ -6,6 +6,7 @@ import ValidationsEditor from "../../kit/ValidationsEditor";
 import LicenseBanner from "../../kit/LicenseBanner";
 import { formatDurationHours } from "../../kit/format-duration";
 import logo from "../../assets/icons/icon.png";
+import { BUILD_INFO } from "../../../build-info.js";
 
 const SettingsRow = ({ label, description, children }) => (
   <div className="settings-row">
@@ -182,7 +183,9 @@ const GlobalPolicyEditor = () => {
   }
 
   return (
-    <div className="admin-container">
+    // data-sv-build: deploy-staleness stamp (webpack inlines BUILD_INFO at build time) — lets the
+    // harness assert the SERVED frontend matches the deployed backend (`what=version`), the it26 trap.
+    <div className="admin-container" data-sv-build={BUILD_INFO.gitSha}>
       <div className="admin-header">
         <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
           <img
