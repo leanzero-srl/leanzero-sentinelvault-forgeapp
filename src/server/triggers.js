@@ -570,13 +570,17 @@ async function restoreMediaPass(ctx, sealFileMap, probeCache = new Map()) {
     }
     violations.push(entry);
   }
+  if (violations.length > 0) probeCache.set("__saw-violations", true);
   if (violations.length === 0) {
     // Fix 3: a clean save clears the comment-dedup markers — the NEXT tamper on this page is
     // a genuinely new incident and must produce a fresh comment. "Clean" means NO violation of
     // ANY kind: a save with an ATTR-only violation must NOT clear the layout-changed marker
     // the previous run just claimed (found in-suite: two rapid resizes → run B cleared run A's
-    // marker before dispatching its own comment → double comment).
-    if (attrViolations === 0) {
+    // marker before dispatching its own comment → double comment). AND the run itself must
+    // never have seen a violation: an at-least-once DUPLICATE delivery that loses the 409 race
+    // re-reads the sibling's restored body, judges it "clean", and would clear the marker the
+    // winner just claimed (observed live — twin invocations 400ms apart on one tamper).
+    if (attrViolations === 0 && !probeCache.get("__saw-violations")) {
       for (const { seal } of sealFileMap) {
         if (seal.attachmentId) await clearViolationNotices(ctx.pageId, seal.attachmentId);
       }
