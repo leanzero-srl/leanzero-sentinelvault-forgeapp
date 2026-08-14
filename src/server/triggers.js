@@ -433,6 +433,7 @@ async function restoreMediaPass(ctx, sealFileMap, probeCache = new Map()) {
   // Protect-list comparison only (layout/width/widthType + media width/height) → immune to
   // editor attr-regen noise; legacy seals without a baseline are skipped. SHADOW mode (log,
   // no write) unless the global `enforceMediaPresentation` flag is true — flip after soak.
+  let attrViolations = 0;
   for (const { seal, fileId } of sealFileMap) {
     if (!presentFileIds.has(fileId) || !seal.mediaBaseline) continue;
     try {
@@ -449,6 +450,7 @@ async function restoreMediaPass(ctx, sealFileMap, probeCache = new Map()) {
         console.warn(`[MEDIA-ATTRS] re-baselined sealed ${seal.attachmentId} presentation (authorized ${isOwner ? "owner" : "grantee"} change)`);
         continue;
       }
+      attrViolations++;
       if (!ctx.enforceMediaAttrs) {
         console.warn(`[MEDIA-ATTRS] SHADOW: presentation drift on sealed ${seal.attachmentId} by ${ctx.atlassianId}: ${JSON.stringify(seal.mediaBaseline)} -> ${JSON.stringify(current)} (not enforcing)`);
         continue;
@@ -476,9 +478,14 @@ async function restoreMediaPass(ctx, sealFileMap, probeCache = new Map()) {
   );
   if (violations.length === 0) {
     // Fix 3: a clean save clears the comment-dedup markers — the NEXT tamper on this page is
-    // a genuinely new incident and must produce a fresh comment.
-    for (const { seal } of sealFileMap) {
-      if (seal.attachmentId) await clearViolationNotices(ctx.pageId, seal.attachmentId);
+    // a genuinely new incident and must produce a fresh comment. "Clean" means NO violation of
+    // ANY kind: a save with an ATTR-only violation must NOT clear the layout-changed marker
+    // the previous run just claimed (found in-suite: two rapid resizes → run B cleared run A's
+    // marker before dispatching its own comment → double comment).
+    if (attrViolations === 0) {
+      for (const { seal } of sealFileMap) {
+        if (seal.attachmentId) await clearViolationNotices(ctx.pageId, seal.attachmentId);
+      }
     }
     return;
   }
