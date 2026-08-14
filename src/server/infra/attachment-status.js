@@ -91,7 +91,9 @@ export async function restoreAttachmentFromTrash({ attachmentId, pageId, title, 
 
   const version = currentVersion ?? probe.version;
   const effPageId = pageId || probe.pageId;
-  const effTitle = title || probe.title || "Unknown";
+  // Vet F6: the probe's title is the LIVE truth — an owner may have legitimately renamed the
+  // file since sealing; restoring the seal-era name back would be a silent side-effect rename.
+  const effTitle = probe.title || title || "Unknown";
   if (!version || !effPageId) {
     console.error(`[ATT-STATUS] cannot restore ${attachmentId} — missing ${!version ? "version" : "pageId"} (event and probe both empty)`);
     return { ok: false, status: "missing-inputs", probe };
@@ -119,5 +121,34 @@ export async function restoreAttachmentFromTrash({ attachmentId, pageId, title, 
     console.error(`[ATT-STATUS] restore PUT failed for ${attachmentId}: ${res.status} — ${(await res.text()).slice(0, 200)}`);
     break;
   }
-  return { ok: false, status: lastStatus || "exhausted", probe };
+  // Adversarial-vet F1: one UI delete fires trashed:attachment AND updated:page — the trash
+  // handler and the media pass can race this restore. The loser's PUT 409s (or 4xx-es); before
+  // reporting failure, re-probe: if a concurrent caller already restored it, that IS success.
+  const recheck = await probeAttachmentStatus(attachmentId);
+  if (recheck.status === "current") return { ok: true, already: true, probe: recheck };
+  return { ok: false, status: recheck.status === "deleted" ? "deleted" : (lastStatus || "exhausted"), probe: recheck };
+}
+
+/**
+ * Corroborate a permanent deletion before any DESTRUCTIVE action (adversarial-vet F1/lens-3:
+ * a single transient 404 — trash-transaction propagation, container visibility — must never
+ * purge a seal). Two witnesses after a settle delay: the v2 GET must STILL 404, and the v1
+ * trashed-status GET (a different API surface that distinguishes trashed vs purged, probed
+ * live in INCIDENT-2026-07-22.md §7) must also miss. Only the INFERRED path needs this — the
+ * real deleted:attachment event is authoritative and keeps cleaning up immediately.
+ */
+export async function confirmAttachmentPurged(attachmentId, settleMs = 3000) {
+  await new Promise((r) => setTimeout(r, settleMs));
+  const again = await probeAttachmentStatus(attachmentId);
+  if (again.status !== "deleted") return false;
+  try {
+    const v1 = await asApp().requestConfluence(
+      route`/wiki/rest/api/content/${attachmentId}?status=trashed`,
+    );
+    if (v1.ok) return false; // still visible as trashed on the v1 surface — NOT purged
+    return v1.status === 404;
+  } catch (e) {
+    console.error(`[ATT-STATUS] purge corroboration errored for ${attachmentId} — treating as NOT confirmed:`, e);
+    return false;
+  }
 }
