@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-08-14T17:17:51.670Z",
+  "generatedAt": "2026-08-14T19:39:37.605Z",
   "appRoot": "/Users/mihaiperdum/Projects/Sentinel Vault",
   "harnessRoot": "/Users/mihaiperdum/Projects/forge-live-harness",
   "evidenceFiles": [
@@ -40,6 +40,8 @@
     "harness/sealed-image-ui-delete.spec.ts",
     "harness/sealed-media-attrs.spec.ts",
     "harness/sealed-media.spec.ts",
+    "harness/sealed-nonembedded.spec.ts",
+    "harness/sealed-owner-intent.spec.ts",
     "harness/sealed-section.spec.ts",
     "harness/space-access-persist.spec.ts",
     "harness/steward-console-deep.spec.ts",
@@ -70,6 +72,7 @@
     "unit/doc-surgery.test.mjs",
     "unit/format-duration.test.mjs",
     "unit/json-salvage.test.mjs",
+    "unit/kvs-ttl.test.mjs",
     "unit/license.test.mjs",
     "unit/media-presentation.test.mjs",
     "unit/media-restore.test.mjs",
@@ -81,10 +84,10 @@
     "unit/workflow-engine.test.mjs"
   ],
   "counts": {
-    "total": 177,
+    "total": 178,
     "stringVerified": 95,
     "annotated": 0,
-    "gaps": 82
+    "gaps": 83
   },
   "items": [
     {
@@ -985,6 +988,7 @@
         "harness/sealed-artifact-trash.spec.ts",
         "harness/sealed-delete-restore-journey.spec.ts",
         "harness/sealed-image-ui-delete.spec.ts",
+        "harness/sealed-owner-intent.spec.ts",
         "harness/sealed-section.spec.ts",
         "harness/space-access-persist.spec.ts",
         "harness/steward-force-unseal.spec.ts",
@@ -1033,6 +1037,8 @@
         "harness/sealed-image-ui-delete.spec.ts",
         "harness/sealed-media-attrs.spec.ts",
         "harness/sealed-media.spec.ts",
+        "harness/sealed-nonembedded.spec.ts",
+        "harness/sealed-owner-intent.spec.ts",
         "harness/sealed-section.spec.ts",
         "harness/space-access-persist.spec.ts",
         "harness/steward-force-unseal.spec.ts",
@@ -1079,6 +1085,8 @@
         "harness/sealed-image-ui-delete.spec.ts",
         "harness/sealed-media-attrs.spec.ts",
         "harness/sealed-media.spec.ts",
+        "harness/sealed-nonembedded.spec.ts",
+        "harness/sealed-owner-intent.spec.ts",
         "harness/sealed-section.spec.ts",
         "harness/space-access-persist.spec.ts",
         "harness/steward-force-unseal.spec.ts",
@@ -1099,6 +1107,14 @@
         "e2e/workflow-e2e.mjs",
         "e2e/workflow-enforce-e2e.mjs"
       ],
+      "annotatedBy": []
+    },
+    {
+      "id": "testhook:what:setttl",
+      "short": "setttl",
+      "group": "testhook/what-verbs",
+      "tier": "uncovered",
+      "coveredBy": [],
       "annotatedBy": []
     },
     {
