@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=1840">
+<title>Highlight 1 — Seal &amp; Protect</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{font-family:'DM Sans',system-ui,sans-serif;background:#080E1A;width:1840px;height:900px;overflow:hidden;display:flex;align-items:center;justify-content:center;position:relative}
+  body::before{content:'';position:absolute;inset:0;background-image:radial-gradient(rgba(255,255,255,.04) 1px,transparent 1px);background-size:24px 24px}
+  body::after{content:'';position:absolute;top:50%;left:50%;width:600px;height:600px;transform:translate(-50%,-50%);background:radial-gradient(circle,rgba(0,101,255,.1),transparent 60%);pointer-events:none}
+
+  .container{position:relative;z-index:1;display:flex;align-items:center;gap:100px;padding:0 120px;width:100%}
+
+  .text-side{max-width:580px;flex-shrink:0}
+  .badge{display:inline-flex;align-items:center;gap:6px;padding:5px 12px;border-radius:20px;background:rgba(0,101,255,.1);border:1px solid rgba(0,101,255,.2);margin-bottom:20px}
+  .badge .num{font-size:16px;font-weight:700;color:#58A6FF}
+  .badge .label{font-size:14px;font-weight:600;color:#58A6FF;text-transform:uppercase;letter-spacing:.5px}
+  h2{font-size:52px;font-weight:700;color:#FFFFFF;line-height:1.2;margin-bottom:14px;letter-spacing:-.5px}
+  h2 span{color:#58A6FF}
+  p{font-size:20px;color:#8B949E;line-height:1.65;margin-bottom:32px}
+  .features{list-style:none;display:flex;flex-direction:column;gap:10px}
+  .features li{display:flex;align-items:flex-start;gap:14px;font-size:18px;color:#C9D1D9;line-height:1.5}
+  .features li svg{width:22px;height:22px;flex-shrink:0;margin-top:2px}
+
+  .visual{position:relative;flex:1}
+  .screenshot-frame{width:100%;border-radius:12px;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.5);border:1px solid rgba(255,255,255,.08)}
+  .screenshot-frame img{display:block;width:100%;height:auto}
+
+  .shield-glow{position:absolute;top:-30px;right:-20px;width:80px;height:80px;opacity:.15}
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="text-side">
+    <div class="badge"><span class="num">01</span><span class="label">Core Feature</span></div>
+    <h2>Seal &amp; <span>Protect</span><br>Your Attachments</h2>
+    <p>Lock any Confluence attachment before editing. Other users see the seal status and who holds it — enforced at the platform level, not just a visual indicator.</p>
+    <ul class="features">
+      <li>
+        <svg viewBox="0 0 24 24" fill="none" stroke="#3FB950" stroke-width="2" stroke-linecap="round"><path d="M20 6L9 17l-5-5"/></svg>
+        One-click seal from the inline panel or overlay
+      </li>
+      <li>
+        <svg viewBox="0 0 24 24" fill="none" stroke="#3FB950" stroke-width="2" stroke-linecap="round"><path d="M20 6L9 17l-5-5"/></svg>
+        Content protection for embedded media in pages
+      </li>
+      <li>
+        <svg viewBox="0 0 24 24" fill="none" stroke="#3FB950" stroke-width="2" stroke-linecap="round"><path d="M20 6L9 17l-5-5"/></svg>
+        Upload, label, delete, restore &amp; purge
+      </li>
+      <li>
+        <svg viewBox="0 0 24 24" fill="none" stroke="#3FB950" stroke-width="2" stroke-linecap="round"><path d="M20 6L9 17l-5-5"/></svg>
+        Configurable seal duration with auto-expiry
+      </li>
+    </ul>
+  </div>
+
+  <div class="visual">
+    <svg class="shield-glow" viewBox="0 0 128 128" fill="none">
+      <path d="M64 8L16 28V60C16 88.72 36.48 115.36 64 122C91.52 115.36 112 88.72 112 60V28L64 8Z" fill="#0065FF"/>
+    </svg>
+    <div class="screenshot-frame">
+      <img src="screenshots/macro.jpg" alt="Sentinel Vault inline panel with sealed and available attachments">
+    </div>
+  </div>
+</div>
+</body>
+</html>

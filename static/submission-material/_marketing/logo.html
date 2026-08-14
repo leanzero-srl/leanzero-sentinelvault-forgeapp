@@ -1,0 +1,13 @@
+<!doctype html>
+<html><head><meta charset="utf-8">
+<style>
+/* 144x144 Marketplace app logo — the authored mark from mark.mjs, injected by
+   render.mjs into the [data-brand-mark] slot so the listing logo and every
+   brand row in the banner/highlights are the SAME drawing. Rendered at
+   deviceScaleFactor 2 with a transparent background; derive.mjs downscales
+   the 288px render to the exact 144x144. */
+*{box-sizing:border-box;margin:0;padding:0}
+body{width:144px;height:144px;overflow:hidden;background:transparent;line-height:0}
+[data-brand-mark]{width:144px;height:144px}
+</style></head>
+<body><div data-brand-mark></div></body></html>

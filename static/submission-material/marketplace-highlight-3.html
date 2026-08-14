@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=1840">
+<title>Highlight 3 — Administration &amp; Alerts</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{font-family:'DM Sans',system-ui,sans-serif;background:#080E1A;width:1840px;height:900px;overflow:hidden;display:flex;align-items:center;justify-content:center;position:relative}
+  body::before{content:'';position:absolute;inset:0;background-image:radial-gradient(rgba(255,255,255,.04) 1px,transparent 1px);background-size:24px 24px}
+  body::after{content:'';position:absolute;top:50%;left:50%;width:600px;height:600px;transform:translate(-50%,-50%);background:radial-gradient(circle,rgba(210,153,34,.06),transparent 60%);pointer-events:none}
+
+  .container{position:relative;z-index:1;display:flex;align-items:center;gap:100px;padding:0 120px;width:100%}
+
+  .text-side{max-width:580px;flex-shrink:0}
+  .badge{display:inline-flex;align-items:center;gap:6px;padding:5px 12px;border-radius:20px;background:rgba(210,153,34,.1);border:1px solid rgba(210,153,34,.2);margin-bottom:20px}
+  .badge .num{font-size:16px;font-weight:700;color:#D29922}
+  .badge .label{font-size:14px;font-weight:600;color:#D29922;text-transform:uppercase;letter-spacing:.5px}
+  h2{font-size:52px;font-weight:700;color:#FFFFFF;line-height:1.2;margin-bottom:14px;letter-spacing:-.5px}
+  h2 span{color:#D29922}
+  p{font-size:20px;color:#8B949E;line-height:1.65;margin-bottom:32px}
+  .features{list-style:none;display:flex;flex-direction:column;gap:10px}
+  .features li{display:flex;align-items:flex-start;gap:14px;font-size:18px;color:#C9D1D9;line-height:1.5}
+  .features li svg{width:22px;height:22px;flex-shrink:0;margin-top:2px}
+
+  .visual{position:relative;display:flex;flex-direction:column;gap:20px;flex:1}
+
+  .screenshot-frame{border-radius:10px;overflow:hidden;box-shadow:0 12px 40px rgba(0,0,0,.5);border:1px solid rgba(255,255,255,.08)}
+  .screenshot-frame img{display:block;width:100%;height:auto}
+  .screenshot-frame.top{width:100%}
+  .screenshot-frame.bottom{width:100%}
+
+  .screenshot-label{font-size:13px;font-weight:600;color:#6E7681;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px;padding-left:2px}
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="text-side">
+    <div class="badge"><span class="num">03</span><span class="label">Administration</span></div>
+    <h2>Full <span>Admin</span><br>Control</h2>
+    <p>Configure every aspect of Sentinel Vault at both the global and space level. 17 global settings, 5 space-level tabs, steward access requests, guilds, and 8 email notification types.</p>
+    <ul class="features">
+      <li>
+        <svg viewBox="0 0 24 24" fill="none" stroke="#3FB950" stroke-width="2" stroke-linecap="round"><path d="M20 6L9 17l-5-5"/></svg>
+        Global &amp; per-space policy controls
+      </li>
+      <li>
+        <svg viewBox="0 0 24 24" fill="none" stroke="#3FB950" stroke-width="2" stroke-linecap="round"><path d="M20 6L9 17l-5-5"/></svg>
+        Steward delegation &amp; access requests
+      </li>
+      <li>
+        <svg viewBox="0 0 24 24" fill="none" stroke="#3FB950" stroke-width="2" stroke-linecap="round"><path d="M20 6L9 17l-5-5"/></svg>
+        5 notification channels, each toggleable
+      </li>
+      <li>
+        <svg viewBox="0 0 24 24" fill="none" stroke="#3FB950" stroke-width="2" stroke-linecap="round"><path d="M20 6L9 17l-5-5"/></svg>
+        Watch notifications for sealed files
+      </li>
+    </ul>
+  </div>
+
+  <div class="visual">
+    <div>
+      <div class="screenshot-label">Steward Console (Global)</div>
+      <div class="screenshot-frame top">
+        <img src="screenshots/global-admin.jpg" alt="Steward Console showing global settings with toggles">
+      </div>
+    </div>
+    <div>
+      <div class="screenshot-label">Realm Console (Space)</div>
+      <div class="screenshot-frame bottom">
+        <img src="screenshots/space-settings.jpg" alt="Realm Console showing access control with stewards and guilds">
+      </div>
+    </div>
+  </div>
+</div>
+</body>
+</html>

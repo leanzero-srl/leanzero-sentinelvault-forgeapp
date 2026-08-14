@@ -1,0 +1,70 @@
+<!doctype html>
+<html><head><meta charset="utf-8">
+<style>
+/* 1840x900 Marketplace highlight. Rendered with Playwright at deviceScaleFactor 2;
+   derive.mjs produces the exact 1840x900 and the 580x330 centre-crop.
+   House rules: solid saturated colour, no faded washes, no left accent rails,
+   real product imagery, flat window — no 3D tilt. */
+*{box-sizing:border-box;margin:0;padding:0}
+body{width:1840px;height:900px;overflow:hidden;background:#020617;
+     font-family:Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;
+     display:flex;align-items:center;color:#E2E8F0;position:relative}
+/* faint seal-cyan blueprint grid — the brand's drafting-table device, kept subtle */
+body::before{content:'';position:absolute;inset:0;
+  background-image:linear-gradient(rgba(34,211,238,.05) 1px,transparent 1px),
+                   linear-gradient(90deg,rgba(34,211,238,.05) 1px,transparent 1px);
+  background-size:160px 160px}
+.text{width:620px;flex:0 0 620px;padding:0 0 0 88px;position:relative;z-index:2}
+.brand{display:flex;align-items:center;gap:11px;margin-bottom:34px}
+.mark{width:30px;height:30px;flex-shrink:0;line-height:0}
+.wordmark{font-size:16px;font-weight:800;letter-spacing:-.01em;color:#F8FAFC}
+.eyebrow{font:800 12px/1 ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.20em;
+         text-transform:uppercase;color:#22D3EE;margin-bottom:20px}
+h1{font-size:58px;line-height:1.06;letter-spacing:-.026em;font-weight:800;color:#fff;margin-bottom:24px}
+h1 em{font-style:normal;color:#22D3EE}
+p{font-size:21px;line-height:1.5;color:#94A3B8;margin-bottom:32px}
+.feat{display:flex;align-items:flex-start;gap:11px;font-size:16.5px;color:#CBD5E1;margin-bottom:13px}
+.tick{flex:0 0 19px;height:19px;border-radius:50%;background:#16A34A;color:#fff;
+      font-size:11px;font-weight:800;display:flex;align-items:center;justify-content:center;margin-top:2px}
+.visual{flex:1;height:100%;position:relative;display:flex;align-items:center;padding-left:56px}
+/* flat browser window, bleeding off the right edge — crisp, no tilt */
+.win{width:1240px;border-radius:14px 0 0 14px;overflow:hidden;background:#fff;
+     box-shadow:0 40px 90px -30px rgba(0,0,0,.8);border:1px solid rgba(255,255,255,.10);border-right:0}
+.chrome{height:38px;background:#F1F5F9;border-bottom:1px solid #E2E8F0;display:flex;align-items:center;padding:0 15px;gap:8px}
+.dot{width:11px;height:11px;border-radius:50%}
+.shot{display:block;width:100%}
+.note{position:absolute;left:24px;bottom:66px;max-width:430px;background:#0F172A;
+      border:1px solid #334155;border-radius:11px;padding:15px 18px;
+      display:flex;gap:13px;align-items:flex-start;box-shadow:0 20px 50px -18px rgba(0,0,0,.85)}
+.ic{flex:0 0 26px;height:26px;border-radius:7px;background:#0891B2;color:#fff;font-size:14px;
+    display:flex;align-items:center;justify-content:center;font-weight:800}
+.note b{display:block;font-size:15px;color:#fff;margin-bottom:3px}
+.note small{font:12.5px/1.45 ui-monospace,SFMono-Regular,Menlo,monospace;color:#94A3B8}
+</style></head>
+<body>
+  <div class="text">
+    <div class="brand"><div class="mark" data-brand-mark></div><div class="wordmark">Sentinel Vault</div></div>
+    <div class="eyebrow" id="eyebrow">§01 · Seal &amp; auto-restore</div>
+    <h1 id="title">Seal a file —<br><em>the vault holds it</em></h1>
+    <p id="sub">Seal attachments and page sections. If anyone overwrites, trashes or strips a sealed file, Sentinel Vault puts it back — automatically.</p>
+    <div id="feats">
+      <div class="feat"><span class="tick">✓</span><span>Overwritten files restored to the sealed version</span></div>
+      <div class="feat"><span class="tick">✓</span><span>Trashed attachments come back from the trash</span></div>
+      <div class="feat"><span class="tick">✓</span><span>Sealed embeds re-inserted when an edit removes them</span></div>
+      <div class="feat"><span class="tick">✓</span><span>Edit requests — approve or deny named editors</span></div>
+    </div>
+  </div>
+  <div class="visual">
+    <div class="win">
+      <div class="chrome"><span class="dot" style="background:#ff5f57"></span><span class="dot" style="background:#febc2e"></span><span class="dot" style="background:#28c840"></span></div>
+      <img class="shot" id="shot" src="../screenshots/panel-seals.png" alt="">
+    </div>
+    <div class="note">
+      <!-- plain arrow, not a shield glyph: exotic codepoints (U+26E8 etc.)
+           render as tofu in headless Chromium's default font stack -->
+      <div class="ic">→</div>
+      <div><b id="noteTitle">Restored, not just flagged</b>
+      <small id="noteBody">A violation is not a warning — the previous version is re-uploaded and everyone involved is notified.</small></div>
+    </div>
+  </div>
+</body></html>
