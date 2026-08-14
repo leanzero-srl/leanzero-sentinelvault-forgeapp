@@ -9,7 +9,7 @@ status legend: discovered -> researched -> designed -> implemented -> verified |
 | 44 | Enforced Approved state (revert-on-tamper) | Backend → ribbon/comments | **verified (Fn 8)** | 1 | 1 | 1 | 1 | 1 | 21.0 | demote default + revert opt-in; enforce-e2e 19/19; design caught 17 gaps + review caught 8 (1 HIGH); grade PASS |
 | 48 | Workflow dashboard & CSV export | Realm console (space page) | **verified (Fn 10)** | 1 | 1 | 1 | 1 | 1 | 21.0 | state distribution + overdue + recent-pages table + client CSV; counts exact from by-state index; enforce-e2e 27/27 |
 | 46 | Transition conditions (rules + AI gate) | Backend + realm console config | **verified (Fn 12)** | 1 | 1 | 1 | 1 | 1 | 19.0 | content gate reuses evaluateRules (sync); AI = robot-approver axis on the pending record (async); conditions-e2e 18/18; adversarial review found+fixed 7 async/authority defects |
-| 47 | Native content-state mirroring | Backend → native status chip | **verified (Fn 11)** | 1 | 1 | 1 | 1 | 1 | 16.0 | PUT /content/{id}/state — LIVE-CONFIRMED writable (hex color, idempotent no-bump); mirrored from persistState; sweep author=app fix so the version bump doesn't trip #44; enforce-e2e 30/30 |
+| 47 | Native content-state mirroring | Backend → native status chip | **REMOVED (C6, 2026-07-15)** | — | — | — | — | — | — | Shipped it11, REMOVED by owner-decision C6 (commit c5d7723): the going-in "v1 API 410" theory was disproven; the real defect was mirrorNativeState 409-conflicting on custom-state creation while swallowing every error — unreliable + redundant. `native-state.js` no longer exists; do NOT treat this row as shipped surface. |
 | 1 | Sealed Sections group (picker, seal/unseal) | Inline panel | discovered | 3 | 3 | 2 | 3 | 3 | 15.6 | — |
 | 2 | Watch / Notify me | Inline panel + overlay + realm console | discovered | 4 | 3 | 2 | 2 | 3 | 14.6 | — |
 | 6 | Edit requests & grants — attachments | Inline panel + realm console | discovered | 3 | 3 | 3 | 2 | 3 | 14.6 | — |
@@ -423,7 +423,12 @@ Rows 42–48 are the vetted Comala-style workflow-rules capability (owner direct
 - **Baseline:** all axes 1 (not built). **Impact 4 · Effort 3 · Risk 4** (+2 → Priority 19.0).
 - **Guardrails:** @forge/llm (Preview, already accepted; developer-billed since 2026-06 → opt-in per space + daily cap — OPEN QUESTION for owner); **demand-evidence gate before build** (no user review asks for AI gating). **Confidence LOW (flagged)** — async block-until-job-lands has no in-repo precedent.
 
-## 47. Native content-state mirroring  *(BUILD-GATED on a live API spike)*
+## 47. Native content-state mirroring  *(REMOVED — owner decision C6, 2026-07-15, commit c5d7723)*
+
+> **This feature was shipped in it11 and later REMOVED.** `mirrorNativeState` 409-conflicted on
+> custom-state creation while swallowing every error (the "v1 API 410" theory was disproven by
+> live probes); judged unreliable + redundant with the app's own chip. Nothing below ships.
+
 - **Does:** When SV changes a page's workflow state, the native Confluence status chip updates to match (visible in editor/header/search). Default off per space. Resolves the two-chips-disagree case.
 - **Lives:** transition side-effect hook in F1 engine; mirror PUT NEVER inside `pageContentTrigger` (async @forge/events job for trigger-driven transitions — single-writer discipline); v1-only `PUT /wiki/rest/api/content/{id}/state` behind an adapter.
 - **Baseline:** all axes 1 (not built). **Impact 3 · Effort 3 · Risk 4** (+2 → Priority 16.0).

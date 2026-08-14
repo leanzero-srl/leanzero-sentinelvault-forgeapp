@@ -652,34 +652,34 @@ const ArtifactControlPanel = () => {
         console.warn("[OVERLAY] Fast seal fetch failed:", e);
       }
 
-      // Phase 2: Full list from Confluence API (merges with Phase 1)
-      await retrieveFileData(false, null, hasPhase1);
-
-      // Fetch global settings to check auto-unlock status
-      try {
-        const globalSettings = await invoke("load-policy", {
-          scope: "global",
-        });
-        const enabled = globalSettings?.expiryAlertsActive !== false;
-        setExpiryAlertsActive(enabled);
-        setSettingsLoaded(true);
-      } catch (error) {
-        console.warn(
-          "Failed to get auto-unlock setting, defaulting to enabled:",
-          error,
-        );
-        setSettingsLoaded(true);
-      }
-
-      // Fetch page-level panel settings
-      try {
-        const panelStatus = await invoke("check-panel-status", { pageId: null });
-        setPanelHidden(panelStatus?.macroDisabled === true);
-      } catch (error) {
-        console.warn("Failed to get panel status:", error);
-      } finally {
-        setPanelConfigReady(true);
-      }
+      // Phase 2 (slow Confluence file enrichment), global settings, and panel status are
+      // INDEPENDENT — run them concurrently. The old sequential chain made the "Checking
+      // macro visibility…" strip and the gating toggle wait >5s behind the file enrichment
+      // they don't need (the same stuck-behind-a-slow-await class as the it26 realm-console
+      // fix; flagged as the COVERAGE-MATRIX first-paint LEAD).
+      await Promise.allSettled([
+        retrieveFileData(false, null, hasPhase1),
+        (async () => {
+          try {
+            const globalSettings = await invoke("load-policy", { scope: "global" });
+            setExpiryAlertsActive(globalSettings?.expiryAlertsActive !== false);
+          } catch (error) {
+            console.warn("Failed to get auto-unlock setting, defaulting to enabled:", error);
+          } finally {
+            setSettingsLoaded(true);
+          }
+        })(),
+        (async () => {
+          try {
+            const panelStatus = await invoke("check-panel-status", { pageId: null });
+            setPanelHidden(panelStatus?.macroDisabled === true);
+          } catch (error) {
+            console.warn("Failed to get panel status:", error);
+          } finally {
+            setPanelConfigReady(true);
+          }
+        })(),
+      ]);
     };
     initializeComponent();
   }, []);
