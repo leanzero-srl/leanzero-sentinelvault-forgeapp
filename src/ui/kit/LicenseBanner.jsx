@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { invoke } from "@forge/bridge";
+import { invoke, router } from "@forge/bridge";
 import { shouldShowLicenseBanner } from "./license.js";
 
 // Non-blocking "unlicensed" nag banner for the admin surfaces. Calls check-license once; renders
@@ -23,8 +23,15 @@ const LicenseBanner = () => {
     <div className="license-banner" role="status">
       <span className="license-banner-text">
         Sentinel Vault is unlicensed. Your sealed content stays protected — please renew your
-        subscription in the Atlassian Marketplace to keep using the app.
+        subscription to keep using the app.
       </span>
+      <button
+        type="button"
+        className="license-banner-link"
+        onClick={() => router.open("/wiki/plugins/servlet/upm")}
+      >
+        Manage subscription
+      </button>
     </div>
   );
 };

@@ -6,7 +6,7 @@
 import { asApp, asUser, route } from "@forge/api";
 import { kvs, WhereConditions } from "@forge/kvs";
 
-import { authorizeSteward } from "../../shared/steward-checks.js";
+import { authorizeSteward, isOperatorSiteAdmin } from "../../shared/steward-checks.js";
 import {
   resolveWorkflowDef,
   loadWorkflowConfig,
@@ -298,9 +298,15 @@ const loadConfig = async (req) => {
 
 const storeConfig = async (req) => {
   const { scope, key, def } = req.payload || {};
-  const realmKey = key || spaceKeyOf(req);
-  if (!(await authorizeSteward(req.context?.accountId, realmKey))) {
-    return { success: false, reason: "Only a space steward can edit workflow definitions" };
+  // Scope-tiered authz (mirrors store-validation-config, it17): a SPACE def needs a steward of
+  // THAT space; the GLOBAL def needs a site admin — previously any space steward could invoke
+  // with scope:"global" and overwrite the org-wide workflow definition.
+  const caller = req.context?.accountId;
+  const authorized = !!caller && ((scope === "space" && (key || spaceKeyOf(req)))
+    ? await authorizeSteward(caller, key || spaceKeyOf(req))
+    : await isOperatorSiteAdmin(caller));
+  if (!authorized) {
+    return { success: false, reason: scope === "space" ? "Only a space steward can edit workflow definitions" : "Only a site admin can edit the global workflow definition" };
   }
   return storeWorkflowConfig(scope || "global", key, def);
 };

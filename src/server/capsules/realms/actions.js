@@ -3,6 +3,7 @@ import { kvs, WhereConditions } from "@forge/kvs";
 import { Queue } from "@forge/events";
 
 import { authorizeSteward, isOperatorSteward } from "../../shared/steward-checks.js";
+import { probeAttachmentStatus } from "../../infra/attachment-status.js";
 import { removeSealContentProp, touchSealTimestamp } from "../sealing/logic.js";
 import { notifyWatchers } from "../bulletins/logic.js";
 import { sweepEditAccess } from "../editreq/logic.js";
@@ -98,10 +99,30 @@ const enumerateRealmSeals = async (req) => {
         lockedByAccountId: value.lockedBy,
         lockedOn: value.timestamp,
         expiresAt: value.expiresAt,
+        isExpired: !!(value.expiresAt && new Date(value.expiresAt) < new Date()),
         downloadLink: value.downloadLink || null,
         mediaType: value.mediaType || null,
+        isStale: false,
+        staleReason: null,
       };
     });
+
+    // Fix 5 (incident 2026-07-22): stale-parity with the inline panel. The console listed a
+    // seal as a normal live row while its attachment sat in TRASH — the two surfaces
+    // disagreed. Bounded chunked probe (concurrency 10, ≤ one page of rows, runs on the
+    // seals-tab fetch — never on bootstrap, it26); probe failure → non-stale (panel parity).
+    const CHUNK = 10;
+    for (let i = 0; i < attachments.length; i += CHUNK) {
+      await Promise.all(
+        attachments.slice(i, i + CHUNK).map(async (a) => {
+          try {
+            const probe = await probeAttachmentStatus(a.id);
+            if (probe.status === "trashed") { a.isStale = true; a.staleReason = "trashed"; }
+            else if (probe.status === "deleted") { a.isStale = true; a.staleReason = "deleted"; }
+          } catch (_) { /* non-stale on probe failure */ }
+        }),
+      );
+    }
 
     return {
       attachments,
