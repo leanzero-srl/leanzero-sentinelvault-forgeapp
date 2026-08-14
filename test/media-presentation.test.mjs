@@ -1,4 +1,4 @@
-import { findSealedMediaSingle, capturePresentation, presentationDiffers, applyPresentation } from "../src/server/infra/media-presentation.js";
+import { findSealedMediaSingle, findAllSealedMediaSingles, capturePresentation, presentationDiffers, applyPresentation } from "../src/server/infra/media-presentation.js";
 import { eq, ok, report } from "./_assert.mjs";
 
 const media = (id, attrs = {}) => ({ type: "media", attrs: { type: "file", id, collection: "c", ...attrs } });
@@ -40,5 +40,30 @@ eq("media dims restored", tampered.content[0].attrs.width, 820);
 const untouched = single("f-1", { layout: "center" }, { width: 820, height: 820 });
 eq("apply on an already-conforming node → no change", applyPresentation(untouched, base), false);
 ok("apply with no baseline is a no-op", applyPresentation(untouched, null) === false);
+
+// --- findAllSealedMediaSingles (hunt F7: duplicate embeds of one fileId) ---
+const dupDoc = doc(
+  single("f-9", { layout: "center" }, { width: 820, height: 820 }),
+  { type: "paragraph", content: [] },
+  { type: "expand", content: [single("f-9", { layout: "wide", width: 340, widthType: "pixel" }, { width: 400, height: 400 })] },
+  single("f-other", { layout: "center" }),
+);
+const allCopies = findAllSealedMediaSingles(dupDoc, "f-9");
+eq("finds EVERY copy of the fileId (incl. a nested one)", allCopies.length, 2);
+ok("copies are LIVE refs in document order",
+  allCopies[0] === dupDoc.content[0] && allCopies[1] === dupDoc.content[2].content[0]);
+eq("absent fileId → empty list", findAllSealedMediaSingles(dupDoc, "f-404"), []);
+eq("null doc → empty list", findAllSealedMediaSingles(null, "f-9"), []);
+eq("other fileIds are not swept up", findAllSealedMediaSingles(dupDoc, "f-other").length, 1);
+
+// multi-copy apply: every differing copy is restorable against one baseline
+const dupBase = { layout: "center", width: null, widthType: null, mediaWidth: 820, mediaHeight: 820 };
+const diffCopies = allCopies.filter((n) => presentationDiffers(dupBase, capturePresentation(n)));
+eq("only the tampered copy differs from the baseline", diffCopies.length, 1);
+ok("applying the baseline restores the tampered copy in place", applyPresentation(diffCopies[0], dupBase) === true);
+eq("restored copy's wrapper matches the baseline", dupDoc.content[2].content[0].attrs, { layout: "center" });
+eq("restored copy's media dims match the baseline", dupDoc.content[2].content[0].content[0].attrs.width, 820);
+eq("after restore, NO copy differs",
+  findAllSealedMediaSingles(dupDoc, "f-9").filter((n) => presentationDiffers(dupBase, capturePresentation(n))).length, 0);
 
 report("media-presentation");

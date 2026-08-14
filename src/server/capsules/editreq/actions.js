@@ -3,6 +3,7 @@ import { kvs, WhereConditions } from "@forge/kvs";
 
 import { authorizeSteward } from "../../shared/steward-checks.js";
 import { resolveBulletinToggles } from "../../shared/bulletin-flags.js";
+import { setUntil } from "../../shared/kvs-ttl.js";
 import {
   mailEditRequest,
   mailEditApproved,
@@ -201,7 +202,7 @@ const approveEditRequest = async (req) => {
   const grantKey = `edit-grant-${attachmentId}-${requesterAccountId}`;
   const expiryMs = seal.expiresAt ? new Date(seal.expiresAt).getTime() : 0;
   if (expiryMs > Date.now()) {
-    await kvs.set(grantKey, grant, { expiresAt: expiryMs });
+    await setUntil(grantKey, grant, expiryMs);
   } else {
     await kvs.set(grantKey, grant);
   }
@@ -377,7 +378,7 @@ export const approveSectionEdit = async (req) => {
   const grant = { sectionId, editorAccountId: requesterAccountId, editorName: request?.requesterName || "User", grantedBy: accountId, grantedAt: new Date().toISOString(), expiresAt: seal.expiresAt || null };
   const grantKey = `section-edit-grant-${sectionId}-${requesterAccountId}`;
   const expiryMs = seal.expiresAt ? new Date(seal.expiresAt).getTime() : 0;
-  if (expiryMs > Date.now()) await kvs.set(grantKey, grant, { expiresAt: expiryMs });
+  if (expiryMs > Date.now()) await setUntil(grantKey, grant, expiryMs);
   else await kvs.set(grantKey, grant);
   await kvs.delete(requestKey);
 

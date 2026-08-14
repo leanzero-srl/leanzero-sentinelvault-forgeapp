@@ -1,5 +1,4 @@
-import { kvs } from "@forge/kvs";
-
+import { setWithTtl } from "../../shared/kvs-ttl.js";
 import { readDocBody, readDocBodyAtVersion, extractPlainText } from "../../infra/doc-surgery.js";
 import { runForgeLlmJson, isForgeLlmModelAllowed, FORGE_LLM_DEFAULT_MODEL } from "../../infra/forge-llm.js";
 import { postAiFindingsComment } from "../../infra/validation-blueprints.js";
@@ -75,14 +74,15 @@ export async function aiValidationConsumer(event) {
     return;
   }
   const statusKey = `ai-validation-status-${taskId}`;
-  const ttl = { expiresAt: Date.now() + 3600000 };
+  const STATUS_TTL_MS = 3600000;
+  const setStatus = (value) => setWithTtl(statusKey, value, STATUS_TTL_MS);
 
   try {
-    await kvs.set(statusKey, { status: "processing", pageId }, ttl);
+    await setStatus({ status: "processing", pageId });
 
     const ai = await resolveAiConfig(spaceKey);
     if (!ai || ai.enabled !== true) {
-      await kvs.set(statusKey, { status: "error", error: "AI validation is not enabled", pageId }, ttl);
+      await setStatus({ status: "error", error: "AI validation is not enabled", pageId });
       return;
     }
 
@@ -102,7 +102,7 @@ export async function aiValidationConsumer(event) {
     if (res.usage) await accrueTokenUsage(realmKey || spaceKey, res.usage);
 
     if (!res.ok) {
-      await kvs.set(statusKey, { status: "error", error: res.error || "LLM call failed", pageId }, ttl);
+      await setStatus({ status: "error", error: res.error || "LLM call failed", pageId });
       return;
     }
 
@@ -110,7 +110,7 @@ export async function aiValidationConsumer(event) {
       // Parse failure: record audit, post NO comment (fail-closed — never fabricate).
       const payload = { pageId, pageTitle, parseError: true, findings: [], summary: "", model, truncated, usage: res.usage, at: new Date().toISOString() };
       await storeFindings(pageId, payload);
-      await kvs.set(statusKey, { status: "done", result: payload }, ttl);
+      await setStatus({ status: "done", result: payload });
       return;
     }
 
@@ -135,11 +135,11 @@ export async function aiValidationConsumer(event) {
       }
     }
 
-    await kvs.set(statusKey, { status: "done", result: payload }, ttl);
+    await setStatus({ status: "done", result: payload });
   } catch (e) {
     console.error("[AI-VALIDATE] consumer error:", e);
     try {
-      await kvs.set(statusKey, { status: "error", error: String(e?.message || e).slice(0, 300), pageId }, ttl);
+      await setStatus({ status: "error", error: String(e?.message || e).slice(0, 300), pageId });
     } catch (_) { /* best effort */ }
     // Manual flow: do NOT rethrow (avoid retry double-billing).
   }

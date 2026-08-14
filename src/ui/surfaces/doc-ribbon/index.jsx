@@ -323,8 +323,8 @@ const DocumentRibbon = () => {
   const fetchAlerts = useCallback(async (pageId, operatorId) => {
     try {
       const result = await invoke("recent-dispatches", { pageId });
-      if (result?.success && result.dispatches?.length > 0) {
-        const relevant = result.dispatches.filter(
+      if (result?.success && result.notifications?.length > 0) {
+        const relevant = result.notifications.filter(
           (n) => n.ownerAccountId === operatorId || n.editorAccountId === operatorId,
         );
         setAlerts(relevant);
