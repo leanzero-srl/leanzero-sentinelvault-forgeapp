@@ -211,10 +211,6 @@
       "reason": "unreviewed-baseline"
     },
     {
-      "item": "resolver:enumerate-page-seals",
-      "reason": "unreviewed-baseline"
-    },
-    {
       "item": "resolver:check-seal-stamp",
       "reason": "unreviewed-baseline"
     },
@@ -333,6 +329,10 @@
     {
       "item": "manifest:scheduledTrigger:expiry-sweep-scheduled",
       "reason": "unreviewed-baseline"
+    },
+    {
+      "item": "testhook:what:setttl",
+      "reason": "diagnostic-seam (TTL-shape live probe; exercised ad hoc, not by a standing spec)"
     }
   ]
 }

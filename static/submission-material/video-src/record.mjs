@@ -26,7 +26,10 @@ import fs from 'node:fs';
 import { mkdir, rm } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { chromium } from 'playwright';
+import { createRequire } from 'node:module';
+// playwright lives in the screenshot-harness package, not the repo root (render.mjs precedent).
+const __req = createRequire(new URL('../../_screenshot-harness/package.json', import.meta.url));
+const { chromium } = __req('playwright');
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SHOTS = path.resolve(__dirname, '../../_screenshot-harness/shots');
