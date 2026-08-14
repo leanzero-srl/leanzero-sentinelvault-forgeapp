@@ -38,6 +38,7 @@
     "eslint": "^8.56.0",
     "eslint-plugin-react-hooks": "^4.6.0",
     "html-webpack-plugin": "^5.6.6",
+    "js-yaml": "^4.3.1",
     "webpack": "^5.88.0",
     "webpack-cli": "^5.1.0"
   }

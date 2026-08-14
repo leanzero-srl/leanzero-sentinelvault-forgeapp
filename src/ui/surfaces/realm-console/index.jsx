@@ -166,8 +166,14 @@ const SortPicker = ({ orderField, orderDir, onSort }) => {
 const RealmClaimedCard = ({ artifact, onForceRelease, onWatch, isWatching, forceReleaseActive, visibleColumns, busyAction, siteUrl }) => {
   const [expanded, setExpanded] = useState(false);
   const [cachedPreview, setCachedPreview] = useState(null);
-  const statusClass = artifact.isExpired ? "expired" : "locked";
-  const statusText = artifact.isExpired ? "Overdue" : "Sealed";
+  // Fix 5: stale-parity with the overlay/panel (incident 2026-07-22: a trashed attachment's
+  // seal rendered here as a normal live row). Same badge vocabulary as the overlay.
+  const isStale = artifact.isStale === true;
+  const isRecoverable = artifact.staleReason === "trashed";
+  let statusClass = artifact.isExpired ? "expired" : "locked";
+  let statusText = artifact.isExpired ? "Overdue" : "Sealed";
+  if (isStale && isRecoverable) { statusClass = "trashed"; statusText = "Trash"; }
+  else if (isStale) { statusClass = "stale"; statusText = "Missing"; }
   const isImage = artifact.mediaType?.startsWith("image/");
   const numericAttId = artifact.id ? artifact.id.replace(/^att/, "") : null;
   const downloadHref = siteUrl && artifact.pageId && artifact.title
