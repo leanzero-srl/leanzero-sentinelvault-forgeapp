@@ -18,6 +18,7 @@ import {
 // Import from capsule logic
 import { writeSealContentProp, removeSealContentProp, touchSealTimestamp } from "./logic.js";
 import { readDocBody } from "../../infra/doc-surgery.js";
+import { confirmAttachmentPurged } from "../../infra/attachment-status.js";
 import { findSealedMediaSingle, capturePresentation } from "../../infra/media-presentation.js";
 import { purgeAllSealState } from "./confluence-sync.js";
 
@@ -182,6 +183,7 @@ const sealArtifact = async (req) => {
   // absent (SV-M8). The expiry sweep only notifies and never deletes, so an expired-but-
   // unswept seal would otherwise block a legitimate re-seal until the sweep runs.
   const existingSeal = await kvs.get(`protection-${attachmentId}`);
+  let staleRealmIndexId = null;
   if (existingSeal && existingSeal.lockedBy && existingSeal.lockedBy !== operatorAccountId) {
     const expired = existingSeal.expiresAt && new Date(existingSeal.expiresAt) < new Date();
     if (!expired) {
@@ -196,6 +198,10 @@ const sealArtifact = async (req) => {
     // seal (blocking a requester, or surfacing a phantom request the new owner could approve).
     await kvs.delete(`protection-${attachmentId}`).catch(() => {});
     await sweepEditAccess(attachmentId).catch(() => {});
+    // Hunt H2-F5b: remember the old seal's space so its index leg can be dropped below once
+    // the NEW seal's space is resolved — otherwise a stale row (previous owner's name/expiry)
+    // survives whenever the new seal lands in a different space or resolves no space at all.
+    staleRealmIndexId = existingSeal.spaceId || null;
   }
 
   let realmKey =
@@ -312,10 +318,17 @@ const sealArtifact = async (req) => {
   // from a SERVER READ of the ADF (normalization-consistent with later trigger reads). Failure
   // → no baseline → attr protection simply skipped for this seal (fail-open, logged).
   let mediaBaseline = null;
+  // Whether the sealed file was EMBEDDED in the page body at seal time. Tri-state on purpose:
+  // true/false only from a successful ADF read; undefined (omitted from the record) when the
+  // read failed or there was no fileId — so the phantom-violation gate in triggers.js can
+  // distinguish "provably never embedded" from "unknown".
+  let embedded;
   if (contentId && sealedFileId) {
     try {
       const { adfDoc } = await readDocBody(contentId);
-      mediaBaseline = capturePresentation(findSealedMediaSingle(adfDoc, sealedFileId));
+      const sealedNode = findSealedMediaSingle(adfDoc, sealedFileId);
+      embedded = sealedNode != null;
+      mediaBaseline = capturePresentation(sealedNode);
     } catch (e) {
       console.warn(`[SEAL] presentation-baseline capture failed for ${attachmentId} (attr protection inactive):`, e?.message);
     }
@@ -337,7 +350,15 @@ const sealArtifact = async (req) => {
     sealedFileId: sealedFileId,
     downloadLink: artifactDownloadLink,
     mediaBaseline,
+    embedded,
   };
+
+  // Hunt H2-F5b: the expired-other-user re-seal above removed `protection-{id}` but not the
+  // old space index leg — drop it now that the new space is known, unless the new index write
+  // below will overwrite the very same key.
+  if (staleRealmIndexId && String(staleRealmIndexId) !== String(realmId || "")) {
+    await kvs.delete(`space-protection-${staleRealmIndexId}-${attachmentId}`).catch(() => {});
+  }
 
   // Store seal record
   await kvs.set(`protection-${attachmentId}`, sealPayload);
@@ -675,26 +696,33 @@ const enumerateOperatorSeals = async (req) => {
         let fileSize = "Unknown";
         let attDownloadLink = null;
         let attMediaType = null;
+        let isStale = false;
+        let staleReason = null;
 
+        // Hunt H2-F1: a READ must never tear down protection state on an unproven negative
+        // (the 2026-07-17 doctrine). Delete only a DOUBLE-CONFIRMED purge; a trashed file is
+        // recoverable → mark stale (enumeratePageSeals parity); anything transient keeps the
+        // seal and just skips the row for this render.
         try {
           const artifactResponse = await asUser().requestConfluence(
             route`/wiki/api/v2/attachments/${artifactId}`,
           );
           if (!artifactResponse.ok) {
-            // Attachment is gone — clean up stale seal record
-            await kvs.delete(`protection-${artifactId}`);
-            if (value.spaceId) {
-              await kvs.delete(`space-protection-${value.spaceId}-${artifactId}`);
+            if (
+              artifactResponse.status === 404 &&
+              (await confirmAttachmentPurged(artifactId))
+            ) {
+              await kvs.delete(`protection-${artifactId}`);
+              if (value.spaceId) {
+                await kvs.delete(`space-protection-${value.spaceId}-${artifactId}`);
+              }
             }
             continue;
           }
           const artifactData = await artifactResponse.json();
           if (artifactData.status && artifactData.status !== "current") {
-            await kvs.delete(`protection-${artifactId}`);
-            if (value.spaceId) {
-              await kvs.delete(`space-protection-${value.spaceId}-${artifactId}`);
-            }
-            continue;
+            isStale = true;
+            staleReason = artifactData.status === "trashed" ? "trashed" : artifactData.status;
           }
           artifactTitle = artifactData.title || artifactTitle;
           fileSize = artifactData.fileSize
@@ -703,11 +731,10 @@ const enumerateOperatorSeals = async (req) => {
           attDownloadLink = artifactData.downloadLink || artifactData._links?.download || null;
           attMediaType = artifactData.mediaType || null;
         } catch (attErr) {
-          // Can't verify attachment — clean up and skip
-          await kvs.delete(`protection-${artifactId}`);
-          if (value.spaceId) {
-            await kvs.delete(`space-protection-${value.spaceId}-${artifactId}`);
-          }
+          console.warn(
+            `[ENUMERATE-OPERATOR-SEALS] probe failed for ${artifactId} — keeping seal, skipping row:`,
+            attErr,
+          );
           continue;
         }
 
@@ -763,6 +790,8 @@ const enumerateOperatorSeals = async (req) => {
           lockedOn: value.timestamp,
           expiresAt: value.expiresAt,
           isExpired: sealLapsed,
+          isStale,
+          staleReason,
           autoUnlockEnabled: autoUnsealActive,
           downloadLink: attDownloadLink,
           mediaType: attMediaType,

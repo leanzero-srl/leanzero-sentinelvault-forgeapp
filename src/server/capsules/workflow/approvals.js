@@ -15,6 +15,7 @@
  */
 import { asApp, route } from "@forge/api";
 import { kvs, WhereConditions } from "@forge/kvs";
+import { setWithTtl } from "../../shared/kvs-ttl.js";
 import { transitionPageWorkflow, readPageWorkflow, fetchLivePageVersion } from "./logic.js";
 import { notifyApprovalRequested, notifyApprovalResolved } from "../../infra/approval-blueprints.js";
 
@@ -166,7 +167,7 @@ async function finalizeApprovedTransition(pageId, stateId, pending, actorAccount
   if (await kvs.get(completingKey(pageId))) {
     return { success: true, outcome: "approved", transitioned: false, alreadyCompleting: true };
   }
-  await kvs.set(completingKey(pageId), { stateId, at: new Date().toISOString() }, { expiresAt: Date.now() + 120000 });
+  await setWithTtl(completingKey(pageId), { stateId, at: new Date().toISOString() }, 120000);
   try {
     const live = await fetchLivePageVersion(pageId);
     if (live == null) {

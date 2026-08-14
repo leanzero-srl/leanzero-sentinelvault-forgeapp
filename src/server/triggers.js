@@ -30,7 +30,8 @@ import { isAccountStewardAsApp } from "./shared/steward-checks.js";
 import { postValidationComment } from "./infra/validation-blueprints.js";
 import { readDocBody, readDocBodyAtVersion, writeDocBody, collectMediaFileIds, extractMediaSingleNodes, spliceMediaNodes, locateBodiedSectionNodes, spliceSectionWrapper, hashAdf, canonicalizeAdf, nonEmptySectionBody } from "./infra/doc-surgery.js";
 import { probeAttachmentStatus, restoreAttachmentFromTrash, decideMediaRestoreAction, confirmAttachmentPurged } from "./infra/attachment-status.js";
-import { findSealedMediaSingle, capturePresentation, presentationDiffers, applyPresentation } from "./infra/media-presentation.js";
+import { findSealedMediaSingle, findAllSealedMediaSingles, capturePresentation, presentationDiffers, applyPresentation } from "./infra/media-presentation.js";
+import { setWithTtl, setUntil } from "./shared/kvs-ttl.js";
 
 // --- Fix 3 (CORE T6 extension): cross-run violation-comment dedup ---
 // K1: `violation-noticed-{pageId}-{targetId}-{class}`, TTL 24h, claimed BEFORE the footer
@@ -41,23 +42,62 @@ import { findSealedMediaSingle, capturePresentation, presentationDiffers, applyP
 // clears the markers so a genuinely NEW tamper comments afresh. KVS has no CAS — the tiny
 // concurrent double-claim window is the same one T6 already accepts.
 const VIOLATION_NOTICE_TTL_MS = 24 * 3600 * 1000;
-const DEDUPED_NOTICE_CLASSES = ["content-removal", "delete", "revert-failed", "layout-changed"];
+// Hunt H2-F3: "delete" (trash handler) and "content-removal" (media pass) are one physical
+// event — a UI delete of an embedded attachment fires BOTH trashed:attachment and updated:page.
+// They share one marker class so a single delete can never yield two comments regardless of
+// event ordering. Section classes (hunt H1-F4) close the incident spam loop on that surface.
+const NOTICE_CLASS_ALIASES = { delete: "content-loss", "content-removal": "content-loss" };
+const DEDUPED_NOTICE_CLASSES = ["content-loss", "revert-failed", "layout-changed", "section-removed", "section-edited"];
+// Marker classes cleared by each surface's clean-save path (targetId spaces differ:
+// attachmentId for media, sectionId for sections — never clear across the split).
+// "content-removal"/"delete" are never claimed anymore (aliased to content-loss) but existing
+// installs hold PERMANENT copies of those keys (the expiresAt TTL bug wrote them with no
+// expiry) — the clean-save clear is the only reaper they have, so keep them in the clear list.
+const MEDIA_NOTICE_CLASSES = ["content-loss", "revert-failed", "layout-changed", "content-removal", "delete"];
+const SECTION_NOTICE_CLASSES = ["section-removed", "section-edited"];
+function noticeMarkerKey(pageId, targetId, klass) {
+  return `violation-noticed-${pageId}-${targetId}-${NOTICE_CLASS_ALIASES[klass] || klass}`;
+}
 async function claimViolationNotice(pageId, targetId, klass) {
-  if (!DEDUPED_NOTICE_CLASSES.includes(klass)) return true;
-  const key = `violation-noticed-${pageId}-${targetId}-${klass}`;
+  const effective = NOTICE_CLASS_ALIASES[klass] || klass;
+  if (!DEDUPED_NOTICE_CLASSES.includes(effective)) return true;
+  const key = noticeMarkerKey(pageId, targetId, klass);
   try {
     if (await kvs.get(key)) return false;
-    await kvs.set(key, { at: new Date().toISOString() }, { expiresAt: Date.now() + VIOLATION_NOTICE_TTL_MS });
+    await setWithTtl(key, { at: new Date().toISOString() }, VIOLATION_NOTICE_TTL_MS);
     return true;
   } catch (e) {
     console.error("[NOTICE-DEDUP] marker claim failed — notifying anyway:", e);
     return true; // marker infra failure must not suppress a real violation notice
   }
 }
-async function clearViolationNotices(pageId, targetId) {
-  for (const klass of DEDUPED_NOTICE_CLASSES) {
+// Hunt H2-F4/H1-F5: a claimed marker whose comment did NOT post must be released — otherwise a
+// transient post failure consumes the 24h window and the owner never hears about the tamper.
+async function releaseViolationNotice(pageId, targetId, klass) {
+  await kvs.delete(noticeMarkerKey(pageId, targetId, klass)).catch(() => {});
+}
+async function clearViolationNotices(pageId, targetId, classes = MEDIA_NOTICE_CLASSES) {
+  for (const klass of classes) {
     await kvs.delete(`violation-noticed-${pageId}-${targetId}-${klass}`).catch(() => {});
   }
+}
+
+// Hunt H1-F5 (claim ordering): claim the dedup marker ONLY when the comment channel is
+// actually postable (both toggles on — postDocFootnote/dispatchNotice would silently skip
+// otherwise, burning the marker with no comment), post, and release the marker when the post
+// throws or reports failure. Best-effort: an undetectable failure (no return value) keeps the
+// marker — the 24h TTL bounds the damage.
+async function postDedupedFootnote(bulletinToggles, pageId, markerTargetId, markerClass, ownerAccountId, editorAccountId, artifactName, actionVerb) {
+  if (!bulletinToggles?.ENABLE_CONFLUENCE_BULLETINS || !bulletinToggles?.ENABLE_NATIVE_NOTIFICATIONS) return;
+  if (!(await claimViolationNotice(pageId, markerTargetId, markerClass))) return;
+  let posted = false;
+  try {
+    const res = await postDocFootnote(pageId, ownerAccountId, editorAccountId, artifactName, actionVerb);
+    posted = !(res && res.success === false);
+  } catch (e) {
+    console.error(`[NOTICE-DEDUP] footer comment failed (${markerClass}) — releasing marker:`, e);
+  }
+  if (!posted) await releaseViolationNotice(pageId, markerTargetId, markerClass);
 }
 
 // --- Helpers ---
@@ -425,6 +465,24 @@ async function collectMediaSealsForPage(pageId) {
 //   deleted  → never splice a dead node; run the permanent-delete cleanup + honest notice
 //   unknown  → splice (fail toward the pre-fix behavior)
 // Resolutions are cached in `probeCache` across 409 retries (no re-probe/re-restore/re-notify).
+// Hunt F2b/F4: an authorized actor (owner or active grantee) removed their own sealed embed —
+// the seal stays live on the FILE but stops expecting on-page presence. Hunt F5: merge onto a
+// FRESH read (this can race the attachment trigger's grant re-baseline); this path owns only
+// embedded + mediaBaseline. Mutates the in-memory seal too so later passes/retries see it.
+async function rebaselineSealNotEmbedded(seal, who) {
+  if (!seal.attachmentId) return;
+  try {
+    const fresh = (await kvs.get(`protection-${seal.attachmentId}`)) || seal;
+    await kvs.set(`protection-${seal.attachmentId}`, { ...fresh, embedded: false, mediaBaseline: null });
+    seal.embedded = false;
+    seal.mediaBaseline = null;
+    await touchSealTimestamp(); // S5
+    console.warn(`[PAGE-PROTECT] ${who} removed their own sealed embed ${seal.attachmentId} — re-baselined seal to embedded:false (future absence is sanctioned)`);
+  } catch (e) {
+    console.error(`[PAGE-PROTECT] not-embedded re-baseline failed for ${seal.attachmentId}:`, e);
+  }
+}
+
 async function restoreMediaPass(ctx, sealFileMap, probeCache = new Map()) {
   if (ctx.enforcedRevert) return; // #44: an enforce revert already replaced the whole body
   const presentFileIds = collectMediaFileIds(ctx.adfDoc);
@@ -437,27 +495,38 @@ async function restoreMediaPass(ctx, sealFileMap, probeCache = new Map()) {
   for (const { seal, fileId } of sealFileMap) {
     if (!presentFileIds.has(fileId) || !seal.mediaBaseline) continue;
     try {
-      const node = findSealedMediaSingle(ctx.adfDoc, fileId);
-      if (!node) continue;
-      const current = capturePresentation(node);
-      if (!presentationDiffers(seal.mediaBaseline, current)) continue;
+      // Hunt F7: check EVERY copy of the sealed embed — copy-paste duplicates share the fileId,
+      // and the old first-match-only scan let a resized second copy stand while reporting clean.
+      const nodes = findAllSealedMediaSingles(ctx.adfDoc, fileId);
+      if (nodes.length === 0) continue;
+      const differing = nodes.filter((n) => presentationDiffers(seal.mediaBaseline, capturePresentation(n)));
+      if (differing.length === 0) continue;
       const isOwner = seal.lockedBy === ctx.atlassianId;
       const grant = isOwner ? null : await getActiveEditGrant(seal.attachmentId, ctx.atlassianId);
       if (isOwner || grant) {
-        // Authorized presentation change → re-baseline the seal to the new look.
-        await kvs.set(`protection-${seal.attachmentId}`, { ...seal, mediaBaseline: current });
+        // Authorized presentation change → re-baseline the seal to the new look (the FIRST
+        // copy is canonical). Hunt F5: merge onto a FRESH read of the record — the attachment
+        // trigger's grant re-baseline can race this write; patch only mediaBaseline here.
+        const current = capturePresentation(nodes[0]);
+        const fresh = (await kvs.get(`protection-${seal.attachmentId}`)) || seal;
+        await kvs.set(`protection-${seal.attachmentId}`, { ...fresh, mediaBaseline: current });
         seal.mediaBaseline = current;
+        await touchSealTimestamp(); // hunt H2-F5: S5 — every seal mutation touches the stamp
         console.warn(`[MEDIA-ATTRS] re-baselined sealed ${seal.attachmentId} presentation (authorized ${isOwner ? "owner" : "grantee"} change)`);
         continue;
       }
       attrViolations++;
       if (!ctx.enforceMediaAttrs) {
-        console.warn(`[MEDIA-ATTRS] SHADOW: presentation drift on sealed ${seal.attachmentId} by ${ctx.atlassianId}: ${JSON.stringify(seal.mediaBaseline)} -> ${JSON.stringify(current)} (not enforcing)`);
+        console.warn(`[MEDIA-ATTRS] SHADOW: presentation drift on sealed ${seal.attachmentId} by ${ctx.atlassianId} (${differing.length} cop${differing.length === 1 ? "y" : "ies"}): ${JSON.stringify(seal.mediaBaseline)} -> ${JSON.stringify(capturePresentation(differing[0]))} (not enforcing)`);
         continue;
       }
-      if (applyPresentation(node, seal.mediaBaseline)) {
+      let mutated = false;
+      for (const n of differing) {
+        if (applyPresentation(n, seal.mediaBaseline)) mutated = true;
+      }
+      if (mutated) {
         ctx.changed = true;
-        console.warn(`[MEDIA-ATTRS] restored sealed presentation of ${seal.attachmentId} (non-owner change by ${ctx.atlassianId})`);
+        console.warn(`[MEDIA-ATTRS] restored sealed presentation of ${seal.attachmentId} on ${differing.length} cop${differing.length === 1 ? "y" : "ies"} (non-owner change by ${ctx.atlassianId})`);
         ctx.notifications.push({
           type: "layout-changed",
           targetId: seal.attachmentId,
@@ -472,10 +541,35 @@ async function restoreMediaPass(ctx, sealFileMap, probeCache = new Map()) {
     }
   }
 
-  const violations = sealFileMap.filter(
-    ({ seal, fileId }) =>
-      !presentFileIds.has(fileId) && seal.lockedBy !== ctx.atlassianId,
-  );
+  // Hunt F2b: an OWNER removing their own sealed embed is sanctioned — record it on the seal
+  // (embedded:false, baseline dropped) BEFORE the violations filter, otherwise the next
+  // non-owner save sees "absent", re-splices the owner's deliberate removal and blames a
+  // bystander. Runs before the filter so the very save that removed the embed re-baselines.
+  for (const { seal, fileId } of sealFileMap) {
+    if (presentFileIds.has(fileId) || seal.lockedBy !== ctx.atlassianId) continue;
+    if (seal.embedded === false) continue; // already recorded as not-embedded
+    await rebaselineSealNotEmbedded(seal, "owner");
+  }
+
+  // Hunt F1: absence is tamper evidence ONLY for seals that were actually embedded.
+  // embedded === false (captured at seal time, or re-baselined above) → the sealed file is
+  // attached-not-embedded and its absence from the body is its normal state, not a violation.
+  // Legacy seals (no field) keep the lookback but degrade to a silent skip on exhaustion below.
+  const violations = [];
+  for (const entry of sealFileMap) {
+    const { seal, fileId } = entry;
+    if (presentFileIds.has(fileId) || seal.lockedBy === ctx.atlassianId) continue;
+    if (seal.embedded === false) continue;
+    // Hunt F4 (G2): an ACTIVE edit grant makes the grantee's removal authoritative — treat it
+    // like the owner case (re-baseline, no restore, no accusation). Grant lookups only happen
+    // for seals that would otherwise be violations (cost-bounded).
+    const grant = seal.attachmentId ? await getActiveEditGrant(seal.attachmentId, ctx.atlassianId) : null;
+    if (grant) {
+      await rebaselineSealNotEmbedded(seal, "grantee");
+      continue;
+    }
+    violations.push(entry);
+  }
   if (violations.length === 0) {
     // Fix 3: a clean save clears the comment-dedup markers — the NEXT tamper on this page is
     // a genuinely new incident and must produce a fresh comment. "Clean" means NO violation of
@@ -492,6 +586,21 @@ async function restoreMediaPass(ctx, sealFileMap, probeCache = new Map()) {
 
   // --- Attachment-layer triage (Fix 1) ---
   const MAX_PROBES = 15; // bound REST cost on pathological pages; overflow → "unknown" → splice
+  // Hunt F8: purge corroboration is the expensive step (settle delay + 2 probes, serialized) —
+  // cap it per trigger run or a multi-purge sweep blows the 25s Forge budget mid-triage. The
+  // counter lives in probeCache so 409 retries share it (the "__" key can't collide with an
+  // attachment id). Beyond the cap a 404 is treated as NOT confirmed → restore-splice, the
+  // non-destructive path; a later event finishes the job.
+  const MAX_PURGE_CONFIRMS = 3;
+  const confirmPurgedBudgeted = async (attId) => {
+    const used = probeCache.get("__purge-confirms") || 0;
+    if (used >= MAX_PURGE_CONFIRMS) {
+      console.warn(`[PAGE-PROTECT] purge-confirmation budget exhausted for ${attId} — treating as NOT confirmed`);
+      return false;
+    }
+    probeCache.set("__purge-confirms", used + 1);
+    return confirmAttachmentPurged(attId);
+  };
   let probesUsed = 0;
   const spliceable = []; // violations whose attachment renders (current, restored, or unknown)
   for (const violation of violations) {
@@ -510,7 +619,7 @@ async function restoreMediaPass(ctx, sealFileMap, probeCache = new Map()) {
         // Vet F1 (lens 3): a SINGLE 404 must never license the destructive branch — a
         // trash-propagation window or container visibility can 404 a live attachment.
         // Corroborate on two API surfaces after a settle delay; unconfirmed → treat as trashed.
-        const purged = await confirmAttachmentPurged(attId);
+        const purged = await confirmPurgedBudgeted(attId);
         if (!purged) resolution.action = "restore-splice";
       }
       if (resolution.action === "restore-splice") {
@@ -523,7 +632,7 @@ async function restoreMediaPass(ctx, sealFileMap, probeCache = new Map()) {
         if (r.ok) {
           console.warn(`[PAGE-PROTECT] Un-trashed sealed attachment ${attId} before re-splice`);
           resolution.action = "splice";
-        } else if (r.status === "deleted" && (await confirmAttachmentPurged(attId))) {
+        } else if (r.status === "deleted" && (await confirmPurgedBudgeted(attId))) {
           resolution.action = "cleanup";
         } else {
           resolution.action = "restore-failed";
@@ -615,18 +724,31 @@ async function restoreMediaPass(ctx, sealFileMap, probeCache = new Map()) {
         pageId: ctx.pageId,
         artifactName: seal.attachmentName || "Unknown Attachment",
       });
-    } else {
+    } else if (seal.embedded === true) {
       // Fix 4: MAX_LOOKBACK exhausted — the embed location is lost (the attachment itself is
       // fine). Loud + honest instead of the old silent skip; keep the seal; once per run.
-      const resolution = probeCache.get(seal.attachmentId);
-      if (resolution && !resolution.notified) {
+      // Hunt F1: the loud notice fires ONLY for seals PROVEN embedded at seal time — for a
+      // legacy seal absence may just mean "attached, never embedded" (see the branch below).
+      // Hunt F11: a budget-skipped probe has no cached resolution — synthesize one locally so
+      // the notice isn't silently dropped; the "__notified-" sentinel (collision-free with
+      // attachment-id keys) stops a 409 retry from double-dispatching.
+      const resolution = probeCache.get(seal.attachmentId)
+        || { notified: probeCache.get(`__notified-${seal.attachmentId}`) === true };
+      if (!resolution.notified) {
         resolution.notified = true;
+        probeCache.set(`__notified-${seal.attachmentId}`, true);
         console.warn(`[PAGE-PROTECT] Could not find sealed media ${seal.attachmentId} within ${MAX_LOOKBACK} prior versions — notifying owner (embed location lost)`);
         await notifyAttachmentRevertFailed(
           seal, seal.attachmentId, ctx.pageId, ctx.atlassianId,
           seal.attachmentName || "Unknown Attachment",
         ).catch(() => {});
       }
+    } else {
+      // Hunt F1: legacy seal (no `embedded` field) with the lookback exhausted — pre-campaign
+      // SILENT skip. Without proof the file was ever embedded, "could NOT restore / was
+      // modified" would be a false public accusation of whoever happened to edit the page
+      // (the most common seal shape: a sealed file that is merely attached).
+      console.warn(`[PAGE-PROTECT] Sealed media ${seal.attachmentId} absent and not in ${MAX_LOOKBACK} prior versions; seal carries no embed evidence — skipping silently (legacy/attached-only seal)`);
     }
   }
 }
@@ -715,6 +837,7 @@ async function restoreSealedSectionsPass(ctx, sectionSeals) {
               wrapperNode: JSON.parse(JSON.stringify(ownWrap.node)),
               bodyContent: newBody, hash: ownHash, version: null, originalIndex: ownWrap.originalIndex,
             });
+            await touchSealTimestamp(); // hunt H2-F5: S5 — every seal mutation touches the stamp
             console.warn(`[SECTION] Owner re-baselined section ${seal.sectionId}`);
           } catch (e) { console.error("[SECTION] owner re-baseline failed:", e); }
         }
@@ -779,7 +902,12 @@ async function restoreSealedSectionsPass(ctx, sectionSeals) {
         JSON.stringify(canonicalizeAdf(node.content)) === JSON.stringify(canonicalizeAdf(snapshot.bodyContent));
     };
     const changedWrappers = wrapperList.filter((w) => !isUntouched(w.node));
-    if (changedWrappers.length === 0) continue; // every copy matches the seal — untouched
+    if (changedWrappers.length === 0) {
+      // Hunt H1-F4: a clean save for THIS section clears its comment-dedup markers (mirror of
+      // the media clean-save clear) so the next genuine tamper comments afresh.
+      await clearViolationNotices(ctx.pageId, seal.sectionId, SECTION_NOTICE_CLASSES);
+      continue; // every copy matches the seal — untouched
+    }
 
     // Approved section editor (Edit Requests) — allow the edit and re-baseline from the edited copy.
     const sectionGrant = await getActiveSectionEditGrant(seal.sectionId, ctx.atlassianId);
@@ -802,6 +930,7 @@ async function restoreSealedSectionsPass(ctx, sectionSeals) {
           changedWrappers[ci].node.content = nonEmptySectionBody(JSON.parse(JSON.stringify(newBody)));
           ctx.changed = true;
         }
+        await touchSealTimestamp(); // hunt H2-F5: S5 — same stamp duty as the owner re-baseline
         console.warn(`[SECTION] Allowed approved edit of section ${seal.sectionId} by ${ctx.atlassianId} — re-baselined (${changedWrappers.length} cop${changedWrappers.length === 1 ? "y" : "ies"})`);
       } catch (e) { console.error("[SECTION] re-baseline failed:", e); }
       continue;
@@ -1206,16 +1335,19 @@ async function sendSectionViolationNotifications(seal, pageId, actor, kind) {
     timestamp: Date.now(),
     pageId,
   });
-  try {
-    await postDocFootnote(pageId, seal.lockedBy, actor, title, verb);
-  } catch (e) {
-    console.error("[SECTION] Failed to post section violation comment:", e);
-  }
+  // Hunt H1-F4: section comments get the same cross-run dedup the media path has (the
+  // incident-2026-07-22 spam loop — a stale draft re-publishing every few minutes — was
+  // reproducible verbatim on the section surface). Marker keyed by sectionId; the dispatch
+  // record above still fires per occurrence.
+  const bulletinToggles = await resolveBulletinToggles();
+  const markerClass = kind === "removed" ? "section-removed" : "section-edited";
+  await postDedupedFootnote(bulletinToggles, pageId, seal.sectionId, markerClass, seal.lockedBy, actor, title, verb);
 }
 
 // --- Handle unauthorized edit of a sealed artifact ---
 async function handleSealedArtifactEdit(sealRecord, artifactId, contentId, atlassianId, attachment) {
-  const currentVersion = attachment.version?.number;
+  let currentVersion = attachment.version?.number;
+  let pageId = contentId || sealRecord.contentId;
 
   // Allow the seal owner to edit their own sealed artifact
   if (sealRecord.lockedBy === atlassianId) {
@@ -1227,6 +1359,15 @@ async function handleSealedArtifactEdit(sealRecord, artifactId, contentId, atlas
   // (restoreSealedSectionsPass); attachments did not.
   if (sealRecord.expiresAt && new Date(sealRecord.expiresAt).getTime() <= Date.now()) {
     return;
+  }
+
+  // Hunt F9 (Fix-2 parity): a degraded updated:attachment event can omit container/version —
+  // the trash handler completes those from a probe, this handler built a download route with
+  // "undefined" and failed open. Fill the gaps the same way before proceeding.
+  if (!pageId || !currentVersion) {
+    const probe = await probeAttachmentStatus(artifactId);
+    pageId = pageId || probe.pageId;
+    currentVersion = currentVersion || probe.version;
   }
 
   // Allow approved editors (Edit Requests) to edit without reverting. Re-baseline
@@ -1243,10 +1384,27 @@ async function handleSealedArtifactEdit(sealRecord, artifactId, contentId, atlas
         const attData = await attRes.json();
         newFileId = attData.fileId || newFileId;
       }
+      // Hunt F6: the approved upload replaced the binary — the OLD file's presentation
+      // baseline is stale (new natural dimensions surface as attr drift that would later be
+      // "restored" onto the new image, distorting it and accusing an innocent editor).
+      // Refresh from a fresh server read against the NEW fileId; on any failure keep NO
+      // baseline (attr protection off until the next authorized change beats stale-revert).
+      let newBaseline = null;
+      if (pageId && newFileId) {
+        try {
+          const { adfDoc } = await readDocBody(pageId);
+          newBaseline = capturePresentation(findSealedMediaSingle(adfDoc, newFileId));
+        } catch (_) { /* null baseline — fail toward no attr protection */ }
+      }
+      // Hunt F5: merge onto a FRESH record — the page trigger's attr-pass re-baseline can race
+      // this write (one grantee save fires both events); patch only the fields this path owns
+      // (sealedVersion/sealedFileId/mediaBaseline), never persist the trigger-entry snapshot.
+      const fresh = (await kvs.get(`protection-${artifactId}`)) || sealRecord;
       await kvs.set(`protection-${artifactId}`, {
-        ...sealRecord,
-        sealedVersion: currentVersion || sealRecord.sealedVersion,
+        ...fresh,
+        sealedVersion: currentVersion || fresh.sealedVersion,
         sealedFileId: newFileId,
+        mediaBaseline: newBaseline,
       });
       await touchSealTimestamp();
       console.warn(
@@ -1285,15 +1443,15 @@ async function handleSealedArtifactEdit(sealRecord, artifactId, contentId, atlas
   // audit B1/B2: retry the download+re-upload; on definitive failure, notify LOUDLY instead
   // of returning silently (the seal is a fail-OPEN otherwise — a single 429/5xx blip would
   // permanently let the tampered version stand with the owner believing it was protected).
-  const revert = await revertAttachmentToVersion(contentId, artifactId, artifactName, targetVersion);
+  const revert = await revertAttachmentToVersion(pageId, artifactId, artifactName, targetVersion);
   if (!revert.ok) {
     console.error(`[EDIT-REVERT] FAILED to enforce seal on "${artifactName}" -> v${targetVersion} (${revert.stage} ${revert.status || revert.error || ""}) — the tampered version is LIVE; notifying owner.`);
-    await notifyAttachmentRevertFailed(sealRecord, artifactId, contentId, atlassianId, artifactName).catch(() => {});
+    await notifyAttachmentRevertFailed(sealRecord, artifactId, pageId, atlassianId, artifactName).catch(() => {});
     return;
   }
 
   console.warn(`[EDIT-REVERT] Reverted ${artifactName} to v${targetVersion}`);
-  await sendViolationNotifications(sealRecord, artifactId, contentId, atlassianId, artifactName, "edit");
+  await sendViolationNotifications(sealRecord, artifactId, pageId, atlassianId, artifactName, "edit");
 }
 
 // audit B1/B2: attachment revert with bounded 429/5xx backoff. A single transient failure
@@ -1350,9 +1508,9 @@ async function notifyAttachmentRevertFailed(sealRecord, artifactId, contentId, a
   try {
     // Fix 3: the revert-failed comment is deduped too — a persistently unrestorable attachment
     // would otherwise re-comment on every page edit (vet F5 / the incident's own spam shape).
-    if (await claimViolationNotice(contentId, artifactId, "revert-failed")) {
-      await postDocFootnote(contentId, sealRecord.lockedBy, atlassianId, artifactName, "revert-failed");
-    }
+    // Hunt H2-F4: claim only when postable, release on a failed post (postDedupedFootnote).
+    const bulletinToggles = await resolveBulletinToggles();
+    await postDedupedFootnote(bulletinToggles, contentId, artifactId, "revert-failed", sealRecord.lockedBy, atlassianId, artifactName, "revert-failed");
   } catch (_) { /* best-effort */ }
 }
 
@@ -1361,8 +1519,21 @@ async function notifyAttachmentRevertFailed(sealRecord, artifactId, contentId, a
 // event shape the Confluence UI delete emits (the trigger only fires on a real trashed:attachment
 // event, which REST can't emit with a controlled payload). Mirrors the B13 export precedent.
 export async function handleSealedArtifactTrash(sealRecord, artifactId, contentId, atlassianId, attachment) {
-  // Allow the seal owner to trash their own sealed attachment
+  // Hunt F2a: the owner trashing their own sealed file RELEASES the seal — convert the record
+  // to an inert S7 trashedOnly TRACKING record (the restore UI already handles those) instead
+  // of returning with the live seal intact. A live seal left behind means the NEXT non-owner
+  // page save un-trashes the owner's deliberate delete and publicly blames that bystander.
   if (sealRecord.lockedBy === atlassianId) {
+    try {
+      // F5 discipline: merge onto a fresh read (the panel's own delete-artifact conversion can
+      // race this event); this path owns only trashedOnly.
+      const fresh = (await kvs.get(`protection-${artifactId}`)) || sealRecord;
+      await kvs.set(`protection-${artifactId}`, { ...fresh, trashedOnly: true });
+      await touchSealTimestamp();
+      console.warn(`[TRASH-RESTORE] owner ${atlassianId} trashed their own sealed ${artifactId} — seal released (trashedOnly tracking record)`);
+    } catch (e) {
+      console.error(`[TRASH-RESTORE] failed to release seal on owner trash of ${artifactId}:`, e);
+    }
     return;
   }
   // Expired seals are inert (parity with the edit handler's audit-C3 guard and the
@@ -1519,22 +1690,14 @@ async function sendViolationNotifications(sealRecord, artifactId, contentId, atl
   // Post Confluence comment with @mentions of owner and editor.
   // Confluence's notification engine emails the seal owner.
   // Fix 3: at most one comment per (page, attachment, class) per 24h / until a clean save —
-  // the dispatch record above still fires per occurrence.
-  if (await claimViolationNotice(contentId, artifactId, actionVerb)) {
-    await postDocFootnote(
-      contentId,
-      sealRecord.lockedBy,
-      atlassianId,
-      artifactName,
-      actionVerb,
-    );
-  }
+  // the dispatch record above still fires per occurrence. Hunt H1-F5: the claim happens only
+  // when the comment channel is ON and is released if the post fails (postDedupedFootnote) —
+  // a toggled-off week or a transient 5xx must not consume the dedup window.
+  await postDedupedFootnote(bulletinToggles, contentId, artifactId, actionVerb, sealRecord.lockedBy, atlassianId, artifactName, actionVerb);
 
   if (bulletinToggles?.ENABLE_TOAST_DISPATCHES) {
     const violationKey = `violation-alert-${sealRecord.lockedBy}-${artifactId}-${Date.now()}`;
-    await kvs.set(violationKey, dispatchPayload, {
-      expiresAt: Date.now() + 3600000,
-    });
+    await setWithTtl(violationKey, dispatchPayload, 3600000);
   }
 }
 
@@ -1613,6 +1776,12 @@ export async function expirySweepTask() {
         if (!value || !value.timestamp || !value.expiresAt) {
           continue;
         }
+        // S7 (hunt F2a/F12 family): trashedOnly tracking records are NOT seals — an owner-trash
+        // conversion keeps expiresAt on the record, and a released seal must not produce
+        // expiry notices or halfway reminders.
+        if (value.trashedOnly) {
+          continue;
+        }
 
         const expiresAt = new Date(value.expiresAt);
 
@@ -1625,12 +1794,16 @@ export async function expirySweepTask() {
             continue;
           }
 
-          // Post expiry notification comment with @mention of seal owner
-          if (
+          // Post expiry notification comment with @mention of seal owner.
+          // Hunt H1-F6: the dedup flag is set ONLY when the notice actually posted (or the
+          // toggle deliberately suppressed it) — a transient post failure must not consume
+          // the seal's single expiry notice (halfway reminder already had this discipline).
+          let noticePosted = false;
+          const noticeWanted =
             bulletinToggles.ENABLE_NATIVE_NOTIFICATIONS &&
             bulletinToggles.ENABLE_EXPIRY_NOTICE &&
-            value.contentId
-          ) {
+            value.contentId;
+          if (noticeWanted) {
             try {
               const expiryDate = now.toLocaleDateString("en-US", {
                 year: "numeric",
@@ -1645,23 +1818,26 @@ export async function expirySweepTask() {
                 expiryDate,
               );
 
-              if (!noticeResult.success) {
+              noticePosted = noticeResult?.success === true;
+              if (!noticePosted) {
                 console.warn(
-                  `Failed to post expiry notice: ${noticeResult.reason}`,
+                  `Failed to post expiry notice: ${noticeResult?.reason} — dedup flag NOT set (will retry next sweep)`,
                 );
               }
             } catch (noticeError) {
-              console.error("Error posting expiry notice:", noticeError);
+              console.error("Error posting expiry notice (dedup flag NOT set):", noticeError);
             }
           }
 
           // Store dedup flag so we don't re-notify
           // audit C5: TTL the dedup flag so it can't accumulate forever nor suppress the
           // notice when the same attachment is re-sealed later (flag dies with the seal +7d).
-          await kvs.set(dedupKey, {
-            sentAt: now.toISOString(),
-            attachmentId: artifactId,
-          }, { expiresAt: expiresAt.getTime() + 7 * 86400000 });
+          if (noticePosted || !noticeWanted) {
+            await setUntil(dedupKey, {
+              sentAt: now.toISOString(),
+              attachmentId: artifactId,
+            }, expiresAt.getTime() + 7 * 86400000);
+          }
 
           // Store dispatch event for page banner
           await recordDispatch({
@@ -1711,9 +1887,9 @@ export async function expirySweepTask() {
             );
 
             if (result.success) {
-              await kvs.set(halfwayKey, {
+              await setUntil(halfwayKey, {
                 sentAt: now.toISOString(),
-              }, { expiresAt: expiresAt.getTime() + 7 * 86400000 }); // audit C5: die with the seal
+              }, expiresAt.getTime() + 7 * 86400000); // audit C5: die with the seal
               halfwayAlertsSent++;
             } else {
               console.warn(
@@ -1810,6 +1986,11 @@ export async function recurringNudgeTask() {
         if (!value || !value.timestamp) {
           continue;
         }
+        // Hunt F12 (S7): trashedOnly tracking records are NOT seals — a merely-deleted file
+        // must not generate "sealed for N days" banners.
+        if (value.trashedOnly) {
+          continue;
+        }
 
         const artifactId = key.replace("protection-", "");
         const sealCreatedAt = new Date(value.timestamp);
@@ -1849,12 +2030,13 @@ export async function recurringNudgeTask() {
         });
 
         // audit C5: TTL the nudge dedup flag to the seal's lifetime (+7d) so it neither
-        // accumulates forever nor suppresses reminders when the attachment is re-sealed.
+        // accumulates forever nor suppresses reminders when the attachment is re-sealed
+        // (setUntil clamps the no-expiry 365d+7d case to the platform's TTL ceiling).
         const nudgeTtl = (value?.expiresAt ? new Date(value.expiresAt).getTime() : Date.now() + 365 * 86400000) + 7 * 86400000;
-        await kvs.set(nudgeKey, {
+        await setUntil(nudgeKey, {
           sentAt: now.toISOString(),
           reminderNumber: (priorNudgeData?.reminderNumber || 0) + 1,
-        }, { expiresAt: nudgeTtl });
+        }, nudgeTtl);
 
         nudgeTally.set(artifactId, (nudgeTally.get(artifactId) || 0) + 1);
       } catch (error) {

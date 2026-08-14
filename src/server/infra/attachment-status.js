@@ -136,8 +136,10 @@ export async function restoreAttachmentFromTrash({ attachmentId, pageId, title, 
  * trashed-status GET (a different API surface that distinguishes trashed vs purged, probed
  * live in INCIDENT-2026-07-22.md §7) must also miss. Only the INFERRED path needs this — the
  * real deleted:attachment event is authoritative and keeps cleaning up immediately.
+ * Hunt F8: settle default is 1.5s — the two-surface corroboration is the real safeguard, and
+ * these sleeps serialize per candidate inside a 25s Forge trigger budget.
  */
-export async function confirmAttachmentPurged(attachmentId, settleMs = 3000) {
+export async function confirmAttachmentPurged(attachmentId, settleMs = 1500) {
   await new Promise((r) => setTimeout(r, settleMs));
   const again = await probeAttachmentStatus(attachmentId);
   if (again.status !== "deleted") return false;
