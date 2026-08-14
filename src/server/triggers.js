@@ -29,6 +29,7 @@ import { postEnforceComment } from "./infra/approval-blueprints.js";
 import { isAccountStewardAsApp } from "./shared/steward-checks.js";
 import { postValidationComment } from "./infra/validation-blueprints.js";
 import { readDocBody, readDocBodyAtVersion, writeDocBody, collectMediaFileIds, extractMediaSingleNodes, spliceMediaNodes, locateBodiedSectionNodes, spliceSectionWrapper, hashAdf, canonicalizeAdf, nonEmptySectionBody } from "./infra/doc-surgery.js";
+import { probeAttachmentStatus, restoreAttachmentFromTrash } from "./infra/attachment-status.js";
 
 // --- Helpers ---
 
@@ -1130,57 +1131,65 @@ async function notifyAttachmentRevertFailed(sealRecord, artifactId, contentId, a
 }
 
 // --- Handle trashing of a sealed artifact — restore from trash ---
-async function handleSealedArtifactTrash(sealRecord, artifactId, contentId, atlassianId, attachment) {
+// Fix 2 (incident 2026-07-22): exported so the harness can drive the version-less/container-less
+// event shape the Confluence UI delete emits (the trigger only fires on a real trashed:attachment
+// event, which REST can't emit with a controlled payload). Mirrors the B13 export precedent.
+export async function handleSealedArtifactTrash(sealRecord, artifactId, contentId, atlassianId, attachment) {
   // Allow the seal owner to trash their own sealed attachment
   if (sealRecord.lockedBy === atlassianId) {
     return;
   }
-  const pageId = contentId || sealRecord.contentId;
-  const currentVersion = attachment.version?.number;
-  const attachmentTitle = attachment.title || sealRecord.attachmentName || "Unknown";
-
-  if (!pageId) {
-    console.error(`[TRASH-RESTORE] Cannot restore ${artifactId} — no pageId available`);
+  // Expired seals are inert (parity with the edit handler's audit-C3 guard and the
+  // section pass) — a dead seal must not un-trash anyone's delete.
+  if (sealRecord.expiresAt && new Date(sealRecord.expiresAt).getTime() <= Date.now()) {
     return;
   }
+  let pageId = contentId || sealRecord.contentId;
+  let currentVersion = attachment.version?.number;
+  let attachmentTitle = attachment.title || sealRecord.attachmentName || "Unknown";
 
-  if (!currentVersion) {
-    console.error(`[TRASH-RESTORE] Cannot restore ${artifactId} — no version number in event`);
+  // Incident 2026-07-22: the UI-driven delete can emit an event WITHOUT version/container —
+  // the old guards returned silently and the sealed file stayed in the trash (the owner had
+  // to restore it by hand). Fetch what the event omitted instead of abandoning the restore.
+  if (!currentVersion || !pageId) {
+    const probe = await probeAttachmentStatus(artifactId);
+    if (probe.status === "current") return; // already restored by a concurrent run/user
+    if (probe.status === "deleted") {
+      // Trash event raced a purge — treat as the permanent-delete path (cleanup + honest notice).
+      await handleSealedArtifactDeleted(sealRecord, artifactId, pageId, atlassianId, attachment);
+      return;
+    }
+    currentVersion = currentVersion || probe.version;
+    pageId = pageId || probe.pageId;
+    attachmentTitle = attachment.title || probe.title || attachmentTitle;
+  }
+
+  if (!pageId || !currentVersion) {
+    console.error(`[TRASH-RESTORE] Cannot restore ${artifactId} — ${!pageId ? "no pageId" : "no version"} from event OR probe; keeping the seal and notifying the owner.`);
+    await notifyAttachmentRevertFailed(sealRecord, artifactId, pageId || sealRecord.contentId, atlassianId, attachmentTitle).catch(() => {});
     return;
   }
 
   console.warn(`[TRASH-RESTORE] Sealed artifact ${artifactId} trashed by ${atlassianId} — restoring`);
 
-  // Use the v1 attachment properties endpoint with correct required fields
-  const restoreRoute = route`/wiki/rest/api/content/${pageId}/child/attachment/${artifactId}`;
-  const restoreBody = JSON.stringify({
-    id: artifactId, type: "attachment", status: "current", title: attachmentTitle,
-    version: { number: currentVersion + 1 },
+  const restore = await restoreAttachmentFromTrash({
+    attachmentId: artifactId, pageId, title: attachmentTitle, currentVersion,
   });
-  // audit C4: retry the restore on a transient failure; a single 429/5xx must not be treated
-  // as "unrecoverable".
-  let restoreOk = false, lastStatus = 0;
-  for (let attempt = 0; attempt < 3; attempt++) {
-    const restoreResponse = await asApp().requestConfluence(restoreRoute, {
-      method: "PUT", headers: { "Content-Type": "application/json" }, body: restoreBody,
-    });
-    if (restoreResponse.ok) { restoreOk = true; break; }
-    lastStatus = restoreResponse.status;
-    if ((restoreResponse.status === 429 || restoreResponse.status >= 500) && attempt < 2) {
-      await new Promise((r) => setTimeout(r, Math.pow(2, attempt) * 500)); continue;
-    }
-    console.error(`[TRASH-RESTORE] Failed ${artifactId}: ${restoreResponse.status} — ${(await restoreResponse.text()).slice(0, 200)}`);
-    break;
-  }
 
-  if (!restoreOk) {
+  if (!restore.ok) {
+    if (restore.status === "deleted") {
+      await handleSealedArtifactDeleted(sealRecord, artifactId, pageId, atlassianId, attachment);
+      return;
+    }
     // audit C4: do NOT hard-delete the seal on a restore failure — the attachment is still in
     // TRASH and recoverable, so deleting the seal permanently strips protection AND the old code
     // emailed a false "deleted". Keep the seal; tell the owner the restore could not be applied.
-    console.error(`[TRASH-RESTORE] Could not restore ${artifactId} (last status ${lastStatus}) — KEEPING the seal (attachment recoverable from trash); notifying.`);
+    console.error(`[TRASH-RESTORE] Could not restore ${artifactId} (${restore.status}) — KEEPING the seal (attachment recoverable from trash); notifying.`);
     await notifyAttachmentRevertFailed(sealRecord, artifactId, pageId, atlassianId, attachmentTitle).catch(() => {});
     return;
   }
+
+  if (restore.already) return; // nothing was restored this run — no duplicate notice
 
   console.warn(`[TRASH-RESTORE] Restored ${attachmentTitle} (${artifactId})`);
 
