@@ -6,7 +6,7 @@
  * records (section-protection-{id} incl. stored hash), validation findings/gate,
  * and grants — the deterministic state the harness asserts against.
  */
-import { kvs } from "@forge/kvs";
+import { kvs, WhereConditions } from "@forge/kvs";
 import { expirySweepTask, workflowSweep, collectWorkflowEnforcementForPage, sweepRevertToApproved, handleSealedArtifactDeleted, handleSealedArtifactTrash, lifecycleTrigger, recurringNudgeTask } from "./server/triggers";
 import {
   assignPageWorkflow,
@@ -119,6 +119,15 @@ export async function testStateTrigger(req) {
       if (!key) return json(400, { error: "key required" });
       await kvs.delete(key);
       return json(200, { deleted: key });
+    }
+    // DEV-ONLY read: run an EVENTUALLY-CONSISTENT kvs.query for a prefix and return the keys.
+    // Specs that seed an index row and then drive a query-backed surface (realm sealed files)
+    // MUST poll this until the seeded key is query-visible — per-key gets prove nothing (it45).
+    if (what === "query") {
+      const prefix = q(req, "prefix");
+      if (!prefix) return json(400, { error: "prefix required" });
+      const { results } = await kvs.query().where("key", WhereConditions.beginsWith(prefix)).limit(100).getMany();
+      return json(200, { prefix, keys: (results || []).map((r) => r.key) });
     }
     // DEV-ONLY: invoke a scheduled task on demand so the harness can assert the scheduled tier
     // deterministically (no waiting for the daily/hourly cron).
@@ -392,6 +401,13 @@ export async function testStateTrigger(req) {
           { title: sealRecord.attachmentName || "seal-me.txt" },
         );
         return json(200, { invoked: fn, result: { ran: true } });
+      }
+      // Fix 5 diag: run the shared attachment probe AS THE APP (asApp semantics can differ from
+      // a user token — the classifier decision table must hold for the identity that runs it).
+      if (fn === "probeAttachment") {
+        const { probeAttachmentStatus } = await import("./server/infra/attachment-status.js");
+        const r = await probeAttachmentStatus(q(req, "att"));
+        return json(200, { invoked: fn, result: r });
       }
       // Fix 2 (incident 2026-07-22): trash-restore with a UI-shaped event payload. `bare=1` omits
       // version AND container (the shape the Confluence UI delete emitted on 07-22, which the old
