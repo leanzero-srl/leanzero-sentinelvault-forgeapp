@@ -7,7 +7,7 @@
  * and grants — the deterministic state the harness asserts against.
  */
 import { kvs } from "@forge/kvs";
-import { expirySweepTask, workflowSweep, collectWorkflowEnforcementForPage, sweepRevertToApproved, handleSealedArtifactDeleted, lifecycleTrigger, recurringNudgeTask } from "./server/triggers";
+import { expirySweepTask, workflowSweep, collectWorkflowEnforcementForPage, sweepRevertToApproved, handleSealedArtifactDeleted, handleSealedArtifactTrash, lifecycleTrigger, recurringNudgeTask } from "./server/triggers";
 import {
   assignPageWorkflow,
   transitionPageWorkflow,
@@ -392,6 +392,25 @@ export async function testStateTrigger(req) {
           { title: sealRecord.attachmentName || "seal-me.txt" },
         );
         return json(200, { invoked: fn, result: { ran: true } });
+      }
+      // Fix 2 (incident 2026-07-22): trash-restore with a UI-shaped event payload. `bare=1` omits
+      // version AND container (the shape the Confluence UI delete emitted on 07-22, which the old
+      // guards silently abandoned) so the probe fetch-and-proceed path is exercised for real.
+      if (fn === "handleSealedArtifactTrash") {
+        const att = q(req, "att");
+        const sealRecord = await kvs.get(`protection-${att}`);
+        if (!sealRecord) return json(200, { invoked: fn, result: { skipped: "no seal record" } });
+        const bare = !!q(req, "bare");
+        const attachment = bare
+          ? { id: att }
+          : { id: att, title: sealRecord.attachmentName, version: { number: Number(q(req, "ver")) || 1 } };
+        await handleSealedArtifactTrash(
+          sealRecord, att,
+          bare ? null : (q(req, "page") || sealRecord.contentId),
+          q(req, "actor") || "harness-trasher",
+          attachment,
+        );
+        return json(200, { invoked: fn, result: { ran: true, bare } });
       }
       // B12 (guard-only): lifecycleTrigger mass-deletes the ENTIRE KVS on uninstall. A NON-uninstall
       // event must skip the whole body (triggers.js eventType guard). The e2e seeds a canary key,

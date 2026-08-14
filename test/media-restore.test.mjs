@@ -1,0 +1,39 @@
+import { classifyAttachmentResponse, decideMediaRestoreAction } from "../src/server/infra/attachment-status.js";
+import { eq, report } from "./_assert.mjs";
+
+// Decision table probed live 2026-08-14 (state/INCIDENT-2026-07-22.md §7): v2 GET returns
+// 200+"current", 200+"trashed" (with pageId/version/title/fileId), or 404 after a purge.
+
+// --- classifyAttachmentResponse ---
+eq("200 current → current",
+  classifyAttachmentResponse(200, { status: "current", version: { number: 3 }, title: "a.png", pageId: "852172", fileId: "f-1" }),
+  { status: "current", version: 3, title: "a.png", pageId: "852172", fileId: "f-1" });
+
+eq("200 trashed carries every restore input",
+  classifyAttachmentResponse(200, { status: "trashed", version: { number: 1 }, title: "a.png", pageId: "852172", fileId: "f-1" }),
+  { status: "trashed", version: 1, title: "a.png", pageId: "852172", fileId: "f-1" });
+
+eq("404 → deleted (purged, unrecoverable)",
+  classifyAttachmentResponse(404, null),
+  { status: "deleted", version: null, title: null, pageId: null, fileId: null });
+
+eq("200 with missing fields → current with nulls (no crash on sparse payloads)",
+  classifyAttachmentResponse(200, {}),
+  { status: "current", version: null, title: null, pageId: null, fileId: null });
+
+eq("503 → unknown (callers fail toward pre-probe behavior)",
+  classifyAttachmentResponse(503, null).status, "unknown");
+
+eq("429 → unknown", classifyAttachmentResponse(429, null).status, "unknown");
+
+eq("200 archived-ish status maps to current (only 'trashed' is special)",
+  classifyAttachmentResponse(200, { status: "draft" }).status, "current");
+
+// --- decideMediaRestoreAction (the Fix-1 classify→action mapping) ---
+eq("current → splice (today's path)", decideMediaRestoreAction("current"), "splice");
+eq("trashed → restore attachment FIRST, then splice", decideMediaRestoreAction("trashed"), "restore-splice");
+eq("deleted → cleanup, never a dead node", decideMediaRestoreAction("deleted"), "cleanup");
+eq("unknown → splice (fail toward pre-probe behavior)", decideMediaRestoreAction("unknown"), "splice");
+eq("garbage → splice", decideMediaRestoreAction(undefined), "splice");
+
+report("media-restore");
