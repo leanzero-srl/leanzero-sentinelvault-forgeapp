@@ -128,6 +128,19 @@ export async function testStateTrigger(req) {
       await kvs.delete(key);
       return json(200, { deleted: key });
     }
+    // DEV-ONLY: empirically exercise the shared TTL helper (the hunt found { expiresAt } was
+    // silently invalid; this seam proves whatever shape kvs-ttl.js uses ACTUALLY persists).
+    if (what === "setttl") {
+      const key = q(req, "key");
+      if (!key) return json(400, { error: "key required" });
+      try {
+        const { setWithTtl } = await import("./server/shared/kvs-ttl.js");
+        await setWithTtl(key, { probe: true, at: new Date().toISOString() }, Number(q(req, "ms")) || 300000);
+        return json(200, { setttl: key, readBack: (await kvs.get(key)) ?? null });
+      } catch (e) {
+        return json(200, { setttl: key, error: String(e?.message || e) });
+      }
+    }
     // DEV-ONLY read: run an EVENTUALLY-CONSISTENT kvs.query for a prefix and return the keys.
     // Specs that seed an index row and then drive a query-backed surface (realm sealed files)
     // MUST poll this until the seeded key is query-visible — per-key gets prove nothing (it45).
