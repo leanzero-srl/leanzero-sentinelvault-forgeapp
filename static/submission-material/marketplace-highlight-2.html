@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=1840">
+<title>Highlight 2 — Auto-Revert &amp; Full Protection</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{font-family:'DM Sans',system-ui,sans-serif;background:#080E1A;width:1840px;height:900px;overflow:hidden;display:flex;align-items:center;justify-content:center;position:relative}
+  body::before{content:'';position:absolute;inset:0;background-image:radial-gradient(rgba(255,255,255,.04) 1px,transparent 1px);background-size:24px 24px}
+  body::after{content:'';position:absolute;top:50%;left:50%;width:600px;height:600px;transform:translate(-50%,-50%);background:radial-gradient(circle,rgba(248,81,73,.06),transparent 60%);pointer-events:none}
+
+  .container{position:relative;z-index:1;display:flex;align-items:center;gap:100px;padding:0 120px;flex-direction:row-reverse;width:100%}
+
+  .text-side{max-width:580px;flex-shrink:0}
+  .badge{display:inline-flex;align-items:center;gap:6px;padding:5px 12px;border-radius:20px;background:rgba(248,81,73,.1);border:1px solid rgba(248,81,73,.2);margin-bottom:20px}
+  .badge .num{font-size:16px;font-weight:700;color:#F85149}
+  .badge .label{font-size:14px;font-weight:600;color:#F85149;text-transform:uppercase;letter-spacing:.5px}
+  h2{font-size:52px;font-weight:700;color:#FFFFFF;line-height:1.2;margin-bottom:14px;letter-spacing:-.5px}
+  h2 span{color:#F85149}
+  p{font-size:20px;color:#8B949E;line-height:1.65;margin-bottom:32px}
+  .features{list-style:none;display:flex;flex-direction:column;gap:10px}
+  .features li{display:flex;align-items:flex-start;gap:14px;font-size:18px;color:#C9D1D9;line-height:1.5}
+  .features li svg{width:22px;height:22px;flex-shrink:0;margin-top:2px}
+
+  .visual{position:relative;display:flex;flex-direction:column;gap:16px;flex:1}
+  .screenshot-frame{width:100%;border-radius:12px;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.5);border:1px solid rgba(255,255,255,.08)}
+  .screenshot-frame img{display:block;width:100%;height:auto}
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="text-side">
+    <div class="badge"><span class="num">02</span><span class="label">Protection</span></div>
+    <h2>Automatic <span>Reversion</span><br>of Violations</h2>
+    <p>When someone modifies a sealed attachment, Sentinel Vault detects the change in real time, restores the previous version, and notifies all parties. Zero manual intervention.</p>
+    <ul class="features">
+      <li>
+        <svg viewBox="0 0 24 24" fill="none" stroke="#3FB950" stroke-width="2" stroke-linecap="round"><path d="M20 6L9 17l-5-5"/></svg>
+        Real-time edit, trash &amp; delete detection
+      </li>
+      <li>
+        <svg viewBox="0 0 24 24" fill="none" stroke="#3FB950" stroke-width="2" stroke-linecap="round"><path d="M20 6L9 17l-5-5"/></svg>
+        Surgical page content protection for embeds
+      </li>
+      <li>
+        <svg viewBox="0 0 24 24" fill="none" stroke="#3FB950" stroke-width="2" stroke-linecap="round"><path d="M20 6L9 17l-5-5"/></svg>
+        Expandable cards with thumbnail previews
+      </li>
+      <li>
+        <svg viewBox="0 0 24 24" fill="none" stroke="#3FB950" stroke-width="2" stroke-linecap="round"><path d="M20 6L9 17l-5-5"/></svg>
+        Infinite loop prevention built in
+      </li>
+    </ul>
+  </div>
+
+  <div class="visual">
+    <div class="screenshot-frame">
+      <img src="screenshots/expanded-artifact-card.jpg" alt="Expanded card rows showing thumbnail previews and seal metadata">
+    </div>
+  </div>
+</div>
+</body>
+</html>

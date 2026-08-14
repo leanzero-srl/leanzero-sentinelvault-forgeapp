@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=960">
+<title>Sentinel Vault — Marketplace Banner</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{font-family:'DM Sans',system-ui,sans-serif;background:#0D1117;width:960px;height:600px;overflow:hidden;display:flex}
+
+  /* ── Left branding panel ── */
+  .brand{width:420px;height:600px;background:#080E1A;position:relative;display:flex;flex-direction:column;justify-content:center;padding:48px 40px;overflow:hidden}
+  .brand::before{content:'';position:absolute;inset:0;background-image:radial-gradient(rgba(255,255,255,.06) 1px,transparent 1px);background-size:20px 20px;pointer-events:none}
+  .brand::after{content:'';position:absolute;top:-60px;right:-60px;width:300px;height:300px;background:radial-gradient(circle,rgba(0,101,255,.15),transparent 70%);pointer-events:none}
+
+  .accent-line{position:absolute;top:0;right:0;width:2px;height:100%;background:linear-gradient(180deg,transparent,#0065FF 30%,#0065FF 70%,transparent);transform:skewX(-2deg)}
+
+  .logo-row{display:flex;align-items:center;gap:14px;margin-bottom:28px;position:relative;z-index:1}
+  .logo-icon{width:52px;height:52px;border-radius:12px;background:linear-gradient(135deg,#0065FF,#0747A6);display:flex;align-items:center;justify-content:center;box-shadow:0 4px 16px rgba(0,101,255,.3)}
+  .logo-icon svg{width:32px;height:32px}
+  .app-name{font-size:24px;font-weight:700;color:#FFFFFF;letter-spacing:-.3px}
+
+  .tagline{font-size:17px;font-weight:500;color:#B6C2CF;line-height:1.5;margin-bottom:32px;position:relative;z-index:1}
+
+  .features{list-style:none;display:flex;flex-direction:column;gap:12px;position:relative;z-index:1}
+  .features li{display:flex;align-items:center;gap:10px;font-size:14px;color:#9FADBC;font-weight:400}
+  .features li .dot{width:7px;height:7px;border-radius:50%;background:#0065FF;flex-shrink:0}
+
+  .forge-badge{margin-top:36px;display:inline-flex;align-items:center;gap:8px;padding:8px 14px;border:1px solid rgba(255,255,255,.08);border-radius:8px;background:rgba(255,255,255,.03);position:relative;z-index:1}
+  .forge-badge svg{width:16px;height:16px}
+  .forge-badge span{font-size:12px;font-weight:500;color:#8C9BAB;letter-spacing:.3px}
+
+  /* ── Right mockup panel ── */
+  .mockup{flex:1;height:600px;background:#0D1117;position:relative;display:flex;align-items:center;justify-content:center;overflow:hidden}
+  .mockup::before{content:'';position:absolute;top:50%;left:50%;width:500px;height:500px;transform:translate(-50%,-50%);background:radial-gradient(circle,rgba(0,101,255,.08),transparent 65%);pointer-events:none}
+
+  .screenshot-frame{width:480px;border-radius:12px;overflow:hidden;box-shadow:0 24px 64px rgba(0,0,0,.5),0 2px 8px rgba(0,0,0,.3);transform:perspective(1200px) rotateY(-4deg) rotateX(1.5deg);border:1px solid rgba(255,255,255,.08)}
+  .screenshot-frame img{display:block;width:100%;height:auto}
+
+  .float-badge{position:absolute;background:#161B22;border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:10px 14px;box-shadow:0 8px 24px rgba(0,0,0,.4);display:flex;align-items:center;gap:8px}
+  .violation-badge{top:52px;right:24px;animation:floatUp 3s ease-in-out infinite}
+  .violation-badge .icon-circle{width:28px;height:28px;border-radius:50%;background:rgba(248,81,73,.12);display:flex;align-items:center;justify-content:center}
+  .violation-badge .icon-circle svg{width:14px;height:14px}
+  .violation-badge .text{font-size:11px;font-weight:600;color:#F85149}
+  .violation-badge .sub{font-size:10px;color:#8B949E;font-weight:400}
+
+  .revert-badge{bottom:60px;right:16px;animation:floatUp 3s ease-in-out 1.5s infinite}
+  .revert-badge .icon-circle{width:28px;height:28px;border-radius:50%;background:rgba(63,185,80,.12);display:flex;align-items:center;justify-content:center}
+  .revert-badge .icon-circle svg{width:14px;height:14px}
+  .revert-badge .text{font-size:11px;font-weight:600;color:#3FB950}
+  .revert-badge .sub{font-size:10px;color:#8B949E;font-weight:400}
+
+  @keyframes floatUp{0%,100%{transform:translateY(0)}50%{transform:translateY(-6px)}}
+</style>
+</head>
+<body>
+
+<div class="brand">
+  <div class="accent-line"></div>
+  <div class="logo-row">
+    <div class="logo-icon">
+      <svg viewBox="0 0 128 128" fill="none">
+        <path d="M64 8L16 28V60C16 88.72 36.48 115.36 64 122C91.52 115.36 112 88.72 112 60V28L64 8Z" fill="rgba(255,255,255,.15)"/>
+        <path d="M50 62V54C50 46.268 56.268 40 64 40C71.732 40 78 46.268 78 54V62" stroke="#fff" stroke-width="5" stroke-linecap="round" fill="none"/>
+        <rect x="44" y="62" width="40" height="30" rx="4" fill="#fff"/>
+        <circle cx="64" cy="74" r="5" fill="#0747A6"/>
+        <path d="M62 78L64 88L66 78" fill="#0747A6"/>
+      </svg>
+    </div>
+    <span class="app-name">Sentinel Vault</span>
+  </div>
+
+  <p class="tagline">Attachment protection &amp; concurrent&#8209;edit prevention for Confluence Cloud</p>
+
+  <ul class="features">
+    <li><span class="dot"></span>Seal attachments to prevent overwrites</li>
+    <li><span class="dot"></span>Auto-revert unauthorized modifications</li>
+    <li><span class="dot"></span>Content protection for embedded media</li>
+    <li><span class="dot"></span>Multi-channel alerts &amp; watch notifications</li>
+  </ul>
+
+  <div class="forge-badge">
+    <svg viewBox="0 0 24 24" fill="none" stroke="#8C9BAB" stroke-width="2" stroke-linecap="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+    <span>Built on Atlassian Forge</span>
+  </div>
+</div>
+
+<div class="mockup">
+  <div class="screenshot-frame">
+    <img src="screenshots/macro.jpg" alt="Sentinel Vault inline panel showing sealed and available attachments">
+  </div>
+
+  <div class="float-badge violation-badge">
+    <div class="icon-circle">
+      <svg viewBox="0 0 24 24" fill="none" stroke="#F85149" stroke-width="2.5" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
+    </div>
+    <div>
+      <div class="text">Violation Detected</div>
+      <div class="sub">Unauthorized edit rolled back</div>
+    </div>
+  </div>
+
+  <div class="float-badge revert-badge">
+    <div class="icon-circle">
+      <svg viewBox="0 0 24 24" fill="none" stroke="#3FB950" stroke-width="2.5" stroke-linecap="round"><path d="M1 4v6h6"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
+    </div>
+    <div>
+      <div class="text">Auto-Reverted</div>
+      <div class="sub">Previous version restored</div>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

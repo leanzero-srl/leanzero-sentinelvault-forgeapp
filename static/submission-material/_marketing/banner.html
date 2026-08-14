@@ -1,0 +1,57 @@
+<!doctype html>
+<html><head><meta charset="utf-8">
+<style>
+/* 1120x548 Marketplace banner (derive.mjs downscales the 2x render to
+   1120x548 and 560x274 — never re-render the small one by hand).
+   House rules: solid saturated colour, no faded accent washes, no left
+   accent rails, flat window (no 3D tilt), real product imagery. */
+*{box-sizing:border-box;margin:0;padding:0}
+body{width:1120px;height:548px;overflow:hidden;background:#020617;position:relative;
+     font-family:Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;
+     display:flex;align-items:center;color:#E2E8F0}
+/* faint blueprint grid in the seal cyan — atmosphere, never competes */
+body::before{content:'';position:absolute;inset:0;
+  background-image:linear-gradient(rgba(34,211,238,.055) 1px,transparent 1px),
+                   linear-gradient(90deg,rgba(34,211,238,.055) 1px,transparent 1px);
+  background-size:112px 112px}
+.panel{width:520px;flex:0 0 520px;padding:0 0 0 62px;position:relative;z-index:2}
+.brand{display:flex;align-items:center;gap:10px;margin-bottom:24px}
+.mark{width:34px;height:34px;flex-shrink:0;line-height:0}
+.wordmark{font-size:19px;font-weight:800;letter-spacing:-.01em;color:#F8FAFC}
+.eyebrow{font:800 11px/1 ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.22em;
+         text-transform:uppercase;color:#22D3EE;margin-bottom:14px}
+h1{font-size:44px;line-height:1.08;letter-spacing:-.028em;font-weight:800;color:#fff;margin-bottom:16px}
+h1 em{font-style:normal;color:#22D3EE}
+p{font-size:17px;line-height:1.5;color:#94A3B8;max-width:440px}
+.chips{display:flex;gap:8px;margin-top:24px;flex-wrap:wrap}
+.chip{font-size:12.5px;font-weight:700;padding:5px 11px;border-radius:9999px;color:#fff}
+.visual{flex:1;height:100%;display:flex;align-items:center;padding-left:34px}
+.win{width:760px;border-radius:12px 0 0 12px;overflow:hidden;background:#fff;
+     box-shadow:0 34px 74px -26px rgba(0,0,0,.8);border:1px solid rgba(255,255,255,.10);border-right:0}
+.chrome{height:32px;background:#F1F5F9;border-bottom:1px solid #E2E8F0;display:flex;align-items:center;padding:0 13px;gap:7px}
+.dot{width:9.5px;height:9.5px;border-radius:50%}
+.shot{display:block;width:100%}
+</style></head>
+<body>
+  <div class="panel">
+    <div class="brand"><div class="mark" data-brand-mark></div><div class="wordmark">Sentinel Vault</div></div>
+    <div class="eyebrow">§ Content protection for Confluence</div>
+    <h1>Sealed, approved —<br><em>and it stays that way</em></h1>
+    <p>Seal attachments and page sections, gate pages behind real approvals, and watch unauthorized edits revert themselves.</p>
+    <div class="chips">
+      <span class="chip" style="background:#0891B2">Seal &amp; auto-restore</span>
+      <span class="chip" style="background:#16A34A">Enforced approvals</span>
+      <span class="chip" style="background:#7C3AED">AI validations</span>
+      <!-- "Runs on Atlassian": README records v4.0.0 verified eligible (no
+           egress, Forge LLM only). Re-confirm with `forge eligibility -e production`
+           for the SUBMITTED version before upload — remove this chip if not green. -->
+      <span class="chip" style="background:#1D4ED8">Runs on Atlassian</span>
+    </div>
+  </div>
+  <div class="visual">
+    <div class="win">
+      <div class="chrome"><span class="dot" style="background:#ff5f57"></span><span class="dot" style="background:#febc2e"></span><span class="dot" style="background:#28c840"></span></div>
+      <img class="shot" src="../screenshots/panel-seals.png" alt="">
+    </div>
+  </div>
+</body></html>
