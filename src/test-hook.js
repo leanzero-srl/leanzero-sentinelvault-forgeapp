@@ -211,7 +211,14 @@ export async function testStateTrigger(req) {
         return json(200, { invoked: fn, result: { reverted: ok } });
       }
       if (fn === "dashboard") {
-        const r = await getWorkflowDashboard({ payload: { spaceKey: q(req, "spaceKey") } });
+        // SV-SEC-1: get-workflow-dashboard is steward-gated now (it returns a whole space's page
+        // inventory), so the seam has to pass a caller. In a webtrigger asUser() has no context,
+        // so isOperatorSteward resolves only via the explicit adminUsers list in KVS — which is
+        // exactly what the e2e seeds, and what makes this assert the gate rather than bypass it.
+        const r = await getWorkflowDashboard({
+          payload: { spaceKey: q(req, "spaceKey") },
+          context: { accountId: q(req, "actor") },
+        });
         return json(200, { invoked: fn, result: r });
       }
       if (fn === "reqTransition") {

@@ -269,7 +269,7 @@ const RealmClaimedCard = ({ artifact, onForceRelease, onWatch, isWatching, force
       {/* Expand panel: thumbnail + view link */}
       {expanded && (
         <div className="card-row card-row-expand">
-          {isImage && artifact.pageId && <ThumbnailPreview artifactId={artifact.id} contentId={artifact.pageId} mediaType={artifact.mediaType} fileSize={artifact.fileSize} cachedDataUri={cachedPreview} onCached={setCachedPreview} />}
+          {isImage && artifact.pageId && <ThumbnailPreview artifactId={artifact.id} contentId={artifact.pageId} cachedDataUri={cachedPreview} onCached={setCachedPreview} />}
           {(viewUrl || propertiesUrl) && (
             <div className="card-expand-links">
               {viewUrl && <a href={viewUrl} onClick={(e) => { e.preventDefault(); router.open(viewUrl); }} className="card-expand-link">View</a>}
@@ -361,7 +361,7 @@ const MyClaimedCard = ({ artifact, onRelease, busyAction, siteUrl }) => {
       {/* Expand panel: thumbnail + view link */}
       {expanded && (
         <div className="card-row card-row-expand">
-          {isImage && artifact.pageId && <ThumbnailPreview artifactId={artifact.id} contentId={artifact.pageId} mediaType={artifact.mediaType} fileSize={artifact.fileSize} cachedDataUri={cachedPreview} onCached={setCachedPreview} />}
+          {isImage && artifact.pageId && <ThumbnailPreview artifactId={artifact.id} contentId={artifact.pageId} cachedDataUri={cachedPreview} onCached={setCachedPreview} />}
           {(viewUrl || propertiesUrl) && (
             <div className="card-expand-links">
               {viewUrl && <a href={viewUrl} onClick={(e) => { e.preventDefault(); router.open(viewUrl); }} className="card-expand-link">View</a>}

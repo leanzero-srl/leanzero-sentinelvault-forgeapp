@@ -24,6 +24,11 @@ const rec = async (id) => kvsGet(`workflow-state-${id}`);
 const pend = async (id) => kvsGet(`workflow-pending-${id}`);
 const verOf = async (id) => (await get(`/api/v2/pages/${id}`))?.version?.number;
 
+// SV-SEC-1: request-transition now requires the CALLER's own edit rights on the page (moving a
+// page's governance state is changing the page), so the actor has to be a real account. A
+// synthetic id is correctly refused, which is the gate working — see authz-content-gate.spec.ts.
+const { currentUser } = await import("../lib/confluence.mjs");
+const me = await currentUser();
 const spaceKey = env.SV_SPACE_KEY || "WFH";
 const space = (await get(`/api/v2/spaces?keys=${spaceKey}`))?.results?.[0];
 const pages = [];
@@ -59,20 +64,24 @@ try {
   const pA = await post(`/api/v2/pages`, { spaceId: space.id, status: "current", title: `HARNESS cond-rules ${Date.now()}`, body: { representation: "storage", value: "<p>no rollback heading here</p>" } });
   pages.push(pA.id);
   await hook({ what: "invoke", fn: "assignWorkflow", pageId: pA.id, spaceKey });
-  const blocked = (await hook({ what: "invoke", fn: "reqTransition", pageId: pA.id, to: "in_review", actor: "harness" })).result;
+  const blocked = (await hook({ what: "invoke", fn: "reqTransition", pageId: pA.id, to: "in_review", actor: me.accountId })).result;
   check("transition BLOCKED when required content missing", blocked?.success === false && blocked?.blocked === true);
   check("block result carries the violation", (blocked?.violations || []).some((v) => v.ruleId === "r-rollback"));
   // Add the required heading → the transition is allowed and completes.
   await put(`/api/v2/pages/${pA.id}`, { id: pA.id, status: "current", title: pA.title, body: { representation: "storage", value: "<h2>Rollback plan</h2><p>steps…</p>" }, version: { number: (await verOf(pA.id)) + 1 } });
   await sleep(1500);
-  const allowed = (await hook({ what: "invoke", fn: "reqTransition", pageId: pA.id, to: "in_review", actor: "harness" })).result;
+  const allowed = (await hook({ what: "invoke", fn: "reqTransition", pageId: pA.id, to: "in_review", actor: me.accountId })).result;
   check("transition ALLOWED once required content is present", allowed?.blocked !== true && (await rec(pA.id))?.stateId === "in_review");
 
   // Authority: an AI-only enforce gate must NOT downgrade the steward requirement (a
   // non-steward can't drive an enforce transition just because AI review is required).
   await setWf({ approved: { requireAi: true } });
   const pAuth = await mkPage("HARNESS cond-authz", "<p>authz body</p>");
-  const authz = (await hook({ what: "invoke", fn: "reqTransition", pageId: pAuth.id, to: "approved", actor: "not-a-steward" })).result;
+  // The actor is REAL (so it clears the SV-SEC-1 edit gate and the steward requirement is what
+  // is actually under test) but is not a steward here: in a webtrigger asUser() has no context,
+  // so isOperatorSteward can only answer from the explicit adminUsers list, and this space has
+  // none. That is precisely the authority the enforce transition must still demand.
+  const authz = (await hook({ what: "invoke", fn: "reqTransition", pageId: pAuth.id, to: "approved", actor: me.accountId })).result;
   check("AI-only enforce gate still requires a steward requester (no authority downgrade)", authz?.success === false && /steward/i.test(authz?.reason || ""));
   check("blocked non-steward request did NOT transition", (await rec(pAuth.id))?.stateId === "in_review");
 

@@ -1,6 +1,8 @@
 import { asUser, asApp, route } from "@forge/api";
 import { kvs } from "@forge/kvs";
 import { withinUploadSizeLimit, MAX_UPLOAD_LABEL } from "../../shared/upload-limits.js";
+import { canEditPage, canReadPage, mustVerify } from "../../shared/content-access.js";
+import { isOperatorSiteAdmin } from "../../shared/steward-checks.js";
 
 import {
   insertPanelNode,
@@ -11,6 +13,7 @@ import {
   isPanelExtensionKey,
   triggerPanelEmbed,
   resolveExtensionKey,
+  deriveExtensionKeyFromContext,
 } from "../../infra/doc-surgery.js";
 import { resolveArtifactPreview } from "../../infra/artifact-fetch.js";
 
@@ -315,6 +318,15 @@ const injectPanel = async (req) => {
     return { success: false, reason: "Missing pageId" };
   }
 
+  // SV-SEC-1. insertPanelNode reads and REWRITES this page through asApp(), which carries
+  // site-wide write:confluence-content, and pageId comes straight off the payload — so
+  // ungated this let any logged-in user append a node to, and bump the version of, any page
+  // on the site. Unconditional: this is a write, and a context id would only prove the
+  // caller can see the page, not change it.
+  if (!(await canEditPage(req.context.accountId, pageId))) {
+    return { success: false, reason: "You do not have permission to edit this page" };
+  }
+
   const extensionKey = await resolveExtensionKey();
   if (!extensionKey) {
     return {
@@ -336,6 +348,12 @@ const extractPanel = async (req) => {
     return { success: false, reason: "Missing pageId" };
   }
 
+  // SV-SEC-1, mirror of injectPanel: removePanelNode is the same asApp() read+write. Stripping
+  // the panel off a page is removing the protection surface, so it needs the edit bar too.
+  if (!(await canEditPage(req.context.accountId, pageId))) {
+    return { success: false, reason: "You do not have permission to edit this page" };
+  }
+
   return await removePanelNode(pageId);
 };
 
@@ -343,10 +361,18 @@ const extractPanel = async (req) => {
  * Check if the panel exists on a page + get page-level panel settings
  */
 const checkPanelStatus = async (req) => {
-  const pageId =
-    req.payload?.pageId || req.context.extension?.content?.id;
+  const ctxPageId = req.context.extension?.content?.id;
+  const pageId = req.payload?.pageId || ctxPageId;
 
   if (!pageId) {
+    return { macroExists: false, macroDisabled: false };
+  }
+
+  // SV-SEC-1 (disclosure side): reads the page body via asApp(). What leaks is thin — two
+  // booleans — but it is still an oracle over pages the caller cannot open, so a payload-named
+  // id gets checked. A context id does not: rendering here already required read access.
+  if (mustVerify(req.payload?.pageId, ctxPageId)
+    && !(await canReadPage(req.context.accountId, pageId))) {
     return { macroExists: false, macroDisabled: false };
   }
 
@@ -386,6 +412,15 @@ const storeDocPanelPrefs = async (req) => {
 
   if (!pageId) {
     return { success: false, reason: "Missing pageId" };
+  }
+
+  // SV-SEC-1. Two privileged writes hang off this pageId: the content property below (asApp)
+  // and, when macroDisabled is set, removePanelNode — an asApp body rewrite. So ungated, any
+  // logged-in user could permanently suppress the protection panel on a page they have no
+  // rights to. Unconditional, as for every other write path: the overlay's only call site
+  // passes pageId: null and picks up the context id, which is unaffected by this.
+  if (!(await canEditPage(req.context.accountId, pageId))) {
+    return { success: false, reason: "You do not have permission to change settings for this page" };
   }
 
   const propertyKey = "sentinel-vault-page-settings";
@@ -520,6 +555,22 @@ const registerPanelKey = async (req) => {
     return { success: false, reason: "Missing extensionKey" };
   }
 
+  // SV-SEC-1. This value is TENANT-GLOBAL and the app stamps it, as the app, into the ADF of
+  // every page it auto-embeds the panel onto — so an arbitrary string accepted here is written
+  // site-wide under write:confluence-content. Nothing in the UI calls this action; the correct
+  // key is derivable from the Forge app context, so the caller's value is MATCHED against the
+  // derived one rather than believed. If the context cannot produce one, fall back to a shape
+  // check behind a site-admin gate rather than accepting anything.
+  const canonical = deriveExtensionKeyFromContext();
+  if (canonical) {
+    if (extensionKey !== canonical) {
+      return { success: false, reason: "Rejected: not this app's macro key" };
+    }
+  } else if (!isPanelExtensionKey(extensionKey)
+    || !(await isOperatorSiteAdmin(req.context.accountId))) {
+    return { success: false, reason: "Not authorized" };
+  }
+
   const existing = await kvs.get("macro-extension-key");
   if (existing !== extensionKey) {
     await kvs.set("macro-extension-key", extensionKey);
@@ -532,11 +583,18 @@ const registerPanelKey = async (req) => {
  * Discover the panel's extensionKey by reading the page ADF.
  */
 const discoverPanelKey = async (req) => {
-  const pageId =
-    req.payload?.pageId || req.context.extension?.content?.id;
+  const ctxPageId = req.context.extension?.content?.id;
+  const pageId = req.payload?.pageId || ctxPageId;
 
   if (!pageId) {
     return { success: false, reason: "Missing pageId" };
+  }
+
+  // SV-SEC-1: reads the page ADF via asApp(), and what it finds is written to the same
+  // tenant-global key registerPanelKey guards. A payload-named page gets a read check.
+  if (mustVerify(req.payload?.pageId, ctxPageId)
+    && !(await canReadPage(req.context.accountId, pageId))) {
+    return { success: false, reason: "Not authorized" };
   }
 
   // Check if already discovered
@@ -569,11 +627,21 @@ const discoverPanelKey = async (req) => {
 };
 
 const resolvePreview = async (req) => {
-  const { artifactId, contentId, mediaType, fileSize } = req.payload;
+  const { artifactId, contentId } = req.payload;
   if (!artifactId || !contentId) {
     return null;
   }
-  return resolveArtifactPreview(artifactId, contentId, mediaType, fileSize);
+  // SV-SEC-1 (the worst of the set). Both ids came from the payload and the download ran as
+  // the app, so this returned the raw bytes of any attachment on the site as a base64 data
+  // URI — and because the caller also supplied mediaType, claiming "image/png" skipped the
+  // metadata read that enforced image-only and the 5 MB cap, making it any file of any size.
+  // Two changes: the type/size are now read from the attachment (artifact-fetch.js) and the
+  // download runs as the user; this gate is the third, so the caller cannot even probe an
+  // attachment on a page they may not read.
+  if (!(await canReadPage(req.context.accountId, contentId))) {
+    return null;
+  }
+  return resolveArtifactPreview(artifactId, contentId);
 };
 
 export const actions = [
