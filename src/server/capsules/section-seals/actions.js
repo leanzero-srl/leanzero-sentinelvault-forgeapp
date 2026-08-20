@@ -146,7 +146,7 @@ export const sealSection = async (req) => {
 
   if (!pageId || headingIndex == null) return { success: false, reason: "Missing pageId/headingIndex" };
 
-  // SV-SEC-1. pageId above is attacker-controlled and everything below reads and REWRITES
+  // SV-SEC-1 (fixed 2026-08-20; see SECURITY-TODO.md and CLAUDE.md). pageId above is attacker-controlled and everything below reads and REWRITES
   // that page through asApp(), which carries site-wide write:confluence-content — so without
   // this gate any logged-in user could restructure any page on the site. Confluence's own
   // answer to "may this account edit this content" is the bar, i.e. exactly the bar the user
