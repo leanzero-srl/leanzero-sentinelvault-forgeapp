@@ -786,7 +786,7 @@ const ArtifactCard = ({ att, onRefresh, columns, siteUrl, spaceKey, pageId, page
       {/* Expand panel: thumbnail + view link */}
       {expanded && (
         <div className="card-row card-row-expand">
-          {isImage && <ThumbnailPreview artifactId={att.id} contentId={pageId} mediaType={att.mediaType} fileSize={att.fileSize} cachedDataUri={cachedPreview} onCached={setCachedPreview} />}
+          {isImage && <ThumbnailPreview artifactId={att.id} contentId={pageId} cachedDataUri={cachedPreview} onCached={setCachedPreview} />}
           {(viewUrl || propertiesUrl) && (
             <div className="card-expand-links">
               {viewUrl && <a href={viewUrl} onClick={(e) => { e.preventDefault(); router.open(viewUrl); }} className="card-expand-link">View</a>}
