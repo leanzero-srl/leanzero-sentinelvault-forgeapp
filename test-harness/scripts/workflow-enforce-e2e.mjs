@@ -170,13 +170,21 @@ try {
     ["expired", "x1", null],
   ];
   for (const [st, pid, due] of dashIdx) await kvsSet(`workflow-idx-${DS}-${st}-${pid}`, { pageId: pid, stateId: st, enteredAt: "2026-01-01T00:00:00Z", reviewDueAt: due });
-  const dash = (await hook({ what: "invoke", fn: "dashboard", spaceKey: DS })).result;
+  // SV-SEC-1: the dashboard is steward-only now. Register the harness user as a steward OF THIS
+  // synthetic space the same way line 43 does for the real one — asUser has no context in a
+  // webtrigger, so the explicit adminUsers list is the arm of isOperatorSteward that can answer.
+  const dashStewardKey = `admin-settings-space-${DS}`;
+  await kvsSet(dashStewardKey, { adminUsers: [me.accountId] });
+  const denied = (await hook({ what: "invoke", fn: "dashboard", spaceKey: DS, actor: "not-a-steward" })).result;
+  check("dashboard REFUSES a non-steward", !!denied?.error && !denied?.total);
+  const dash = (await hook({ what: "invoke", fn: "dashboard", spaceKey: DS, actor: me.accountId })).result;
   const countOf = (id) => (dash?.states || []).find((s) => s.id === id)?.count;
   check("dashboard total counts all indexed pages", dash?.total === 7);
   check("dashboard tallies Draft/In Review/Approved/Expired", countOf("draft") === 2 && countOf("in_review") === 1 && countOf("approved") === 3 && countOf("expired") === 1);
   check("dashboard reports the overdue Approved count", dash?.overdue === 1);
   check("dashboard lists rows with state names", (dash?.pages || []).length === 7 && dash.pages.every((p) => p.stateName));
   for (const [st, pid] of dashIdx) await hook({ what: "delete", key: `workflow-idx-${DS}-${st}-${pid}` }).catch(() => {});
+  await hook({ what: "delete", key: dashStewardKey }).catch(() => {});
 } finally {
   // restore the steward config + reset space settings so nothing leaks into other suites
   if (priorStewardCfg) await kvsSet(stewardKey, priorStewardCfg).catch(() => {});
