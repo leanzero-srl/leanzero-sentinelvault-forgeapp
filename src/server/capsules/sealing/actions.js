@@ -6,6 +6,7 @@ import { BASELINE_HOLD_SPAN, sanitizeHoldDuration } from "../../shared/baseline.
 import { keysetPage, encodeKeysetCursor, decodeKeysetCursor } from "../../shared/pagination.js";
 import { restampIfEnforced } from "../workflow/logic.js";
 import { authorizeSteward } from "../../shared/steward-checks.js";
+import { canEditPage, canReadPage, mustVerify } from "../../shared/content-access.js";
 import { resolveBulletinToggles } from "../../shared/bulletin-flags.js";
 
 // Import from infra
@@ -212,7 +213,7 @@ const sealArtifact = async (req) => {
     req.context.extension?.content?.space?.id ||
     req.context.extension?.space?.id;
 
-  const contentId =
+  let contentId =
     req.context.extension?.content?.id ||
     req.context.extension?.content?.content?.id;
 
@@ -282,6 +283,7 @@ const sealArtifact = async (req) => {
   let sealedVersion = null;
   let sealedFileId = null;
   let artifactDownloadLink = null;
+  let artifactPageId = null;
   try {
     const artifactRoute = route`/wiki/api/v2/attachments/${attachmentId}`;
     const artifactResponse = await asUser().requestConfluence(artifactRoute);
@@ -293,9 +295,29 @@ const sealArtifact = async (req) => {
       sealedVersion = artifactData.version?.number || null;
       sealedFileId = artifactData.fileId || null;
       artifactDownloadLink = artifactData.downloadLink || artifactData._links?.download || null;
+      artifactPageId = artifactData.pageId || null;
     }
   } catch (error) {
     console.warn("Failed to fetch artifact details:", error);
+  }
+
+  // SV-SEC-1. attachmentId is payload-supplied and nothing above this point checked the caller
+  // against it — the asUser read just overhead is best-effort and swallows its own failure, so an
+  // unentitled caller simply got artifactName "Unknown Attachment" and carried on to write the
+  // seal record. That record is not inert: the page trigger reads `protection-{id}` and reverts
+  // or re-restores the real owner's edits through asApp, and it names the writer as `lockedBy`,
+  // which is what purge and unseal treat as ownership. So an ungated seal is a durable takeover
+  // of someone else's file. Sealing stops other people editing a file, so the bar is being able
+  // to edit it yourself.
+  if (!(await canEditPage(operatorAccountId, attachmentId))) {
+    return { success: false, reason: "You do not have permission to seal this file" };
+  }
+
+  // Where the file actually LIVES beats where the caller happens to be standing. contentId comes
+  // from the resolver context, so a mismatch means the seal record, its content property, the
+  // presentation baseline and the panel embed would all be filed against the wrong page.
+  if (artifactPageId && String(artifactPageId) !== String(contentId || "")) {
+    contentId = String(artifactPageId);
   }
 
   // Fetch page title
@@ -470,10 +492,16 @@ const unsealArtifact = async (req) => {
   if (sealRecord.lockedBy === operatorAccountId) {
     canRelease = true;
     releaseReason = "owner unlock";
-  } else if (adminOverride && realmKey) {
+  } else if (adminOverride && (sealRecord.spaceKey || realmKey)) {
+    // SV-SEC-1 (confused deputy). This used to ask "is the caller a steward of the space they
+    // are STANDING IN", while acting on a seal named by a payload attachmentId that carries its
+    // own spaceKey. Administering one space — a personal space is enough — therefore granted force-unseal
+    // over every sealed file on the site, and the teardown below drives an asApp body rewrite on
+    // the victim's page. Authorize against the space the SEAL lives in; the caller's context is
+    // only a fallback for records that never recorded one.
     const hasStewardAccess = await authorizeSteward(
       operatorAccountId,
-      realmKey,
+      sealRecord.spaceKey || realmKey,
     );
     if (hasStewardAccess) {
       canRelease = true;
@@ -828,11 +856,19 @@ const enumerateOperatorSeals = async (req) => {
  * The frontend displays these instantly, then backfills with the full list.
  */
 const enumeratePageSeals = async (req) => {
-  const contentId =
-    req.payload?.pageId ||
-    req.context.extension?.content?.id;
+  const ctxPageId = req.context.extension?.content?.id;
+  const contentId = req.payload?.pageId || ctxPageId;
 
   if (!contentId) {
+    return { claimedArtifacts: [] };
+  }
+
+  // SV-SEC-1 (disclosure side): the records carry attachment ids and filenames, who holds each
+  // seal and their display name, and lock/expiry times — so a payload-named page id enumerated
+  // all of that for any page on the site. A context id needs no call: rendering here already
+  // required read access.
+  if (mustVerify(req.payload?.pageId, ctxPageId)
+    && !(await canReadPage(req.context.accountId, contentId))) {
     return { claimedArtifacts: [] };
   }
 
@@ -979,11 +1015,36 @@ export const restoreSealedArtifact = async (req) => {
 
   // Determine page ID from seal record or attachment container
   const sealRecord = await kvs.get(`protection-${attachmentId}`);
-  const pageId = sealRecord?.contentId || req.payload?.pageId ||
-    req.context.extension?.content?.id;
+  // SV-SEC-1: req.payload.pageId used to sit in this chain, so a caller could name the page the
+  // asApp PUT below would restore onto. Only the seal's own record or the caller's genuine
+  // context may decide that.
+  const pageId = sealRecord?.contentId || req.context.extension?.content?.id;
 
   if (!pageId) {
     return { success: false, reason: "Cannot determine parent page — unable to restore" };
+  }
+
+  // SV-SEC-1. Nothing here consulted req.context.accountId at all: the only gate was the global
+  // allowSealRestore toggle, and the un-trash runs as the app. So once an admin enabled the
+  // feature, any logged-in user could resurrect any deleted attachment anywhere on the site —
+  // including files removed deliberately — on a page they cannot read. Same bar as purge:
+  // the seal's owner, or a steward of the space the SEAL lives in, evaluated against the object.
+  const operatorAccountId = req.context.accountId;
+  const restoreRealmKey = sealRecord?.spaceKey
+    || req.context.extension?.content?.space?.key
+    || req.context.extension?.space?.key
+    || null;
+  const restoreIsOwner = !!sealRecord?.lockedBy && sealRecord.lockedBy === operatorAccountId;
+  if (!restoreIsOwner) {
+    const stewardOk = restoreRealmKey
+      ? await authorizeSteward(operatorAccountId, restoreRealmKey)
+      : false;
+    // No record, or not a steward of its space: fall back to the caller's own rights on the page
+    // the file would land on. That keeps the legitimate "restore a file I could have deleted"
+    // case working without handing out the app's site-wide reach.
+    if (!stewardOk && !(await canEditPage(operatorAccountId, pageId))) {
+      return { success: false, reason: "You do not have permission to restore this file" };
+    }
   }
 
   const currentVersion = probeData.version?.number;
@@ -1049,7 +1110,12 @@ export const purgeSealRecord = async (req) => {
   // global allowSealPurge toggle → ANY user could permanently purge ANY attachment by id (it46).
   // Require owner-or-steward UNCONDITIONALLY. realmKey falls back to the seal record's own spaceKey
   // when the calling surface lacks page/space context, so a legitimate steward isn't wrongly denied.
-  const effectiveRealmKey = realmKey || sealRecord?.spaceKey || null;
+  //
+  // SV-SEC-1 follow-on: the precedence here was inverted. It read the CALLER's context space
+  // first and fell back to the seal's, which is the confused deputy again — a steward of any one
+  // space could purge a seal belonging to another. The object's own space is authoritative;
+  // context is the fallback, which is what the paragraph above always meant.
+  const effectiveRealmKey = sealRecord?.spaceKey || realmKey || null;
   const isOwner = !!sealRecord?.lockedBy && sealRecord.lockedBy === operatorAccountId;
   if (!isOwner) {
     const hasStewardAccess = effectiveRealmKey
@@ -1057,6 +1123,12 @@ export const purgeSealRecord = async (req) => {
       : false;
     if (!hasStewardAccess) {
       return { success: false, reason: "Only the seal owner or a steward can purge" };
+    }
+    // With no seal record there is no trustworthy space for the TARGET at all, so the steward
+    // check above can only ever have been about somewhere else. Purge is permanent and
+    // unrecoverable, so in that case also require rights on the attachment itself.
+    if (!sealRecord && !(await canEditPage(operatorAccountId, attachmentId))) {
+      return { success: false, reason: "You do not have permission to purge this file" };
     }
   }
 

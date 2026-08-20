@@ -5,28 +5,10 @@ import { fetchPageLabels } from "../../infra/labels.js";
 
 import { authorizeSteward, isOperatorSteward, isOperatorSiteAdmin } from "../../shared/steward-checks.js";
 import { setWithTtl } from "../../shared/kvs-ttl.js";
+// audit B6 / SV-SEC-1: resolvePageSpaceKey moved to the shared module so the workflow capsule
+// uses the same copy instead of a second one that can drift apart from this one.
+import { canEditPage, canReadPage, mustVerify, resolvePageSpaceKey } from "../../shared/content-access.js";
 
-// audit B6: resolve a page's REAL space key from its id (never trust a caller-supplied
-// spaceKey for authorization — else a steward of space A could act on a page in space B).
-//
-// B11 (LIVE-VERIFIED BUG FIX): the old v1 read — `/wiki/rest/api/content/{id}?expand=space` —
-// now returns **HTTP 410 Gone** for the Forge app on EVERY page (the v1 Confluence content GET
-// endpoints were sunset for apps). That made this return null for all pages, so BOTH callers
-// (approvePageGate + enqueuePageValidation) denied EVERY steward ("Only a steward of this page's
-// space can…") — page-gate approval and manual AI review were silently broken in production.
-// Fix: resolve via the v2 API the rest of the app already uses — page → spaceId → space key.
-async function resolvePageSpaceKey(pageId) {
-  try {
-    const pres = await asApp().requestConfluence(route`/wiki/api/v2/pages/${pageId}`);
-    if (!pres.ok) return null;
-    const spaceId = (await pres.json())?.spaceId;
-    if (!spaceId) return null;
-    const sres = await asApp().requestConfluence(route`/wiki/api/v2/spaces/${spaceId}`);
-    if (!sres.ok) return null;
-    return (await sres.json())?.key || null;
-  } catch (_) { /* deny on failure */ }
-  return null;
-}
 import { readDocBody } from "../../infra/doc-surgery.js";
 import { evaluateRules } from "../../infra/rules-engine.js";
 import {
@@ -90,12 +72,25 @@ const storeConfig = async (req) => {
  * On-demand validation (no mutation). Used by the "Validate now" button.
  */
 const validatePageNow = async (req) => {
-  const pageId = req.payload?.pageId || req.context.extension?.content?.id;
-  const spaceKey =
-    req.payload?.spaceKey ||
-    req.context.extension?.content?.space?.key ||
-    req.context.extension?.space?.key;
+  const ctxPageId = req.context.extension?.content?.id;
+  const pageId = req.payload?.pageId || ctxPageId;
   if (!pageId) return { passed: true, violations: [], reason: "No page" };
+
+  // SV-SEC-1. The body is read via asApp() and the violations echo derived content back —
+  // verbatim heading text, exact character counts, which labels/macros/tables are present — so
+  // a payload-named page id was a readable window onto pages the caller cannot open.
+  if (mustVerify(req.payload?.pageId, ctxPageId)
+    && !(await canReadPage(req.context.accountId, pageId))) {
+    return { ok: false, passed: false, violations: [], failureReason: "Could not validate this page" };
+  }
+
+  // Which ruleset applies is a property of the page, not of the caller. Taking spaceKey from the
+  // payload let a caller run one space's rules against another space's page. Context first (it is
+  // authentic and free); otherwise resolve it from the page itself.
+  const spaceKey =
+    req.context.extension?.content?.space?.key ||
+    req.context.extension?.space?.key ||
+    await resolvePageSpaceKey(pageId);
 
   const rules = await resolveRules(spaceKey);
   if (!rules.length) return { passed: true, violations: [], noRules: true };
@@ -112,8 +107,14 @@ const validatePageNow = async (req) => {
 };
 
 const getValidationState = async (req) => {
-  const pageId = req.payload?.pageId || req.context.extension?.content?.id;
+  const ctxPageId = req.context.extension?.content?.id;
+  const pageId = req.payload?.pageId || ctxPageId;
   if (!pageId) return { state: null };
+  // SV-SEC-1: the state carries the page's outstanding violations and who approved its gate.
+  if (mustVerify(req.payload?.pageId, ctxPageId)
+    && !(await canReadPage(req.context.accountId, pageId))) {
+    return { state: null };
+  }
   const state = await readValidationState(pageId);
   return { state };
 };
@@ -222,10 +223,16 @@ export const getValidationJob = async (req) => {
 };
 
 export const getAiFindings = async (req) => {
-  const pageId = req.payload?.pageId || req.context.extension?.content?.id;
+  const ctxPageId = req.context.extension?.content?.id;
+  const pageId = req.payload?.pageId || ctxPageId;
   if (!pageId) return { findings: null, aiEnabled: false };
+  // SV-SEC-1: findings quote the page back — up to 25 verbatim excerpts of its body, originally
+  // read with asApp() — plus the title and the accountId of the steward who ran the review.
+  if (mustVerify(req.payload?.pageId, ctxPageId)
+    && !(await canReadPage(req.context.accountId, pageId))) {
+    return { findings: null, aiEnabled: false };
+  }
   const spaceKey =
-    req.payload?.spaceKey ||
     req.context.extension?.content?.space?.key ||
     req.context.extension?.space?.key ||
     null;
@@ -243,6 +250,12 @@ export const getAiFindings = async (req) => {
 const setAiFindingState = async (req) => {
   const { pageId, findingId: fid, state } = req.payload || {};
   if (!pageId || !fid) return { success: false, reason: "Missing params" };
+  // SV-SEC-1: this WRITES triage state (dismissed / false-positive) against a payload-named
+  // page, so ungated anyone could clear another page's AI findings. Dismissing a finding is a
+  // judgement about the page's content — the bar is being able to change the page.
+  if (!(await canEditPage(req.context.accountId, pageId))) {
+    return { success: false, reason: "You do not have permission to change this page's review" };
+  }
   const allowed = new Set(["open", "dismissed", "false-positive", "acknowledged"]);
   await setFindingState(pageId, fid, allowed.has(state) ? state : "open");
   return { success: true };
@@ -254,6 +267,11 @@ const getValidationAudit = async (req) => {
     req.context.extension?.content?.space?.key ||
     req.context.extension?.space?.key ||
     null;
+  // SV-SEC-1 (same class as its neighbours): AI spend is an administrative metric for a
+  // payload-named space, so it belongs to that space's stewards.
+  if (!spaceKey || !(await isOperatorSteward(req.context?.accountId, spaceKey))) {
+    return { monthlyTokens: null };
+  }
   const monthlyTokens = await getMonthlyTokenUsage(spaceKey);
   return { monthlyTokens };
 };

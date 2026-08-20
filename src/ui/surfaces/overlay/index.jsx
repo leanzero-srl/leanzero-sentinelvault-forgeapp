@@ -510,7 +510,7 @@ const OverlayArtifactCard = ({ artifact, visibleColumns, onSecure, onRelease, on
       {/* Expand panel: thumbnail + view link */}
       {expanded && (
         <div className="card-row card-row-expand">
-          {isImage && pageId && <ThumbnailPreview artifactId={artifact.id} contentId={pageId} mediaType={artifact.mediaType} fileSize={artifact.fileSize} cachedDataUri={cachedPreview} onCached={setCachedPreview} />}
+          {isImage && pageId && <ThumbnailPreview artifactId={artifact.id} contentId={pageId} cachedDataUri={cachedPreview} onCached={setCachedPreview} />}
           {(viewUrl || propertiesUrl) && (
             <div className="card-expand-links">
               {viewUrl && <a href={viewUrl} onClick={(e) => { e.preventDefault(); router.open(viewUrl); }} className="card-expand-link">View</a>}
