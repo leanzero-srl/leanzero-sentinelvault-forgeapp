@@ -1,6 +1,7 @@
 import { kvs, WhereConditions } from "@forge/kvs";
 import { resolveBulletinToggles } from "../../shared/bulletin-flags.js";
 import { setWithTtl } from "../../shared/kvs-ttl.js";
+import { canReadPage } from "../../shared/content-access.js";
 
 /**
  * Get bulletin toggle flags
@@ -27,6 +28,12 @@ export const recentDispatches = async (req) => {
 
     let events = recentNotifications.events || [];
     if (pageId) {
+      // SV-SEC-1: H1-F8 closed the no-pageId case (instance-wide feed) but left this one — a
+      // payload-named pageId still returned that page's whole event feed, names and accountIds
+      // included, to anyone. Filtering by a page you may not read is still reading it.
+      if (!(await canReadPage(requesterAccountId, pageId))) {
+        return { success: true, notifications: [] };
+      }
       events = events.filter((event) => event.pageId === pageId);
     } else {
       // Hunt H1-F8: without a pageId this would hand any authenticated user the
@@ -130,6 +137,12 @@ export const acknowledgeDispatch = async (req) => {
 export const watchArtifact = async (req) => {
   const { attachmentId } = req.payload;
   const { accountId } = req.context;
+
+  // SV-SEC-1: a watch subscribes the caller to unseal events for a payload-named attachment,
+  // so without this you could subscribe to activity on a file you cannot see.
+  if (!(await canReadPage(accountId, attachmentId))) {
+    return { success: false, error: "Not authorized" };
+  }
 
   try {
     const watchKey = `notify-request-${attachmentId}-${accountId}`;

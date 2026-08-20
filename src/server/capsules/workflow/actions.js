@@ -7,6 +7,7 @@ import { asApp, asUser, route } from "@forge/api";
 import { kvs, WhereConditions } from "@forge/kvs";
 
 import { authorizeSteward, isOperatorSiteAdmin } from "../../shared/steward-checks.js";
+import { canEditPage, canReadPage, mustVerify, resolvePageSpaceKey } from "../../shared/content-access.js";
 import {
   resolveWorkflowDef,
   loadWorkflowConfig,
@@ -74,6 +75,23 @@ const spaceKeyOf = (req) =>
   req.context?.extension?.space?.key ||
   null;
 
+const ctxPageIdOf = (req) =>
+  req.context?.extension?.content?.id ||
+  req.context?.extension?.content?.content?.id ||
+  null;
+
+/**
+ * SV-SEC-1. May this caller READ the page these actions are about?
+ *
+ * pageIdOf prefers req.payload.pageId, which is attacker-controlled, so every read-only
+ * workflow action would otherwise hand back another page's state, history or approver list.
+ * A context id is skipped: rendering the ribbon there already required read access.
+ */
+async function callerMayReadPage(req, pageId) {
+  if (!mustVerify(req.payload?.pageId, ctxPageIdOf(req))) return true;
+  return canReadPage(req.context?.accountId, pageId);
+}
+
 async function actorName() {
   try {
     const res = await asUser().requestConfluence(route`/wiki/rest/api/user/current`);
@@ -85,6 +103,7 @@ async function actorName() {
 const getWorkflow = async (req) => {
   const pageId = pageIdOf(req);
   if (!pageId) return { assigned: false, reason: "No page context" };
+  if (!(await callerMayReadPage(req, pageId))) return { assigned: false, reason: "No page context" };
   const result = await getPageWorkflow(pageId, spaceKeyOf(req));
   // Flag which available transitions require approval (enforce state + approvers
   // configured) so the ribbon can say "Request approval" instead of "Move to".
@@ -100,13 +119,24 @@ const getWorkflow = async (req) => {
 const getLog = async (req) => {
   const pageId = pageIdOf(req);
   if (!pageId) return { log: [] };
+  // The log names who moved the page between states and when — history about a page the
+  // caller may not be able to open.
+  if (!(await callerMayReadPage(req, pageId))) return { log: [] };
   return { log: await getWorkflowLog(pageId) };
 };
 
 const assignWorkflow = async (req) => {
   const pageId = pageIdOf(req);
-  const spaceKey = spaceKeyOf(req);
   const actorAccountId = req.context?.accountId;
+  if (!pageId) return { success: false, reason: "No page context" };
+  // SV-SEC-1 (confused deputy). The gate used to name spaceKeyOf(req) — the payload's spaceKey —
+  // while the mutation targeted the payload's pageId. Two different objects, so a steward of any
+  // one space could reset the workflow state of ANY page on the site, wiping the enforce baseline
+  // that powers approved-page protection. requestTransition below already states the doctrine:
+  // the authoritative space is the PAGE's own, never a caller-supplied one. Same here — and the
+  // resolved key is what gets stored, so the index row cannot be filed under a foreign space.
+  const spaceKey = (await readPageWorkflow(pageId))?.spaceKey || await resolvePageSpaceKey(pageId);
+  if (!spaceKey) return { success: false, reason: "Could not resolve this page's space" };
   // Assigning a workflow is a steward act in v1 (per-page-owner assignment arrives with #43).
   if (!(await authorizeSteward(actorAccountId, spaceKey))) {
     return { success: false, reason: "Only a space steward can assign a workflow" };
@@ -133,11 +163,29 @@ export const requestTransition = async (req) => {
   if (!current) return { success: false, reason: "Page has no workflow assigned" };
   const spaceKey = current.spaceKey || spaceKeyOf(req);
 
+  // SV-SEC-1. The space was already derived correctly (above), but nothing checked the CALLER
+  // against the page at all — so any logged-in user could move any workflow-assigned page to any
+  // non-enforce state. Moving a page's governance state is changing the page, so the bar is being
+  // able to change the page.
+  if (!(await canEditPage(actorAccountId, pageId))) {
+    return { success: false, reason: "You do not have permission to change this page's state" };
+  }
+
   // Entering an `enforce`-marked state (e.g. Approved): if the space has approvers
   // configured (#43), open a multi-approver approval instead of transitioning now;
   // otherwise fall back to the #42 steward gate.
   const def = await resolveWorkflowDef(spaceKey);
   const target = findState(def, toStateId);
+
+  // SV-SEC-1. Entering an enforce state is gated below; LEAVING one was not. Approved -> Draft
+  // clears the enforce baseline, which is what makes the app revert unapproved edits — so the
+  // cheapest way to switch protection off for a page was to walk it backwards out of Approved.
+  // The exit deserves the same authority as the entry.
+  const from = findState(def, current.stateId);
+  if (from?.enforce && !target?.enforce
+    && !(await authorizeSteward(actorAccountId, spaceKey))) {
+    return { success: false, reason: `Leaving "${from.name}" requires steward approval` };
+  }
 
   // #46: transition conditions run BEFORE the enforce/approval branch. Content conditions
   // are checked synchronously here; if they fail, the move is blocked with the reasons.
@@ -228,6 +276,8 @@ const decideApprovalAction = async (req) => {
 const getPageApprovals = async (req) => {
   const pageId = pageIdOf(req);
   if (!pageId) return { pending: false };
+  // Exposes the approver roster and each approver's decision for the named page.
+  if (!(await callerMayReadPage(req, pageId))) return { pending: false };
   return getPageApprovalStatus(pageId);
 };
 
@@ -313,6 +363,13 @@ const storeConfig = async (req) => {
 
 const getSpaceSettings = async (req) => {
   const spaceKey = spaceKeyOf(req);
+  if (!spaceKey) return { settings: {}, def: null };
+  // SV-SEC-1: spaceKey is payload-supplied and the settings carry the space's approver roster
+  // and enforcement configuration. Its only caller is the steward-only Workflow tab
+  // (WorkflowSettingsEditor.jsx:163), so the server now enforces what the UI assumed.
+  if (!(await authorizeSteward(req.context?.accountId, spaceKey))) {
+    return { settings: {}, def: null };
+  }
   const settings = await getSpaceWorkflowSettings(spaceKey);
   const def = await resolveWorkflowDef(spaceKey);
   return { settings, def }; // def.states power the read-only preview chips in the config UI
@@ -336,13 +393,14 @@ const bulkAssign = async (req) => {
   const settings = await getSpaceWorkflowSettings(spaceKey);
   if (!settings.enabled) return { success: false, reason: "Enable workflow for this space first" };
 
-  let spaceId = req.payload?.spaceId
-    || req.context?.extension?.space?.id
-    || req.context?.extension?.content?.space?.id;
-  if (!spaceId) {
-    const sres = await asApp().requestConfluence(route`/wiki/api/v2/spaces?keys=${spaceKey}`);
-    if (sres.ok) spaceId = (await sres.json())?.results?.[0]?.id;
-  }
+  // SV-SEC-1. The steward check above is about spaceKey, but the scan used to run against
+  // req.payload.spaceId — a different, unchecked object. A steward of any one space could
+  // therefore have the app enumerate another space's pages with its own identity and write app
+  // state and content properties onto them. Resolve the id from the key that was authorized,
+  // and from nothing else.
+  let spaceId = null;
+  const sres = await asApp().requestConfluence(route`/wiki/api/v2/spaces?keys=${spaceKey}`);
+  if (sres.ok) spaceId = (await sres.json())?.results?.[0]?.id;
   if (!spaceId) return { success: false, reason: "Could not resolve the space" };
 
   return bulkAssignPagesInSpace({ spaceKey, spaceId, cursor: req.payload?.cursor || null, actorAccountId: req.context?.accountId });
@@ -355,6 +413,12 @@ const LIST_CAP = 100;
 export const getWorkflowDashboard = async (req) => {
   const spaceKey = spaceKeyOf(req);
   if (!spaceKey) return { error: "No space context" };
+  // SV-SEC-1: naming any space in the payload returned that space's whole workflow inventory —
+  // up to 100 page titles and webui URLs fetched with the app's identity, per-state counts and
+  // review-overdue flags. It is the steward-only dashboard (WorkflowDashboard.jsx:22).
+  if (!(await authorizeSteward(req.context?.accountId, spaceKey))) {
+    return { error: "Only a space steward can view the workflow dashboard" };
+  }
   const prefix = `workflow-idx-${sanitize(spaceKey)}-`;
   const entries = [];
   let cursor = null;
