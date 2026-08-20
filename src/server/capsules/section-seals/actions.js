@@ -3,6 +3,7 @@ import { kvs, WhereConditions } from "@forge/kvs";
 
 import { BASELINE_HOLD_SPAN } from "../../shared/baseline.js";
 import { authorizeSteward } from "../../shared/steward-checks.js";
+import { canEditPage, canReadPage, mustVerify } from "../../shared/content-access.js";
 import { touchSealTimestamp } from "../sealing/logic.js";
 import { restampIfEnforced } from "../workflow/logic.js";
 import {
@@ -60,8 +61,16 @@ async function resolveHoldPeriod(realmKey, override) {
  * sections already exist on the page.
  */
 export const listPageHeadings = async (req) => {
-  const pageId = req.payload?.pageId || req.context.extension?.content?.id;
+  const ctxPageId = req.context.extension?.content?.id;
+  const pageId = req.payload?.pageId || ctxPageId;
   if (!pageId) return { headings: [], hasSealedSections: false };
+  // SV-SEC-1 (disclosure side): readDocBody runs as asApp(), so a payload-named page id
+  // would hand back the heading outline of ANY page on the site. A context id costs no
+  // call — rendering the module there already required read access.
+  if (mustVerify(req.payload?.pageId, ctxPageId)
+    && !(await canReadPage(req.context.accountId, pageId))) {
+    return { headings: [], hasSealedSections: false };
+  }
   try {
     const { adfDoc } = await readDocBody(pageId);
     const content = adfDoc.content || [];
@@ -86,9 +95,16 @@ export const listPageHeadings = async (req) => {
  * List sealed sections on a page (for the inline-panel "Sealed Sections" group).
  */
 export const enumerateSectionSeals = async (req) => {
-  const pageId = req.payload?.pageId || req.context.extension?.content?.id;
+  const ctxPageId = req.context.extension?.content?.id;
+  const pageId = req.payload?.pageId || ctxPageId;
   const operatorAccountId = req.context.accountId;
   if (!pageId) return { sections: [] };
+  // SV-SEC-1 (disclosure side): the records carry section titles plus who holds each seal,
+  // so a payload-named page id would enumerate that for any page on the site.
+  if (mustVerify(req.payload?.pageId, ctxPageId)
+    && !(await canReadPage(operatorAccountId, pageId))) {
+    return { sections: [] };
+  }
   try {
     const { results } = await kvs
       .query()
@@ -129,6 +145,24 @@ export const sealSection = async (req) => {
     req.context.extension?.content?.space?.id || req.context.extension?.space?.id;
 
   if (!pageId || headingIndex == null) return { success: false, reason: "Missing pageId/headingIndex" };
+
+  // SV-SEC-1 (fixed 2026-08-20; see SECURITY-TODO.md and CLAUDE.md). pageId above is attacker-controlled and everything below reads and REWRITES
+  // that page through asApp(), which carries site-wide write:confluence-content — so without
+  // this gate any logged-in user could restructure any page on the site. Confluence's own
+  // answer to "may this account edit this content" is the bar, i.e. exactly the bar the user
+  // would face doing it by hand.
+  //
+  // UNCONDITIONAL on purpose: this is a write, so the "trusted context id" shortcut the two
+  // read paths above use does not apply. Holding a page id in resolver context proves the
+  // caller can SEE the page, never that they may CHANGE it — a reader would sail through.
+  //
+  // unsealSection below gates on owner-or-steward. That asymmetry is intended (seal = anyone
+  // who may edit the page, unseal = only the owner or a steward); this side was simply absent,
+  // which is what made an unentitled seal both possible and, once made, unremovable by the
+  // people who actually own the page.
+  if (!(await canEditPage(operatorAccountId, pageId))) {
+    return { success: false, reason: "You do not have permission to edit this page" };
+  }
 
   const extensionKey = await resolveSealedSectionKey();
   if (!extensionKey) return { success: false, reason: "Could not resolve section macro key" };
