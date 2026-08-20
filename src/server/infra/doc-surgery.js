@@ -19,7 +19,7 @@ export function isPanelExtensionKey(extensionKey) {
  * Format: <appId>/<environmentId>/static/<module-key>
  * Uses getAppContext() which provides appAri and environmentAri at runtime.
  */
-function buildExtensionKeyFromContext() {
+export function deriveExtensionKeyFromContext() {
   try {
     const { appAri, environmentAri } = getAppContext();
     const appId = appAri?.appId;
@@ -48,7 +48,7 @@ export async function resolveExtensionKey() {
   if (cached) return cached;
 
   // Derive from app context
-  const key = buildExtensionKeyFromContext();
+  const key = deriveExtensionKeyFromContext();
   if (key) {
     await kvs.set("macro-extension-key", key);
     console.info(`[PANEL-AUTO] Derived extension key from app context: ${key}`);
