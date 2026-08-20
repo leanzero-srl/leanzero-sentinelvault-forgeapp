@@ -119,6 +119,10 @@ export const enumerateSectionSeals = async (req) => {
  * snapshot it, and record the seal. The app's own page write is ignored by the
  * page-content trigger's loop-guard.
  */
+// ⛔ SV-SEC-1 — OPEN SECURITY ITEM. DO NOT REMOVE UNTIL FIXED. See SECURITY-TODO.md.
+// This path does not verify the caller's entitlement to the target page before performing a
+// privileged write. unsealSection (below) DOES check entitlement; that asymmetry is the defect.
+// Not fixed until the NEGATIVE case passes: an unentitled caller is refused. Raised 2026-08-20.
 export const sealSection = async (req) => {
   const { pageId: payloadPageId, headingIndex, headingText, lockDuration } = req.payload || {};
   const operatorAccountId = req.context.accountId;
