@@ -14,6 +14,18 @@ const canWriteGlobal = async (accountId) => !!accountId && (await isOperatorSite
 const canWriteSpace = async (accountId, key) =>
   !!accountId && ((await isOperatorSteward(accountId, key)) || (await isOperatorSiteAdmin(accountId)));
 
+// SV-SEC-1 (read side). A1 gated the WRITES; the reads still returned a whole space policy for
+// any spaceKey named in the payload — including `adminUsers` / `adminGroups`, i.e. exactly who
+// administers that space. The operational fields (activation, timeouts, macro placement) are
+// what the console actually needs and are harmless, so redact only the roster, and only for a
+// caller who is not a steward there. That keeps every legitimate read working.
+async function redactRosterUnlessSteward(ruleset, accountId, key) {
+  if (!ruleset || typeof ruleset !== "object") return ruleset;
+  if (!ruleset.adminUsers?.length && !ruleset.adminGroups?.length) return ruleset;
+  if (key && accountId && (await isOperatorSteward(accountId, key))) return ruleset;
+  return { ...ruleset, adminUsers: [], adminGroups: [] };
+}
+
 /**
  * Get admin settings (unified function for global and realm)
  */
@@ -47,7 +59,8 @@ const loadPolicy = async (req) => {
     );
   } else if (scope === "space" && key) {
     const sanitizedRealmKey = key.replace(/[^a-zA-Z0-9:._\s-#]/g, "_");
-    const ruleset = await kvs.get(`admin-settings-space-${sanitizedRealmKey}`);
+    const stored = await kvs.get(`admin-settings-space-${sanitizedRealmKey}`);
+    const ruleset = await redactRosterUnlessSteward(stored, req.context?.accountId, key);
     return (
       ruleset || {
         activation: "use-system-default",
@@ -188,7 +201,9 @@ const storeGlobalRuleset = async (req) => {
 const loadRealmRuleset = async (req) => {
   const { spaceKey } = req.payload;
   const sanitizedRealmKey = spaceKey.replace(/[^a-zA-Z0-9:._\s-#]/g, "_");
-  const ruleset = await kvs.get(`admin-settings-space-${sanitizedRealmKey}`);
+  const stored = await kvs.get(`admin-settings-space-${sanitizedRealmKey}`);
+  // SV-SEC-1: same redaction as loadPolicy — a stored ruleset carries the steward roster.
+  const ruleset = await redactRosterUnlessSteward(stored, req.context?.accountId, spaceKey);
   return (
     ruleset || {
       autoUnlockTimeoutHours: null,
