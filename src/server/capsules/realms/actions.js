@@ -52,13 +52,52 @@ const identifyRealm = async (req) => {
 };
 
 /**
+ * SV-SEC-1 helper. Resolve a space's id from its KEY, server-side.
+ *
+ * The realm console sends both key and id in the payload, and the steward gate can only ever
+ * be about the KEY — so trusting the accompanying id would let a steward of one space name
+ * another space's id and read its index. The key is what was authorized; the id must be
+ * derived from it, not accepted alongside it.
+ */
+async function resolveRealmIdFromKey(spaceKey) {
+  try {
+    const res = await asApp().requestConfluence(
+      route`/wiki/api/v2/spaces?keys=${spaceKey}`,
+      { headers: { Accept: "application/json" } },
+    );
+    if (!res.ok) return null;
+    const body = await res.json();
+    return body?.results?.[0]?.id ? String(body.results[0].id) : null;
+  } catch (e) {
+    console.warn(`[REALM] Could not resolve space id for ${spaceKey}:`, e?.message);
+    return null;
+  }
+}
+
+/**
  * Get sealed artifacts for a realm using KVS secondary index.
  */
 const enumerateRealmSeals = async (req) => {
-  const { spaceId, cursor = null, limit = 50 } = req.payload;
+  const { spaceKey, cursor = null, limit = 50 } = req.payload;
+  const operatorAccountId = req.context.accountId;
 
+  if (!spaceKey) {
+    throw new Error("Space key is required");
+  }
+
+  // SV-SEC-1. This took spaceId straight off the payload and never looked at the caller at all,
+  // so any logged-in user could list every sealed file of any space — filenames, page titles and
+  // ids, download links, and the name and accountId of whoever sealed each one, all assembled by
+  // asApp() crawls. The realm console only ever shows this tab to a steward (index.jsx:1647), so
+  // the server now enforces what the UI already assumed.
+  if (!(await isOperatorSteward(operatorAccountId, spaceKey))) {
+    return { attachments: [], hasMore: false, nextCursor: null };
+  }
+
+  // Derive the id from the key that was just authorized; the payload's own spaceId is ignored.
+  const spaceId = await resolveRealmIdFromKey(spaceKey);
   if (!spaceId) {
-    throw new Error("Space ID is required");
+    return { attachments: [], hasMore: false, nextCursor: null };
   }
 
   try {
@@ -143,10 +182,23 @@ const enumerateRealmSeals = async (req) => {
  * Trigger a background scan to rebuild the realm-seal index.
  */
 const launchRealmAudit = async (req) => {
-  const { spaceKey, spaceId } = req.payload;
+  const { spaceKey } = req.payload;
 
-  if (!spaceKey || !spaceId) {
-    throw new Error("Space key and space ID are required");
+  if (!spaceKey) {
+    throw new Error("Space key is required");
+  }
+
+  // SV-SEC-1. Ungated, this made the app crawl any named space with its own site-wide identity
+  // and index what it found — and clobber that space's scan-job record while doing it. It is
+  // the steward-only "Reconstruct index" button (index.jsx:998); gate it accordingly, and derive
+  // the id from the authorized key so the crawl and the job record cannot be aimed elsewhere.
+  if (!(await isOperatorSteward(req.context.accountId, spaceKey))) {
+    return { status: "denied" };
+  }
+
+  const spaceId = await resolveRealmIdFromKey(spaceKey);
+  if (!spaceId) {
+    return { status: "denied" };
   }
 
   // Check if a scan is already in progress
@@ -186,13 +238,20 @@ const launchRealmAudit = async (req) => {
  * Get the status of a background realm scan job.
  */
 const checkAuditStatus = async (req) => {
-  const { spaceId } = req.payload;
+  const { spaceId, spaceKey } = req.payload;
 
   if (!spaceId) {
     throw new Error("Space ID is required");
   }
 
+  // SV-SEC-1 (minor disclosure): the job record names the space and its scan statistics. The
+  // caller may only see it for a space they steward. spaceKey is what the console has to hand;
+  // when it is absent the record's own spaceKey is the thing to authorize against.
   const status = await kvs.get(`space-scan-status-${spaceId}`);
+  const realmKey = spaceKey || status?.spaceKey || null;
+  if (!realmKey || !(await isOperatorSteward(req.context.accountId, realmKey))) {
+    return { status: "none" };
+  }
   return status || { status: "none" };
 };
 
@@ -208,8 +267,9 @@ const stewardUnseal = async (req) => {
     return { success: false, reason: "Attachment is not locked" };
   }
 
-  // Resolve realmId from seal data, payload, or settings
-  let resolvedRealmId = spaceId || sealRecord.spaceId || null;
+  // SV-SEC-1: the seal's OWN space id first. This used to prefer the payload's, so a caller
+  // could steer which realm-index key the expired-seal branch below deletes.
+  let resolvedRealmId = sealRecord.spaceId || spaceId || null;
   if (!resolvedRealmId && spaceKey) {
     try {
       const sanitizedRealmKey = spaceKey.replace(/[^a-zA-Z0-9:._\s-#]/g, "_");
@@ -255,10 +315,15 @@ const stewardUnseal = async (req) => {
     }
   }
 
-  const hasStewardAccess = await authorizeSteward(
-    operatorAccountId,
-    spaceKey,
-  );
+  // SV-SEC-1 (confused deputy). The gate named the PAYLOAD's spaceKey while the action tears
+  // down the seal named by the payload's attachmentId — two different objects. Administering any
+  // single space therefore granted force-unseal over every sealed file on the site. Authorize
+  // against the space the SEAL is in; the payload's key is only a fallback for records that
+  // never recorded one.
+  const effectiveRealmKey = sealRecord.spaceKey || spaceKey || null;
+  const hasStewardAccess = effectiveRealmKey
+    ? await authorizeSteward(operatorAccountId, effectiveRealmKey)
+    : false;
   if (!hasStewardAccess) {
     return {
       success: false,

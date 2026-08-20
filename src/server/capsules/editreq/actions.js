@@ -10,6 +10,7 @@ import {
   mailEditDenied,
 } from "../../infra/notice-composer.js";
 import { getActiveEditGrant, getActiveSectionEditGrant } from "./logic.js";
+import { canReadPage } from "../../shared/content-access.js";
 
 const COOLDOWN_MS = 48 * 60 * 60 * 1000; // 48h after a denial before re-requesting
 
@@ -48,7 +49,18 @@ const requestEditAccess = async (req) => {
 
   const seal = await kvs.get(`protection-${attachmentId}`);
   if (!seal || !seal.lockedBy) return { success: false, reason: "This file is not sealed" };
+  // The owner check runs FIRST deliberately: it is self-knowledge (you are this record's
+  // lockedBy), so it discloses nothing, and the owner gets the accurate message rather than the
+  // deliberately-vague one below.
   if (seal.lockedBy === accountId) return { success: false, reason: "You own this seal" };
+  // SV-SEC-1. attachmentId is payload-supplied and every sibling in this file gates through
+  // loadSealForOwnerAction — this one did not. Unchecked it is both an oracle ("is file X
+  // sealed?") and a way to have the app post an @mention comment, as the app, on a page the
+  // caller cannot open. Asking for access to something presupposes being able to see it. The
+  // reason string deliberately matches the not-sealed one so the refusal itself says nothing.
+  if (seal.contentId && !(await canReadPage(accountId, seal.contentId))) {
+    return { success: false, reason: "This file is not sealed" };
+  }
 
   if (await getActiveEditGrant(attachmentId, accountId)) {
     return { success: false, reason: "You already have edit access" };
@@ -301,7 +313,13 @@ export const requestSectionEdit = async (req) => {
 
   const seal = await kvs.get(`section-protection-${sectionId}`);
   if (!seal || !seal.lockedBy) return { success: false, reason: "This section is not sealed" };
+  // Owner first — self-knowledge, no disclosure, accurate message (see requestEditAccess).
   if (seal.lockedBy === accountId) return { success: false, reason: "You own this section" };
+  // SV-SEC-1, mirror of requestEditAccess: same oracle, and the same app-authored @mention
+  // comment carrying the caller's text onto a page they may have no access to.
+  if (seal.pageId && !(await canReadPage(accountId, seal.pageId))) {
+    return { success: false, reason: "This section is not sealed" };
+  }
   if (await getActiveSectionEditGrant(sectionId, accountId)) return { success: false, reason: "You already have edit access" };
 
   const existing = await kvs.get(`section-edit-request-${sectionId}-${accountId}`);
