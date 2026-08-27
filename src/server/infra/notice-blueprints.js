@@ -53,6 +53,20 @@ const VERB_OUTCOMES = {
   "layout-changed": "The sealed presentation has been restored.",
 };
 
+// F2 (owner feedback 2026-08-27): "without a specific notification for me or for the owner;
+// it is the same for both parties". The notice used to be a single owner-addressed sentence
+// that merely MENTIONED the other person, so the editor was notified by a message written
+// about them rather than to them, and neither party was told what it meant for THEM. Each
+// side now gets its own addressed paragraph — one comment, two audiences.
+const VERB_EDITOR_LINES = {
+  edit: "your change was undone because this file is sealed.",
+  delete: "your deletion was undone — the file is sealed, and Sentinel Vault pulled it back out of the trash.",
+  "content-removal": "your removal was undone because this file is sealed.",
+  "permanently-deleted": "the file you deleted was sealed. It could not be recovered.",
+  "revert-failed": "this file is sealed and your change should not have applied.",
+  "layout-changed": "your presentation change was undone — this file's on-page layout is sealed.",
+};
+
 export function composeViolationLayout({
   ownerAccountId,
   editorAccountId,
@@ -64,21 +78,28 @@ export function composeViolationLayout({
   const verbPhrase = VERB_PHRASES[actionVerb] || VERB_PHRASES.edit;
   const outcome = VERB_OUTCOMES[actionVerb] || "The change has been reverted.";
 
-  // Trust: tell the editor their work isn't lost and where to recover it.
-  const recovery = historyUrl
-    ? `<p>If that change was intentional, your version is preserved in the page history — ${`<a href="${escapeXml(historyUrl)}">view previous versions</a>`} to recover it, or request access.</p>`
-    : "";
-
   // Vet F4: with NO editor (a purge discovered by probe, not witnessed as an event), state the
   // fact without accusing whoever happened to touch the page.
-  const attemptLine = editorAccountId
-    ? `${mention(editorAccountId)} attempted to ${escapeXml(verbPhrase)} <strong>"${escapeXml(artifactName)}"</strong>.`
-    : `your sealed file <strong>"${escapeXml(artifactName)}"</strong> ${actionVerb === "permanently-deleted" ? "was permanently deleted" : "was modified"}.`;
+  const ownerLine = editorAccountId
+    ? `${mention(ownerAccountId)} — ${mention(editorAccountId)} attempted to ${escapeXml(verbPhrase)} your sealed file <strong>"${escapeXml(artifactName)}"</strong>. ${escapeXml(outcome)}`
+    : `${mention(ownerAccountId)} — your sealed file <strong>"${escapeXml(artifactName)}"</strong> ${actionVerb === "permanently-deleted" ? "was permanently deleted" : "was modified"}. ${escapeXml(outcome)}`;
+
+  // The editor's own paragraph: what happened to THEIR change, and where their work went.
+  // Skipped when the editor IS the owner or is unknown — a comment addressed to one person
+  // twice reads worse than one addressed once.
+  let editorPara = "";
+  if (editorAccountId && editorAccountId !== ownerAccountId) {
+    const editorLine = VERB_EDITOR_LINES[actionVerb] || VERB_EDITOR_LINES.edit;
+    const recovery = historyUrl
+      ? ` If that change was intentional, your version is preserved in the page history — <a href="${escapeXml(historyUrl)}">view previous versions</a> to recover it.`
+      : "";
+    editorPara = `<p>${mention(editorAccountId)} — ${escapeXml(editorLine)}${recovery} To change this file, ask ${mention(ownerAccountId)} for edit access from the Sentinel Vault panel.</p>`;
+  }
 
   const storageBody = `
 <p>${HEADER} — <strong>Seal Violation</strong></p>
-<p>${mention(ownerAccountId)} — ${attemptLine} ${escapeXml(outcome)}</p>
-${recovery}
+<p>${ownerLine}</p>
+${editorPara}
 ${ctaLink(pageUrl, "Open the page")}
 `.trim();
 
@@ -157,8 +178,64 @@ ${ctaLink(pageUrl, "Open the page")}
   };
 }
 
-// Backwards-compatible alias.
-export const composeAutoReleaseLayout = composeExpiryLayout;
+/**
+ * Lapse notice N of N (F5 — owner feedback 2026-08-27).
+ *
+ * The old expiry notice fired ONCE and said "please release the seal when you are finished",
+ * which is unanswerable when the owner has left the company — the file then stayed listed as
+ * sealed forever. Every notice now states the deadline and what happens at it, so the outcome
+ * is never a surprise.
+ */
+export function composeLapseNoticeLayout({
+  ownerAccountId,
+  artifactName,
+  pageTitle,
+  pageUrl,
+  expiryDate,
+  noticeNumber = 1,
+  noticeLimit = 3,
+  releaseDate,
+}) {
+  const remaining = Math.max(0, noticeLimit - noticeNumber);
+  const deadline = releaseDate
+    ? `on <strong>${escapeXml(releaseDate)}</strong>`
+    : `after ${remaining} more reminder${remaining === 1 ? "" : "s"}`;
+
+  const storageBody = `
+<p>${HEADER} — <strong>Seal Overdue</strong> (reminder ${noticeNumber} of ${noticeLimit})</p>
+<p>${mention(ownerAccountId)} — your seal on <strong>"${escapeXml(artifactName)}"</strong> (<em>${escapeXml(pageTitle)}</em>) lapsed${expiryDate ? ` on <strong>${escapeXml(expiryDate)}</strong>` : ""} and is no longer protecting the file.</p>
+<p>Extend it from the Sentinel Vault panel to keep it, or release it if you are finished. If nothing changes, Sentinel Vault will release it automatically ${deadline} and the file becomes available to everyone.</p>
+${ctaLink(pageUrl, "Open the page")}
+`.trim();
+
+  return {
+    summary: `Seal overdue on "${artifactName}" (${noticeNumber}/${noticeLimit})`,
+    storageBody,
+  };
+}
+
+/**
+ * The seal was released automatically after the reminders ran out (F5).
+ */
+export function composeAutoReleaseLayout({
+  ownerAccountId,
+  artifactName,
+  pageTitle,
+  pageUrl,
+  noticeLimit = 3,
+}) {
+  const storageBody = `
+<p>${HEADER} — <strong>Seal Released</strong></p>
+<p>${mention(ownerAccountId)} — the lapsed seal on <strong>"${escapeXml(artifactName)}"</strong> (<em>${escapeXml(pageTitle)}</em>) has been released automatically after ${noticeLimit} reminder${noticeLimit === 1 ? "" : "s"} with no extension.</p>
+<p>The file is available to everyone again. Seal it again from the Sentinel Vault panel if you still need exclusive access.</p>
+${ctaLink(pageUrl, "Open the page")}
+`.trim();
+
+  return {
+    summary: `Seal released on "${artifactName}"`,
+    storageBody,
+  };
+}
 
 /**
  * Periodic reminder: artifact has been sealed for many days.
