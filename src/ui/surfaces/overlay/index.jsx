@@ -259,7 +259,7 @@ const SortPicker = ({ orderField, orderDir, onSort }) => {
   );
 };
 
-const OverlayArtifactCard = ({ artifact, visibleColumns, onSecure, onRelease, onWatch, onRestore, onPurge, onDelete, isWatching, busyAction, formatRemainingTime, formatFileSize, siteUrl, spaceKey, pageId, pageLocation }) => {
+const OverlayArtifactCard = ({ artifact, visibleColumns, onSecure, onRelease, onExtend, onWatch, onRestore, onPurge, onDelete, isWatching, busyAction, formatRemainingTime, formatFileSize, siteUrl, spaceKey, pageId, pageLocation }) => {
   const [pendingConfirm, setPendingConfirm] = useState(null); // "delete" | "purge" | null
   const [expanded, setExpanded] = useState(false);
   const [cachedPreview, setCachedPreview] = useState(null);
@@ -322,9 +322,15 @@ const OverlayArtifactCard = ({ artifact, visibleColumns, onSecure, onRelease, on
       );
     } else if (isSealedByMe) {
       primaryAction = (
-        <button className={`action-btn unlock ${busyAction === "unseal" ? "is-busy" : ""}`} onClick={() => onRelease(artifact.id)} disabled={busyAction && busyAction !== "unseal"} title="Release your seal and allow others to modify this file">
-          {busyAction === "unseal" ? <>Unsealing<span className="btn-busy-bar" /></> : "Unseal"}
-        </button>
+        <>
+          {/* F4: a way to renew the retention period without unseal-and-seal-again. */}
+          <button className={`action-btn extend ${busyAction === "extend" ? "is-busy" : ""}`} onClick={() => onExtend(artifact.id)} disabled={busyAction && busyAction !== "extend"} title="Give this seal a fresh retention period">
+            {busyAction === "extend" ? <>Extending<span className="btn-busy-bar" /></> : "Extend"}
+          </button>
+          <button className={`action-btn unlock ${busyAction === "unseal" ? "is-busy" : ""}`} onClick={() => onRelease(artifact.id)} disabled={busyAction && busyAction !== "unseal"} title="Release your seal and allow others to modify this file">
+            {busyAction === "unseal" ? <>Unsealing<span className="btn-busy-bar" /></> : "Unseal"}
+          </button>
+        </>
       );
     }
   }
@@ -444,7 +450,21 @@ const OverlayArtifactCard = ({ artifact, visibleColumns, onSecure, onRelease, on
               <path d="M3 5l3 3 3-3" stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinecap="round" />
             </svg>
           </button>
-          <ArtifactTypeIcon mediaType={artifact.mediaType} />
+          {/* F3 (owner feedback 2026-08-27): image-20230720-212157.png tells you nothing about
+              which image it is. Show the image; clicking it opens the file. */}
+          {isImage && pageId ? (
+            <ThumbnailPreview
+              artifactId={artifact.id}
+              contentId={pageId}
+              variant="thumb"
+              alt={artifact.title}
+              cachedDataUri={cachedPreview}
+              onCached={setCachedPreview}
+              onClick={viewUrl ? () => router.open(viewUrl) : undefined}
+            />
+          ) : (
+            <ArtifactTypeIcon mediaType={artifact.mediaType} />
+          )}
           {downloadHref ? (
             <a className="card-filename-text card-filename-link" href={downloadHref} onClick={(e) => { e.preventDefault(); router.open(downloadHref); }} title={`Download ${artifact.title}`}>
               {artifact.title}
@@ -510,7 +530,7 @@ const OverlayArtifactCard = ({ artifact, visibleColumns, onSecure, onRelease, on
       {/* Expand panel: thumbnail + view link */}
       {expanded && (
         <div className="card-row card-row-expand">
-          {isImage && pageId && <ThumbnailPreview artifactId={artifact.id} contentId={pageId} cachedDataUri={cachedPreview} onCached={setCachedPreview} />}
+          {isImage && pageId && <ThumbnailPreview artifactId={artifact.id} contentId={pageId} alt={artifact.title} cachedDataUri={cachedPreview} onCached={setCachedPreview} />}
           {(viewUrl || propertiesUrl) && (
             <div className="card-expand-links">
               {viewUrl && <a href={viewUrl} onClick={(e) => { e.preventDefault(); router.open(viewUrl); }} className="card-expand-link">View</a>}
@@ -788,6 +808,23 @@ const ArtifactControlPanel = () => {
     } catch (err) {
       console.error("Failed to unseal artifact:", err);
       setError("Could not unseal attachment.");
+    } finally {
+      setBusyAction(null);
+    }
+  };
+
+  // F4: renew the retention period in place — the only previous exit from Overdue was
+  // unseal-and-seal-again, which drops the labels, the comment and every edit grant.
+  const onExtendSeal = async (artifactId) => {
+    setBusyAction({ id: artifactId, action: "extend" });
+    setError(null);
+    try {
+      const r = await invoke("extend-seal", { attachmentId: artifactId });
+      if (r?.success) await retrieveFileData();
+      else setError(r?.reason || "Could not extend this seal.");
+    } catch (err) {
+      console.error("Failed to extend seal:", err);
+      setError("Could not extend this seal.");
     } finally {
       setBusyAction(null);
     }
@@ -1211,6 +1248,7 @@ const ArtifactControlPanel = () => {
                                 visibleColumns={visibleColumns}
                                 onSecure={onSecureFile}
                                 onRelease={onReleaseFile}
+                                onExtend={onExtendSeal}
                                 onWatch={onWatchToggle}
                                 onRestore={onRestoreFile}
                                 onPurge={onPurgeFile}
@@ -1242,6 +1280,7 @@ const ArtifactControlPanel = () => {
                                 visibleColumns={visibleColumns}
                                 onSecure={onSecureFile}
                                 onRelease={onReleaseFile}
+                                onExtend={onExtendSeal}
                                 onWatch={onWatchToggle}
                                 onRestore={onRestoreFile}
                                 onPurge={onPurgeFile}
@@ -1273,6 +1312,7 @@ const ArtifactControlPanel = () => {
                                 visibleColumns={visibleColumns}
                                 onSecure={onSecureFile}
                                 onRelease={onReleaseFile}
+                                onExtend={onExtendSeal}
                                 onWatch={onWatchToggle}
                                 onRestore={onRestoreFile}
                                 onPurge={onPurgeFile}

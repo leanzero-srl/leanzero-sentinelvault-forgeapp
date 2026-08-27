@@ -140,7 +140,7 @@ const checkEditRequest = async (req) => {
 /**
  * List pending requests for one attachment (owner/steward only).
  */
-const listEditRequests = async (req) => {
+export const listEditRequests = async (req) => {
   const { attachmentId } = req.payload || {};
   const accountId = req.context.accountId;
   if (!attachmentId) return { requests: [] };
@@ -186,7 +186,7 @@ const listMyEditRequests = async (req) => {
 /**
  * Approve a request → write an edit grant scoped to the seal's lifetime.
  */
-const approveEditRequest = async (req) => {
+export const approveEditRequest = async (req) => {
   const { attachmentId, requesterAccountId } = req.payload || {};
   const accountId = req.context.accountId;
   if (!attachmentId || !requesterAccountId) return { success: false, reason: "Missing params" };
@@ -240,7 +240,7 @@ const approveEditRequest = async (req) => {
 /**
  * Deny a request → mark denied (48h cooldown before retry).
  */
-const denyEditRequest = async (req) => {
+export const denyEditRequest = async (req) => {
   const { attachmentId, requesterAccountId } = req.payload || {};
   const accountId = req.context.accountId;
   if (!attachmentId || !requesterAccountId) return { success: false, reason: "Missing params" };

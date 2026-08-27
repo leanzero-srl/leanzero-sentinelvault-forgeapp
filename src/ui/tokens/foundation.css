@@ -62,6 +62,12 @@
   --sv-interactive-danger-hover: #B91C1C;
   --sv-interactive-danger-active: #991B1B;
 
+  /* ── Interactive: Extend (emerald) ───────────────── */
+  /* F4: renewing a seal is its own action and needs its own hue — the card already spends
+     cyan on Seal, red on Unseal, violet on Request Edit and amber on Requested. */
+  --sv-interactive-extend: #059669;
+  --sv-interactive-extend-hover: #047857;
+
   /* ── Scrollbar ──────────────────────────────────── */
   --sv-scrollbar-track: #F1F5F9;
   --sv-scrollbar-thumb: #CBD5E1;
@@ -153,6 +159,9 @@ html[data-color-mode="dark"] {
   --sv-interactive-danger: #F87171;
   --sv-interactive-danger-hover: #FCA5A5;
   --sv-interactive-danger-active: #FECACA;
+
+  --sv-interactive-extend: #10B981;
+  --sv-interactive-extend-hover: #34D399;
 
   --sv-scrollbar-track: #1E293B;
   --sv-scrollbar-thumb: #475569;

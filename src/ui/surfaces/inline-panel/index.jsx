@@ -345,11 +345,20 @@ const ArtifactCard = ({ att, onRefresh, columns, siteUrl, spaceKey, pageId, page
 
   const resolveEditReq = async (requesterAccountId, action) => {
     setReqBusy(`${requesterAccountId}:${action}`);
+    setActionError(null);
     try {
       const r = await invoke(action === "approve" ? "approve-edit-request" : "deny-edit-request", { attachmentId: att.id, requesterAccountId });
-      if (r?.success) setMyRequests((p) => (p || []).filter((x) => x.requesterAccountId !== requesterAccountId));
+      if (r?.success) {
+        setMyRequests((p) => (p || []).filter((x) => x.requesterAccountId !== requesterAccountId));
+      } else {
+        // F1: this used to be a bare `if (r?.success)` with no else, so a refusal left the row
+        // sitting there looking like a dead button — which is exactly what an overdue seal
+        // produced, every time, on approve but never on deny. A refusal must say so.
+        setActionError(r?.reason || (action === "approve" ? "Could not grant edit access" : "Could not decline the request"));
+      }
     } catch (e) {
       console.error("Resolve edit request failed:", e);
+      setActionError("Could not reach Sentinel Vault. Try again.");
     } finally {
       setReqBusy(null);
     }
@@ -387,11 +396,31 @@ const ArtifactCard = ({ att, onRefresh, columns, siteUrl, spaceKey, pageId, page
 
   const handleUnseal = async () => {
     setActionBusy("unseal");
+    setActionError(null);
     try {
-      await invoke("unseal-artifact", { attachmentId: att.id });
-      onRefresh();
+      const r = await invoke("unseal-artifact", { attachmentId: att.id });
+      if (r && r.success === false) setActionError(r.reason || "Could not unseal this file");
+      else onRefresh();
     } catch (e) {
       console.error("Unseal failed:", e);
+      setActionError("Could not reach Sentinel Vault. Try again.");
+    } finally {
+      setActionBusy(null);
+    }
+  };
+
+  // F4: renew the retention period in place. Before this the only exit from Overdue was
+  // unseal-and-seal-again, which drops the labels, the comment and every edit grant.
+  const handleExtend = async () => {
+    setActionBusy("extend");
+    setActionError(null);
+    try {
+      const r = await invoke("extend-seal", { attachmentId: att.id });
+      if (r?.success) onRefresh();
+      else setActionError(r?.reason || "Could not extend this seal");
+    } catch (e) {
+      console.error("Extend seal failed:", e);
+      setActionError("Could not reach Sentinel Vault. Try again.");
     } finally {
       setActionBusy(null);
     }
@@ -544,9 +573,17 @@ const ArtifactCard = ({ att, onRefresh, columns, siteUrl, spaceKey, pageId, page
       );
     } else if (canUnseal) {
       primaryActionBtn = (
-        <button className={`action-btn unlock ${actionBusy === "unseal" ? "is-busy" : ""}`} onClick={handleUnseal} disabled={actionBusy && actionBusy !== "unseal"} title="Release your seal and allow others to modify this file">
-          {actionBusy === "unseal" ? <>Unsealing<span className="btn-busy-bar" /></> : "Unseal"}
-        </button>
+        <>
+          {/* F4: "a button to extend the retention period next to overdue - unseal". Offered on
+              every seal the caller holds, not only lapsed ones — renewing before the deadline is
+              the behaviour the reminders ask for. */}
+          <button className={`action-btn extend ${actionBusy === "extend" ? "is-busy" : ""}`} onClick={handleExtend} disabled={actionBusy && actionBusy !== "extend"} title="Give this seal a fresh retention period">
+            {actionBusy === "extend" ? <>Extending<span className="btn-busy-bar" /></> : "Extend"}
+          </button>
+          <button className={`action-btn unlock ${actionBusy === "unseal" ? "is-busy" : ""}`} onClick={handleUnseal} disabled={actionBusy && actionBusy !== "unseal"} title="Release your seal and allow others to modify this file">
+            {actionBusy === "unseal" ? <>Unsealing<span className="btn-busy-bar" /></> : "Unseal"}
+          </button>
+        </>
       );
     }
   }
@@ -658,7 +695,22 @@ const ArtifactCard = ({ att, onRefresh, columns, siteUrl, spaceKey, pageId, page
               <path d="M3 5l3 3 3-3" stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinecap="round" />
             </svg>
           </button>
-          <ArtifactTypeIcon mediaType={att.mediaType} />
+          {/* F3: a filename like image-20230720-212157.png says nothing about which image it is.
+              Images get their actual thumbnail here instead of the generic document glyph, and
+              clicking it opens the file. Non-images keep the glyph. */}
+          {isImage && pageId ? (
+            <ThumbnailPreview
+              artifactId={att.id}
+              contentId={pageId}
+              variant="thumb"
+              alt={att.title}
+              cachedDataUri={cachedPreview}
+              onCached={setCachedPreview}
+              onClick={viewUrl ? () => router.open(viewUrl) : undefined}
+            />
+          ) : (
+            <ArtifactTypeIcon mediaType={att.mediaType} />
+          )}
           {downloadHref ? (
             <a className="card-filename-text card-filename-link" href={downloadHref} onClick={(e) => { e.preventDefault(); router.open(downloadHref); }} title={`Download ${att.title}`}>
               {att.title}
@@ -786,7 +838,7 @@ const ArtifactCard = ({ att, onRefresh, columns, siteUrl, spaceKey, pageId, page
       {/* Expand panel: thumbnail + view link */}
       {expanded && (
         <div className="card-row card-row-expand">
-          {isImage && <ThumbnailPreview artifactId={att.id} contentId={pageId} cachedDataUri={cachedPreview} onCached={setCachedPreview} />}
+          {isImage && <ThumbnailPreview artifactId={att.id} contentId={pageId} alt={att.title} cachedDataUri={cachedPreview} onCached={setCachedPreview} />}
           {(viewUrl || propertiesUrl) && (
             <div className="card-expand-links">
               {viewUrl && <a href={viewUrl} onClick={(e) => { e.preventDefault(); router.open(viewUrl); }} className="card-expand-link">View</a>}
@@ -1228,6 +1280,7 @@ const SealedSectionsGroup = ({ pageId, onChanged }) => {
         </button>
         <span className="sv-card-section-title">Sealed Sections</span>
         {sections.length > 0 && <span className="sv-card-section-count">{sections.length}</span>}
+        <span className="sv-card-section-note">Locks a heading&rsquo;s content on the page — no files involved</span>
         <button
           className="action-btn lock"
           style={{ marginLeft: "auto" }}
@@ -1597,17 +1650,30 @@ const ArtifactGridView = () => {
         </div>
       )}
 
+      {/* Upload zone — F6 (owner feedback 2026-08-27): "the Drop files here or click to select
+          section applies to an image; at first view you may be induced in error and think that
+          for sealing a section you must crop it and drag and drop". It used to render LAST, i.e.
+          directly beneath the Sealed Sections header, so it read as that section's control. It
+          belongs with the attachments it uploads, and it now says what it does. */}
+      {!loading && panelConfig.showUploadZone && (
+        <div className="sv-card-section sv-upload-section">
+          <div className="sv-card-section-header">
+            <span className="sv-card-section-title">Add a file</span>
+            <span className="sv-card-section-note">Attaches a file to this page — seal it afterwards</span>
+          </div>
+          <UploadZone onUploadComplete={onRefresh} />
+        </div>
+      )}
+
       {/* Validation status (Conditions & Validations) */}
       {!loading && !isEditing && <ValidationStatus pageId={pageId} />}
 
       {/* AI Review (Semantic AI Validations) */}
       {!loading && !isEditing && <AiReviewGroup pageId={pageId} />}
 
-      {/* Sealed Sections (Content Sealing) */}
+      {/* Sealed Sections (Content Sealing) — page CONTENT, not files. Kept last and visually
+          divided from everything above so the two are never read as one surface. */}
       {!loading && !isEditing && <SealedSectionsGroup pageId={pageId} onChanged={onRefresh} />}
-
-      {/* Upload zone */}
-      {!loading && panelConfig.showUploadZone && <UploadZone onUploadComplete={onRefresh} />}
     </div>
   );
 };

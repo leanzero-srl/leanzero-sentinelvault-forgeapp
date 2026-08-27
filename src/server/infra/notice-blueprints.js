@@ -79,8 +79,11 @@ export function composeViolationLayout({
   const outcome = VERB_OUTCOMES[actionVerb] || "The change has been reverted.";
 
   // Vet F4: with NO editor (a purge discovered by probe, not witnessed as an event), state the
-  // fact without accusing whoever happened to touch the page.
-  const ownerLine = editorAccountId
+  // fact without accusing whoever happened to touch the page. Same phrasing when the editor IS
+  // the owner — "@me — @me attempted to edit your sealed file" names one person twice and reads
+  // as a bug rather than as a notice.
+  const namesSomeoneElse = Boolean(editorAccountId) && editorAccountId !== ownerAccountId;
+  const ownerLine = namesSomeoneElse
     ? `${mention(ownerAccountId)} — ${mention(editorAccountId)} attempted to ${escapeXml(verbPhrase)} your sealed file <strong>"${escapeXml(artifactName)}"</strong>. ${escapeXml(outcome)}`
     : `${mention(ownerAccountId)} — your sealed file <strong>"${escapeXml(artifactName)}"</strong> ${actionVerb === "permanently-deleted" ? "was permanently deleted" : "was modified"}. ${escapeXml(outcome)}`;
 
@@ -88,7 +91,7 @@ export function composeViolationLayout({
   // Skipped when the editor IS the owner or is unknown — a comment addressed to one person
   // twice reads worse than one addressed once.
   let editorPara = "";
-  if (editorAccountId && editorAccountId !== ownerAccountId) {
+  if (namesSomeoneElse) {
     const editorLine = VERB_EDITOR_LINES[actionVerb] || VERB_EDITOR_LINES.edit;
     const recovery = historyUrl
       ? ` If that change was intentional, your version is preserved in the page history — <a href="${escapeXml(historyUrl)}">view previous versions</a> to recover it.`
