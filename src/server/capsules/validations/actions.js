@@ -232,10 +232,19 @@ export const getAiFindings = async (req) => {
     && !(await canReadPage(req.context.accountId, pageId))) {
     return { findings: null, aiEnabled: false };
   }
-  const spaceKey =
+  // The aiEnabled flag describes the space the PAGE lives in, so derive it from the page.
+  // Reading it out of the caller's extension context instead answers for the space the caller
+  // happens to be standing in — the same page-vs-space mix-up the SV-SEC-1 audit found all over
+  // this surface, and it is wrong here for the same reason even though this one only drives a
+  // display flag: ask about page X and be told whether AI is on for space B. Context stays as a
+  // fallback for the ordinary in-page call, where it is already correct and costs no round-trip.
+  const ctxSpaceKey =
     req.context.extension?.content?.space?.key ||
     req.context.extension?.space?.key ||
     null;
+  const spaceKey = (ctxPageId && String(pageId) === String(ctxPageId) && ctxSpaceKey)
+    ? ctxSpaceKey
+    : ((await resolvePageSpaceKey(pageId)) || ctxSpaceKey);
   const findings = await getLatestFindings(pageId);
   // Attach per-finding state (open/dismissed/false-positive/acknowledged).
   if (findings && Array.isArray(findings.findings)) {
