@@ -282,7 +282,7 @@ export async function pageContentTrigger(event) {
       }
       // Pass A: sealed-section restore (suppressed while enforcing — who-wins + SV-M5 suppression)
       if (!ctx.enforcedRevert && sectionSeals.length > 0) {
-        try { await restoreSealedSectionsPass(ctx, sectionSeals); }
+        try { await restoreSealedSectionsPass(ctx, sectionSeals, mediaProbeCache); }
         catch (e) { console.error("[PAGE-PROTECT] section pass error:", e); }
       }
       // Pass B: sealed-media restore
@@ -809,7 +809,7 @@ function sectionHeadingText(node) {
   return t.trim();
 }
 
-async function restoreSealedSectionsPass(ctx, sectionSeals) {
+async function restoreSealedSectionsPass(ctx, sectionSeals, probeCache = new Map()) {
   if (ctx.enforcedRevert) return; // #44: suppress SV-M5 re-baseline + restore while enforcing
   const now = Date.now();
   // it24 (R3-F1): group ALL wrappers per sectionId, not a last-wins Map. A page can hold
@@ -906,10 +906,19 @@ async function restoreSealedSectionsPass(ctx, sectionSeals) {
         JSON.stringify(canonicalizeAdf(node.content)) === JSON.stringify(canonicalizeAdf(snapshot.bodyContent));
     };
     const changedWrappers = wrapperList.filter((w) => !isUntouched(w.node));
+    if (changedWrappers.length > 0) probeCache.set("__saw-violations", true);
     if (changedWrappers.length === 0) {
       // Hunt H1-F4: a clean save for THIS section clears its comment-dedup markers (mirror of
       // the media clean-save clear) so the next genuine tamper comments afresh.
-      await clearViolationNotices(ctx.pageId, seal.sectionId, SECTION_NOTICE_CLASSES);
+      // SV-m3: ...and it must be a REAL mirror. The media clear also requires that THIS RUN never
+      // saw a violation; without that, an at-least-once duplicate that loses the 409 race re-reads
+      // the sibling's restored section, finds changedWrappers empty, and deletes the marker the
+      // winner just claimed — costing the 24h suppression window, so the NEXT occurrence comments
+      // when it should have been swallowed. Found 2026-08-27 while fact-checking the write-up of
+      // the media-surface fix: the comment above claimed "mirror" while missing the guard.
+      if (!probeCache.get("__saw-violations")) {
+        await clearViolationNotices(ctx.pageId, seal.sectionId, SECTION_NOTICE_CLASSES);
+      }
       continue; // every copy matches the seal — untouched
     }
 
