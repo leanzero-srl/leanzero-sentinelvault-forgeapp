@@ -34,6 +34,13 @@ import {
   listSectionEditRequests,
   approveSectionEdit,
   denySectionEdit,
+  // Owner feedback F1/F4 (2026-08-27): the attachment approve/deny pair, so the harness can prove
+  // the asymmetry that made "Approve" look like a dead button — approve refuses a lapsed seal,
+  // deny never did. Both paths gate on the caller's own accountId against the seal record and
+  // never touch content, so a synthetic actor is still valid here (unlike the SV-SEC-1 resolvers).
+  listEditRequests,
+  approveEditRequest,
+  denyEditRequest,
 } from "./server/capsules/editreq/actions.js";
 // #13: watch/bulletins capsule seams (bulletins/actions.js → @forge/kvs + bulletin-flags → baseline;
 // all Queue/LLM-free → it17-safe).
@@ -64,7 +71,7 @@ import {
 } from "./server/capsules/realms/actions.js";
 // it46: destructive-action permission-matrix seams (Queue/LLM-free modules — safe to import).
 import { deleteArtifact } from "./server/capsules/panels/actions.js";
-import { purgeSealRecord, restoreSealedArtifact } from "./server/capsules/sealing/actions.js";
+import { purgeSealRecord, restoreSealedArtifact, extendSeal } from "./server/capsules/sealing/actions.js";
 // B11: live AI validation pipeline. validations/actions.js is import-safe after the it57 lazy-Queue
 // refactor (ai-validation-queue is now built at push time, not module load — the it17 trap). The real
 // Forge LLM runs in the queue consumer; the enqueue/poll/findings resolvers are the driveable seam.
@@ -238,6 +245,31 @@ export async function testStateTrigger(req) {
           q(req, "status"),
           q(req, "reason") || null,
         );
+        return json(200, { invoked: fn, result: r });
+      }
+      // Owner feedback F1 (2026-08-27): approve/deny an ATTACHMENT edit request. The pair exists
+      // so a spec can assert what the owner reported — on a lapsed seal, deny succeeds and
+      // approve refuses, which is why the request stayed on screen.
+      if (fn === "listEditRequests") {
+        const r = await listEditRequests({ payload: { attachmentId: q(req, "att") }, context: { accountId: q(req, "actor") } });
+        return json(200, { invoked: fn, result: r });
+      }
+      if (fn === "approveEditRequest") {
+        const r = await approveEditRequest({ payload: { attachmentId: q(req, "att"), requesterAccountId: q(req, "requester") }, context: { accountId: q(req, "actor") } });
+        return json(200, { invoked: fn, result: r });
+      }
+      if (fn === "denyEditRequest") {
+        const r = await denyEditRequest({ payload: { attachmentId: q(req, "att"), requesterAccountId: q(req, "requester") }, context: { accountId: q(req, "actor") } });
+        return json(200, { invoked: fn, result: r });
+      }
+      // Owner feedback F4: extend a seal's retention period. Owner-or-steward against the seal
+      // record, no content call, so a synthetic actor drives it.
+      if (fn === "extendSeal") {
+        const secs = Number(q(req, "seconds"));
+        const r = await extendSeal({
+          payload: { attachmentId: q(req, "att"), additionalSeconds: Number.isFinite(secs) && secs > 0 ? secs : undefined },
+          context: { accountId: q(req, "actor") },
+        });
         return json(200, { invoked: fn, result: r });
       }
       if (fn === "listEditGrants") {
