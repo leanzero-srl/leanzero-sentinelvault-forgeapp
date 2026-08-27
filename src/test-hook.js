@@ -437,7 +437,17 @@ export async function testStateTrigger(req) {
         return json(200, { invoked: fn, result: r });
       }
       if (fn === "getAiFindings") {
-        const r = await getAiFindings({ payload: { pageId: q(req, "page"), spaceKey: q(req, "space") } });
+        // SV-SEC-1 fallout, found 2026-08-27 by running the opt-in live-LLM spec: the resolver
+        // now reads req.context.extension and req.context.accountId, and this seam passed NO
+        // context at all — so it threw "Cannot read properties of undefined (reading 'extension')"
+        // before reaching any assertion. It went unnoticed because the only spec that drives it is
+        // gated behind SV_LIVE_LLM=1 and so never ran after that patch. Pass a real caller, the
+        // way every other gated seam does; the findings quote the page body back, so the read gate
+        // is correct and the actor has to be someone who can actually read the page.
+        const r = await getAiFindings({
+          payload: { pageId: q(req, "page"), spaceKey: q(req, "space") },
+          context: { accountId: q(req, "actor") },
+        });
         return json(200, { invoked: fn, result: r });
       }
       // B15: the cross-space ruleset enumeration is now site-admin gated. In the webtrigger asUser
