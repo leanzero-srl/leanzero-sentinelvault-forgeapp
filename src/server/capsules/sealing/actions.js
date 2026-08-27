@@ -544,7 +544,7 @@ const unsealArtifact = async (req) => {
  * for. Owner, or a steward of the space the SEAL lives in — never the space the caller
  * happens to be standing in.
  */
-const extendSeal = async (req) => {
+export const extendSeal = async (req) => {
   const { attachmentId, additionalSeconds } = req.payload || {};
   const operatorAccountId = req.context.accountId;
   if (!attachmentId) return { success: false, reason: "Missing attachment" };

@@ -39,6 +39,11 @@
   --sv-interactive-success: #0891B2;
   --sv-interactive-success-hover: #0E7490;
   --sv-interactive-danger: #DC2626;
+  /* F4: Extend gets its own solid hue — cyan is Seal, red is Unseal, violet is
+     Request Edit. Mirrors foundation.css; each surface CSS carries its own copy of
+     the token block because webpack copies ONE flat file per surface. */
+  --sv-interactive-extend: #059669;
+  --sv-interactive-extend-hover: #047857;
   --sv-interactive-danger-hover: #B91C1C;
 
   --sv-shadow-light: rgba(0, 0, 0, 0.06);
@@ -90,6 +95,8 @@ html[data-color-mode="dark"] {
   --sv-interactive-success: #22D3EE;
   --sv-interactive-success-hover: #67E8F9;
   --sv-interactive-danger: #F87171;
+  --sv-interactive-extend: #10B981;
+  --sv-interactive-extend-hover: #34D399;
   --sv-interactive-danger-hover: #FCA5A5;
 
   --sv-shadow-light: rgba(0, 0, 0, 0.3);
@@ -1407,3 +1414,66 @@ html[data-color-mode="dark"] .status-lozenge.trashed {
   color: var(--sv-interactive-primary); font-size: 11px; padding: 4px 0; margin-top: 4px;
 }
 .sv-section-block { display: flex; flex-direction: column; }
+
+/* ═══════════════════════════════════════════════════════════
+   Owner feedback 2026-08-27
+   ═══════════════════════════════════════════════════════════ */
+
+/* ── F4: Extend the retention period ─────────────── */
+/* Its own solid hue: cyan is Seal, red is Unseal, violet is Request Edit. */
+.action-btn.extend {
+  background: var(--sv-interactive-extend);
+  color: #ffffff;
+  border-color: var(--sv-interactive-extend);
+}
+.action-btn.extend:hover:not(:disabled) {
+  background: var(--sv-interactive-extend-hover);
+  border-color: var(--sv-interactive-extend-hover);
+}
+html[data-color-mode="dark"] .action-btn.extend {
+  color: #04231A;
+}
+
+/* ── F3: card-row image thumbnail ────────────────── */
+/* Replaces the generic document glyph for images, so a row of screenshots is
+   distinguishable without opening each one. Sized to the filename line height so
+   adding it does not change the card's rhythm. */
+.card-thumbnail-mini {
+  width: 32px;
+  height: 32px;
+  flex: 0 0 32px;
+  border-radius: 4px;
+  border: 1px solid var(--sv-border-primary);
+  object-fit: cover;
+  background: var(--sv-bg-tertiary);
+  display: block;
+}
+.card-thumbnail-mini.is-clickable {
+  cursor: pointer;
+}
+.card-thumbnail-mini.is-clickable:hover {
+  border-color: var(--sv-interactive-primary);
+}
+.card-thumbnail-mini.is-loading {
+  border-style: dashed;
+}
+
+/* ── F6: the upload zone is about FILES ──────────── */
+/* It used to render last, directly under the Sealed Sections heading, which read as
+   "to seal a section, drop a file here". It now sits with the attachments and says so. */
+.sv-card-section-note {
+  font-size: 11px;
+  color: var(--sv-text-subtle);
+  margin-left: auto;
+  text-align: right;
+}
+.sv-upload-section .upload-zone-wrapper {
+  margin-top: 0;
+}
+/* A real divider above Sealed Sections: page content and page files are two different
+   things and the panel should not let them blur into one another. */
+.sv-section-seals {
+  margin-top: 14px;
+  border-top: 2px solid var(--sv-border-primary);
+  padding-top: 4px;
+}

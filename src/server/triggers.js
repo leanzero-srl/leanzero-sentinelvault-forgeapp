@@ -35,6 +35,11 @@ import { readDocBody, readDocBodyAtVersion, writeDocBody, collectMediaFileIds, e
 import { probeAttachmentStatus, restoreAttachmentFromTrash, decideMediaRestoreAction, confirmAttachmentPurged } from "./infra/attachment-status.js";
 import { findSealedMediaSingle, findAllSealedMediaSingles, capturePresentation, presentationDiffers, applyPresentation } from "./infra/media-presentation.js";
 import { setWithTtl, setUntil } from "./shared/kvs-ttl.js";
+// F5 (owner feedback 2026-08-27): a lapsed seal gets a bounded run of reminders and is then
+// released automatically. The decision is time-based, so it lives in a pure zero-import module
+// that unit tests can hand clocks to rather than waiting three days for a live sweep.
+import { decideLapseAction, resolveLapsePolicy, priorNoticeCount } from "./shared/lapse-policy.js";
+import { decideAnnounce, decideRelease } from "./shared/notice-dedup.js";
 
 // --- Fix 3 (CORE T6 extension): cross-run violation-comment dedup ---
 // K1: `violation-noticed-{pageId}-{targetId}-{class}`, TTL 24h, claimed BEFORE the footer
@@ -46,14 +51,6 @@ import { setWithTtl, setUntil } from "./shared/kvs-ttl.js";
 // concurrent double-claim window is the same one T6 already accepts.
 const VIOLATION_NOTICE_TTL_MS = 24 * 3600 * 1000;
 
-// F5 (owner feedback 2026-08-27): a lapsed seal gets this many reminders, this far apart, and
-// is then released automatically. Before this the sweep notified ONCE and held the seal for
-// ever — so a file sealed by someone who has since left the company stayed listed as sealed
-// with no route back short of a steward force-unseal. Overridable per install via
-// admin-settings-global (lapseNoticeLimit / lapseNoticeIntervalHours); 0 restores the old
-// remind-once-and-hold behaviour.
-const LAPSE_NOTICE_LIMIT_DEFAULT = 3;
-const LAPSE_NOTICE_INTERVAL_MS_DEFAULT = 24 * 3600 * 1000;
 // Hunt H2-F3: "delete" (trash handler) and "content-removal" (media pass) are one physical
 // event — a UI delete of an embedded attachment fires BOTH trashed:attachment and updated:page.
 // They share one marker class so a single delete can never yield two comments regardless of
@@ -70,42 +67,20 @@ const SECTION_NOTICE_CLASSES = ["section-removed", "section-edited"];
 function noticeMarkerKey(pageId, targetId, klass) {
   return `violation-noticed-${pageId}-${targetId}-${NOTICE_CLASS_ALIASES[klass] || klass}`;
 }
-// F2 (owner feedback 2026-08-27): "I was able to delete a sealed document; after a few second
-// it restored but without a specific notification". Traced: a UI delete of an embedded sealed
-// file fires BOTH updated:page and trashed:attachment, the two share the content-loss marker
-// class, so whichever event won the race posted the only comment there would ever be — and the
-// loser was usually the trash handler. The user was therefore told "the page content has been
-// reverted" and never that the FILE had been pulled back out of the trash.
-//
-// The marker now records WHICH outcomes have been announced, not merely that something was.
-// A repeat of the same outcome is still swallowed (that is the whole point of the class, and
-// the incident spam loop it closed), but a materially DIFFERENT outcome is never hidden behind
-// its sibling. At most one comment per outcome per 24h, instead of one per class.
-// The KEY is still the aliased class, so a delete and a content-removal share one marker and
-// one 24h window. The OUTCOME is the raw verb, which is what actually differs in the comment
-// the user reads — that split is the whole fix.
-const outcomeOf = (klass) => klass;
+// F2 (owner feedback 2026-08-27): the marker records WHICH outcome it stands for, so the
+// "restored from the trash" message is no longer swallowed by its "page content reverted"
+// sibling. The KEY is still the aliased class, so both share one 24h window; the OUTCOME is the
+// raw verb, which is what actually differs in the comment the user reads. The decision itself is
+// pure and lives in shared/notice-dedup.js with its tests.
 async function claimViolationNotice(pageId, targetId, klass) {
   const effective = NOTICE_CLASS_ALIASES[klass] || klass;
   if (!DEDUPED_NOTICE_CLASSES.includes(effective)) return true;
   const key = noticeMarkerKey(pageId, targetId, klass);
-  const outcome = outcomeOf(klass);
   try {
     const existing = await kvs.get(key);
-    if (existing) {
-      // A marker written before this change records no outcome list. It cannot say WHICH
-      // message it stood for, so it keeps blocking exactly as it used to — an upgraded
-      // install must not emit a burst of catch-up comments. Self-heals within the 24h TTL.
-      if (!Array.isArray(existing.outcomes)) return false;
-      if (existing.outcomes.includes(outcome)) return false;
-      await setWithTtl(key, {
-        ...existing,
-        at: new Date().toISOString(),
-        outcomes: [...existing.outcomes, outcome],
-      }, VIOLATION_NOTICE_TTL_MS);
-      return true;
-    }
-    await setWithTtl(key, { at: new Date().toISOString(), outcomes: [outcome] }, VIOLATION_NOTICE_TTL_MS);
+    const { announce, marker } = decideAnnounce(existing, klass);
+    if (!announce) return false;
+    await setWithTtl(key, { ...(existing || {}), at: new Date().toISOString(), ...marker }, VIOLATION_NOTICE_TTL_MS);
     return true;
   } catch (e) {
     console.error("[NOTICE-DEDUP] marker claim failed — notifying anyway:", e);
@@ -118,19 +93,14 @@ async function claimViolationNotice(pageId, targetId, klass) {
 // sibling outcome that did post, and it would then post a second time.
 async function releaseViolationNotice(pageId, targetId, klass) {
   const key = noticeMarkerKey(pageId, targetId, klass);
-  const outcome = outcomeOf(klass);
   try {
     const existing = await kvs.get(key);
-    if (!existing || !Array.isArray(existing.outcomes)) {
+    const { drop, marker } = decideRelease(existing, klass);
+    if (drop) {
       await kvs.delete(key).catch(() => {});
       return;
     }
-    const remaining = existing.outcomes.filter((o) => o !== outcome);
-    if (remaining.length === 0) {
-      await kvs.delete(key).catch(() => {});
-      return;
-    }
-    await setWithTtl(key, { ...existing, outcomes: remaining }, VIOLATION_NOTICE_TTL_MS);
+    await setWithTtl(key, { ...existing, ...marker }, VIOLATION_NOTICE_TTL_MS);
   } catch (_) {
     await kvs.delete(key).catch(() => {});
   }
@@ -1810,18 +1780,11 @@ export async function expirySweepTask() {
       };
     }
 
-    // F5: how many overdue reminders an owner gets before the seal is released for them,
-    // and how far apart. Stewards can tune both; the defaults are the owner's brief — three
-    // reminders, one a day. A limit of 0 disables auto-release and keeps the pre-F5 behaviour
-    // of reminding once and holding the seal indefinitely.
-    const lapseNoticeLimit = Number.isFinite(Number(systemPolicy?.lapseNoticeLimit))
-      && Number(systemPolicy.lapseNoticeLimit) >= 0
-      ? Math.floor(Number(systemPolicy.lapseNoticeLimit))
-      : LAPSE_NOTICE_LIMIT_DEFAULT;
-    const lapseNoticeIntervalMs = Number.isFinite(Number(systemPolicy?.lapseNoticeIntervalHours))
-      && Number(systemPolicy.lapseNoticeIntervalHours) > 0
-      ? Math.floor(Number(systemPolicy.lapseNoticeIntervalHours)) * 3600 * 1000
-      : LAPSE_NOTICE_INTERVAL_MS_DEFAULT;
+    // F5: how many overdue reminders an owner gets before the seal is released for them, and
+    // how far apart. Stewards can tune both in admin-settings-global; the defaults are the
+    // owner's brief — three reminders, one a day. 0 disables the release and keeps the pre-F5
+    // behaviour of reminding once and holding the seal indefinitely.
+    const { limit: lapseNoticeLimit, intervalMs: lapseNoticeIntervalMs } = resolveLapsePolicy(systemPolicy);
 
     // Determine if halfway reminders should be sent
     const sendHalfwayAlerts =
@@ -1875,23 +1838,25 @@ export async function expirySweepTask() {
         if (now >= expiresAt) {
           const dedupKey = `expiry-notified-${artifactId}`;
           const prior = await kvs.get(dedupKey);
-          // Legacy records (written before F5) carry no `count`. Treat them as one notice
-          // already sent, which is exactly what they were — the countdown picks up from there
-          // instead of restarting and re-notifying an owner who was already told once.
-          const priorCount = Number(prior?.count) || (prior ? 1 : 0);
+          const priorCount = priorNoticeCount(prior);
           const lastSentMs = prior?.sentAt ? new Date(prior.sentAt).getTime() : 0;
-
-          // lapseNoticeLimit 0 means an install has turned auto-release OFF. Then the seal is
-          // held indefinitely and the owner gets exactly ONE reminder — the pre-F5 behaviour —
-          // rather than a reminder every interval for ever.
           const releaseEnabled = lapseNoticeLimit > 0;
-          const maxNotices = releaseEnabled ? lapseNoticeLimit : 1;
+
+          const decision = decideLapseAction({
+            priorCount,
+            lastSentMs,
+            nowMs: now.getTime(),
+            limit: lapseNoticeLimit,
+            intervalMs: lapseNoticeIntervalMs,
+          });
+
+          if (decision.action === "wait") continue;
 
           // --- Reminders are exhausted: hand the file back ---
           // This is the case the owner reported: someone seals a file, leaves the company, and
           // the file is listed as sealed forever because the only two ways out (the owner
           // unsealing, or a steward force-unsealing) both need a person who is not coming back.
-          if (releaseEnabled && priorCount >= lapseNoticeLimit) {
+          if (decision.action === "release") {
             const released = await releaseSeal(artifactId, value);
             if (!released.success) {
               console.error(`[EXPIRY-SWEEP] auto-release of ${artifactId} failed: ${released.reason}`);
@@ -1925,16 +1890,8 @@ export async function expirySweepTask() {
             continue;
           }
 
-          // --- Not yet exhausted: at most one reminder per interval ---
-          if (priorCount >= maxNotices) continue; // auto-release off and the one notice is spent
-          if (lastSentMs && now.getTime() - lastSentMs < lapseNoticeIntervalMs) {
-            continue;
-          }
-
-          const noticeNumber = priorCount + 1;
-          // When the file will actually be handed back: the remaining reminders, plus the
-          // interval that has to elapse after the last one before the release pass fires.
-          const releaseAtMs = now.getTime() + (lapseNoticeLimit - noticeNumber + 1) * lapseNoticeIntervalMs;
+          // --- decision.action === "notify" ---
+          const { noticeNumber, releaseAtMs } = decision;
 
           // Hunt H1-F6: the counter advances ONLY when the notice actually posted (or the
           // toggle deliberately suppressed it) — a transient post failure must not consume
@@ -1989,7 +1946,7 @@ export async function expirySweepTask() {
               firstSentAt: prior?.firstSentAt || now.toISOString(),
               count: noticeNumber,
               attachmentId: artifactId,
-            }, now.getTime() + (maxNotices + 1) * lapseNoticeIntervalMs + 7 * 86400000);
+            }, now.getTime() + (Math.max(lapseNoticeLimit, 1) + 1) * lapseNoticeIntervalMs + 7 * 86400000);
           }
 
           // Store dispatch event for page banner

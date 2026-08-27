@@ -225,7 +225,20 @@ const RealmClaimedCard = ({ artifact, onForceRelease, onWatch, isWatching, force
               <path d="M3 5l3 3 3-3" stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinecap="round" />
             </svg>
           </button>
-          <ArtifactTypeIcon mediaType={artifact.mediaType} />
+          {/* F3 (owner feedback 2026-08-27): show which image this actually is. */}
+          {isImage && artifact.pageId ? (
+            <ThumbnailPreview
+              artifactId={artifact.id}
+              contentId={artifact.pageId}
+              variant="thumb"
+              alt={artifact.title}
+              cachedDataUri={cachedPreview}
+              onCached={setCachedPreview}
+              onClick={viewUrl ? () => router.open(viewUrl) : undefined}
+            />
+          ) : (
+            <ArtifactTypeIcon mediaType={artifact.mediaType} />
+          )}
           {downloadHref ? (
             <a className="card-filename-text card-filename-link" href={downloadHref} onClick={(e) => { e.preventDefault(); router.open(downloadHref); }} title={`Download ${artifact.title}`}>
               {artifact.title}
@@ -269,7 +282,7 @@ const RealmClaimedCard = ({ artifact, onForceRelease, onWatch, isWatching, force
       {/* Expand panel: thumbnail + view link */}
       {expanded && (
         <div className="card-row card-row-expand">
-          {isImage && artifact.pageId && <ThumbnailPreview artifactId={artifact.id} contentId={artifact.pageId} cachedDataUri={cachedPreview} onCached={setCachedPreview} />}
+          {isImage && artifact.pageId && <ThumbnailPreview artifactId={artifact.id} contentId={artifact.pageId} alt={artifact.title} cachedDataUri={cachedPreview} onCached={setCachedPreview} />}
           {(viewUrl || propertiesUrl) && (
             <div className="card-expand-links">
               {viewUrl && <a href={viewUrl} onClick={(e) => { e.preventDefault(); router.open(viewUrl); }} className="card-expand-link">View</a>}
@@ -282,7 +295,7 @@ const RealmClaimedCard = ({ artifact, onForceRelease, onWatch, isWatching, force
   );
 };
 
-const MyClaimedCard = ({ artifact, onRelease, busyAction, siteUrl }) => {
+const MyClaimedCard = ({ artifact, onRelease, onExtend, busyAction, siteUrl }) => {
   const [expanded, setExpanded] = useState(false);
   const [cachedPreview, setCachedPreview] = useState(null);
   const isExpired = artifact.isExpired || (artifact.expiresAt && new Date(artifact.expiresAt) < new Date());
@@ -326,7 +339,20 @@ const MyClaimedCard = ({ artifact, onRelease, busyAction, siteUrl }) => {
               <path d="M3 5l3 3 3-3" stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinecap="round" />
             </svg>
           </button>
-          <ArtifactTypeIcon mediaType={artifact.mediaType} />
+          {/* F3 (owner feedback 2026-08-27): show which image this actually is. */}
+          {isImage && artifact.pageId ? (
+            <ThumbnailPreview
+              artifactId={artifact.id}
+              contentId={artifact.pageId}
+              variant="thumb"
+              alt={artifact.title}
+              cachedDataUri={cachedPreview}
+              onCached={setCachedPreview}
+              onClick={viewUrl ? () => router.open(viewUrl) : undefined}
+            />
+          ) : (
+            <ArtifactTypeIcon mediaType={artifact.mediaType} />
+          )}
           {downloadHref ? (
             <a className="card-filename-text card-filename-link" href={downloadHref} onClick={(e) => { e.preventDefault(); router.open(downloadHref); }} title={`Download ${artifact.title}`}>
               {artifact.title}
@@ -337,6 +363,12 @@ const MyClaimedCard = ({ artifact, onRelease, busyAction, siteUrl }) => {
         </span>
         <span className="card-row-right">
           <span className={`status-lozenge ${statusClass}`}>{statusText}</span>
+          {/* F4: renew the retention period rather than unseal-and-seal-again. */}
+          {onExtend && (
+            <button className={`action-btn extend ${busyAction === "extend" ? "is-busy" : ""}`} onClick={() => onExtend(artifact.id)} disabled={busyAction && busyAction !== "extend"} title="Give this seal a fresh retention period">
+              {busyAction === "extend" ? <>Extending<span className="btn-busy-bar" /></> : "Extend"}
+            </button>
+          )}
           {onRelease && (
             <button className={`action-btn unlock ${busyAction === "unseal" ? "is-busy" : ""}`} onClick={() => onRelease(artifact.id)} disabled={busyAction && busyAction !== "unseal"} title="Release your seal and allow others to modify this file">
               {busyAction === "unseal" ? <>Unsealing<span className="btn-busy-bar" /></> : "Unseal"}
@@ -361,7 +393,7 @@ const MyClaimedCard = ({ artifact, onRelease, busyAction, siteUrl }) => {
       {/* Expand panel: thumbnail + view link */}
       {expanded && (
         <div className="card-row card-row-expand">
-          {isImage && artifact.pageId && <ThumbnailPreview artifactId={artifact.id} contentId={artifact.pageId} cachedDataUri={cachedPreview} onCached={setCachedPreview} />}
+          {isImage && artifact.pageId && <ThumbnailPreview artifactId={artifact.id} contentId={artifact.pageId} alt={artifact.title} cachedDataUri={cachedPreview} onCached={setCachedPreview} />}
           {(viewUrl || propertiesUrl) && (
             <div className="card-expand-links">
               {viewUrl && <a href={viewUrl} onClick={(e) => { e.preventDefault(); router.open(viewUrl); }} className="card-expand-link">View</a>}
@@ -757,6 +789,10 @@ const RealmPolicyDashboard = () => {
         setEditRequests((prev) => prev.filter((r) => !(r.artifactId === artifactId && r.requesterAccountId === requesterAccountId)));
         setMessage("Edit request declined.");
         setMessageType("success");
+      } else {
+        // F1 parity: approve already surfaced its refusal here; deny silently did nothing.
+        setMessage(result?.reason || "Could not decline the request.");
+        setMessageType("error");
       }
     } catch (e) {
       console.error("Deny edit failed:", e);
@@ -1632,9 +1668,25 @@ const RealmPolicyDashboard = () => {
                   onRelease={async (id) => {
                     setBusyAction({ id, action: "unseal" });
                     try {
-                      await invoke("unseal-artifact", { attachmentId: id });
-                      fetchMyClaimedFiles();
+                      const r = await invoke("unseal-artifact", { attachmentId: id });
+                      if (r && r.success === false) { setMessage(r.reason || "Could not unseal this file."); setMessageType("error"); }
+                      else fetchMyClaimedFiles();
                     } catch (e) { console.error("Release failed:", e); }
+                    finally { setBusyAction(null); }
+                  }}
+                  onExtend={async (id) => {
+                    setBusyAction({ id, action: "extend" });
+                    try {
+                      const r = await invoke("extend-seal", { attachmentId: id });
+                      if (r?.success) {
+                        setMessage("Seal extended.");
+                        setMessageType("success");
+                        fetchMyClaimedFiles();
+                      } else {
+                        setMessage(r?.reason || "Could not extend this seal.");
+                        setMessageType("error");
+                      }
+                    } catch (e) { console.error("Extend failed:", e); }
                     finally { setBusyAction(null); }
                   }}
                 />

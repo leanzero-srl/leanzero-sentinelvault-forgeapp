@@ -38,6 +38,11 @@
   --sv-interactive-success-hover: #0E7490;
   --sv-interactive-success-active: #155E75;
   --sv-interactive-danger: #DC2626;
+  /* F4: Extend gets its own solid hue — cyan is Seal, red is Unseal, violet is
+     Request Edit. Mirrors foundation.css; each surface CSS carries its own copy of
+     the token block because webpack copies ONE flat file per surface. */
+  --sv-interactive-extend: #059669;
+  --sv-interactive-extend-hover: #047857;
   --sv-interactive-danger-hover: #B91C1C;
   --sv-interactive-danger-active: #991B1B;
   --sv-scrollbar-track: #F1F5F9;
@@ -89,6 +94,8 @@ html[data-color-mode="dark"] {
   --sv-interactive-success-hover: #67E8F9;
   --sv-interactive-success-active: #A5F3FC;
   --sv-interactive-danger: #F87171;
+  --sv-interactive-extend: #10B981;
+  --sv-interactive-extend-hover: #34D399;
   --sv-interactive-danger-hover: #FCA5A5;
   --sv-interactive-danger-active: #FECACA;
   --sv-scrollbar-track: #1E293B;
@@ -1929,4 +1936,44 @@ html[data-color-mode="dark"] .wf-inbox { border-color: #f59e0b; }
 .license-banner-link:hover {
   background: #FFFFFF;
   color: #B45309;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   Owner feedback 2026-08-27
+   ═══════════════════════════════════════════════════════════ */
+
+/* ── F4: Extend the retention period ─────────────── */
+.action-btn.extend {
+  background: var(--sv-interactive-extend);
+  color: #ffffff;
+  border-color: var(--sv-interactive-extend);
+}
+.action-btn.extend:hover:not(:disabled) {
+  background: var(--sv-interactive-extend-hover);
+  border-color: var(--sv-interactive-extend-hover);
+}
+html[data-color-mode="dark"] .action-btn.extend {
+  color: #04231A;
+}
+
+/* ── F3: card-row image thumbnail ────────────────── */
+/* An image identifies itself; image-20230720-212157.png does not. */
+.card-thumbnail-mini {
+  width: 32px;
+  height: 32px;
+  flex: 0 0 32px;
+  border-radius: 4px;
+  border: 1px solid var(--sv-border-primary);
+  object-fit: cover;
+  background: var(--sv-bg-tertiary);
+  display: block;
+}
+.card-thumbnail-mini.is-clickable {
+  cursor: pointer;
+}
+.card-thumbnail-mini.is-clickable:hover {
+  border-color: var(--sv-interactive-primary);
+}
+.card-thumbnail-mini.is-loading {
+  border-style: dashed;
 }
