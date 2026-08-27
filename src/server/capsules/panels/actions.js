@@ -13,6 +13,7 @@ import {
   resolveExtensionKey,
 } from "../../infra/doc-surgery.js";
 import { resolveArtifactPreview } from "../../infra/artifact-fetch.js";
+import { guardPageWrite } from "../../shared/page-access.js";
 
 /**
  * Get attachments for a page with seal status, labels, and version comments
@@ -308,12 +309,20 @@ export const deleteArtifact = async (req) => {
 /**
  * Inject the panel into a page (manual trigger from UI)
  */
+// SV-SEC-1 (same class as the section-seal defect). DO NOT REMOVE THE GATE BELOW.
+// registry.js flattens every capsule into ONE resolver, so this key is reachable by any
+// authenticated invoker regardless of which surface it was meant for. insertPanelNode ->
+// writeDocBody -> asApp() PUT, on a pageId that comes straight from the payload: without the gate
+// this is a privileged ADF mutation and version bump on any page whose id the caller can name.
 const injectPanel = async (req) => {
   const { pageId } = req.payload;
 
   if (!pageId) {
     return { success: false, reason: "Missing pageId" };
   }
+
+  const { refusal } = await guardPageWrite(req, pageId, "PANEL inject-panel");
+  if (refusal) return refusal;
 
   const extensionKey = await resolveExtensionKey();
   if (!extensionKey) {
@@ -329,12 +338,18 @@ const injectPanel = async (req) => {
 /**
  * Remove the panel from a page
  */
+// SV-SEC-1 (same class). DO NOT REMOVE THE GATE BELOW. removePanelNode runs removeExtensionDeep
+// over the WHOLE document and writes it back via asApp(), so an ungated call strips nodes from any
+// page the caller can name.
 const extractPanel = async (req) => {
   const { pageId } = req.payload;
 
   if (!pageId) {
     return { success: false, reason: "Missing pageId" };
   }
+
+  const { refusal } = await guardPageWrite(req, pageId, "PANEL extract-panel");
+  if (refusal) return refusal;
 
   return await removePanelNode(pageId);
 };
@@ -387,6 +402,12 @@ const storeDocPanelPrefs = async (req) => {
   if (!pageId) {
     return { success: false, reason: "Missing pageId" };
   }
+
+  // SV-SEC-1 (same class — found by sweeping the rest of allActions, not named in the review).
+  // DO NOT REMOVE. This resolver writes a content property with asApp() AND calls removePanelNode
+  // on a caller-supplied pageId, so it is the same privileged-write-to-any-page primitive.
+  const { refusal } = await guardPageWrite(req, pageId, "PANEL store-doc-panel-prefs");
+  if (refusal) return refusal;
 
   const propertyKey = "sentinel-vault-page-settings";
 

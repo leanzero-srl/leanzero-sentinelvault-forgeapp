@@ -1,8 +1,12 @@
-import { asApp, asUser, route } from "@forge/api";
 import { kvs, WhereConditions } from "@forge/kvs";
 
 import { BASELINE_HOLD_SPAN } from "../../shared/baseline.js";
 import { authorizeSteward } from "../../shared/steward-checks.js";
+import {
+  guardPageWrite,
+  resolvePageRealm,
+  resolveAmbientUser,
+} from "../../shared/page-access.js";
 import { touchSealTimestamp } from "../sealing/logic.js";
 import { restampIfEnforced } from "../workflow/logic.js";
 import {
@@ -119,20 +123,64 @@ export const enumerateSectionSeals = async (req) => {
  * snapshot it, and record the seal. The app's own page write is ignored by the
  * page-content trigger's loop-guard.
  */
-// ⛔ SV-SEC-1 — OPEN SECURITY ITEM. DO NOT REMOVE UNTIL FIXED. See SECURITY-TODO.md.
-// This path does not verify the caller's entitlement to the target page before performing a
-// privileged write. unsealSection (below) DOES check entitlement; that asymmetry is the defect.
-// Not fixed until the NEGATIVE case passes: an unentitled caller is refused. Raised 2026-08-20.
+// SV-SEC-1 (CLOSED in code; see SECURITY-TODO.md for the live-verification checklist).
+// DO NOT REMOVE OR REORDER THE GATE BELOW.
+// This resolver takes a CALLER-SUPPLIED pageId and then writes to that page with the app's
+// elevated authority (writeDocBody -> asApp), so the caller's entitlement to the TARGET PAGE is
+// the only thing between an authenticated invoker and a privileged write to any page they can
+// name. The gate must stay AHEAD of resolveSealedSectionKey (it writes KVS), readDocBody, the
+// writeDocBody loop and every kvs.set, and it must be evaluated ONCE, outside the retry loop.
+//
+// The write itself deliberately stays asApp(). An asUser() page write would carry the HUMAN's
+// atlassianId, so the page-content trigger's loop-guard would NOT fire and the enforcement pass
+// would classify the seal as an unapproved change and revert the whole page — silently undoing
+// it. User authority as the PRECONDITION, app authority as the EXECUTOR.
+//
+// Layering and the tri-state fail-closed contract: src/server/shared/page-access.js.
 export const sealSection = async (req) => {
   const { pageId: payloadPageId, headingIndex, headingText, lockDuration } = req.payload || {};
-  const operatorAccountId = req.context.accountId;
-  const pageId = payloadPageId || req.context.extension?.content?.id;
-  const realmKey =
-    req.context.extension?.content?.space?.key || req.context.extension?.space?.key;
-  let realmId =
-    req.context.extension?.content?.space?.id || req.context.extension?.space?.id;
+  const operatorAccountId = req.context?.accountId;
+  const ctxPageId = req.context?.extension?.content?.id;
+  const pageId = payloadPageId || ctxPageId;
 
   if (!pageId || headingIndex == null) return { success: false, reason: "Missing pageId/headingIndex" };
+
+  // ─── SV-SEC-1 GATE — nothing above this line touches Confluence or KVS ──────────────────────
+  // headingIndex is caller-supplied and indexes straight into the ADF block array. Accept the
+  // numeric strings the testhook and the UI already send; reject everything else at the gate
+  // rather than letting a non-integer land silently on "Section not found". Pure payload
+  // validation, no I/O.
+  const sectionIndex =
+    typeof headingIndex === "number"
+      ? headingIndex
+      : typeof headingIndex === "string" && headingIndex.trim() !== ""
+        ? Number(headingIndex)
+        : NaN;
+  if (!Number.isInteger(sectionIndex) || sectionIndex < 0) {
+    return { success: false, reason: "Invalid headingIndex" };
+  }
+
+  // May THIS caller edit THIS page? The shared class gate — identical to the one every other
+  // resolver that writes to a caller-supplied pageId uses. Tri-state throughout: an indeterminate
+  // probe DENIES. It also resolves the realm from the PAGE, never from the caller's extension
+  // context, which is what stops a caller choosing whose hold-period policy applies via
+  // resolveHoldPeriod and whose stewards get consulted.
+  const { refusal, realm, verdict } = await guardPageWrite(req, pageId, "SECTION seal");
+  if (refusal) return refusal;
+
+  const realmKey = realm.spaceKey;
+  // The record's spaceKey is an INVARIANT, not a best effort. unsealSection consults it to decide
+  // who may unseal, so a null here would send that decision looking for a fallback. Resolving the
+  // space is retried on transient failures upstream; if it still cannot be established, the page
+  // cannot be sealed. Refusing is the fail-closed side: a seal is enforced by a trigger that keeps
+  // restoring the body, so creating one whose ownership metadata is incomplete is the worse
+  // outcome by far.
+  if (!realmKey) {
+    console.error(`[SECTION] seal refused: page ${pageId} resolved no space key — refusing to write a seal record with a null realm`);
+    return { success: false, reason: "Could not verify this page — try again" };
+  }
+  let realmId = realm.spaceId;
+  // ─── END SV-SEC-1 GATE ─────────────────────────────────────────────────────────────────────
 
   const extensionKey = await resolveSealedSectionKey();
   if (!extensionKey) return { success: false, reason: "Could not resolve section macro key" };
@@ -141,19 +189,18 @@ export const sealSection = async (req) => {
   const expiresAt = new Date(Date.now() + holdPeriod * 1000).toISOString();
   const sectionId = newSectionId();
 
-  let operatorName = "Current User";
-  let operatorEmail = null;
-  try {
-    const r = await asUser().requestConfluence(route`/wiki/rest/api/user/current`);
-    if (r.ok) { const d = await r.json(); operatorName = d.displayName || operatorName; operatorEmail = d.email || null; }
-  } catch (_) { /* best effort */ }
+  // Reuse the identity the gate already fetched when it took the as-user arm; otherwise make the
+  // same best-effort lookup this handler always made.
+  const identity = verdict.ambient || (await resolveAmbientUser());
+  const operatorName = identity?.displayName || "Current User";
+  const operatorEmail = identity?.email || null;
 
   let result = null;
   for (let attempt = 0; attempt < 3; attempt++) {
     const { pageData, adfDoc } = await readDocBody(pageId);
     if (!realmId && pageData.spaceId) realmId = pageData.spaceId;
     const content = adfDoc.content || [];
-    const block = content[headingIndex];
+    const block = content[sectionIndex];
     if (!block) return { success: false, reason: "Section not found — refresh and try again" };
     if (headingText && block.type === "heading" && textOfHeading(block) !== headingText) {
       return { success: false, reason: "Page changed — refresh and try again" };
@@ -162,7 +209,7 @@ export const sealSection = async (req) => {
       return { success: false, reason: "This section is already sealed" };
     }
 
-    const { start, end } = computeSectionRange(content, headingIndex);
+    const { start, end } = computeSectionRange(content, sectionIndex);
     const rangeBlocks = content.slice(start, end).map((b) => JSON.parse(JSON.stringify(b)));
     const wrapper = buildSealedSectionNode({ sectionId, extensionKey, bodyContent: rangeBlocks });
     content.splice(start, end - start, wrapper);
@@ -183,11 +230,8 @@ export const sealSection = async (req) => {
   const sectionTitle = result.rangeBlocks[0]?.type === "heading"
     ? textOfHeading(result.rangeBlocks[0]) : "Sealed section";
 
-  let pageTitle = "Unknown Page";
-  try {
-    const pr = await asApp().requestConfluence(route`/wiki/api/v2/pages/${pageId}`);
-    if (pr.ok) { const pd = await pr.json(); pageTitle = pd.title || pageTitle; if (!realmId && pd.spaceId) realmId = pd.spaceId; }
-  } catch (_) { /* best effort */ }
+  // resolvePageRealm already fetched the page authoritatively — reuse it instead of a second GET.
+  const pageTitle = realm.title || "Unknown Page";
 
   const record = {
     sectionId, pageId, spaceId: realmId || null, spaceKey: realmKey || null,
@@ -219,8 +263,6 @@ export const sealSection = async (req) => {
 export const unsealSection = async (req) => {
   const { sectionId } = req.payload || {};
   const operatorAccountId = req.context.accountId;
-  const realmKey =
-    req.context.extension?.content?.space?.key || req.context.extension?.space?.key;
   if (!sectionId) return { success: false, reason: "Missing sectionId" };
 
   const record = await kvs.get(`section-protection-${sectionId}`);
@@ -228,8 +270,23 @@ export const unsealSection = async (req) => {
 
   let allowed = record.lockedBy === operatorAccountId;
   if (!allowed) {
-    try { allowed = await authorizeSteward(operatorAccountId, record.spaceKey || realmKey); }
-    catch (_) { /* deny */ }
+    // The steward arm must never consult a CALLER-SUPPLIED space. This previously read
+    // `record.spaceKey || req.context.extension...space.key`, so a record whose spaceKey was null
+    // let the caller nominate the space they would be judged a steward of — an escalation on
+    // exactly the records the seal path could produce. Seals written now always carry a spaceKey
+    // (see the invariant in sealSection); for a legacy record that does not, re-resolve the realm
+    // authoritatively from the recorded pageId rather than falling back to caller input.
+    let stewardRealmKey = record.spaceKey || null;
+    if (!stewardRealmKey && record.pageId) {
+      const realm = await resolvePageRealm(record.pageId);
+      stewardRealmKey = realm?.spaceKey || null;
+    }
+    if (stewardRealmKey) {
+      try { allowed = await authorizeSteward(operatorAccountId, stewardRealmKey); }
+      catch (_) { /* deny */ }
+    } else {
+      console.warn(`[SECTION] unseal: no authoritative realm for section ${sectionId} — steward arm unavailable`);
+    }
   }
   if (!allowed) return { success: false, reason: "Only the section owner or a steward can unseal" };
 
