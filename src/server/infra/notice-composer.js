@@ -17,6 +17,8 @@ import {
   composeSealConfirmLayout,
   composeHalfwayLayout,
   composeExpiryLayout,
+  composeLapseNoticeLayout,
+  composeAutoReleaseLayout,
   composePeriodicLayout,
   composeReleaseNoticeLayout,
   composeStewardOverrideLayout,
@@ -30,6 +32,7 @@ export {
   composeSealConfirmLayout,
   composeHalfwayLayout,
   composeExpiryLayout,
+  composeLapseNoticeLayout,
   composeAutoReleaseLayout,
   composePeriodicLayout,
   composeReleaseNoticeLayout,
@@ -46,6 +49,7 @@ export const ALERT_CATEGORIES = {
   SEAL_CREATED: "seal_created",
   FIFTY_PERCENT_REMINDER: "fifty_percent_reminder",
   AUTO_RELEASE: "auto_release",
+  LAPSE_NOTICE: "lapse_notice",
   EXPIRY_NOTIFICATION: "expiry_notification",
   PERIODIC_REMINDER: "periodic_reminder",
   RELEASE_NOTIFICATION: "release_notification",
@@ -115,6 +119,9 @@ function buildBlueprint(type, data) {
     case ALERT_CATEGORIES.FIFTY_PERCENT_REMINDER:
       return composeHalfwayLayout(data);
     case ALERT_CATEGORIES.AUTO_RELEASE:
+      return composeAutoReleaseLayout(data);
+    case ALERT_CATEGORIES.LAPSE_NOTICE:
+      return composeLapseNoticeLayout(data);
     case ALERT_CATEGORIES.EXPIRY_NOTIFICATION:
       return composeExpiryLayout(data);
     case ALERT_CATEGORIES.PERIODIC_REMINDER:
@@ -243,6 +250,41 @@ export async function mailHalfwayReminder(
     pageId,
     artifactName,
     extra: { expiryDate },
+  });
+}
+
+/**
+ * F5: reminder N of N that a seal has lapsed, naming the automatic-release date.
+ * Replaces the single fire-and-forget expiry notice on the sweep path.
+ */
+export async function mailLapseNotice(
+  ownerAccountId,
+  artifactName,
+  pageId,
+  { expiryDate, noticeNumber, noticeLimit, releaseDate },
+) {
+  return dispatchNotice(ALERT_CATEGORIES.LAPSE_NOTICE, {
+    recipientAccountId: ownerAccountId,
+    pageId,
+    artifactName,
+    extra: { expiryDate, noticeNumber, noticeLimit, releaseDate },
+  });
+}
+
+/**
+ * F5: the seal was released automatically because the reminders ran out.
+ */
+export async function mailAutoReleaseNotice(
+  ownerAccountId,
+  artifactName,
+  pageId,
+  { noticeLimit },
+) {
+  return dispatchNotice(ALERT_CATEGORIES.AUTO_RELEASE, {
+    recipientAccountId: ownerAccountId,
+    pageId,
+    artifactName,
+    extra: { noticeLimit },
   });
 }
 
