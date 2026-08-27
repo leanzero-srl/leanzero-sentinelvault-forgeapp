@@ -194,7 +194,14 @@ const approveEditRequest = async (req) => {
   if (!seal) return { success: false, reason: "Seal not found" };
   if (!authorized) return { success: false, reason: "Not the seal owner" };
   // it54: an EXPIRED seal is inert — approving it would only mint a dead, never-reaped grant. Reject.
-  if (seal.expiresAt && new Date(seal.expiresAt).getTime() <= Date.now()) return { success: false, reason: "This seal has expired" };
+  // F1 (owner feedback 2026-08-27): "the request remains available even if I choose approve; it
+  // disappears if I choose deny instead". This branch was the cause — deny has no expiry check, so
+  // on an overdue seal (which every seal in the reported screenshot was) approve failed while deny
+  // worked, and the panel swallowed the failure into a console.error. Still a refusal, because the
+  // grant really would be born dead, but the message now names the fix the UI can actually offer.
+  if (seal.expiresAt && new Date(seal.expiresAt).getTime() <= Date.now()) {
+    return { success: false, reason: "This seal has lapsed — extend it first, then grant edit access" };
+  }
 
   const requestKey = `edit-request-${attachmentId}-${requesterAccountId}`;
   const request = await kvs.get(requestKey);
@@ -386,7 +393,10 @@ export const approveSectionEdit = async (req) => {
   // it54: an EXPIRED seal is inert (the section is no longer protected) — approving it would only
   // mint a dead, never-reaped grant (grant.expiresAt in the past → getActiveSectionEditGrant returns
   // null). Reject instead of leaking a zombie record.
-  if (seal.expiresAt && new Date(seal.expiresAt).getTime() <= Date.now()) return { success: false, reason: "This section's seal has expired" };
+  // F1: same asymmetry as the attachment path — see approveEditRequest.
+  if (seal.expiresAt && new Date(seal.expiresAt).getTime() <= Date.now()) {
+    return { success: false, reason: "This section's seal has lapsed — extend it first, then grant edit access" };
+  }
 
   const requestKey = `section-edit-request-${sectionId}-${requesterAccountId}`;
   const request = await kvs.get(requestKey);

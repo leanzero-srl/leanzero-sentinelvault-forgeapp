@@ -8,6 +8,7 @@ import { restampIfEnforced } from "../workflow/logic.js";
 import { authorizeSteward } from "../../shared/steward-checks.js";
 import { canEditPage, canReadPage, mustVerify } from "../../shared/content-access.js";
 import { resolveBulletinToggles } from "../../shared/bulletin-flags.js";
+import { setUntil } from "../../shared/kvs-ttl.js";
 
 // Import from infra
 import {
@@ -17,11 +18,12 @@ import {
 } from "../../infra/notice-composer.js";
 
 // Import from capsule logic
-import { writeSealContentProp, removeSealContentProp, touchSealTimestamp } from "./logic.js";
+import { writeSealContentProp, removeSealContentProp, touchSealTimestamp, resolveSealHoldPeriod } from "./logic.js";
 import { readDocBody } from "../../infra/doc-surgery.js";
 import { confirmAttachmentPurged } from "../../infra/attachment-status.js";
 import { findSealedMediaSingle, capturePresentation } from "../../infra/media-presentation.js";
 import { purgeAllSealState } from "./confluence-sync.js";
+import { releaseSeal } from "./release.js";
 
 // Import from sibling capsules
 import { notifyWatchers } from "../bulletins/logic.js";
@@ -217,47 +219,19 @@ const sealArtifact = async (req) => {
     req.context.extension?.content?.id ||
     req.context.extension?.content?.content?.id;
 
-  // it55: sanitize the API-only lockDuration (negative → past expiresAt / "sealed" but unprotected;
-  // string/NaN/huge → Date crash). The policy chain below still overrides this default.
-  let holdPeriod = sanitizeHoldDuration(req.payload.lockDuration, BASELINE_HOLD_SPAN);
-
-  if (realmKey) {
+  // The space policy is still read here for its spaceId fallback; the DURATION chain it used
+  // to also compute inline now lives in resolveSealHoldPeriod (sealing/logic.js) so seal,
+  // section-seal and extend-seal all resolve a hold period the same way. It carries the it55
+  // /B14 clamp with it: store-policy persists autoUnlockTimeoutHours / defaultLockDuration RAW,
+  // so a negative/NaN/absurd stored value would otherwise reach expiresAt as a date in the past
+  // (a record that reads "sealed" while unprotected) or crash the Date.
+  if (realmKey && !realmId) {
     const sanitizedRealmKey = realmKey.replace(/[^a-zA-Z0-9:._\s-#]/g, "_");
-    const realmPolicy = await kvs.get(
-      `admin-settings-space-${sanitizedRealmKey}`,
-    );
-
-    if (!realmId && realmPolicy?.spaceId) {
-      realmId = realmPolicy.spaceId;
-    }
-
-    if (
-      realmPolicy?.autoUnlockTimeoutHours &&
-      realmPolicy.autoUnlockTimeoutHours !== null
-    ) {
-      holdPeriod = realmPolicy.autoUnlockTimeoutHours * 3600;
-    } else {
-      const globalPolicy = await kvs.get("admin-settings-global");
-
-      if (globalPolicy?.defaultLockDuration) {
-        holdPeriod = globalPolicy.defaultLockDuration;
-      }
-    }
-  } else {
-    const globalPolicy = await kvs.get("admin-settings-global");
-    if (globalPolicy?.defaultLockDuration) {
-      holdPeriod = globalPolicy.defaultLockDuration;
-    }
+    const realmPolicy = await kvs.get(`admin-settings-space-${sanitizedRealmKey}`);
+    if (realmPolicy?.spaceId) realmId = realmPolicy.spaceId;
   }
 
-  // B14 (it55 completion): the policy chain above may OVERRIDE holdPeriod with a STORED policy value
-  // (autoUnlockTimeoutHours / defaultLockDuration) that store-policy persists RAW — never bounds-checked
-  // (the it55 guard lives in the dead policies/logic.js:savePolicyRuleset, which nothing calls). So a
-  // negative/zero/absurd/NaN stored value would flow straight into expiresAt: a past date (attachment
-  // reads "sealed" but is already expired → unprotected) or an overflowing/NaN Date. Re-run the FINAL
-  // holdPeriod through the same clamp as the API-only path above — defense-in-depth at the seal boundary,
-  // independent of whether store-time validation ever lands.
-  holdPeriod = sanitizeHoldDuration(holdPeriod, BASELINE_HOLD_SPAN);
+  const holdPeriod = await resolveSealHoldPeriod(realmKey, req.payload.lockDuration);
   const expiresAt = new Date(Date.now() + holdPeriod * 1000).toISOString();
 
   // Fetch current operator's email and display name
@@ -515,48 +489,11 @@ const unsealArtifact = async (req) => {
   }
 
   if (canRelease) {
-    await kvs.delete(`protection-${attachmentId}`);
-
-    // Re-verify the seal was actually removed before proceeding
-    const verifyDeleted = await kvs.get(`protection-${attachmentId}`);
-    if (verifyDeleted) {
-      return { success: false, reason: "Seal removal could not be confirmed" };
-    }
-
-    await touchSealTimestamp();
-
-    // Remove content property
-    if (sealRecord.contentId) {
-      await removeSealContentProp(sealRecord.contentId);
-    }
-
-    // Remove realm-seal index key
-    if (sealRecord.spaceId) {
-      try {
-        await kvs.delete(`space-protection-${sealRecord.spaceId}-${attachmentId}`);
-      } catch (indexError) {
-        console.warn(`[UNSEAL] Failed to delete realm-seal index:`, indexError);
-      }
-    }
-
-    const watchPrefix = `notification-${attachmentId}-`;
-    const { results: watchEntries } = await kvs
-      .query()
-      .where("key", WhereConditions.beginsWith(watchPrefix))
-      .limit(50)
-      .getMany();
-    for (const { key } of watchEntries) {
-      await kvs.delete(key);
-    }
-
-    // Clear any Edit Requests / grants tied to this seal
-    await sweepEditAccess(attachmentId);
-
-    // Notify watchers
-    await notifyWatchers(attachmentId, {
-      attachmentName: sealRecord.attachmentName,
-      contentId: sealRecord.contentId,
-    });
+    // The teardown itself lives in ./release.js so the expiry sweep's auto-release (F5)
+    // runs the SAME one — six key families have to be cleaned in step, and two copies of
+    // that list is how they end up disagreeing.
+    const released = await releaseSeal(attachmentId, sealRecord, { fallbackSpaceKey: realmKey });
+    if (!released.success) return released;
 
     // Notify seal owner when a steward forcefully unseals their artifact
     if (releaseReason === "admin override" && sealRecord.lockedBy && sealRecord.contentId) {
@@ -586,33 +523,124 @@ const unsealArtifact = async (req) => {
       }
     }
 
-    // Manage inline panel: keep if other seals remain, remove if page is clear
-    if (sealRecord.contentId) {
-      try {
-        const realmKeyForPanel = sealRecord.spaceKey || realmKey;
-        const { results: remainingSeals } = await kvs
-          .query()
-          .where("key", WhereConditions.beginsWith("protection-"))
-          .limit(100)
-          .getMany();
-        const pageHasSeals = remainingSeals.some(
-          ({ value }) => value && value.contentId === sealRecord.contentId,
-        );
-
-        if (pageHasSeals && realmKeyForPanel) {
-          await triggerPanelEmbed(sealRecord.contentId, realmKeyForPanel);
-        } else if (!pageHasSeals) {
-          await removePanelNode(sealRecord.contentId);
-        }
-      } catch (panelErr) {
-        console.warn("[UNSEAL] Panel management failed:", panelErr);
-      }
-    }
-
     return { success: true, reason: releaseReason };
   } else {
     return { success: false, reason: "Permission denied" };
   }
+};
+
+/**
+ * Extend a seal's retention period (F4 — owner feedback 2026-08-27).
+ *
+ * Before this there was exactly one way out of an overdue seal: unseal it and seal it
+ * again, which loses the labels, the comment, the presentation baseline and every edit
+ * grant hanging off it. "Overdue" was therefore a dead end that the UI offered no way
+ * back from, which is also what made the expired-seal refusal on approve-edit-request
+ * look like a broken button.
+ *
+ * Authorization is the SAME bar as unsealArtifact, deliberately: the only client input
+ * is attachmentId, and everything else is read from the seal record that id resolves to
+ * (its own spaceKey, its own contentId), so there is no payload object to be a deputy
+ * for. Owner, or a steward of the space the SEAL lives in — never the space the caller
+ * happens to be standing in.
+ */
+const extendSeal = async (req) => {
+  const { attachmentId, additionalSeconds } = req.payload || {};
+  const operatorAccountId = req.context.accountId;
+  if (!attachmentId) return { success: false, reason: "Missing attachment" };
+
+  const contextSpaceKey =
+    req.context.extension?.content?.space?.key ||
+    req.context.extension?.space?.key;
+
+  const sealRecord = await kvs.get(`protection-${attachmentId}`);
+  if (!sealRecord || !sealRecord.lockedBy) {
+    return { success: false, reason: "This file is not sealed" };
+  }
+  // S7: a trashedOnly record is a tracking stub, not a seal — there is no retention to extend.
+  if (sealRecord.trashedOnly) {
+    return { success: false, reason: "This file is in the trash — restore it before extending the seal" };
+  }
+
+  let authorized = sealRecord.lockedBy === operatorAccountId;
+  if (!authorized) {
+    try {
+      authorized = await authorizeSteward(operatorAccountId, sealRecord.spaceKey || contextSpaceKey);
+    } catch (_) { authorized = false; }
+  }
+  if (!authorized) {
+    return { success: false, reason: "Only the seal owner or a space steward can extend this seal" };
+  }
+
+  // How long to add: an explicit request wins, otherwise the same policy chain a fresh
+  // seal would resolve. sanitizeHoldDuration is the it55 clamp — a negative or NaN value
+  // would otherwise produce an expiry in the PAST, i.e. an "extension" that expires the seal.
+  let addSeconds = sanitizeHoldDuration(additionalSeconds, 0);
+  if (!addSeconds) {
+    addSeconds = await resolveSealHoldPeriod(sealRecord.spaceKey || contextSpaceKey);
+  }
+  addSeconds = sanitizeHoldDuration(addSeconds, BASELINE_HOLD_SPAN);
+
+  // A live seal extends from its current expiry (the owner keeps what they already had);
+  // a lapsed one extends from now, because anchoring on a date in the past would hand back
+  // a seal that is still overdue.
+  const now = Date.now();
+  const currentExpiryMs = sealRecord.expiresAt ? new Date(sealRecord.expiresAt).getTime() : 0;
+  const anchorMs = Number.isFinite(currentExpiryMs) && currentExpiryMs > now ? currentExpiryMs : now;
+  const newExpiresAt = new Date(anchorMs + addSeconds * 1000).toISOString();
+
+  const updated = {
+    ...sealRecord,
+    expiresAt: newExpiresAt,
+    extendedAt: new Date().toISOString(),
+    extendedBy: operatorAccountId,
+    extensionCount: (Number(sealRecord.extensionCount) || 0) + 1,
+  };
+  await kvs.set(`protection-${attachmentId}`, updated);
+  await touchSealTimestamp();
+
+  // The space index row carries its own copy of expiresAt — the consoles render "Overdue"
+  // from THAT, so leaving it behind means the steward view keeps showing a seal as lapsed
+  // after it was extended.
+  if (sealRecord.spaceId) {
+    try {
+      const indexKey = `space-protection-${sealRecord.spaceId}-${attachmentId}`;
+      const indexRow = await kvs.get(indexKey);
+      if (indexRow) await kvs.set(indexKey, { ...indexRow, expiresAt: newExpiresAt });
+    } catch (e) {
+      console.warn("[EXTEND-SEAL] index row update failed:", e);
+    }
+  }
+
+  if (sealRecord.contentId) {
+    await writeSealContentProp(sealRecord.contentId, updated).catch((e) =>
+      console.warn("[EXTEND-SEAL] content property update failed:", e));
+  }
+
+  // Edit grants were written with a KVS TTL pinned to the OLD expiry so they die with the
+  // seal. Extending the seal without extending them would silently revoke an approved
+  // editor's access partway through the new period.
+  try {
+    const { results } = await kvs
+      .query()
+      .where("key", WhereConditions.beginsWith(`edit-grant-${attachmentId}-`))
+      .limit(50)
+      .getMany();
+    for (const { key, value } of results || []) {
+      if (!value) continue;
+      await setUntil(key, { ...value, expiresAt: newExpiresAt }, new Date(newExpiresAt).getTime());
+    }
+  } catch (e) {
+    console.warn("[EXTEND-SEAL] edit-grant TTL extension failed:", e);
+  }
+
+  // Restart the lapse cycle: the sweep's notice counter and its dedup flags describe the
+  // period that just got extended. Leaving them would mean the next lapse notifies fewer
+  // times than the policy promises, or not at all.
+  await kvs.delete(`expiry-notified-${attachmentId}`).catch(() => {});
+  await kvs.delete(`fifty-percent-reminder-sent-${attachmentId}`).catch(() => {});
+
+  return { success: true, expiresAt: newExpiresAt, extensionCount: updated.extensionCount };
 };
 
 /**
@@ -1190,6 +1218,7 @@ export const purgeSealRecord = async (req) => {
 export const actions = [
   ["seal-artifact", sealArtifact],
   ["unseal-artifact", unsealArtifact],
+  ["extend-seal", extendSeal],
   ["enumerate-doc-artifacts", enumerateDocArtifacts],
   ["enumerate-operator-seals", enumerateOperatorSeals],
   ["enumerate-page-seals", enumeratePageSeals],

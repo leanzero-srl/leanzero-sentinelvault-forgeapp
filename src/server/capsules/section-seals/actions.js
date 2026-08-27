@@ -1,10 +1,9 @@
 import { asApp, asUser, route } from "@forge/api";
 import { kvs, WhereConditions } from "@forge/kvs";
 
-import { BASELINE_HOLD_SPAN } from "../../shared/baseline.js";
 import { authorizeSteward } from "../../shared/steward-checks.js";
 import { canEditPage, canReadPage, mustVerify } from "../../shared/content-access.js";
-import { touchSealTimestamp } from "../sealing/logic.js";
+import { touchSealTimestamp, resolveSealHoldPeriod } from "../sealing/logic.js";
 import { restampIfEnforced } from "../workflow/logic.js";
 import {
   readDocBody,
@@ -38,22 +37,6 @@ function textOfHeading(node) {
   };
   walk(node);
   return t.trim();
-}
-
-/**
- * Resolve the effective hold period (seconds): explicit override → realm policy →
- * global default → baseline. Mirrors sealArtifact's resolution.
- */
-async function resolveHoldPeriod(realmKey, override) {
-  if (override && Number.isFinite(override) && override > 0) return override;
-  if (realmKey) {
-    const sanitized = realmKey.replace(/[^a-zA-Z0-9:._\s-#]/g, "_");
-    const realmPolicy = await kvs.get(`admin-settings-space-${sanitized}`);
-    if (realmPolicy?.autoUnlockTimeoutHours) return realmPolicy.autoUnlockTimeoutHours * 3600;
-  }
-  const globalPolicy = await kvs.get("admin-settings-global");
-  if (globalPolicy?.defaultLockDuration) return globalPolicy.defaultLockDuration;
-  return BASELINE_HOLD_SPAN;
 }
 
 /**
@@ -167,7 +150,7 @@ export const sealSection = async (req) => {
   const extensionKey = await resolveSealedSectionKey();
   if (!extensionKey) return { success: false, reason: "Could not resolve section macro key" };
 
-  const holdPeriod = await resolveHoldPeriod(realmKey, lockDuration);
+  const holdPeriod = await resolveSealHoldPeriod(realmKey, lockDuration);
   const expiresAt = new Date(Date.now() + holdPeriod * 1000).toISOString();
   const sectionId = newSectionId();
 

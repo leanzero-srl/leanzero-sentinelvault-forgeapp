@@ -1,7 +1,40 @@
 import { kvs } from "@forge/kvs";
 import { asApp, route } from "@forge/api";
 import { authorizeSteward } from "../../shared/steward-checks.js";
+import { BASELINE_HOLD_SPAN, sanitizeHoldDuration } from "../../shared/baseline.js";
 import { notifyWatchers } from "../bulletins/logic.js";
+
+/**
+ * Resolve the effective seal hold period, in seconds, for a space.
+ *
+ * space policy (autoUnlockTimeoutHours) → global policy (defaultLockDuration) → baseline.
+ *
+ * This chain existed in three places — inline in sealArtifact, again as resolveHoldPeriod
+ * in the section-seals capsule, and it was about to be written a fourth time for the
+ * extend-seal action. Three copies of one rule is how they end up disagreeing about which
+ * level wins, so there is one and the callers share it.
+ *
+ * The result is clamped: store-policy persists autoUnlockTimeoutHours / defaultLockDuration
+ * RAW, so a negative or absurd stored value would otherwise flow into an expiresAt in the
+ * past (a record that reads "sealed" while being unprotected) or an overflowing Date.
+ */
+export async function resolveSealHoldPeriod(spaceKey, override) {
+  const explicit = sanitizeHoldDuration(override, 0);
+  if (explicit) return explicit;
+
+  if (spaceKey) {
+    const sanitizedKey = String(spaceKey).replace(/[^a-zA-Z0-9:._\s-#]/g, "_");
+    const spacePolicy = await kvs.get(`admin-settings-space-${sanitizedKey}`);
+    if (spacePolicy?.autoUnlockTimeoutHours) {
+      return sanitizeHoldDuration(spacePolicy.autoUnlockTimeoutHours * 3600, BASELINE_HOLD_SPAN);
+    }
+  }
+  const globalPolicy = await kvs.get("admin-settings-global");
+  if (globalPolicy?.defaultLockDuration) {
+    return sanitizeHoldDuration(globalPolicy.defaultLockDuration, BASELINE_HOLD_SPAN);
+  }
+  return BASELINE_HOLD_SPAN;
+}
 
 /**
  * Update the seals-last-modified timestamp so the sealIndexCron
