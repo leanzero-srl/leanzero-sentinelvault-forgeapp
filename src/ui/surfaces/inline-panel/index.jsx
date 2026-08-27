@@ -1154,6 +1154,7 @@ const SealedSectionsGroup = ({ pageId, onChanged }) => {
   const [headings, setHeadings] = useState([]);
   const [headingsLoading, setHeadingsLoading] = useState(false);
   const [sealingIndex, setSealingIndex] = useState(null);
+  const [sealError, setSealError] = useState(null);
   const [collapsed, setCollapsed] = useState(false);
 
   const load = useCallback(async () => {
@@ -1173,6 +1174,7 @@ const SealedSectionsGroup = ({ pageId, onChanged }) => {
 
   const openPicker = async () => {
     setPicking(true);
+    setSealError(null);
     setHeadingsLoading(true);
     try {
       const r = await invoke("list-page-headings", { pageId });
@@ -1190,11 +1192,14 @@ const SealedSectionsGroup = ({ pageId, onChanged }) => {
     try {
       const r = await invoke("seal-section", { pageId, headingIndex: h.index, headingText: h.text });
       if (r?.success) {
+        setSealError(null);
         setPicking(false);
         await load();
         if (onChanged) onChanged();
       } else {
-        console.warn("seal-section declined:", r?.reason);
+        // SV-SEC-1: the gate can now decline. Surface it — swallowing the refusal into a
+        // console.warn made a denied user see the spinner stop and nothing happen.
+        setSealError(r?.reason || "Could not seal this section.");
       }
     } catch (e) {
       console.error("Seal section failed:", e);
@@ -1242,6 +1247,7 @@ const SealedSectionsGroup = ({ pageId, onChanged }) => {
           {picking && (
             <div className="sv-section-picker">
               {headingsLoading && <div className="sv-panel-loading">Reading page…</div>}
+              {sealError && <div className="sv-panel-empty">{sealError}</div>}
               {!headingsLoading && headings.length === 0 && (
                 <div className="sv-panel-empty">No headings to seal. Add a heading, then try again.</div>
               )}
