@@ -3,4 +3,4 @@
  * A placeholder is COMMITTED so the Forge backend bundle always resolves this import;
  * the generator overwrites it locally on every npm build / deploy (commit churn expected).
  */
-export const BUILD_INFO = { gitSha: "0140e44", builtAt: "2026-09-05T22:41:59.395Z" };
+export const BUILD_INFO = { gitSha: "8fd8cc7", builtAt: "2026-09-05T22:44:36.389Z" };
