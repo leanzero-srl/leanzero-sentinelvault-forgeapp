@@ -12,6 +12,8 @@ import {
   mailStewardOverrideNotice,
   fetchOperatorProfile,
 } from "../../infra/notice-composer.js";
+import { recordActivity } from "../../infra/activity-log.js";
+import { resolvePageSpaceKey } from "../../shared/content-access.js";
 
 // Queue for background realm scanning
 // it57: realm-audit-queue is constructed lazily at push time (see launch-realm-audit) so this module
@@ -287,6 +289,20 @@ const stewardUnseal = async (req) => {
         }
       }
 
+      // A1: a lapsed seal cleared by whoever clicked — not a force (no steward gate ran on this
+      // branch) and not the sweep's auto-release; the details say which it was.
+      await recordActivity({
+        type: "seal.released",
+        pageId: sealRecord.contentId || null,
+        // Not the payload's spaceKey: this branch runs with no steward gate, so an attacker-chosen
+        // key would land a row in another space's report (A1 review F2). The object's own space.
+        spaceKey: sealRecord.spaceKey || (sealRecord.contentId ? await resolvePageSpaceKey(sealRecord.contentId) : null) || null,
+        actor: { accountId: operatorAccountId, name: null },
+        target: { kind: "attachment", id: attachmentId, name: sealRecord.attachmentName || null },
+        details: { reason: "lapsed", via: "steward-unseal", ownerAccountId: sealRecord.lockedBy || null },
+        version: null,
+      });
+
       await notifyWatchers(attachmentId, {
         attachmentName: sealRecord.attachmentName,
         contentId: sealRecord.contentId,
@@ -321,6 +337,18 @@ const stewardUnseal = async (req) => {
   }
 
   await touchSealTimestamp();
+
+  // A1: the seal is confirmed gone (verified read-back above); the rest of the teardown is
+  // best-effort and must not stand between the fact and its record.
+  await recordActivity({
+    type: "seal.forced",
+    pageId: sealRecord.contentId || null,
+    spaceKey: effectiveRealmKey,
+    actor: { accountId: operatorAccountId, name: null },
+    target: { kind: "attachment", id: attachmentId, name: sealRecord.attachmentName || null },
+    details: { ownerAccountId: sealRecord.lockedBy || null, ownerName: sealRecord.lockedByName || null, via: "realm-console" },
+    version: null,
+  });
 
   if (sealRecord.contentId) {
     await removeSealContentProp(sealRecord.contentId);

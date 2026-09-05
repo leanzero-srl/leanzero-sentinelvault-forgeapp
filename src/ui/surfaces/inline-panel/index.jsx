@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import { invoke, view, router } from "@forge/bridge";
 import { enablePaletteSync } from "../../kit/palette-sync";
 import ThumbnailPreview from "../../kit/ThumbnailPreview";
+import ActivityFeed from "../../kit/ActivityFeed";
 
 // ── Icon components ──────────────────────────────────
 
@@ -1326,6 +1327,28 @@ const SealedSectionsGroup = ({ pageId, onChanged }) => {
   );
 };
 
+// ── Activity group (A1 — Document Activity) ──────────
+// Same header treatment as the sibling groups (caret toggle, uppercase title, note on the right).
+// `reloadKey` is bumped by the panel whenever a seal changes hands so the feed shows the event
+// the user just caused without a page reload.
+
+const ActivityGroup = ({ pageId, reloadKey }) => {
+  const [collapsed, setCollapsed] = useState(false);
+  if (!pageId) return null;
+  return (
+    <div className="sv-card-section sv-activity-section">
+      <div className="sv-card-section-header">
+        <button className="sv-group-toggle" onClick={() => setCollapsed(!collapsed)} title={collapsed ? "Expand" : "Collapse"}>
+          <span className={`sv-group-caret ${collapsed ? "collapsed" : ""}`}>▾</span>
+        </button>
+        <span className="sv-card-section-title">Activity</span>
+        <span className="sv-card-section-note">Everything Sentinel Vault did or was asked to do on this page</span>
+      </div>
+      {!collapsed && <ActivityFeed pageId={pageId} pageSize={10} compact reloadKey={reloadKey} />}
+    </div>
+  );
+};
+
 // ── Onboarding explainer (dismissible, shown once) ───
 
 const EXPLAINER_KEY = "sv-explainer-dismissed-v1";
@@ -1377,6 +1400,9 @@ const ArtifactGridView = () => {
   const [nextCursor, setNextCursor] = useState(null);
   const [loadingMore, setLoadingMore] = useState(false);
   const [panelConfig, setPanelConfig] = useState(INITIAL_CONFIG);
+  // A1: bumped whenever seals change (an action here, or the stamp poll seeing another surface's
+  // change) so the Activity group refetches and shows the event that just happened.
+  const [activityReload, setActivityReload] = useState(0);
 
   // Fetch artifacts from backend — merges with any existing KVS-sourced claimed files
   const retrieveFileData = useCallback(async (pid, append = false, cursor = null, isEnrichPhase = false) => {
@@ -1431,6 +1457,7 @@ const ArtifactGridView = () => {
       }
     } catch (_) { /* fall through */ }
     retrieveFileData(pageId, false, null, true);
+    setActivityReload((n) => n + 1);
   }, [pageId, retrieveFileData]);
 
   // Load more
@@ -1512,6 +1539,7 @@ const ArtifactGridView = () => {
         const { stamp } = await invoke("check-seal-stamp");
         if (lastStamp !== null && stamp !== lastStamp) {
           retrieveFileData(pageId);
+          setActivityReload((n) => n + 1);
         }
         lastStamp = stamp;
       } catch (e) {
@@ -1674,6 +1702,10 @@ const ArtifactGridView = () => {
       {/* Sealed Sections (Content Sealing) — page CONTENT, not files. Kept last and visually
           divided from everything above so the two are never read as one surface. */}
       {!loading && !isEditing && <SealedSectionsGroup pageId={pageId} onChanged={onRefresh} />}
+
+      {/* Activity (A1) — the record of what happened on this page, newest first. Last, because it
+          is a log to consult rather than a control to act on. */}
+      {!loading && !isEditing && <ActivityGroup pageId={pageId} reloadKey={activityReload} />}
     </div>
   );
 };

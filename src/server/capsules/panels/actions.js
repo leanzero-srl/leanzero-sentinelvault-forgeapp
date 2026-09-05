@@ -2,6 +2,7 @@ import { asUser, asApp, route } from "@forge/api";
 import { kvs } from "@forge/kvs";
 import { withinUploadSizeLimit, MAX_UPLOAD_LABEL } from "../../shared/upload-limits.js";
 import { canEditPage, canReadPage, mustVerify } from "../../shared/content-access.js";
+import { recordActivity } from "../../infra/activity-log.js";
 import { isOperatorSiteAdmin } from "../../shared/steward-checks.js";
 
 import {
@@ -295,6 +296,16 @@ export const deleteArtifact = async (req) => {
         await kvs.set(`protection-${attachmentId}`, { ...freshSeal, trashedOnly: true });
         const { touchSealTimestamp } = await import("../sealing/logic.js");
         await touchSealTimestamp();
+        // A1: the seal ended here by the owner's own delete (A1 review F6).
+        await recordActivity({
+          type: "seal.released",
+          pageId: pageId || sealData.contentId || null,
+          spaceKey: sealData.spaceKey || null,
+          actor: { accountId: req.context.accountId, name: sealData.lockedByName || null },
+          target: { kind: "attachment", id: attachmentId, name: sealData.attachmentName || attTitle || null },
+          details: { reason: "owner-deleted", via: "panel" },
+          version: null,
+        });
       }
       return { success: true };
     }

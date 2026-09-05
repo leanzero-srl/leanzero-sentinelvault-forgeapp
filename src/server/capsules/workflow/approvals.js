@@ -26,6 +26,7 @@ import { kvs, WhereConditions } from "@forge/kvs";
 import { setWithTtl } from "../../shared/kvs-ttl.js";
 import { transitionPageWorkflow, readPageWorkflow, fetchLivePageVersion } from "./logic.js";
 import { notifyApprovalRequested, notifyApprovalResolved } from "../../infra/approval-blueprints.js";
+import { recordActivity } from "../../infra/activity-log.js";
 
 const APPROVAL_ID = "approval"; // v1 single default round; schema carries the segment for future named rounds
 
@@ -144,6 +145,25 @@ export async function requestApprovalTransition({ pageId, toStateId, toStateName
     requestedAt, pinnedVersion, approvers, mode, min, spaceKey: spaceKey || null,
     // #46: the AI review axis, AND-composed with the human quorum on the same pinned version.
     aiGate: aiGate?.required ? { required: true, status: "pending", threshold: aiGate.threshold || "medium", reviewedVersion: null, reason: null, enqueuedAt: Date.now() } : null,
+  });
+  // A1: the pending record is written — the request is open from here on.
+  await recordActivity({
+    type: "workflow.approval-requested",
+    pageId,
+    spaceKey: spaceKey || null,
+    actor: actorAccountId ? { accountId: actorAccountId, name: actorName || null } : null,
+    target: { kind: "page", id: pageId, name: null },
+    details: {
+      to: toStateId,
+      toName: toStateName || toStateId,
+      approverCount: approvers.length,
+      approvers: approvers.slice(0, 10), // ids are ~47 bytes each; 22 would breach the 1 KB details cap (A1 review F3)
+      mode,
+      min,
+      pinnedVersion: pinnedVersion ?? null,
+      aiGate: aiGate?.required ? true : false,
+    },
+    version: pinnedVersion ?? null,
   });
   // Best-effort: @mention the approvers in a page comment so Confluence emails them.
   if (approvers.length) {
@@ -287,6 +307,30 @@ export async function decideApproval({ pageId, approverAccountId, decision, reas
   const records = await readApprovalRecords(pageId, stateId, approvers);
   const outcome = evaluateApproval(pending.mode, pending.min, records.map((r) => r.status || "pending"));
 
+  // A1: the vote is recorded (kvs.set above) — witness it with the outcome the vote produced.
+  // `outcome` here is what the quorum says; the finalizer may still turn "approved" into
+  // "stale" (page changed) or a no-op, so the result's own outcome wins when it has one.
+  const decided = async (result) => {
+    await recordActivity({
+      type: "workflow.approval-decided",
+      pageId,
+      spaceKey: pending.spaceKey || null,
+      actor: { accountId: approverAccountId, name: actorName || record.approverName || null },
+      target: { kind: "page", id: pageId, name: null },
+      details: {
+        decision,
+        reason: reason || null,
+        to: stateId,
+        toName: pending.toStateName || stateId,
+        versionAtDecision: await fetchLivePageVersion(pageId),
+        outcome: result?.outcome || outcome,
+        transitioned: result?.transitioned === true,
+      },
+      version: pending.pinnedVersion ?? null,
+    });
+    return result;
+  };
+
   if (outcome === "approved") {
     // #46: the human quorum is met — the transition completes only when the AI axis (if
     // required) has also passed. RE-READ the pending fresh so a verdict that landed AFTER our
@@ -295,19 +339,19 @@ export async function decideApproval({ pageId, approverAccountId, decision, reas
     const freshPending = (await kvs.get(pendingKey(pageId))) || pending;
     if (freshPending.aiGate?.required && freshPending.aiGate.status !== "passed") {
       if (freshPending.aiGate.status === "failed") {
-        return { success: true, outcome: "ai-blocked", transitioned: false, reason: "AI content review did not pass — revise and re-request." };
+        return decided({ success: true, outcome: "ai-blocked", transitioned: false, reason: "AI content review did not pass — revise and re-request." });
       }
-      return { success: true, outcome: "pending-ai", transitioned: false, reason: "Approvals complete — waiting on the AI content review." };
+      return decided({ success: true, outcome: "pending-ai", transitioned: false, reason: "Approvals complete — waiting on the AI content review." });
     }
     const voteSummary = `approved (${records.filter((r) => r.status === "approved").length}/${records.length})`;
-    return await finalizeApprovedTransition(pageId, stateId, freshPending, approverAccountId, actorName, voteSummary);
+    return decided(await finalizeApprovedTransition(pageId, stateId, freshPending, approverAccountId, actorName, voteSummary));
   }
   if (outcome === "denied") {
     await clearPageApprovals(pageId, stateId, approvers);
     await notifyApprovalResolved({ pageId, requestedBy: pending.requestedBy, outcome: "denied", targetName: pending.toStateName || stateId, deciderName: actorName }).catch(() => {});
-    return { success: true, outcome: "denied" };
+    return decided({ success: true, outcome: "denied" });
   }
-  return { success: true, outcome: "pending" };
+  return decided({ success: true, outcome: "pending" });
 }
 
 // Read model for the page/panel: the pending transition + per-approver statuses + staleness.

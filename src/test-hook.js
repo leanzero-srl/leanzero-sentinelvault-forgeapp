@@ -84,6 +84,11 @@ import { insertPanelNode, resolveExtensionKey } from "./server/infra/doc-surgery
 // also reports the gate decision on its own — otherwise an allowed-but-undownloadable preview is
 // indistinguishable from a refused one (both are null).
 import { canReadPage } from "./server/shared/content-access.js";
+// A1: activity-log read seams. The capsule is KVS + the two shared gates only (Queue/LLM-free —
+// import-safe). Both gated resolvers need a REAL account: the page feed asks Confluence whether
+// the actor can read the page, the space report resolves stewardship through the KVS adminUsers
+// list (asUser has no session in a webtrigger — same shape as the getWorkflowDashboard seam).
+import { actions as activityActions } from "./server/capsules/activity/actions.js";
 // B11: live AI validation pipeline. validations/actions.js is import-safe after the it57 lazy-Queue
 // refactor (ai-validation-queue is now built at push time, not module load — the it17 trap). The real
 // Forge LLM runs in the queue consumer; the enqueue/poll/findings resolvers are the driveable seam.
@@ -232,7 +237,7 @@ export async function testStateTrigger(req) {
       if (fn === "sweepRevert") {
         const rec = await readPageWorkflow(q(req, "pageId"));
         const ok = await sweepRevertToApproved(q(req, "pageId"), rec);
-        return json(200, { invoked: fn, result: { reverted: ok } });
+        return json(200, { invoked: fn, result: { reverted: !!ok, wrote: ok ? ok.wrote : null, version: ok ? ok.version : null } });
       }
       if (fn === "dashboard") {
         // SV-SEC-1: get-workflow-dashboard is steward-gated now (it returns a whole space's page
@@ -660,6 +665,37 @@ export async function testStateTrigger(req) {
       // bulletins: the toggle read that feeds flashMessagesEnabled() (toast gate) on every surface.
       if (fn === "loadBulletinToggles") {
         const r = await byKey(bulletinsActions, "load-bulletin-toggles")({ payload: {}, context: {} });
+        return json(200, { invoked: fn, result: r });
+      }
+      // A1: per-page activity feed. No extension context is passed on purpose, so mustVerify
+      // always sends the payload pageId through canReadPage — the seam asserts the gate, not a
+      // bypass of it (a refused actor gets entries: [] + reason).
+      if (fn === "getPageActivity") {
+        const lim = parseInt(q(req, "limit"), 10);
+        const r = await byKey(activityActions, "get-page-activity")({
+          payload: { pageId: q(req, "page") || q(req, "pageId"), cursor: q(req, "cursor") || undefined, limit: Number.isFinite(lim) ? lim : undefined },
+          context: { accountId: q(req, "actor"), extension: {} },
+        });
+        return json(200, { invoked: fn, result: r });
+      }
+      // A1: per-space activity report with the server-side filters. `types` is a csv of exact
+      // ACTIVITY_TYPES strings; since/until are ISO or ms; pageId narrows to one page.
+      if (fn === "getSpaceActivity") {
+        const lim = parseInt(q(req, "limit"), 10);
+        const typesCsv = q(req, "types");
+        const r = await byKey(activityActions, "get-space-activity")({
+          payload: {
+            spaceKey: q(req, "space") || q(req, "spaceKey"),
+            cursor: q(req, "cursor") || undefined,
+            limit: Number.isFinite(lim) ? lim : undefined,
+            types: typesCsv ? String(typesCsv).split(",").map((t) => t.trim()).filter(Boolean) : undefined,
+            since: q(req, "since") || undefined,
+            until: q(req, "until") || undefined,
+            pageId: q(req, "page") || q(req, "pageId") || undefined,
+            actorAccountId: q(req, "actorAccountId") || undefined,
+          },
+          context: { accountId: q(req, "actor") },
+        });
         return json(200, { invoked: fn, result: r });
       }
       return json(400, { error: `unknown fn=${fn}` });

@@ -11,6 +11,7 @@ import WorkflowInbox from "../../kit/WorkflowInbox";
 import LicenseBanner from "../../kit/LicenseBanner";
 import { formatRemaining, formatDurationHours } from "../../kit/format-duration";
 import { WorkflowDashboard } from "../../kit/WorkflowDashboard";
+import ActivityReport from "../../kit/ActivityReport";
 import logo from "../../assets/icons/icon.png";
 import { BUILD_INFO } from "../../../build-info.js";
 
@@ -1547,6 +1548,10 @@ const RealmPolicyDashboard = () => {
               onClick={() => setActiveTab("workflow")}>
               Workflow
             </button>
+            <button className={`tab-button ${activeTab === "activity" ? "active" : ""}`}
+              onClick={() => setActiveTab("activity")}>
+              Activity
+            </button>
           </>
         )}
       </div>
@@ -2299,7 +2304,14 @@ const RealmPolicyDashboard = () => {
         </div>
       )}
 
-      {userRole === "steward" && activeTab !== "validations" && activeTab !== "workflow" && (
+      {/* A1: the Activity report is read-only — nothing to apply, so it has no action bar. */}
+      {activeTab === "activity" && userRole === "steward" && (
+        <div className="tab-content">
+          <ActivityReport spaceKey={realmKey} siteUrl={siteUrl} />
+        </div>
+      )}
+
+      {userRole === "steward" && activeTab !== "validations" && activeTab !== "workflow" && activeTab !== "activity" && (
         <div className="action-bar">
           <button
             className="btn-primary"
