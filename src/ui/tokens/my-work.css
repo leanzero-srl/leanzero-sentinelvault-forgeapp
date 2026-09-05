@@ -218,3 +218,12 @@ body { margin: 0; background: var(--sv-bg-primary); color: var(--sv-text-primary
 .mw-error { margin: 0 0 10px; padding: 10px 12px; border-radius: 8px; background: #DC2626; color: #fff; font-size: 13px; font-weight: 700; }
 .mw-loading { font-size: 13px; color: var(--sv-text-secondary); }
 html[data-color-mode="dark"] .mw-row { background: var(--sv-bg-secondary); }
+
+/* B3: signature enrolment */
+.mw-ok { margin: 0 0 10px; padding: 10px 12px; border-radius: 8px; background: #15803d; color: #fff; font-size: 13px; font-weight: 700; }
+.mw-enrol { display: flex; gap: 18px; align-items: flex-start; margin-top: 12px; padding: 14px; border-radius: 10px; background: var(--sv-bg-secondary, #F8FAFC); }
+.mw-qr { width: 168px; height: 168px; border-radius: 8px; background: #fff; flex-shrink: 0; }
+.mw-enrol-steps { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.mw-secret { display: inline-block; padding: 6px 10px; border-radius: 8px; background: var(--sv-bg-primary, #fff); border: 1.5px solid #7C3AED; font-size: 13px; font-weight: 800; letter-spacing: 0.08em; word-break: break-all; }
+.mw-code { width: 130px; padding: 7px 10px; border: 1.5px solid #7C3AED; border-radius: 8px; font: inherit; font-size: 16px; font-weight: 800; letter-spacing: 0.18em; }
+.mw-foot { align-items: center; gap: 12px; }

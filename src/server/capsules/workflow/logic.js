@@ -493,6 +493,8 @@ export async function setSpaceWorkflowSettings(spaceKey, settings) {
     syncLabels: settings?.syncLabels === true,
     // B2: read confirmations on approved pages — { enabled, audience: [{type,id,name}] } or null.
     readConfirmation: sanitizeReadConfirmation(settings?.readConfirmation),
+    // B3: every approval decision must carry a TOTP from the approver's enrolled device.
+    requireSignature: settings?.requireSignature === true,
   };
   // Optional approval config for the enforce transition (#43). Shape:
   // { approvers: [{ type:"user"|"group", id, name }], mode:"any"|"all"|"min", min }.

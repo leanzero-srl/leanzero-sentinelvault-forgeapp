@@ -39,6 +39,7 @@ import {
 } from "./approvals.js";
 import { enqueueAiGate, resolveRules } from "../validations/actions.js";
 import { confirmRead, readStatus, readReport, readConfirmationRequired, requiredVersion } from "./read-acks.js";
+import { signatureStatus, startEnrollment, confirmEnrollment, revokeSignature } from "./signature.js";
 import { evaluateRules } from "../../infra/rules-engine.js";
 import { readDocBody } from "../../infra/doc-surgery.js";
 import { fetchPageLabels } from "../../infra/labels.js";
@@ -366,7 +367,7 @@ const decideApprovalAction = async (req) => {
   const { decision } = req.payload || {};
   const reason = boundReason(req.payload?.reason);
   if (!pageId) return { success: false, reason: "No page context" };
-  return decideApproval({ pageId, approverAccountId: req.context?.accountId, decision, reason, actorName: await actorName() });
+  return decideApproval({ pageId, approverAccountId: req.context?.accountId, decision, reason, actorName: await actorName(), signatureCode: typeof req.payload?.code === "string" ? req.payload.code : null });
 };
 
 const getPageApprovals = async (req) => {
@@ -374,8 +375,27 @@ const getPageApprovals = async (req) => {
   if (!pageId) return { pending: false };
   // Exposes the approver roster and each approver's decision for the named page.
   if (!(await callerMayReadPage(req, pageId))) return { pending: false };
-  return getPageApprovalStatus(pageId);
+  const status = await getPageApprovalStatus(pageId);
+  // B3: the ribbon asks for a code only when the space requires one, and can say "set up your
+  // signature first" when the caller has none.
+  if (status?.pending) {
+    const settings = await getSpaceWorkflowSettings(status.spaceKey || (await readPageWorkflow(pageId))?.spaceKey);
+    status.requireSignature = !!settings?.requireSignature;
+    if (status.requireSignature) status.signatureEnrolled = (await signatureStatus(req.context?.accountId)).enrolled;
+  }
+  return status;
 };
+
+// B3: the approver's signature device. All four act on the CALLER only (req.context) — there is
+// no payload account, so nothing here can be pointed at someone else.
+const signatureStatusAction = async (req) => signatureStatus(req.context?.accountId);
+const enrollSignatureAction = async (req) => {
+  const accountId = req.context?.accountId;
+  if (!accountId) return { success: false, reason: "No account" };
+  return startEnrollment(accountId, { accountLabel: (await actorName()) || accountId });
+};
+const confirmSignatureAction = async (req) => confirmEnrollment(req.context?.accountId, typeof req.payload?.code === "string" ? req.payload.code : "");
+const revokeSignatureAction = async (req) => revokeSignature(req.context?.accountId);
 
 const listMyApprovalsAction = async (req) => {
   const raw = await listMyApprovals(req.context?.accountId);
@@ -589,6 +609,10 @@ export const actions = [
   ["set-space-workflow-settings", setSpaceSettings],
   ["set-review-due", setReviewDue],
   ["confirm-read", confirmReadAction],
+  ["signature-status", signatureStatusAction],
+  ["enroll-signature", enrollSignatureAction],
+  ["confirm-signature-enrollment", confirmSignatureAction],
+  ["revoke-signature", revokeSignatureAction],
   ["get-read-status", getReadStatusAction],
   ["get-read-report", getReadReportAction],
   ["bulk-assign-workflow", bulkAssign],
