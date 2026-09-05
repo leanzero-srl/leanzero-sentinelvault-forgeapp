@@ -1,10 +1,14 @@
 import React, { useState, useEffect, useCallback } from "react";
-import { invoke, view } from "@forge/bridge";
+import { invoke, view, router } from "@forge/bridge";
 
 // "Approvals waiting on you" (#43). Self-contained: fetches the current user's pending
 // approvals across all pages and lets them Approve/Deny inline or open the page.
-// Renders NOTHING when there are none, so it never clutters the console.
-export default function WorkflowInbox() {
+// Renders NOTHING when there are none (the space console must not clutter), unless the host
+// passes `emptyText` — the My-work page (A7) wants "nothing waiting" said out loud.
+// Links go through `router.navigate`: a Custom UI iframe may be sandboxed without
+// allow-top-navigation (proven on the page banner, it63), where a target=_top anchor is
+// silently dropped.
+export default function WorkflowInbox({ emptyText = null, onDecided = null } = {}) {
   const [items, setItems] = useState(null);
   const [siteUrl, setSiteUrl] = useState("");
   const [busy, setBusy] = useState(null);
@@ -30,19 +34,30 @@ export default function WorkflowInbox() {
     setBusy(pageId); setMsg(null);
     try {
       const r = await invoke("decide-approval", { pageId, decision });
-      if (r?.success) { setMsg({ type: "success", text: decision === "approved" ? "Approved." : "Denied." }); await load(); }
+      if (r?.success) { setMsg({ type: "success", text: decision === "approved" ? "Approved." : "Denied." }); await load(); onDecided?.(); }
       else setMsg({ type: "error", text: r?.reason || "Could not record your decision." });
     } catch (_) {
       setMsg({ type: "error", text: "Could not record your decision." });
     } finally {
       setBusy(null);
     }
-  }, [load]);
+  }, [load, onDecided]);
 
-  if (items === null || items.length === 0) return null;
+  if (items === null) return emptyText ? <div className="wf-inbox wf-inbox-empty" data-testid="wf-inbox-loading">Checking for approvals…</div> : null;
+  if (items.length === 0) {
+    if (!emptyText) return null;
+    return (
+      <div className="wf-inbox wf-inbox-empty" data-testid="wf-inbox-empty">
+        <div className="wf-inbox-head"><span className="wf-inbox-title">Approvals waiting on you</span><span className="wf-inbox-count wf-inbox-count-zero">0</span></div>
+        <p className="wf-inbox-none">{emptyText}</p>
+      </div>
+    );
+  }
+
+  const open = (e, pageId) => { e.preventDefault(); router.navigate(`/wiki/pages/viewpage.action?pageId=${pageId}`); };
 
   return (
-    <div className="wf-inbox">
+    <div className="wf-inbox" data-testid="wf-inbox">
       <div className="wf-inbox-head">
         <span className="wf-inbox-title">Approvals waiting on you</span>
         <span className="wf-inbox-count">{items.length}</span>
@@ -52,7 +67,7 @@ export default function WorkflowInbox() {
         {items.map((it) => (
           <li key={it.pageId} className="wf-inbox-row">
             <div className="wf-inbox-info">
-              <a className="wf-inbox-page" href={siteUrl ? `${siteUrl}/wiki/pages/viewpage.action?pageId=${it.pageId}` : "#"} target="_top" rel="noreferrer">{it.pageTitle}</a>
+              <a className="wf-inbox-page" href={siteUrl ? `${siteUrl}/wiki/pages/viewpage.action?pageId=${it.pageId}` : "#"} onClick={(e) => open(e, it.pageId)} data-testid="wf-inbox-page">{it.pageTitle}</a>
               <span className="wf-inbox-meta">Move to <strong>{it.toStateName}</strong>{it.requestedByName ? ` · requested by ${it.requestedByName}` : ""}</span>
             </div>
             <div className="wf-inbox-actions">
