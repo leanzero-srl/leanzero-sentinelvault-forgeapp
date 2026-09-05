@@ -35,6 +35,9 @@ export const DEFAULT_WORKFLOW = {
     { from: "in_review", to: "approved" },
     { from: "in_review", to: "draft" },
     { from: "approved", to: "draft" },
+    // A2 (2026-09-05): an Approved page can go BACK TO REVIEW — the Comala-shaped demote target
+    // ("send it back for review rather than to the start"), and a steward's manual return.
+    { from: "approved", to: "in_review" },
     { from: "approved", to: "expired" },
     { from: "expired", to: "in_review" },
     { from: "expired", to: "draft" },
@@ -82,6 +85,103 @@ export function validateTransition(def, fromStateId, toStateId) {
   const edge = def.transitions?.some((t) => t.from === fromStateId && t.to === toStateId);
   if (!edge) return { ok: false, reason: `No transition ${fromStateId} → ${toStateId}` };
   return { ok: true };
+}
+
+// --- A2: where a tampered enforced page goes ---
+
+const enforceStateIds = (def) => (def?.states || []).filter((s) => s?.enforce).map((s) => s.id);
+
+// PURE. { ok, reason } — may `stateId` be the space's demotion target for this definition?
+// (a) it exists, (b) it is not itself an enforce state (demoting Approved to Approved is not a
+// demotion), (c) it is reachable by a defined transition from EVERY enforce state — the demote
+// runs from whichever enforce state the page is in, and a target one of them cannot reach would
+// leave that page enforced-but-not-demoted. A definition with no enforce state has nothing to
+// demote from, so no stateId is valid there ("initial" always is).
+export function validateDemoteTarget(def, stateId, entryConditions = null) {
+  if (!def || !Array.isArray(def.states)) return { ok: false, reason: "No workflow definition" };
+  const target = findState(def, stateId);
+  if (!target) return { ok: false, reason: `Unknown state: ${stateId}` };
+  if (target.enforce) return { ok: false, reason: `"${target.name || stateId}" is an approved state — a page cannot be moved back to it` };
+  // A demote is a SYSTEM move that skips the entry gate (rules / AI review) a human transition
+  // would pay, so a state that has one cannot be the target (review finding 9): the page would
+  // land past a gate nobody ran.
+  const cond = entryConditions && typeof entryConditions === "object" ? entryConditions[stateId] : null;
+  if (cond && (cond.requireRules || cond.requireAi)) {
+    return { ok: false, reason: `"${target.name || stateId}" has an entry condition — a page moved back automatically would skip it. Pick a state without one, or remove the condition` };
+  }
+  const froms = enforceStateIds(def);
+  if (!froms.length) return { ok: false, reason: "This workflow has no approved state to move pages back from" };
+  const unreachable = froms.filter((from) => !validateTransition(def, from, stateId).ok);
+  if (unreachable.length) {
+    const names = unreachable.map((id) => findState(def, id)?.name || id).join(", ");
+    return { ok: false, reason: `No transition from ${names} to "${target.name || stateId}" — add one to the workflow first` };
+  }
+  return { ok: true };
+}
+
+// PURE. The state an enforced page is demoted to after an unsanctioned edit: the space's
+// `demoteTo` when it still names a valid target (see validateDemoteTarget — a re-saved definition
+// may have dropped the state or the edge since the setting was saved), else the initial state
+// (today's behaviour, and the "initial" setting). `fromStateId` (the page's current state) tightens
+// the check to the edge that will actually be taken; without it the save-time rule applies.
+export function resolveDemoteTarget(def, settings, fromStateId) {
+  const initial = getInitialState(def);
+  const want = settings?.demoteTo;
+  if (typeof want !== "string" || !want || want === "initial") return initial;
+  if (!validateDemoteTarget(def, want, settings?.entryConditions).ok) return initial;
+  if (fromStateId && !validateTransition(def, fromStateId, want).ok) return initial;
+  return findState(def, want);
+}
+
+// --- A5: review clocks ---
+
+const isPositiveDays = (n) => typeof n === "number" && Number.isFinite(n) && n > 0;
+
+// PURE. How many days a page may sit in `state` before it is due for review, or null. The order
+// is: the per-state override in the space settings → the legacy `reviewAfterDays` setting, which
+// stays what it always was, the override for the ENFORCE state only (#45; the settings editor
+// labels it "re-review Approved pages after N days") → the state's own `reviewAfterDays` from the
+// definition (any state may carry one; the built-in workflow gives one to Approved).
+export function resolveReviewAfterDays(state, settings) {
+  if (!state) return null;
+  const byState = settings?.reviewAfterDaysByState?.[state.id];
+  if (isPositiveDays(byState)) return byState;
+  if (state.enforce && isPositiveDays(settings?.reviewAfterDays)) return settings.reviewAfterDays;
+  return isPositiveDays(state.reviewAfterDays) ? state.reviewAfterDays : null;
+}
+
+// PURE. { ok, reason, value } — the stored shape of the per-state review overrides. Unknown state
+// ids and non-positive values are REFUSED (a dead configuration must not be saved silently);
+// null / "" / undefined entries mean "no override" and are dropped.
+export function sanitizeReviewAfterDaysByState(input, def) {
+  if (input == null) return { ok: true, value: {} };
+  if (typeof input !== "object" || Array.isArray(input)) return { ok: false, reason: "reviewAfterDaysByState must be an object of { stateId: days }" };
+  const out = {};
+  for (const [stateId, raw] of Object.entries(input)) {
+    if (raw == null || raw === "") continue;
+    const state = findState(def, stateId);
+    if (!state) return { ok: false, reason: `Unknown state "${stateId}" in review clocks` };
+    const days = typeof raw === "number" ? raw : Number(raw);
+    if (!isPositiveDays(days) || !Number.isInteger(days)) {
+      return { ok: false, reason: `Review clock for "${state.name || stateId}" must be a whole number of days greater than zero` };
+    }
+    out[stateId] = days;
+  }
+  return { ok: true, value: out };
+}
+
+// PURE. A steward-set review date must parse and lie in the future (Comala 5.0.4 parity); null
+// clears the clock. Returns { ok, reason, value } with `value` normalised to ISO (or null).
+export function validateReviewDueAt(input, nowMs = Date.now()) {
+  if (input == null || input === "") return { ok: true, value: null };
+  const ms = typeof input === "number" ? input : Date.parse(String(input));
+  // Finite is not enough: `new Date(1e18).toISOString()` throws a RangeError, and the payload is
+  // attacker-controlled (review finding 5). Bound to what a Date can represent AND to a horizon a
+  // review clock could plausibly mean (100 years).
+  if (!Number.isFinite(ms) || Math.abs(ms) > 8.64e15) return { ok: false, reason: "That is not a valid date" };
+  if (ms <= nowMs) return { ok: false, reason: "The review date must be in the future" };
+  if (ms - nowMs > 100 * 365 * 24 * 3600 * 1000) return { ok: false, reason: "The review date is too far in the future" };
+  return { ok: true, value: new Date(ms).toISOString() };
 }
 
 // --- Config (global + per-space fallback, mirrors resolveEffectiveConfig) ---
@@ -252,7 +352,9 @@ export async function getWorkflowLog(pageId) {
 
 // Compute reviewDueAt (ISO) if the target state defines a review clock. #45: a per-space
 // `overrideDays` (steward-configured) takes precedence over the state's built-in default.
-function computeReviewDueAt(state, overrideDays) {
+// A5: callers pass `resolveReviewAfterDays(state, settings)` as the override, which already folds
+// the per-state map and the legacy enforce-state setting in; the signature is unchanged.
+export function computeReviewDueAt(state, overrideDays) {
   const days = (typeof overrideDays === "number" && overrideDays > 0) ? overrideDays : state?.reviewAfterDays;
   if (!days) return null;
   return new Date(Date.now() + days * 24 * 3600 * 1000).toISOString();
@@ -271,6 +373,8 @@ export async function assignPageWorkflow({ pageId, spaceKey, actorAccountId, act
   if (!initial) return { success: false, reason: "Workflow has no states" };
   const enteredAt = new Date().toISOString();
   const prev = await readPageWorkflow(pageId);
+  // A5: the initial state may carry a review clock too (definition or per-state override).
+  const settings = await getSpaceWorkflowSettings(spaceKey);
   const record = {
     workflowId: def.id,
     stateId: initial.id,
@@ -278,7 +382,7 @@ export async function assignPageWorkflow({ pageId, spaceKey, actorAccountId, act
     enteredBy: actorAccountId || null,
     enteredByName: actorName || null,
     spaceKey: spaceKey || null,
-    reviewDueAt: computeReviewDueAt(initial),
+    reviewDueAt: computeReviewDueAt(initial, resolveReviewAfterDays(initial, settings)),
   };
   await persistState(pageId, record, prev?.stateId);
   await appendWorkflowLog(pageId, { from: null, to: initial.id, by: actorAccountId || null, byName: actorName || null, reason: logReason || "assigned" });
@@ -287,7 +391,7 @@ export async function assignPageWorkflow({ pageId, spaceKey, actorAccountId, act
 
 // --- Per-space workflow activation settings (at-scale assignment) ---
 
-const DEFAULT_SPACE_SETTINGS = { enabled: false, autoAssignNew: false, workflowId: "default" };
+const DEFAULT_SPACE_SETTINGS = { enabled: false, autoAssignNew: false, workflowId: "default", demoteTo: "initial", reviewAfterDaysByState: {} };
 
 export async function getSpaceWorkflowSettings(spaceKey) {
   if (!spaceKey) return { ...DEFAULT_SPACE_SETTINGS };
@@ -314,6 +418,17 @@ function sanitizeEntryConditions(ec) {
 
 export async function setSpaceWorkflowSettings(spaceKey, settings) {
   if (!spaceKey) return { success: false, reason: "spaceKey required" };
+  // A2/A5: `demoteTo` and `reviewAfterDaysByState` name states, so they are validated against the
+  // space's RESOLVED definition and a dead value is refused here rather than ignored at enforce time.
+  const def = await resolveWorkflowDef(spaceKey);
+  let demoteTo = "initial";
+  if (typeof settings?.demoteTo === "string" && settings.demoteTo && settings.demoteTo !== "initial") {
+    const check = validateDemoteTarget(def, settings.demoteTo, sanitizeEntryConditions(settings?.entryConditions));
+    if (!check.ok) return { success: false, reason: check.reason };
+    demoteTo = settings.demoteTo;
+  }
+  const byState = sanitizeReviewAfterDaysByState(settings?.reviewAfterDaysByState, def);
+  if (!byState.ok) return { success: false, reason: byState.reason };
   const clean = {
     enabled: !!settings?.enabled,
     autoAssignNew: !!settings?.autoAssignNew,
@@ -323,8 +438,15 @@ export async function setSpaceWorkflowSettings(spaceKey, settings) {
     enforceMode: settings?.enforceMode === "revert" ? "revert" : "demote",
     // #45: re-review an Approved page after N days (null = use the workflow default). The
     // sweep auto-transitions overdue Approved pages to Expired.
+    // A5: this legacy field stays the ENFORCE-state override (see resolveReviewAfterDays).
     reviewAfterDays: (typeof settings?.reviewAfterDays === "number" && settings.reviewAfterDays > 0)
       ? Math.round(settings.reviewAfterDays) : null,
+    // A2: "initial" (today's behaviour) or a validated non-enforce state id reachable from the
+    // enforce state — see validateDemoteTarget / resolveDemoteTarget.
+    demoteTo,
+    // A5: { <stateId>: days } review clocks for states other than (or including) the enforce
+    // state; a per-state entry wins over the legacy `reviewAfterDays` above.
+    reviewAfterDaysByState: byState.value,
     // #46: per-target-state transition conditions. { <stateId>: { requireRules, requireAi,
     // aiThreshold, onBudgetExhausted } } — reuses the space validation ruleset (rulesRef "space").
     entryConditions: sanitizeEntryConditions(settings?.entryConditions),
@@ -399,11 +521,12 @@ export async function transitionPageWorkflow({ pageId, spaceKey, toStateId, acto
     // survive a move out of Approved unless it is cleared here, with the rest of the enforce set.
     enforceFields = { enforce: false, approvedVersion: null, approvers: [], approvalRecord: null };
   }
-  // #45: a review clock uses the steward's per-space override when set (only read settings
-  // when the target state actually has a review clock, to keep other transitions cheap).
-  const reviewOverride = target?.reviewAfterDays
-    ? (await getSpaceWorkflowSettings(current.spaceKey || spaceKey))?.reviewAfterDays
-    : null;
+  // #45/A5: a review clock on the entered state — per-state override, the legacy enforce-state
+  // override, or the definition's own value (resolveReviewAfterDays). A per-state override can
+  // put a clock on a state the definition gives none, so the settings are read on every move
+  // (one KVS get).
+  const settings = await getSpaceWorkflowSettings(current.spaceKey || spaceKey);
+  const reviewOverride = resolveReviewAfterDays(target, settings);
   const record = {
     ...current,
     workflowId: def.id,
@@ -459,6 +582,43 @@ export async function transitionPageWorkflow({ pageId, spaceKey, toStateId, acto
     version: enforceFields.approvedVersion ?? null,
   });
   return { success: true, record, state: target, def };
+}
+
+// A5: the steward-editable review date (Comala's clock icon). Authz is the resolver's job
+// (canEditPage + authorizeSteward on the record's space); this layer validates the date, writes
+// the record + by-state index row (the dashboard's overdue count reads it), appends the log
+// entry and records the activity row. `null` clears the clock. The once-only overdue-notice
+// marker is dropped so a date that later passes again is announced again.
+export async function setPageReviewDue({ pageId, reviewDueAt, actorAccountId, actorName, reason }) {
+  if (!pageId) return { success: false, reason: "pageId required" };
+  const check = validateReviewDueAt(reviewDueAt);
+  if (!check.ok) return { success: false, reason: check.reason };
+  const current = await readPageWorkflow(pageId);
+  if (!current) return { success: false, reason: "Page has no workflow assigned" };
+  const from = current.reviewDueAt || null;
+  const to = check.value;
+  const record = { ...current, reviewDueAt: to };
+  await persistState(pageId, record, current.stateId);
+  await kvs.delete(`workflow-review-notified-${pageId}`).catch(() => {});
+  await appendWorkflowLog(pageId, {
+    kind: "review-due-set",
+    stateId: current.stateId,
+    by: actorAccountId || null,
+    byName: actorName || null,
+    reason: reason || null,
+    details: { from, to },
+  });
+  const def = await resolveWorkflowDef(current.spaceKey);
+  await recordActivity({
+    type: "workflow.review-due",
+    pageId,
+    spaceKey: record.spaceKey || null,
+    actor: actorAccountId ? { accountId: actorAccountId, name: actorName || null } : null,
+    target: { kind: "page", id: pageId, name: null },
+    details: { from, to, stateId: current.stateId, stateName: findState(def, current.stateId)?.name || current.stateId, reason: reason || null },
+    version: null,
+  });
+  return { success: true, reviewDueAt: to, record };
 }
 
 // Bulk-assign the space's workflow to pages that don't have one (one result page

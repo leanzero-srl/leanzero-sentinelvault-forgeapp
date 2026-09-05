@@ -23,6 +23,7 @@ import {
   readPageWorkflow,
   validateTransition,
   fetchLivePageVersion,
+  setPageReviewDue,
   sanitize,
 } from "./logic.js";
 import {
@@ -115,6 +116,10 @@ const getWorkflow = async (req) => {
     // A4: the ribbon's "changed since approval" line says what happens to the edit; that is the
     // space's enforce mode, which the settings read above already holds.
     result.enforceMode = settings?.enforceMode === "revert" ? "revert" : "demote";
+    // A5: the ribbon turns the "Review due" chip into a button only for someone set-review-due
+    // would accept — a steward of the page's own space (the edit check runs on the write).
+    result.canSetReviewDue = !!(req.context?.accountId && result.record?.spaceKey)
+      && await authorizeSteward(req.context.accountId, result.record.spaceKey);
   }
   // A4/A6: the page's CURRENT version, so the ribbon can say "changed since approval (now v{n})"
   // next to the approval evidence without a second resolver call. Best-effort: null on failure
@@ -280,6 +285,34 @@ export const requestTransition = async (req) => {
     actorName: await actorName(),
     reason: boundReason(req.payload?.reason),
   });
+};
+
+// A5: the steward-editable review date. Payload { pageId, reviewDueAt: ISO | null }.
+// Two gates, both on the page the payload names: the caller must be able to change the page
+// (canEditPage — the write bar, CLAUDE.md) AND be a steward of the page's OWN space, derived from
+// its workflow record — never a payload spaceKey. A past date is refused; null clears the clock.
+const setReviewDue = async (req) => {
+  const pageId = pageIdOf(req);
+  const actorAccountId = req.context?.accountId;
+  if (!pageId) return { success: false, reason: "No page context" };
+  if (!(await canEditPage(actorAccountId, pageId))) {
+    return { success: false, reason: "You do not have permission to change this page's review date" };
+  }
+  const current = await readPageWorkflow(pageId);
+  if (!current) return { success: false, reason: "Page has no workflow assigned" };
+  const spaceKey = current.spaceKey || await resolvePageSpaceKey(pageId);
+  if (!spaceKey || !(await authorizeSteward(actorAccountId, spaceKey))) {
+    return { success: false, reason: "Only a space steward can change the review date" };
+  }
+  const r = await setPageReviewDue({
+    pageId,
+    reviewDueAt: req.payload?.reviewDueAt ?? null,
+    actorAccountId,
+    actorName: await actorName(),
+    reason: boundReason(req.payload?.reason),
+  });
+  if (!r.success) return { success: false, reason: r.reason };
+  return { success: true, reviewDueAt: r.reviewDueAt };
 };
 
 // A free-text reason is stored in the durable record; a 1 KB one would push the entry past the
@@ -452,12 +485,16 @@ export const getWorkflowDashboard = async (req) => {
     if (!cursor) break;
   }
   const now = Date.now();
+  // A5: any state may carry a review clock (definition, per-state override, or a steward-set
+  // date), so "overdue" is a passed reviewDueAt on the index row, whatever the state — the same
+  // rule workflowSweep's expiry pass applies. It used to be pinned to stateId === "approved".
+  const isOverdue = (e) => !!(e.reviewDueAt && new Date(e.reviewDueAt).getTime() < now);
   const def = await resolveWorkflowDef(spaceKey);
   const counts = {};
   let overdue = 0;
   for (const e of entries) {
     counts[e.stateId] = (counts[e.stateId] || 0) + 1;
-    if (e.stateId === "approved" && e.reviewDueAt && new Date(e.reviewDueAt).getTime() < now) overdue++;
+    if (isOverdue(e)) overdue++;
   }
   // Most-recently-changed first, bounded — then fetch titles in parallel.
   const list = entries
@@ -481,7 +518,7 @@ export const getWorkflowDashboard = async (req) => {
     stateName: stateName(e.stateId),
     enteredAt: e.enteredAt || null,
     reviewDueAt: e.reviewDueAt || null,
-    overdue: e.stateId === "approved" && e.reviewDueAt && new Date(e.reviewDueAt).getTime() < now,
+    overdue: isOverdue(e),
   }));
   return {
     spaceKey,
@@ -504,6 +541,7 @@ export const actions = [
   ["store-workflow-config", storeConfig],
   ["get-space-workflow-settings", getSpaceSettings],
   ["set-space-workflow-settings", setSpaceSettings],
+  ["set-review-due", setReviewDue],
   ["bulk-assign-workflow", bulkAssign],
   ["decide-approval", decideApprovalAction],
   ["get-page-approvals", getPageApprovals],

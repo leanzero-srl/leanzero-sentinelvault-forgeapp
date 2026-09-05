@@ -433,7 +433,10 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   background-color: var(--sv-bg-tertiary);
   border: none;
   border-radius: 12px;
-  overflow: hidden;
+  /* A2: was overflow:hidden (a leftover from the first commit); nothing inside carries its own
+     background, and hidden clipped every custom dropdown (.mini-select-menu) that opened from
+     the last row of a nested block — the demote-target and decision-rule menus were cut off. */
+  overflow: visible;
 }
 
 .nested-control .settings-row {

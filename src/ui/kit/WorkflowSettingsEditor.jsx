@@ -24,7 +24,7 @@ const Toggle = ({ checked, onChange, label }) => (
 );
 
 const ENFORCE_MODE_OPTS = [
-  { value: "demote", label: "Move it back to Draft (keeps their edit)" },
+  { value: "demote", label: "Move it back to an earlier state (keeps their edit)" },
   { value: "revert", label: "Revert to the approved version (discards their edit)" },
 ];
 
@@ -35,11 +35,11 @@ const MODE_OPTS = [
 ];
 
 // Small custom select (no native <select>), mirroring ValidationsEditor's MiniSelect.
-export const MiniSelect = ({ value, options, onChange, ariaLabel }) => {
+export const MiniSelect = ({ value, options, onChange, ariaLabel, testId }) => {
   const [open, setOpen] = useState(false);
   const current = options.find((o) => o.value === value);
   return (
-    <div className="mini-select" tabIndex={0} onBlur={() => setTimeout(() => setOpen(false), 150)}>
+    <div className="mini-select" tabIndex={0} onBlur={() => setTimeout(() => setOpen(false), 150)} data-testid={testId}>
       <div className="mini-select-value" onClick={() => setOpen(!open)} role="button" aria-haspopup="listbox" aria-label={ariaLabel}>
         <span>{current ? current.label : "Select…"}</span>
         <span className={`mini-select-arrow ${open ? "open" : ""}`}>▼</span>
@@ -148,8 +148,34 @@ const GroupPicker = ({ selected, onChange }) => {
   );
 };
 
+// A5: { stateId: days } with only positive whole numbers kept — a blank row means "use the
+// workflow's own value", and the server should never see a 0 or an empty string for that.
+// When a definition is known, ids it does not have are dropped too: a clock saved for a state
+// that was since removed from the workflow is otherwise invisible in the editor (no row renders
+// it) and yet is refused by the server on the next save — a form the user cannot fix.
+const cleanClocks = (byState, def = null) => {
+  const known = Array.isArray(def?.states) ? new Set(def.states.map((s) => s.id)) : null;
+  const out = {};
+  for (const [id, v] of Object.entries(byState || {})) {
+    if (known && !known.has(id)) continue;
+    const n = typeof v === "number" ? v : parseInt(v, 10);
+    if (Number.isFinite(n) && n > 0) out[id] = Math.round(n);
+  }
+  return out;
+};
+// Same for the demote target: a saved id the definition no longer has falls back to "initial"
+// rather than being sent back and refused.
+const cleanDemoteTo = (demoteTo, def = null) => {
+  if (!demoteTo || demoteTo === "initial") return "initial";
+  if (Array.isArray(def?.states) && !def.states.some((s) => s.id === demoteTo)) return "initial";
+  return demoteTo;
+};
+// The enforce state is flagged in the definition; "approved" is the fallback for a def saved
+// before the flag existed (the server treats it the same way).
+const isEnforceState = (s) => !!s?.enforce || s?.id === "approved";
+
 export default function WorkflowSettingsEditor({ spaceKey = null }) {
-  const [settings, setSettings] = useState({ enabled: false, autoAssignNew: false, workflowId: "default", approval: null, enforceMode: "demote", reviewAfterDays: null, entryConditions: {} });
+  const [settings, setSettings] = useState({ enabled: false, autoAssignNew: false, workflowId: "default", approval: null, enforceMode: "demote", demoteTo: "initial", reviewAfterDays: null, reviewAfterDaysByState: {}, entryConditions: {} });
   const [def, setDef] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -161,7 +187,7 @@ export default function WorkflowSettingsEditor({ spaceKey = null }) {
     (async () => {
       try {
         const r = await invoke("get-space-workflow-settings", { spaceKey });
-        if (r?.settings) setSettings({ enabled: !!r.settings.enabled, autoAssignNew: !!r.settings.autoAssignNew, workflowId: r.settings.workflowId || "default", approval: r.settings.approval || null, enforceMode: r.settings.enforceMode === "revert" ? "revert" : "demote", reviewAfterDays: r.settings.reviewAfterDays ?? null, entryConditions: r.settings.entryConditions || {} });
+        if (r?.settings) setSettings({ enabled: !!r.settings.enabled, autoAssignNew: !!r.settings.autoAssignNew, workflowId: r.settings.workflowId || "default", approval: r.settings.approval || null, enforceMode: r.settings.enforceMode === "revert" ? "revert" : "demote", demoteTo: cleanDemoteTo(r.settings.demoteTo, r.def), reviewAfterDays: r.settings.reviewAfterDays ?? null, reviewAfterDaysByState: cleanClocks(r.settings.reviewAfterDaysByState, r.def), entryConditions: r.settings.entryConditions || {} });
         if (r?.def) setDef(r.def);
       } catch (e) {
         console.error("Load workflow settings failed:", e);
@@ -178,7 +204,7 @@ export default function WorkflowSettingsEditor({ spaceKey = null }) {
       // it16: check the resolver's success — set-space-workflow-settings returns
       // { success:false, reason } (e.g. a non-steward) rather than throwing, so a blind
       // "saved" would be a false success.
-      const r = await invoke("set-space-workflow-settings", { spaceKey, settings });
+      const r = await invoke("set-space-workflow-settings", { spaceKey, settings: { ...settings, demoteTo: cleanDemoteTo(settings.demoteTo, def), reviewAfterDaysByState: cleanClocks(settings.reviewAfterDaysByState, def) } });
       if (r?.success) setMsg({ type: "success", text: "Workflow settings saved." });
       else setMsg({ type: "error", text: r?.reason || "Could not save workflow settings." });
     } catch (e) {
@@ -211,6 +237,17 @@ export default function WorkflowSettingsEditor({ spaceKey = null }) {
   if (loading) return <div className="settings-panel">Loading…</div>;
 
   const states = def?.states || [];
+  const initialState = states.find((s) => s.initial) || states[0] || null;
+  const enforceState = states.find(isEnforceState) || null;
+  // A2: where a tampered Approved page lands. "initial" = whatever the first state is (survives a
+  // re-saved definition); a state id pins one. The first state is not repeated under its own name.
+  const demoteOpts = [
+    { value: "initial", label: `The first state (${initialState?.name || "Draft"})` },
+    ...states.filter((s) => !isEnforceState(s) && s.id !== initialState?.id).map((s) => ({ value: s.id, label: s.name })),
+  ];
+  // A5: every state except the enforce one gets a clock row here; Approved keeps its own row.
+  const clockStates = states.filter((s) => !isEnforceState(s));
+  const enforceName = enforceState?.name || "Approved";
 
   return (
     <div className="settings-panel">
@@ -286,14 +323,14 @@ export default function WorkflowSettingsEditor({ spaceKey = null }) {
                 </SettingsRow>
               )}
               {(settings.approval.approvers || []).length === 0 && settings.enforceMode === "revert" && (
-                <p className="alert-error" role="alert">No approvers are set, so every non-steward edit to an Approved page would be reverted. Add an approver, or use “Move it back to Draft” below.</p>
+                <p className="alert-error" role="alert">No approvers are set, so every non-steward edit to an Approved page would be reverted. Add an approver, or use “Move it back to an earlier state” below.</p>
               )}
             </div>
           )}
 
           <SettingsRow
             label="If an Approved page is edited by a non-approver"
-            description="Approved is an enforced state. Choose what happens when someone who isn’t an approver (and isn’t a steward) edits an Approved page. “Move to Draft” keeps their edit; “Revert” restores the approved version and is stricter."
+            description="Approved is an enforced state. Choose what happens when someone who isn’t an approver (and isn’t a steward) edits an Approved page. “Move it back” keeps their edit — you choose where it lands below; “Revert” restores the approved version and is stricter."
           >
             <MiniSelect
               ariaLabel="Enforcement when an approved page is edited"
@@ -303,23 +340,74 @@ export default function WorkflowSettingsEditor({ spaceKey = null }) {
             />
           </SettingsRow>
 
+          {(settings.enforceMode || "demote") === "demote" && (
+            <div className="nested-control">
+              <SettingsRow
+                label={`When an ${enforceName} page is edited without approval, move it to`}
+                description="Send it back for review rather than to the start."
+              >
+                <MiniSelect
+                  ariaLabel={`Where an ${enforceName} page goes when edited without approval`}
+                  testId="wf-demote-to"
+                  value={demoteOpts.some((o) => o.value === settings.demoteTo) ? settings.demoteTo : "initial"}
+                  options={demoteOpts}
+                  onChange={(demoteTo) => setSettings((p) => ({ ...p, demoteTo }))}
+                />
+              </SettingsRow>
+            </div>
+          )}
+
           <SettingsRow
-            label="Re-review Approved pages after"
-            description="Approved pages show a review-due date on their ribbon and are moved to Expired once it passes, so approvals don’t silently go stale. Leave blank to use the workflow default (150 days)."
+            label={`${enforceName} pages: re-review after (days)`}
+            description={`${enforceName} pages show a review-due date on their ribbon and are moved to Expired once it passes, so approvals don’t silently go stale. Leave blank to use the workflow default (${enforceState?.reviewAfterDays || 150} days).`}
           >
             <div className="days-input">
               <input
                 className="form-input"
                 type="number"
                 min="1"
-                placeholder="150"
-                aria-label="Re-review Approved pages after this many days"
+                placeholder={String(enforceState?.reviewAfterDays || 150)}
+                aria-label={`Re-review ${enforceName} pages after this many days`}
+                data-testid={`wf-review-clock-${enforceState?.id || "approved"}`}
                 value={settings.reviewAfterDays ?? ""}
                 onChange={(e) => setSettings((p) => ({ ...p, reviewAfterDays: e.target.value === "" ? null : (parseInt(e.target.value, 10) || null) }))}
               />
               <span className="days-suffix">days</span>
             </div>
           </SettingsRow>
+
+          {clockStates.length > 0 && (
+            <SettingsRow
+              label="Review clocks"
+              description={`How long a page may sit in each state before it is due for review. Its ribbon shows the date, and a steward can move it from there. Leave a state blank to use the workflow's own value, or none. ${enforceName} pages use the setting above.`}
+            >
+              <div className="wf-clock-list">
+                {clockStates.map((s) => (
+                  <div key={s.id} className="wf-clock-row">
+                    <span className={`wf-state-chip wf-state-${s.color || "neutral"}`}>{s.name}</span>
+                    <div className="days-input">
+                      <input
+                        className="form-input wf-clock-input"
+                        type="number"
+                        min="1"
+                        placeholder={s.reviewAfterDays ? String(s.reviewAfterDays) : "none"}
+                        aria-label={`Review ${s.name} pages after this many days`}
+                        data-testid={`wf-review-clock-${s.id}`}
+                        value={settings.reviewAfterDaysByState?.[s.id] ?? ""}
+                        onChange={(e) => setSettings((p) => {
+                          const next = { ...(p.reviewAfterDaysByState || {}) };
+                          const v = e.target.value === "" ? null : (parseInt(e.target.value, 10) || null);
+                          if (v === null) delete next[s.id]; else next[s.id] = v;
+                          return { ...p, reviewAfterDaysByState: next };
+                        })}
+                      />
+                      <span className="days-suffix">days</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </SettingsRow>
+          )}
 
           <SettingsRow
             label="Require content rules before Approved"
