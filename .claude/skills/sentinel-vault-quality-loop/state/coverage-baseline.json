@@ -1,338 +1,54 @@
 {
-  "createdAt": "2026-08-14T17:13:59.459Z",
-  "note": "auto-created on first --check run; each entry is an accepted gap",
+  "createdAt": "2026-09-05T15:55:19.925Z",
+  "note": "Reviewed 2026-09-05 (it61). Every entry here is a DEAD, UNWIRED or INTERNAL item with a stated reason; anything else uncovered fails --check. Eight formerly-dead resolvers were deleted the same day (SV-SEC-2).",
   "gaps": [
     {
-      "item": "resolver:load-bulletin-toggles",
-      "reason": "unreviewed-baseline"
-    },
-    {
-      "item": "resolver:recent-dispatches",
-      "reason": "unreviewed-baseline"
-    },
-    {
-      "item": "resolver:operator-dispatches",
-      "reason": "unreviewed-baseline"
-    },
-    {
-      "item": "resolver:acknowledge-dispatch",
-      "reason": "unreviewed-baseline"
-    },
-    {
-      "item": "resolver:watch-artifact",
-      "reason": "unreviewed-baseline"
-    },
-    {
-      "item": "resolver:check-watch",
-      "reason": "unreviewed-baseline"
-    },
-    {
-      "item": "resolver:unwatch-artifact",
-      "reason": "unreviewed-baseline"
-    },
-    {
       "item": "resolver:flush-operator-dispatches",
-      "reason": "unreviewed-baseline"
-    },
-    {
-      "item": "resolver:list-breach-dispatches",
-      "reason": "unreviewed-baseline"
-    },
-    {
-      "item": "resolver:request-edit-access",
-      "reason": "unreviewed-baseline"
-    },
-    {
-      "item": "resolver:check-edit-request",
-      "reason": "unreviewed-baseline"
-    },
-    {
-      "item": "resolver:list-edit-requests",
-      "reason": "unreviewed-baseline"
-    },
-    {
-      "item": "resolver:list-my-edit-requests",
-      "reason": "unreviewed-baseline"
-    },
-    {
-      "item": "resolver:approve-edit-request",
-      "reason": "unreviewed-baseline"
-    },
-    {
-      "item": "resolver:deny-edit-request",
-      "reason": "unreviewed-baseline"
-    },
-    {
-      "item": "resolver:revoke-edit-grant",
-      "reason": "unreviewed-baseline"
-    },
-    {
-      "item": "resolver:list-edit-grants",
-      "reason": "unreviewed-baseline"
-    },
-    {
-      "item": "resolver:request-section-edit",
-      "reason": "unreviewed-baseline"
-    },
-    {
-      "item": "resolver:check-section-edit",
-      "reason": "unreviewed-baseline"
-    },
-    {
-      "item": "resolver:list-section-edit-requests",
-      "reason": "unreviewed-baseline"
-    },
-    {
-      "item": "resolver:approve-section-edit",
-      "reason": "unreviewed-baseline"
-    },
-    {
-      "item": "resolver:deny-section-edit",
-      "reason": "unreviewed-baseline"
+      "reason": "dead: no UI caller (list-breach-dispatches is the read-and-drain path the ribbon uses)"
     },
     {
       "item": "resolver:load-session",
-      "reason": "unreviewed-baseline"
-    },
-    {
-      "item": "resolver:identify-operator",
-      "reason": "unreviewed-baseline"
+      "reason": "internal: returns req.context verbatim; no caller, nothing to assert"
     },
     {
       "item": "resolver:current-operator",
-      "reason": "unreviewed-baseline"
-    },
-    {
-      "item": "resolver:enumerate-operators",
-      "reason": "unreviewed-baseline"
-    },
-    {
-      "item": "resolver:enumerate-teams",
-      "reason": "unreviewed-baseline"
-    },
-    {
-      "item": "resolver:enumerate-panel-artifacts",
-      "reason": "unreviewed-baseline"
-    },
-    {
-      "item": "resolver:label-artifact",
-      "reason": "unreviewed-baseline"
-    },
-    {
-      "item": "resolver:unlabel-artifact",
-      "reason": "unreviewed-baseline"
-    },
-    {
-      "item": "resolver:inject-panel",
-      "reason": "unreviewed-baseline"
-    },
-    {
-      "item": "resolver:extract-panel",
-      "reason": "unreviewed-baseline"
-    },
-    {
-      "item": "resolver:check-panel-status",
-      "reason": "unreviewed-baseline"
-    },
-    {
-      "item": "resolver:store-doc-panel-prefs",
-      "reason": "unreviewed-baseline"
-    },
-    {
-      "item": "resolver:register-panel-key",
-      "reason": "unreviewed-baseline"
-    },
-    {
-      "item": "resolver:discover-panel-key",
-      "reason": "unreviewed-baseline"
-    },
-    {
-      "item": "resolver:resolve-artifact-preview",
-      "reason": "unreviewed-baseline"
-    },
-    {
-      "item": "resolver:load-global-ruleset",
-      "reason": "unreviewed-baseline"
-    },
-    {
-      "item": "resolver:store-global-ruleset",
-      "reason": "unreviewed-baseline"
-    },
-    {
-      "item": "resolver:load-realm-ruleset",
-      "reason": "unreviewed-baseline"
-    },
-    {
-      "item": "resolver:store-realm-ruleset",
-      "reason": "unreviewed-baseline"
-    },
-    {
-      "item": "resolver:discard-realm-ruleset",
-      "reason": "unreviewed-baseline"
-    },
-    {
-      "item": "resolver:identify-realm",
-      "reason": "unreviewed-baseline"
-    },
-    {
-      "item": "resolver:enumerate-realm-seals",
-      "reason": "unreviewed-baseline"
+      "reason": "dead: whoami has no UI or server caller"
     },
     {
       "item": "resolver:launch-realm-audit",
-      "reason": "unreviewed-baseline"
+      "reason": "unwired UI: the Reconstruct Index button was removed in 2c9d366; the index rebuild that ships runs seal-index-cron -> realm-audit-queue (trigger-guards.spec)"
     },
     {
       "item": "resolver:check-audit-status",
-      "reason": "unreviewed-baseline"
-    },
-    {
-      "item": "resolver:request-steward-access",
-      "reason": "unreviewed-baseline"
-    },
-    {
-      "item": "resolver:check-steward-request",
-      "reason": "unreviewed-baseline"
-    },
-    {
-      "item": "resolver:approve-steward-request",
-      "reason": "unreviewed-baseline"
-    },
-    {
-      "item": "resolver:deny-steward-request",
-      "reason": "unreviewed-baseline"
-    },
-    {
-      "item": "resolver:enumerate-doc-artifacts",
-      "reason": "unreviewed-baseline"
-    },
-    {
-      "item": "resolver:enumerate-operator-seals",
-      "reason": "unreviewed-baseline"
-    },
-    {
-      "item": "resolver:check-seal-stamp",
-      "reason": "unreviewed-baseline"
-    },
-    {
-      "item": "resolver:enumerate-section-seals",
-      "reason": "unreviewed-baseline"
+      "reason": "unwired UI: paired with launch-realm-audit (see above)"
     },
     {
       "item": "resolver:refresh-section-snapshot",
-      "reason": "unreviewed-baseline"
-    },
-    {
-      "item": "resolver:load-validation-config",
-      "reason": "unreviewed-baseline"
-    },
-    {
-      "item": "resolver:validate-page-now",
-      "reason": "unreviewed-baseline"
-    },
-    {
-      "item": "resolver:get-validation-state",
-      "reason": "unreviewed-baseline"
+      "reason": "dead: owner re-baseline happens inside the page trigger (SV-M5, sealed-section.spec); no caller"
     },
     {
       "item": "resolver:approve-page-gate",
-      "reason": "unreviewed-baseline"
-    },
-    {
-      "item": "resolver:list-ai-models",
-      "reason": "unreviewed-baseline"
-    },
-    {
-      "item": "resolver:get-validation-job",
-      "reason": "unreviewed-baseline"
-    },
-    {
-      "item": "resolver:get-ai-findings",
-      "reason": "unreviewed-baseline"
-    },
-    {
-      "item": "resolver:set-ai-finding-state",
-      "reason": "unreviewed-baseline"
+      "reason": "dead: no UI caller; the gate reconciles automatically (gate-revert.spec)"
     },
     {
       "item": "resolver:get-validation-audit",
-      "reason": "unreviewed-baseline"
-    },
-    {
-      "item": "resolver:get-workflow-dashboard",
-      "reason": "unreviewed-baseline"
-    },
-    {
-      "item": "resolver:get-workflow-log",
-      "reason": "unreviewed-baseline"
-    },
-    {
-      "item": "resolver:assign-workflow",
-      "reason": "unreviewed-baseline"
-    },
-    {
-      "item": "resolver:request-transition",
-      "reason": "unreviewed-baseline"
+      "reason": "dead until a surface consumes the AI spend report; steward-gated read"
     },
     {
       "item": "resolver:load-workflow-config",
-      "reason": "unreviewed-baseline"
-    },
-    {
-      "item": "resolver:store-workflow-config",
-      "reason": "unreviewed-baseline"
-    },
-    {
-      "item": "resolver:get-space-workflow-settings",
-      "reason": "unreviewed-baseline"
-    },
-    {
-      "item": "resolver:bulk-assign-workflow",
-      "reason": "unreviewed-baseline"
-    },
-    {
-      "item": "resolver:list-my-approvals",
-      "reason": "unreviewed-baseline"
-    },
-    {
-      "item": "resolver:search-workflow-users",
-      "reason": "unreviewed-baseline"
-    },
-    {
-      "item": "resolver:search-workflow-groups",
-      "reason": "unreviewed-baseline"
+      "reason": "dead: no definition editor by design (non-goal 5); store side is probed by workflow-deadend-warn.spec"
     },
     {
       "item": "resolver:heartbeat",
-      "reason": "unreviewed-baseline"
-    },
-    {
-      "item": "testhook:fn:enumerateSectionSeals",
-      "reason": "unreviewed-baseline"
-    },
-    {
-      "item": "testhook:fn:probeAttachment",
-      "reason": "unreviewed-baseline"
-    },
-    {
-      "item": "manifest:confluence:pageBanner:sentinel-vault-ribbon",
-      "reason": "unreviewed-baseline"
-    },
-    {
-      "item": "manifest:consumer:ai-validation-queue",
-      "reason": "unreviewed-baseline"
-    },
-    {
-      "item": "event:avi:confluence:created:page",
-      "reason": "unreviewed-baseline"
-    },
-    {
-      "item": "manifest:scheduledTrigger:expiry-sweep-scheduled",
-      "reason": "unreviewed-baseline"
+      "reason": "internal: registry liveness string"
     },
     {
       "item": "testhook:what:setttl",
-      "reason": "diagnostic-seam (TTL-shape live probe; exercised ad hoc, not by a standing spec)"
+      "reason": "harness diagnostic for kvs-ttl.js; the helper is unit-tested (kvs-ttl.test.mjs) and every TTLd key the specs assert on goes through it live"
+    },
+    {
+      "item": "testhook:fn:probeAttachment",
+      "reason": "harness diagnostic; the classifier is exercised live through trash/restore in sealed-artifact-trash, sealed-delete-restore-journey, realm-stale-badge"
     }
   ]
 }

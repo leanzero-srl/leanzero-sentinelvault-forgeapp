@@ -24,7 +24,7 @@ import {
   decideApproval,
   getPageApprovalStatus,
 } from "./server/capsules/workflow/approvals.js";
-import { getWorkflowDashboard, requestTransition } from "./server/capsules/workflow/actions.js";
+import { getWorkflowDashboard, requestTransition, actions as workflowActions } from "./server/capsules/workflow/actions.js";
 import { applyAiVerdict } from "./server/capsules/workflow/approvals.js";
 import { revokeEditGrant, listEditGrants } from "./server/capsules/editreq/actions.js";
 // #6: section edit-access request/approve/deny seams (editreq is Queue/LLM-free — import-safe).
@@ -41,6 +41,9 @@ import {
   listEditRequests,
   approveEditRequest,
   denyEditRequest,
+  // Coverage gaps (2026-09-05): the non-exported request/check/list-my trio is reached through the
+  // capsule's registered `actions` list (byKey below) — the same fn the resolver router calls.
+  actions as editreqActions,
 } from "./server/capsules/editreq/actions.js";
 // #13: watch/bulletins capsule seams (bulletins/actions.js → @forge/kvs + bulletin-flags → baseline;
 // all Queue/LLM-free → it17-safe).
@@ -52,6 +55,7 @@ import {
   operatorDispatches,
   recentDispatches,
   listBreachDispatches,
+  actions as bulletinsActions,
 } from "./server/capsules/bulletins/actions.js";
 // B6: section-seal CREATION resolvers (section-seals imports workflow/logic + sealing/logic, both
 // already in the hook bundle → no new problematic deps; the page read/write is asApp).
@@ -70,8 +74,16 @@ import {
   checkStewardRequest,
 } from "./server/capsules/realms/actions.js";
 // it46: destructive-action permission-matrix seams (Queue/LLM-free modules — safe to import).
-import { deleteArtifact } from "./server/capsules/panels/actions.js";
-import { purgeSealRecord, restoreSealedArtifact, extendSeal } from "./server/capsules/sealing/actions.js";
+import { deleteArtifact, actions as panelsActions } from "./server/capsules/panels/actions.js";
+import { purgeSealRecord, restoreSealedArtifact, extendSeal, actions as sealingActions } from "./server/capsules/sealing/actions.js";
+// Fixture repair (2026-09-05): the inline-panel macro is stripped from the fixture page whenever a
+// spec relinquishes its last seal, and six browser specs then fail on a page with no panel.
+// ensure-fixture.mjs step 7b re-inserts it through the app's own insertion path (asApp).
+import { insertPanelNode, resolveExtensionKey } from "./server/infra/doc-surgery.js";
+// resolvePreview's download leg runs asUser(), which has no session in a webtrigger, so the seam
+// also reports the gate decision on its own — otherwise an allowed-but-undownloadable preview is
+// indistinguishable from a refused one (both are null).
+import { canReadPage } from "./server/shared/content-access.js";
 // B11: live AI validation pipeline. validations/actions.js is import-safe after the it57 lazy-Queue
 // refactor (ai-validation-queue is now built at push time, not module load — the it17 trap). The real
 // Forge LLM runs in the queue consumer; the enqueue/poll/findings resolvers are the driveable seam.
@@ -79,6 +91,7 @@ import {
   enqueuePageValidation,
   getValidationJob,
   getAiFindings,
+  actions as validationsActions,
 } from "./server/capsules/validations/actions.js";
 // B15: cross-space ruleset enumeration — now site-admin gated (was ungated → leaked every space's
 // steward list). policies/actions.js is Queue/LLM-free → import-safe.
@@ -99,6 +112,10 @@ const q = (req, n) => {
   const v = req && req.queryParameters && req.queryParameters[n];
   return Array.isArray(v) ? v[0] : v;
 };
+// Resolve a capsule's registered action by key — for resolvers the capsule does not export by
+// name. Dispatching through the same `actions` list registry.js consumes means the seam drives the
+// exact function the router would, not a copy.
+const byKey = (list, key) => list.find(([k]) => k === key)[1];
 
 export async function testStateTrigger(req) {
   const secret = process.env.HARNESS_SECRET;
@@ -544,6 +561,105 @@ export async function testStateTrigger(req) {
           ? { id: "probe", name: "Probe", states: [{ id: "draft", name: "Draft", initial: true }, { id: "approved", name: "Approved" }], transitions: [{ from: "draft", to: "approved" }] }
           : { id: "probe", name: "Probe", states: [{ id: "draft", name: "Draft", initial: true }, { id: "approved", name: "Approved" }], transitions: [{ from: "draft", to: "approved" }, { from: "approved", to: "draft" }] };
         const r = await storeWorkflowConfig("space", q(req, "key") || "B14PROBE", def);
+        return json(200, { invoked: fn, result: r });
+      }
+      // ---- Coverage gaps (2026-09-05): seams for the resolvers no spec could reach. ----
+      // FIXTURE REPAIR: re-insert the inline-panel macro on a page through the app's own insertion
+      // path (the macro is stripped when a spec relinquishes the last seal on the fixture page).
+      if (fn === "ensurePanel") {
+        const extensionKey = await resolveExtensionKey();
+        if (!extensionKey) return json(200, { invoked: fn, result: { success: false, error: "no extension key resolvable" } });
+        const r = await insertPanelNode(q(req, "pageId"), extensionKey, 3, "bottom");
+        return json(200, { invoked: fn, result: { ...r, extensionKey } });
+      }
+      // editreq: the requester side of the attachment edit-access loop. The harness user OWNS the
+      // fixture seal, so "Request edit access" never renders for them — hook-driven with a real
+      // non-owner (canReadPage gate on the seal's page).
+      if (fn === "requestEditAccess") {
+        const r = await byKey(editreqActions, "request-edit-access")({ payload: { attachmentId: q(req, "att"), reason: q(req, "reason") }, context: { accountId: q(req, "actor") } });
+        return json(200, { invoked: fn, result: r });
+      }
+      if (fn === "checkEditRequest") {
+        const r = await byKey(editreqActions, "check-edit-request")({ payload: { attachmentId: q(req, "att") }, context: { accountId: q(req, "actor") } });
+        return json(200, { invoked: fn, result: r });
+      }
+      if (fn === "listMyEditRequests") {
+        const r = await byKey(editreqActions, "list-my-edit-requests")({ payload: {}, context: { accountId: q(req, "actor") } });
+        return json(200, { invoked: fn, result: r });
+      }
+      // panels: the overlay's "hide the macro on this page" pair (page content property +
+      // removePanelNode on disable), the panel-key discovery every panel load performs, and the
+      // thumbnail preview. checkPanelStatus/discoverPanelKey are mustVerify READ paths, so the
+      // context carries an empty extension (no content id → the payload id IS verified).
+      if (fn === "checkPanelStatus") {
+        const r = await byKey(panelsActions, "check-panel-status")({ payload: { pageId: q(req, "pageId") }, context: { accountId: q(req, "actor"), extension: {} } });
+        return json(200, { invoked: fn, result: r });
+      }
+      if (fn === "storeDocPanelPrefs") {
+        const r = await byKey(panelsActions, "store-doc-panel-prefs")({ payload: { pageId: q(req, "pageId"), macroDisabled: q(req, "macroDisabled") === "true" }, context: { accountId: q(req, "actor"), extension: {} } });
+        return json(200, { invoked: fn, result: r });
+      }
+      if (fn === "discoverPanelKey") {
+        const r = await byKey(panelsActions, "discover-panel-key")({ payload: { pageId: q(req, "pageId") }, context: { accountId: q(req, "actor"), extension: {} } });
+        return json(200, { invoked: fn, result: r });
+      }
+      if (fn === "resolvePreview") {
+        // `gate` is the same shared check the resolver runs first. The resolver's own null is
+        // ambiguous from a webtrigger (refused vs. asUser download unavailable) — see the import note.
+        const actor = q(req, "actor");
+        const contentId = q(req, "pageId");
+        const gate = await canReadPage(actor, contentId);
+        const r = await byKey(panelsActions, "resolve-artifact-preview")({ payload: { artifactId: q(req, "att"), contentId }, context: { accountId: actor, extension: {} } });
+        return json(200, { invoked: fn, result: r, gate });
+      }
+      // sealing: "My Sealed Files" (self-scoped) and the 5-second cross-surface stamp poll.
+      // NOTE enumerateOperatorSeals probes every attachment asUser(), which has no session here,
+      // so from the hook every row is skipped — the seam exists for the shape/empty case only; the
+      // populated list is a browser-lane proof.
+      if (fn === "enumerateOperatorSeals") {
+        const lim = Number(q(req, "limit"));
+        const r = await byKey(sealingActions, "enumerate-operator-seals")({ payload: { limit: Number.isFinite(lim) && lim > 0 ? lim : 10 }, context: { accountId: q(req, "actor") } });
+        return json(200, { invoked: fn, result: r });
+      }
+      if (fn === "checkSealStamp") {
+        const r = await byKey(sealingActions, "check-seal-stamp")({ payload: {}, context: {} });
+        return json(200, { invoked: fn, result: r });
+      }
+      // validations: the inline-panel "Validate now" readout, the ribbon's state chip, the admin
+      // model dropdown (Forge LLM list — no tokens billed) and per-finding triage (canEditPage write).
+      if (fn === "validatePageNow") {
+        const r = await byKey(validationsActions, "validate-page-now")({ payload: { pageId: q(req, "pageId") }, context: { accountId: q(req, "actor"), extension: {} } });
+        return json(200, { invoked: fn, result: r });
+      }
+      if (fn === "getValidationState") {
+        const r = await byKey(validationsActions, "get-validation-state")({ payload: { pageId: q(req, "pageId") }, context: { accountId: q(req, "actor"), extension: {} } });
+        return json(200, { invoked: fn, result: r });
+      }
+      if (fn === "listAiModels") {
+        const r = await byKey(validationsActions, "list-ai-models")({ payload: {}, context: {} });
+        return json(200, { invoked: fn, result: r });
+      }
+      if (fn === "setAiFindingState") {
+        const r = await byKey(validationsActions, "set-ai-finding-state")({ payload: { pageId: q(req, "pageId"), findingId: q(req, "findingId"), state: q(req, "state") }, context: { accountId: q(req, "actor"), extension: {} } });
+        return json(200, { invoked: fn, result: r });
+      }
+      // workflow: the WorkflowInbox (self-scoped pending approvals) and the approver pickers
+      // (asApp CQL user search / group picker; payload field is `query`).
+      if (fn === "listMyApprovals") {
+        const r = await byKey(workflowActions, "list-my-approvals")({ payload: {}, context: { accountId: q(req, "actor") } });
+        return json(200, { invoked: fn, result: r });
+      }
+      if (fn === "searchWorkflowUsers") {
+        const r = await byKey(workflowActions, "search-workflow-users")({ payload: { query: q(req, "q") }, context: { accountId: q(req, "actor") } });
+        return json(200, { invoked: fn, result: r });
+      }
+      if (fn === "searchWorkflowGroups") {
+        const r = await byKey(workflowActions, "search-workflow-groups")({ payload: { query: q(req, "q") }, context: { accountId: q(req, "actor") } });
+        return json(200, { invoked: fn, result: r });
+      }
+      // bulletins: the toggle read that feeds flashMessagesEnabled() (toast gate) on every surface.
+      if (fn === "loadBulletinToggles") {
+        const r = await byKey(bulletinsActions, "load-bulletin-toggles")({ payload: {}, context: {} });
         return json(200, { invoked: fn, result: r });
       }
       return json(400, { error: `unknown fn=${fn}` });

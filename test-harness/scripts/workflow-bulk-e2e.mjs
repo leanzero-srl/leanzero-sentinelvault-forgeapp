@@ -3,6 +3,7 @@
 // pages, enables workflow with auto-assign OFF (so the pages start with no workflow),
 // drives the real bulk-assign path via the dev hook, asserts the pages get workflows,
 // then deletes the space.
+// @covers resolver:bulk-assign-workflow
 import { readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";

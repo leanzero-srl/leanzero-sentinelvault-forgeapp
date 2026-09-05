@@ -1,18 +1,24 @@
 {
-  "generatedAt": "2026-08-14T19:39:37.605Z",
+  "generatedAt": "2026-09-05T15:55:20.005Z",
   "appRoot": "/Users/mihaiperdum/Projects/Sentinel Vault",
   "harnessRoot": "/Users/mihaiperdum/Projects/forge-live-harness",
   "evidenceFiles": [
     "harness/a11y.spec.ts",
     "harness/admin-render.spec.ts",
     "harness/ai-validation-live.spec.ts",
+    "harness/authz-content-gate.spec.ts",
+    "harness/bulletin-toggles.spec.ts",
     "harness/deploy-state-guard.spec.ts",
     "harness/destructive-actions-perm.spec.ts",
+    "harness/editreq-request-lifecycle.spec.ts",
     "harness/expiry-sweep.spec.ts",
     "harness/full-app-walkthrough.spec.ts",
     "harness/gate-revert.spec.ts",
+    "harness/lapsed-seal-lifecycle.spec.ts",
     "harness/license-banner.spec.ts",
     "harness/media-attr-matrix.spec.ts",
+    "harness/operator-seals-stamp.spec.ts",
+    "harness/overlay-owner-name.spec.ts",
     "harness/page-editrequest-approve.spec.ts",
     "harness/page-editrequest-deny-revoke.spec.ts",
     "harness/page-inline-panel.spec.ts",
@@ -22,8 +28,11 @@
     "harness/page-section-editrequest.spec.ts",
     "harness/page-section-seal-create.spec.ts",
     "harness/page-watch-dispatch.spec.ts",
+    "harness/panel-labels.spec.ts",
+    "harness/panel-prefs-preview.spec.ts",
     "harness/perm-delete-cleanup.spec.ts",
     "harness/realm-console-deep.spec.ts",
+    "harness/realm-directory-lists.spec.ts",
     "harness/realm-operator-search.spec.ts",
     "harness/realm-plainuser-gate.spec.ts",
     "harness/realm-reservation-persist.spec.ts",
@@ -51,10 +60,12 @@
     "harness/trigger-guards.spec.ts",
     "harness/upload-boundary-live.spec.ts",
     "harness/validation-eval.spec.ts",
+    "harness/validation-readouts.spec.ts",
     "harness/validation-space-floor.spec.ts",
     "harness/validation.spec.ts",
     "harness/violation-dedup.spec.ts",
     "harness/workflow-deadend-warn.spec.ts",
+    "harness/workflow-pickers-inbox.spec.ts",
     "e2e/editgrant-revoke-e2e.mjs",
     "e2e/ensure-fixture.mjs",
     "e2e/forge-logs.mjs",
@@ -69,13 +80,16 @@
     "e2e/workflow-e2e.mjs",
     "e2e/workflow-enforce-e2e.mjs",
     "unit/adf-perf.test.mjs",
+    "unit/content-access.test.mjs",
     "unit/doc-surgery.test.mjs",
     "unit/format-duration.test.mjs",
     "unit/json-salvage.test.mjs",
     "unit/kvs-ttl.test.mjs",
+    "unit/lapse-policy.test.mjs",
     "unit/license.test.mjs",
     "unit/media-presentation.test.mjs",
     "unit/media-restore.test.mjs",
+    "unit/notice-dedup.test.mjs",
     "unit/pagination.test.mjs",
     "unit/rules-engine.test.mjs",
     "unit/sealing-logic.test.mjs",
@@ -84,67 +98,83 @@
     "unit/workflow-engine.test.mjs"
   ],
   "counts": {
-    "total": 178,
-    "stringVerified": 95,
-    "annotated": 0,
-    "gaps": 83
+    "total": 193,
+    "stringVerified": 143,
+    "annotated": 38,
+    "gaps": 12
   },
   "items": [
     {
       "id": "resolver:load-bulletin-toggles",
       "short": "load-bulletin-toggles",
       "group": "resolver/bulletins",
-      "tier": "uncovered",
-      "coveredBy": [],
-      "annotatedBy": []
+      "tier": "string-verified",
+      "coveredBy": [
+        "harness/bulletin-toggles.spec.ts"
+      ],
+      "annotatedBy": [
+        "harness/bulletin-toggles.spec.ts"
+      ]
     },
     {
       "id": "resolver:recent-dispatches",
       "short": "recent-dispatches",
       "group": "resolver/bulletins",
-      "tier": "uncovered",
+      "tier": "annotated",
       "coveredBy": [],
-      "annotatedBy": []
+      "annotatedBy": [
+        "harness/page-watch-dispatch.spec.ts"
+      ]
     },
     {
       "id": "resolver:operator-dispatches",
       "short": "operator-dispatches",
       "group": "resolver/bulletins",
-      "tier": "uncovered",
+      "tier": "annotated",
       "coveredBy": [],
-      "annotatedBy": []
+      "annotatedBy": [
+        "harness/page-watch-dispatch.spec.ts"
+      ]
     },
     {
       "id": "resolver:acknowledge-dispatch",
       "short": "acknowledge-dispatch",
       "group": "resolver/bulletins",
-      "tier": "uncovered",
+      "tier": "annotated",
       "coveredBy": [],
-      "annotatedBy": []
+      "annotatedBy": [
+        "harness/page-watch-dispatch.spec.ts"
+      ]
     },
     {
       "id": "resolver:watch-artifact",
       "short": "watch-artifact",
       "group": "resolver/bulletins",
-      "tier": "uncovered",
+      "tier": "annotated",
       "coveredBy": [],
-      "annotatedBy": []
+      "annotatedBy": [
+        "harness/page-watch-dispatch.spec.ts"
+      ]
     },
     {
       "id": "resolver:check-watch",
       "short": "check-watch",
       "group": "resolver/bulletins",
-      "tier": "uncovered",
+      "tier": "annotated",
       "coveredBy": [],
-      "annotatedBy": []
+      "annotatedBy": [
+        "harness/page-watch-dispatch.spec.ts"
+      ]
     },
     {
       "id": "resolver:unwatch-artifact",
       "short": "unwatch-artifact",
       "group": "resolver/bulletins",
-      "tier": "uncovered",
+      "tier": "annotated",
       "coveredBy": [],
-      "annotatedBy": []
+      "annotatedBy": [
+        "harness/page-watch-dispatch.spec.ts"
+      ]
     },
     {
       "id": "resolver:flush-operator-dispatches",
@@ -158,113 +188,148 @@
       "id": "resolver:list-breach-dispatches",
       "short": "list-breach-dispatches",
       "group": "resolver/bulletins",
-      "tier": "uncovered",
+      "tier": "annotated",
       "coveredBy": [],
-      "annotatedBy": []
+      "annotatedBy": [
+        "harness/page-watch-dispatch.spec.ts"
+      ]
     },
     {
       "id": "resolver:request-edit-access",
       "short": "request-edit-access",
       "group": "resolver/editreq",
-      "tier": "uncovered",
-      "coveredBy": [],
-      "annotatedBy": []
+      "tier": "string-verified",
+      "coveredBy": [
+        "harness/editreq-request-lifecycle.spec.ts"
+      ],
+      "annotatedBy": [
+        "harness/editreq-request-lifecycle.spec.ts"
+      ]
     },
     {
       "id": "resolver:check-edit-request",
       "short": "check-edit-request",
       "group": "resolver/editreq",
-      "tier": "uncovered",
+      "tier": "annotated",
       "coveredBy": [],
-      "annotatedBy": []
+      "annotatedBy": [
+        "harness/editreq-request-lifecycle.spec.ts"
+      ]
     },
     {
       "id": "resolver:list-edit-requests",
       "short": "list-edit-requests",
       "group": "resolver/editreq",
-      "tier": "uncovered",
+      "tier": "annotated",
       "coveredBy": [],
-      "annotatedBy": []
+      "annotatedBy": [
+        "harness/lapsed-seal-lifecycle.spec.ts",
+        "harness/page-editrequest-approve.spec.ts"
+      ]
     },
     {
       "id": "resolver:list-my-edit-requests",
       "short": "list-my-edit-requests",
       "group": "resolver/editreq",
-      "tier": "uncovered",
+      "tier": "annotated",
       "coveredBy": [],
-      "annotatedBy": []
+      "annotatedBy": [
+        "harness/editreq-request-lifecycle.spec.ts"
+      ]
     },
     {
       "id": "resolver:approve-edit-request",
       "short": "approve-edit-request",
       "group": "resolver/editreq",
-      "tier": "uncovered",
+      "tier": "annotated",
       "coveredBy": [],
-      "annotatedBy": []
+      "annotatedBy": [
+        "harness/lapsed-seal-lifecycle.spec.ts",
+        "harness/page-editrequest-approve.spec.ts"
+      ]
     },
     {
       "id": "resolver:deny-edit-request",
       "short": "deny-edit-request",
       "group": "resolver/editreq",
-      "tier": "uncovered",
+      "tier": "annotated",
       "coveredBy": [],
-      "annotatedBy": []
+      "annotatedBy": [
+        "harness/editreq-request-lifecycle.spec.ts",
+        "harness/page-editrequest-deny-revoke.spec.ts"
+      ]
     },
     {
       "id": "resolver:revoke-edit-grant",
       "short": "revoke-edit-grant",
       "group": "resolver/editreq",
-      "tier": "uncovered",
+      "tier": "annotated",
       "coveredBy": [],
-      "annotatedBy": []
+      "annotatedBy": [
+        "harness/page-editrequest-deny-revoke.spec.ts",
+        "e2e/editgrant-revoke-e2e.mjs"
+      ]
     },
     {
       "id": "resolver:list-edit-grants",
       "short": "list-edit-grants",
       "group": "resolver/editreq",
-      "tier": "uncovered",
+      "tier": "annotated",
       "coveredBy": [],
-      "annotatedBy": []
+      "annotatedBy": [
+        "harness/page-editrequest-deny-revoke.spec.ts",
+        "e2e/editgrant-revoke-e2e.mjs"
+      ]
     },
     {
       "id": "resolver:request-section-edit",
       "short": "request-section-edit",
       "group": "resolver/editreq",
-      "tier": "uncovered",
+      "tier": "annotated",
       "coveredBy": [],
-      "annotatedBy": []
+      "annotatedBy": [
+        "harness/page-section-editrequest.spec.ts"
+      ]
     },
     {
       "id": "resolver:check-section-edit",
       "short": "check-section-edit",
       "group": "resolver/editreq",
-      "tier": "uncovered",
+      "tier": "annotated",
       "coveredBy": [],
-      "annotatedBy": []
+      "annotatedBy": [
+        "harness/page-section-editrequest.spec.ts"
+      ]
     },
     {
       "id": "resolver:list-section-edit-requests",
       "short": "list-section-edit-requests",
       "group": "resolver/editreq",
-      "tier": "uncovered",
+      "tier": "annotated",
       "coveredBy": [],
-      "annotatedBy": []
+      "annotatedBy": [
+        "harness/page-section-editrequest.spec.ts"
+      ]
     },
     {
       "id": "resolver:approve-section-edit",
       "short": "approve-section-edit",
       "group": "resolver/editreq",
-      "tier": "uncovered",
+      "tier": "annotated",
       "coveredBy": [],
-      "annotatedBy": []
+      "annotatedBy": [
+        "harness/page-section-editrequest.spec.ts"
+      ]
     },
     {
       "id": "resolver:deny-section-edit",
       "short": "deny-section-edit",
       "group": "resolver/editreq",
-      "tier": "uncovered",
+      "tier": "annotated",
       "coveredBy": [],
-      "annotatedBy": []
+      "annotatedBy": [
+        "harness/page-section-editrequest.spec.ts"
+      ]
     },
     {
       "id": "resolver:load-session",
@@ -298,9 +363,13 @@
       "id": "resolver:identify-operator",
       "short": "identify-operator",
       "group": "resolver/operators",
-      "tier": "uncovered",
-      "coveredBy": [],
-      "annotatedBy": []
+      "tier": "string-verified",
+      "coveredBy": [
+        "harness/overlay-owner-name.spec.ts"
+      ],
+      "annotatedBy": [
+        "harness/overlay-owner-name.spec.ts"
+      ]
     },
     {
       "id": "resolver:search-operators",
@@ -308,6 +377,7 @@
       "group": "resolver/operators",
       "tier": "string-verified",
       "coveredBy": [
+        "harness/realm-directory-lists.spec.ts",
         "harness/realm-operator-search.spec.ts"
       ],
       "annotatedBy": []
@@ -324,41 +394,61 @@
       "id": "resolver:enumerate-operators",
       "short": "enumerate-operators",
       "group": "resolver/operators",
-      "tier": "uncovered",
-      "coveredBy": [],
-      "annotatedBy": []
+      "tier": "string-verified",
+      "coveredBy": [
+        "harness/realm-directory-lists.spec.ts"
+      ],
+      "annotatedBy": [
+        "harness/realm-directory-lists.spec.ts"
+      ]
     },
     {
       "id": "resolver:enumerate-teams",
       "short": "enumerate-teams",
       "group": "resolver/operators",
-      "tier": "uncovered",
-      "coveredBy": [],
-      "annotatedBy": []
+      "tier": "string-verified",
+      "coveredBy": [
+        "harness/realm-directory-lists.spec.ts"
+      ],
+      "annotatedBy": [
+        "harness/realm-directory-lists.spec.ts"
+      ]
     },
     {
       "id": "resolver:enumerate-panel-artifacts",
       "short": "enumerate-panel-artifacts",
       "group": "resolver/panels",
-      "tier": "uncovered",
-      "coveredBy": [],
-      "annotatedBy": []
+      "tier": "string-verified",
+      "coveredBy": [
+        "harness/panel-labels.spec.ts"
+      ],
+      "annotatedBy": [
+        "harness/upload-boundary-live.spec.ts"
+      ]
     },
     {
       "id": "resolver:label-artifact",
       "short": "label-artifact",
       "group": "resolver/panels",
-      "tier": "uncovered",
-      "coveredBy": [],
-      "annotatedBy": []
+      "tier": "string-verified",
+      "coveredBy": [
+        "harness/panel-labels.spec.ts"
+      ],
+      "annotatedBy": [
+        "harness/panel-labels.spec.ts"
+      ]
     },
     {
       "id": "resolver:unlabel-artifact",
       "short": "unlabel-artifact",
       "group": "resolver/panels",
-      "tier": "uncovered",
-      "coveredBy": [],
-      "annotatedBy": []
+      "tier": "string-verified",
+      "coveredBy": [
+        "harness/panel-labels.spec.ts"
+      ],
+      "annotatedBy": [
+        "harness/panel-labels.spec.ts"
+      ]
     },
     {
       "id": "resolver:delete-artifact",
@@ -371,36 +461,28 @@
       "annotatedBy": []
     },
     {
-      "id": "resolver:inject-panel",
-      "short": "inject-panel",
-      "group": "resolver/panels",
-      "tier": "uncovered",
-      "coveredBy": [],
-      "annotatedBy": []
-    },
-    {
-      "id": "resolver:extract-panel",
-      "short": "extract-panel",
-      "group": "resolver/panels",
-      "tier": "uncovered",
-      "coveredBy": [],
-      "annotatedBy": []
-    },
-    {
       "id": "resolver:check-panel-status",
       "short": "check-panel-status",
       "group": "resolver/panels",
-      "tier": "uncovered",
-      "coveredBy": [],
-      "annotatedBy": []
+      "tier": "string-verified",
+      "coveredBy": [
+        "harness/panel-prefs-preview.spec.ts"
+      ],
+      "annotatedBy": [
+        "harness/panel-prefs-preview.spec.ts"
+      ]
     },
     {
       "id": "resolver:store-doc-panel-prefs",
       "short": "store-doc-panel-prefs",
       "group": "resolver/panels",
-      "tier": "uncovered",
-      "coveredBy": [],
-      "annotatedBy": []
+      "tier": "string-verified",
+      "coveredBy": [
+        "harness/panel-prefs-preview.spec.ts"
+      ],
+      "annotatedBy": [
+        "harness/panel-prefs-preview.spec.ts"
+      ]
     },
     {
       "id": "resolver:upload-artifact",
@@ -413,28 +495,28 @@
       "annotatedBy": []
     },
     {
-      "id": "resolver:register-panel-key",
-      "short": "register-panel-key",
-      "group": "resolver/panels",
-      "tier": "uncovered",
-      "coveredBy": [],
-      "annotatedBy": []
-    },
-    {
       "id": "resolver:discover-panel-key",
       "short": "discover-panel-key",
       "group": "resolver/panels",
-      "tier": "uncovered",
-      "coveredBy": [],
-      "annotatedBy": []
+      "tier": "string-verified",
+      "coveredBy": [
+        "harness/panel-prefs-preview.spec.ts"
+      ],
+      "annotatedBy": [
+        "harness/panel-prefs-preview.spec.ts"
+      ]
     },
     {
       "id": "resolver:resolve-artifact-preview",
       "short": "resolve-artifact-preview",
       "group": "resolver/panels",
-      "tier": "uncovered",
-      "coveredBy": [],
-      "annotatedBy": []
+      "tier": "string-verified",
+      "coveredBy": [
+        "harness/panel-prefs-preview.spec.ts"
+      ],
+      "annotatedBy": [
+        "harness/panel-prefs-preview.spec.ts"
+      ]
     },
     {
       "id": "resolver:load-policy",
@@ -460,38 +542,6 @@
       "annotatedBy": []
     },
     {
-      "id": "resolver:load-global-ruleset",
-      "short": "load-global-ruleset",
-      "group": "resolver/policies",
-      "tier": "uncovered",
-      "coveredBy": [],
-      "annotatedBy": []
-    },
-    {
-      "id": "resolver:store-global-ruleset",
-      "short": "store-global-ruleset",
-      "group": "resolver/policies",
-      "tier": "uncovered",
-      "coveredBy": [],
-      "annotatedBy": []
-    },
-    {
-      "id": "resolver:load-realm-ruleset",
-      "short": "load-realm-ruleset",
-      "group": "resolver/policies",
-      "tier": "uncovered",
-      "coveredBy": [],
-      "annotatedBy": []
-    },
-    {
-      "id": "resolver:store-realm-ruleset",
-      "short": "store-realm-ruleset",
-      "group": "resolver/policies",
-      "tier": "uncovered",
-      "coveredBy": [],
-      "annotatedBy": []
-    },
-    {
       "id": "resolver:enumerate-realm-rulesets",
       "short": "enumerate-realm-rulesets",
       "group": "resolver/policies",
@@ -502,28 +552,27 @@
       "annotatedBy": []
     },
     {
-      "id": "resolver:discard-realm-ruleset",
-      "short": "discard-realm-ruleset",
-      "group": "resolver/policies",
-      "tier": "uncovered",
-      "coveredBy": [],
-      "annotatedBy": []
-    },
-    {
       "id": "resolver:identify-realm",
       "short": "identify-realm",
       "group": "resolver/realms",
-      "tier": "uncovered",
-      "coveredBy": [],
-      "annotatedBy": []
+      "tier": "string-verified",
+      "coveredBy": [
+        "harness/realm-directory-lists.spec.ts"
+      ],
+      "annotatedBy": [
+        "harness/realm-directory-lists.spec.ts"
+      ]
     },
     {
       "id": "resolver:enumerate-realm-seals",
       "short": "enumerate-realm-seals",
       "group": "resolver/realms",
-      "tier": "uncovered",
+      "tier": "annotated",
       "coveredBy": [],
-      "annotatedBy": []
+      "annotatedBy": [
+        "harness/realm-stale-badge.spec.ts",
+        "harness/steward-force-unseal.spec.ts"
+      ]
     },
     {
       "id": "resolver:launch-realm-audit",
@@ -565,17 +614,21 @@
       "id": "resolver:request-steward-access",
       "short": "request-steward-access",
       "group": "resolver/realms",
-      "tier": "uncovered",
+      "tier": "annotated",
       "coveredBy": [],
-      "annotatedBy": []
+      "annotatedBy": [
+        "harness/realm-plainuser-gate.spec.ts"
+      ]
     },
     {
       "id": "resolver:check-steward-request",
       "short": "check-steward-request",
       "group": "resolver/realms",
-      "tier": "uncovered",
+      "tier": "annotated",
       "coveredBy": [],
-      "annotatedBy": []
+      "annotatedBy": [
+        "harness/realm-plainuser-gate.spec.ts"
+      ]
     },
     {
       "id": "resolver:list-steward-requests",
@@ -591,17 +644,21 @@
       "id": "resolver:approve-steward-request",
       "short": "approve-steward-request",
       "group": "resolver/realms",
-      "tier": "uncovered",
+      "tier": "annotated",
       "coveredBy": [],
-      "annotatedBy": []
+      "annotatedBy": [
+        "harness/steward-grant-roundtrip.spec.ts"
+      ]
     },
     {
       "id": "resolver:deny-steward-request",
       "short": "deny-steward-request",
       "group": "resolver/realms",
-      "tier": "uncovered",
+      "tier": "annotated",
       "coveredBy": [],
-      "annotatedBy": []
+      "annotatedBy": [
+        "harness/steward-grant-roundtrip.spec.ts"
+      ]
     },
     {
       "id": "resolver:seal-artifact",
@@ -625,20 +682,40 @@
       "annotatedBy": []
     },
     {
+      "id": "resolver:extend-seal",
+      "short": "extend-seal",
+      "group": "resolver/sealing",
+      "tier": "string-verified",
+      "coveredBy": [
+        "harness/operator-seals-stamp.spec.ts"
+      ],
+      "annotatedBy": [
+        "harness/lapsed-seal-lifecycle.spec.ts"
+      ]
+    },
+    {
       "id": "resolver:enumerate-doc-artifacts",
       "short": "enumerate-doc-artifacts",
       "group": "resolver/sealing",
-      "tier": "uncovered",
+      "tier": "annotated",
       "coveredBy": [],
-      "annotatedBy": []
+      "annotatedBy": [
+        "harness/page-seal-state.spec.ts",
+        "harness/page-seal-unseal.spec.ts"
+      ]
     },
     {
       "id": "resolver:enumerate-operator-seals",
       "short": "enumerate-operator-seals",
       "group": "resolver/sealing",
-      "tier": "uncovered",
-      "coveredBy": [],
-      "annotatedBy": []
+      "tier": "string-verified",
+      "coveredBy": [
+        "harness/operator-seals-stamp.spec.ts",
+        "harness/realm-directory-lists.spec.ts"
+      ],
+      "annotatedBy": [
+        "harness/realm-directory-lists.spec.ts"
+      ]
     },
     {
       "id": "resolver:enumerate-page-seals",
@@ -654,9 +731,13 @@
       "id": "resolver:check-seal-stamp",
       "short": "check-seal-stamp",
       "group": "resolver/sealing",
-      "tier": "uncovered",
-      "coveredBy": [],
-      "annotatedBy": []
+      "tier": "string-verified",
+      "coveredBy": [
+        "harness/operator-seals-stamp.spec.ts"
+      ],
+      "annotatedBy": [
+        "harness/operator-seals-stamp.spec.ts"
+      ]
     },
     {
       "id": "resolver:restore-sealed-artifact",
@@ -692,9 +773,13 @@
       "id": "resolver:enumerate-section-seals",
       "short": "enumerate-section-seals",
       "group": "resolver/section-seals",
-      "tier": "uncovered",
-      "coveredBy": [],
-      "annotatedBy": []
+      "tier": "string-verified",
+      "coveredBy": [
+        "harness/page-section-seal-create.spec.ts"
+      ],
+      "annotatedBy": [
+        "harness/page-section-seal-create.spec.ts"
+      ]
     },
     {
       "id": "resolver:seal-section",
@@ -728,9 +813,11 @@
       "id": "resolver:load-validation-config",
       "short": "load-validation-config",
       "group": "resolver/validations",
-      "tier": "uncovered",
+      "tier": "annotated",
       "coveredBy": [],
-      "annotatedBy": []
+      "annotatedBy": [
+        "harness/realm-validation-crud.spec.ts"
+      ]
     },
     {
       "id": "resolver:store-validation-config",
@@ -746,17 +833,25 @@
       "id": "resolver:validate-page-now",
       "short": "validate-page-now",
       "group": "resolver/validations",
-      "tier": "uncovered",
-      "coveredBy": [],
-      "annotatedBy": []
+      "tier": "string-verified",
+      "coveredBy": [
+        "harness/validation-readouts.spec.ts"
+      ],
+      "annotatedBy": [
+        "harness/validation-readouts.spec.ts"
+      ]
     },
     {
       "id": "resolver:get-validation-state",
       "short": "get-validation-state",
       "group": "resolver/validations",
-      "tier": "uncovered",
-      "coveredBy": [],
-      "annotatedBy": []
+      "tier": "string-verified",
+      "coveredBy": [
+        "harness/validation-readouts.spec.ts"
+      ],
+      "annotatedBy": [
+        "harness/validation-readouts.spec.ts"
+      ]
     },
     {
       "id": "resolver:approve-page-gate",
@@ -770,9 +865,13 @@
       "id": "resolver:list-ai-models",
       "short": "list-ai-models",
       "group": "resolver/validations",
-      "tier": "uncovered",
-      "coveredBy": [],
-      "annotatedBy": []
+      "tier": "string-verified",
+      "coveredBy": [
+        "harness/validation-readouts.spec.ts"
+      ],
+      "annotatedBy": [
+        "harness/validation-readouts.spec.ts"
+      ]
     },
     {
       "id": "resolver:enqueue-page-validation",
@@ -788,25 +887,35 @@
       "id": "resolver:get-validation-job",
       "short": "get-validation-job",
       "group": "resolver/validations",
-      "tier": "uncovered",
+      "tier": "annotated",
       "coveredBy": [],
-      "annotatedBy": []
+      "annotatedBy": [
+        "harness/ai-validation-live.spec.ts"
+      ]
     },
     {
       "id": "resolver:get-ai-findings",
       "short": "get-ai-findings",
       "group": "resolver/validations",
-      "tier": "uncovered",
-      "coveredBy": [],
-      "annotatedBy": []
+      "tier": "string-verified",
+      "coveredBy": [
+        "harness/validation-readouts.spec.ts"
+      ],
+      "annotatedBy": [
+        "harness/ai-validation-live.spec.ts"
+      ]
     },
     {
       "id": "resolver:set-ai-finding-state",
       "short": "set-ai-finding-state",
       "group": "resolver/validations",
-      "tier": "uncovered",
-      "coveredBy": [],
-      "annotatedBy": []
+      "tier": "string-verified",
+      "coveredBy": [
+        "harness/validation-readouts.spec.ts"
+      ],
+      "annotatedBy": [
+        "harness/validation-readouts.spec.ts"
+      ]
     },
     {
       "id": "resolver:get-validation-audit",
@@ -830,32 +939,40 @@
       "id": "resolver:get-workflow-dashboard",
       "short": "get-workflow-dashboard",
       "group": "resolver/workflow",
-      "tier": "uncovered",
+      "tier": "annotated",
       "coveredBy": [],
-      "annotatedBy": []
+      "annotatedBy": [
+        "e2e/workflow-enforce-e2e.mjs"
+      ]
     },
     {
       "id": "resolver:get-workflow-log",
       "short": "get-workflow-log",
       "group": "resolver/workflow",
-      "tier": "uncovered",
+      "tier": "annotated",
       "coveredBy": [],
-      "annotatedBy": []
+      "annotatedBy": [
+        "e2e/workflow-e2e.mjs"
+      ]
     },
     {
       "id": "resolver:assign-workflow",
       "short": "assign-workflow",
       "group": "resolver/workflow",
-      "tier": "uncovered",
+      "tier": "annotated",
       "coveredBy": [],
-      "annotatedBy": []
+      "annotatedBy": [
+        "e2e/workflow-e2e.mjs"
+      ]
     },
     {
       "id": "resolver:request-transition",
       "short": "request-transition",
       "group": "resolver/workflow",
-      "tier": "uncovered",
-      "coveredBy": [],
+      "tier": "string-verified",
+      "coveredBy": [
+        "e2e/workflow-conditions-e2e.mjs"
+      ],
       "annotatedBy": []
     },
     {
@@ -870,17 +987,22 @@
       "id": "resolver:store-workflow-config",
       "short": "store-workflow-config",
       "group": "resolver/workflow",
-      "tier": "uncovered",
+      "tier": "annotated",
       "coveredBy": [],
-      "annotatedBy": []
+      "annotatedBy": [
+        "harness/workflow-deadend-warn.spec.ts"
+      ]
     },
     {
       "id": "resolver:get-space-workflow-settings",
       "short": "get-space-workflow-settings",
       "group": "resolver/workflow",
-      "tier": "uncovered",
+      "tier": "annotated",
       "coveredBy": [],
-      "annotatedBy": []
+      "annotatedBy": [
+        "harness/realm-workflow-persist.spec.ts",
+        "e2e/workflow-autoassign-e2e.mjs"
+      ]
     },
     {
       "id": "resolver:set-space-workflow-settings",
@@ -896,9 +1018,11 @@
       "id": "resolver:bulk-assign-workflow",
       "short": "bulk-assign-workflow",
       "group": "resolver/workflow",
-      "tier": "uncovered",
+      "tier": "annotated",
       "coveredBy": [],
-      "annotatedBy": []
+      "annotatedBy": [
+        "e2e/workflow-bulk-e2e.mjs"
+      ]
     },
     {
       "id": "resolver:decide-approval",
@@ -925,25 +1049,35 @@
       "id": "resolver:list-my-approvals",
       "short": "list-my-approvals",
       "group": "resolver/workflow",
-      "tier": "uncovered",
-      "coveredBy": [],
-      "annotatedBy": []
+      "tier": "string-verified",
+      "coveredBy": [
+        "harness/workflow-pickers-inbox.spec.ts"
+      ],
+      "annotatedBy": [
+        "harness/workflow-pickers-inbox.spec.ts"
+      ]
     },
     {
       "id": "resolver:search-workflow-users",
       "short": "search-workflow-users",
       "group": "resolver/workflow",
-      "tier": "uncovered",
-      "coveredBy": [],
-      "annotatedBy": []
+      "tier": "string-verified",
+      "coveredBy": [
+        "harness/workflow-pickers-inbox.spec.ts"
+      ],
+      "annotatedBy": [
+        "harness/workflow-pickers-inbox.spec.ts"
+      ]
     },
     {
       "id": "resolver:search-workflow-groups",
       "short": "search-workflow-groups",
       "group": "resolver/workflow",
-      "tier": "uncovered",
+      "tier": "annotated",
       "coveredBy": [],
-      "annotatedBy": []
+      "annotatedBy": [
+        "harness/workflow-pickers-inbox.spec.ts"
+      ]
     },
     {
       "id": "resolver:heartbeat",
@@ -970,15 +1104,20 @@
       "tier": "string-verified",
       "coveredBy": [
         "harness/ai-validation-live.spec.ts",
+        "harness/bulletin-toggles.spec.ts",
         "harness/destructive-actions-perm.spec.ts",
+        "harness/editreq-request-lifecycle.spec.ts",
         "harness/expiry-sweep.spec.ts",
         "harness/gate-revert.spec.ts",
+        "harness/lapsed-seal-lifecycle.spec.ts",
         "harness/media-attr-matrix.spec.ts",
+        "harness/operator-seals-stamp.spec.ts",
         "harness/page-editrequest-approve.spec.ts",
         "harness/page-editrequest-deny-revoke.spec.ts",
         "harness/page-section-editrequest.spec.ts",
         "harness/page-section-seal-create.spec.ts",
         "harness/page-watch-dispatch.spec.ts",
+        "harness/panel-prefs-preview.spec.ts",
         "harness/perm-delete-cleanup.spec.ts",
         "harness/realm-plainuser-gate.spec.ts",
         "harness/restore-gate.spec.ts",
@@ -996,9 +1135,11 @@
         "harness/steward-grant-roundtrip.spec.ts",
         "harness/trigger-guards.spec.ts",
         "harness/validation-eval.spec.ts",
+        "harness/validation-readouts.spec.ts",
         "harness/validation-space-floor.spec.ts",
         "harness/validation.spec.ts",
         "harness/violation-dedup.spec.ts",
+        "harness/workflow-pickers-inbox.spec.ts",
         "e2e/editgrant-revoke-e2e.mjs",
         "e2e/ensure-fixture.mjs",
         "e2e/seal-revert-e2e.mjs",
@@ -1018,9 +1159,12 @@
       "tier": "string-verified",
       "coveredBy": [
         "harness/ai-validation-live.spec.ts",
+        "harness/bulletin-toggles.spec.ts",
         "harness/destructive-actions-perm.spec.ts",
+        "harness/editreq-request-lifecycle.spec.ts",
         "harness/expiry-sweep.spec.ts",
         "harness/gate-revert.spec.ts",
+        "harness/lapsed-seal-lifecycle.spec.ts",
         "harness/license-banner.spec.ts",
         "harness/media-attr-matrix.spec.ts",
         "harness/page-editrequest-approve.spec.ts",
@@ -1046,6 +1190,7 @@
         "harness/steward-grant-roundtrip.spec.ts",
         "harness/trigger-guards.spec.ts",
         "harness/validation-eval.spec.ts",
+        "harness/validation-readouts.spec.ts",
         "harness/validation-space-floor.spec.ts",
         "harness/validation.spec.ts",
         "harness/violation-dedup.spec.ts",
@@ -1064,9 +1209,12 @@
       "tier": "string-verified",
       "coveredBy": [
         "harness/ai-validation-live.spec.ts",
+        "harness/bulletin-toggles.spec.ts",
         "harness/destructive-actions-perm.spec.ts",
+        "harness/editreq-request-lifecycle.spec.ts",
         "harness/expiry-sweep.spec.ts",
         "harness/gate-revert.spec.ts",
+        "harness/lapsed-seal-lifecycle.spec.ts",
         "harness/license-banner.spec.ts",
         "harness/media-attr-matrix.spec.ts",
         "harness/page-editrequest-approve.spec.ts",
@@ -1094,10 +1242,12 @@
         "harness/steward-grant-roundtrip.spec.ts",
         "harness/trigger-guards.spec.ts",
         "harness/validation-eval.spec.ts",
+        "harness/validation-readouts.spec.ts",
         "harness/validation-space-floor.spec.ts",
         "harness/validation.spec.ts",
         "harness/violation-dedup.spec.ts",
         "harness/workflow-deadend-warn.spec.ts",
+        "harness/workflow-pickers-inbox.spec.ts",
         "e2e/editgrant-revoke-e2e.mjs",
         "e2e/seal-revert-e2e.mjs",
         "e2e/workflow-approval-e2e.mjs",
@@ -1125,7 +1275,8 @@
       "coveredBy": [
         "harness/realm-stale-badge.spec.ts",
         "harness/ribbon-approval-dialog.spec.ts",
-        "harness/sealed-delete-restore-journey.spec.ts"
+        "harness/sealed-delete-restore-journey.spec.ts",
+        "harness/workflow-pickers-inbox.spec.ts"
       ],
       "annotatedBy": []
     },
@@ -1136,21 +1287,30 @@
       "tier": "string-verified",
       "coveredBy": [
         "harness/ai-validation-live.spec.ts",
+        "harness/authz-content-gate.spec.ts",
+        "harness/bulletin-toggles.spec.ts",
         "harness/destructive-actions-perm.spec.ts",
+        "harness/editreq-request-lifecycle.spec.ts",
         "harness/expiry-sweep.spec.ts",
+        "harness/lapsed-seal-lifecycle.spec.ts",
         "harness/license-banner.spec.ts",
+        "harness/operator-seals-stamp.spec.ts",
         "harness/page-ribbon-workflow.spec.ts",
         "harness/page-section-editrequest.spec.ts",
         "harness/page-section-seal-create.spec.ts",
         "harness/page-watch-dispatch.spec.ts",
+        "harness/panel-prefs-preview.spec.ts",
         "harness/perm-delete-cleanup.spec.ts",
         "harness/realm-plainuser-gate.spec.ts",
         "harness/restore-gate.spec.ts",
         "harness/ribbon-approval-dialog.spec.ts",
         "harness/ruleset-enum-gate.spec.ts",
         "harness/trigger-guards.spec.ts",
+        "harness/validation-readouts.spec.ts",
         "harness/workflow-deadend-warn.spec.ts",
+        "harness/workflow-pickers-inbox.spec.ts",
         "e2e/editgrant-revoke-e2e.mjs",
+        "e2e/ensure-fixture.mjs",
         "e2e/workflow-approval-e2e.mjs",
         "e2e/workflow-autoassign-e2e.mjs",
         "e2e/workflow-bulk-e2e.mjs",
@@ -1166,7 +1326,8 @@
       "group": "testhook/invoke-seams",
       "tier": "string-verified",
       "coveredBy": [
-        "harness/expiry-sweep.spec.ts"
+        "harness/expiry-sweep.spec.ts",
+        "harness/lapsed-seal-lifecycle.spec.ts"
       ],
       "annotatedBy": []
     },
@@ -1178,6 +1339,7 @@
       "coveredBy": [
         "harness/page-ribbon-workflow.spec.ts",
         "harness/ribbon-approval-dialog.spec.ts",
+        "harness/workflow-pickers-inbox.spec.ts",
         "e2e/workflow-approval-e2e.mjs",
         "e2e/workflow-conditions-e2e.mjs",
         "e2e/workflow-e2e.mjs",
@@ -1192,6 +1354,7 @@
       "tier": "string-verified",
       "coveredBy": [
         "harness/ribbon-approval-dialog.spec.ts",
+        "harness/workflow-pickers-inbox.spec.ts",
         "e2e/workflow-approval-e2e.mjs",
         "e2e/workflow-conditions-e2e.mjs",
         "e2e/workflow-e2e.mjs",
@@ -1257,6 +1420,50 @@
       "tier": "string-verified",
       "coveredBy": [
         "e2e/workflow-conditions-e2e.mjs"
+      ],
+      "annotatedBy": []
+    },
+    {
+      "id": "testhook:fn:listEditRequests",
+      "short": "listEditRequests",
+      "group": "testhook/invoke-seams",
+      "tier": "string-verified",
+      "coveredBy": [
+        "harness/lapsed-seal-lifecycle.spec.ts"
+      ],
+      "annotatedBy": []
+    },
+    {
+      "id": "testhook:fn:approveEditRequest",
+      "short": "approveEditRequest",
+      "group": "testhook/invoke-seams",
+      "tier": "string-verified",
+      "coveredBy": [
+        "harness/lapsed-seal-lifecycle.spec.ts",
+        "harness/sealed-owner-intent.spec.ts"
+      ],
+      "annotatedBy": []
+    },
+    {
+      "id": "testhook:fn:denyEditRequest",
+      "short": "denyEditRequest",
+      "group": "testhook/invoke-seams",
+      "tier": "string-verified",
+      "coveredBy": [
+        "harness/editreq-request-lifecycle.spec.ts",
+        "harness/lapsed-seal-lifecycle.spec.ts",
+        "harness/page-editrequest-deny-revoke.spec.ts"
+      ],
+      "annotatedBy": []
+    },
+    {
+      "id": "testhook:fn:extendSeal",
+      "short": "extendSeal",
+      "group": "testhook/invoke-seams",
+      "tier": "string-verified",
+      "coveredBy": [
+        "harness/lapsed-seal-lifecycle.spec.ts",
+        "harness/operator-seals-stamp.spec.ts"
       ],
       "annotatedBy": []
     },
@@ -1336,7 +1543,8 @@
       "group": "testhook/invoke-seams",
       "tier": "string-verified",
       "coveredBy": [
-        "harness/page-watch-dispatch.spec.ts"
+        "harness/page-watch-dispatch.spec.ts",
+        "harness/steward-force-unseal.spec.ts"
       ],
       "annotatedBy": []
     },
@@ -1406,6 +1614,7 @@
       "group": "testhook/invoke-seams",
       "tier": "string-verified",
       "coveredBy": [
+        "harness/authz-content-gate.spec.ts",
         "harness/page-section-seal-create.spec.ts"
       ],
       "annotatedBy": []
@@ -1414,8 +1623,11 @@
       "id": "testhook:fn:enumerateSectionSeals",
       "short": "enumerateSectionSeals",
       "group": "testhook/invoke-seams",
-      "tier": "uncovered",
-      "coveredBy": [],
+      "tier": "string-verified",
+      "coveredBy": [
+        "harness/authz-content-gate.spec.ts",
+        "harness/page-section-seal-create.spec.ts"
+      ],
       "annotatedBy": []
     },
     {
@@ -1424,6 +1636,7 @@
       "group": "testhook/invoke-seams",
       "tier": "string-verified",
       "coveredBy": [
+        "harness/authz-content-gate.spec.ts",
         "harness/page-section-seal-create.spec.ts"
       ],
       "annotatedBy": []
@@ -1434,6 +1647,7 @@
       "group": "testhook/invoke-seams",
       "tier": "string-verified",
       "coveredBy": [
+        "harness/authz-content-gate.spec.ts",
         "harness/page-section-seal-create.spec.ts"
       ],
       "annotatedBy": []
@@ -1519,6 +1733,7 @@
       "tier": "string-verified",
       "coveredBy": [
         "harness/ribbon-approval-dialog.spec.ts",
+        "harness/workflow-pickers-inbox.spec.ts",
         "e2e/workflow-approval-e2e.mjs"
       ],
       "annotatedBy": []
@@ -1600,7 +1815,8 @@
       "group": "testhook/invoke-seams",
       "tier": "string-verified",
       "coveredBy": [
-        "harness/ai-validation-live.spec.ts"
+        "harness/ai-validation-live.spec.ts",
+        "harness/validation-readouts.spec.ts"
       ],
       "annotatedBy": []
     },
@@ -1684,13 +1900,196 @@
       "annotatedBy": []
     },
     {
+      "id": "testhook:fn:ensurePanel",
+      "short": "ensurePanel",
+      "group": "testhook/invoke-seams",
+      "tier": "string-verified",
+      "coveredBy": [
+        "harness/panel-prefs-preview.spec.ts",
+        "e2e/ensure-fixture.mjs"
+      ],
+      "annotatedBy": []
+    },
+    {
+      "id": "testhook:fn:requestEditAccess",
+      "short": "requestEditAccess",
+      "group": "testhook/invoke-seams",
+      "tier": "string-verified",
+      "coveredBy": [
+        "harness/editreq-request-lifecycle.spec.ts"
+      ],
+      "annotatedBy": []
+    },
+    {
+      "id": "testhook:fn:checkEditRequest",
+      "short": "checkEditRequest",
+      "group": "testhook/invoke-seams",
+      "tier": "string-verified",
+      "coveredBy": [
+        "harness/editreq-request-lifecycle.spec.ts"
+      ],
+      "annotatedBy": []
+    },
+    {
+      "id": "testhook:fn:listMyEditRequests",
+      "short": "listMyEditRequests",
+      "group": "testhook/invoke-seams",
+      "tier": "string-verified",
+      "coveredBy": [
+        "harness/editreq-request-lifecycle.spec.ts"
+      ],
+      "annotatedBy": []
+    },
+    {
+      "id": "testhook:fn:checkPanelStatus",
+      "short": "checkPanelStatus",
+      "group": "testhook/invoke-seams",
+      "tier": "string-verified",
+      "coveredBy": [
+        "harness/panel-prefs-preview.spec.ts"
+      ],
+      "annotatedBy": []
+    },
+    {
+      "id": "testhook:fn:storeDocPanelPrefs",
+      "short": "storeDocPanelPrefs",
+      "group": "testhook/invoke-seams",
+      "tier": "string-verified",
+      "coveredBy": [
+        "harness/panel-prefs-preview.spec.ts"
+      ],
+      "annotatedBy": []
+    },
+    {
+      "id": "testhook:fn:discoverPanelKey",
+      "short": "discoverPanelKey",
+      "group": "testhook/invoke-seams",
+      "tier": "string-verified",
+      "coveredBy": [
+        "harness/panel-prefs-preview.spec.ts"
+      ],
+      "annotatedBy": []
+    },
+    {
+      "id": "testhook:fn:resolvePreview",
+      "short": "resolvePreview",
+      "group": "testhook/invoke-seams",
+      "tier": "string-verified",
+      "coveredBy": [
+        "harness/panel-prefs-preview.spec.ts"
+      ],
+      "annotatedBy": []
+    },
+    {
+      "id": "testhook:fn:enumerateOperatorSeals",
+      "short": "enumerateOperatorSeals",
+      "group": "testhook/invoke-seams",
+      "tier": "string-verified",
+      "coveredBy": [
+        "harness/realm-directory-lists.spec.ts"
+      ],
+      "annotatedBy": []
+    },
+    {
+      "id": "testhook:fn:checkSealStamp",
+      "short": "checkSealStamp",
+      "group": "testhook/invoke-seams",
+      "tier": "string-verified",
+      "coveredBy": [
+        "harness/operator-seals-stamp.spec.ts"
+      ],
+      "annotatedBy": []
+    },
+    {
+      "id": "testhook:fn:validatePageNow",
+      "short": "validatePageNow",
+      "group": "testhook/invoke-seams",
+      "tier": "string-verified",
+      "coveredBy": [
+        "harness/validation-readouts.spec.ts"
+      ],
+      "annotatedBy": []
+    },
+    {
+      "id": "testhook:fn:getValidationState",
+      "short": "getValidationState",
+      "group": "testhook/invoke-seams",
+      "tier": "string-verified",
+      "coveredBy": [
+        "harness/validation-readouts.spec.ts"
+      ],
+      "annotatedBy": []
+    },
+    {
+      "id": "testhook:fn:listAiModels",
+      "short": "listAiModels",
+      "group": "testhook/invoke-seams",
+      "tier": "string-verified",
+      "coveredBy": [
+        "harness/validation-readouts.spec.ts"
+      ],
+      "annotatedBy": []
+    },
+    {
+      "id": "testhook:fn:setAiFindingState",
+      "short": "setAiFindingState",
+      "group": "testhook/invoke-seams",
+      "tier": "string-verified",
+      "coveredBy": [
+        "harness/validation-readouts.spec.ts"
+      ],
+      "annotatedBy": []
+    },
+    {
+      "id": "testhook:fn:listMyApprovals",
+      "short": "listMyApprovals",
+      "group": "testhook/invoke-seams",
+      "tier": "string-verified",
+      "coveredBy": [
+        "harness/workflow-pickers-inbox.spec.ts"
+      ],
+      "annotatedBy": []
+    },
+    {
+      "id": "testhook:fn:searchWorkflowUsers",
+      "short": "searchWorkflowUsers",
+      "group": "testhook/invoke-seams",
+      "tier": "string-verified",
+      "coveredBy": [
+        "harness/workflow-pickers-inbox.spec.ts"
+      ],
+      "annotatedBy": []
+    },
+    {
+      "id": "testhook:fn:searchWorkflowGroups",
+      "short": "searchWorkflowGroups",
+      "group": "testhook/invoke-seams",
+      "tier": "string-verified",
+      "coveredBy": [
+        "harness/workflow-pickers-inbox.spec.ts"
+      ],
+      "annotatedBy": []
+    },
+    {
+      "id": "testhook:fn:loadBulletinToggles",
+      "short": "loadBulletinToggles",
+      "group": "testhook/invoke-seams",
+      "tier": "string-verified",
+      "coveredBy": [
+        "harness/bulletin-toggles.spec.ts"
+      ],
+      "annotatedBy": []
+    },
+    {
       "id": "manifest:macro:sentinel-vault-panel",
       "short": "sentinel-vault-panel",
       "group": "manifest/macro",
       "tier": "string-verified",
       "coveredBy": [
+        "harness/panel-prefs-preview.spec.ts",
         "harness/upload-boundary-live.spec.ts",
-        "harness/validation-eval.spec.ts"
+        "harness/validation-eval.spec.ts",
+        "e2e/ensure-fixture.mjs"
       ],
       "annotatedBy": []
     },
@@ -1710,9 +2109,11 @@
       "id": "manifest:confluence:pageBanner:sentinel-vault-ribbon",
       "short": "sentinel-vault-ribbon",
       "group": "manifest/confluence:pageBanner",
-      "tier": "uncovered",
+      "tier": "annotated",
       "coveredBy": [],
-      "annotatedBy": []
+      "annotatedBy": [
+        "harness/page-seal-state.spec.ts"
+      ]
     },
     {
       "id": "manifest:webtrigger:harness-test-state",
@@ -1739,9 +2140,11 @@
       "id": "manifest:consumer:ai-validation-queue",
       "short": "ai-validation-queue",
       "group": "manifest/consumer",
-      "tier": "uncovered",
+      "tier": "annotated",
       "coveredBy": [],
-      "annotatedBy": []
+      "annotatedBy": [
+        "harness/ai-validation-live.spec.ts"
+      ]
     },
     {
       "id": "event:avi:confluence:updated:attachment",
@@ -1787,9 +2190,11 @@
       "id": "event:avi:confluence:created:page",
       "short": "avi:confluence:created:page",
       "group": "manifest/trigger-events",
-      "tier": "uncovered",
+      "tier": "annotated",
       "coveredBy": [],
-      "annotatedBy": []
+      "annotatedBy": [
+        "e2e/workflow-autoassign-e2e.mjs"
+      ]
     },
     {
       "id": "event:avi:forge:installed:app",
@@ -1815,9 +2220,11 @@
       "id": "manifest:scheduledTrigger:expiry-sweep-scheduled",
       "short": "expiry-sweep-scheduled",
       "group": "manifest/scheduledTrigger",
-      "tier": "uncovered",
+      "tier": "annotated",
       "coveredBy": [],
-      "annotatedBy": []
+      "annotatedBy": [
+        "harness/expiry-sweep.spec.ts"
+      ]
     },
     {
       "id": "manifest:scheduledTrigger:recurring-nudge-scheduled",
@@ -1871,6 +2278,7 @@
         "harness/deploy-state-guard.spec.ts",
         "harness/full-app-walkthrough.spec.ts",
         "harness/realm-console-deep.spec.ts",
+        "harness/realm-directory-lists.spec.ts",
         "harness/realm-operator-search.spec.ts",
         "harness/realm-plainuser-gate.spec.ts",
         "harness/realm-reservation-persist.spec.ts",
@@ -1880,7 +2288,8 @@
         "harness/realm.spec.ts",
         "harness/space-access-persist.spec.ts",
         "harness/steward-force-unseal.spec.ts",
-        "harness/steward-grant-roundtrip.spec.ts"
+        "harness/steward-grant-roundtrip.spec.ts",
+        "harness/workflow-pickers-inbox.spec.ts"
       ],
       "annotatedBy": []
     }

@@ -2,6 +2,7 @@
 // ever called them (a phantom feature — approved edit access was permanent). The panel now
 // wires them; this proves the backend actually lists + revokes, with the owner authorization.
 // Pure KVS + resolver test (owner auth is a direct lockedBy comparison — no asUser needed).
+// @covers resolver:list-edit-grants resolver:revoke-edit-grant
 import { readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";

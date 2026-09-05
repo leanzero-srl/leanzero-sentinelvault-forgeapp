@@ -12,18 +12,30 @@ export async function resolveRealm(realmKey) {
     throw new Error("Space key is required");
   }
 
+  // v2, as the user. The v1 `/rest/api/space/{key}` call this used to make answers a Forge
+  // asUser() request with a non-2xx on this site (an API token gets a 200 for the same URL),
+  // so every realm console rendered the "Current Space" fallback — found 2026-09-05 by a spec
+  // asserting on the REAL space name rather than "not blank". This is the ONE resolver of a
+  // space's name; identify-realm delegates here, and the two other copies that existed
+  // (operators/logic.getRealmInfo, an inline one in realms/actions) were deleted.
   try {
     const response = await asUser().requestConfluence(
-      route`/wiki/rest/api/space/${realmKey}`,
+      route`/wiki/api/v2/spaces?keys=${realmKey}`,
+      { headers: { Accept: "application/json" } },
     );
 
     if (response.ok) {
-      const realmData = await response.json();
-      return {
-        key: realmData.key,
-        name: realmData.name,
-        id: realmData.id,
-      };
+      const body = await response.json();
+      const realmData = body?.results?.[0];
+      if (realmData?.key) {
+        return {
+          key: realmData.key,
+          name: realmData.name,
+          id: realmData.id != null ? String(realmData.id) : null,
+        };
+      }
+    } else {
+      console.warn(`[REALM] resolveRealm ${realmKey}: v2 spaces answered ${response.status}`);
     }
 
     return { key: realmKey, name: "Current Space", id: null };

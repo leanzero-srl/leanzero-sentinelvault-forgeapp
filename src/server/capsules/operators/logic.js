@@ -42,37 +42,6 @@ export async function identifyOperatorById(accountId, cloudId) {
 }
 
 /**
- * Get realm information by realm key
- *
- * @param {string} realmKey - The Confluence realm key
- * @returns {Promise<Object>} Realm information including key, name, and id
- */
-export async function getRealmInfo(realmKey) {
-  if (!realmKey) {
-    throw new Error("Space key is required");
-  }
-
-  try {
-    const response = await asUser().requestConfluence(
-      route`/wiki/rest/api/space/${realmKey}`,
-    );
-
-    if (response.ok) {
-      const realmData = await response.json();
-      return {
-        key: realmData.key,
-        name: realmData.name,
-        id: realmData.id,
-      };
-    }
-
-    return { key: realmKey, name: "Current Space", id: null };
-  } catch (error) {
-    return { key: realmKey, name: "Current Space", id: null };
-  }
-}
-
-/**
  * Search for operators by query using Confluence CQL
  *
  * @param {string} query - The search query (minimum 2 characters)
