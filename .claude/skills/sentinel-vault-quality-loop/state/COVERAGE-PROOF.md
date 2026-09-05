@@ -1,15 +1,15 @@
 # Coverage Proof — Sentinel Vault
 
-Generated 2026-09-05T19:40:17.923Z by `scripts/coverage-proof.mjs` (parsed inventory — never hand-maintained; do not edit).
+Generated 2026-09-05T20:19:47.496Z by `scripts/coverage-proof.mjs` (parsed inventory — never hand-maintained; do not edit).
 
-**201 inventory items** — 148 string-verified, 40 annotated, 13 gaps.
-Evidence: 104 files (harness specs, app e2e scripts, unit tests).
+**201 inventory items** — 148 string-verified, 41 annotated, 12 gaps.
+Evidence: 106 files (harness specs, app e2e scripts, unit tests).
 
-## manifest/confluence:globalPage (1 items, 1 gaps)
+## manifest/confluence:globalPage (1 items, 0 gaps)
 
 | Item | Coverage | Evidence |
 |---|---|---|
-| `my-work` | **GAP** | — |
+| `my-work` | annotated | harness/my-work-page.spec.ts (annotated) |
 
 ## manifest/confluence:globalSettings (1 items, 0 gaps)
 
@@ -98,9 +98,9 @@ Evidence: 104 files (harness specs, app e2e scripts, unit tests).
 | `request-edit-access` | string-verified | harness/editreq-request-lifecycle.spec.ts |
 | `check-edit-request` | annotated | harness/editreq-request-lifecycle.spec.ts (annotated) |
 | `list-edit-requests` | annotated | harness/lapsed-seal-lifecycle.spec.ts (annotated), harness/page-editrequest-approve.spec.ts (annotated) |
-| `list-my-edit-requests` | annotated | harness/editreq-request-lifecycle.spec.ts (annotated), harness/my-work-page.spec.ts (annotated) |
+| `list-my-edit-requests` | annotated | harness/editreq-owner-index.spec.ts (annotated), harness/editreq-request-lifecycle.spec.ts (annotated), harness/my-work-page.spec.ts (annotated) |
 | `approve-edit-request` | annotated | harness/lapsed-seal-lifecycle.spec.ts (annotated), harness/my-work-page.spec.ts (annotated), harness/page-editrequest-approve.spec.ts (annotated) |
-| `deny-edit-request` | annotated | harness/editreq-request-lifecycle.spec.ts (annotated), harness/page-editrequest-deny-revoke.spec.ts (annotated) |
+| `deny-edit-request` | annotated | harness/editreq-owner-index.spec.ts (annotated), harness/editreq-request-lifecycle.spec.ts (annotated), harness/page-editrequest-deny-revoke.spec.ts (annotated) |
 | `revoke-edit-grant` | annotated | harness/page-editrequest-deny-revoke.spec.ts (annotated), e2e/editgrant-revoke-e2e.mjs (annotated) |
 | `list-edit-grants` | annotated | harness/page-editrequest-deny-revoke.spec.ts (annotated), e2e/editgrant-revoke-e2e.mjs (annotated) |
 | `request-section-edit` | annotated | harness/page-section-editrequest.spec.ts (annotated) |
@@ -236,7 +236,7 @@ Evidence: 104 files (harness specs, app e2e scripts, unit tests).
 
 | Item | Coverage | Evidence |
 |---|---|---|
-| `expirySweep` | string-verified | harness/expiry-sweep.spec.ts, harness/lapsed-seal-lifecycle.spec.ts |
+| `expirySweep` | string-verified | harness/editreq-owner-index.spec.ts, harness/expiry-sweep.spec.ts, harness/lapsed-seal-lifecycle.spec.ts |
 | `assignWorkflow` | string-verified | harness/approval-evidence.spec.ts, harness/my-work-page.spec.ts, harness/page-ribbon-workflow.spec.ts, harness/review-due.spec.ts, harness/ribbon-approval-dialog.spec.ts, harness/ribbon-review-due.spec.ts … +7 more |
 | `transitionWorkflow` | string-verified | harness/approval-evidence.spec.ts, harness/my-work-page.spec.ts, harness/review-due.spec.ts, harness/ribbon-approval-dialog.spec.ts, harness/ribbon-review-due.spec.ts, harness/workflow-demote-target.spec.ts … +6 more |
 | `workflowSweep` | string-verified | harness/review-due.spec.ts, harness/workflow-trashed-pages.spec.ts, e2e/workflow-conditions-e2e.mjs, e2e/workflow-enforce-e2e.mjs |
@@ -247,7 +247,7 @@ Evidence: 104 files (harness specs, app e2e scripts, unit tests).
 | `aiVerdict` | string-verified | e2e/workflow-conditions-e2e.mjs |
 | `listEditRequests` | string-verified | harness/lapsed-seal-lifecycle.spec.ts |
 | `approveEditRequest` | string-verified | harness/lapsed-seal-lifecycle.spec.ts, harness/sealed-owner-intent.spec.ts |
-| `denyEditRequest` | string-verified | harness/activity-log.spec.ts, harness/editreq-request-lifecycle.spec.ts, harness/lapsed-seal-lifecycle.spec.ts, harness/page-editrequest-deny-revoke.spec.ts |
+| `denyEditRequest` | string-verified | harness/activity-log.spec.ts, harness/editreq-owner-index.spec.ts, harness/editreq-request-lifecycle.spec.ts, harness/lapsed-seal-lifecycle.spec.ts, harness/page-editrequest-deny-revoke.spec.ts |
 | `extendSeal` | string-verified | harness/activity-log.spec.ts, harness/lapsed-seal-lifecycle.spec.ts, harness/operator-seals-stamp.spec.ts |
 | `listEditGrants` | string-verified | e2e/editgrant-revoke-e2e.mjs |
 | `revokeEditGrant` | string-verified | e2e/editgrant-revoke-e2e.mjs |
@@ -294,9 +294,9 @@ Evidence: 104 files (harness specs, app e2e scripts, unit tests).
 | `checkLicense` | string-verified | harness/license-banner.spec.ts, unit/license.test.mjs |
 | `storeWorkflowConfigProbe` | string-verified | harness/workflow-deadend-warn.spec.ts |
 | `ensurePanel` | string-verified | harness/panel-prefs-preview.spec.ts, e2e/ensure-fixture.mjs |
-| `requestEditAccess` | string-verified | harness/activity-log.spec.ts, harness/editreq-request-lifecycle.spec.ts, harness/my-work-page.spec.ts |
+| `requestEditAccess` | string-verified | harness/activity-log.spec.ts, harness/editreq-owner-index.spec.ts, harness/editreq-request-lifecycle.spec.ts, harness/my-work-page.spec.ts |
 | `checkEditRequest` | string-verified | harness/editreq-request-lifecycle.spec.ts |
-| `listMyEditRequests` | string-verified | harness/editreq-request-lifecycle.spec.ts |
+| `listMyEditRequests` | string-verified | harness/editreq-owner-index.spec.ts, harness/editreq-request-lifecycle.spec.ts |
 | `checkPanelStatus` | string-verified | harness/panel-prefs-preview.spec.ts |
 | `storeDocPanelPrefs` | string-verified | harness/panel-prefs-preview.spec.ts |
 | `discoverPanelKey` | string-verified | harness/panel-prefs-preview.spec.ts |
@@ -319,10 +319,10 @@ Evidence: 104 files (harness specs, app e2e scripts, unit tests).
 | Item | Coverage | Evidence |
 |---|---|---|
 | `version` | string-verified | harness/deploy-state-guard.spec.ts |
-| `kvs` | string-verified | harness/activity-log.spec.ts, harness/ai-validation-live.spec.ts, harness/approval-evidence.spec.ts, harness/bulletin-toggles.spec.ts, harness/destructive-actions-perm.spec.ts, harness/editreq-request-lifecycle.spec.ts … +47 more |
-| `set` | string-verified | harness/ai-validation-live.spec.ts, harness/bulletin-toggles.spec.ts, harness/destructive-actions-perm.spec.ts, harness/editreq-request-lifecycle.spec.ts, harness/expiry-sweep.spec.ts, harness/gate-revert.spec.ts … +38 more |
-| `delete` | string-verified | harness/activity-log.spec.ts, harness/ai-validation-live.spec.ts, harness/approval-evidence.spec.ts, harness/bulletin-toggles.spec.ts, harness/destructive-actions-perm.spec.ts, harness/editreq-request-lifecycle.spec.ts … +49 more |
+| `kvs` | string-verified | harness/activity-log.spec.ts, harness/ai-validation-live.spec.ts, harness/approval-evidence.spec.ts, harness/bulletin-toggles.spec.ts, harness/destructive-actions-perm.spec.ts, harness/editreq-owner-index.spec.ts … +48 more |
+| `set` | string-verified | harness/ai-validation-live.spec.ts, harness/bulletin-toggles.spec.ts, harness/destructive-actions-perm.spec.ts, harness/editreq-owner-index.spec.ts, harness/editreq-request-lifecycle.spec.ts, harness/expiry-sweep.spec.ts … +39 more |
+| `delete` | string-verified | harness/activity-log.spec.ts, harness/ai-validation-live.spec.ts, harness/approval-evidence.spec.ts, harness/bulletin-toggles.spec.ts, harness/destructive-actions-perm.spec.ts, harness/editreq-owner-index.spec.ts … +50 more |
 | `setttl` | **GAP** | — |
 | `query` | string-verified | harness/approval-evidence.spec.ts, harness/my-work-page.spec.ts, harness/realm-stale-badge.spec.ts, harness/review-due.spec.ts, harness/ribbon-approval-dialog.spec.ts, harness/ribbon-review-due.spec.ts … +4 more |
-| `invoke` | string-verified | harness/activity-log.spec.ts, harness/ai-validation-live.spec.ts, harness/approval-evidence.spec.ts, harness/authz-content-gate.spec.ts, harness/bulletin-toggles.spec.ts, harness/destructive-actions-perm.spec.ts … +32 more |
+| `invoke` | string-verified | harness/activity-log.spec.ts, harness/ai-validation-live.spec.ts, harness/approval-evidence.spec.ts, harness/authz-content-gate.spec.ts, harness/bulletin-toggles.spec.ts, harness/destructive-actions-perm.spec.ts … +33 more |
 
