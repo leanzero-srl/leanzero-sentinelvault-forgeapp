@@ -37,6 +37,21 @@ const den = formatActivity(base("workflow.approval-decided", { details: { decisi
 eq("approval-decided (denied)", den.sentence, "Alice Stone denied moving to Approved (v7)");
 eq("denied is critical", den.tone, "critical");
 
+// A2/A5: the demote row names the configured target; the overdue-without-transition row and the
+// steward-set review date read as sentences.
+const dem = formatActivity(base("workflow.enforced", { actor: { accountId: null, name: null }, details: { mode: "demote", editorName: "Bob Ray", demotedTo: "in_review", demotedToName: "In Review", approvedVersion: 4, driftedVersion: 5 } }));
+eq("demote names the configured target state", dem.sentence, "Bob Ray edited the Approved page — it was moved back to In Review for a new review");
+eq("demote label follows the target", dem.label, "Moved back to In Review");
+ok("demote detail carries both versions", dem.detail.includes("approved v4") && dem.detail.includes("edited v5"));
+eq("a pre-A2 demote row still says Draft", formatActivity(base("workflow.enforced", { details: { mode: "demote" } })).label, "Moved back to Draft");
+const over = formatActivity(base("workflow.expired", { actor: { accountId: null, name: null }, details: { from: "in_review", fromName: "In Review", noTransition: true, reviewDueAt: "2026-09-01T00:00:00.000Z" } }));
+ok("overdue-without-transition does not claim the page moved", !/moved to Expired/.test(over.sentence) && /overdue/.test(over.sentence) && /In Review/.test(over.sentence));
+eq("a plain expiry still says it moved", formatActivity(base("workflow.expired")).label, "Approval expired");
+const setDue = formatActivity(base("workflow.review-due", { details: { from: null, to: "2026-10-01T00:00:00.000Z" } }));
+ok("review date set: '{name} set the review date to {date}'", /^Alice Stone set the review date to .*2026/.test(setDue.sentence));
+eq("review date set is a Workflow row", setDue.category, "workflow");
+eq("review date cleared", formatActivity(base("workflow.review-due", { details: { from: "2026-10-01T00:00:00.000Z", to: null } })).sentence, "Alice Stone cleared the review date");
+
 // The app as actor.
 const auto = formatActivity(base("seal.auto-released", { actor: { accountId: null, name: null } }));
 ok("null actor never prints 'null'", !/null|undefined/.test(auto.sentence));

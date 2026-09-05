@@ -45,12 +45,20 @@ export async function postEnforceComment(pageId, editorId, kind, opts = {}) {
   const historyUrl = `/wiki/pages/viewpreviousversions.action?pageId=${pageId}`;
   const m = editorId ? mention(editorId) + " — " : "";
   let body;
-  if (kind === "expired") {
+  if (kind === "expired" && opts.noTransition) {
+    // A5: the review date passed but the page's state has no transition to Expired — it stays
+    // where it is, overdue. Posted ONCE per due date (`workflow-review-notified-{pageId}` keeps
+    // the announced date, no TTL): a re-set date that passes again is announced again.
+    body = `<p>${HEADER} — <strong>Review overdue</strong></p>
+<p>${m}this page's review date has passed${opts.stateName ? ` and it is still ${escapeXml(opts.stateName)}` : ""}. Review it and move it on, or set a new review date.</p>`;
+  } else if (kind === "expired") {
     body = `<p>${HEADER} — <strong>Approval expired</strong></p>
 <p>${m}this page's review period has elapsed, so Sentinel Vault moved it to Expired. Re-submit it for review to approve it again.</p>`;
   } else if (kind === "demote") {
-    body = `<p>${HEADER} — <strong>Moved back to Draft</strong></p>
-<p>${m}this page was edited after it was Approved, so Sentinel Vault moved it back to Draft. Re-submit it for approval when the changes are ready.</p>`;
+    // A2: the target is the space's configured demote state (opts.demotedToName); Draft is the default.
+    const to = escapeXml(opts.demotedToName || "Draft");
+    body = `<p>${HEADER} — <strong>Moved back to ${to}</strong></p>
+<p>${m}this page was edited after it was Approved, so Sentinel Vault moved it back to ${to}. Re-submit it for approval when the changes are ready.</p>`;
   } else if (kind === "revert-failed") {
     body = `<p>${HEADER} — <strong>Enforcement pending</strong></p>
 <p>Sentinel Vault could not re-apply the approved version of this page and will retry automatically. The current content is in the page history — <a href="${escapeXml(historyUrl)}">view previous versions</a>.</p>`;

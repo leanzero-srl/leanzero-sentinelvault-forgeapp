@@ -25,7 +25,7 @@ import {
 import { evaluateRules } from "./infra/rules-engine.js";
 import { fetchPageLabels } from "./infra/labels.js";
 import {
-  autoAssignOnEvent, getSpaceWorkflowSettings, resolveWorkflowDef, findState, getInitialState,
+  autoAssignOnEvent, getSpaceWorkflowSettings, resolveWorkflowDef, findState, resolveDemoteTarget, validateTransition,
   transitionPageWorkflow, readPageWorkflow, restampApprovedVersion, fetchLivePageVersion,
 } from "./capsules/workflow/logic.js";
 import { resolveApproverIds, applyAiVerdict, sweepApprovalIndex } from "./capsules/workflow/approvals.js";
@@ -55,6 +55,11 @@ import { recordActivity } from "./infra/activity-log.js";
 // clears the markers so a genuinely NEW tamper comments afresh. KVS has no CAS — the tiny
 // concurrent double-claim window is the same one T6 already accepts.
 const VIOLATION_NOTICE_TTL_MS = 24 * 3600 * 1000;
+// A5: an overdue page whose state cannot move to Expired is announced once per due date; the
+// marker keeps the due date it announced, so a re-set date that passes again is announced again.
+// The marker has NO TTL on purpose (A2/A5 review, finding 1): with a 7-day TTL a page whose state
+// has no edge to Expired would be re-announced weekly forever. It is deleted when the page does
+// expire, and cleared with the rest of the workflow keys when the page leaves the workflow.
 
 // Hunt H2-F3: "delete" (trash handler) and "content-removal" (media pass) are one physical
 // event — a UI delete of an embedded attachment fires BOTH trashed:attachment and updated:page.
@@ -1084,13 +1089,16 @@ export async function collectWorkflowEnforcementForPage(pageId, atlassianId, eve
   if (mode === "revert") return { action: "revert", record, spaceKey: record.spaceKey };
 
   // DEMOTE inline (§2.6) — no body write, no ADF read, no ping-pong surface.
+  // A2: the target is the space's configured `demoteTo` (validated at save; resolveDemoteTarget
+  // falls back to the initial state if the definition changed underneath it) — the ONE helper
+  // both this path and the sweep use.
   try {
-    const initial = getInitialState(def);
+    const target = resolveDemoteTarget(def, settings, record.stateId);
     const res = await transitionPageWorkflow({
       activity: false, // the workflow.enforced row below is the record of this event (A1 review F5)
-      pageId, spaceKey: record.spaceKey, toStateId: initial.id,
+      pageId, spaceKey: record.spaceKey, toStateId: target.id,
       actorAccountId: systemAccountId, actorName: "Sentinel Vault",
-      reason: "auto-demoted: edited by non-approver while Approved",
+      reason: `auto-demoted to ${target.name || target.id}: edited by non-approver while Approved`,
     });
     if (res.success) {
       // A1: the demotion transition persisted — enforcement happened (mode demote).
@@ -1100,10 +1108,14 @@ export async function collectWorkflowEnforcementForPage(pageId, atlassianId, eve
         spaceKey: record.spaceKey || null,
         actor: null,
         target: { kind: "page", id: pageId, name: null },
-        details: { mode: "demote", editor: atlassianId || null, approvedVersion: record.approvedVersion ?? null, restoredTo: null, demotedTo: initial.id, via: "event" },
+        details: {
+          mode: "demote", editor: atlassianId || null, approvedVersion: record.approvedVersion ?? null, restoredTo: null,
+          demotedTo: target.id, demotedToName: target.name || target.id,
+          driftedVersion: typeof eventVersion === "number" ? eventVersion : null, via: "event",
+        },
         version: typeof eventVersion === "number" ? eventVersion : null,
       });
-      await postEnforceComment(pageId, atlassianId, "demote").catch(() => {});
+      await postEnforceComment(pageId, atlassianId, "demote", { demotedToName: target.name || target.id }).catch(() => {});
     }
     // #7: the default workflow has an Approved->Draft edge; a custom workflow that lacks one
     // would leave the page enforced-but-not-demoted — surface it rather than fail silently.
@@ -1223,7 +1235,7 @@ export async function sweepRevertToApproved(pageId, record) {
 export async function workflowSweep() {
   const systemAccountId = await resolveAppAccountId();
   if (!systemAccountId) return { body: JSON.stringify({ swept: 0, reason: "no app account" }) };
-  let reverted = 0, demoted = 0, healed = 0, expired = 0;
+  let reverted = 0, demoted = 0, healed = 0, expired = 0, overdue = 0;
   const nowMs = Date.now();
   const defCache = new Map(); // per-space def cache — most pages in a space share one workflow
   const defFor = async (sk) => { if (!defCache.has(sk)) defCache.set(sk, await resolveWorkflowDef(sk)); return defCache.get(sk); };
@@ -1236,32 +1248,60 @@ export async function workflowSweep() {
         const record = await readPageWorkflow(idx.pageId);
         if (!record) continue;
         const def = await defFor(record.spaceKey);
-        // #45 review-expiry (runs FIRST): an Approved page past its review-due date
-        // auto-transitions to Expired + notifies. Leaving Approved also ends enforcement,
-        // so this page needs no enforce processing this tick.
-        if (record.reviewDueAt && findState(def, record.stateId)?.reviewAfterDays &&
-            new Date(record.reviewDueAt).getTime() < nowMs && findState(def, "expired")) {
-          const res = await transitionPageWorkflow({
-            activity: false, // the dedicated row below records this event (A1 review F5)
-            pageId: idx.pageId, spaceKey: record.spaceKey, toStateId: "expired",
-            actorAccountId: systemAccountId, actorName: "Sentinel Vault",
-            reason: "review period elapsed — auto-expired",
-          });
-          if (res.success) {
-            expired++;
-            // A1: the Expired transition persisted.
+        // #45/A5 review-expiry (runs FIRST): ANY page whose review date has passed — the clock
+        // may come from the definition, a per-state override, or a steward-set date, so the
+        // record's reviewDueAt is the only thing consulted. When the definition has a transition
+        // from its state to Expired it moves there (leaving Approved also ends enforcement, so
+        // the page needs no enforce processing this tick); otherwise it stays put, overdue, and is
+        // recorded + commented ONCE per due date (workflow-review-notified-{pageId}, 7-day TTL —
+        // an hourly sweep must not comment hourly). A page already in Expired has nowhere to go.
+        if (record.reviewDueAt && record.stateId !== "expired" && new Date(record.reviewDueAt).getTime() < nowMs) {
+          const fromName = findState(def, record.stateId)?.name || record.stateId;
+          const canExpire = !!findState(def, "expired") && validateTransition(def, record.stateId, "expired").ok;
+          if (canExpire) {
+            const res = await transitionPageWorkflow({
+              activity: false, // the dedicated row below records this event (A1 review F5)
+              pageId: idx.pageId, spaceKey: record.spaceKey, toStateId: "expired",
+              actorAccountId: systemAccountId, actorName: "Sentinel Vault",
+              reason: "review period elapsed — auto-expired",
+            });
+            if (res.success) {
+              expired++;
+              // A1: the Expired transition persisted.
+              await recordActivity({
+                type: "workflow.expired",
+                pageId: idx.pageId,
+                spaceKey: record.spaceKey || null,
+                actor: null,
+                target: { kind: "page", id: idx.pageId, name: null },
+                details: { from: record.stateId, fromName, reviewDueAt: record.reviewDueAt || null, approvedVersion: record.approvedVersion ?? null, lastEnteredBy: record.enteredBy || null },
+                version: record.approvedVersion ?? null,
+              });
+              await kvs.delete(`workflow-review-notified-${idx.pageId}`).catch(() => {});
+              await postEnforceComment(idx.pageId, record.enteredBy, "expired").catch(() => {});
+            }
+            continue;
+          }
+          const notified = await kvs.get(`workflow-review-notified-${idx.pageId}`);
+          if (notified?.reviewDueAt !== record.reviewDueAt) {
+            // Claim the marker BEFORE the side effects (T6): a duplicate tick must not comment twice.
+            await kvs.set(`workflow-review-notified-${idx.pageId}`, { at: new Date().toISOString(), reviewDueAt: record.reviewDueAt });
+            overdue++;
             await recordActivity({
               type: "workflow.expired",
               pageId: idx.pageId,
               spaceKey: record.spaceKey || null,
               actor: null,
               target: { kind: "page", id: idx.pageId, name: null },
-              details: { from: record.stateId, reviewDueAt: record.reviewDueAt || null, approvedVersion: record.approvedVersion ?? null, lastEnteredBy: record.enteredBy || null },
+              details: { from: record.stateId, fromName, noTransition: true, reviewDueAt: record.reviewDueAt || null, approvedVersion: record.approvedVersion ?? null, lastEnteredBy: record.enteredBy || null },
               version: record.approvedVersion ?? null,
             });
-            await postEnforceComment(idx.pageId, record.enteredBy, "expired").catch(() => {});
+            // Address a HUMAN: after a demote `enteredBy` is the app account, and a notice that
+            // @mentions Sentinel Vault reaches nobody (review finding 7). Nobody is better than that.
+            const overdueAddressee = record.enteredBy && record.enteredBy !== systemAccountId ? record.enteredBy : (record.approvedBy && record.approvedBy !== systemAccountId ? record.approvedBy : null);
+            await postEnforceComment(idx.pageId, overdueAddressee, "expired", { noTransition: true, stateName: fromName }).catch(() => {});
           }
-          continue;
+          // fall through: an overdue enforced page is still enforced
         }
         if (!record?.enforce) continue;
         if (!findState(def, record.stateId)?.enforce) continue;
@@ -1322,12 +1362,12 @@ export async function workflowSweep() {
             await kvs.set(`workflow-integrity-notified-${idx.pageId}`, { at: new Date().toISOString() });
           }
         } else {
-          const initial = getInitialState(def);
+          const target = resolveDemoteTarget(def, settings, record.stateId); // A2: same helper as the event path
           const res = await transitionPageWorkflow({
             activity: false, // the dedicated row below records this event (A1 review F5)
-            pageId: idx.pageId, spaceKey: record.spaceKey, toStateId: initial.id,
+            pageId: idx.pageId, spaceKey: record.spaceKey, toStateId: target.id,
             actorAccountId: systemAccountId, actorName: "Sentinel Vault",
-            reason: "auto-demoted by integrity sweep (unauthorized drift)",
+            reason: `auto-demoted to ${target.name || target.id} by integrity sweep (unauthorized drift)`,
           });
           if (res.success) {
             // A1: the demotion persisted whether or not the (once-only) comment goes out.
@@ -1337,13 +1377,13 @@ export async function workflowSweep() {
               spaceKey: record.spaceKey || null,
               actor: null,
               target: { kind: "page", id: idx.pageId, name: null },
-              details: { mode: "demote", editor: author || null, approvedVersion: record.approvedVersion ?? null, restoredTo: null, demotedTo: initial.id, driftedVersion: live, via: "sweep" },
+              details: { mode: "demote", editor: author || null, approvedVersion: record.approvedVersion ?? null, restoredTo: null, demotedTo: target.id, demotedToName: target.name || target.id, driftedVersion: live, via: "sweep" },
               version: live,
             });
           }
           if (res.success && !alreadyNotified) {
             demoted++;
-            await postEnforceComment(idx.pageId, record.enteredBy, "demote").catch(() => {});
+            await postEnforceComment(idx.pageId, record.enteredBy, "demote", { demotedToName: target.name || target.id }).catch(() => {});
             await kvs.set(`workflow-integrity-notified-${idx.pageId}`, { at: new Date().toISOString() });
           }
         }
@@ -1380,7 +1420,7 @@ export async function workflowSweep() {
   let inbox = { backfilled: 0, orphansRemoved: 0 };
   try { inbox = await sweepApprovalIndex({ nowMs }); } catch (e) { console.error("[WORKFLOW-SWEEP] inbox index", e); }
 
-  return { body: JSON.stringify({ reverted, demoted, healed, expired, aiTimedOut, inboxBackfilled: inbox.backfilled, orphanApprovalsRemoved: inbox.orphansRemoved }) };
+  return { body: JSON.stringify({ reverted, demoted, healed, expired, overdue, aiTimedOut, inboxBackfilled: inbox.backfilled, orphanApprovalsRemoved: inbox.orphansRemoved }) };
 }
 
 // --- Conditions & Validations phase (runs after the body-protection pipeline) ---
