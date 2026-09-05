@@ -327,6 +327,29 @@ async function persistState(pageId, record, prevStateId) {
   // content states once, map to them, and surface failures instead of swallowing them.)
 }
 
+// Every workflow key a page owns, gone — for a page Confluence itself has forgotten (purged from
+// the trash: v2 GET 404s). Called by the hourly sweep once `fetchPageStatuses` says `missing`,
+// never on `trashed` (a restored page keeps its state, as Comala does) and never on `unknown`.
+// The approval records + inbox rows go through the approvals module's own teardown so the
+// per-approver index stays consistent with the records.
+export async function purgePageWorkflow(pageId, { clearApprovals } = {}) {
+  const record = await readPageWorkflow(pageId);
+  const sk = sanitize(record?.spaceKey || "_");
+  const keys = [
+    `workflow-state-${pageId}`, `workflow-pending-${pageId}`, `workflow-autoassigned-${pageId}`,
+    `workflow-integrity-notified-${pageId}`, `workflow-review-notified-${pageId}`, `workflow-completing-${pageId}`,
+  ];
+  if (record?.stateId) keys.push(`workflow-idx-${sk}-${record.stateId}-${pageId}`);
+  for (const k of keys) await kvs.delete(k).catch(() => {});
+  // Index rows under other states (a record that moved while a write failed) and the log.
+  for (const prefix of [`workflow-log-${pageId}-`]) {
+    const { results } = await kvs.query().where("key", WhereConditions.beginsWith(prefix)).limit(100).getMany();
+    for (const { key } of results || []) await kvs.delete(key).catch(() => {});
+  }
+  if (typeof clearApprovals === "function") await clearApprovals(pageId, null, null).catch(() => {});
+  return { purged: true, stateId: record?.stateId || null, spaceKey: record?.spaceKey || null };
+}
+
 export async function appendWorkflowLog(pageId, entry) {
   const ts = Date.now();
   await kvs.set(`workflow-log-${pageId}-${ts}`, { ts, ...entry }); // NO TTL — compliance history
