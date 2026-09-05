@@ -27,7 +27,7 @@ export const ACTIVITY_CATEGORIES = Object.freeze([
   ]) },
   { id: "workflow", label: "Workflow", types: Object.freeze([
     "workflow.transition", "workflow.approval-requested", "workflow.approval-decided",
-    "workflow.enforced", "workflow.expired",
+    "workflow.enforced", "workflow.expired", "workflow.review-due",
   ]) },
   { id: "validation", label: "Validation", types: Object.freeze([
     "validation.reverted", "validation.gate",
@@ -86,12 +86,13 @@ export function formatAbsolute(iso) {
   return d.toLocaleString(undefined, { month: "short", day: "numeric", year: "numeric", hour: "2-digit", minute: "2-digit" });
 }
 
-// Date only: "Sep 12, 2026".
+// Date only: "Sep 12, 2026". Review dates are UTC end-of-day instants (A5), so a calendar day is
+// read in UTC — the local zone would show the next morning to anyone east of the picker.
 export function formatDay(iso) {
   if (!iso) return "";
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return String(iso);
-  return d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+  return d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" });
 }
 
 /**
@@ -253,13 +254,24 @@ export function formatActivity(entry) {
             sentence: d.reconciled === "baseline-advanced"
               ? `${byWho} the Approved page with no content change — ${APP_NAME} kept it and advanced the approved baseline${d.driftedVersion != null ? ` to v${d.driftedVersion}` : ""}`
               : `${byWho} the Approved page — ${APP_NAME} restored the approved version${d.restoredTo != null ? ` (v${d.restoredTo})` : ""}` }
-        : { ...base, label: "Moved back to Draft", glyph: "arrow", tone: "caution",
-            sentence: `${byWho} the Approved page — it was moved back to Draft for a new review`,
-            detail: d.approvedVersion != null ? `approved v${d.approvedVersion}` : "" };
+        : { ...base, label: `Moved back to ${d.demotedToName || "Draft"}`, glyph: "arrow", tone: "caution",
+            // A2: the target is the space's configured demote state, named on the row; "Draft" is
+            // only the fallback for rows written before the setting existed.
+            sentence: `${byWho} the Approved page — it was moved back to ${d.demotedToName || "Draft"} for a new review`,
+            detail: [d.approvedVersion != null ? `approved v${d.approvedVersion}` : "", d.driftedVersion != null ? `edited v${d.driftedVersion}` : ""].filter(Boolean).join(" · ") };
     }
     case "workflow.expired":
-      return { ...base, label: "Approval expired", glyph: "hourglass", tone: "caution",
-        sentence: "The approval on this page expired — it was moved to Expired and needs a new review" };
+      // A5: a page can be overdue without moving — its state has no transition to Expired.
+      return d.noTransition
+        ? { ...base, label: "Review overdue", glyph: "hourglass", tone: "caution",
+            sentence: `The review date on this page has passed — it is overdue for a new review${d.fromName ? ` (still ${d.fromName})` : ""}`,
+            detail: d.reviewDueAt ? `due ${formatDay(d.reviewDueAt)}` : "" }
+        : { ...base, label: "Approval expired", glyph: "hourglass", tone: "caution",
+            sentence: "The approval on this page expired — it was moved to Expired and needs a new review" };
+    case "workflow.review-due":
+      return { ...base, label: d.to ? "Review date set" : "Review date cleared", glyph: "clock", tone: "info",
+        sentence: d.to ? `${who} set the review date to ${formatAbsolute(d.to)}` : `${who} cleared the review date`,
+        detail: [d.from ? `was ${formatAbsolute(d.from)}` : "", d.reason ? String(d.reason) : ""].filter(Boolean).join(" · ") };
 
     // ── Validation ──
     case "validation.reverted": {

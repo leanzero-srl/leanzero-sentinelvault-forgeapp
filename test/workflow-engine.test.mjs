@@ -10,6 +10,12 @@ import {
   sanitize,
   shouldAutoAssign,
   findDeadEndStates,
+  validateDemoteTarget,
+  resolveDemoteTarget,
+  resolveReviewAfterDays,
+  sanitizeReviewAfterDaysByState,
+  validateReviewDueAt,
+  computeReviewDueAt,
 } from "../src/server/capsules/workflow/logic.js";
 import { evaluateApproval, resolveApprovers, inboxKey, isOrphanApproval, ORPHAN_APPROVAL_MIN_AGE_MS, buildApprovalRecord } from "../src/server/capsules/workflow/approvals.js";
 import { eq, ok, report } from "./_assert.mjs";
@@ -26,7 +32,7 @@ eq("approved has review clock", findState(DEFAULT_WORKFLOW, "approved").reviewAf
 // --- listTransitions ---
 eq("from draft -> [in_review]", listTransitions(DEFAULT_WORKFLOW, "draft"), ["in_review"]);
 eq("from in_review -> [approved, draft]", listTransitions(DEFAULT_WORKFLOW, "in_review").sort(), ["approved", "draft"]);
-eq("from approved -> [draft, expired]", listTransitions(DEFAULT_WORKFLOW, "approved").sort(), ["draft", "expired"]);
+eq("from approved -> [draft, expired, in_review] (A2: back to review)", listTransitions(DEFAULT_WORKFLOW, "approved").sort(), ["draft", "expired", "in_review"]);
 eq("unknown state -> no transitions", listTransitions(DEFAULT_WORKFLOW, "ghost"), []);
 
 // --- validateTransition ---
@@ -197,6 +203,117 @@ eq("inboxKey is per approver then page", inboxKey("712020:abc", "123"), "workflo
   const longName = buildApprovalRecord({ pending: {}, records: [{ approverAccountId: "x", status: "approved", approverName: "n".repeat(500), reason: "r".repeat(900) }], outcome: "approved" }).decisions[0];
   eq("names are bounded", longName.name.length, 120);
   eq("reasons are bounded", longName.reason.length, 300);
+}
+
+// --- A2: resolveDemoteTarget / validateDemoteTarget — where a tampered Approved page goes ---
+{
+  const D = DEFAULT_WORKFLOW;
+  eq("no settings -> initial (Draft)", resolveDemoteTarget(D, null).id, "draft");
+  eq("demoteTo 'initial' -> initial", resolveDemoteTarget(D, { demoteTo: "initial" }).id, "draft");
+  eq("demoteTo '' -> initial", resolveDemoteTarget(D, { demoteTo: "" }).id, "draft");
+  eq("demoteTo a non-string -> initial", resolveDemoteTarget(D, { demoteTo: 42 }).id, "draft");
+  // A2: the built-in workflow has approved -> in_review (back to review), so it IS a valid target.
+  eq("in_review is accepted for the default workflow (approved -> in_review edge)", validateDemoteTarget(D, "in_review").ok, true);
+  eq("…and resolves to it", resolveDemoteTarget(D, { demoteTo: "in_review" }).id, "in_review");
+  // An UNREACHABLE target is refused, resolves to initial, and the reason names the missing edge.
+  const NOEDGE = { ...D, transitions: D.transitions.filter((t) => !(t.from === "approved" && t.to === "in_review")) };
+  ok("a target with no edge from the enforce state is refused", !validateDemoteTarget(NOEDGE, "in_review").ok);
+  eq("…and resolves to initial, never to the unreachable state", resolveDemoteTarget(NOEDGE, { demoteTo: "in_review" }).id, "draft");
+  ok("the refusal reason names the missing edge", /Approved/.test(validateDemoteTarget(NOEDGE, "in_review").reason) && /In Review/.test(validateDemoteTarget(NOEDGE, "in_review").reason));
+  eq("expired IS reachable from approved -> valid target", validateDemoteTarget(D, "expired").ok, true);
+  eq("…and resolves to it", resolveDemoteTarget(D, { demoteTo: "expired" }).id, "expired");
+  ok("the enforce state itself is refused", !validateDemoteTarget(D, "approved").ok && /approved state/i.test(validateDemoteTarget(D, "approved").reason));
+  eq("enforce-state demoteTo -> initial", resolveDemoteTarget(D, { demoteTo: "approved" }).id, "draft");
+  ok("an unknown state is refused", !validateDemoteTarget(D, "ghost").ok);
+  eq("vanished state (re-saved definition dropped it) -> initial", resolveDemoteTarget(D, { demoteTo: "ghost" }).id, "draft");
+  ok("a definition with no enforce state accepts no stateId", !validateDemoteTarget({ states: [{ id: "a", initial: true }, { id: "b" }], transitions: [{ from: "a", to: "b" }] }, "b").ok);
+  eq("malformed def -> refused, not thrown", validateDemoteTarget(null, "draft").ok, false);
+  eq("malformed def -> resolves to null initial without throwing", resolveDemoteTarget(null, { demoteTo: "draft" }), null);
+
+  // Comala-shaped workflow: approved -> in_review exists, so in_review is a valid target.
+  const comala = {
+    id: "c", states: [
+      { id: "draft", name: "Draft", initial: true },
+      { id: "in_review", name: "Review" },
+      { id: "approved", name: "Approved", enforce: true },
+    ],
+    transitions: [{ from: "draft", to: "in_review" }, { from: "in_review", to: "approved" }, { from: "approved", to: "in_review" }, { from: "approved", to: "draft" }],
+  };
+  ok("valid target: reachable non-enforce state", validateDemoteTarget(comala, "in_review").ok);
+  eq("…resolves to that state object", resolveDemoteTarget(comala, { demoteTo: "in_review" }).name, "Review");
+  eq("fromStateId tightens to the page's actual state: reachable", resolveDemoteTarget(comala, { demoteTo: "in_review" }, "approved").id, "in_review");
+  eq("fromStateId: reachable from a non-enforce state too (draft -> in_review edge)", resolveDemoteTarget(comala, { demoteTo: "in_review" }, "draft").id, "in_review");
+  eq("fromStateId: the page is already IN the target (no self edge) -> initial", resolveDemoteTarget(comala, { demoteTo: "in_review" }, "in_review").id, "draft");
+  eq("fromStateId: a state with no edge to the target -> initial", resolveDemoteTarget({ ...comala, transitions: [...comala.transitions, { from: "draft", to: "approved" }].filter((t) => !(t.from === "draft" && t.to === "in_review")) }, { demoteTo: "in_review" }, "draft").id, "draft");
+
+  // Two enforce states: the target must be reachable from BOTH (the demote may run from either).
+  const two = {
+    id: "t", states: [
+      { id: "draft", name: "Draft", initial: true },
+      { id: "review", name: "Review" },
+      { id: "approved", name: "Approved", enforce: true },
+      { id: "published", name: "Published", enforce: true },
+    ],
+    transitions: [{ from: "draft", to: "review" }, { from: "review", to: "approved" }, { from: "approved", to: "published" }, { from: "approved", to: "review" }, { from: "published", to: "draft" }, { from: "approved", to: "draft" }],
+  };
+  ok("reachable from only one of two enforce states -> refused", !validateDemoteTarget(two, "review").ok);
+  ok("…the reason names the state that cannot reach it", /Published/.test(validateDemoteTarget(two, "review").reason));
+  ok("reachable from both -> ok", validateDemoteTarget(two, "draft").ok);
+}
+
+// --- A5: review clocks — precedence, per-state validation, the steward-set date ---
+{
+  const approved = findState(DEFAULT_WORKFLOW, "approved");
+  const draft = findState(DEFAULT_WORKFLOW, "draft");
+  eq("no settings: the definition's own clock", resolveReviewAfterDays(approved, null), 150);
+  eq("no settings, no clock on the state -> null", resolveReviewAfterDays(draft, null), null);
+  eq("legacy reviewAfterDays overrides the ENFORCE state", resolveReviewAfterDays(approved, { reviewAfterDays: 30 }), 30);
+  eq("legacy reviewAfterDays does NOT touch a non-enforce state", resolveReviewAfterDays(draft, { reviewAfterDays: 30 }), null);
+  eq("per-state override puts a clock on a state with none", resolveReviewAfterDays(draft, { reviewAfterDaysByState: { draft: 7 } }), 7);
+  eq("per-state override beats the legacy enforce override", resolveReviewAfterDays(approved, { reviewAfterDays: 30, reviewAfterDaysByState: { approved: 10 } }), 10);
+  eq("a per-state entry for another state is not applied", resolveReviewAfterDays(approved, { reviewAfterDaysByState: { draft: 7 } }), 150);
+  eq("garbage per-state value falls through", resolveReviewAfterDays(approved, { reviewAfterDaysByState: { approved: -1 } }), 150);
+  eq("null state -> null", resolveReviewAfterDays(null, { reviewAfterDaysByState: { draft: 7 } }), null);
+  ok("computeReviewDueAt with a resolved override lands ~N days out", (() => {
+    const iso = computeReviewDueAt(draft, resolveReviewAfterDays(draft, { reviewAfterDaysByState: { draft: 7 } }));
+    const ms = Date.parse(iso) - Date.now();
+    return ms > 6.9 * 86400000 && ms < 7.1 * 86400000;
+  })());
+  eq("computeReviewDueAt with no clock -> null", computeReviewDueAt(draft, resolveReviewAfterDays(draft, {})), null);
+
+  const D = DEFAULT_WORKFLOW;
+  eq("sanitize: null -> {}", sanitizeReviewAfterDaysByState(null, D), { ok: true, value: {} });
+  eq("sanitize: known states + positive ints kept", sanitizeReviewAfterDaysByState({ draft: 7, in_review: "14" }, D), { ok: true, value: { draft: 7, in_review: 14 } });
+  eq("sanitize: empty entries are dropped (cleared row)", sanitizeReviewAfterDaysByState({ draft: "", in_review: null }, D), { ok: true, value: {} });
+  ok("sanitize: unknown state id REFUSED", !sanitizeReviewAfterDaysByState({ ghost: 7 }, D).ok);
+  ok("sanitize: zero REFUSED", !sanitizeReviewAfterDaysByState({ draft: 0 }, D).ok);
+  ok("sanitize: negative REFUSED", !sanitizeReviewAfterDaysByState({ draft: -3 }, D).ok);
+  ok("sanitize: fractional REFUSED", !sanitizeReviewAfterDaysByState({ draft: 1.5 }, D).ok);
+  ok("sanitize: non-numeric REFUSED", !sanitizeReviewAfterDaysByState({ draft: "soon" }, D).ok);
+  ok("sanitize: an array is not a map", !sanitizeReviewAfterDaysByState([7], D).ok);
+  ok("sanitize: the enforce state may carry a per-state entry", sanitizeReviewAfterDaysByState({ approved: 30 }, D).ok);
+
+  const NOW = Date.parse("2026-09-05T12:00:00Z");
+  eq("due date: null clears", validateReviewDueAt(null, NOW), { ok: true, value: null });
+  eq("due date: '' clears", validateReviewDueAt("", NOW), { ok: true, value: null });
+  eq("due date: future ISO accepted and normalised", validateReviewDueAt("2026-09-06T00:00:00+02:00", NOW), { ok: true, value: "2026-09-05T22:00:00.000Z" });
+  ok("due date: past REFUSED", !validateReviewDueAt("2026-09-05T11:59:59Z", NOW).ok);
+  ok("due date: exactly now REFUSED", !validateReviewDueAt(NOW, NOW).ok);
+  ok("due date: garbage REFUSED", !validateReviewDueAt("tomorrow-ish", NOW).ok);
+  ok("due date: the past refusal says why", /future/.test(validateReviewDueAt("2020-01-01", NOW).reason));
+  // Review finding 5: a huge number is finite but not a Date — toISOString throws RangeError.
+  let threw = false; let huge;
+  try { huge = validateReviewDueAt(1e18, NOW); } catch (_) { threw = true; }
+  ok("due date: an absurd number is REFUSED, not thrown", !threw && huge && huge.ok === false);
+  ok("due date: a century out is REFUSED", !validateReviewDueAt(NOW + 101 * 365 * 24 * 3600 * 1000, NOW).ok);
+  ok("due date: a decade out is fine", validateReviewDueAt(NOW + 10 * 365 * 24 * 3600 * 1000, NOW).ok);
+
+  // Review finding 9: a demote skips the entry gate, so a gated state cannot be the target.
+  const gated = { in_review: { requireRules: true, requireAi: false, aiThreshold: "medium", onBudgetExhausted: "block" } };
+  ok("demote target: a state with an entry condition is REFUSED", !validateDemoteTarget(D, "in_review", gated).ok);
+  ok("demote target: …and the reason names the condition", /entry condition/.test(validateDemoteTarget(D, "in_review", gated).reason));
+  ok("demote target: a condition on ANOTHER state does not matter", validateDemoteTarget(D, "in_review", { draft: gated.in_review }).ok);
+  eq("resolveDemoteTarget: a gated saved target falls back to the initial state", resolveDemoteTarget(D, { demoteTo: "in_review", entryConditions: gated })?.id, "draft");
 }
 
 report("workflow-engine");

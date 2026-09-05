@@ -407,10 +407,33 @@ export async function testStateTrigger(req) {
         return json(200, { invoked: fn, result: { log: await getWorkflowLog(q(req, "pageId")) } });
       }
       if (fn === "setSpaceWorkflowSettings") {
+        // A2/A5: `demoteTo` (stateId | "initial"), `reviewAfterDays` (int), `enforceMode`, and the
+        // JSON-valued `reviewAfterDaysByState` / `entryConditions` / `approval` pass through to the
+        // same validation the resolver runs (a bad demoteTo is REFUSED, not stored). An optional
+        // `settings` JSON param is merged underneath the named ones for anything else.
+        const jsonParam = (n) => { const v = q(req, n); if (!v) return undefined; try { return JSON.parse(v); } catch (_) { return undefined; } };
+        const rad = q(req, "reviewAfterDays");
         const r = await setSpaceWorkflowSettings(q(req, "spaceKey"), {
+          ...(jsonParam("settings") || {}),
           enabled: q(req, "enabled") === "1",
           autoAssignNew: q(req, "autoAssignNew") === "1",
           workflowId: q(req, "workflowId"),
+          ...(q(req, "enforceMode") ? { enforceMode: q(req, "enforceMode") } : {}),
+          ...(rad != null && rad !== "" ? { reviewAfterDays: parseInt(rad, 10) } : {}),
+          ...(q(req, "demoteTo") ? { demoteTo: q(req, "demoteTo") } : {}),
+          ...(jsonParam("reviewAfterDaysByState") !== undefined ? { reviewAfterDaysByState: jsonParam("reviewAfterDaysByState") } : {}),
+          ...(jsonParam("entryConditions") !== undefined ? { entryConditions: jsonParam("entryConditions") } : {}),
+          ...(jsonParam("approval") !== undefined ? { approval: jsonParam("approval") } : {}),
+        });
+        return json(200, { invoked: fn, result: r });
+      }
+      // A5: the steward-editable review date, through the REGISTERED resolver (both gates run, so
+      // the actor must be a REAL account that can edit the page; `reviewDueAt` "" / "null" clears).
+      if (fn === "setReviewDue") {
+        const raw = q(req, "reviewDueAt");
+        const r = await byKey(workflowActions, "set-review-due")({
+          payload: { pageId: q(req, "pageId"), reviewDueAt: raw && raw !== "null" ? raw : null, reason: q(req, "reason") },
+          context: { accountId: q(req, "actor"), extension: {} },
         });
         return json(200, { invoked: fn, result: r });
       }

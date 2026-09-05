@@ -1,8 +1,10 @@
 import React, { useEffect, useState } from "react";
 import { invoke } from "@forge/bridge";
 
+// Review dates are stored as the END of a calendar day in UTC (A5) and shown in UTC everywhere,
+// so a steward in Sydney and one in Denver read the same day the picker offered.
 const fmtDate = (iso) =>
-  iso ? new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }) : "—";
+  iso ? new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" }) : "—";
 
 function toCsv(pages) {
   const header = ["Page ID", "Title", "State", "Entered", "Review due", "Overdue"];

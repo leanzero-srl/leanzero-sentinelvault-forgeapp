@@ -711,7 +711,10 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   background-color: var(--sv-bg-tertiary);
   border: none;
   border-radius: 12px;
-  overflow: hidden;
+  /* A2: was overflow:hidden (a leftover from the first commit); nothing inside carries its own
+     background, and hidden clipped every custom dropdown (.mini-select-menu) that opened from
+     the last row of a nested block — the demote-target and decision-rule menus were cut off. */
+  overflow: visible;
 }
 
 .nested-control .settings-row {
@@ -1822,6 +1825,11 @@ html[data-color-mode="dark"] .status-lozenge.trashed {
 .wf-state-ai       { background: #7c3aed; }
 .wf-state-seal     { background: #0e7490; }
 html[data-color-mode="dark"] .wf-state-neutral { background: #64748b; }
+/* A5: one review-clock row per state — chip + days input. */
+.wf-clock-list { display: flex; flex-direction: column; gap: 8px; }
+.wf-clock-row { display: flex; align-items: center; gap: 12px; }
+.wf-clock-row .wf-state-chip { min-width: 88px; justify-content: center; }
+.wf-clock-input { width: 80px; }
 
 /* ── Workflow dashboard (#48) ─────────────────────────── */
 .wf-dash { margin-bottom: 36px; }

@@ -8,8 +8,10 @@
 
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { createRoot } from "react-dom/client";
+import { createPortal } from "react-dom";
 import { invoke, view, Modal, router } from "@forge/bridge";
 import { enablePaletteSync } from "../../kit/palette-sync";
+import DatePicker, { toYmd, fromYmd } from "../../kit/DatePicker";
 
 /**
  * Workflow state chip + transition control (#42). Shows the page's current
@@ -61,16 +63,141 @@ const useDismissableDialog = (open, setOpen, panelRef, triggerRef) => {
     const outside = (e) => !panelRef.current?.contains(e.target) && !triggerRef.current?.contains(e.target);
     const onDown = (e) => { if (outside(e)) setOpen(false); };
     const onKey = (e) => { if (e.key === "Escape") { setOpen(false); triggerRef.current?.focus(); } };
+    // Focus leaving the popover (Tab to another chip, then Enter) closes it too, so two popovers
+    // can never be open at once — a keyboard user otherwise stacked them in the host row.
+    const onFocus = (e) => { if (outside(e)) setOpen(false); };
     document.addEventListener("mousedown", onDown);
     document.addEventListener("keydown", onKey);
-    return () => { document.removeEventListener("mousedown", onDown); document.removeEventListener("keydown", onKey); };
+    document.addEventListener("focusin", onFocus);
+    return () => { document.removeEventListener("mousedown", onDown); document.removeEventListener("keydown", onKey); document.removeEventListener("focusin", onFocus); };
   }, [open, setOpen, panelRef, triggerRef]);
+};
+
+// Every ribbon popover renders INTO the in-flow host row below the chip row (DocumentRibbon's
+// `.wf-dialog-host`) rather than absolutely over the bar: in real Confluence the pageBanner
+// iframe only grows with in-flow content, so an absolutely-positioned panel is clipped to the
+// bar's height (only the first lines of the Approval record were visible live). Refs, roles and
+// the dismiss hook all work across the portal (the hook tests `ref.contains`, and React events
+// bubble through portals). Before the host mounts, render in place.
+const inHost = (host, node) => (host ? createPortal(node, host) : node);
+
+// A5: a picked calendar day means the END of that day — "due Sep 12" is not overdue at breakfast
+// on Sep 12 — anchored in UTC and rendered in UTC everywhere (chip, dialog, dashboard), so the day
+// a steward in one timezone picked is the day a reader in another one sees. A local end-of-day
+// would show as the next morning to anyone east of the picker.
+const endOfDayIso = (ymd) => (fromYmd(ymd) ? `${ymd}T23:59:59.999Z` : null);
+const ymdOfIso = (iso) => { const ms = iso ? new Date(iso).getTime() : NaN; return Number.isFinite(ms) ? new Date(ms).toISOString().slice(0, 10) : null; };
+const UTC_SHORT = { month: "short", day: "numeric", timeZone: "UTC" };
+const UTC_LONG = { weekday: "long", year: "numeric", month: "long", day: "numeric", timeZone: "UTC" };
+const UTC_NUMERIC = { timeZone: "UTC" };
+
+// A5: the review-due indicator. For a steward it is a button that opens a small dialog with the
+// app's own month grid (never a native date input), Clear and Save; `set-review-due` is gated
+// server-side on edit + steward and its refusal reason is shown inline. Everyone else sees the
+// plain indicator. A steward with no clock on the page gets a quiet "Set review date" so Clear
+// is not a one-way door.
+const ReviewDue = ({ workflow, pageId, isSteward, host, onSaved }) => {
+  const record = workflow.record || {};
+  const [open, setOpen] = useState(false);
+  const [dueAt, setDueAt] = useState(record.reviewDueAt || null);
+  const [picked, setPicked] = useState(null); // "YYYY-MM-DD" chosen in the grid, null = untouched
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(null);
+  const panelRef = useRef(null);
+  const btnRef = useRef(null);
+  useDismissableDialog(open, setOpen, panelRef, btnRef);
+  useEffect(() => { setDueAt(record.reviewDueAt || null); }, [record.reviewDueAt]);
+  useEffect(() => { if (!open) { setPicked(null); setError(null); } }, [open]);
+
+  const dueMs = dueAt ? new Date(dueAt).getTime() : NaN;
+  const hasDue = Number.isFinite(dueMs);
+  const overdue = hasDue && dueMs < Date.now();
+  const shortDate = hasDue ? new Date(dueMs).toLocaleDateString(undefined, UTC_SHORT) : null;
+  const longDate = hasDue ? new Date(dueMs).toLocaleDateString(undefined, UTC_LONG) : null;
+  const label = overdue ? "Review overdue" : hasDue ? `Review due ${shortDate}` : "Set review date";
+  // "will move to Expired" only when the page's state actually has that transition; a state
+  // without one stays put, overdue, and the sweep says so in a comment instead.
+  const expiresFromHere = Array.isArray(workflow?.available) && workflow.available.some((s) => s?.id === "expired");
+  const title = overdue ? (expiresFromHere ? "The review period has elapsed — this page will move to Expired." : "The review period has elapsed — review this page and move it on, or set a new date.")
+    : hasDue ? `Due for re-review on ${new Date(dueMs).toLocaleDateString(undefined, UTC_NUMERIC)}.` : "Give this page a review date.";
+
+  if (!isSteward) {
+    if (!hasDue) return null;
+    return (
+      <span className={`wf-review-due${overdue ? " wf-review-overdue" : ""}`} title={title} data-testid="wf-review-due">{label}</span>
+    );
+  }
+
+  const tomorrow = toYmd(new Date(Date.now() + 24 * 3600 * 1000));
+  const currentYmd = ymdOfIso(dueAt);
+  const selectedYmd = picked || currentYmd;
+  const canSave = !!picked && picked !== currentYmd;
+
+  const save = async (next) => {
+    setBusy(true); setError(null);
+    try {
+      const r = await invoke("set-review-due", { pageId, reviewDueAt: next });
+      if (r?.success) {
+        setDueAt(r.reviewDueAt ?? next ?? null);
+        setOpen(false);
+        await onSaved?.();
+        requestAnimationFrame(() => btnRef.current?.focus());
+      } else {
+        setError(r?.reason || "Could not change the review date.");
+      }
+    } catch (_) {
+      setError("Could not change the review date.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <span className="wf-review">
+      <button
+        ref={btnRef}
+        type="button"
+        className={`wf-review-due wf-review-btn${overdue ? " wf-review-overdue" : ""}${hasDue ? "" : " wf-review-unset"}`}
+        onClick={() => setOpen((o) => !o)}
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        title={`${title} Click to change it.`}
+        data-testid={hasDue ? "wf-review-due" : "wf-review-due-set"}
+      >
+        <svg className="wf-chip-icon" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" />
+        </svg>
+        <span>{label}</span>
+        <span className="wf-chip-caret" aria-hidden="true">▾</span>
+      </button>
+      {open && inHost(host, (
+        <div className="wf-appr-panel wf-review-panel" role="dialog" aria-label="Review date" ref={panelRef} tabIndex={-1} data-testid="wf-review-due-dialog">
+          <div className="wf-appr-head">Review date</div>
+          <div className="wf-appr-sub" data-testid="wf-review-due-current">
+            {hasDue
+              ? (overdue ? `Was due ${longDate} — overdue.` : `Currently due ${longDate}.`)
+              : "No review date is set on this page."}
+            {" "}Pick a day to change it; it has to be in the future.
+          </div>
+          <DatePicker value={selectedYmd} min={tomorrow} onChange={setPicked} onClose={() => { setOpen(false); btnRef.current?.focus(); }} ariaLabel="Review date" />
+          {picked && picked !== currentYmd && (
+            <div className="wf-review-pick" data-testid="wf-review-due-picked">New date: <strong>{new Date(`${picked}T12:00:00Z`).toLocaleDateString(undefined, UTC_LONG)}</strong></div>
+          )}
+          <div className="wf-appr-actions wf-review-actions">
+            <button type="button" className="wf-review-clear" onClick={() => save(null)} disabled={busy || !hasDue} data-testid="wf-review-due-clear" title={hasDue ? "Remove the review date — the page will not be flagged for re-review." : "There is no review date to clear."}>Clear</button>
+            <button type="button" className="wf-review-save" onClick={() => save(endOfDayIso(picked))} disabled={busy || !canSave} data-testid="wf-review-due-save">{busy ? "Saving…" : "Save"}</button>
+          </div>
+          {error && <div className="wf-error wf-review-error" role="alert" data-testid="wf-review-due-error">{error}</div>}
+        </div>
+      ))}
+    </span>
+  );
 };
 
 // A4: the evidence chip beside an enforced Approved state, and the "Approval record" dialog it
 // opens. Pages approved before the record shipped have no approvalRecord — say so rather than
 // invent names.
-const ApprovalEvidence = ({ workflow, siteUrl, pageId }) => {
+const ApprovalEvidence = ({ workflow, siteUrl, pageId, host }) => {
   const [open, setOpen] = useState(false);
   const panelRef = useRef(null);
   const chipRef = useRef(null);
@@ -126,7 +253,7 @@ const ApprovalEvidence = ({ workflow, siteUrl, pageId }) => {
         <span className="wf-chip-label">Approval record · v{approvedVersion}</span>
         <span className="wf-chip-caret" aria-hidden="true">▾</span>
       </button>
-      {open && (
+      {open && inHost(host, (
         <div className="wf-appr-panel wf-evidence-panel" role="dialog" aria-label="Approval record" ref={panelRef} tabIndex={-1} data-testid="wf-evidence-panel">
           <div className="wf-appr-head">Approval record</div>
           <div className="wf-appr-sub">{summary}</div>
@@ -168,12 +295,12 @@ const ApprovalEvidence = ({ workflow, siteUrl, pageId }) => {
             </div>
           )}
         </div>
-      )}
+      ))}
     </span>
   );
 };
 
-const WorkflowControl = ({ workflow, approvals, operatorId, pageId, spaceKey, siteUrl, onTransitioned }) => {
+const WorkflowControl = ({ workflow, approvals, operatorId, pageId, spaceKey, siteUrl, isSteward, host, onTransitioned }) => {
   const [menuOpen, setMenuOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
@@ -304,7 +431,7 @@ const WorkflowControl = ({ workflow, approvals, operatorId, pageId, spaceKey, si
           <span className="wf-chip-count" aria-hidden="true">{approvedCount} of {approverList.length}</span>
           <span className="wf-chip-caret" aria-hidden="true">▾</span>
         </button>
-        {panelOpen && (
+        {panelOpen && inHost(host, (
           <div className="wf-appr-panel" role="dialog" aria-label={`Approval to move to ${targetName}`} ref={panelRef} tabIndex={-1}>
             <div className="wf-appr-head">Approval to move to <strong>{targetName}</strong></div>
             <div className="wf-appr-sub">
@@ -361,7 +488,7 @@ const WorkflowControl = ({ workflow, approvals, operatorId, pageId, spaceKey, si
             )}
             {decideMsg && <div className="wf-error" role="alert">{decideMsg}</div>}
           </div>
-        )}
+        ))}
       </span>
     );
   }
@@ -386,21 +513,10 @@ const WorkflowControl = ({ workflow, approvals, operatorId, pageId, spaceKey, si
         {canMove && <span className="wf-chip-caret" aria-hidden="true">▾</span>}
       </button>
       {workflow.record?.enforce && workflow.record?.approvedVersion != null && (
-        <ApprovalEvidence workflow={workflow} siteUrl={siteUrl} pageId={pageId} />
+        <ApprovalEvidence workflow={workflow} siteUrl={siteUrl} pageId={pageId} host={host} />
       )}
-      {workflow.record?.reviewDueAt && (() => {
-        const dueMs = new Date(workflow.record.reviewDueAt).getTime();
-        const overdue = dueMs < Date.now();
-        return (
-          <span
-            className={`wf-review-due${overdue ? " wf-review-overdue" : ""}`}
-            title={overdue ? "The review period has elapsed — this page will move to Expired." : `Approval is due for re-review on ${new Date(dueMs).toLocaleDateString()}.`}
-          >
-            {overdue ? "Review overdue" : `Review due ${new Date(dueMs).toLocaleDateString(undefined, { month: "short", day: "numeric" })}`}
-          </span>
-        );
-      })()}
-      {menuOpen && (
+      <ReviewDue workflow={workflow} pageId={pageId} isSteward={isSteward} host={host} onSaved={onTransitioned} />
+      {menuOpen && inHost(host, (
         <div className="wf-menu" role="menu" aria-label={`Move ${state.name} to`} ref={menuRef} onKeyDown={onMenuKey}>
           <div className="wf-menu-head" aria-hidden="true">Move to…</div>
           {available.map((s, i) => (
@@ -418,7 +534,7 @@ const WorkflowControl = ({ workflow, approvals, operatorId, pageId, spaceKey, si
             </button>
           ))}
         </div>
-      )}
+      ))}
       {error && <span className="wf-error" role="alert">{error}</span>}
     </span>
   );
@@ -437,6 +553,7 @@ const DocumentRibbon = () => {
   const [pageId, setPageId] = useState(null);
   const [spaceKey, setSpaceKey] = useState(null);
   const [siteUrl, setSiteUrl] = useState(null); // A6: version links must leave the iframe to the site
+  const [dialogHost, setDialogHost] = useState(null); // in-flow row every popover renders into
 
   const reloadWorkflow = useCallback(async () => {
     if (!pageId) return;
@@ -516,6 +633,9 @@ const DocumentRibbon = () => {
           const wf = await invoke("get-page-workflow", { pageId: ctxPageId, spaceKey: ctxSpaceKey });
           if (wf?.assigned) setWorkflow(wf);
         } catch (_) { /* none */ }
+        // A5: the review-date control shows for whoever `get-page-workflow` says may set it
+        // (`canSetReviewDue`, the SAME gate `set-review-due` applies) — a separate role probe
+        // answered a different question and drifted from it when admin override was off.
         try {
           const appr = await invoke("get-page-approvals", { pageId: ctxPageId, spaceKey: ctxSpaceKey });
           if (appr?.pending) setApprovals(appr);
@@ -632,6 +752,8 @@ const DocumentRibbon = () => {
             pageId={pageId}
             spaceKey={spaceKey}
             siteUrl={siteUrl}
+            isSteward={!!workflow?.canSetReviewDue}
+            host={dialogHost}
             onTransitioned={reloadWorkflow}
           />
         )}
@@ -651,6 +773,10 @@ const DocumentRibbon = () => {
           Manage Attachments
         </button>
       </div>
+
+      {/* In-flow host for every workflow popover — see inHost(). Empty (and display:none) when
+          nothing is open so the banner reserves no space. */}
+      <div className="wf-dialog-host" ref={setDialogHost} data-testid="wf-dialog-host" />
 
       {/* Alert section */}
       {primaryAlert && (
