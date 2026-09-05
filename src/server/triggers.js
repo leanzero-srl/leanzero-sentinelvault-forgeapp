@@ -12,7 +12,7 @@ import { recordDispatch, postDocFootnote } from "./capsules/bulletins/logic.js";
 import { resolveBulletinToggles } from "./shared/bulletin-flags.js";
 import { touchSealTimestamp, removeSealContentProp } from "./capsules/sealing/logic.js";
 import { releaseSeal } from "./capsules/sealing/release.js";
-import { getActiveEditGrant, sweepEditAccess, getActiveSectionEditGrant } from "./capsules/editreq/logic.js";
+import { getActiveEditGrant, sweepEditAccess, getActiveSectionEditGrant, sweepEditRequestIndex } from "./capsules/editreq/logic.js";
 import {
   resolveEffectiveConfig,
   readValidationState,
@@ -2280,10 +2280,13 @@ export async function expirySweepTask() {
     if (notifiedCount > 0 || halfwayAlertsSent > 0 || autoReleasedCount > 0) {
       console.warn(`[EXPIRY-SWEEP] ${notifiedCount} expiry notifications, ${halfwayAlertsSent} reminders sent, ${autoReleasedCount} auto-released`);
     }
+    // K1: the owner index behind "edit requests waiting on me" is backfilled hourly.
+    let editreqIndex = { backfilled: 0 };
+    try { editreqIndex = await sweepEditRequestIndex(); } catch (e) { console.error("[EXPIRY-SWEEP] editreq index", e); }
     return {
       statusCode: 200,
       headers: {},
-      body: JSON.stringify({ notifiedCount, fiftyPctReminders: halfwayAlertsSent, autoReleasedCount }),
+      body: JSON.stringify({ notifiedCount, fiftyPctReminders: halfwayAlertsSent, autoReleasedCount, editreqIndexBackfilled: editreqIndex.backfilled }),
     };
   } catch (error) {
     console.error("Error in expiry sweep task:", error);
