@@ -42,7 +42,7 @@ import {
 } from "./approvals.js";
 import { enqueueAiGate, resolveRules } from "../validations/actions.js";
 import { confirmRead, readStatus, readReport, readConfirmationRequired, requiredVersion } from "./read-acks.js";
-import { signatureStatus, startEnrollment, confirmEnrollment, revokeSignature } from "./signature.js";
+import { signatureStatus, startEnrollment, confirmEnrollment, revokeSignature, verifySignature } from "./signature.js";
 import { evaluateRules } from "../../infra/rules-engine.js";
 import { readDocBody } from "../../infra/doc-surgery.js";
 import { fetchPageLabels } from "../../infra/labels.js";
@@ -241,6 +241,15 @@ export const requestTransition = async (req) => {
     }
     const pinnedVersion = await fetchLivePageVersion(pageId);
     if (pinnedVersion == null) return { success: false, reason: "Could not verify the page version — please retry." };
+    // B3 (review finding 11): with no human approvers the requester is the signing authority, so
+    // a space that requires signed decisions takes the requester's code HERE — the AI-only
+    // completion then carries it. With approvers, each of them signs their own decision.
+    let requestSignature = null;
+    if (target?.enforce && wfSettings.requireSignature && !(spec?.approvers?.length)) {
+      const v = await verifySignature(actorAccountId, typeof req.payload?.code === "string" ? req.payload.code : null);
+      if (!v.ok) return { success: false, reason: v.reason, signatureRequired: true };
+      requestSignature = v.signature;
+    }
     const names = {};
     (wfSettings.approval?.approvers || []).forEach((a) => { if (a.id) names[a.id] = a.name; });
     const result = await requestApprovalTransition({
@@ -248,6 +257,7 @@ export const requestTransition = async (req) => {
       approvers: spec?.approvers || [], mode: spec?.mode || "any", min: spec?.min || 1,
       actorAccountId, actorName: await actorName(), pinnedVersion, approverNames: names,
       aiGate: needsAi ? { required: true, threshold: entryCond.aiThreshold } : null,
+      requestSignature,
     });
     if (needsAi) {
       // Enqueue the async review; if it resolved without an LLM call (AI disabled / budget),
@@ -273,13 +283,21 @@ export const requestTransition = async (req) => {
     if (approvedVersion == null) {
       return { success: false, reason: "Could not verify the page version — please retry." };
     }
+    // B3 (review finding 11): the steward's direct approval is a decision too — signed when
+    // the space requires it, so the evidence never shows an unsigned approval in such a space.
+    let requestSignature = null;
+    if (wfSettings.requireSignature) {
+      const v = await verifySignature(actorAccountId, typeof req.payload?.code === "string" ? req.payload.code : null);
+      if (!v.ok) return { success: false, reason: v.reason, signatureRequired: true };
+      requestSignature = v.signature;
+    }
     const snap = (await resolveApproverIds(wfSettings.approval))?.approvers || [];
     const stewardName = await actorName();
     // A4: a direct steward approval still leaves an evidence block — no approvers, no decisions,
     // just who approved which version, when. Same shape as a quorum approval (buildApprovalRecord
     // with no pending record), so the ribbon renders one thing.
     const approvalRecord = buildApprovalRecord({
-      pending: { pinnedVersion: approvedVersion }, records: [], outcome: "approved",
+      pending: { pinnedVersion: approvedVersion, requestSignature }, records: [], outcome: "approved",
       completedBy: actorAccountId, completedByName: stewardName,
     });
     return transitionPageWorkflow({
@@ -395,10 +413,10 @@ const signatureStatusAction = async (req) => signatureStatus(req.context?.accoun
 const enrollSignatureAction = async (req) => {
   const accountId = req.context?.accountId;
   if (!accountId) return { success: false, reason: "No account" };
-  return startEnrollment(accountId, { accountLabel: (await actorName()) || accountId });
+  return startEnrollment(accountId, { accountLabel: (await actorName()) || accountId, code: typeof req.payload?.code === "string" ? req.payload.code : null });
 };
 const confirmSignatureAction = async (req) => confirmEnrollment(req.context?.accountId, typeof req.payload?.code === "string" ? req.payload.code : "");
-const revokeSignatureAction = async (req) => revokeSignature(req.context?.accountId);
+const revokeSignatureAction = async (req) => revokeSignature(req.context?.accountId, { code: typeof req.payload?.code === "string" ? req.payload.code : null });
 
 const listMyApprovalsAction = async (req) => {
   const raw = await listMyApprovals(req.context?.accountId);
@@ -619,7 +637,11 @@ export const getWorkflowDashboard = async (req) => {
     truncated: shown.length > LIST_CAP,
     listCap: LIST_CAP,
     overdue,
-    states: (def?.states || []).map((s) => ({ id: s.id, name: s.name, color: s.color, count: counts[s.id] || 0 })),
+    // B1: chips for the default's states AND every label-scoped workflow's (review finding 13 —
+    // pages in an extra's state had a count but no chip). Deduped by id, the default first.
+    states: [...(def?.states || []), ...[...extraDefs.values()].flatMap((d) => d.states || [])]
+      .filter((s, i, arr) => arr.findIndex((x) => x.id === s.id) === i)
+      .map((s) => ({ id: s.id, name: s.name, color: s.color, count: counts[s.id] || 0 })),
     pages,
   };
 };

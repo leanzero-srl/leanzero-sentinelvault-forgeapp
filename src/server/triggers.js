@@ -26,11 +26,10 @@ import { evaluateRules } from "./infra/rules-engine.js";
 import { fetchPageLabels } from "./infra/labels.js";
 import {
   autoAssignOnEvent, getSpaceWorkflowSettings, resolveWorkflowDef, findState, resolveDemoteTarget, validateTransition,
-  transitionPageWorkflow, readPageWorkflow, purgePageWorkflow, mirrorStateLabel, restampApprovedVersion, fetchLivePageVersion,
+  transitionPageWorkflow, readPageWorkflow, purgePageWorkflow, mirrorStateLabel, readLabelStamp, clearStateLabel, restampApprovedVersion, fetchLivePageVersion,
 } from "./capsules/workflow/logic.js";
 import { resolveApproverIds, applyAiVerdict, sweepApprovalIndex, clearPageApprovals } from "./capsules/workflow/approvals.js";
 import { fetchPageStatuses } from "./shared/page-status.js";
-import { syncStateLabel } from "./capsules/workflow/label-sync.js";
 import { postEnforceComment } from "./infra/approval-blueprints.js";
 import { isAccountStewardAsApp } from "./shared/steward-checks.js";
 import { postValidationComment } from "./infra/validation-blueprints.js";
@@ -1242,6 +1241,7 @@ export async function workflowSweep() {
   const defCache = new Map(); // per-space def cache — most pages in a space share one workflow
   const settingsCache = new Map(); // per-space settings (B4 label sync reads them per row)
   let labelsSynced = 0;
+  const LABEL_SYNC_PER_RUN = 40;
   const defFor = async (sk, wid = null) => { const k = `${sk}|${wid || ""}`; if (!defCache.has(k)) defCache.set(k, await resolveWorkflowDef(sk, wid)); return defCache.get(k); };
   let query = kvs.query().where("key", WhereConditions.beginsWith("workflow-idx-")).limit(100);
   let iterations = 0;
@@ -1271,11 +1271,16 @@ export async function workflowSweep() {
           const sk = record.spaceKey;
           if (!settingsCache.has(sk)) settingsCache.set(sk, await getSpaceWorkflowSettings(sk));
           const sset = settingsCache.get(sk);
-          if (sset?.syncLabels && record.labelState !== record.stateId) {
-            if ((await mirrorStateLabel(idx.pageId, record, sset))?.ok) labelsSynced++;
-          } else if (!sset?.syncLabels && record.labelState) {
-            const r = await syncStateLabel(idx.pageId, null);
-            if (r.ok) { delete record.labelState; await kvs.set(`workflow-state-${idx.pageId}`, record).catch(() => {}); labelsSynced++; }
+          // Capped per run (review finding 6): a 600-page space enabling sync must not spend the
+          // whole 25 s budget on labels and starve the expiry pass, the AI reaper and the inbox
+          // housekeeping below — the backfill simply continues next hour.
+          if (labelsSynced < LABEL_SYNC_PER_RUN) {
+            const stamp = await readLabelStamp(idx.pageId);
+            if (sset?.syncLabels && stamp !== record.stateId) {
+              if ((await mirrorStateLabel(idx.pageId, record, sset))?.ok) labelsSynced++;
+            } else if (!sset?.syncLabels && stamp) {
+              if ((await clearStateLabel(idx.pageId)).ok) labelsSynced++;
+            }
           }
         } catch (e) { console.warn("[WORKFLOW-SWEEP] label sync", e); }
         // #45/A5 review-expiry (runs FIRST): ANY page whose review date has passed — the clock

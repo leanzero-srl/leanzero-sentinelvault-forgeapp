@@ -161,10 +161,10 @@ eq("inboxKey is per approver then page", inboxKey("712020:abc", "123"), "workflo
   eq("aiGate is copied as status + reason only", rec.aiGate, { status: "passed", reason: "No issues found." });
   eq("one decision row per approver record, in order", rec.decisions.length, 3);
   eq("decision row maps name/decision/decidedAt/reason/versionAtDecision from the record", rec.decisions[0],
-    { accountId: "712020:a", name: "Alice", decision: "approved", decidedAt: "2026-09-05T11:00:00.000Z", reason: "LGTM", versionAtDecision: 7 , signed: false});
+    { accountId: "712020:a", name: "Alice", decision: "approved", decidedAt: "2026-09-05T11:00:00.000Z", reason: "LGTM", versionAtDecision: 7 , signed: false, signedWithDeviceEnrolledAt: null});
   eq("a denial row keeps its reason", [rec.decisions[1].decision, rec.decisions[1].reason], ["denied", "Section 3 is wrong"]);
   eq("an approver who never answered is listed as pending with nulls, not dropped", rec.decisions[2],
-    { accountId: "712020:c", name: null, decision: "pending", decidedAt: null, reason: null, versionAtDecision: null , signed: false});
+    { accountId: "712020:c", name: null, decision: "pending", decidedAt: null, reason: null, versionAtDecision: null , signed: false, signedWithDeviceEnrolledAt: null});
   eq("the exact stored key set (the UI and harness assert on it)", Object.keys(rec).sort(),
     ["aiGate", "approverCount", "completedAt", "completedBy", "completedByName", "decisions", "min", "mode", "omitted", "outcome", "pinnedVersion", "requestedAt", "requestedBy", "requestedByName"]);
 
