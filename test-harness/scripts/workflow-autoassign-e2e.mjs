@@ -2,6 +2,7 @@
 // deployed trigger: enables a space's workflow auto-assign via the dev hook, creates
 // a real page, and asserts the created:page trigger auto-assigns the default workflow.
 // Cleanup ALWAYS disables the space setting so it can't leak into other suites.
+// @covers event:avi:confluence:created:page resolver:get-space-workflow-settings
 import { readFileSync, existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";

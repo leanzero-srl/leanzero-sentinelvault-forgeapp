@@ -159,71 +159,6 @@ const storePolicy = async (req) => {
 };
 
 /**
- * Get global admin settings
- */
-const loadGlobalRuleset = async () => {
-  const ruleset = await kvs.get("admin-settings-global");
-  return (
-    ruleset || {
-      autoUnlockEnabled: true,
-      defaultLockDuration: BASELINE_HOLD_SPAN,
-      reminderIntervalDays: 7,
-      // Notification settings
-      enableToastNotifications: true,
-      enablePageBanners: true,
-      enableConfluenceNotifications: true,
-      enableEmailNotifications: false,
-      enableLockExpiryReminderEmail: false,
-      enableAutoUnlockNotificationEmail: false,
-      enablePeriodicReminderEmail: false,
-      // Panel settings
-      allowArtifactDelete: false,
-      // Macro auto-insert settings
-      globalAutoInsertMacro: false,
-      replaceAttachmentsMacro: false,
-    }
-  );
-};
-
-/**
- * Update global admin settings
- */
-const storeGlobalRuleset = async (req) => {
-  const { settings } = req.payload;
-  if (!(await canWriteGlobal(req.context?.accountId))) return DENY;
-  await kvs.set("admin-settings-global", settings);
-  return { success: true };
-};
-
-/**
- * Get realm-specific admin settings
- */
-const loadRealmRuleset = async (req) => {
-  const { spaceKey } = req.payload;
-  const sanitizedRealmKey = spaceKey.replace(/[^a-zA-Z0-9:._\s-#]/g, "_");
-  const stored = await kvs.get(`admin-settings-space-${sanitizedRealmKey}`);
-  // SV-SEC-1: same redaction as loadPolicy — a stored ruleset carries the steward roster.
-  const ruleset = await redactRosterUnlessSteward(stored, req.context?.accountId, spaceKey);
-  return (
-    ruleset || {
-      autoUnlockTimeoutHours: null,
-      overrideGlobalSettings: false,
-    }
-  );
-};
-
-/**
- * Update realm-specific admin settings
- */
-const storeRealmRuleset = async (req) => {
-  const { spaceKey, settings } = req.payload;
-  if (!(await canWriteSpace(req.context?.accountId, spaceKey))) return DENY;
-  const sanitizedRealmKey = spaceKey.replace(/[^a-zA-Z0-9:._\s-#]/g, "_");
-  await kvs.set(`admin-settings-space-${sanitizedRealmKey}`, settings);
-  return { success: true };
-};
-
-/**
  * Get all realm settings (for realm admin page)
  */
 // SECURITY (audit B15): this CROSS-SPACE enumeration returns every space's admin-settings —
@@ -257,24 +192,12 @@ export const enumerateRealmRulesets = async (req) => {
   }
 };
 
-/**
- * Delete realm settings
- */
-const discardRealmRuleset = async (req) => {
-  const { spaceKey } = req.payload;
-  if (!(await canWriteSpace(req.context?.accountId, spaceKey))) return DENY;
-  const sanitizedRealmKey = spaceKey.replace(/[^a-zA-Z0-9:._\s-#]/g, "_");
-  await kvs.delete(`admin-settings-space-${sanitizedRealmKey}`);
-  return { success: true };
-};
-
+// The legacy `*-ruleset` actions (load/store-global-ruleset, load/store/discard-realm-ruleset)
+// were removed 2026-09-05: no surface called them since load-policy/store-policy unified both
+// scopes, and load-global-ruleset answered ANY logged-in user with the raw record, steward
+// roster included. Dead code that still answers is attack surface, not a feature.
 export const actions = [
   ["load-policy", loadPolicy],
   ["store-policy", storePolicy],
-  ["load-global-ruleset", loadGlobalRuleset],
-  ["store-global-ruleset", storeGlobalRuleset],
-  ["load-realm-ruleset", loadRealmRuleset],
-  ["store-realm-ruleset", storeRealmRuleset],
   ["enumerate-realm-rulesets", enumerateRealmRulesets],
-  ["discard-realm-ruleset", discardRealmRuleset],
 ];

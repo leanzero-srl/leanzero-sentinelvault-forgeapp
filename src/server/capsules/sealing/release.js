@@ -1,7 +1,7 @@
 import { kvs, WhereConditions } from "@forge/kvs";
 
 import { removeSealContentProp, touchSealTimestamp } from "./logic.js";
-import { notifyWatchers } from "../bulletins/logic.js";
+import { notifyWatchers, sweepWatchers } from "../bulletins/logic.js";
 import { sweepEditAccess } from "../editreq/logic.js";
 import { triggerPanelEmbed, removePanelNode } from "../../infra/doc-surgery.js";
 
@@ -18,7 +18,7 @@ import { triggerPanelEmbed, removePanelNode } from "../../infra/doc-surgery.js";
  *   protection-{id}                          the seal itself
  *   space-protection-{spaceId}-{id}          the space index row the consoles list from
  *   the `protection-` page content property   the CQL/fast-path marker
- *   notification-{id}-*                       watchers waiting for the release
+ *   notify-request-{id}-*                     watchers waiting for the release
  *   edit-request-* / edit-grant-*             the seal's edit-access sidecars
  *   the inline panel node                     removed when the page has no seals left
  *
@@ -50,20 +50,6 @@ export async function releaseSeal(attachmentId, sealRecord, { fallbackSpaceKey =
       console.warn("[RELEASE] Failed to delete space-seal index:", indexError));
   }
 
-  const watchPrefix = `notification-${attachmentId}-`;
-  try {
-    const { results: watchEntries } = await kvs
-      .query()
-      .where("key", WhereConditions.beginsWith(watchPrefix))
-      .limit(50)
-      .getMany();
-    for (const { key } of watchEntries || []) {
-      await kvs.delete(key);
-    }
-  } catch (e) {
-    console.warn("[RELEASE] watcher sweep failed:", e);
-  }
-
   // Clear any Edit Requests / grants tied to this seal.
   await sweepEditAccess(attachmentId).catch((e) =>
     console.warn("[RELEASE] edit-access sweep failed:", e));
@@ -81,6 +67,9 @@ export async function releaseSeal(attachmentId, sealRecord, { fallbackSpaceKey =
       contentId: sealRecord.contentId,
     }).catch((e) => console.warn("[RELEASE] watcher notify failed:", e));
   }
+  // Only after the notices: what is left are watches whose notice failed, and they must
+  // not outlive the seal they were about (see sweepWatchers).
+  await sweepWatchers(attachmentId);
 
   // Manage inline panel: keep it if other seals remain on the page, remove it if not.
   if (sealRecord.contentId) {

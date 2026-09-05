@@ -12,7 +12,7 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { homedir } from "node:os";
 import { cfg } from "../lib/env.mjs";
-import { get, post, put, currentUser, listAttachments } from "../lib/confluence.mjs";
+import { get, post, put, currentUser, listAttachments, readPageAdf } from "../lib/confluence.mjs";
 
 const C = cfg();
 const HARNESS_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -177,6 +177,33 @@ if (prop) {
 const readBack = await hook({ what: "kvs", key: `protection-${att.id}` });
 if (!readBack?.value?.lockedBy) fail("read-back of seeded seal record failed");
 ok("read-back verified");
+
+// --- 7b. inline-panel macro present on the fixture page (fixture-drift class, 2026-09-05) ---
+// The panel macro is stripped from the fixture page whenever a spec relinquishes its last seal
+// (removePanelNode), and six browser specs then fail on a page that renders no panel at all.
+// Re-insert it through the app's own insertion path (hook fn=ensurePanel → insertPanelNode as the
+// app, same as auto-insert), then re-verify by reading the body back over REST.
+const PANEL_KEY_SUFFIX = "/static/sentinel-vault-panel";
+const hasPanelNode = (node) => {
+  if (!node || typeof node !== "object") return false;
+  if (["extension", "bodiedExtension", "inlineExtension"].includes(node.type)
+    && String(node.attrs?.extensionKey || "").endsWith(PANEL_KEY_SUFFIX)) return true;
+  return Array.isArray(node.content) && node.content.some(hasPanelNode);
+};
+const readPanelPresence = async () => {
+  const body = await readPageAdf(page.id);
+  const raw = body?.body?.atlas_doc_format?.value;
+  if (!raw) fail(`fixture page ${page.id}: no atlas_doc_format body in the v2 read`);
+  return hasPanelNode(JSON.parse(raw));
+};
+if (await readPanelPresence()) {
+  ok("inline-panel macro present on the fixture page");
+} else {
+  const ins = await hook({ what: "invoke", fn: "ensurePanel", pageId: page.id });
+  if (!ins?.result?.success) fail(`ensurePanel → ${JSON.stringify(ins?.result || ins).slice(0, 300)}`);
+  if (!(await readPanelPresence())) fail("ensurePanel reported success but the panel macro is still absent from the page body");
+  ok(`re-inserted inline-panel macro on the fixture page (${ins.result.extensionKey})`);
+}
 
 // --- 8. persist SV_PAGE_ID / SV_SPACE_KEY into test-harness/.env ---
 const envPath = join(HARNESS_ROOT, ".env");

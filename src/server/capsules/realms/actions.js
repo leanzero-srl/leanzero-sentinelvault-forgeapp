@@ -1,11 +1,12 @@
 import { asApp, asUser, route } from "@forge/api";
 import { kvs, WhereConditions } from "@forge/kvs";
+import { resolveRealm } from "./logic.js";
 import { Queue } from "@forge/events";
 
 import { authorizeSteward, isOperatorSteward } from "../../shared/steward-checks.js";
 import { probeAttachmentStatus } from "../../infra/attachment-status.js";
 import { removeSealContentProp, touchSealTimestamp } from "../sealing/logic.js";
-import { notifyWatchers } from "../bulletins/logic.js";
+import { notifyWatchers, sweepWatchers } from "../bulletins/logic.js";
 import { sweepEditAccess } from "../editreq/logic.js";
 import {
   mailStewardOverrideNotice,
@@ -25,30 +26,10 @@ const skKey = (k) => String(k).replace(/[^a-zA-Z0-9:._\s-#]/g, "_");
  */
 const identifyRealm = async (req) => {
   const { spaceKey } = req.payload;
-
   if (!spaceKey) {
     throw new Error("Space key is required");
   }
-
-  try {
-    const response = await asUser().requestConfluence(
-      route`/wiki/rest/api/space/${spaceKey}`,
-    );
-
-    if (response.ok) {
-      const realmData = await response.json();
-      return {
-        key: realmData.key,
-        name: realmData.name,
-        id: realmData.id,
-      };
-    }
-
-    return { key: spaceKey, name: "Current Space", id: null };
-  } catch (error) {
-    console.error("Error getting realm info:", error);
-    return { key: spaceKey, name: "Current Space", id: null };
-  }
+  return resolveRealm(spaceKey);
 };
 
 /**
@@ -360,24 +341,17 @@ const stewardUnseal = async (req) => {
     }
   }
 
-  const watchPrefix = `notification-${attachmentId}-`;
-  const { results: watchEntries } = await kvs
-    .query()
-    .where("key", WhereConditions.beginsWith(watchPrefix))
-    .limit(50)
-    .getMany();
-  for (const { key } of watchEntries) {
-    await kvs.delete(key);
-  }
-
   // Clear any Edit Requests / grants tied to this seal
   await sweepEditAccess(attachmentId);
 
-  // Notify watchers
+  // Notify watchers, then sweep whatever a failed notice left behind (never before —
+  // the sweep used to run first under a prefix nothing wrote, which is the only reason
+  // watchers were ever notified at all).
   await notifyWatchers(attachmentId, {
     attachmentName: sealRecord.attachmentName,
     contentId: sealRecord.contentId,
   });
+  await sweepWatchers(attachmentId);
 
   // Notify seal owner that a steward forcefully unsealed their artifact
   if (sealRecord.lockedBy && sealRecord.contentId) {

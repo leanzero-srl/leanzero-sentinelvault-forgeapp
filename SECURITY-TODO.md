@@ -1,5 +1,26 @@
 # Security items
 
+## ✅ SV-SEC-2 — dead resolvers that still answered — **CLOSED 2026-09-05**
+
+Found by a coverage triage (which resolver keys have no caller anywhere in `src/ui`), not by an
+incident. Eight registered actions had no UI, server, or harness caller: the legacy
+`load/store-global-ruleset`, `load/store/discard-realm-ruleset` (superseded by `load-policy` /
+`store-policy` in the first console rewrite) and `inject-panel` / `extract-panel` /
+`register-panel-key` (auto-insert runs from the seal path via `triggerPanelEmbed`; the extension
+key is discovered from context).
+
+Dead is not harmless here: every registered key is callable by any logged-in user (see SV-SEC-1).
+`load-global-ruleset` had **no gate at all** and returned the stored `admin-settings-global`
+verbatim, `adminUsers` / `adminGroups` included, where `load-policy` redacts the roster for
+non-stewards. `inject-panel` / `extract-panel` rewrote a payload-named page as the app (they did
+carry the SV-SEC-1 `canEditPage` gate, so this half was surface, not a hole).
+
+Fix: the registrations and functions are deleted, with a comment at each `actions` array saying
+why. No scope change, no UI change. Guard: `coverage-proof.mjs` now lists every registered key,
+so a key with no caller is visible at every run rather than only when someone goes looking.
+
+---
+
 ## ✅ SV-SEC-1 — resolver authorization gap — **CLOSED 2026-08-20**
 
 Raised 2026-08-20, fixed the same day, while the app was in Marketplace certification.

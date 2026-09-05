@@ -26,7 +26,7 @@ import { purgeAllSealState } from "./confluence-sync.js";
 import { releaseSeal } from "./release.js";
 
 // Import from sibling capsules
-import { notifyWatchers } from "../bulletins/logic.js";
+import { notifyWatchers, sweepWatchers } from "../bulletins/logic.js";
 import { sweepEditAccess } from "../editreq/logic.js";
 import { triggerPanelEmbed, removePanelNode } from "../../infra/doc-surgery.js";
 
@@ -1197,16 +1197,9 @@ export const purgeSealRecord = async (req) => {
     await purgeAllSealState(attachmentId, sealRecord);
   }
 
-  // Clean up watcher subscriptions
-  const watchPrefix = `notification-${attachmentId}-`;
-  const { results: watchEntries } = await kvs
-    .query()
-    .where("key", WhereConditions.beginsWith(watchPrefix))
-    .limit(50)
-    .getMany();
-  for (const { key } of watchEntries) {
-    await kvs.delete(key);
-  }
+  // The file is gone for good; a "notify me when it is unsealed" watch has nothing left
+  // to wait for.
+  await sweepWatchers(attachmentId);
 
   // Clear any Edit Requests / grants tied to this seal
   await sweepEditAccess(attachmentId);

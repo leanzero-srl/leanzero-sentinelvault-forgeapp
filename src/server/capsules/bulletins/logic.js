@@ -176,3 +176,37 @@ export async function notifyWatchers(
 
   return result;
 }
+
+/**
+ * Remove every "Notify Me" watch left on an artifact whose seal is gone.
+ *
+ * Call this AFTER notifyWatchers: notifyWatchers consumes each watch only when its
+ * notice actually posted (H1-F10), so what survives here is a watch whose notice
+ * failed. Leaving it behind would fire on the NEXT seal's release on the same file,
+ * telling someone about an event they never asked about. The 7-day TTL bounded the
+ * damage; this bounds it to zero.
+ *
+ * The teardown sites used to sweep `notification-{id}-*` — a prefix nothing ever
+ * wrote for a watch (dispatch records are `notification-{ts}-…`) — so they swept
+ * nothing, and the only reason watchers were still notified is that the no-op ran
+ * BEFORE notifyWatchers. Fixing the prefix in place would have deleted the watches
+ * before they were notified; hence one helper, one prefix, one ordering.
+ */
+export async function sweepWatchers(artifactId) {
+  if (!artifactId) return 0;
+  let removed = 0;
+  try {
+    const { results } = await kvs
+      .query()
+      .where("key", WhereConditions.beginsWith(`notify-request-${artifactId}-`))
+      .limit(50)
+      .getMany();
+    for (const { key } of results || []) {
+      await kvs.delete(key);
+      removed++;
+    }
+  } catch (e) {
+    console.warn(`[NOTIFY-ME] watcher sweep failed for ${artifactId}:`, e);
+  }
+  return removed;
+}

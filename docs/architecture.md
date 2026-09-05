@@ -78,13 +78,13 @@ All capsule actions are aggregated in `src/server/registry.js`, which creates a 
 
 **Bulletins:** `load-bulletin-toggles`, `recent-dispatches`, `operator-dispatches`, `acknowledge-dispatch`, `watch-artifact`, `check-watch`, `unwatch-artifact`, `flush-operator-dispatches`, `list-breach-dispatches`
 
-**Policies:** `load-policy`, `store-policy`, `load-global-ruleset`, `store-global-ruleset`, `load-realm-ruleset`, `store-realm-ruleset`, `enumerate-realm-rulesets`, `discard-realm-ruleset`
+**Policies:** `load-policy`, `store-policy`, `enumerate-realm-rulesets` (the legacy `*-ruleset` actions were removed 2026-09-05: unused, and one answered any user with the steward roster)
 
 **Realms:** `identify-realm`, `enumerate-realm-seals`, `launch-realm-audit`, `check-audit-status`, `steward-unseal`, `check-user-role`, `request-steward-access`, `check-steward-request`, `list-steward-requests`, `approve-steward-request`, `deny-steward-request`
 
 **Operators:** `identify-operator`, `search-operators`, `current-operator`, `enumerate-operators`, `enumerate-teams`
 
-**Panels:** `enumerate-panel-artifacts`, `label-artifact`, `unlabel-artifact`, `delete-artifact`, `inject-panel`, `extract-panel`, `check-panel-status`, `store-doc-panel-prefs`, `upload-artifact`, `register-panel-key`, `discover-panel-key`, `resolve-artifact-preview`
+**Panels:** `enumerate-panel-artifacts`, `label-artifact`, `unlabel-artifact`, `delete-artifact`, `check-panel-status`, `store-doc-panel-prefs`, `upload-artifact`, `discover-panel-key`, `resolve-artifact-preview` (`inject-panel`/`extract-panel`/`register-panel-key` removed 2026-09-05: no callers, asApp writes behind payload ids)
 
 **Entitlements:** `load-session`, `check-license`, `steward-override-enabled`
 
