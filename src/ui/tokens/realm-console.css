@@ -2138,7 +2138,7 @@ html[data-color-mode="dark"] .sv-activity-chip-validation.is-active { background
 .wf-def-head label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; font-weight: 700; color: var(--sv-text-secondary); }
 .wf-def-name { flex: 1 1 220px; } .wf-def-labels { flex: 2 1 260px; } .wf-def-priority { flex: 0 0 110px; }
 .wf-def-table { display: flex; flex-direction: column; gap: 6px; overflow-x: auto; }
-.wf-def-row { display: grid; grid-template-columns: minmax(150px, 1fr) 110px 48px 72px 92px minmax(180px, 2fr) 100px; gap: 8px; align-items: center; padding: 8px 10px; border-radius: 10px; background: var(--sv-bg-secondary, #F8FAFC); min-width: 760px; }
+.wf-def-row { display: grid; grid-template-columns: minmax(140px, 1fr) 130px 48px 72px 92px minmax(170px, 2fr) 100px; gap: 8px; align-items: center; padding: 8px 10px; border-radius: 10px; background: var(--sv-bg-secondary, #F8FAFC); min-width: 760px; }
 .wf-def-row-head { background: transparent; font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.04em; color: var(--sv-text-secondary); padding-bottom: 0; }
 .wf-def-cell-name { display: flex; flex-direction: column; gap: 3px; }
 .wf-def-id { font-size: 11px; color: var(--sv-text-subtle); }
@@ -2166,3 +2166,6 @@ html[data-color-mode="dark"] .sv-activity-chip-validation.is-active { background
 .wf-def-row > span > input[type="radio"] { appearance: none; -webkit-appearance: none; width: 18px; height: 18px; margin: 0; border: 2px solid #1d4ed8; border-radius: 50%; background: var(--sv-bg-primary, #fff); cursor: pointer; display: inline-block; position: relative; }
 .wf-def-row > span > input[type="radio"]:checked { background: #1d4ed8; box-shadow: inset 0 0 0 3px var(--sv-bg-primary, #fff); }
 .wf-def-row > span > input[type="radio"]:focus-visible { outline: 2px solid var(--sv-border-focus); outline-offset: 2px; }
+/* The colour picker keeps to its column (the shared mini-select otherwise insists on 180px and
+   runs under the First/Approved controls). */
+.wf-def-row .mini-select { min-width: 0; width: 100%; }
