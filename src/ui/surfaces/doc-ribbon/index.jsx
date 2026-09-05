@@ -8,7 +8,7 @@
 
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { createRoot } from "react-dom/client";
-import { invoke, view, Modal } from "@forge/bridge";
+import { invoke, view, Modal, router } from "@forge/bridge";
 import { enablePaletteSync } from "../../kit/palette-sync";
 
 /**
@@ -20,8 +20,160 @@ import { enablePaletteSync } from "../../kit/palette-sync";
  */
 const MODE_TEXT = { any: "Any one approver can approve", all: "All approvers must approve", min: "A minimum number must approve" };
 const APPR_STATUS = { approved: "Approved", denied: "Denied", pending: "Pending" };
+// A4: the approval-record summary names the rule the decisions satisfied.
+const MODE_LABEL = { any: "any approver", all: "all approvers" };
+const modeLabel = (mode, min) => (mode === "min" ? `at least ${min || 1} approver${(min || 1) === 1 ? "" : "s"}` : MODE_LABEL[mode] || MODE_LABEL.any);
+const fmtDate = (iso) => {
+  const ms = iso ? new Date(iso).getTime() : NaN;
+  return Number.isFinite(ms) ? new Date(ms).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" }) : "an unknown date";
+};
+// A6: a historical page version renders at viewpage.action?pageId=…&pageVersion=n (verified live
+// 2026-09-05; the classic viewpageversion.action is a 404). The ribbon is a SANDBOXED iframe
+// (no allow-top-navigation), so a plain target="_top" anchor is dropped by the browser — the
+// navigation has to go through the Forge bridge router (the overlay and console do the same).
+// The href stays for hover, copy-link and the harness; the click is what navigates.
+const versionPath = (pageId, version) => (pageId && version != null
+  ? `/wiki/pages/viewpage.action?pageId=${encodeURIComponent(pageId)}&pageVersion=${encodeURIComponent(version)}`
+  : null);
+const versionHref = (siteUrl, pageId, version) => (siteUrl && versionPath(pageId, version) ? `${siteUrl}${versionPath(pageId, version)}` : null);
+const VersionLink = ({ siteUrl, pageId, version, testId, children }) => {
+  const href = versionHref(siteUrl, pageId, version);
+  if (!href) return null;
+  const go = (e) => { e.preventDefault(); router.navigate(versionPath(pageId, version)).catch(() => { window.open(href, "_blank"); }); };
+  return (
+    <a className="wf-version-link" href={href} onClick={go} rel="noreferrer" data-testid={testId}>
+      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <path d="M14 3h7v7" /><path d="M21 3l-9 9" /><path d="M19 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h6" />
+      </svg>
+      {children}
+    </a>
+  );
+};
 
-const WorkflowControl = ({ workflow, approvals, operatorId, pageId, spaceKey, onTransitioned }) => {
+// One dismissable-dialog behaviour for every ribbon panel (approval dialog #43, approval
+// record A4): on open, focus moves INTO the panel (a role="dialog" that never receives focus is
+// an SR defect — focus the container, not a control, so nothing is activated by accident);
+// Escape and an outside click close it; Escape returns focus to the trigger chip.
+const useDismissableDialog = (open, setOpen, panelRef, triggerRef) => {
+  useEffect(() => {
+    if (!open) return undefined;
+    requestAnimationFrame(() => panelRef.current?.focus());
+    const outside = (e) => !panelRef.current?.contains(e.target) && !triggerRef.current?.contains(e.target);
+    const onDown = (e) => { if (outside(e)) setOpen(false); };
+    const onKey = (e) => { if (e.key === "Escape") { setOpen(false); triggerRef.current?.focus(); } };
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => { document.removeEventListener("mousedown", onDown); document.removeEventListener("keydown", onKey); };
+  }, [open, setOpen, panelRef, triggerRef]);
+};
+
+// A4: the evidence chip beside an enforced Approved state, and the "Approval record" dialog it
+// opens. Pages approved before the record shipped have no approvalRecord — say so rather than
+// invent names.
+const ApprovalEvidence = ({ workflow, siteUrl, pageId }) => {
+  const [open, setOpen] = useState(false);
+  const panelRef = useRef(null);
+  const chipRef = useRef(null);
+  useDismissableDialog(open, setOpen, panelRef, chipRef);
+
+  const record = workflow.record;
+  const ar = record.approvalRecord || null;
+  // The chip and the link name the version that was REVIEWED (the record's pin). The enforce
+  // baseline (record.approvedVersion) moves forward on every sanctioned edit; when it has, the
+  // dialog says so on its own line rather than linking to a version nobody approved.
+  const reviewedVersion = (typeof ar?.pinnedVersion === "number" ? ar.pinnedVersion : null) ?? record.approvedVersion;
+  const approvedVersion = reviewedVersion;
+  const baselineVersion = record.approvedVersion;
+  const baselineMoved = typeof baselineVersion === "number" && baselineVersion !== reviewedVersion;
+  const decisions = Array.isArray(ar?.decisions) ? ar.decisions : [];
+  const live = typeof workflow.liveVersion === "number" ? workflow.liveVersion : null;
+  const changedSince = live != null && typeof baselineVersion === "number" && live > baselineVersion;
+  const enforceMode = workflow.enforceMode || workflow.settings?.enforceMode || record.enforceMode || null;
+  // CL-5: revert is downgraded to demote when the approver snapshot is empty — say what the app
+  // will actually do, not what the setting says.
+  const hasApproverSnapshot = Array.isArray(record.approvers) && record.approvers.length > 0;
+  const consequence = enforceMode === "revert" && hasApproverSnapshot ? "reverted"
+    : enforceMode ? "moved back for review"
+      : "handled";
+  const outcomeWord = ar?.outcome === "denied" ? "Denied" : "Approved";
+
+  let summary;
+  if (!ar) {
+    summary = `Approved on ${fmtDate(record.approvedAt)} (details were not recorded for this approval).`;
+  } else if (decisions.length === 0) {
+    summary = `${outcomeWord} by ${ar.completedByName || "a space steward"} on ${fmtDate(ar.completedAt)}.`;
+  } else {
+    summary = `${outcomeWord} for version ${ar.pinnedVersion ?? approvedVersion} on ${fmtDate(ar.completedAt)} · ${modeLabel(ar.mode, ar.min)}`;
+  }
+
+  return (
+    <span className="wf-evidence">
+      <button
+        ref={chipRef}
+        type="button"
+        className="wf-chip wf-chip-success wf-chip-evidence"
+        onClick={() => setOpen((o) => !o)}
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        data-testid="wf-evidence-chip"
+        title="Open the approval record"
+      >
+        <svg className="wf-chip-icon" width="10" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /><path d="m9 12 2 2 4-4" />
+        </svg>
+        {/* Not "Approved v7": the state chip beside it already reads "Approved", and two green
+            "Approved" chips are one click apart from each other's job. This one is the record. */}
+        <span className="wf-chip-label">Approval record · v{approvedVersion}</span>
+        <span className="wf-chip-caret" aria-hidden="true">▾</span>
+      </button>
+      {open && (
+        <div className="wf-appr-panel wf-evidence-panel" role="dialog" aria-label="Approval record" ref={panelRef} tabIndex={-1} data-testid="wf-evidence-panel">
+          <div className="wf-appr-head">Approval record</div>
+          <div className="wf-appr-sub">{summary}</div>
+          {ar?.requestedByName && (
+            <div className="wf-appr-sub">Requested by {ar.requestedByName} on {fmtDate(ar.requestedAt)}</div>
+          )}
+          {(decisions.length > 0 || ar?.aiGate) && (
+            <ul className="wf-appr-list">
+              {decisions.map((d, i) => (
+                <li key={d.accountId || i} className="wf-appr-row wf-evidence-row" data-testid="wf-evidence-decision">
+                  <span className="wf-appr-name">{d.name || "Approver"}</span>
+                  <span className={`wf-appr-badge wf-appr-${d.decision === "denied" ? "denied" : d.decision === "approved" ? "approved" : "pending"}`}>{d.decision === "denied" ? "Denied" : d.decision === "approved" ? "Approved" : "No decision before completion"}</span>
+                  <span className="wf-appr-date">{fmtDate(d.decidedAt)}</span>
+                  {d.reason ? <span className="wf-appr-reason">“{d.reason}”</span> : null}
+                </li>
+              ))}
+              {ar?.aiGate && (
+                <li className="wf-appr-row wf-evidence-row" data-testid="wf-evidence-ai">
+                  <span className="wf-appr-name">AI content review</span>
+                  <span className={`wf-appr-badge wf-appr-${ar.aiGate.status === "passed" ? "approved" : ar.aiGate.status === "failed" ? "denied" : "pending"}`}>
+                    {ar.aiGate.status === "passed" ? "Passed" : ar.aiGate.status === "failed" ? "Failed" : "Skipped"}
+                  </span>
+                  {ar.aiGate.reason ? <span className="wf-appr-reason">“{ar.aiGate.reason}”</span> : null}
+                </li>
+              )}
+            </ul>
+          )}
+          <VersionLink siteUrl={siteUrl} pageId={pageId} version={approvedVersion} testId="wf-approved-version-link">
+            View approved version (v{approvedVersion})
+          </VersionLink>
+          {baselineMoved && (
+                <p className="wf-evidence-baseline" data-testid="wf-evidence-baseline">
+                  Sanctioned baseline is now v{baselineVersion} (edited by an approver or steward since the review).
+                </p>
+              )}
+              {changedSince && (
+            <div className="wf-evidence-stale" data-testid="wf-evidence-stale">
+              This page has changed since approval (now v{live}). Unsanctioned edits are {consequence} automatically.
+            </div>
+          )}
+        </div>
+      )}
+    </span>
+  );
+};
+
+const WorkflowControl = ({ workflow, approvals, operatorId, pageId, spaceKey, siteUrl, onTransitioned }) => {
   const [menuOpen, setMenuOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
@@ -41,20 +193,8 @@ const WorkflowControl = ({ workflow, approvals, operatorId, pageId, spaceKey, on
   const canMove = available.length > 0;
   const pendingApproval = approvals?.pending ? approvals : null;
 
-  // Close the approval panel on outside click / Escape.
-  useEffect(() => {
-    if (!panelOpen) return undefined;
-    // a11y: move focus INTO the dialog on open so it's announced (aria-label) and keyboard
-    // users land inside it — a role="dialog" that never receives focus is an SR defect.
-    // Focus the container (not a control) to avoid accidental Approve/Deny activation.
-    requestAnimationFrame(() => panelRef.current?.focus());
-    const outside = (e) => !panelRef.current?.contains(e.target) && !apprBtnRef.current?.contains(e.target);
-    const onDown = (e) => { if (outside(e)) setPanelOpen(false); };
-    const onKey = (e) => { if (e.key === "Escape") { setPanelOpen(false); apprBtnRef.current?.focus(); } };
-    document.addEventListener("mousedown", onDown);
-    document.addEventListener("keydown", onKey);
-    return () => { document.removeEventListener("mousedown", onDown); document.removeEventListener("keydown", onKey); };
-  }, [panelOpen]);
+  // Close the approval panel on outside click / Escape; focus in on open, back to the chip on Escape.
+  useDismissableDialog(panelOpen, setPanelOpen, panelRef, apprBtnRef);
 
   const doDecide = useCallback(async (decision) => {
     setDecideBusy(true); setDecideMsg(null);
@@ -172,6 +312,11 @@ const WorkflowControl = ({ workflow, approvals, operatorId, pageId, spaceKey, on
               {pendingApproval.mode === "min" ? ` (at least ${pendingApproval.min})` : ""}
             </div>
             <div className="wf-appr-progress">{approvedCount} of {approverList.length} approved</div>
+            {pendingApproval.pinnedVersion != null && (
+              <VersionLink siteUrl={siteUrl} pageId={pageId} version={pendingApproval.pinnedVersion} testId="wf-pinned-version-link">
+                View the version you are approving (v{pendingApproval.pinnedVersion})
+              </VersionLink>
+            )}
             <ul className="wf-appr-list">
               {approverList.map((a) => (
                 <li key={a.accountId} className="wf-appr-row">
@@ -240,6 +385,9 @@ const WorkflowControl = ({ workflow, approvals, operatorId, pageId, spaceKey, on
         <span className="wf-chip-label">{state.name}</span>
         {canMove && <span className="wf-chip-caret" aria-hidden="true">▾</span>}
       </button>
+      {workflow.record?.enforce && workflow.record?.approvedVersion != null && (
+        <ApprovalEvidence workflow={workflow} siteUrl={siteUrl} pageId={pageId} />
+      )}
       {workflow.record?.reviewDueAt && (() => {
         const dueMs = new Date(workflow.record.reviewDueAt).getTime();
         const overdue = dueMs < Date.now();
@@ -288,6 +436,7 @@ const DocumentRibbon = () => {
   const [operatorId, setOperatorId] = useState(null);
   const [pageId, setPageId] = useState(null);
   const [spaceKey, setSpaceKey] = useState(null);
+  const [siteUrl, setSiteUrl] = useState(null); // A6: version links must leave the iframe to the site
 
   const reloadWorkflow = useCallback(async () => {
     if (!pageId) return;
@@ -358,6 +507,7 @@ const DocumentRibbon = () => {
         setPageId(ctxPageId);
         setSpaceKey(ctxSpaceKey);
         setOperatorId(operatorId || null);
+        setSiteUrl(context?.siteUrl || null);
 
         await fetchArtifactStats();
 
@@ -481,6 +631,7 @@ const DocumentRibbon = () => {
             operatorId={operatorId}
             pageId={pageId}
             spaceKey={spaceKey}
+            siteUrl={siteUrl}
             onTransitioned={reloadWorkflow}
           />
         )}

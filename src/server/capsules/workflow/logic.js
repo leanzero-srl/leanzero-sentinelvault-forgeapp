@@ -333,7 +333,7 @@ export async function setSpaceWorkflowSettings(spaceKey, settings) {
   // { approvers: [{ type:"user"|"group", id, name }], mode:"any"|"all"|"min", min }.
   if (settings?.approval && Array.isArray(settings.approval.approvers)) {
     clean.approval = {
-      approvers: settings.approval.approvers.filter((a) => a && a.id).map((a) => ({ type: a.type || "user", id: a.id, name: a.name || null })),
+      approvers: settings.approval.approvers.filter((a) => a && a.id).map((a) => ({ type: a.type || "user", id: String(a.id).slice(0, 200), name: typeof a.name === "string" ? a.name.slice(0, 120) : null })),
       mode: ["any", "all", "min"].includes(settings.approval.mode) ? settings.approval.mode : "any",
       min: Math.max(1, parseInt(settings.approval.min, 10) || 1),
     };
@@ -369,7 +369,11 @@ export async function autoAssignOnEvent({ pageId, spaceKey, actorAccountId, acto
 
 // Move a page to `toStateId` after validating the edge. Returns {success, reason?, record?}.
 // `requireStewardForEnforce` is enforced by the caller (resolver) — logic stays authz-free & testable.
-export async function transitionPageWorkflow({ pageId, spaceKey, toStateId, actorAccountId, actorName, reason, approvers, approvedVersion, activity = true }) {
+// `approvalRecord` (A4): the evidence snapshot built by approvals.js (buildApprovalRecord) — or,
+// for a direct steward approval, the same shape with no decisions. Stored on the state record as
+// `record.approvalRecord` and copied into the log entry's `details.approvalRecord`; cleared with
+// the other enforce fields when the page leaves the enforce state.
+export async function transitionPageWorkflow({ pageId, spaceKey, toStateId, actorAccountId, actorName, reason, approvers, approvedVersion, approvalRecord, activity = true }) {
   if (!pageId || !toStateId) return { success: false, reason: "pageId and toStateId required" };
   const current = await readPageWorkflow(pageId);
   if (!current) return { success: false, reason: "Page has no workflow assigned" };
@@ -388,9 +392,12 @@ export async function transitionPageWorkflow({ pageId, spaceKey, toStateId, acto
       approvers: Array.isArray(approvers) ? [...new Set(approvers)] : [],
       approvedAt: enteredAt,
       approvedBy: actorAccountId || null,
+      approvalRecord: approvalRecord && typeof approvalRecord === "object" ? approvalRecord : null,
     };
   } else {
-    enforceFields = { enforce: false, approvedVersion: null, approvers: [] };
+    // `...current` is spread into the record below, so the previous approval's evidence would
+    // survive a move out of Approved unless it is cleared here, with the rest of the enforce set.
+    enforceFields = { enforce: false, approvedVersion: null, approvers: [], approvalRecord: null };
   }
   // #45: a review clock uses the steward's per-space override when set (only read settings
   // when the target state actually has a review clock, to keep other transitions cheap).
@@ -415,6 +422,9 @@ export async function transitionPageWorkflow({ pageId, spaceKey, toStateId, acto
     by: actorAccountId || null,
     byName: actorName || null,
     reason: reason || null,
+    // A4: the evidence rides the log entry of the transition it completed. `details` is only
+    // added when there is something to put in it, so plain entries keep their flat shape.
+    ...(enforceFields.approvalRecord ? { details: { approvalRecord: enforceFields.approvalRecord } } : {}),
   });
   // A1: the state is persisted — the transition is a fact. Beside the legacy workflow-log
   // (kept: get-workflow-log still reads it); this is the entry the unified activity feed shows.
@@ -433,6 +443,18 @@ export async function transitionPageWorkflow({ pageId, spaceKey, toStateId, acto
       toName: target?.name || toStateId,
       reason: reason || null,
       approvedVersion: enforceFields.approvedVersion ?? null,
+      // A4: a SUMMARY only. The full approvalRecord (ids, names, free-text reasons) can pass the
+      // 1 KB details cap with two approvers, and boundDetails then drops EVERY field to a marker
+      // (A1 review F3) — from/to would vanish from the feed. The full record lives on the state
+      // record and in the workflow-log entry above.
+      approval: enforceFields.approvalRecord
+        ? {
+          outcome: enforceFields.approvalRecord.outcome,
+          mode: enforceFields.approvalRecord.mode ?? null,
+          decided: (enforceFields.approvalRecord.decisions || []).filter((d) => d.decision !== "pending").length,
+          aiGate: enforceFields.approvalRecord.aiGate?.status ?? null,
+        }
+        : null,
     },
     version: enforceFields.approvedVersion ?? null,
   });

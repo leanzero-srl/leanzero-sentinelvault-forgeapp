@@ -24,7 +24,7 @@
 import { asApp, route } from "@forge/api";
 import { kvs, WhereConditions } from "@forge/kvs";
 import { setWithTtl } from "../../shared/kvs-ttl.js";
-import { transitionPageWorkflow, readPageWorkflow, fetchLivePageVersion } from "./logic.js";
+import { transitionPageWorkflow, readPageWorkflow, fetchLivePageVersion, appendWorkflowLog } from "./logic.js";
 import { notifyApprovalRequested, notifyApprovalResolved } from "../../infra/approval-blueprints.js";
 import { recordActivity } from "../../infra/activity-log.js";
 
@@ -51,6 +51,53 @@ export function evaluateApproval(mode, min, decisions) {
   if (approved >= 1) return "approved";
   if (denied === total) return "denied";
   return "pending";
+}
+
+// --- Pure (unit-tested; no I/O). A4: the approval EVIDENCE snapshot. ---
+// The per-approver records are deleted the moment an approval resolves (clearPageApprovals),
+// so this is built from them BEFORE that delete and stored on the workflow state record
+// (`record.approvalRecord`) and in the transition's workflow-log entry (`details.approvalRecord`).
+// `records` are the strong per-key approval records over the known approver list — EVERY
+// approver is listed, so an "any"-mode approval still shows who was asked and never answered
+// (decision "pending"). `versionAtDecision` is the record's pinnedVersion: the version the
+// approver actually reviewed. A direct steward approval (no approvers, no pending) passes
+// `pending: { pinnedVersion }` and `records: []`, so the page carries the same shape once approved.
+const MAX_DECISION_ROWS = 50;   // decided rows first; the rest are counted, not listed
+const MAX_NAME = 120;
+const bound = (v, n) => (typeof v === "string" ? v.slice(0, n) : (v ?? null));
+export function buildApprovalRecord({ pending, records, outcome, completedBy, completedByName, nowIso }) {
+  const p = pending || {};
+  const all = (Array.isArray(records) ? records : []).map((r) => ({
+    accountId: r?.approverAccountId ?? null,
+    name: bound(r?.approverName, MAX_NAME),
+    decision: r?.status || "pending",
+    decidedAt: r?.decidedAt ?? null,
+    reason: bound(r?.reason, 300),
+    // The version the approver actually decided on (stamped at decide time); the request-time
+    // pin only when the decision predates that stamp.
+    versionAtDecision: typeof r?.decidedVersion === "number" ? r.decidedVersion : (typeof r?.pinnedVersion === "number" ? r.pinnedVersion : null),
+  }));
+  // A 100-approver roster with reasons would push the state record toward the KVS value cap
+  // and make the page permanently un-approvable; keep the record bounded and say what was cut.
+  const decided = all.filter((d) => d.decision !== "pending");
+  const undecided = all.filter((d) => d.decision === "pending");
+  const decisions = [...decided, ...undecided].slice(0, MAX_DECISION_ROWS);
+  return {
+    outcome: outcome === "denied" ? "denied" : outcome === "stale" ? "stale" : "approved",
+    approverCount: all.length,
+    omitted: Math.max(0, all.length - decisions.length),
+    mode: p.mode ?? null,
+    min: p.min ?? null,
+    requestedBy: p.requestedBy ?? null,
+    requestedByName: p.requestedByName ?? null,
+    requestedAt: p.requestedAt ?? null,
+    pinnedVersion: typeof p.pinnedVersion === "number" ? p.pinnedVersion : null,
+    completedAt: nowIso || new Date().toISOString(),
+    completedBy: completedBy ?? null,
+    completedByName: completedByName ?? null,
+    aiGate: p.aiGate?.required ? { status: p.aiGate.status ?? null, reason: bound(p.aiGate.reason, 320) } : null,
+    decisions,
+  };
 }
 
 // Normalize a settings.approval block → { approvers: [accountId], mode, min } or null if none.
@@ -223,15 +270,36 @@ async function finalizeApprovedTransition(pageId, stateId, pending, actorAccount
       return { success: false, reason: "Could not verify the page version — approval not applied, please retry." };
     }
     if (pending.pinnedVersion != null && live !== pending.pinnedVersion) {
+      // A4: the decisions are about to be deleted; a stale outcome must not erase who said what.
+      try {
+        const staleRecord = buildApprovalRecord({
+          pending, records: await readApprovalRecords(pageId, stateId, approvers), outcome: "stale",
+          completedBy: actorAccountId || null, completedByName: actorName || null,
+        });
+        const current = await readPageWorkflow(pageId);
+        await appendWorkflowLog(pageId, {
+          kind: "approval-stale", from: current?.stateId ?? null, to: stateId,
+          by: actorAccountId || null, byName: actorName || null,
+          reason: `page changed since review (reviewed v${pending.pinnedVersion}, now v${live})`,
+          details: { approvalRecord: staleRecord },
+        });
+      } catch (e) { console.warn("[APPROVALS] stale trace failed:", e); }
       await clearPageApprovals(pageId, stateId, approvers);
       await notifyApprovalResolved({ pageId, requestedBy: pending.requestedBy, outcome: "denied", targetName: pending.toStateName || stateId, deciderName: actorName }).catch(() => {});
       return { success: true, outcome: "stale", transitioned: false, reason: "Page changed since review — re-approval required." };
     }
+    // A4: snapshot the evidence from the strong per-key records NOW — clearPageApprovals below
+    // deletes them, and the snapshot is what the page keeps (record.approvalRecord + the log).
+    const approvalRecord = buildApprovalRecord({
+      pending, records: await readApprovalRecords(pageId, stateId, approvers), outcome: "approved",
+      completedBy: actorAccountId || null, completedByName: actorName || null,
+    });
     const res = await transitionPageWorkflow({
       pageId, spaceKey: pending.spaceKey, toStateId: stateId,
       actorAccountId: actorAccountId || pending.requestedBy || null, actorName,
       reason: voteSummary || "approved",
       approvers: pending.approvers, approvedVersion: pending.pinnedVersion,
+      approvalRecord,
     });
     // Gate side-effects on the transition ACTUALLY happening. A finalizer that lost the race
     // gets res.success=false (validateTransition no-ops on the already-left source state) and
@@ -275,7 +343,8 @@ export async function applyAiVerdict(pageId, reviewedVersion, status, reason) {
   // AI passed — complete iff the human axis is also met (else wait for the last human vote).
   const records = await readApprovalRecords(pageId, pending.toStateId, pending.approvers);
   if (!humanQuorumMet(pending, records)) return { applied: true, status: "passed", waiting: "humans" };
-  const res = await finalizeApprovedTransition(pageId, pending.toStateId, pending, null, "Sentinel Vault", "approved (AI review + approvals)");
+  // The AI was a CONDITION; the authority was the steward who requested the transition.
+  const res = await finalizeApprovedTransition(pageId, pending.toStateId, pending, pending.requestedBy || null, pending.requestedByName || "Sentinel Vault", "approved (AI review + approvals)");
   return { applied: true, status: "passed", ...res };
 }
 
@@ -300,6 +369,9 @@ export async function decideApproval({ pageId, approverAccountId, decision, reas
   record.status = decision;
   record.decidedAt = new Date().toISOString();
   record.reason = reason || null;
+  // A4: the version this approver decided on (the request pin is the version they were ASKED
+  // about; a denial after an interim save is about what they actually saw).
+  try { const lv = await fetchLivePageVersion(pageId); if (typeof lv === "number") record.decidedVersion = lv; } catch (_) { /* best-effort */ }
   if (actorName && !record.approverName) record.approverName = actorName;
   await kvs.set(key, record);
 
@@ -347,6 +419,24 @@ export async function decideApproval({ pageId, approverAccountId, decision, reas
     return decided(await finalizeApprovedTransition(pageId, stateId, freshPending, approverAccountId, actorName, voteSummary));
   }
   if (outcome === "denied") {
+    // A4 §3: a denial used to leave NO durable trace once the records were deleted. Snapshot
+    // the evidence (from `records`, read above — before the clear) into a workflow-log entry
+    // FIRST, so the trace exists even if the clear below fails midway. Shape mirrors a
+    // transition entry (from/to/by/byName/reason) plus `kind` so readers can tell it apart:
+    // the page did NOT move, it stays in `from`.
+    const approvalRecord = buildApprovalRecord({
+      pending, records, outcome: "denied",
+      completedBy: approverAccountId, completedByName: actorName || record.approverName || null,
+    });
+    await appendWorkflowLog(pageId, {
+      kind: "approval-denied",
+      from: (await readPageWorkflow(pageId))?.stateId ?? null,
+      to: stateId,
+      by: approverAccountId,
+      byName: actorName || record.approverName || null,
+      reason: "approval denied",
+      details: { approvalRecord },
+    });
     await clearPageApprovals(pageId, stateId, approvers);
     await notifyApprovalResolved({ pageId, requestedBy: pending.requestedBy, outcome: "denied", targetName: pending.toStateName || stateId, deciderName: actorName }).catch(() => {});
     return decided({ success: true, outcome: "denied" });
