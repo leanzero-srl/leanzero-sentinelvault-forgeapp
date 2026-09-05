@@ -8,6 +8,7 @@ import { kvs, WhereConditions } from "@forge/kvs";
 
 import { authorizeSteward, isOperatorSiteAdmin } from "../../shared/steward-checks.js";
 import { canEditPage, canReadPage, mustVerify, resolvePageSpaceKey } from "../../shared/content-access.js";
+import { fetchPageStatuses } from "../../shared/page-status.js";
 import {
   resolveWorkflowDef,
   loadWorkflowConfig,
@@ -338,21 +339,21 @@ const getPageApprovals = async (req) => {
 const listMyApprovalsAction = async (req) => {
   const raw = await listMyApprovals(req.context?.accountId);
   const out = [];
-  for (const r of raw.slice(0, 25)) { // bounded — the inbox is a working list, not a report
+  const head = raw.slice(0, 25); // bounded — the inbox is a working list, not a report
+  // One batch lookup for title + where the page is: an approval on a page that sits in the
+  // trash (or is gone) is not something an approver can act on, so it is not shown.
+  const status = await fetchPageStatuses(head.map((r) => r.pageId));
+  for (const r of head) {
+    const place = status.get(String(r.pageId));
+    if (place && ["trashed", "missing"].includes(place.status)) continue;
     const pending = await kvs.get(`workflow-pending-${r.pageId}`);
     if (!pending) continue; // resolved since; skip stale record
     if (pending.aiGate?.status === "failed") continue; // #46: AI review blocked it — the
     // requester must revise + re-request; don't nag approvers with a currently-blocked item
-    let pageTitle = null;
-    let spaceKey = null;
-    try {
-      const res = await asApp().requestConfluence(route`/wiki/api/v2/pages/${r.pageId}`);
-      if (res.ok) { const p = await res.json(); pageTitle = p?.title; spaceKey = p?.spaceId; }
-    } catch (_) { /* best-effort */ }
     out.push({
       pageId: r.pageId,
-      pageTitle: pageTitle || `Page ${r.pageId}`,
-      spaceKey,
+      pageTitle: place?.title || `Page ${r.pageId}`,
+      spaceKey: null,
       toStateName: pending.toStateName || r.stateId,
       requestedByName: pending.requestedByName || null,
       requestedAt: r.requestedAt,
@@ -490,30 +491,32 @@ export const getWorkflowDashboard = async (req) => {
   // rule workflowSweep's expiry pass applies. It used to be pinned to stateId === "approved".
   const isOverdue = (e) => !!(e.reviewDueAt && new Date(e.reviewDueAt).getTime() < now);
   const def = await resolveWorkflowDef(spaceKey);
+  // The index outlives the page: a trashed page keeps its row (and its state, for a restore) and
+  // a purged page's row waits for the hourly sweep. Neither is work for a steward — on
+  // 2026-09-05 every one of the thirteen pages this dashboard listed for WFH was in the trash.
+  // ONE batch lookup (250 ids a call) answers status AND title for every row, where each row
+  // used to cost its own request for the title alone.
+  const status = await fetchPageStatuses(entries.map((e) => e.pageId));
+  const placeOf = (e) => status.get(String(e.pageId))?.status || "unknown";
+  const shown = entries.filter((e) => !["trashed", "missing"].includes(placeOf(e)));
+  const inTrash = entries.filter((e) => placeOf(e) === "trashed").length;
+  const missing = entries.filter((e) => placeOf(e) === "missing").length;
   const counts = {};
   let overdue = 0;
-  for (const e of entries) {
+  for (const e of shown) {
     counts[e.stateId] = (counts[e.stateId] || 0) + 1;
     if (isOverdue(e)) overdue++;
   }
-  // Most-recently-changed first, bounded — then fetch titles in parallel.
-  const list = entries
+  // Most-recently-changed first, bounded.
+  const list = shown
     .slice()
     .sort((a, b) => String(b.enteredAt || "").localeCompare(String(a.enteredAt || "")))
     .slice(0, LIST_CAP);
-  const titles = await Promise.all(list.map(async (e) => {
-    try {
-      const res = await asApp().requestConfluence(route`/wiki/api/v2/pages/${e.pageId}`);
-      if (res.ok) { const p = await res.json(); return { id: e.pageId, title: p?.title || null, url: p?._links?.webui || null }; }
-    } catch (_) { /* best-effort */ }
-    return { id: e.pageId, title: null, url: null };
-  }));
-  const titleMap = Object.fromEntries(titles.map((t) => [t.id, t]));
   const stateName = (id) => def?.states?.find((s) => s.id === id)?.name || id;
   const pages = list.map((e) => ({
     pageId: e.pageId,
-    title: titleMap[e.pageId]?.title || `(page ${e.pageId})`,
-    url: titleMap[e.pageId]?.url || null,
+    title: status.get(String(e.pageId))?.title || `(page ${e.pageId})`,
+    url: status.get(String(e.pageId))?.url || null,
     stateId: e.stateId,
     stateName: stateName(e.stateId),
     enteredAt: e.enteredAt || null,
@@ -522,8 +525,10 @@ export const getWorkflowDashboard = async (req) => {
   }));
   return {
     spaceKey,
-    total: entries.length,
-    truncated: entries.length > LIST_CAP,
+    total: shown.length,
+    inTrash,
+    missing,
+    truncated: shown.length > LIST_CAP,
     listCap: LIST_CAP,
     overdue,
     states: (def?.states || []).map((s) => ({ id: s.id, name: s.name, color: s.color, count: counts[s.id] || 0 })),
