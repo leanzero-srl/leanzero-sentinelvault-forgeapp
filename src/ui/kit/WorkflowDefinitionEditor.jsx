@@ -118,7 +118,7 @@ const DefinitionForm = ({ initial, isExtra, onSave, onDelete, saving, message })
   );
 };
 
-export default function WorkflowDefinitionEditor({ spaceKey }) {
+export default function WorkflowDefinitionEditor({ spaceKey, onSaved = null }) {
   const [data, setData] = useState(null);
   const [saving, setSaving] = useState(false);
   const [messages, setMessages] = useState({});
@@ -138,6 +138,7 @@ export default function WorkflowDefinitionEditor({ spaceKey }) {
         setMessages((m) => ({ ...m, [key]: { type: r.warning ? "error" : "success", text: r.warning ? `Saved, but: ${r.warning}` : "Workflow saved." } }));
         setDraftExtra(null);
         await load();
+        onSaved?.();
       } else setMessages((m) => ({ ...m, [key]: { type: "error", text: r?.reason || "Could not save the workflow." } }));
     } catch (_) { setMessages((m) => ({ ...m, [key]: { type: "error", text: "Could not save the workflow." } })); }
     finally { setSaving(false); }
@@ -147,7 +148,7 @@ export default function WorkflowDefinitionEditor({ spaceKey }) {
     try {
       const r = await invoke("delete-space-workflow", { spaceKey, workflowId });
       if (!r?.success) setMessages((m) => ({ ...m, [workflowId]: { type: "error", text: r?.reason || "Could not remove the workflow." } }));
-      else await load();
+      else { await load(); onSaved?.(); }
     } finally { setSaving(false); }
   };
 

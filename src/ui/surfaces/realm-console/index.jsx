@@ -409,6 +409,7 @@ const MyClaimedCard = ({ artifact, onRelease, onExtend, busyAction, siteUrl }) =
 };
 
 const RealmPolicyDashboard = () => {
+  const [defRev, setDefRev] = useState(0); // B1: bumps when a workflow definition is saved
   const [activeTab, setActiveTab] = useState("my-claims");
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState(null);
@@ -2301,8 +2302,8 @@ const RealmPolicyDashboard = () => {
       {activeTab === "workflow" && userRole === "steward" && (
         <div className="tab-content">
           <WorkflowDashboard spaceKey={realmKey} />
-          <WorkflowSettingsEditor spaceKey={realmKey} />
-          <WorkflowDefinitionEditor spaceKey={realmKey} />
+          <WorkflowSettingsEditor spaceKey={realmKey} defRev={defRev} />
+          <WorkflowDefinitionEditor spaceKey={realmKey} onSaved={() => setDefRev((r) => r + 1)} />
         </div>
       )}
 

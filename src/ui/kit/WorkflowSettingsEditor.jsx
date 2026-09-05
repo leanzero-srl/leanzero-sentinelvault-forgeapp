@@ -174,7 +174,9 @@ const cleanDemoteTo = (demoteTo, def = null) => {
 // before the flag existed (the server treats it the same way).
 const isEnforceState = (s) => !!s?.enforce || s?.id === "approved";
 
-export default function WorkflowSettingsEditor({ spaceKey = null }) {
+// `defRev` (B1): bumped by the definition editor after a save, so the state chips, the per-state
+// review clocks and the demote-target options here follow the definition without a reload.
+export default function WorkflowSettingsEditor({ spaceKey = null, defRev = 0 }) {
   const [settings, setSettings] = useState({ enabled: false, autoAssignNew: false, workflowId: "default", approval: null, enforceMode: "demote", demoteTo: "initial", reviewAfterDays: null, reviewAfterDaysByState: {}, entryConditions: {}, syncLabels: false, readConfirmation: null, requireSignature: false });
   const [def, setDef] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -195,7 +197,7 @@ export default function WorkflowSettingsEditor({ spaceKey = null }) {
         setLoading(false);
       }
     })();
-  }, [spaceKey]);
+  }, [spaceKey, defRev]);
 
   const save = async () => {
     setSaving(true);
