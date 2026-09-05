@@ -271,6 +271,14 @@ const ApprovalEvidence = ({ workflow, siteUrl, pageId, host }) => {
                   {d.reason ? <span className="wf-appr-reason">“{d.reason}”</span> : null}
                 </li>
               ))}
+              {ar?.requestSignature && (
+                <li className="wf-appr-row wf-evidence-row" data-testid="wf-evidence-request-signed">
+                  <span className="wf-appr-name">{ar.completedByName || "Approver"}</span>
+                  <span className="wf-appr-badge wf-appr-approved">Approved</span>
+                  <span className="wf-appr-date">{fmtDate(ar.requestSignature.verifiedAt)}</span>
+                  <span className="wf-appr-signed" title="Signed with the approver's enrolled authenticator">Signed</span>
+                </li>
+              )}
               {ar?.aiGate && (
                 <li className="wf-appr-row wf-evidence-row" data-testid="wf-evidence-ai">
                   <span className="wf-appr-name">AI content review</span>
@@ -383,6 +391,11 @@ const WorkflowControl = ({ workflow, approvals, operatorId, pageId, spaceKey, si
   const [panelOpen, setPanelOpen] = useState(false);
   const [reason, setReason] = useState("");
   const [sigCode, setSigCode] = useState(""); // B3: the approver's authenticator code, when the space requires one
+  const [signMove, setSignMove] = useState(null); // B3: { toStateId, reason } — a move that must be signed (direct steward approval / AI-only gate)
+  const [moveCode, setMoveCode] = useState("");
+  const signRef = useRef(null);
+  const signBtnRef = useRef(null);
+  useDismissableDialog(!!signMove, (o) => { if (!o) setSignMove(null); }, signRef, signBtnRef);
   const [decideBusy, setDecideBusy] = useState(false);
   const [decideMsg, setDecideMsg] = useState(null);
   const btnRef = useRef(null);
@@ -450,11 +463,19 @@ const WorkflowControl = ({ workflow, approvals, operatorId, pageId, spaceKey, si
   const doTransition = useCallback(async (toStateId) => {
     setBusy(true); setError(null); setMenuOpen(false);
     try {
-      const res = await invoke("request-transition", { pageId, spaceKey, toStateId });
+      const res = await invoke("request-transition", { pageId, spaceKey, toStateId, ...(moveCode ? { code: moveCode } : {}) });
+      if (res?.signatureRequired) {
+        // The space requires a signed decision and this move IS the decision (no approvers,
+        // or an AI-only gate): ask for the code and retry with it.
+        setSignMove({ toStateId, reason: res.reason || "" });
+        setMoveCode("");
+        setMenuOpen(false);
+        return;
+      }
       // A pending result (approval and/or AI review opened) is NOT an error — reload so the
       // ribbon renders the awaiting state.
       if (res?.success || res?.pending) {
-        await onTransitioned();
+        setSignMove(null); setMoveCode(""); await onTransitioned();
         setSeat(false);
         requestAnimationFrame(() => setSeat(true)); // seat the newly-rendered state
       } else {
@@ -468,7 +489,7 @@ const WorkflowControl = ({ workflow, approvals, operatorId, pageId, spaceKey, si
       setBusy(false);
       requestAnimationFrame(() => btnRef.current?.focus()); // return focus to the trigger
     }
-  }, [pageId, spaceKey, onTransitioned]);
+  }, [moveCode, pageId, spaceKey, onTransitioned]);
 
   if (!workflow?.assigned || !workflow.state) return null;
   const state = workflow.state;
@@ -616,6 +637,22 @@ const WorkflowControl = ({ workflow, approvals, operatorId, pageId, spaceKey, si
       )}
       <ReviewDue workflow={workflow} pageId={pageId} isSteward={isSteward} host={host} onSaved={onTransitioned} />
       <ReadConfirm workflow={workflow} pageId={pageId} host={host} />
+      {signMove && inHost(host, (
+        <div className="wf-appr-panel wf-sign-panel" role="dialog" aria-label="Sign this move" ref={signRef} tabIndex={-1} data-testid="wf-sign-move">
+          <div className="wf-appr-head">Sign this move</div>
+          <div className="wf-appr-sub">{signMove.reason || "This space requires a signed decision — enter the current code from your authenticator."}</div>
+          <div className="wf-appr-sign">
+            <label className="wf-appr-sign-label">
+              <span>Authenticator code</span>
+              <input className="wf-appr-sign-input" inputMode="numeric" autoComplete="one-time-code" maxLength={8} placeholder="123 456" value={moveCode} onChange={(e) => setMoveCode(e.target.value)} aria-label="Authenticator code" data-testid="wf-sign-move-code" />
+            </label>
+          </div>
+          <div className="wf-appr-actions">
+            <button type="button" className="wf-appr-approve" disabled={busy || !moveCode.trim()} onClick={() => { const to = signMove.toStateId; doTransition(to); }} data-testid="wf-sign-move-go">Sign &amp; move</button>
+            <button type="button" className="wf-appr-deny" onClick={() => { setSignMove(null); setMoveCode(""); }}>Cancel</button>
+          </div>
+        </div>
+      ))}
       {menuOpen && inHost(host, (
         <div className="wf-menu" role="menu" aria-label={`Move ${state.name} to`} ref={menuRef} onKeyDown={onMenuKey}>
           <div className="wf-menu-head" aria-hidden="true">Move to…</div>

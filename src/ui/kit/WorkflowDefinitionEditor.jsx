@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { invoke } from "@forge/bridge";
 import { MiniSelect } from "./WorkflowSettingsEditor";
 
@@ -27,7 +27,11 @@ const DefinitionForm = ({ initial, isExtra, onSave, onDelete, saving, message })
   const [def, setDef] = useState(initial.def);
   const [labels, setLabels] = useState((initial.labels || []).join(", "));
   const [priority, setPriority] = useState(initial.priority ?? 0);
-  useEffect(() => { setDef(initial.def); setLabels((initial.labels || []).join(", ")); setPriority(initial.priority ?? 0); }, [initial]);
+  // Ids of states added in THIS editing session: their id follows the name until saved.
+  const [fresh, setFresh] = useState(() => new Set());
+  // Reset only when the server copy actually changes (the parent memoises `initial` per
+  // workflow — review finding 7: a new object per render snapped the form back on Save).
+  useEffect(() => { setDef(initial.def); setLabels((initial.labels || []).join(", ")); setPriority(initial.priority ?? 0); setFresh(new Set()); }, [initial]);
 
   const states = def.states || [];
   const transitions = def.transitions || [];
@@ -35,11 +39,12 @@ const DefinitionForm = ({ initial, isExtra, onSave, onDelete, saving, message })
   const toggle = (from, to) => setDef((d) => ({ ...d, transitions: can(from, to) ? d.transitions.filter((t) => !(t.from === from && t.to === to)) : [...(d.transitions || []), { from, to }] }));
   const patchState = (id, patch) => setDef((d) => ({ ...d, states: d.states.map((s) => (s.id === id ? { ...s, ...patch } : s)) }));
   const setInitial = (id) => setDef((d) => ({ ...d, states: d.states.map((s) => ({ ...s, initial: s.id === id })) }));
-  const addState = () => setDef((d) => {
-    const taken = new Set(d.states.map((s) => s.id));
+  const addState = () => {
+    const taken = new Set(states.map((s) => s.id));
     const id = uniqueId("new_state", taken);
-    return { ...d, states: [...d.states, { id, name: "New state", color: "neutral" }] };
-  });
+    setFresh((f) => new Set([...f, id]));
+    setDef((d) => ({ ...d, states: [...d.states, { id, name: "New state", color: "neutral" }] }));
+  };
   const removeState = (id) => setDef((d) => ({ ...d, states: d.states.filter((s) => s.id !== id), transitions: (d.transitions || []).filter((t) => t.from !== id && t.to !== id) }));
   const move = (id, dir) => setDef((d) => {
     const i = d.states.findIndex((s) => s.id === id); const j = i + dir;
@@ -47,12 +52,13 @@ const DefinitionForm = ({ initial, isExtra, onSave, onDelete, saving, message })
     const next = d.states.slice(); [next[i], next[j]] = [next[j], next[i]];
     return { ...d, states: next };
   });
-  // A brand-new state's id follows its name until the definition is saved (then it is fixed).
+  // A brand-new state's id follows its name (every keystroke) until the definition is saved —
+  // tracked in `fresh`, not inferred from the id text (review finding 8: "Legal review" became "l").
   const renameState = (s, name) => {
-    const isFresh = /^new_state(_\d+)?$/.test(s.id) && !initial.def.states.some((x) => x.id === s.id);
-    if (!isFresh) return patchState(s.id, { name });
+    if (!fresh.has(s.id)) return patchState(s.id, { name });
     const taken = new Set(states.filter((x) => x.id !== s.id).map((x) => x.id));
     const id = uniqueId(slug(name), taken);
+    if (id !== s.id) setFresh((f) => { const n = new Set(f); n.delete(s.id); n.add(id); return n; });
     setDef((d) => ({ ...d, states: d.states.map((x) => (x.id === s.id ? { ...x, id, name } : x)), transitions: (d.transitions || []).map((t) => ({ from: t.from === s.id ? id : t.from, to: t.to === s.id ? id : t.to })) }));
   };
 
@@ -152,6 +158,10 @@ export default function WorkflowDefinitionEditor({ spaceKey, onSaved = null }) {
     } finally { setSaving(false); }
   };
 
+  // Memoised per load so a form only resets when the SERVER copy changes, never on a re-render.
+  const initialDefault = useMemo(() => (data?.default ? { def: data.default, labels: [], priority: 0 } : null), [data]);
+  const initialExtras = useMemo(() => (data?.extras || []).filter((x) => x.def).map((x) => ({ workflowId: x.workflowId, def: x.def, labels: x.labels, priority: x.priority })), [data]);
+
   if (!data) return null;
   if (data.error) return <div className="wf-dash-error" role="status">Couldn’t load the workflow definitions. Reload the page to try again.</div>;
 
@@ -168,11 +178,11 @@ export default function WorkflowDefinitionEditor({ spaceKey, onSaved = null }) {
       </div>
       {open && (
         <>
-          <DefinitionForm initial={{ def: data.default, labels: [], priority: 0 }} isExtra={false} onSave={(p) => save(p, "default")} saving={saving} message={messages.default} />
+          <DefinitionForm initial={initialDefault} isExtra={false} onSave={(p) => save(p, "default")} saving={saving} message={messages.default} />
           <h4 className="wf-defs-sub">Workflows for labelled pages</h4>
           <p className="wf-dash-sub">A page created with one of these labels starts this workflow instead of the default (the highest priority wins when several match). Pages already assigned keep the workflow they have.</p>
-          {(data.extras || []).map((x) => x.def && (
-            <DefinitionForm key={x.workflowId} initial={{ def: x.def, labels: x.labels, priority: x.priority }} isExtra onSave={(p) => save(p, x.workflowId)} onDelete={remove} saving={saving} message={messages[x.workflowId]} />
+          {initialExtras.map((x) => (
+            <DefinitionForm key={x.workflowId} initial={x} isExtra onSave={(p) => save(p, x.workflowId)} onDelete={remove} saving={saving} message={messages[x.workflowId]} />
           ))}
           {draftExtra ? (
             <DefinitionForm initial={draftExtra} isExtra onSave={(p) => save(p, draftExtra.def.id)} onDelete={() => setDraftExtra(null)} saving={saving} message={messages[draftExtra.def.id]} />
