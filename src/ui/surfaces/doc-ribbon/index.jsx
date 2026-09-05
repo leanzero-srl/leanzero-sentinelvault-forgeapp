@@ -414,7 +414,7 @@ const WorkflowControl = ({ workflow, approvals, operatorId, pageId, spaceKey, si
     } finally {
       setDecideBusy(false);
     }
-  }, [pageId, reason, onTransitioned]);
+  }, [pageId, reason, sigCode, onTransitioned]); // B3: the code is read at click time, not from the first render
 
   // Close on outside click, or when focus leaves both the trigger and the menu.
   useEffect(() => {
