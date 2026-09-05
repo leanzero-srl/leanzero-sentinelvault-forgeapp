@@ -27,7 +27,7 @@ export const ACTIVITY_CATEGORIES = Object.freeze([
   ]) },
   { id: "workflow", label: "Workflow", types: Object.freeze([
     "workflow.transition", "workflow.approval-requested", "workflow.approval-decided",
-    "workflow.enforced", "workflow.expired", "workflow.review-due",
+    "workflow.enforced", "workflow.expired", "workflow.review-due", "workflow.read-confirmed",
   ]) },
   { id: "validation", label: "Validation", types: Object.freeze([
     "validation.reverted", "validation.gate",
@@ -272,6 +272,11 @@ export function formatActivity(entry) {
       return { ...base, label: d.to ? "Review date set" : "Review date cleared", glyph: "clock", tone: "info",
         sentence: d.to ? `${who} set the review date to ${formatAbsolute(d.to)}` : `${who} cleared the review date`,
         detail: [d.from ? `was ${formatAbsolute(d.from)}` : "", d.reason ? String(d.reason) : ""].filter(Boolean).join(" · ") };
+
+    case "workflow.read-confirmed":
+      return { ...base, label: "Read confirmed", glyph: "check", tone: "info",
+        sentence: `${who} confirmed reading ${d.version != null ? `version ${d.version} of ` : ""}this page`,
+        detail: "" };
 
     // ── Validation ──
     case "validation.reverted": {

@@ -14,6 +14,7 @@ import { asApp, route } from "@forge/api";
 import { kvs, WhereConditions } from "@forge/kvs";
 import { recordActivity } from "../../infra/activity-log.js";
 import { syncStateLabel } from "./label-sync.js";
+import { sanitizeReadConfirmation } from "./read-acks.js";
 
 export const WORKFLOW_STATE_PROP = "sentinel-vault-workflow";
 
@@ -490,6 +491,8 @@ export async function setSpaceWorkflowSettings(spaceKey, settings) {
     entryConditions: sanitizeEntryConditions(settings?.entryConditions),
     // B4: mirror the state as `sv-state-{id}` so Content by Label / CQL can filter on it.
     syncLabels: settings?.syncLabels === true,
+    // B2: read confirmations on approved pages — { enabled, audience: [{type,id,name}] } or null.
+    readConfirmation: sanitizeReadConfirmation(settings?.readConfirmation),
   };
   // Optional approval config for the enforce transition (#43). Shape:
   // { approvers: [{ type:"user"|"group", id, name }], mode:"any"|"all"|"min", min }.

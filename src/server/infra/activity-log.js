@@ -33,7 +33,7 @@ export const ACTIVITY_TYPES = Object.freeze([
   "section.sealed", "section.released", "section.restored", "section.reverted",
   "editreq.requested", "editreq.approved", "editreq.denied", "editreq.revoked",
   "workflow.transition", "workflow.approval-requested", "workflow.approval-decided",
-  "workflow.enforced", "workflow.expired", "workflow.review-due",
+  "workflow.enforced", "workflow.expired", "workflow.review-due", "workflow.read-confirmed",
   "validation.reverted", "validation.gate",
 ]);
 

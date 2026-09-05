@@ -175,7 +175,7 @@ const cleanDemoteTo = (demoteTo, def = null) => {
 const isEnforceState = (s) => !!s?.enforce || s?.id === "approved";
 
 export default function WorkflowSettingsEditor({ spaceKey = null }) {
-  const [settings, setSettings] = useState({ enabled: false, autoAssignNew: false, workflowId: "default", approval: null, enforceMode: "demote", demoteTo: "initial", reviewAfterDays: null, reviewAfterDaysByState: {}, entryConditions: {}, syncLabels: false });
+  const [settings, setSettings] = useState({ enabled: false, autoAssignNew: false, workflowId: "default", approval: null, enforceMode: "demote", demoteTo: "initial", reviewAfterDays: null, reviewAfterDaysByState: {}, entryConditions: {}, syncLabels: false, readConfirmation: null });
   const [def, setDef] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -187,7 +187,7 @@ export default function WorkflowSettingsEditor({ spaceKey = null }) {
     (async () => {
       try {
         const r = await invoke("get-space-workflow-settings", { spaceKey });
-        if (r?.settings) setSettings({ enabled: !!r.settings.enabled, autoAssignNew: !!r.settings.autoAssignNew, workflowId: r.settings.workflowId || "default", approval: r.settings.approval || null, enforceMode: r.settings.enforceMode === "revert" ? "revert" : "demote", demoteTo: cleanDemoteTo(r.settings.demoteTo, r.def), reviewAfterDays: r.settings.reviewAfterDays ?? null, reviewAfterDaysByState: cleanClocks(r.settings.reviewAfterDaysByState, r.def), entryConditions: r.settings.entryConditions || {}, syncLabels: !!r.settings.syncLabels });
+        if (r?.settings) setSettings({ enabled: !!r.settings.enabled, autoAssignNew: !!r.settings.autoAssignNew, workflowId: r.settings.workflowId || "default", approval: r.settings.approval || null, enforceMode: r.settings.enforceMode === "revert" ? "revert" : "demote", demoteTo: cleanDemoteTo(r.settings.demoteTo, r.def), reviewAfterDays: r.settings.reviewAfterDays ?? null, reviewAfterDaysByState: cleanClocks(r.settings.reviewAfterDaysByState, r.def), entryConditions: r.settings.entryConditions || {}, syncLabels: !!r.settings.syncLabels, readConfirmation: r.settings.readConfirmation || null });
         if (r?.def) setDef(r.def);
       } catch (e) {
         console.error("Load workflow settings failed:", e);
@@ -273,6 +273,29 @@ export default function WorkflowSettingsEditor({ spaceKey = null }) {
           >
             <Toggle label="Show the state as a page label" checked={!!settings.syncLabels} onChange={(e) => setSettings((p) => ({ ...p, syncLabels: e.target.checked }))} />
           </SettingsRow>
+
+          <SettingsRow
+            label="Ask readers to confirm they have read Approved pages"
+            description="While a page is Approved, the people and groups below are asked to confirm they have read the approved version; the ribbon shows who has. A new approved version asks again."
+          >
+            <Toggle label="Ask readers to confirm they have read Approved pages" checked={!!settings.readConfirmation?.enabled} onChange={(e) => setSettings((p) => ({ ...p, readConfirmation: { enabled: e.target.checked, audience: p.readConfirmation?.audience || [] } }))} />
+          </SettingsRow>
+          {settings.readConfirmation?.enabled && (
+            <div className="nested-control" data-testid="wf-read-audience">
+              <SettingsRow label="Readers" description="People who must confirm.">
+                <UserPicker
+                  selected={(settings.readConfirmation.audience || []).filter((a) => (a.type || "user") === "user")}
+                  onChange={(users) => setSettings((p) => ({ ...p, readConfirmation: { ...p.readConfirmation, audience: [...users, ...(p.readConfirmation.audience || []).filter((a) => a.type === "group")] } }))}
+                />
+              </SettingsRow>
+              <SettingsRow label="Reader groups" description="Everyone in these groups must confirm.">
+                <GroupPicker
+                  selected={(settings.readConfirmation.audience || []).filter((a) => a.type === "group")}
+                  onChange={(groups) => setSettings((p) => ({ ...p, readConfirmation: { ...p.readConfirmation, audience: [...(p.readConfirmation.audience || []).filter((a) => (a.type || "user") === "user"), ...groups] } }))}
+                />
+              </SettingsRow>
+            </div>
+          )}
 
           <SettingsRow label="Workflow states" description="The states every page moves through.">
             <div className="wf-state-preview">

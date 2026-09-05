@@ -47,6 +47,9 @@ eq("a pre-A2 demote row still says Draft", formatActivity(base("workflow.enforce
 const over = formatActivity(base("workflow.expired", { actor: { accountId: null, name: null }, details: { from: "in_review", fromName: "In Review", noTransition: true, reviewDueAt: "2026-09-01T00:00:00.000Z" } }));
 ok("overdue-without-transition does not claim the page moved", !/moved to Expired/.test(over.sentence) && /overdue/.test(over.sentence) && /In Review/.test(over.sentence));
 eq("a plain expiry still says it moved", formatActivity(base("workflow.expired")).label, "Approval expired");
+const readAck = formatActivity(base("workflow.read-confirmed", { details: { version: 4, stateId: "approved" } }));
+eq("read confirmed names the version", readAck.sentence, "Alice Stone confirmed reading version 4 of this page");
+eq("read confirmed is a workflow row", readAck.label, "Read confirmed");
 const setDue = formatActivity(base("workflow.review-due", { details: { from: null, to: "2026-10-01T00:00:00.000Z" } }));
 ok("review date set: '{name} set the review date to {date}'", /^Alice Stone set the review date to .*2026/.test(setDue.sentence));
 eq("review date set is a Workflow row", setDue.category, "workflow");
