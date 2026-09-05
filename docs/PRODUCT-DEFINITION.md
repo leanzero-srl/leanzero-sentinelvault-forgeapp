@@ -134,6 +134,10 @@ between is built and verified on dev but not shipped:
 - Trashed pages leave the workflow dashboard, inbox and sweep; purged pages lose their keys.
 - **A7** Cross-space "My work" global page (approvals, edit requests on my seals, my seals).
 - Edit-request owner index (the last site-wide scan filtered client-side).
+- **Tier B (owner: "do the Tier B items too now", 2026-09-05):** B4 label sync (`sv-state-{id}`),
+  B2 read confirmations, B3 signed decisions (TOTP), B1 definition editor + label-scoped
+  workflows. **B5 webhook deliberately not built** — it needs an egress permission (major
+  version, re-consent, loss of "Runs on Atlassian"); that trade is the owner's to make.
 
 Shipping requires the paid plan to be live in the Partner portal (`deploy-prod.sh` refuses
 without `--licensing-live`) and is a minor bump — none of it61–it66 adds a scope; the
