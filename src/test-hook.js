@@ -429,6 +429,19 @@ export async function testStateTrigger(req) {
       }
       // A5: the steward-editable review date, through the REGISTERED resolver (both gates run, so
       // the actor must be a REAL account that can edit the page; `reviewDueAt` "" / "null" clears).
+      // B2: read confirmations — the caller's own ack, the counts, and the steward report.
+      if (fn === "confirmRead") {
+        const r = await byKey(workflowActions, "confirm-read")({ payload: { pageId: q(req, "pageId") }, context: { accountId: q(req, "actor"), extension: {} } });
+        return json(200, { invoked: fn, result: r });
+      }
+      if (fn === "getReadStatus") {
+        const r = await byKey(workflowActions, "get-read-status")({ payload: { pageId: q(req, "pageId") }, context: { accountId: q(req, "actor"), extension: {} } });
+        return json(200, { invoked: fn, result: r });
+      }
+      if (fn === "getReadReport") {
+        const r = await byKey(workflowActions, "get-read-report")({ payload: { pageId: q(req, "pageId") }, context: { accountId: q(req, "actor"), extension: {} } });
+        return json(200, { invoked: fn, result: r });
+      }
       if (fn === "setReviewDue") {
         const raw = q(req, "reviewDueAt");
         const r = await byKey(workflowActions, "set-review-due")({
