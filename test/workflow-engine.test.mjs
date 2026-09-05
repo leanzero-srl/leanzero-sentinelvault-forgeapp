@@ -11,7 +11,7 @@ import {
   shouldAutoAssign,
   findDeadEndStates,
 } from "../src/server/capsules/workflow/logic.js";
-import { evaluateApproval, resolveApprovers, inboxKey, isOrphanApproval, ORPHAN_APPROVAL_MIN_AGE_MS } from "../src/server/capsules/workflow/approvals.js";
+import { evaluateApproval, resolveApprovers, inboxKey, isOrphanApproval, ORPHAN_APPROVAL_MIN_AGE_MS, buildApprovalRecord } from "../src/server/capsules/workflow/approvals.js";
 import { eq, ok, report } from "./_assert.mjs";
 
 // --- findState / getInitialState ---
@@ -131,6 +131,72 @@ eq("inboxKey is per approver then page", inboxKey("712020:abc", "123"), "workflo
   ok("exactly at the age threshold counts as old", isOrphanApproval(edge, false, NOW));
   ok("a record with no requestedAt and no pending is an orphan (nothing can be waiting on it)", isOrphanApproval({}, false, NOW));
   ok("a record with a garbage requestedAt and no pending is an orphan", isOrphanApproval({ requestedAt: "yesterday" }, false, NOW));
+}
+
+// --- A4: buildApprovalRecord — the evidence snapshot taken before the per-approver records are deleted ---
+{
+  const NOW = "2026-09-05T12:00:00.000Z";
+  const pending = {
+    toStateId: "approved", mode: "min", min: 2, requestedBy: "712020:req", requestedByName: "Requester",
+    requestedAt: "2026-09-05T10:00:00.000Z", pinnedVersion: 7, approvers: ["712020:a", "712020:b", "712020:c"],
+    aiGate: { required: true, status: "passed", threshold: "medium", reviewedVersion: 7, reason: "No issues found." },
+  };
+  const records = [
+    { approverAccountId: "712020:a", approverName: "Alice", status: "approved", decidedAt: "2026-09-05T11:00:00.000Z", reason: "LGTM", pinnedVersion: 7 },
+    { approverAccountId: "712020:b", approverName: "Bob", status: "denied", decidedAt: "2026-09-05T11:30:00.000Z", reason: "Section 3 is wrong", pinnedVersion: 7 },
+    { approverAccountId: "712020:c", status: "pending" }, // the readApprovalRecords fallback for a never-written key
+  ];
+  const rec = buildApprovalRecord({ pending, records, outcome: "approved", completedBy: "712020:a", completedByName: "Alice", nowIso: NOW });
+  eq("outcome is carried", rec.outcome, "approved");
+  eq("mode and min are carried from the pending record", [rec.mode, rec.min], ["min", 2]);
+  eq("requester provenance is carried", [rec.requestedBy, rec.requestedByName, rec.requestedAt], ["712020:req", "Requester", "2026-09-05T10:00:00.000Z"]);
+  eq("pinnedVersion is the version the approval was opened on", rec.pinnedVersion, 7);
+  eq("completion is who/when/name", [rec.completedBy, rec.completedByName, rec.completedAt], ["712020:a", "Alice", NOW]);
+  eq("aiGate is copied as status + reason only", rec.aiGate, { status: "passed", reason: "No issues found." });
+  eq("one decision row per approver record, in order", rec.decisions.length, 3);
+  eq("decision row maps name/decision/decidedAt/reason/versionAtDecision from the record", rec.decisions[0],
+    { accountId: "712020:a", name: "Alice", decision: "approved", decidedAt: "2026-09-05T11:00:00.000Z", reason: "LGTM", versionAtDecision: 7 });
+  eq("a denial row keeps its reason", [rec.decisions[1].decision, rec.decisions[1].reason], ["denied", "Section 3 is wrong"]);
+  eq("an approver who never answered is listed as pending with nulls, not dropped", rec.decisions[2],
+    { accountId: "712020:c", name: null, decision: "pending", decidedAt: null, reason: null, versionAtDecision: null });
+  eq("the exact stored key set (the UI and harness assert on it)", Object.keys(rec).sort(),
+    ["aiGate", "approverCount", "completedAt", "completedBy", "completedByName", "decisions", "min", "mode", "omitted", "outcome", "pinnedVersion", "requestedAt", "requestedBy", "requestedByName"]);
+
+  const denied = buildApprovalRecord({ pending: { ...pending, aiGate: null }, records, outcome: "denied", completedBy: "712020:b", completedByName: "Bob", nowIso: NOW });
+  eq("denied outcome is carried", denied.outcome, "denied");
+  eq("no AI gate -> aiGate null (not an empty object)", denied.aiGate, null);
+  eq("an aiGate that was never required is also null", buildApprovalRecord({ pending: { aiGate: { required: false, status: "x" } }, records: [], outcome: "approved", nowIso: NOW }).aiGate, null);
+
+  // Direct steward approval (request-transition, enforce target, no approvers, no AI): no pending
+  // record exists — the page still gets an evidence block, with the same key set.
+  const direct = buildApprovalRecord({ pending: { pinnedVersion: 4 }, records: [], outcome: "approved", completedBy: "712020:s", completedByName: "Steward", nowIso: NOW });
+  eq("direct steward approval: no mode/min, no decisions, pinned to the approved version", [direct.mode, direct.min, direct.decisions, direct.pinnedVersion], [null, null, [], 4]);
+  eq("direct steward approval: requester fields are null, not undefined", [direct.requestedBy, direct.requestedByName, direct.requestedAt], [null, null, null]);
+  eq("direct steward approval: same key set as a quorum approval", Object.keys(direct).sort(), Object.keys(rec).sort());
+
+  // Defensive: garbage in never throws and never yields undefined fields.
+  const bare = buildApprovalRecord({ pending: null, records: null, outcome: "bogus" });
+  eq("unknown outcome falls back to approved (only two outcomes exist)", bare.outcome, "approved");
+  eq("null inputs -> empty decisions", bare.decisions, []);
+  ok("completedAt defaults to now when nowIso is omitted", typeof bare.completedAt === "string" && !Number.isNaN(Date.parse(bare.completedAt)));
+  ok("no field is ever undefined (KVS/JSON would silently drop it)", Object.values(bare).every((v) => v !== undefined));
+  eq("a non-numeric pinnedVersion is stored as null", buildApprovalRecord({ pending: { pinnedVersion: "7" }, records: [{ pinnedVersion: "7" }], outcome: "approved", nowIso: NOW }).pinnedVersion, null);
+}
+
+// A4 review F7/F4/F2: bounded rows (decided first), decidedVersion wins, a third outcome
+{
+  const many = Array.from({ length: 60 }, (_, i) => ({ approverAccountId: `a${i}`, status: i < 5 ? "approved" : "pending", pinnedVersion: 3, decidedVersion: i < 5 ? 4 : undefined }));
+  const r = buildApprovalRecord({ pending: { mode: "min", min: 5, pinnedVersion: 3 }, records: many, outcome: "approved" });
+  eq("decision rows are capped at 50", r.decisions.length, 50);
+  eq("…and the cut is counted", r.omitted, 10);
+  eq("…with the roster size kept", r.approverCount, 60);
+  ok("decided rows come first", r.decisions.slice(0, 5).every((d) => d.decision === "approved"));
+  eq("decidedVersion wins over the request pin", r.decisions[0].versionAtDecision, 4);
+  eq("an undecided row keeps the request pin", r.decisions[5].versionAtDecision, 3);
+  eq("a stale outcome is its own value", buildApprovalRecord({ pending: {}, records: [], outcome: "stale" }).outcome, "stale");
+  const longName = buildApprovalRecord({ pending: {}, records: [{ approverAccountId: "x", status: "approved", approverName: "n".repeat(500), reason: "r".repeat(900) }], outcome: "approved" }).decisions[0];
+  eq("names are bounded", longName.name.length, 120);
+  eq("reasons are bounded", longName.reason.length, 300);
 }
 
 report("workflow-engine");
