@@ -166,7 +166,7 @@ eq("inboxKey is per approver then page", inboxKey("712020:abc", "123"), "workflo
   eq("an approver who never answered is listed as pending with nulls, not dropped", rec.decisions[2],
     { accountId: "712020:c", name: null, decision: "pending", decidedAt: null, reason: null, versionAtDecision: null , signed: false, signedWithDeviceEnrolledAt: null});
   eq("the exact stored key set (the UI and harness assert on it)", Object.keys(rec).sort(),
-    ["aiGate", "approverCount", "completedAt", "completedBy", "completedByName", "decisions", "min", "mode", "omitted", "outcome", "pinnedVersion", "requestedAt", "requestedBy", "requestedByName"]);
+    ["aiGate", "approverCount", "completedAt", "completedBy", "completedByName", "decisions", "min", "mode", "omitted", "outcome", "pinnedVersion", "requestSignature", "requestedAt", "requestedBy", "requestedByName"]);
 
   const denied = buildApprovalRecord({ pending: { ...pending, aiGate: null }, records, outcome: "denied", completedBy: "712020:b", completedByName: "Bob", nowIso: NOW });
   eq("denied outcome is carried", denied.outcome, "denied");
