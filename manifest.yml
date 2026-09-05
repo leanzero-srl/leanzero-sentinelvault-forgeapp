@@ -145,6 +145,19 @@ modules:
       resolver:
         function: action-router
 
+  # A7: one page, every space — what Sentinel Vault is waiting on the current user for
+  # (approvals, edit requests on their sealed files) and the files they hold sealed.
+  # Composes list-my-approvals / list-my-edit-requests / enumerate-operator-seals, all
+  # scoped to req.context.accountId. No new scope; a module without one is a minor version.
+  confluence:globalPage:
+    - key: my-work
+      title: "Sentinel Vault — My work"
+      route: my-work
+      resource: my-work
+      resolver:
+        function: action-router
+      icon: "static/steward-console/assets/icon.png"
+
   # Realm-level administration (Custom UI)
   # Only visible to space administrators
   confluence:spacePage:
@@ -171,6 +184,8 @@ resources:
     path: static/panel-setup
   - key: section-setup-ui
     path: static/section-setup
+  - key: my-work
+    path: static/my-work
 
 permissions:
   scopes:

@@ -1,9 +1,15 @@
 # Coverage Proof — Sentinel Vault
 
-Generated 2026-09-05T17:36:33.330Z by `scripts/coverage-proof.mjs` (parsed inventory — never hand-maintained; do not edit).
+Generated 2026-09-05T19:40:17.923Z by `scripts/coverage-proof.mjs` (parsed inventory — never hand-maintained; do not edit).
 
-**197 inventory items** — 145 string-verified, 40 annotated, 12 gaps.
-Evidence: 97 files (harness specs, app e2e scripts, unit tests).
+**201 inventory items** — 148 string-verified, 40 annotated, 13 gaps.
+Evidence: 104 files (harness specs, app e2e scripts, unit tests).
+
+## manifest/confluence:globalPage (1 items, 1 gaps)
+
+| Item | Coverage | Evidence |
+|---|---|---|
+| `my-work` | **GAP** | — |
 
 ## manifest/confluence:globalSettings (1 items, 0 gaps)
 
@@ -44,7 +50,7 @@ Evidence: 97 files (harness specs, app e2e scripts, unit tests).
 | `expiry-sweep-scheduled` | annotated | harness/expiry-sweep.spec.ts (annotated) |
 | `recurring-nudge-scheduled` | string-verified | harness/trigger-guards.spec.ts |
 | `seal-index-cron` | string-verified | harness/trigger-guards.spec.ts |
-| `workflow-sweep-scheduled` | string-verified | e2e/workflow-conditions-e2e.mjs, e2e/workflow-enforce-e2e.mjs |
+| `workflow-sweep-scheduled` | string-verified | harness/review-due.spec.ts, harness/workflow-trashed-pages.spec.ts, e2e/workflow-conditions-e2e.mjs, e2e/workflow-enforce-e2e.mjs |
 
 ## manifest/trigger-events (7 items, 0 gaps)
 
@@ -92,8 +98,8 @@ Evidence: 97 files (harness specs, app e2e scripts, unit tests).
 | `request-edit-access` | string-verified | harness/editreq-request-lifecycle.spec.ts |
 | `check-edit-request` | annotated | harness/editreq-request-lifecycle.spec.ts (annotated) |
 | `list-edit-requests` | annotated | harness/lapsed-seal-lifecycle.spec.ts (annotated), harness/page-editrequest-approve.spec.ts (annotated) |
-| `list-my-edit-requests` | annotated | harness/editreq-request-lifecycle.spec.ts (annotated) |
-| `approve-edit-request` | annotated | harness/lapsed-seal-lifecycle.spec.ts (annotated), harness/page-editrequest-approve.spec.ts (annotated) |
+| `list-my-edit-requests` | annotated | harness/editreq-request-lifecycle.spec.ts (annotated), harness/my-work-page.spec.ts (annotated) |
+| `approve-edit-request` | annotated | harness/lapsed-seal-lifecycle.spec.ts (annotated), harness/my-work-page.spec.ts (annotated), harness/page-editrequest-approve.spec.ts (annotated) |
 | `deny-edit-request` | annotated | harness/editreq-request-lifecycle.spec.ts (annotated), harness/page-editrequest-deny-revoke.spec.ts (annotated) |
 | `revoke-edit-grant` | annotated | harness/page-editrequest-deny-revoke.spec.ts (annotated), e2e/editgrant-revoke-e2e.mjs (annotated) |
 | `list-edit-grants` | annotated | harness/page-editrequest-deny-revoke.spec.ts (annotated), e2e/editgrant-revoke-e2e.mjs (annotated) |
@@ -173,7 +179,7 @@ Evidence: 97 files (harness specs, app e2e scripts, unit tests).
 | `unseal-artifact` | string-verified | harness/page-seal-unseal.spec.ts |
 | `extend-seal` | string-verified | harness/operator-seals-stamp.spec.ts, harness/lapsed-seal-lifecycle.spec.ts (annotated) |
 | `enumerate-doc-artifacts` | annotated | harness/page-seal-state.spec.ts (annotated), harness/page-seal-unseal.spec.ts (annotated) |
-| `enumerate-operator-seals` | string-verified | harness/operator-seals-stamp.spec.ts, harness/realm-directory-lists.spec.ts |
+| `enumerate-operator-seals` | string-verified | harness/operator-seals-stamp.spec.ts, harness/realm-directory-lists.spec.ts, harness/my-work-page.spec.ts (annotated) |
 | `enumerate-page-seals` | string-verified | harness/sealed-delete-restore-journey.spec.ts |
 | `check-seal-stamp` | string-verified | harness/operator-seals-stamp.spec.ts |
 | `restore-sealed-artifact` | string-verified | harness/restore-gate.spec.ts |
@@ -205,37 +211,38 @@ Evidence: 97 files (harness specs, app e2e scripts, unit tests).
 | `set-ai-finding-state` | string-verified | harness/validation-readouts.spec.ts |
 | `get-validation-audit` | **GAP** | — |
 
-## resolver/workflow (15 items, 1 gaps)
+## resolver/workflow (16 items, 1 gaps)
 
 | Item | Coverage | Evidence |
 |---|---|---|
-| `get-page-workflow` | string-verified | harness/page-ribbon-workflow.spec.ts |
-| `get-workflow-dashboard` | annotated | e2e/workflow-enforce-e2e.mjs (annotated) |
-| `get-workflow-log` | annotated | e2e/workflow-e2e.mjs (annotated) |
+| `get-page-workflow` | string-verified | harness/approval-evidence.spec.ts, harness/page-ribbon-workflow.spec.ts |
+| `get-workflow-dashboard` | annotated | harness/workflow-trashed-pages.spec.ts (annotated), e2e/workflow-enforce-e2e.mjs (annotated) |
+| `get-workflow-log` | annotated | harness/approval-evidence.spec.ts (annotated), e2e/workflow-e2e.mjs (annotated) |
 | `assign-workflow` | annotated | e2e/workflow-e2e.mjs (annotated) |
-| `request-transition` | string-verified | e2e/workflow-conditions-e2e.mjs |
+| `request-transition` | string-verified | e2e/workflow-conditions-e2e.mjs, unit/workflow-engine.test.mjs |
 | `load-workflow-config` | **GAP** | — |
 | `store-workflow-config` | annotated | harness/workflow-deadend-warn.spec.ts (annotated) |
-| `get-space-workflow-settings` | annotated | harness/realm-workflow-persist.spec.ts (annotated), e2e/workflow-autoassign-e2e.mjs (annotated) |
-| `set-space-workflow-settings` | string-verified | harness/realm-workflow-persist.spec.ts |
+| `get-space-workflow-settings` | annotated | harness/realm-workflow-persist.spec.ts (annotated), harness/workflow-demote-target.spec.ts (annotated), e2e/workflow-autoassign-e2e.mjs (annotated) |
+| `set-space-workflow-settings` | string-verified | harness/realm-workflow-persist.spec.ts, harness/workflow-demote-target.spec.ts (annotated) |
+| `set-review-due` | string-verified | harness/review-due.spec.ts, harness/ribbon-review-due.spec.ts (annotated) |
 | `bulk-assign-workflow` | annotated | e2e/workflow-bulk-e2e.mjs (annotated) |
-| `decide-approval` | string-verified | harness/page-ribbon-workflow.spec.ts, harness/ribbon-approval-dialog.spec.ts |
+| `decide-approval` | string-verified | harness/page-ribbon-workflow.spec.ts, harness/ribbon-approval-dialog.spec.ts, harness/approval-evidence.spec.ts (annotated) |
 | `get-page-approvals` | string-verified | harness/ribbon-approval-dialog.spec.ts |
-| `list-my-approvals` | string-verified | harness/workflow-pickers-inbox.spec.ts |
+| `list-my-approvals` | string-verified | harness/workflow-pickers-inbox.spec.ts, harness/workflow-trashed-pages.spec.ts (annotated) |
 | `search-workflow-users` | string-verified | harness/workflow-pickers-inbox.spec.ts |
 | `search-workflow-groups` | annotated | harness/workflow-pickers-inbox.spec.ts (annotated) |
 
-## testhook/invoke-seams (75 items, 1 gaps)
+## testhook/invoke-seams (77 items, 1 gaps)
 
 | Item | Coverage | Evidence |
 |---|---|---|
 | `expirySweep` | string-verified | harness/expiry-sweep.spec.ts, harness/lapsed-seal-lifecycle.spec.ts |
-| `assignWorkflow` | string-verified | harness/page-ribbon-workflow.spec.ts, harness/ribbon-approval-dialog.spec.ts, harness/workflow-pickers-inbox.spec.ts, e2e/workflow-approval-e2e.mjs, e2e/workflow-conditions-e2e.mjs, e2e/workflow-e2e.mjs … +1 more |
-| `transitionWorkflow` | string-verified | harness/ribbon-approval-dialog.spec.ts, harness/workflow-pickers-inbox.spec.ts, e2e/workflow-approval-e2e.mjs, e2e/workflow-conditions-e2e.mjs, e2e/workflow-e2e.mjs, e2e/workflow-enforce-e2e.mjs |
-| `workflowSweep` | string-verified | e2e/workflow-conditions-e2e.mjs, e2e/workflow-enforce-e2e.mjs |
-| `enforceDecision` | string-verified | e2e/workflow-enforce-e2e.mjs |
+| `assignWorkflow` | string-verified | harness/approval-evidence.spec.ts, harness/my-work-page.spec.ts, harness/page-ribbon-workflow.spec.ts, harness/review-due.spec.ts, harness/ribbon-approval-dialog.spec.ts, harness/ribbon-review-due.spec.ts … +7 more |
+| `transitionWorkflow` | string-verified | harness/approval-evidence.spec.ts, harness/my-work-page.spec.ts, harness/review-due.spec.ts, harness/ribbon-approval-dialog.spec.ts, harness/ribbon-review-due.spec.ts, harness/workflow-demote-target.spec.ts … +6 more |
+| `workflowSweep` | string-verified | harness/review-due.spec.ts, harness/workflow-trashed-pages.spec.ts, e2e/workflow-conditions-e2e.mjs, e2e/workflow-enforce-e2e.mjs |
+| `enforceDecision` | string-verified | harness/workflow-demote-target.spec.ts, e2e/workflow-enforce-e2e.mjs |
 | `sweepRevert` | string-verified | e2e/workflow-enforce-e2e.mjs |
-| `dashboard` | string-verified | e2e/workflow-enforce-e2e.mjs |
+| `dashboard` | string-verified | harness/realm-workflow-persist.spec.ts, harness/review-due.spec.ts, harness/workflow-trashed-pages.spec.ts, e2e/workflow-enforce-e2e.mjs |
 | `reqTransition` | string-verified | e2e/workflow-conditions-e2e.mjs |
 | `aiVerdict` | string-verified | e2e/workflow-conditions-e2e.mjs |
 | `listEditRequests` | string-verified | harness/lapsed-seal-lifecycle.spec.ts |
@@ -263,12 +270,14 @@ Evidence: 97 files (harness specs, app e2e scripts, unit tests).
 | `checkUserRole` | string-verified | harness/realm-plainuser-gate.spec.ts |
 | `requestStewardAccess` | string-verified | harness/realm-plainuser-gate.spec.ts |
 | `checkStewardRequest` | string-verified | harness/realm-plainuser-gate.spec.ts |
-| `getWorkflow` | string-verified | e2e/workflow-autoassign-e2e.mjs, e2e/workflow-bulk-e2e.mjs, e2e/workflow-e2e.mjs |
-| `setSpaceWorkflowSettings` | string-verified | e2e/workflow-autoassign-e2e.mjs, e2e/workflow-bulk-e2e.mjs, e2e/workflow-enforce-e2e.mjs |
-| `getSpaceWorkflowSettings` | string-verified | e2e/workflow-autoassign-e2e.mjs |
+| `getWorkflow` | string-verified | harness/approval-evidence.spec.ts, e2e/workflow-autoassign-e2e.mjs, e2e/workflow-bulk-e2e.mjs, e2e/workflow-e2e.mjs |
+| `getWorkflowLog` | string-verified | harness/review-due.spec.ts |
+| `setSpaceWorkflowSettings` | string-verified | harness/workflow-demote-target.spec.ts, e2e/workflow-autoassign-e2e.mjs, e2e/workflow-bulk-e2e.mjs, e2e/workflow-enforce-e2e.mjs |
+| `setReviewDue` | string-verified | harness/review-due.spec.ts |
+| `getSpaceWorkflowSettings` | string-verified | harness/workflow-demote-target.spec.ts, e2e/workflow-autoassign-e2e.mjs |
 | `bulkAssignWorkflow` | string-verified | e2e/workflow-bulk-e2e.mjs |
-| `requestApproval` | string-verified | harness/ribbon-approval-dialog.spec.ts, harness/workflow-pickers-inbox.spec.ts, e2e/workflow-approval-e2e.mjs |
-| `decideApproval` | string-verified | harness/workflow-pickers-inbox.spec.ts, e2e/workflow-approval-e2e.mjs, e2e/workflow-conditions-e2e.mjs |
+| `requestApproval` | string-verified | harness/approval-evidence.spec.ts, harness/my-work-page.spec.ts, harness/ribbon-approval-dialog.spec.ts, harness/workflow-pickers-inbox.spec.ts, harness/workflow-trashed-pages.spec.ts, e2e/workflow-approval-e2e.mjs |
+| `decideApproval` | string-verified | harness/approval-evidence.spec.ts, harness/workflow-pickers-inbox.spec.ts, e2e/workflow-approval-e2e.mjs, e2e/workflow-conditions-e2e.mjs |
 | `pageApprovals` | string-verified | e2e/workflow-approval-e2e.mjs |
 | `deleteArtifact` | string-verified | harness/destructive-actions-perm.spec.ts |
 | `purgeSealRecord` | string-verified | harness/destructive-actions-perm.spec.ts |
@@ -285,7 +294,7 @@ Evidence: 97 files (harness specs, app e2e scripts, unit tests).
 | `checkLicense` | string-verified | harness/license-banner.spec.ts, unit/license.test.mjs |
 | `storeWorkflowConfigProbe` | string-verified | harness/workflow-deadend-warn.spec.ts |
 | `ensurePanel` | string-verified | harness/panel-prefs-preview.spec.ts, e2e/ensure-fixture.mjs |
-| `requestEditAccess` | string-verified | harness/activity-log.spec.ts, harness/editreq-request-lifecycle.spec.ts |
+| `requestEditAccess` | string-verified | harness/activity-log.spec.ts, harness/editreq-request-lifecycle.spec.ts, harness/my-work-page.spec.ts |
 | `checkEditRequest` | string-verified | harness/editreq-request-lifecycle.spec.ts |
 | `listMyEditRequests` | string-verified | harness/editreq-request-lifecycle.spec.ts |
 | `checkPanelStatus` | string-verified | harness/panel-prefs-preview.spec.ts |
@@ -298,11 +307,11 @@ Evidence: 97 files (harness specs, app e2e scripts, unit tests).
 | `getValidationState` | string-verified | harness/validation-readouts.spec.ts |
 | `listAiModels` | string-verified | harness/validation-readouts.spec.ts |
 | `setAiFindingState` | string-verified | harness/validation-readouts.spec.ts |
-| `listMyApprovals` | string-verified | harness/workflow-pickers-inbox.spec.ts |
+| `listMyApprovals` | string-verified | harness/workflow-pickers-inbox.spec.ts, harness/workflow-trashed-pages.spec.ts |
 | `searchWorkflowUsers` | string-verified | harness/workflow-pickers-inbox.spec.ts |
 | `searchWorkflowGroups` | string-verified | harness/workflow-pickers-inbox.spec.ts |
 | `loadBulletinToggles` | string-verified | harness/bulletin-toggles.spec.ts |
-| `getPageActivity` | string-verified | harness/activity-log.spec.ts |
+| `getPageActivity` | string-verified | harness/activity-log.spec.ts, harness/review-due.spec.ts, harness/workflow-demote-target.spec.ts |
 | `getSpaceActivity` | string-verified | harness/activity-log.spec.ts |
 
 ## testhook/what-verbs (7 items, 1 gaps)
@@ -310,10 +319,10 @@ Evidence: 97 files (harness specs, app e2e scripts, unit tests).
 | Item | Coverage | Evidence |
 |---|---|---|
 | `version` | string-verified | harness/deploy-state-guard.spec.ts |
-| `kvs` | string-verified | harness/activity-log.spec.ts, harness/ai-validation-live.spec.ts, harness/bulletin-toggles.spec.ts, harness/destructive-actions-perm.spec.ts, harness/editreq-request-lifecycle.spec.ts, harness/expiry-sweep.spec.ts … +41 more |
-| `set` | string-verified | harness/ai-validation-live.spec.ts, harness/bulletin-toggles.spec.ts, harness/destructive-actions-perm.spec.ts, harness/editreq-request-lifecycle.spec.ts, harness/expiry-sweep.spec.ts, harness/gate-revert.spec.ts … +35 more |
-| `delete` | string-verified | harness/activity-log.spec.ts, harness/ai-validation-live.spec.ts, harness/bulletin-toggles.spec.ts, harness/destructive-actions-perm.spec.ts, harness/editreq-request-lifecycle.spec.ts, harness/expiry-sweep.spec.ts … +43 more |
+| `kvs` | string-verified | harness/activity-log.spec.ts, harness/ai-validation-live.spec.ts, harness/approval-evidence.spec.ts, harness/bulletin-toggles.spec.ts, harness/destructive-actions-perm.spec.ts, harness/editreq-request-lifecycle.spec.ts … +47 more |
+| `set` | string-verified | harness/ai-validation-live.spec.ts, harness/bulletin-toggles.spec.ts, harness/destructive-actions-perm.spec.ts, harness/editreq-request-lifecycle.spec.ts, harness/expiry-sweep.spec.ts, harness/gate-revert.spec.ts … +38 more |
+| `delete` | string-verified | harness/activity-log.spec.ts, harness/ai-validation-live.spec.ts, harness/approval-evidence.spec.ts, harness/bulletin-toggles.spec.ts, harness/destructive-actions-perm.spec.ts, harness/editreq-request-lifecycle.spec.ts … +49 more |
 | `setttl` | **GAP** | — |
-| `query` | string-verified | harness/realm-stale-badge.spec.ts, harness/ribbon-approval-dialog.spec.ts, harness/sealed-delete-restore-journey.spec.ts, harness/workflow-pickers-inbox.spec.ts |
-| `invoke` | string-verified | harness/activity-log.spec.ts, harness/ai-validation-live.spec.ts, harness/authz-content-gate.spec.ts, harness/bulletin-toggles.spec.ts, harness/destructive-actions-perm.spec.ts, harness/editreq-request-lifecycle.spec.ts … +26 more |
+| `query` | string-verified | harness/approval-evidence.spec.ts, harness/my-work-page.spec.ts, harness/realm-stale-badge.spec.ts, harness/review-due.spec.ts, harness/ribbon-approval-dialog.spec.ts, harness/ribbon-review-due.spec.ts … +4 more |
+| `invoke` | string-verified | harness/activity-log.spec.ts, harness/ai-validation-live.spec.ts, harness/approval-evidence.spec.ts, harness/authz-content-gate.spec.ts, harness/bulletin-toggles.spec.ts, harness/destructive-actions-perm.spec.ts … +32 more |
 

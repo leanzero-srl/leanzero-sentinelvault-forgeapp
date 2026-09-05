@@ -81,4 +81,5 @@ module.exports = [
   createBuildConfig("inline-panel",    "./src/ui/surfaces/inline-panel/index.jsx",    "static/inline-panel",    "inline-panel.css"),
   createBuildConfig("panel-setup",     "./src/ui/surfaces/panel-setup/index.jsx",     "static/panel-setup",     "panel-setup.css"),
   createBuildConfig("section-setup",    "./src/ui/surfaces/section-setup/index.jsx",    "static/section-setup",    "section-setup.css"),
+  createBuildConfig("my-work",          "./src/ui/surfaces/my-work/index.jsx",          "static/my-work",          "my-work.css"),
 ];
