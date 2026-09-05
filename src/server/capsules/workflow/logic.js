@@ -12,6 +12,7 @@
  */
 import { asApp, route } from "@forge/api";
 import { kvs, WhereConditions } from "@forge/kvs";
+import { recordActivity } from "../../infra/activity-log.js";
 
 export const WORKFLOW_STATE_PROP = "sentinel-vault-workflow";
 
@@ -368,7 +369,7 @@ export async function autoAssignOnEvent({ pageId, spaceKey, actorAccountId, acto
 
 // Move a page to `toStateId` after validating the edge. Returns {success, reason?, record?}.
 // `requireStewardForEnforce` is enforced by the caller (resolver) — logic stays authz-free & testable.
-export async function transitionPageWorkflow({ pageId, spaceKey, toStateId, actorAccountId, actorName, reason, approvers, approvedVersion }) {
+export async function transitionPageWorkflow({ pageId, spaceKey, toStateId, actorAccountId, actorName, reason, approvers, approvedVersion, activity = true }) {
   if (!pageId || !toStateId) return { success: false, reason: "pageId and toStateId required" };
   const current = await readPageWorkflow(pageId);
   if (!current) return { success: false, reason: "Page has no workflow assigned" };
@@ -414,6 +415,26 @@ export async function transitionPageWorkflow({ pageId, spaceKey, toStateId, acto
     by: actorAccountId || null,
     byName: actorName || null,
     reason: reason || null,
+  });
+  // A1: the state is persisted — the transition is a fact. Beside the legacy workflow-log
+  // (kept: get-workflow-log still reads it); this is the entry the unified activity feed shows.
+  // `activity:false` is passed by the enforcement/expiry callers that record their own, more
+  // specific row for the same event — one event, one row.
+  if (activity) await recordActivity({
+    type: "workflow.transition",
+    pageId,
+    spaceKey: record.spaceKey,
+    actor: actorAccountId ? { accountId: actorAccountId, name: actorName || null } : null,
+    target: { kind: "page", id: pageId, name: null },
+    details: {
+      from: current.stateId,
+      to: toStateId,
+      fromName: findState(def, current.stateId)?.name || current.stateId,
+      toName: target?.name || toStateId,
+      reason: reason || null,
+      approvedVersion: enforceFields.approvedVersion ?? null,
+    },
+    version: enforceFields.approvedVersion ?? null,
   });
   return { success: true, record, state: target, def };
 }

@@ -15,6 +15,7 @@ import { releaseSeal } from "./capsules/sealing/release.js";
 import { getActiveEditGrant, sweepEditAccess, getActiveSectionEditGrant } from "./capsules/editreq/logic.js";
 import {
   resolveEffectiveConfig,
+  readValidationState,
   writeValidationState,
   getLastGoodVersion,
   setLastGoodVersion,
@@ -40,6 +41,10 @@ import { setWithTtl, setUntil } from "./shared/kvs-ttl.js";
 // that unit tests can hand clocks to rather than waiting three days for a live sweep.
 import { decideLapseAction, resolveLapsePolicy, priorNoticeCount } from "./shared/lapse-policy.js";
 import { decideAnnounce, decideRelease } from "./shared/notice-dedup.js";
+// A1: the activity record. Written ONLY on a CONFIRMED outcome (after the successful page
+// write / attachment restore / KVS purge), never on an attempt, and never between a dedup
+// marker claim and the side effect that marker protects (T6). It never throws.
+import { recordActivity } from "./infra/activity-log.js";
 
 // --- Fix 3 (CORE T6 extension): cross-run violation-comment dedup ---
 // K1: `violation-noticed-{pageId}-{targetId}-{class}`, TTL 24h, claimed BEFORE the footer
@@ -368,7 +373,7 @@ export async function pageContentTrigger(event) {
     // "restored/reverted".
     if (anyChange) {
       for (const n of notifyMap.values()) {
-        try { await dispatchPipelineNotification(n); }
+        try { await dispatchPipelineNotification(n, writtenVersion); }
         catch (e) { console.error("[PAGE-PROTECT] notify error:", e); }
       }
       await touchSealTimestamp();
@@ -376,6 +381,16 @@ export async function pageContentTrigger(event) {
 
     // #44: the enforce-revert notice — only after a CONFIRMED write (SV-M2).
     if (anyChange && enforceReverted) {
+      // A1: same confirmation bar as the notice — the revert is a fact at writtenVersion.
+      await recordActivity({
+        type: "workflow.enforced",
+        pageId,
+        spaceKey: enforcement?.spaceKey || enforcement?.record?.spaceKey || null,
+        actor: null,
+        target: { kind: "page", id: pageId, name: null },
+        details: { mode: "revert", editor: atlassianId || null, approvedVersion: enforceRevertVersion ?? null, restoredTo: enforceRevertVersion ?? null },
+        version: writtenVersion,
+      });
       try { await postEnforceComment(pageId, atlassianId, "revert", { approvedVersion: enforceRevertVersion }); }
       catch (e) { console.error("[WORKFLOW-ENFORCE] notice error:", e); }
     }
@@ -787,7 +802,38 @@ async function restoreMediaPass(ctx, sealFileMap, probeCache = new Map()) {
 }
 
 // --- Pipeline: dispatch a single accumulated notification ---
-async function dispatchPipelineNotification(n) {
+// A1: this runs ONLY after the single page write succeeded (SV-M2 gates the caller on
+// anyChange), so the notifications list IS the set of confirmed restore outcomes — the passes
+// themselves cannot know whether their splice ever landed. The activity entry is written
+// FIRST: sendViolationNotifications claims a dedup marker before its comment, and the record
+// must not sit between that claim and its side effect (T6).
+const PIPELINE_ACTIVITY_TYPE = {
+  "content-removal": "seal.embed-restored",
+  "layout-changed": "seal.presentation-restored",
+};
+async function dispatchPipelineNotification(n, writtenVersion = null) {
+  const seal = n.seal || {};
+  if (n.type === "section-revert") {
+    await recordActivity({
+      type: n.kind === "removed" ? "section.restored" : "section.reverted",
+      pageId: n.pageId,
+      spaceKey: seal.spaceKey || null,
+      actor: n.actor ? { accountId: n.actor, name: null } : null,
+      target: { kind: "section", id: seal.sectionId || n.targetId, name: seal.sectionTitle || "Sealed section" },
+      details: { kind: n.kind, ownerAccountId: seal.lockedBy || null },
+      version: writtenVersion,
+    });
+  } else if (PIPELINE_ACTIVITY_TYPE[n.type]) {
+    await recordActivity({
+      type: PIPELINE_ACTIVITY_TYPE[n.type],
+      pageId: n.pageId,
+      spaceKey: seal.spaceKey || null,
+      actor: n.actor ? { accountId: n.actor, name: null } : null,
+      target: { kind: "attachment", id: seal.attachmentId || n.targetId, name: n.artifactName || seal.attachmentName || null },
+      details: { ownerAccountId: seal.lockedBy || null },
+      version: writtenVersion,
+    });
+  }
   if (n.type === "content-removal") {
     await sendViolationNotifications(
       n.seal, n.seal.attachmentId, n.pageId, n.actor, n.artifactName, "content-removal",
@@ -1041,11 +1087,24 @@ export async function collectWorkflowEnforcementForPage(pageId, atlassianId, eve
   try {
     const initial = getInitialState(def);
     const res = await transitionPageWorkflow({
+      activity: false, // the workflow.enforced row below is the record of this event (A1 review F5)
       pageId, spaceKey: record.spaceKey, toStateId: initial.id,
       actorAccountId: systemAccountId, actorName: "Sentinel Vault",
       reason: "auto-demoted: edited by non-approver while Approved",
     });
-    if (res.success) await postEnforceComment(pageId, atlassianId, "demote").catch(() => {});
+    if (res.success) {
+      // A1: the demotion transition persisted — enforcement happened (mode demote).
+      await recordActivity({
+        type: "workflow.enforced",
+        pageId,
+        spaceKey: record.spaceKey || null,
+        actor: null,
+        target: { kind: "page", id: pageId, name: null },
+        details: { mode: "demote", editor: atlassianId || null, approvedVersion: record.approvedVersion ?? null, restoredTo: null, demotedTo: initial.id, via: "event" },
+        version: typeof eventVersion === "number" ? eventVersion : null,
+      });
+      await postEnforceComment(pageId, atlassianId, "demote").catch(() => {});
+    }
     // #7: the default workflow has an Approved->Draft edge; a custom workflow that lacks one
     // would leave the page enforced-but-not-demoted — surface it rather than fail silently.
     else console.error(`[WORKFLOW-ENFORCE] demote of ${pageId} did not apply: ${res.reason}`);
@@ -1140,12 +1199,19 @@ export async function sweepRevertToApproved(pageId, record) {
     // event-path CL-7 guard). Return true: the drift is reconciled.
     if (hashAdf(head.adfDoc) === hashAdf(approvedAdf) &&
         JSON.stringify(canonicalizeAdf(head.adfDoc.content)) === JSON.stringify(canonicalizeAdf(approvedAdf.content))) {
-      await restampApprovedVersion(pageId, head.pageData.version?.number || 0).catch(() => {});
-      return true;
+      const live = head.pageData.version?.number || 0;
+      await restampApprovedVersion(pageId, live).catch(() => {});
+      // Truthfulness (A1 review F1): this branch wrote NOTHING — the live version became the
+      // baseline. Callers that record the outcome must not call it a revert.
+      return { ok: true, wrote: false, version: live };
     }
     head.adfDoc.content = approvedAdf.content;
     const putRes = await writeDocBody(pageId, head.pageData, head.adfDoc, "(Sentinel Vault reverted unapproved change to the approved version)");
-    if (putRes.ok) { await restampApprovedVersion(pageId, (head.pageData.version?.number || 0) + 1).catch(() => {}); return true; }
+    if (putRes.ok) {
+      const written = (head.pageData.version?.number || 0) + 1;
+      await restampApprovedVersion(pageId, written).catch(() => {});
+      return { ok: true, wrote: true, version: written };
+    }
     if (putRes.status === 409) { await new Promise((r) => setTimeout(r, Math.pow(2, attempt) * 500)); continue; }
     return false; // SV-M2: don't claim success on a non-409 error
   }
@@ -1176,11 +1242,25 @@ export async function workflowSweep() {
         if (record.reviewDueAt && findState(def, record.stateId)?.reviewAfterDays &&
             new Date(record.reviewDueAt).getTime() < nowMs && findState(def, "expired")) {
           const res = await transitionPageWorkflow({
+            activity: false, // the dedicated row below records this event (A1 review F5)
             pageId: idx.pageId, spaceKey: record.spaceKey, toStateId: "expired",
             actorAccountId: systemAccountId, actorName: "Sentinel Vault",
             reason: "review period elapsed — auto-expired",
           });
-          if (res.success) { expired++; await postEnforceComment(idx.pageId, record.enteredBy, "expired").catch(() => {}); }
+          if (res.success) {
+            expired++;
+            // A1: the Expired transition persisted.
+            await recordActivity({
+              type: "workflow.expired",
+              pageId: idx.pageId,
+              spaceKey: record.spaceKey || null,
+              actor: null,
+              target: { kind: "page", id: idx.pageId, name: null },
+              details: { from: record.stateId, reviewDueAt: record.reviewDueAt || null, approvedVersion: record.approvedVersion ?? null, lastEnteredBy: record.enteredBy || null },
+              version: record.approvedVersion ?? null,
+            });
+            await postEnforceComment(idx.pageId, record.enteredBy, "expired").catch(() => {});
+          }
           continue;
         }
         if (!record?.enforce) continue;
@@ -1215,7 +1295,28 @@ export async function workflowSweep() {
         const alreadyNotified = await kvs.get(`workflow-integrity-notified-${idx.pageId}`);
         if (mode === "revert" && record.approvers.length > 0) { // CL-5
           const ok = await sweepRevertToApproved(idx.pageId, record);
-          if (ok) { reverted++; await kvs.delete(`workflow-integrity-notified-${idx.pageId}`).catch(() => {}); }
+          if (ok) {
+            reverted++;
+            // A1: sweepRevertToApproved succeeds on TWO branches — a confirmed write, or confirmed
+            // equality where nothing was written and the live version became the baseline. The
+            // record says which; "reverted to v5" when v6 stayed live would be a false statement
+            // in a no-TTL compliance record (A1 review F1).
+            await recordActivity({
+              type: "workflow.enforced",
+              pageId: idx.pageId,
+              spaceKey: record.spaceKey || null,
+              actor: null,
+              target: { kind: "page", id: idx.pageId, name: null },
+              details: {
+                mode: "revert", editor: author || null, approvedVersion: record.approvedVersion ?? null,
+                restoredTo: ok.wrote ? (record.approvedVersion ?? null) : null,
+                reconciled: ok.wrote ? "reverted" : "baseline-advanced",
+                driftedVersion: live, via: "sweep",
+              },
+              version: ok.version ?? null,
+            });
+            await kvs.delete(`workflow-integrity-notified-${idx.pageId}`).catch(() => {});
+          }
           else if (!alreadyNotified) {
             await postEnforceComment(idx.pageId, record.enteredBy, "revert-failed").catch(() => {});
             await kvs.set(`workflow-integrity-notified-${idx.pageId}`, { at: new Date().toISOString() });
@@ -1223,10 +1324,23 @@ export async function workflowSweep() {
         } else {
           const initial = getInitialState(def);
           const res = await transitionPageWorkflow({
+            activity: false, // the dedicated row below records this event (A1 review F5)
             pageId: idx.pageId, spaceKey: record.spaceKey, toStateId: initial.id,
             actorAccountId: systemAccountId, actorName: "Sentinel Vault",
             reason: "auto-demoted by integrity sweep (unauthorized drift)",
           });
+          if (res.success) {
+            // A1: the demotion persisted whether or not the (once-only) comment goes out.
+            await recordActivity({
+              type: "workflow.enforced",
+              pageId: idx.pageId,
+              spaceKey: record.spaceKey || null,
+              actor: null,
+              target: { kind: "page", id: idx.pageId, name: null },
+              details: { mode: "demote", editor: author || null, approvedVersion: record.approvedVersion ?? null, restoredTo: null, demotedTo: initial.id, driftedVersion: live, via: "sweep" },
+              version: live,
+            });
+          }
           if (res.success && !alreadyNotified) {
             demoted++;
             await postEnforceComment(idx.pageId, record.enteredBy, "demote").catch(() => {});
@@ -1296,11 +1410,31 @@ async function runValidationPhase(event, pageId, atlassianId) {
   const modes = config.modes || { advisory: true, gate: false, revert: false };
   const base = pageData._links?.base;
   const historyUrl = base ? `${base}/pages/viewpreviousversions.action?pageId=${pageId}` : "";
+  const violationLabels = (violations || []).map((v) => v?.label || v?.type || "rule").slice(0, 25);
+
+  // A1: `validation.gate` is recorded on a CHANGE of gate state only — every save re-evaluates
+  // the rules, and a feed that repeats "passed" per version says nothing. The prior state is
+  // read once, before the write that replaces it (a read; not a side effect — the SV-m1 claim
+  // above is untouched by it).
+  const priorGate = modes.gate ? await readValidationState(pageId) : null;
+  const recordGateIfChanged = async (state) => {
+    if (!modes.gate || priorGate?.state === state) return;
+    await recordActivity({
+      type: "validation.gate",
+      pageId,
+      spaceKey,
+      actor: atlassianId ? { accountId: atlassianId, name: null } : null,
+      target: { kind: "page", id: pageId, name: null },
+      details: { state, previous: priorGate?.state || null, violations: state === "failed" ? violationLabels : [] },
+      version,
+    });
+  };
 
   if (passed) {
     await setLastGoodVersion(pageId, version);
     if (modes.gate) {
       await writeValidationState(pageId, { state: "passed", violations: [], version, checkedAt: new Date().toISOString() });
+      await recordGateIfChanged("passed");
     }
     await markVersionChecked(pageId, version);
     return;
@@ -1316,6 +1450,7 @@ async function runValidationPhase(event, pageId, atlassianId) {
   }
   if (modes.gate) {
     await writeValidationState(pageId, { state: "failed", violations, version, checkedAt: new Date().toISOString() });
+    await recordGateIfChanged("failed");
   }
   if (modes.revert) {
     const lastGood = await getLastGoodVersion(pageId);
@@ -1335,11 +1470,21 @@ async function runValidationPhase(event, pageId, atlassianId) {
           const putRes = await writeDocBody(pageId, current.pageData, goodAdf, "(Sentinel Vault reverted non-compliant content)");
           if (putRes.ok) {
             reverted = true;
+            const newVersion = (current.pageData.version?.number || version) + 1;
+            // A1: the revert write is confirmed — the tampered version is gone at newVersion.
+            await recordActivity({
+              type: "validation.reverted",
+              pageId,
+              spaceKey,
+              actor: atlassianId ? { accountId: atlassianId, name: null } : null,
+              target: { kind: "page", id: pageId, name: null },
+              details: { violations: violationLabels, restoredTo: lastGood, revertedVersion: version },
+              version: newVersion,
+            });
             // SV-m2: the content is compliant again — reconcile the gate state so the inline
             // panel / doc ribbon don't keep showing a stale "failed".
             if (modes.gate) {
               try {
-                const newVersion = (current.pageData.version?.number || version) + 1;
                 await writeValidationState(pageId, { state: "passed", violations: [], version: newVersion, checkedAt: new Date().toISOString() });
               } catch (_) { /* best effort */ }
             }
@@ -1497,6 +1642,17 @@ async function handleSealedArtifactEdit(sealRecord, artifactId, contentId, atlas
   }
 
   console.warn(`[EDIT-REVERT] Reverted ${artifactName} to v${targetVersion}`);
+  // A1: the re-upload succeeded — the sealed version is live again. Recorded before the
+  // notification, which claims a dedup marker ahead of its comment (T6 placement).
+  await recordActivity({
+    type: "seal.edit-reverted",
+    pageId: pageId || null,
+    spaceKey: sealRecord.spaceKey || null,
+    actor: atlassianId ? { accountId: atlassianId, name: null } : null,
+    target: { kind: "attachment", id: artifactId, name: artifactName },
+    details: { restoredTo: targetVersion, revertedVersion: currentVersion ?? null, ownerAccountId: sealRecord.lockedBy || null },
+    version: null,
+  });
   await sendViolationNotifications(sealRecord, artifactId, pageId, atlassianId, artifactName, "edit");
 }
 
@@ -1539,6 +1695,18 @@ async function revertAttachmentToVersion(contentId, artifactId, title, targetVer
 // audit B1: surface a failed attachment revert (owner comment + a distinct dispatch) rather
 // than failing silently. Best-effort; never throws into the trigger.
 async function notifyAttachmentRevertFailed(sealRecord, artifactId, contentId, atlassianId, artifactName) {
+  // A1: a CONFIRMED failure to enforce — every caller reaches here only after the revert /
+  // restore definitively did not apply (edit revert exhausted, trash restore refused, embed
+  // lookback exhausted). One record site for all of them, ahead of the dedup claim below.
+  await recordActivity({
+    type: "seal.revert-failed",
+    pageId: contentId || null,
+    spaceKey: sealRecord?.spaceKey || null,
+    actor: atlassianId ? { accountId: atlassianId, name: null } : null,
+    target: { kind: "attachment", id: artifactId, name: artifactName || null },
+    details: { ownerAccountId: sealRecord?.lockedBy || null, sealedVersion: sealRecord?.sealedVersion ?? null },
+    version: null,
+  });
   try {
     await recordDispatch({
       id: `revert-failed-${Date.now()}`,
@@ -1577,6 +1745,17 @@ export async function handleSealedArtifactTrash(sealRecord, artifactId, contentI
       await kvs.set(`protection-${artifactId}`, { ...fresh, trashedOnly: true });
       await touchSealTimestamp();
       console.warn(`[TRASH-RESTORE] owner ${atlassianId} trashed their own sealed ${artifactId} — seal released (trashedOnly tracking record)`);
+      // A1: the seal ended here (owner intent, S3) — a feed that shows "sealed" and then nothing
+      // while the file sits in the trash would be lying by omission (A1 review F6).
+      await recordActivity({
+        type: "seal.released",
+        pageId: contentId || sealRecord.contentId || null,
+        spaceKey: sealRecord.spaceKey || null,
+        actor: { accountId: atlassianId, name: sealRecord.lockedByName || null },
+        target: { kind: "attachment", id: artifactId, name: sealRecord.attachmentName || attachment?.title || null },
+        details: { reason: "owner-trashed", via: "trash-event" },
+        version: null,
+      });
     } catch (e) {
       console.error(`[TRASH-RESTORE] failed to release seal on owner trash of ${artifactId}:`, e);
     }
@@ -1640,6 +1819,17 @@ export async function handleSealedArtifactTrash(sealRecord, artifactId, contentI
   // Touch seal timestamp so frontend polling picks up the change
   await touchSealTimestamp();
 
+  // A1: restore confirmed (restore.ok, not `already`) — ahead of the dedup-claiming notice.
+  await recordActivity({
+    type: "seal.trash-restored",
+    pageId: pageId || null,
+    spaceKey: sealRecord.spaceKey || null,
+    actor: atlassianId ? { accountId: atlassianId, name: null } : null,
+    target: { kind: "attachment", id: artifactId, name: attachmentTitle },
+    details: { ownerAccountId: sealRecord.lockedBy || null, attachmentVersion: currentVersion ?? null },
+    version: null,
+  });
+
   // Send violation notifications
   await sendViolationNotifications(sealRecord, artifactId, pageId, atlassianId, attachmentTitle, "delete");
 }
@@ -1668,6 +1858,17 @@ export async function handleSealedArtifactDeleted(sealRecord, artifactId, conten
 
   // Clean up KVS records since attachment is gone
   await kvs.delete(`protection-${artifactId}`);
+  // A1: the seal record is purged — the seal ended with its file. Actor is whoever the event
+  // named; null on the media-pass cleanup path (vet F4: the page editor did not purge it).
+  await recordActivity({
+    type: "seal.deleted",
+    pageId: pageId || null,
+    spaceKey: sealRecord.spaceKey || null,
+    actor: atlassianId ? { accountId: atlassianId, name: null } : null,
+    target: { kind: "attachment", id: artifactId, name: artifactName },
+    details: { ownerAccountId: sealRecord.lockedBy || null, trashedOnly: !!sealRecord.trashedOnly },
+    version: null,
+  });
   if (sealRecord.spaceId) {
     await kvs.delete(`space-protection-${sealRecord.spaceId}-${artifactId}`);
   }
@@ -1861,7 +2062,11 @@ export async function expirySweepTask() {
           // the file is listed as sealed forever because the only two ways out (the owner
           // unsealing, or a steward force-unsealing) both need a person who is not coming back.
           if (decision.action === "release") {
-            const released = await releaseSeal(artifactId, value);
+            // A1: `autoRelease` makes the shared teardown record `seal.auto-released` once the
+            // deletion is confirmed — this is the only caller that passes it.
+            const released = await releaseSeal(artifactId, value, {
+              autoRelease: { reason: "lapse-policy", noticeCount: priorCount, noticeLimit: lapseNoticeLimit },
+            });
             if (!released.success) {
               console.error(`[EXPIRY-SWEEP] auto-release of ${artifactId} failed: ${released.reason}`);
               continue;

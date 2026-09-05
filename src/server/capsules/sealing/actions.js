@@ -24,6 +24,7 @@ import { confirmAttachmentPurged } from "../../infra/attachment-status.js";
 import { findSealedMediaSingle, capturePresentation } from "../../infra/media-presentation.js";
 import { purgeAllSealState } from "./confluence-sync.js";
 import { releaseSeal } from "./release.js";
+import { recordActivity } from "../../infra/activity-log.js";
 
 // Import from sibling capsules
 import { notifyWatchers, sweepWatchers } from "../bulletins/logic.js";
@@ -359,6 +360,17 @@ const sealArtifact = async (req) => {
   // Store seal record
   await kvs.set(`protection-${attachmentId}`, sealPayload);
   await touchSealTimestamp();
+  // A1: the seal exists from this write on — record it here, before the best-effort tail
+  // (content property, index, comment, panel) any of which may fail without unsealing.
+  await recordActivity({
+    type: "seal.created",
+    pageId: contentId || null,
+    spaceKey: realmKey || null,
+    actor: { accountId: operatorAccountId, name: operatorDisplayName },
+    target: { kind: "attachment", id: attachmentId, name: artifactName },
+    details: { expiresAt, lockDuration: holdPeriod, sealedVersion, embedded: embedded ?? null },
+    version: null,
+  });
   if (contentId) await restampIfEnforced(contentId); // #44 §2.7: keep an enforced baseline seal-complete
 
   // Store as content property for CQL searchability
@@ -495,6 +507,23 @@ const unsealArtifact = async (req) => {
     const released = await releaseSeal(attachmentId, sealRecord, { fallbackSpaceKey: realmKey });
     if (!released.success) return released;
 
+    // A1: the seal is gone from this point — owner release and steward force are different
+    // events to the record (the second names someone acting on another person's seal).
+    await recordActivity({
+      type: releaseReason === "admin override" ? "seal.forced" : "seal.released",
+      pageId: sealRecord.contentId || null,
+      spaceKey: sealRecord.spaceKey || realmKey || null,
+      actor: {
+        accountId: operatorAccountId,
+        name: releaseReason === "admin override" ? null : (sealRecord.lockedByName || null),
+      },
+      target: { kind: "attachment", id: attachmentId, name: sealRecord.attachmentName || null },
+      details: releaseReason === "admin override"
+        ? { ownerAccountId: sealRecord.lockedBy || null, ownerName: sealRecord.lockedByName || null }
+        : {},
+      version: null,
+    });
+
     // Notify seal owner when a steward forcefully unseals their artifact
     if (releaseReason === "admin override" && sealRecord.lockedBy && sealRecord.contentId) {
       try {
@@ -598,6 +627,25 @@ export const extendSeal = async (req) => {
   };
   await kvs.set(`protection-${attachmentId}`, updated);
   await touchSealTimestamp();
+  // A1: the new expiry is live from this write on.
+  await recordActivity({
+    type: "seal.extended",
+    pageId: sealRecord.contentId || null,
+    spaceKey: sealRecord.spaceKey || contextSpaceKey || null,
+    actor: {
+      accountId: operatorAccountId,
+      name: sealRecord.lockedBy === operatorAccountId ? (sealRecord.lockedByName || null) : null,
+    },
+    target: { kind: "attachment", id: attachmentId, name: sealRecord.attachmentName || null },
+    details: {
+      previousExpiresAt: sealRecord.expiresAt || null,
+      expiresAt: newExpiresAt,
+      addedSeconds: addSeconds,
+      extensionCount: updated.extensionCount,
+      byOwner: sealRecord.lockedBy === operatorAccountId,
+    },
+    version: null,
+  });
 
   // The space index row carries its own copy of expiresAt — the consoles render "Overdue"
   // from THAT, so leaving it behind means the steward view keeps showing a seal as lapsed
@@ -1195,6 +1243,16 @@ export const purgeSealRecord = async (req) => {
   // Clean up seal state if present
   if (sealRecord) {
     await purgeAllSealState(attachmentId, sealRecord);
+    // A1: the file and its seal are gone for good (A1 review F6).
+    await recordActivity({
+      type: "seal.deleted",
+      pageId: sealRecord.contentId || null,
+      spaceKey: sealRecord.spaceKey || null,
+      actor: { accountId: req.context?.accountId || null, name: null },
+      target: { kind: "attachment", id: attachmentId, name: sealRecord.attachmentName || null },
+      details: { via: "purge", ownerAccountId: sealRecord.lockedBy || null },
+      version: null,
+    });
   }
 
   // The file is gone for good; a "notify me when it is unsealed" watch has nothing left
