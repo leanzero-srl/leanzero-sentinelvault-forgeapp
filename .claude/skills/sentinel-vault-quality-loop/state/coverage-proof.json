@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-05T19:40:17.923Z",
+  "generatedAt": "2026-09-05T20:19:47.496Z",
   "appRoot": "/Users/mihaiperdum/Projects/Sentinel Vault",
   "harnessRoot": "/Users/mihaiperdum/Projects/forge-live-harness",
   "evidenceFiles": [
@@ -13,6 +13,7 @@
     "harness/bulletin-toggles.spec.ts",
     "harness/deploy-state-guard.spec.ts",
     "harness/destructive-actions-perm.spec.ts",
+    "harness/editreq-owner-index.spec.ts",
     "harness/editreq-request-lifecycle.spec.ts",
     "harness/expiry-sweep.spec.ts",
     "harness/full-app-walkthrough.spec.ts",
@@ -92,6 +93,7 @@
     "unit/adf-perf.test.mjs",
     "unit/content-access.test.mjs",
     "unit/doc-surgery.test.mjs",
+    "unit/editreq-index.test.mjs",
     "unit/format-duration.test.mjs",
     "unit/json-salvage.test.mjs",
     "unit/kvs-ttl.test.mjs",
@@ -111,8 +113,8 @@
   "counts": {
     "total": 201,
     "stringVerified": 148,
-    "annotated": 40,
-    "gaps": 13
+    "annotated": 41,
+    "gaps": 12
   },
   "items": [
     {
@@ -267,6 +269,7 @@
       "tier": "annotated",
       "coveredBy": [],
       "annotatedBy": [
+        "harness/editreq-owner-index.spec.ts",
         "harness/editreq-request-lifecycle.spec.ts",
         "harness/my-work-page.spec.ts"
       ]
@@ -290,6 +293,7 @@
       "tier": "annotated",
       "coveredBy": [],
       "annotatedBy": [
+        "harness/editreq-owner-index.spec.ts",
         "harness/editreq-request-lifecycle.spec.ts",
         "harness/page-editrequest-deny-revoke.spec.ts"
       ]
@@ -1171,6 +1175,7 @@
         "harness/approval-evidence.spec.ts",
         "harness/bulletin-toggles.spec.ts",
         "harness/destructive-actions-perm.spec.ts",
+        "harness/editreq-owner-index.spec.ts",
         "harness/editreq-request-lifecycle.spec.ts",
         "harness/expiry-sweep.spec.ts",
         "harness/gate-revert.spec.ts",
@@ -1231,6 +1236,7 @@
         "harness/ai-validation-live.spec.ts",
         "harness/bulletin-toggles.spec.ts",
         "harness/destructive-actions-perm.spec.ts",
+        "harness/editreq-owner-index.spec.ts",
         "harness/editreq-request-lifecycle.spec.ts",
         "harness/expiry-sweep.spec.ts",
         "harness/gate-revert.spec.ts",
@@ -1286,6 +1292,7 @@
         "harness/approval-evidence.spec.ts",
         "harness/bulletin-toggles.spec.ts",
         "harness/destructive-actions-perm.spec.ts",
+        "harness/editreq-owner-index.spec.ts",
         "harness/editreq-request-lifecycle.spec.ts",
         "harness/expiry-sweep.spec.ts",
         "harness/gate-revert.spec.ts",
@@ -1378,6 +1385,7 @@
         "harness/authz-content-gate.spec.ts",
         "harness/bulletin-toggles.spec.ts",
         "harness/destructive-actions-perm.spec.ts",
+        "harness/editreq-owner-index.spec.ts",
         "harness/editreq-request-lifecycle.spec.ts",
         "harness/expiry-sweep.spec.ts",
         "harness/lapsed-seal-lifecycle.spec.ts",
@@ -1419,6 +1427,7 @@
       "group": "testhook/invoke-seams",
       "tier": "string-verified",
       "coveredBy": [
+        "harness/editreq-owner-index.spec.ts",
         "harness/expiry-sweep.spec.ts",
         "harness/lapsed-seal-lifecycle.spec.ts"
       ],
@@ -1562,6 +1571,7 @@
       "tier": "string-verified",
       "coveredBy": [
         "harness/activity-log.spec.ts",
+        "harness/editreq-owner-index.spec.ts",
         "harness/editreq-request-lifecycle.spec.ts",
         "harness/lapsed-seal-lifecycle.spec.ts",
         "harness/page-editrequest-deny-revoke.spec.ts"
@@ -2061,6 +2071,7 @@
       "tier": "string-verified",
       "coveredBy": [
         "harness/activity-log.spec.ts",
+        "harness/editreq-owner-index.spec.ts",
         "harness/editreq-request-lifecycle.spec.ts",
         "harness/my-work-page.spec.ts"
       ],
@@ -2082,6 +2093,7 @@
       "group": "testhook/invoke-seams",
       "tier": "string-verified",
       "coveredBy": [
+        "harness/editreq-owner-index.spec.ts",
         "harness/editreq-request-lifecycle.spec.ts"
       ],
       "annotatedBy": []
@@ -2444,9 +2456,11 @@
       "id": "manifest:confluence:globalPage:my-work",
       "short": "my-work",
       "group": "manifest/confluence:globalPage",
-      "tier": "uncovered",
+      "tier": "annotated",
       "coveredBy": [],
-      "annotatedBy": []
+      "annotatedBy": [
+        "harness/my-work-page.spec.ts"
+      ]
     },
     {
       "id": "manifest:confluence:spacePage:realm-console",
