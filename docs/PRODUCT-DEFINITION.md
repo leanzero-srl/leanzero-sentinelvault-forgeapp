@@ -124,9 +124,21 @@ between is built and verified on dev but not shipped:
 - `getAiFindings` answered for the caller's space, not the page's (fixed).
 - Section-surface marker-clear race closed (mirror of the media fix).
 - Shared `sealing/release.js` teardown and `resolveSealHoldPeriod` (duplication removed).
+- it61 (2026-09-05): coverage pass — three defects (space name read via v1 failed under
+  asUser; watcher sweeps queried a prefix nothing wrote; approvals inbox blind past 1,500
+  records) and SV-SEC-2 (eight dead resolvers removed, one of them ungated).
+- **A1** Activity log per page + space Activity tab with filters and CSV (`activity-*` family).
+- **A4 + A6** Approval record kept after the approval; "View approved version" links.
+- **A2 + A5** Configurable demote target; per-state review clocks and a steward-editable review
+  date on the page (UTC end-of-day, custom date picker).
+- Trashed pages leave the workflow dashboard, inbox and sweep; purged pages lose their keys.
+- **A7** Cross-space "My work" global page (approvals, edit requests on my seals, my seals).
+- Edit-request owner index (the last site-wide scan filtered client-side).
 
 Shipping requires the paid plan to be live in the Partner portal (`deploy-prod.sh` refuses
-without `--licensing-live`) and is a minor bump (no new scopes).
+without `--licensing-live`) and is a minor bump — none of it61–it66 adds a scope; the
+`confluence:globalPage` module was proven a minor bump on dev (6.97 → 6.100, no re-consent).
+Last full-suite verdict on the dev build: PASS, 71/71 specs (`sv-it66-final`, commit 753f18d).
 
 ## 5. Comala-parity gap analysis — what we could add
 
