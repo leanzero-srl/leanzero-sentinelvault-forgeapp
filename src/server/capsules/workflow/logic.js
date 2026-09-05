@@ -15,6 +15,7 @@ import { kvs, WhereConditions } from "@forge/kvs";
 import { recordActivity } from "../../infra/activity-log.js";
 import { syncStateLabel } from "./label-sync.js";
 import { sanitizeReadConfirmation } from "./read-acks.js";
+import { fetchPageLabels } from "../../infra/labels.js";
 
 export const WORKFLOW_STATE_PROP = "sentinel-vault-workflow";
 
@@ -188,12 +189,169 @@ export function validateReviewDueAt(input, nowMs = Date.now()) {
 
 // --- Config (global + per-space fallback, mirrors resolveEffectiveConfig) ---
 
-export async function resolveWorkflowDef(spaceKey) {
+// B1: a space has ONE default definition (space → global → built-in) and any number of
+// label-scoped extras, each stored under its own id. A page's record names its `workflowId`,
+// and every caller that acts on a page passes it — a page assigned "fast-track" must never be
+// judged by the default's states after the fact.
+const extraDefKey = (spaceKey, workflowId) => `workflow-def-space-${sanitize(spaceKey)}-${workflowId}`;
+export const WORKFLOW_ID_RE = /^[a-z0-9][a-z0-9_-]{0,29}$/;
+
+export async function resolveWorkflowDef(spaceKey, workflowId = null) {
+  if (spaceKey && workflowId && workflowId !== "default" && WORKFLOW_ID_RE.test(workflowId)) {
+    const extra = await kvs.get(extraDefKey(spaceKey, workflowId));
+    if (extra && Array.isArray(extra.states) && extra.states.length) return extra;
+  }
   const space = spaceKey ? await kvs.get(`workflow-def-space-${sanitize(spaceKey)}`) : null;
   if (space && Array.isArray(space.states) && space.states.length) return space;
   const global = await kvs.get("workflow-def-global");
   if (global && Array.isArray(global.states) && global.states.length) return global;
   return { ...DEFAULT_WORKFLOW };
+}
+
+export const WORKFLOW_COLORS = ["neutral", "info", "success", "caution", "critical"];
+const STATE_ID_RE = /^[a-z0-9][a-z0-9_]{0,29}$/;
+
+// PURE. A definition the engine can run: 1–20 states with unique ids, exactly one initial,
+// known colours, transitions between known states (no self-loops, no duplicates). Returns
+// { ok, reason, value } with `value` normalised (trimmed names, booleans, ints).
+export function validateDefinition(input) {
+  if (!input || typeof input !== "object") return { ok: false, reason: "No definition" };
+  const states = Array.isArray(input.states) ? input.states : [];
+  if (!states.length) return { ok: false, reason: "A workflow needs at least one state" };
+  if (states.length > 20) return { ok: false, reason: "A workflow can have at most 20 states" };
+  const seen = new Set(); const outStates = []; let initials = 0;
+  for (const st of states) {
+    const id = String(st?.id || "").trim();
+    if (!STATE_ID_RE.test(id)) return { ok: false, reason: `State id "${id || "(empty)"}" must be 1–30 lowercase letters, digits or underscores` };
+    if (seen.has(id)) return { ok: false, reason: `State id "${id}" is used twice` };
+    seen.add(id);
+    const name = String(st?.name || "").trim().slice(0, 60);
+    if (!name) return { ok: false, reason: `State "${id}" needs a name` };
+    const color = WORKFLOW_COLORS.includes(st?.color) ? st.color : "neutral";
+    const days = st?.reviewAfterDays == null || st?.reviewAfterDays === "" ? null : parseInt(st.reviewAfterDays, 10);
+    if (days != null && (!Number.isFinite(days) || days <= 0 || days > 3650)) return { ok: false, reason: `State "${name}": the review period must be a whole number of days (1–3650)` };
+    const clean = { id, name, color };
+    if (st?.initial === true) { clean.initial = true; initials++; }
+    if (st?.enforce === true) clean.enforce = true;
+    if (days != null) clean.reviewAfterDays = days;
+    outStates.push(clean);
+  }
+  if (initials !== 1) return { ok: false, reason: initials === 0 ? "Mark exactly one state as the first state" : "Only one state can be the first state" };
+  const transitions = Array.isArray(input.transitions) ? input.transitions : [];
+  const edges = new Set(); const outT = [];
+  for (const t of transitions) {
+    const from = String(t?.from || ""); const to = String(t?.to || "");
+    if (!seen.has(from) || !seen.has(to)) return { ok: false, reason: `Transition ${from || "?"} → ${to || "?"} names a state that does not exist` };
+    if (from === to) continue;
+    const k = `${from}>${to}`; if (edges.has(k)) continue; edges.add(k);
+    outT.push({ from, to });
+  }
+  const id = String(input.id || "default").trim();
+  if (!WORKFLOW_ID_RE.test(id)) return { ok: false, reason: `Workflow id "${id}" must be 1–30 lowercase letters, digits, dashes or underscores` };
+  const name = String(input.name || "").trim().slice(0, 80) || "Workflow";
+  return { ok: true, value: { id, name, states: outStates, transitions: outT } };
+}
+
+// PURE. Which label-scoped workflow a page with these labels gets: the highest priority whose
+// labels intersect the page's; ties keep the earlier entry; null means "the default".
+export function chooseWorkflowForLabels(labelWorkflows, pageLabels) {
+  const have = new Set((pageLabels || []).map((l) => String(l).toLowerCase()));
+  let best = null;
+  for (const lw of Array.isArray(labelWorkflows) ? labelWorkflows : []) {
+    if (!lw?.workflowId || !Array.isArray(lw.labels)) continue;
+    if (!lw.labels.some((l) => have.has(String(l).toLowerCase()))) continue;
+    const pr = Number.isFinite(lw.priority) ? lw.priority : 0;
+    if (!best || pr > best.priority) best = { workflowId: lw.workflowId, priority: pr };
+  }
+  return best ? best.workflowId : null;
+}
+
+// PURE. The settings' label-workflow list, clean: ids valid, labels lowercase and bounded.
+export function sanitizeLabelWorkflows(input) {
+  if (!Array.isArray(input)) return [];
+  const out = []; const seen = new Set();
+  for (const lw of input) {
+    const id = String(lw?.workflowId || "").trim();
+    if (!WORKFLOW_ID_RE.test(id) || id === "default" || seen.has(id)) continue;
+    seen.add(id);
+    const labels = [...new Set((Array.isArray(lw?.labels) ? lw.labels : []).map((l) => String(l).trim().toLowerCase()).filter((l) => /^[a-z0-9][a-z0-9_.-]{0,60}$/.test(l)))].slice(0, 20);
+    const priority = Math.max(0, Math.min(1000, parseInt(lw?.priority, 10) || 0));
+    out.push({ workflowId: id, name: typeof lw?.name === "string" ? lw.name.slice(0, 80) : null, labels, priority });
+  }
+  return out.slice(0, 20);
+}
+
+// How many pages sit in a state of this space (first index page — enough to refuse a delete).
+async function countPagesInState(spaceKey, stateId) {
+  const { results } = await kvs.query().where("key", WhereConditions.beginsWith(`workflow-idx-${sanitize(spaceKey)}-${stateId}-`)).limit(100).getMany();
+  return (results || []).length;
+}
+
+// The space's workflows as the editor sees them: the resolved default (with where it came from)
+// and every label-scoped extra with its definition.
+export async function listSpaceWorkflows(spaceKey) {
+  const sk = sanitize(spaceKey);
+  const space = await kvs.get(`workflow-def-space-${sk}`);
+  const global = await kvs.get("workflow-def-global");
+  const def = (space?.states?.length && space) || (global?.states?.length && global) || { ...DEFAULT_WORKFLOW };
+  const source = space?.states?.length ? "space" : global?.states?.length ? "global" : "builtin";
+  const settings = await getSpaceWorkflowSettings(spaceKey);
+  const extras = [];
+  for (const lw of settings.labelWorkflows || []) {
+    const d = await kvs.get(extraDefKey(spaceKey, lw.workflowId));
+    extras.push({ workflowId: lw.workflowId, labels: lw.labels, priority: lw.priority, def: d || null });
+  }
+  return { default: def, source, extras, colors: WORKFLOW_COLORS };
+}
+
+// Save the space default (workflowId absent / "default" / the default's own id) or a
+// label-scoped extra. A state that still holds pages cannot be removed — those pages would be
+// in a state the definition no longer knows.
+export async function storeSpaceWorkflow(spaceKey, { workflowId, def, labels, priority }) {
+  if (!spaceKey) return { success: false, reason: "spaceKey required" };
+  const v = validateDefinition({ ...def, id: workflowId && workflowId !== "default" ? workflowId : (def?.id || "default") });
+  if (!v.ok) return { success: false, reason: v.reason };
+  const clean = v.value;
+  const isExtra = !!workflowId && workflowId !== "default";
+  const current = isExtra ? await kvs.get(extraDefKey(spaceKey, workflowId)) : await resolveWorkflowDef(spaceKey);
+  const keep = new Set(clean.states.map((s) => s.id));
+  for (const st of current?.states || []) {
+    if (keep.has(st.id)) continue;
+    if (!isExtra || current) {
+      const n = await countPagesInState(spaceKey, st.id);
+      if (n > 0) return { success: false, reason: `"${st.name || st.id}" still has ${n >= 100 ? "100+" : n} page${n === 1 ? "" : "s"} in it — move them first, then remove the state` };
+    }
+  }
+  if (isExtra) {
+    await kvs.set(extraDefKey(spaceKey, workflowId), clean);
+    const settings = await getSpaceWorkflowSettings(spaceKey);
+    const others = (settings.labelWorkflows || []).filter((lw) => lw.workflowId !== workflowId);
+    const entry = sanitizeLabelWorkflows([{ workflowId, name: clean.name, labels, priority }])[0] || { workflowId, name: clean.name, labels: [], priority: 0 };
+    await kvs.set(`workflow-settings-${sanitize(spaceKey)}`, { ...settings, labelWorkflows: [...others, entry] });
+    const deadEnds = findDeadEndStates(clean);
+    return { success: true, def: clean, warning: deadEnds.length ? `These states have no way out: ${deadEnds.map((id) => findState(clean, id)?.name || id).join(", ")}` : null };
+  }
+  const r = await storeWorkflowConfig("space", spaceKey, clean);
+  return { ...r, def: clean };
+}
+
+export async function deleteSpaceWorkflow(spaceKey, workflowId) {
+  if (!spaceKey || !workflowId || workflowId === "default") return { success: false, reason: "Only a label-scoped workflow can be removed" };
+  // Refuse while any page in the space still runs it (first 300 index rows are checked).
+  let q = kvs.query().where("key", WhereConditions.beginsWith(`workflow-idx-${sanitize(spaceKey)}-`)).limit(100);
+  for (let i = 0; i < 3; i++) {
+    const { results, nextCursor } = await q.getMany();
+    for (const { value } of results || []) {
+      const rec = value?.pageId ? await readPageWorkflow(value.pageId) : null;
+      if (rec?.workflowId === workflowId) return { success: false, reason: "Pages in this space still run this workflow — move them to another workflow first" };
+    }
+    if (!nextCursor) break;
+    q = kvs.query().where("key", WhereConditions.beginsWith(`workflow-idx-${sanitize(spaceKey)}-`)).limit(100).cursor(nextCursor);
+  }
+  await kvs.delete(extraDefKey(spaceKey, workflowId)).catch(() => {});
+  const settings = await getSpaceWorkflowSettings(spaceKey);
+  await kvs.set(`workflow-settings-${sanitize(spaceKey)}`, { ...settings, labelWorkflows: (settings.labelWorkflows || []).filter((lw) => lw.workflowId !== workflowId) });
+  return { success: true };
 }
 
 export async function loadWorkflowConfig(scope, key) {
@@ -327,6 +485,7 @@ async function persistState(pageId, record, prevStateId) {
   await kvs.set(`workflow-idx-${sk}-${record.stateId}-${pageId}`, {
     pageId,
     stateId: record.stateId,
+    workflowId: record.workflowId || null, // B1: the dashboard names the state from the page's own definition
     enteredAt: record.enteredAt,
     reviewDueAt: record.reviewDueAt || null,
   });
@@ -403,8 +562,9 @@ export function computeReviewDueAt(state, overrideDays) {
 // Assign a workflow to a page and set its initial state (idempotent-ish: re-assign resets to initial).
 export async function assignPageWorkflow({ pageId, spaceKey, actorAccountId, actorName, workflowId, logReason }) {
   if (!pageId) return { success: false, reason: "pageId required" };
-  const def = await resolveWorkflowDef(spaceKey);
-  if (workflowId && def.id !== workflowId) {
+  // B1: "default" (or nothing) is the space default; any other id must be a stored extra.
+  const def = await resolveWorkflowDef(spaceKey, workflowId);
+  if (workflowId && workflowId !== "default" && def.id !== workflowId) {
     return { success: false, reason: `Workflow ${workflowId} not defined for this space` };
   }
   const initial = getInitialState(def);
@@ -430,7 +590,7 @@ export async function assignPageWorkflow({ pageId, spaceKey, actorAccountId, act
 
 // --- Per-space workflow activation settings (at-scale assignment) ---
 
-const DEFAULT_SPACE_SETTINGS = { enabled: false, autoAssignNew: false, workflowId: "default", demoteTo: "initial", reviewAfterDaysByState: {}, syncLabels: false };
+const DEFAULT_SPACE_SETTINGS = { enabled: false, autoAssignNew: false, workflowId: "default", demoteTo: "initial", reviewAfterDaysByState: {}, syncLabels: false, labelWorkflows: [] };
 
 export async function getSpaceWorkflowSettings(spaceKey) {
   if (!spaceKey) return { ...DEFAULT_SPACE_SETTINGS };
@@ -495,6 +655,8 @@ export async function setSpaceWorkflowSettings(spaceKey, settings) {
     readConfirmation: sanitizeReadConfirmation(settings?.readConfirmation),
     // B3: every approval decision must carry a TOTP from the approver's enrolled device.
     requireSignature: settings?.requireSignature === true,
+    // B1: label-scoped workflows — [{ workflowId, name, labels, priority }], highest priority wins.
+    labelWorkflows: sanitizeLabelWorkflows(settings?.labelWorkflows),
   };
   // Optional approval config for the enforce transition (#43). Shape:
   // { approvers: [{ type:"user"|"group", id, name }], mode:"any"|"all"|"min", min }.
@@ -530,8 +692,14 @@ export async function autoAssignOnEvent({ pageId, spaceKey, actorAccountId, acto
   const claimKey = `workflow-autoassigned-${pageId}`;
   if (await kvs.get(claimKey)) return { assigned: false, reason: "already auto-assigned" };
   await kvs.set(claimKey, { at: new Date().toISOString(), spaceKey });
-  const res = await assignPageWorkflow({ pageId, spaceKey, actorAccountId, actorName, workflowId: settings.workflowId, logReason: "auto-assigned on create" });
-  return { assigned: !!res.success, reason: res.success ? "auto-assigned" : res.reason, record: res.record };
+  // B1: a label-scoped workflow wins over the default when one of its labels is on the page.
+  let workflowId = settings.workflowId;
+  if ((settings.labelWorkflows || []).length) {
+    const chosen = chooseWorkflowForLabels(settings.labelWorkflows, await fetchPageLabels(pageId));
+    if (chosen) workflowId = chosen;
+  }
+  const res = await assignPageWorkflow({ pageId, spaceKey, actorAccountId, actorName, workflowId, logReason: workflowId !== settings.workflowId ? `auto-assigned on create (label workflow ${workflowId})` : "auto-assigned on create" });
+  return { assigned: !!res.success, reason: res.success ? "auto-assigned" : res.reason, record: res.record, workflowId };
 }
 
 // Move a page to `toStateId` after validating the edge. Returns {success, reason?, record?}.
@@ -544,7 +712,7 @@ export async function transitionPageWorkflow({ pageId, spaceKey, toStateId, acto
   if (!pageId || !toStateId) return { success: false, reason: "pageId and toStateId required" };
   const current = await readPageWorkflow(pageId);
   if (!current) return { success: false, reason: "Page has no workflow assigned" };
-  const def = await resolveWorkflowDef(spaceKey || current.spaceKey);
+  const def = await resolveWorkflowDef(spaceKey || current.spaceKey, current.workflowId);
   const check = validateTransition(def, current.stateId, toStateId);
   if (!check.ok) return { success: false, reason: check.reason };
   const target = findState(def, toStateId);
@@ -654,7 +822,7 @@ export async function setPageReviewDue({ pageId, reviewDueAt, actorAccountId, ac
     reason: reason || null,
     details: { from, to },
   });
-  const def = await resolveWorkflowDef(current.spaceKey);
+  const def = await resolveWorkflowDef(current.spaceKey, current.workflowId);
   await recordActivity({
     type: "workflow.review-due",
     pageId,
@@ -693,7 +861,7 @@ export async function bulkAssignPagesInSpace({ spaceKey, spaceId, cursor, actorA
 // Read model for the UI: current record + available transitions + def.
 export async function getPageWorkflow(pageId, spaceKey) {
   const record = await readPageWorkflow(pageId);
-  const def = await resolveWorkflowDef(spaceKey || record?.spaceKey);
+  const def = await resolveWorkflowDef(spaceKey || record?.spaceKey, record?.workflowId);
   if (!record) return { assigned: false, def };
   const state = findState(def, record.stateId);
   return {

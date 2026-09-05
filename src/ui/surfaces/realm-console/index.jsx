@@ -7,6 +7,7 @@ import { enablePaletteSync } from "../../kit/palette-sync";
 import ThumbnailPreview from "../../kit/ThumbnailPreview";
 import ValidationsEditor from "../../kit/ValidationsEditor";
 import WorkflowSettingsEditor from "../../kit/WorkflowSettingsEditor";
+import WorkflowDefinitionEditor from "../../kit/WorkflowDefinitionEditor";
 import WorkflowInbox from "../../kit/WorkflowInbox";
 import LicenseBanner from "../../kit/LicenseBanner";
 import { formatRemaining, formatDurationHours } from "../../kit/format-duration";
@@ -2301,6 +2302,7 @@ const RealmPolicyDashboard = () => {
         <div className="tab-content">
           <WorkflowDashboard spaceKey={realmKey} />
           <WorkflowSettingsEditor spaceKey={realmKey} />
+          <WorkflowDefinitionEditor spaceKey={realmKey} />
         </div>
       )}
 
