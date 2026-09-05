@@ -9,7 +9,7 @@ import {
   mailEditApproved,
   mailEditDenied,
 } from "../../infra/notice-composer.js";
-import { getActiveEditGrant, getActiveSectionEditGrant } from "./logic.js";
+import { getActiveEditGrant, getActiveSectionEditGrant, writeOwnerIndex, dropOwnerIndex, listPendingRequestsForOwner } from "./logic.js";
 import { canReadPage } from "../../shared/content-access.js";
 import { recordActivity } from "../../infra/activity-log.js";
 
@@ -100,6 +100,8 @@ const requestEditAccess = async (req) => {
     status: "pending",
     requestedAt: new Date().toISOString(),
   });
+  // K1: the owner's index row goes with the record (read back by key: the set is strongly consistent).
+  await writeOwnerIndex(await kvs.get(`edit-request-${attachmentId}-${accountId}`)).catch((e) => console.warn("[EDIT-ACCESS] owner index", e));
   // A1: the request exists from this write on.
   await recordActivity({
     type: "editreq.requested",
@@ -141,6 +143,7 @@ const checkEditRequest = async (req) => {
     const deniedAt = existing.deniedAt ? new Date(existing.deniedAt).getTime() : 0;
     if (Date.now() - deniedAt >= COOLDOWN_MS) {
       await kvs.delete(`edit-request-${attachmentId}-${accountId}`);
+      await dropOwnerIndex(existing);
       return { status: "none" };
     }
     return { status: "denied", deniedAt: existing.deniedAt };
@@ -174,23 +177,10 @@ const listMyEditRequests = async (req) => {
   const accountId = req.context.accountId;
   if (!accountId) return { requests: [] };
 
-  const requests = [];
-  let query = kvs.query().where("key", WhereConditions.beginsWith("edit-request-")).limit(100);
-  let iterations = 0;
-  do {
-    const { results, nextCursor } = await query.getMany();
-    for (const { value } of results || []) {
-      if (value?.ownerAccountId === accountId && value?.status === "pending") {
-        requests.push(value);
-      }
-    }
-    if (!nextCursor || ++iterations >= 10) break;
-    query = kvs
-      .query()
-      .where("key", WhereConditions.beginsWith("edit-request-"))
-      .limit(100)
-      .cursor(nextCursor);
-  } while (true);
+  // K1 index discipline: the owner's OWN prefix, confirmed by key — never a site-wide scan of
+  // every request filtered client-side (which went blind past ~1,000 records, like the
+  // approvals inbox did before it61).
+  const requests = await listPendingRequestsForOwner(accountId);
   return { requests };
 };
 
@@ -238,6 +228,7 @@ export const approveEditRequest = async (req) => {
   }
 
   await kvs.delete(requestKey);
+  await dropOwnerIndex(request);
   // A1: grant written, request consumed — the approval is a fact.
   await recordActivity({
     type: "editreq.approved",
@@ -273,6 +264,7 @@ export const denyEditRequest = async (req) => {
   const existing = await kvs.get(requestKey);
   if (!existing) return { success: false, reason: "Request not found" };
   await kvs.set(requestKey, { ...existing, status: "denied", deniedAt: new Date().toISOString() });
+  await dropOwnerIndex(existing);
   // A1
   await recordActivity({
     type: "editreq.denied",
