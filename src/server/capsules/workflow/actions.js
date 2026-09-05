@@ -38,6 +38,7 @@ import {
   buildApprovalRecord,
 } from "./approvals.js";
 import { enqueueAiGate, resolveRules } from "../validations/actions.js";
+import { confirmRead, readStatus, readReport, readConfirmationRequired, requiredVersion } from "./read-acks.js";
 import { evaluateRules } from "../../infra/rules-engine.js";
 import { readDocBody } from "../../infra/doc-surgery.js";
 import { fetchPageLabels } from "../../infra/labels.js";
@@ -121,6 +122,10 @@ const getWorkflow = async (req) => {
     // would accept — a steward of the page's own space (the edit check runs on the write).
     result.canSetReviewDue = !!(req.context?.accountId && result.record?.spaceKey)
       && await authorizeSteward(req.context.accountId, result.record.spaceKey);
+    // B2: whether this page asks its readers to confirm; the counts come from get-read-status.
+    result.readConfirmation = readConfirmationRequired(settings, result.record)
+      ? { required: true, version: requiredVersion(result.record), canReport: result.canSetReviewDue }
+      : { required: false };
   }
   // A4/A6: the page's CURRENT version, so the ribbon can say "changed since approval (now v{n})"
   // next to the approval evidence without a second resolver call. Best-effort: null on failure
@@ -314,6 +319,42 @@ const setReviewDue = async (req) => {
   });
   if (!r.success) return { success: false, reason: r.reason };
   return { success: true, reviewDueAt: r.reviewDueAt };
+};
+
+// B2: read confirmations. `confirm-read` is the caller's own statement about a page they can
+// read; `get-read-status` returns counts (no names) to anyone who can read the page; the
+// per-person report is steward-only (a list of who has NOT read something is a people list).
+const confirmReadAction = async (req) => {
+  const pageId = pageIdOf(req);
+  const accountId = req.context?.accountId;
+  if (!pageId || !accountId) return { success: false, reason: "No page context" };
+  if (!(await canReadPage(accountId, pageId))) return { success: false, reason: "No page context" };
+  const record = await readPageWorkflow(pageId);
+  if (!record) return { success: false, reason: "Page has no workflow assigned" };
+  const settings = await getSpaceWorkflowSettings(record.spaceKey);
+  if (!readConfirmationRequired(settings, record)) return { success: false, reason: "This page does not ask for read confirmations" };
+  return confirmRead({ pageId, accountId, name: await actorName(), record });
+};
+
+const getReadStatusAction = async (req) => {
+  const pageId = pageIdOf(req);
+  if (!pageId) return { required: false };
+  if (!(await callerMayReadPage(req, pageId))) return { required: false };
+  const record = await readPageWorkflow(pageId);
+  if (!record) return { required: false };
+  const settings = await getSpaceWorkflowSettings(record.spaceKey);
+  return readStatus({ pageId, accountId: req.context?.accountId, record, settings });
+};
+
+const getReadReportAction = async (req) => {
+  const pageId = pageIdOf(req);
+  if (!pageId) return { required: false, readers: [] };
+  const record = await readPageWorkflow(pageId);
+  if (!record) return { required: false, readers: [] };
+  const spaceKey = record.spaceKey || await resolvePageSpaceKey(pageId);
+  if (!spaceKey || !(await authorizeSteward(req.context?.accountId, spaceKey))) return { required: false, readers: [], reason: "Only a space steward can see who has read this page" };
+  const settings = await getSpaceWorkflowSettings(spaceKey);
+  return readReport({ pageId, record, settings });
 };
 
 // A free-text reason is stored in the durable record; a 1 KB one would push the entry past the
@@ -547,6 +588,9 @@ export const actions = [
   ["get-space-workflow-settings", getSpaceSettings],
   ["set-space-workflow-settings", setSpaceSettings],
   ["set-review-due", setReviewDue],
+  ["confirm-read", confirmReadAction],
+  ["get-read-status", getReadStatusAction],
+  ["get-read-report", getReadReportAction],
   ["bulk-assign-workflow", bulkAssign],
   ["decide-approval", decideApprovalAction],
   ["get-page-approvals", getPageApprovals],

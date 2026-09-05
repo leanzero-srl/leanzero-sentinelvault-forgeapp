@@ -300,6 +300,79 @@ const ApprovalEvidence = ({ workflow, siteUrl, pageId, host }) => {
   );
 };
 
+// B2: read confirmations. While a page asks for them (an approved page in a space with the
+// setting on), everyone sees "Confirm I've read v{N}" until they have, then "Read v{N} ✓"; a
+// steward also sees "Read by X of Y" and can open the list of who has and has not. The counts
+// come from get-read-status (one call), the names from get-read-report (steward-gated).
+const ReadConfirm = ({ workflow, pageId, host }) => {
+  const rc = workflow?.readConfirmation;
+  const [status, setStatus] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(null);
+  const [open, setOpen] = useState(false);
+  const [report, setReport] = useState(null);
+  const btnRef = useRef(null);
+  const panelRef = useRef(null);
+  useDismissableDialog(open, setOpen, panelRef, btnRef);
+
+  const load = useCallback(async () => {
+    try { setStatus(await invoke("get-read-status", { pageId })); } catch (_) { setStatus(null); }
+  }, [pageId]);
+  useEffect(() => { if (rc?.required) load(); else setStatus(null); }, [rc?.required, rc?.version, load]);
+  useEffect(() => {
+    if (!open) { setReport(null); return; }
+    (async () => { try { setReport(await invoke("get-read-report", { pageId })); } catch (_) { setReport({ readers: [] }); } })();
+  }, [open, pageId]);
+
+  if (!rc?.required || !status?.required) return null;
+  const v = status.version;
+  const vLabel = v != null ? `v${v}` : "this version";
+  const confirm = async () => {
+    setBusy(true); setError(null);
+    try {
+      const r = await invoke("confirm-read", { pageId });
+      if (r?.success) await load(); else setError(r?.reason || "Could not record your confirmation.");
+    } catch (_) { setError("Could not record your confirmation."); }
+    finally { setBusy(false); }
+  };
+
+  return (
+    <span className="wf-read" data-testid="wf-read">
+      {status.myAck
+        ? <span className="wf-read-done" title={`You confirmed reading ${vLabel} on ${new Date(status.myAck.at).toLocaleDateString()}.`} data-testid="wf-read-done">Read {vLabel} ✓</span>
+        : (
+          <button type="button" className="wf-read-btn" onClick={confirm} disabled={busy} title="Record that you have read the approved version of this page." data-testid="wf-read-confirm">
+            {busy ? "Saving…" : `Confirm I've read ${vLabel}`}
+          </button>
+        )}
+      {rc.canReport && (
+        <button ref={btnRef} type="button" className="wf-read-count" onClick={() => setOpen((o) => !o)} aria-haspopup="dialog" aria-expanded={open} title="Who has confirmed reading this version." data-testid="wf-read-count">
+          Read by {status.ackedCount} of {status.audienceCount}{status.unresolved ? "+" : ""} <span className="wf-chip-caret" aria-hidden="true">▾</span>
+        </button>
+      )}
+      {error && <span className="wf-read-error" role="alert">{error}</span>}
+      {open && inHost(host, (
+        <div className="wf-appr-panel wf-read-panel" role="dialog" aria-label="Read confirmations" ref={panelRef} tabIndex={-1} data-testid="wf-read-dialog">
+          <div className="wf-appr-head">Read confirmations · {vLabel}</div>
+          <div className="wf-appr-sub">{status.ackedCount} of {status.audienceCount} people asked to read this page have confirmed the approved version.{status.unresolved ? " One or more groups could not be expanded right now." : ""}</div>
+          {!report && <div className="wf-read-loading">Loading…</div>}
+          {report && report.readers?.length === 0 && <div className="wf-read-loading">Nobody is in the audience yet — add people or groups on the space's Workflow tab.</div>}
+          {report && report.readers?.length > 0 && (
+            <ul className="wf-read-list">
+              {report.readers.map((r) => (
+                <li key={r.accountId} className={`wf-read-row${r.confirmed ? " wf-read-row-yes" : ""}`} data-testid="wf-read-row" data-confirmed={r.confirmed ? "1" : "0"}>
+                  <span className="wf-read-name">{r.name}</span>
+                  <span className="wf-read-state">{r.confirmed ? `Read v${r.version ?? "?"}` : r.staleVersion != null ? `Read v${r.staleVersion}, not ${vLabel}` : "Not yet"}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      ))}
+    </span>
+  );
+};
+
 const WorkflowControl = ({ workflow, approvals, operatorId, pageId, spaceKey, siteUrl, isSteward, host, onTransitioned }) => {
   const [menuOpen, setMenuOpen] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -516,6 +589,7 @@ const WorkflowControl = ({ workflow, approvals, operatorId, pageId, spaceKey, si
         <ApprovalEvidence workflow={workflow} siteUrl={siteUrl} pageId={pageId} host={host} />
       )}
       <ReviewDue workflow={workflow} pageId={pageId} isSteward={isSteward} host={host} onSaved={onTransitioned} />
+      <ReadConfirm workflow={workflow} pageId={pageId} host={host} />
       {menuOpen && inHost(host, (
         <div className="wf-menu" role="menu" aria-label={`Move ${state.name} to`} ref={menuRef} onKeyDown={onMenuKey}>
           <div className="wf-menu-head" aria-hidden="true">Move to…</div>
