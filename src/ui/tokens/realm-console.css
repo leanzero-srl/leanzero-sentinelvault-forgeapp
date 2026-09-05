@@ -2138,7 +2138,7 @@ html[data-color-mode="dark"] .sv-activity-chip-validation.is-active { background
 .wf-def-head label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; font-weight: 700; color: var(--sv-text-secondary); }
 .wf-def-name { flex: 1 1 220px; } .wf-def-labels { flex: 2 1 260px; } .wf-def-priority { flex: 0 0 110px; }
 .wf-def-table { display: flex; flex-direction: column; gap: 6px; overflow-x: auto; }
-.wf-def-row { display: grid; grid-template-columns: minmax(170px, 1.3fr) 120px 52px 76px 96px minmax(220px, 2fr) 96px; gap: 10px; align-items: center; padding: 8px 10px; border-radius: 10px; background: var(--sv-bg-secondary, #F8FAFC); min-width: 860px; }
+.wf-def-row { display: grid; grid-template-columns: minmax(190px, 1.3fr) 120px 56px 80px 100px minmax(220px, 2fr) 112px; gap: 10px; align-items: center; padding: 8px 10px; border-radius: 10px; background: var(--sv-bg-secondary, #F8FAFC); min-width: 860px; }
 .wf-def-row-head { background: transparent; font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.04em; color: var(--sv-text-secondary); padding-bottom: 0; }
 .wf-def-cell-name { display: flex; flex-direction: column; gap: 3px; }
 .wf-def-id { font-size: 11px; color: var(--sv-text-subtle); }
@@ -2157,3 +2157,7 @@ html[data-color-mode="dark"] .sv-activity-chip-validation.is-active { background
 .wf-def-delete { border: 0; border-radius: 8px; padding: 8px 14px; background: #dc2626; color: #fff; font-weight: 800; cursor: pointer; }
 .wf-def-delete:disabled { opacity: 0.6; cursor: default; }
 .wf-def .alert-success, .wf-def .alert-error { margin: 12px 0 0; }
+.wf-def-head .form-input { min-width: 260px; }
+/* Native radios/checkboxes in the states table get an explicit, visible look (the console's
+   reset otherwise leaves the "First" radio invisible). */
+.wf-def-row > span > input[type="radio"], .wf-def-row > span > input[type="checkbox"] { appearance: auto; -webkit-appearance: auto; width: 18px; height: 18px; margin: 0; accent-color: #1d4ed8; cursor: pointer; }
