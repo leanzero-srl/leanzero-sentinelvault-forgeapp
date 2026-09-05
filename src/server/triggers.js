@@ -26,9 +26,10 @@ import { evaluateRules } from "./infra/rules-engine.js";
 import { fetchPageLabels } from "./infra/labels.js";
 import {
   autoAssignOnEvent, getSpaceWorkflowSettings, resolveWorkflowDef, findState, resolveDemoteTarget, validateTransition,
-  transitionPageWorkflow, readPageWorkflow, restampApprovedVersion, fetchLivePageVersion,
+  transitionPageWorkflow, readPageWorkflow, purgePageWorkflow, restampApprovedVersion, fetchLivePageVersion,
 } from "./capsules/workflow/logic.js";
-import { resolveApproverIds, applyAiVerdict, sweepApprovalIndex } from "./capsules/workflow/approvals.js";
+import { resolveApproverIds, applyAiVerdict, sweepApprovalIndex, clearPageApprovals } from "./capsules/workflow/approvals.js";
+import { fetchPageStatuses } from "./shared/page-status.js";
 import { postEnforceComment } from "./infra/approval-blueprints.js";
 import { isAccountStewardAsApp } from "./shared/steward-checks.js";
 import { postValidationComment } from "./infra/validation-blueprints.js";
@@ -1235,7 +1236,7 @@ export async function sweepRevertToApproved(pageId, record) {
 export async function workflowSweep() {
   const systemAccountId = await resolveAppAccountId();
   if (!systemAccountId) return { body: JSON.stringify({ swept: 0, reason: "no app account" }) };
-  let reverted = 0, demoted = 0, healed = 0, expired = 0, overdue = 0;
+  let reverted = 0, demoted = 0, healed = 0, expired = 0, overdue = 0, skippedTrashed = 0, purgedPages = 0;
   const nowMs = Date.now();
   const defCache = new Map(); // per-space def cache — most pages in a space share one workflow
   const defFor = async (sk) => { if (!defCache.has(sk)) defCache.set(sk, await resolveWorkflowDef(sk)); return defCache.get(sk); };
@@ -1243,8 +1244,20 @@ export async function workflowSweep() {
   let iterations = 0;
   do {
     const { results, nextCursor } = await query.getMany();
+    // Where each page IS, one batch call per query page: a trashed page keeps its record (it
+    // may be restored) but gets no enforcement, expiry or comment while it is in the trash; a
+    // page Confluence has forgotten (purged) has its workflow keys purged too — the dashboard
+    // otherwise lists it forever. `unknown` (a failed lookup) is left alone this tick.
+    const places = await fetchPageStatuses((results || []).map((r) => r?.value?.pageId).filter(Boolean));
     for (const { value: idx } of (results || [])) {
       try {
+        const place = places.get(String(idx?.pageId))?.status || "unknown";
+        if (place === "trashed") { skippedTrashed++; continue; }
+        if (place === "missing") {
+          await purgePageWorkflow(idx.pageId, { clearApprovals: clearPageApprovals });
+          purgedPages++;
+          continue;
+        }
         const record = await readPageWorkflow(idx.pageId);
         if (!record) continue;
         const def = await defFor(record.spaceKey);
@@ -1420,7 +1433,7 @@ export async function workflowSweep() {
   let inbox = { backfilled: 0, orphansRemoved: 0 };
   try { inbox = await sweepApprovalIndex({ nowMs }); } catch (e) { console.error("[WORKFLOW-SWEEP] inbox index", e); }
 
-  return { body: JSON.stringify({ reverted, demoted, healed, expired, overdue, aiTimedOut, inboxBackfilled: inbox.backfilled, orphanApprovalsRemoved: inbox.orphansRemoved }) };
+  return { body: JSON.stringify({ reverted, demoted, healed, expired, overdue, skippedTrashed, purgedPages, aiTimedOut, inboxBackfilled: inbox.backfilled, orphanApprovalsRemoved: inbox.orphansRemoved }) };
 }
 
 // --- Conditions & Validations phase (runs after the body-protection pipeline) ---

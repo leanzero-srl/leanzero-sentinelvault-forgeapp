@@ -32,7 +32,22 @@ export function WorkflowDashboard({ spaceKey }) {
   // pattern + the it16 error-surfacing direction). Empty (total 0) stays quiet by design —
   // like the approvals inbox, the dashboard doesn't clutter a space with nothing to report.
   if (data?.error) return <div className="wf-dash-error" role="status">Couldn’t load workflow status right now. Reload the page to try again.</div>;
-  if (!data || data.total === 0) return null;
+  if (!data || (data.total === 0 && !data.inTrash)) return null;
+  // Nothing live but something in the trash: four zero cards and an empty table would be
+  // clutter that says less than one sentence does.
+  if (data.total === 0) {
+    return (
+      <div className="wf-dash">
+        <div className="wf-dash-head">
+          <div>
+            <h3 className="wf-dash-title">Workflow status</h3>
+            <p className="wf-dash-sub">No pages under workflow in this space.</p>
+          </div>
+        </div>
+        <p className="wf-dash-note" data-testid="wf-dash-in-trash">{data.inTrash} page{data.inTrash === 1 ? " is" : "s are"} in the trash and not shown; a restored page keeps its workflow state.</p>
+      </div>
+    );
+  }
 
   const colorOf = Object.fromEntries((data.states || []).map((s) => [s.id, s.color || "neutral"]));
   const download = () => {
@@ -96,6 +111,9 @@ export function WorkflowDashboard({ spaceKey }) {
 
       {data.truncated && (
         <p className="wf-dash-note">Showing the {data.listCap} most recently updated pages. The counts above cover all {data.total}.</p>
+      )}
+      {data.inTrash > 0 && (
+        <p className="wf-dash-note" data-testid="wf-dash-in-trash">{data.inTrash} page{data.inTrash === 1 ? " is" : "s are"} in the trash and not shown; a restored page keeps its workflow state.</p>
       )}
     </div>
   );
