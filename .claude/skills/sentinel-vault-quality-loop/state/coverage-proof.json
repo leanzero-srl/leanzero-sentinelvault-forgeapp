@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-05T21:33:51.845Z",
+  "generatedAt": "2026-09-05T23:25:38.745Z",
   "appRoot": "/Users/mihaiperdum/Projects/Sentinel Vault",
   "harnessRoot": "/Users/mihaiperdum/Projects/forge-live-harness",
   "evidenceFiles": [
@@ -2093,8 +2093,7 @@
       "group": "testhook/invoke-seams",
       "tier": "string-verified",
       "coveredBy": [
-        "harness/esignature.spec.ts",
-        "harness/ribbon-esignature.spec.ts"
+        "harness/esignature.spec.ts"
       ],
       "annotatedBy": []
     },

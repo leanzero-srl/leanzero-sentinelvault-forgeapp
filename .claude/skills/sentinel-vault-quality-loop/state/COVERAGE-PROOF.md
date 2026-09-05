@@ -1,6 +1,6 @@
 # Coverage Proof — Sentinel Vault
 
-Generated 2026-09-05T21:33:51.845Z by `scripts/coverage-proof.mjs` (parsed inventory — never hand-maintained; do not edit).
+Generated 2026-09-05T23:25:38.745Z by `scripts/coverage-proof.mjs` (parsed inventory — never hand-maintained; do not edit).
 
 **222 inventory items** — 159 string-verified, 51 annotated, 12 gaps.
 Evidence: 117 files (harness specs, app e2e scripts, unit tests).
@@ -290,7 +290,7 @@ Evidence: 117 files (harness specs, app e2e scripts, unit tests).
 | `signatureStatus` | string-verified | harness/esignature.spec.ts |
 | `enrollSignature` | string-verified | harness/esignature.spec.ts, harness/ribbon-esignature.spec.ts |
 | `confirmSignatureEnrollment` | string-verified | harness/esignature.spec.ts, harness/ribbon-esignature.spec.ts |
-| `revokeSignature` | string-verified | harness/esignature.spec.ts, harness/ribbon-esignature.spec.ts |
+| `revokeSignature` | string-verified | harness/esignature.spec.ts |
 | `confirmRead` | string-verified | harness/read-confirmations.spec.ts |
 | `getReadStatus` | string-verified | harness/read-confirmations.spec.ts |
 | `getReadReport` | string-verified | harness/read-confirmations.spec.ts |
