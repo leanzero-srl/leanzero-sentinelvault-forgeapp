@@ -175,7 +175,7 @@ const cleanDemoteTo = (demoteTo, def = null) => {
 const isEnforceState = (s) => !!s?.enforce || s?.id === "approved";
 
 export default function WorkflowSettingsEditor({ spaceKey = null }) {
-  const [settings, setSettings] = useState({ enabled: false, autoAssignNew: false, workflowId: "default", approval: null, enforceMode: "demote", demoteTo: "initial", reviewAfterDays: null, reviewAfterDaysByState: {}, entryConditions: {}, syncLabels: false, readConfirmation: null });
+  const [settings, setSettings] = useState({ enabled: false, autoAssignNew: false, workflowId: "default", approval: null, enforceMode: "demote", demoteTo: "initial", reviewAfterDays: null, reviewAfterDaysByState: {}, entryConditions: {}, syncLabels: false, readConfirmation: null, requireSignature: false });
   const [def, setDef] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -187,7 +187,7 @@ export default function WorkflowSettingsEditor({ spaceKey = null }) {
     (async () => {
       try {
         const r = await invoke("get-space-workflow-settings", { spaceKey });
-        if (r?.settings) setSettings({ enabled: !!r.settings.enabled, autoAssignNew: !!r.settings.autoAssignNew, workflowId: r.settings.workflowId || "default", approval: r.settings.approval || null, enforceMode: r.settings.enforceMode === "revert" ? "revert" : "demote", demoteTo: cleanDemoteTo(r.settings.demoteTo, r.def), reviewAfterDays: r.settings.reviewAfterDays ?? null, reviewAfterDaysByState: cleanClocks(r.settings.reviewAfterDaysByState, r.def), entryConditions: r.settings.entryConditions || {}, syncLabels: !!r.settings.syncLabels, readConfirmation: r.settings.readConfirmation || null });
+        if (r?.settings) setSettings({ enabled: !!r.settings.enabled, autoAssignNew: !!r.settings.autoAssignNew, workflowId: r.settings.workflowId || "default", approval: r.settings.approval || null, enforceMode: r.settings.enforceMode === "revert" ? "revert" : "demote", demoteTo: cleanDemoteTo(r.settings.demoteTo, r.def), reviewAfterDays: r.settings.reviewAfterDays ?? null, reviewAfterDaysByState: cleanClocks(r.settings.reviewAfterDaysByState, r.def), entryConditions: r.settings.entryConditions || {}, syncLabels: !!r.settings.syncLabels, readConfirmation: r.settings.readConfirmation || null, requireSignature: !!r.settings.requireSignature });
         if (r?.def) setDef(r.def);
       } catch (e) {
         console.error("Load workflow settings failed:", e);
@@ -296,6 +296,13 @@ export default function WorkflowSettingsEditor({ spaceKey = null }) {
               </SettingsRow>
             </div>
           )}
+
+          <SettingsRow
+            label="Require a signed decision"
+            description="Every Approve or Deny must carry the current code from the approver's authenticator app (set up once on their My work page). The approval record marks each decision as signed."
+          >
+            <Toggle label="Require a signed decision" checked={!!settings.requireSignature} onChange={(e) => setSettings((p) => ({ ...p, requireSignature: e.target.checked }))} />
+          </SettingsRow>
 
           <SettingsRow label="Workflow states" description="The states every page moves through.">
             <div className="wf-state-preview">
