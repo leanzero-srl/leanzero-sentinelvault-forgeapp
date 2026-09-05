@@ -13,6 +13,7 @@
 import { asApp, route } from "@forge/api";
 import { kvs, WhereConditions } from "@forge/kvs";
 import { recordActivity } from "../../infra/activity-log.js";
+import { syncStateLabel } from "./label-sync.js";
 
 export const WORKFLOW_STATE_PROP = "sentinel-vault-workflow";
 
@@ -301,6 +302,19 @@ async function writeStateContentProp(pageId, record) {
   }
 }
 
+// B4: mirror the state as a page label when the space asks for it, and stamp the record so the
+// hourly sweep knows which rows still need the label (or need it removed). Best-effort.
+export async function mirrorStateLabel(pageId, record, settings) {
+  if (!record) return null;
+  if (!settings?.syncLabels) return null;
+  const r = await syncStateLabel(pageId, record.stateId);
+  if (r.ok) {
+    record.labelState = record.stateId;
+    await kvs.set(`workflow-state-${pageId}`, record).catch(() => {});
+  }
+  return r;
+}
+
 // Persist a state record: KVS record (source of truth) → by-state index → content property (best-effort).
 // `prevStateId` lets us drop the stale index entry on transition.
 async function persistState(pageId, record, prevStateId) {
@@ -408,13 +422,14 @@ export async function assignPageWorkflow({ pageId, spaceKey, actorAccountId, act
     reviewDueAt: computeReviewDueAt(initial, resolveReviewAfterDays(initial, settings)),
   };
   await persistState(pageId, record, prev?.stateId);
+  await mirrorStateLabel(pageId, record, settings).catch(() => {});
   await appendWorkflowLog(pageId, { from: null, to: initial.id, by: actorAccountId || null, byName: actorName || null, reason: logReason || "assigned" });
   return { success: true, record, state: initial, def };
 }
 
 // --- Per-space workflow activation settings (at-scale assignment) ---
 
-const DEFAULT_SPACE_SETTINGS = { enabled: false, autoAssignNew: false, workflowId: "default", demoteTo: "initial", reviewAfterDaysByState: {} };
+const DEFAULT_SPACE_SETTINGS = { enabled: false, autoAssignNew: false, workflowId: "default", demoteTo: "initial", reviewAfterDaysByState: {}, syncLabels: false };
 
 export async function getSpaceWorkflowSettings(spaceKey) {
   if (!spaceKey) return { ...DEFAULT_SPACE_SETTINGS };
@@ -473,6 +488,8 @@ export async function setSpaceWorkflowSettings(spaceKey, settings) {
     // #46: per-target-state transition conditions. { <stateId>: { requireRules, requireAi,
     // aiThreshold, onBudgetExhausted } } — reuses the space validation ruleset (rulesRef "space").
     entryConditions: sanitizeEntryConditions(settings?.entryConditions),
+    // B4: mirror the state as `sv-state-{id}` so Content by Label / CQL can filter on it.
+    syncLabels: settings?.syncLabels === true,
   };
   // Optional approval config for the enforce transition (#43). Shape:
   // { approvers: [{ type:"user"|"group", id, name }], mode:"any"|"all"|"min", min }.
@@ -562,6 +579,7 @@ export async function transitionPageWorkflow({ pageId, spaceKey, toStateId, acto
     ...enforceFields,
   };
   await persistState(pageId, record, current.stateId);
+  await mirrorStateLabel(pageId, record, settings).catch(() => {});
   await appendWorkflowLog(pageId, {
     from: current.stateId,
     to: toStateId,

@@ -175,7 +175,7 @@ const cleanDemoteTo = (demoteTo, def = null) => {
 const isEnforceState = (s) => !!s?.enforce || s?.id === "approved";
 
 export default function WorkflowSettingsEditor({ spaceKey = null }) {
-  const [settings, setSettings] = useState({ enabled: false, autoAssignNew: false, workflowId: "default", approval: null, enforceMode: "demote", demoteTo: "initial", reviewAfterDays: null, reviewAfterDaysByState: {}, entryConditions: {} });
+  const [settings, setSettings] = useState({ enabled: false, autoAssignNew: false, workflowId: "default", approval: null, enforceMode: "demote", demoteTo: "initial", reviewAfterDays: null, reviewAfterDaysByState: {}, entryConditions: {}, syncLabels: false });
   const [def, setDef] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -187,7 +187,7 @@ export default function WorkflowSettingsEditor({ spaceKey = null }) {
     (async () => {
       try {
         const r = await invoke("get-space-workflow-settings", { spaceKey });
-        if (r?.settings) setSettings({ enabled: !!r.settings.enabled, autoAssignNew: !!r.settings.autoAssignNew, workflowId: r.settings.workflowId || "default", approval: r.settings.approval || null, enforceMode: r.settings.enforceMode === "revert" ? "revert" : "demote", demoteTo: cleanDemoteTo(r.settings.demoteTo, r.def), reviewAfterDays: r.settings.reviewAfterDays ?? null, reviewAfterDaysByState: cleanClocks(r.settings.reviewAfterDaysByState, r.def), entryConditions: r.settings.entryConditions || {} });
+        if (r?.settings) setSettings({ enabled: !!r.settings.enabled, autoAssignNew: !!r.settings.autoAssignNew, workflowId: r.settings.workflowId || "default", approval: r.settings.approval || null, enforceMode: r.settings.enforceMode === "revert" ? "revert" : "demote", demoteTo: cleanDemoteTo(r.settings.demoteTo, r.def), reviewAfterDays: r.settings.reviewAfterDays ?? null, reviewAfterDaysByState: cleanClocks(r.settings.reviewAfterDaysByState, r.def), entryConditions: r.settings.entryConditions || {}, syncLabels: !!r.settings.syncLabels });
         if (r?.def) setDef(r.def);
       } catch (e) {
         console.error("Load workflow settings failed:", e);
@@ -265,6 +265,13 @@ export default function WorkflowSettingsEditor({ spaceKey = null }) {
             description="Every new page created in this space starts the workflow automatically, at its first state."
           >
             <Toggle label="Auto-start workflow on new pages" checked={settings.autoAssignNew} onChange={(e) => setSettings((p) => ({ ...p, autoAssignNew: e.target.checked }))} />
+          </SettingsRow>
+
+          <SettingsRow
+            label="Show the state as a page label"
+            description="Adds a label like sv-state-approved to each page and keeps it in step with the workflow, so Content by Label, the Page Properties Report and CQL can filter on it. Turning it off removes the labels within the hour."
+          >
+            <Toggle label="Show the state as a page label" checked={!!settings.syncLabels} onChange={(e) => setSettings((p) => ({ ...p, syncLabels: e.target.checked }))} />
           </SettingsRow>
 
           <SettingsRow label="Workflow states" description="The states every page moves through.">

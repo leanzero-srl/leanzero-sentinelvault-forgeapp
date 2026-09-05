@@ -26,10 +26,11 @@ import { evaluateRules } from "./infra/rules-engine.js";
 import { fetchPageLabels } from "./infra/labels.js";
 import {
   autoAssignOnEvent, getSpaceWorkflowSettings, resolveWorkflowDef, findState, resolveDemoteTarget, validateTransition,
-  transitionPageWorkflow, readPageWorkflow, purgePageWorkflow, restampApprovedVersion, fetchLivePageVersion,
+  transitionPageWorkflow, readPageWorkflow, purgePageWorkflow, mirrorStateLabel, restampApprovedVersion, fetchLivePageVersion,
 } from "./capsules/workflow/logic.js";
 import { resolveApproverIds, applyAiVerdict, sweepApprovalIndex, clearPageApprovals } from "./capsules/workflow/approvals.js";
 import { fetchPageStatuses } from "./shared/page-status.js";
+import { syncStateLabel } from "./capsules/workflow/label-sync.js";
 import { postEnforceComment } from "./infra/approval-blueprints.js";
 import { isAccountStewardAsApp } from "./shared/steward-checks.js";
 import { postValidationComment } from "./infra/validation-blueprints.js";
@@ -1239,6 +1240,8 @@ export async function workflowSweep() {
   let reverted = 0, demoted = 0, healed = 0, expired = 0, overdue = 0, skippedTrashed = 0, purgedPages = 0;
   const nowMs = Date.now();
   const defCache = new Map(); // per-space def cache — most pages in a space share one workflow
+  const settingsCache = new Map(); // per-space settings (B4 label sync reads them per row)
+  let labelsSynced = 0;
   const defFor = async (sk) => { if (!defCache.has(sk)) defCache.set(sk, await resolveWorkflowDef(sk)); return defCache.get(sk); };
   let query = kvs.query().where("key", WhereConditions.beginsWith("workflow-idx-")).limit(100);
   let iterations = 0;
@@ -1261,6 +1264,20 @@ export async function workflowSweep() {
         const record = await readPageWorkflow(idx.pageId);
         if (!record) continue;
         const def = await defFor(record.spaceKey);
+        // B4: label backfill / removal. On → any row whose stamp lags its state gets the label
+        // (covers "enabled after pages existed"); off → rows still stamped lose their state
+        // labels. One label round-trip per lagging row, none for rows already in step.
+        try {
+          const sk = record.spaceKey;
+          if (!settingsCache.has(sk)) settingsCache.set(sk, await getSpaceWorkflowSettings(sk));
+          const sset = settingsCache.get(sk);
+          if (sset?.syncLabels && record.labelState !== record.stateId) {
+            if ((await mirrorStateLabel(idx.pageId, record, sset))?.ok) labelsSynced++;
+          } else if (!sset?.syncLabels && record.labelState) {
+            const r = await syncStateLabel(idx.pageId, null);
+            if (r.ok) { delete record.labelState; await kvs.set(`workflow-state-${idx.pageId}`, record).catch(() => {}); labelsSynced++; }
+          }
+        } catch (e) { console.warn("[WORKFLOW-SWEEP] label sync", e); }
         // #45/A5 review-expiry (runs FIRST): ANY page whose review date has passed — the clock
         // may come from the definition, a per-state override, or a steward-set date, so the
         // record's reviewDueAt is the only thing consulted. When the definition has a transition
@@ -1433,7 +1450,7 @@ export async function workflowSweep() {
   let inbox = { backfilled: 0, orphansRemoved: 0 };
   try { inbox = await sweepApprovalIndex({ nowMs }); } catch (e) { console.error("[WORKFLOW-SWEEP] inbox index", e); }
 
-  return { body: JSON.stringify({ reverted, demoted, healed, expired, overdue, skippedTrashed, purgedPages, aiTimedOut, inboxBackfilled: inbox.backfilled, orphanApprovalsRemoved: inbox.orphansRemoved }) };
+  return { body: JSON.stringify({ reverted, demoted, healed, expired, overdue, skippedTrashed, purgedPages, labelsSynced, aiTimedOut, inboxBackfilled: inbox.backfilled, orphanApprovalsRemoved: inbox.orphansRemoved }) };
 }
 
 // --- Conditions & Validations phase (runs after the body-protection pipeline) ---
