@@ -2128,3 +2128,32 @@ html[data-color-mode="dark"] .sv-activity-chip-validation.is-active { background
   .sv-activity-filters { flex-direction: column; align-items: stretch; }
   .sv-activity-title-input.form-input { width: 100%; }
 }
+
+/* B1: workflow definition editor */
+.wf-defs { margin-top: 26px; padding-top: 22px; border-top: 1px solid var(--sv-border-primary); }
+.wf-defs-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 14px; }
+.wf-defs-sub { margin: 26px 0 4px; font-size: 15px; font-weight: 800; color: var(--sv-text-primary); }
+.wf-def { margin-top: 14px; padding: 16px 18px; border: 1px solid var(--sv-border-primary); border-radius: 12px; background: var(--sv-surface-raised, #fff); }
+.wf-def-head { display: flex; gap: 14px; flex-wrap: wrap; margin-bottom: 14px; }
+.wf-def-head label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; font-weight: 700; color: var(--sv-text-secondary); }
+.wf-def-name { flex: 1 1 220px; } .wf-def-labels { flex: 2 1 260px; } .wf-def-priority { flex: 0 0 110px; }
+.wf-def-table { display: flex; flex-direction: column; gap: 6px; overflow-x: auto; }
+.wf-def-row { display: grid; grid-template-columns: minmax(170px, 1.3fr) 120px 52px 76px 96px minmax(220px, 2fr) 96px; gap: 10px; align-items: center; padding: 8px 10px; border-radius: 10px; background: var(--sv-bg-secondary, #F8FAFC); min-width: 860px; }
+.wf-def-row-head { background: transparent; font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.04em; color: var(--sv-text-secondary); padding-bottom: 0; }
+.wf-def-cell-name { display: flex; flex-direction: column; gap: 3px; }
+.wf-def-id { font-size: 11px; color: var(--sv-text-subtle); }
+.wf-def-days { width: 84px; }
+.wf-def-targets { display: flex; flex-wrap: wrap; gap: 6px; }
+.wf-def-target { display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px; border-radius: 9999px; border: 1.5px solid var(--sv-border-primary); font-size: 12px; font-weight: 700; color: var(--sv-text-secondary); cursor: pointer; background: var(--sv-bg-primary); }
+.wf-def-target.on { background: #1d4ed8; border-color: #1d4ed8; color: #fff; }
+.wf-def-target input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.wf-def-tools { display: flex; gap: 4px; justify-content: flex-end; }
+.wf-def-tool { width: 28px; height: 28px; border: 1px solid var(--sv-border-primary); border-radius: 8px; background: var(--sv-bg-primary); color: var(--sv-text-primary); font-weight: 800; cursor: pointer; }
+.wf-def-tool:hover { border-color: var(--sv-interactive-primary); color: var(--sv-interactive-primary); }
+.wf-def-tool-x:hover { background: #dc2626; border-color: #dc2626; color: #fff; }
+.wf-def-tool:disabled { opacity: 0.4; cursor: default; }
+.wf-def-actions { display: flex; align-items: center; gap: 10px; margin-top: 14px; }
+.wf-def-spacer { flex: 1; }
+.wf-def-delete { border: 0; border-radius: 8px; padding: 8px 14px; background: #dc2626; color: #fff; font-weight: 800; cursor: pointer; }
+.wf-def-delete:disabled { opacity: 0.6; cursor: default; }
+.wf-def .alert-success, .wf-def .alert-error { margin: 12px 0 0; }

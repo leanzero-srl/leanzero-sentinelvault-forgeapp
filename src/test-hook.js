@@ -17,7 +17,7 @@ import {
   setSpaceWorkflowSettings,
   bulkAssignPagesInSpace,
   readPageWorkflow,
-  storeWorkflowConfig, fetchLivePageVersion } from "./server/capsules/workflow/logic.js";
+  storeWorkflowConfig, fetchLivePageVersion, autoAssignOnEvent } from "./server/capsules/workflow/logic.js";
 import {
   requestApprovalTransition,
   decideApproval,
@@ -429,6 +429,19 @@ export async function testStateTrigger(req) {
       }
       // A5: the steward-editable review date, through the REGISTERED resolver (both gates run, so
       // the actor must be a REAL account that can edit the page; `reviewDueAt` "" / "null" clears).
+      // B1: the created-page auto-assign path with label-scoped selection, driven directly.
+      if (fn === "autoAssign") {
+        const r = await autoAssignOnEvent({ pageId: q(req, "pageId"), spaceKey: q(req, "spaceKey"), actorAccountId: q(req, "actor"), actorName: q(req, "actor") });
+        return json(200, { invoked: fn, result: r });
+      }
+      // B1: the definition editor's resolvers (steward-gated on the space named).
+      if (fn === "listSpaceWorkflows" || fn === "storeSpaceWorkflow" || fn === "deleteSpaceWorkflow") {
+        const key = { listSpaceWorkflows: "list-space-workflows", storeSpaceWorkflow: "store-space-workflow", deleteSpaceWorkflow: "delete-space-workflow" }[fn];
+        let def; try { def = q(req, "def") ? JSON.parse(q(req, "def")) : undefined; } catch (_) { def = undefined; }
+        const labels = q(req, "labels") ? String(q(req, "labels")).split(",") : undefined;
+        const r = await byKey(workflowActions, key)({ payload: { spaceKey: q(req, "spaceKey"), workflowId: q(req, "workflowId") || undefined, def, labels, priority: q(req, "priority") }, context: { accountId: q(req, "actor"), extension: {} } });
+        return json(200, { invoked: fn, result: r });
+      }
       // B3: the approver's signature device. `enrollSignature` returns the secret (it leaves the
       // app exactly once, at enrolment) so a spec can compute codes like an authenticator would.
       if (fn === "signatureStatus" || fn === "enrollSignature" || fn === "confirmSignatureEnrollment" || fn === "revokeSignature") {
