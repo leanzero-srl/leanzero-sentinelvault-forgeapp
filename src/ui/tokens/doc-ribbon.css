@@ -652,3 +652,14 @@ html[data-color-mode="dark"] .wf-read-count { color: #67E8F9; border-color: #67E
 .wf-read-name { font-weight: 700; color: var(--sv-text-primary, #0F172A); }
 .wf-read-state { color: #dc2626; font-weight: 700; }
 .wf-read-row-yes .wf-read-state { color: #0E7490; }
+
+/* B3: the signature field on the approval panel, and the "Signed" mark on a decision. */
+.wf-appr-sign { margin: 10px 0 0; }
+.wf-appr-sign-label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; font-weight: 700; color: var(--sv-text-primary, #0F172A); }
+.wf-appr-sign-input { width: 140px; padding: 6px 10px; border: 1.5px solid #7C3AED; border-radius: 8px; font: inherit; font-size: 15px; font-weight: 800; letter-spacing: 0.18em; color: var(--sv-text-primary, #0F172A); background: var(--sv-bg-primary, #fff); }
+.wf-appr-sign-input:focus-visible { outline: 2px solid #7C3AED; outline-offset: 2px; }
+.wf-appr-sign-missing { padding: 8px 10px; border-radius: 8px; background: #7C3AED; color: #fff; font-size: 12px; font-weight: 700; }
+.wf-appr-sign-missing a { color: #fff; text-decoration: underline; }
+.wf-appr-signed { display: inline-flex; align-items: center; padding: 1px 7px; border-radius: 9999px; background: #7C3AED; color: #fff; font-size: 10px; font-weight: 800; letter-spacing: 0.02em; }
+/* Chips never wrap mid-label (the bar wraps whole chips instead). */
+.wf-review-btn, .wf-review-due, .wf-read-btn, .wf-read-count, .wf-read-done { white-space: nowrap; }

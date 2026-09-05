@@ -429,6 +429,13 @@ export async function testStateTrigger(req) {
       }
       // A5: the steward-editable review date, through the REGISTERED resolver (both gates run, so
       // the actor must be a REAL account that can edit the page; `reviewDueAt` "" / "null" clears).
+      // B3: the approver's signature device. `enrollSignature` returns the secret (it leaves the
+      // app exactly once, at enrolment) so a spec can compute codes like an authenticator would.
+      if (fn === "signatureStatus" || fn === "enrollSignature" || fn === "confirmSignatureEnrollment" || fn === "revokeSignature") {
+        const key = { signatureStatus: "signature-status", enrollSignature: "enroll-signature", confirmSignatureEnrollment: "confirm-signature-enrollment", revokeSignature: "revoke-signature" }[fn];
+        const r = await byKey(workflowActions, key)({ payload: { code: q(req, "code") }, context: { accountId: q(req, "actor"), extension: {} } });
+        return json(200, { invoked: fn, result: r });
+      }
       // B2: read confirmations — the caller's own ack, the counts, and the steward report.
       if (fn === "confirmRead") {
         const r = await byKey(workflowActions, "confirm-read")({ payload: { pageId: q(req, "pageId") }, context: { accountId: q(req, "actor"), extension: {} } });
@@ -479,6 +486,7 @@ export async function testStateTrigger(req) {
         const r = await decideApproval({
           pageId: q(req, "pageId"), approverAccountId: q(req, "approver"),
           decision: q(req, "decision"), reason: q(req, "reason"), actorName: q(req, "approver"),
+          signatureCode: q(req, "code") || null, // B3
         });
         return json(200, { invoked: fn, result: r });
       }

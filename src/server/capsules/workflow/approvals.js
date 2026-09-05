@@ -24,9 +24,10 @@
 import { asApp, route } from "@forge/api";
 import { kvs, WhereConditions } from "@forge/kvs";
 import { setWithTtl } from "../../shared/kvs-ttl.js";
-import { transitionPageWorkflow, readPageWorkflow, fetchLivePageVersion, appendWorkflowLog } from "./logic.js";
+import { transitionPageWorkflow, readPageWorkflow, fetchLivePageVersion, appendWorkflowLog, getSpaceWorkflowSettings } from "./logic.js";
 import { notifyApprovalRequested, notifyApprovalResolved } from "../../infra/approval-blueprints.js";
 import { recordActivity } from "../../infra/activity-log.js";
+import { verifySignature } from "./signature.js";
 
 const APPROVAL_ID = "approval"; // v1 single default round; schema carries the segment for future named rounds
 
@@ -76,6 +77,8 @@ export function buildApprovalRecord({ pending, records, outcome, completedBy, co
     // The version the approver actually decided on (stamped at decide time); the request-time
     // pin only when the decision predates that stamp.
     versionAtDecision: typeof r?.decidedVersion === "number" ? r.decidedVersion : (typeof r?.pinnedVersion === "number" ? r.pinnedVersion : null),
+    // B3: the decision was signed with the approver's enrolled device.
+    signed: !!r?.signature,
   }));
   // A 100-approver roster with reasons would push the state record toward the KVS value cap
   // and make the page permanently un-approvable; keep the record bounded and say what was cut.
@@ -349,9 +352,18 @@ export async function applyAiVerdict(pageId, reviewedVersion, status, reason) {
 }
 
 // An approver records a decision; if the threshold resolves, complete or clear the transition.
-export async function decideApproval({ pageId, approverAccountId, decision, reason, actorName }) {
+export async function decideApproval({ pageId, approverAccountId, decision, reason, actorName, signatureCode }) {
   const pending = await kvs.get(pendingKey(pageId));
   if (!pending) return { success: false, reason: "No approval is pending for this page" };
+  // B3: a space can require every decision to be SIGNED — a TOTP from the approver's enrolled
+  // device — checked before anything is written, so a failed code leaves no trace.
+  let signature = null;
+  const spaceSettings = await getSpaceWorkflowSettings(pending.spaceKey);
+  if (spaceSettings?.requireSignature) {
+    const v = await verifySignature(approverAccountId, signatureCode);
+    if (!v.ok) return { success: false, reason: v.reason, signatureRequired: true };
+    signature = v.signature;
+  }
   // Segregation of duties: the requester cannot approve their own transition.
   if (pending.requestedBy && approverAccountId === pending.requestedBy) {
     return { success: false, reason: "You cannot approve a transition you requested" };
@@ -369,6 +381,7 @@ export async function decideApproval({ pageId, approverAccountId, decision, reas
   record.status = decision;
   record.decidedAt = new Date().toISOString();
   record.reason = reason || null;
+  if (signature) record.signature = signature;
   // A4: the version this approver decided on (the request pin is the version they were ASKED
   // about; a denial after an interim save is about what they actually saw).
   try { const lv = await fetchLivePageVersion(pageId); if (typeof lv === "number") record.decidedVersion = lv; } catch (_) { /* best-effort */ }
@@ -457,7 +470,7 @@ export async function getPageApprovalStatus(pageId) {
     pending: true, toStateId: pending.toStateId, mode: pending.mode, min: pending.min,
     requestedBy: pending.requestedBy, requestedByName: pending.requestedByName, requestedAt: pending.requestedAt,
     pinnedVersion: pending.pinnedVersion, stale, currentStateId: current?.stateId || null,
-    approvers: records.map((r) => ({ accountId: r.approverAccountId, name: r.approverName, status: r.status, reason: r.reason, decidedAt: r.decidedAt })),
+    approvers: records.map((r) => ({ accountId: r.approverAccountId, name: r.approverName, status: r.status, reason: r.reason, decidedAt: r.decidedAt, signed: !!r.signature })),
     // #46: the AI review axis, if this transition requires one.
     aiGate: pending.aiGate?.required ? { status: pending.aiGate.status, reason: pending.aiGate.reason || null } : null,
   };

@@ -161,10 +161,10 @@ eq("inboxKey is per approver then page", inboxKey("712020:abc", "123"), "workflo
   eq("aiGate is copied as status + reason only", rec.aiGate, { status: "passed", reason: "No issues found." });
   eq("one decision row per approver record, in order", rec.decisions.length, 3);
   eq("decision row maps name/decision/decidedAt/reason/versionAtDecision from the record", rec.decisions[0],
-    { accountId: "712020:a", name: "Alice", decision: "approved", decidedAt: "2026-09-05T11:00:00.000Z", reason: "LGTM", versionAtDecision: 7 });
+    { accountId: "712020:a", name: "Alice", decision: "approved", decidedAt: "2026-09-05T11:00:00.000Z", reason: "LGTM", versionAtDecision: 7 , signed: false});
   eq("a denial row keeps its reason", [rec.decisions[1].decision, rec.decisions[1].reason], ["denied", "Section 3 is wrong"]);
   eq("an approver who never answered is listed as pending with nulls, not dropped", rec.decisions[2],
-    { accountId: "712020:c", name: null, decision: "pending", decidedAt: null, reason: null, versionAtDecision: null });
+    { accountId: "712020:c", name: null, decision: "pending", decidedAt: null, reason: null, versionAtDecision: null , signed: false});
   eq("the exact stored key set (the UI and harness assert on it)", Object.keys(rec).sort(),
     ["aiGate", "approverCount", "completedAt", "completedBy", "completedByName", "decisions", "min", "mode", "omitted", "outcome", "pinnedVersion", "requestedAt", "requestedBy", "requestedByName"]);
 
@@ -315,5 +315,7 @@ eq("inboxKey is per approver then page", inboxKey("712020:abc", "123"), "workflo
   ok("demote target: a condition on ANOTHER state does not matter", validateDemoteTarget(D, "in_review", { draft: gated.in_review }).ok);
   eq("resolveDemoteTarget: a gated saved target falls back to the initial state", resolveDemoteTarget(D, { demoteTo: "in_review", entryConditions: gated })?.id, "draft");
 }
+
+  ok("B3: a decision with a signature is marked signed", buildApprovalRecord({ pending: { toStateId: "approved", mode: "any", min: 1 }, records: [{ approverAccountId: "712020:s", approverName: "Sam", status: "approved", decidedAt: "2026-09-05T11:00:00.000Z", signature: { method: "totp", verifiedAt: "2026-09-05T11:00:00.000Z" } }], outcome: "approved", completedBy: "712020:s", completedByName: "Sam", nowIso: "2026-09-05T11:00:01.000Z" }).decisions[0].signed === true);
 
 report("workflow-engine");

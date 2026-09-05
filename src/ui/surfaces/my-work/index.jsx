@@ -4,6 +4,7 @@ import { invoke, router } from "@forge/bridge";
 import { enablePaletteSync } from "../../kit/palette-sync";
 import WorkflowInbox from "../../kit/WorkflowInbox";
 import logo from "../../assets/icons/icon.png";
+import QRCode from "qrcode";
 
 // A7 (ledger #55): one page, every space. Comala's Document Report can be filtered to "my
 // pending approvals"; Sentinel Vault had the same answers scattered across each space's console
@@ -147,6 +148,84 @@ const MySeals = () => {
   );
 };
 
+// B3: the approver's signature device. Enrol once (scan the QR, or type the key, into any
+// authenticator app), confirm with the first code, and spaces that require signed decisions
+// accept your approvals. The QR is drawn HERE from the otpauth URI — nothing leaves Atlassian.
+const SignatureCard = () => {
+  const [status, setStatus] = useState(null);
+  const [enrol, setEnrol] = useState(null); // { secret, uri, qr }
+  const [code, setCode] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState(null);
+
+  const load = useCallback(async () => {
+    try { setStatus(await invoke("signature-status", {})); } catch (_) { setStatus({ enrolled: false }); }
+  }, []);
+  useEffect(() => { load(); }, [load]);
+
+  const start = async () => {
+    setBusy(true); setMsg(null);
+    try {
+      const r = await invoke("enroll-signature", {});
+      if (!r?.success) { setMsg({ type: "error", text: r?.reason || "Could not start the setup." }); return; }
+      let qr = null;
+      try { qr = await QRCode.toDataURL(r.uri, { margin: 1, width: 168 }); } catch (_) { qr = null; }
+      setEnrol({ secret: r.secret, uri: r.uri, qr });
+    } catch (_) { setMsg({ type: "error", text: "Could not start the setup." }); }
+    finally { setBusy(false); }
+  };
+  const confirm = async () => {
+    setBusy(true); setMsg(null);
+    try {
+      const r = await invoke("confirm-signature-enrollment", { code });
+      if (r?.success) { setEnrol(null); setCode(""); setMsg({ type: "ok", text: "Your signature is set up. Spaces that require signed decisions will ask for a code when you approve." }); await load(); }
+      else setMsg({ type: "error", text: r?.reason || "That code did not match." });
+    } catch (_) { setMsg({ type: "error", text: "Could not confirm the code." }); }
+    finally { setBusy(false); }
+  };
+  const revoke = async () => {
+    setBusy(true); setMsg(null);
+    try { const r = await invoke("revoke-signature", {}); if (r?.success) { setMsg({ type: "ok", text: "Signature removed. Set it up again any time." }); await load(); } }
+    catch (_) { setMsg({ type: "error", text: "Could not remove the signature." }); }
+    finally { setBusy(false); }
+  };
+
+  return (
+    <section className="mw-card" data-testid="mw-signature">
+      <div className="mw-card-head">
+        <span className="mw-card-title">Your approval signature</span>
+        {status && <span className={`mw-pill ${status.enrolled ? "mw-pill-live" : "mw-pill-stale"}`} data-testid="mw-signature-state">{status.enrolled ? "Set up" : "Not set up"}</span>}
+      </div>
+      <p className="mw-none">Some spaces require a signed decision: the current code from an authenticator app you enrol here (Google Authenticator, 1Password, Microsoft Authenticator…). It proves the approval came from you and your device.</p>
+      {msg && <p className={msg.type === "ok" ? "mw-ok" : "mw-error"} role="status" data-testid="mw-signature-msg">{msg.text}</p>}
+      {status && !status.enrolled && !enrol && (
+        <div className="mw-foot"><button type="button" className="mw-btn mw-btn-more" disabled={busy} onClick={start} data-testid="mw-signature-start">Set up signature</button></div>
+      )}
+      {enrol && (
+        <div className="mw-enrol" data-testid="mw-signature-enrol">
+          {enrol.qr && <img className="mw-qr" src={enrol.qr} alt="QR code for your authenticator app" />}
+          <div className="mw-enrol-steps">
+            <p className="mw-row-main">1. Scan this with your authenticator app, or type the key:</p>
+            <code className="mw-secret" data-testid="mw-signature-secret">{enrol.secret.replace(/(.{4})/g, "$1 ").trim()}</code>
+            <p className="mw-row-main">2. Enter the 6-digit code it shows to finish:</p>
+            <div className="mw-row-actions">
+              <input className="mw-code" inputMode="numeric" autoComplete="one-time-code" maxLength={8} placeholder="123 456" value={code} onChange={(e) => setCode(e.target.value)} aria-label="Authenticator code" data-testid="mw-signature-code" />
+              <button type="button" className="mw-btn mw-btn-approve" disabled={busy || !code.trim()} onClick={confirm} data-testid="mw-signature-confirm">Confirm</button>
+              <button type="button" className="mw-btn mw-btn-more" disabled={busy} onClick={() => { setEnrol(null); setCode(""); }}>Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
+      {status?.enrolled && !enrol && (
+        <div className="mw-foot">
+          <span className="mw-row-meta">Enrolled {status.enrolledAt ? when(status.enrolledAt) : ""}.</span>
+          <button type="button" className="mw-btn mw-btn-deny" disabled={busy} onClick={revoke} data-testid="mw-signature-revoke">Remove signature</button>
+        </div>
+      )}
+    </section>
+  );
+};
+
 const MyWork = () => {
   useEffect(() => { enablePaletteSync().catch(() => {}); }, []);
   return (
@@ -162,6 +241,7 @@ const MyWork = () => {
         <WorkflowInbox emptyText="Nothing is waiting on your approval." />
         <EditRequests />
         <MySeals />
+        <SignatureCard />
       </div>
     </div>
   );

@@ -267,6 +267,7 @@ const ApprovalEvidence = ({ workflow, siteUrl, pageId, host }) => {
                   <span className="wf-appr-name">{d.name || "Approver"}</span>
                   <span className={`wf-appr-badge wf-appr-${d.decision === "denied" ? "denied" : d.decision === "approved" ? "approved" : "pending"}`}>{d.decision === "denied" ? "Denied" : d.decision === "approved" ? "Approved" : "No decision before completion"}</span>
                   <span className="wf-appr-date">{fmtDate(d.decidedAt)}</span>
+                  {d.signed ? <span className="wf-appr-signed" title="Signed with the approver's enrolled authenticator" data-testid="wf-evidence-signed">Signed</span> : null}
                   {d.reason ? <span className="wf-appr-reason">“{d.reason}”</span> : null}
                 </li>
               ))}
@@ -381,6 +382,7 @@ const WorkflowControl = ({ workflow, approvals, operatorId, pageId, spaceKey, si
   const [activeIndex, setActiveIndex] = useState(0);
   const [panelOpen, setPanelOpen] = useState(false);
   const [reason, setReason] = useState("");
+  const [sigCode, setSigCode] = useState(""); // B3: the approver's authenticator code, when the space requires one
   const [decideBusy, setDecideBusy] = useState(false);
   const [decideMsg, setDecideMsg] = useState(null);
   const btnRef = useRef(null);
@@ -399,9 +401,9 @@ const WorkflowControl = ({ workflow, approvals, operatorId, pageId, spaceKey, si
   const doDecide = useCallback(async (decision) => {
     setDecideBusy(true); setDecideMsg(null);
     try {
-      const r = await invoke("decide-approval", { pageId, decision, reason });
+      const r = await invoke("decide-approval", { pageId, decision, reason, code: sigCode || null });
       if (r?.success) {
-        setReason("");
+        setReason(""); setSigCode("");
         setPanelOpen(false);
         await onTransitioned();
       } else {
@@ -551,9 +553,33 @@ const WorkflowControl = ({ workflow, approvals, operatorId, pageId, spaceKey, si
                   onChange={(e) => setReason(e.target.value)}
                   aria-label="Reason for your decision"
                 />
+                {pendingApproval.requireSignature && (
+                  <div className="wf-appr-sign" data-testid="wf-appr-sign">
+                    {pendingApproval.signatureEnrolled ? (
+                      <label className="wf-appr-sign-label">
+                        <span>Sign with your authenticator code</span>
+                        <input
+                          className="wf-appr-sign-input"
+                          inputMode="numeric"
+                          autoComplete="one-time-code"
+                          maxLength={8}
+                          placeholder="123 456"
+                          value={sigCode}
+                          onChange={(e) => setSigCode(e.target.value)}
+                          aria-label="Authenticator code"
+                          data-testid="wf-appr-sign-code"
+                        />
+                      </label>
+                    ) : (
+                      <div className="wf-appr-sign-missing" data-testid="wf-appr-sign-missing">
+                        This space requires a signed decision. <a href="#" onClick={(e) => { e.preventDefault(); router.navigate("/wiki/apps/c30bf71e-4287-4872-954d-db49cc68f0ff/my-work"); }}>Set up your signature on My work</a> first.
+                      </div>
+                    )}
+                  </div>
+                )}
                 <div className="wf-appr-actions">
-                  <button type="button" className="wf-appr-approve" onClick={() => doDecide("approved")} disabled={decideBusy}>Approve</button>
-                  <button type="button" className="wf-appr-deny" onClick={() => doDecide("denied")} disabled={decideBusy}>Deny</button>
+                  <button type="button" className="wf-appr-approve" onClick={() => doDecide("approved")} disabled={decideBusy || (pendingApproval.requireSignature && (!pendingApproval.signatureEnrolled || !sigCode.trim()))}>{pendingApproval.requireSignature ? "Sign & approve" : "Approve"}</button>
+                  <button type="button" className="wf-appr-deny" onClick={() => doDecide("denied")} disabled={decideBusy || (pendingApproval.requireSignature && (!pendingApproval.signatureEnrolled || !sigCode.trim()))}>{pendingApproval.requireSignature ? "Sign & deny" : "Deny"}</button>
                 </div>
               </div>
             ) : (
