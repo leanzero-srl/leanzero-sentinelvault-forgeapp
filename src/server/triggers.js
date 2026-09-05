@@ -27,7 +27,7 @@ import {
   autoAssignOnEvent, getSpaceWorkflowSettings, resolveWorkflowDef, findState, getInitialState,
   transitionPageWorkflow, readPageWorkflow, restampApprovedVersion, fetchLivePageVersion,
 } from "./capsules/workflow/logic.js";
-import { resolveApproverIds, applyAiVerdict } from "./capsules/workflow/approvals.js";
+import { resolveApproverIds, applyAiVerdict, sweepApprovalIndex } from "./capsules/workflow/approvals.js";
 import { postEnforceComment } from "./infra/approval-blueprints.js";
 import { isAccountStewardAsApp } from "./shared/steward-checks.js";
 import { postValidationComment } from "./infra/validation-blueprints.js";
@@ -1262,7 +1262,11 @@ export async function workflowSweep() {
     pq = kvs.query().where("key", WhereConditions.beginsWith("workflow-pending-")).limit(100).cursor(nextCursor);
   } while (true);
 
-  return { body: JSON.stringify({ reverted, demoted, healed, expired, aiTimedOut }) };
+  // Inbox index housekeeping (2026-09-05): backfill rows for in-flight approvals, drop orphans.
+  let inbox = { backfilled: 0, orphansRemoved: 0 };
+  try { inbox = await sweepApprovalIndex({ nowMs }); } catch (e) { console.error("[WORKFLOW-SWEEP] inbox index", e); }
+
+  return { body: JSON.stringify({ reverted, demoted, healed, expired, aiTimedOut, inboxBackfilled: inbox.backfilled, orphanApprovalsRemoved: inbox.orphansRemoved }) };
 }
 
 // --- Conditions & Validations phase (runs after the body-protection pipeline) ---
