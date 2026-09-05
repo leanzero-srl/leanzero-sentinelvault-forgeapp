@@ -142,7 +142,7 @@ between is built and verified on dev but not shipped:
 Shipping requires the paid plan to be live in the Partner portal (`deploy-prod.sh` refuses
 without `--licensing-live`) and is a minor bump — none of it61–it66 adds a scope; the
 `confluence:globalPage` module was proven a minor bump on dev (6.97 → 6.100, no re-consent).
-Last full-suite verdict on the dev build: PASS, 71/71 specs (`sv-it66-final`, commit 753f18d).
+Last full-suite verdict on the dev build: PASS, 79/79 specs (`sv-it67-final`, commit 7be951a, Tier B included).
 
 ## 5. Comala-parity gap analysis — what we could add
 
