@@ -26,6 +26,9 @@ import {
   fetchLivePageVersion,
   setPageReviewDue,
   sanitize,
+  listSpaceWorkflows,
+  storeSpaceWorkflow,
+  deleteSpaceWorkflow,
 } from "./logic.js";
 import {
   extractApprovalConfig,
@@ -193,8 +196,8 @@ export const requestTransition = async (req) => {
 
   // Entering an `enforce`-marked state (e.g. Approved): if the space has approvers
   // configured (#43), open a multi-approver approval instead of transitioning now;
-  // otherwise fall back to the #42 steward gate.
-  const def = await resolveWorkflowDef(spaceKey);
+  // otherwise fall back to the #42 steward gate. B1: judged by the PAGE's workflow.
+  const def = await resolveWorkflowDef(spaceKey, (await readPageWorkflow(pageId))?.workflowId);
   const target = findState(def, toStateId);
 
   // SV-SEC-1. Entering an enforce state is gated below; LEAVING one was not. Approved -> Draft
@@ -477,6 +480,25 @@ const storeConfig = async (req) => {
   return storeWorkflowConfig(scope || "global", key, def);
 };
 
+// B1: the definition editor. The space IS the object here (the payload names it, the gate is
+// on it), so a steward of that space edits that space's workflows and nothing else.
+const listSpaceWorkflowsAction = async (req) => {
+  const spaceKey = spaceKeyOf(req);
+  if (!spaceKey || !(await authorizeSteward(req.context?.accountId, spaceKey))) return { error: "Only a space steward can view workflow definitions" };
+  return listSpaceWorkflows(spaceKey);
+};
+const storeSpaceWorkflowAction = async (req) => {
+  const spaceKey = spaceKeyOf(req);
+  if (!spaceKey || !(await authorizeSteward(req.context?.accountId, spaceKey))) return { success: false, reason: "Only a space steward can edit workflow definitions" };
+  const { workflowId, def, labels, priority } = req.payload || {};
+  return storeSpaceWorkflow(spaceKey, { workflowId: typeof workflowId === "string" ? workflowId : null, def, labels, priority });
+};
+const deleteSpaceWorkflowAction = async (req) => {
+  const spaceKey = spaceKeyOf(req);
+  if (!spaceKey || !(await authorizeSteward(req.context?.accountId, spaceKey))) return { success: false, reason: "Only a space steward can edit workflow definitions" };
+  return deleteSpaceWorkflow(spaceKey, String(req.payload?.workflowId || ""));
+};
+
 const getSpaceSettings = async (req) => {
   const spaceKey = spaceKeyOf(req);
   if (!spaceKey) return { settings: {}, def: null };
@@ -552,6 +574,10 @@ export const getWorkflowDashboard = async (req) => {
   // rule workflowSweep's expiry pass applies. It used to be pinned to stateId === "approved".
   const isOverdue = (e) => !!(e.reviewDueAt && new Date(e.reviewDueAt).getTime() < now);
   const def = await resolveWorkflowDef(spaceKey);
+  // B1: a label-scoped page's state name comes from ITS definition.
+  const extraDefs = new Map();
+  const { extras } = await listSpaceWorkflows(spaceKey);
+  for (const x of extras) if (x.def) extraDefs.set(x.workflowId, x.def);
   // The index outlives the page: a trashed page keeps its row (and its state, for a restore) and
   // a purged page's row waits for the hourly sweep. Neither is work for a steward — on
   // 2026-09-05 every one of the thirteen pages this dashboard listed for WFH was in the trash.
@@ -573,13 +599,14 @@ export const getWorkflowDashboard = async (req) => {
     .slice()
     .sort((a, b) => String(b.enteredAt || "").localeCompare(String(a.enteredAt || "")))
     .slice(0, LIST_CAP);
-  const stateName = (id) => def?.states?.find((s) => s.id === id)?.name || id;
+  const stateName = (id, wid) => (extraDefs.get(wid) || def)?.states?.find((s) => s.id === id)?.name || def?.states?.find((s) => s.id === id)?.name || id;
   const pages = list.map((e) => ({
     pageId: e.pageId,
     title: status.get(String(e.pageId))?.title || `(page ${e.pageId})`,
     url: status.get(String(e.pageId))?.url || null,
     stateId: e.stateId,
-    stateName: stateName(e.stateId),
+    stateName: stateName(e.stateId, e.workflowId),
+    workflowId: e.workflowId || null,
     enteredAt: e.enteredAt || null,
     reviewDueAt: e.reviewDueAt || null,
     overdue: isOverdue(e),
@@ -609,6 +636,9 @@ export const actions = [
   ["set-space-workflow-settings", setSpaceSettings],
   ["set-review-due", setReviewDue],
   ["confirm-read", confirmReadAction],
+  ["list-space-workflows", listSpaceWorkflowsAction],
+  ["store-space-workflow", storeSpaceWorkflowAction],
+  ["delete-space-workflow", deleteSpaceWorkflowAction],
   ["signature-status", signatureStatusAction],
   ["enroll-signature", enrollSignatureAction],
   ["confirm-signature-enrollment", confirmSignatureAction],

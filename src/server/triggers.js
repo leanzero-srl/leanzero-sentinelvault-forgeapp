@@ -1069,7 +1069,7 @@ export async function collectWorkflowEnforcementForPage(pageId, atlassianId, eve
   // 2. Authoritative record + re-confirm the state is still an enforce state.
   const record = await readPageWorkflow(pageId);
   if (!record?.enforce) return null;
-  const def = await resolveWorkflowDef(record.spaceKey);
+  const def = await resolveWorkflowDef(record.spaceKey, record.workflowId);
   if (!findState(def, record.stateId)?.enforce) return null;
 
   // 3. Privileged? snapshot ∩ live-config approvers, OR live steward (§0.D/§0.E).
@@ -1242,7 +1242,7 @@ export async function workflowSweep() {
   const defCache = new Map(); // per-space def cache — most pages in a space share one workflow
   const settingsCache = new Map(); // per-space settings (B4 label sync reads them per row)
   let labelsSynced = 0;
-  const defFor = async (sk) => { if (!defCache.has(sk)) defCache.set(sk, await resolveWorkflowDef(sk)); return defCache.get(sk); };
+  const defFor = async (sk, wid = null) => { const k = `${sk}|${wid || ""}`; if (!defCache.has(k)) defCache.set(k, await resolveWorkflowDef(sk, wid)); return defCache.get(k); };
   let query = kvs.query().where("key", WhereConditions.beginsWith("workflow-idx-")).limit(100);
   let iterations = 0;
   do {
@@ -1263,7 +1263,7 @@ export async function workflowSweep() {
         }
         const record = await readPageWorkflow(idx.pageId);
         if (!record) continue;
-        const def = await defFor(record.spaceKey);
+        const def = await defFor(record.spaceKey, record.workflowId);
         // B4: label backfill / removal. On → any row whose stamp lags its state gets the label
         // (covers "enabled after pages existed"); off → rows still stamped lose their state
         // labels. One label round-trip per lagging row, none for rows already in step.
