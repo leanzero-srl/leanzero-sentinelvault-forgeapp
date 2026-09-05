@@ -31,4 +31,14 @@ ok("letters are refused", verifyTotp(SECRET, "12a456", { nowMs: now }) === null)
 ok("generated secrets are 32 base32 chars (160 bits)", /^[A-Z2-7]{32}$/.test(generateSecret()));
 ok("two generated secrets differ", generateSecret() !== generateSecret());
 eq("otpauth URI", otpauthUri({ secret: "ABC", account: "m@x.y" }), "otpauth://totp/Sentinel%20Vault%3Am%40x.y?secret=ABC&issuer=Sentinel%20Vault&algorithm=SHA1&digits=6&period=30");
+
+// Lockout decision (signature.js is KVS-bound; its pure predicate is tested here).
+const { isLockedOut, MAX_FAILS } = await import("../src/server/capsules/workflow/signature.js").catch(() => ({ isLockedOut: null }));
+if (isLockedOut) {
+  const t0 = Date.parse("2026-09-06T00:00:00Z");
+  ok("no record → not locked", !isLockedOut(null, t0));
+  ok("below the limit → not locked", !isLockedOut({ count: MAX_FAILS - 1, until: null }, t0));
+  ok("at the limit with a future until → locked", isLockedOut({ count: MAX_FAILS, until: "2026-09-06T00:10:00Z" }, t0));
+  ok("at the limit with an expired until → not locked", !isLockedOut({ count: MAX_FAILS, until: "2026-09-05T23:50:00Z" }, t0));
+}
 report("totp");

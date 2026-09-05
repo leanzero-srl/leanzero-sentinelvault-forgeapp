@@ -77,8 +77,10 @@ export function buildApprovalRecord({ pending, records, outcome, completedBy, co
     // The version the approver actually decided on (stamped at decide time); the request-time
     // pin only when the decision predates that stamp.
     versionAtDecision: typeof r?.decidedVersion === "number" ? r.decidedVersion : (typeof r?.pinnedVersion === "number" ? r.pinnedVersion : null),
-    // B3: the decision was signed with the approver's enrolled device.
+    // B3: the decision was signed with the approver's enrolled device (enrolledAt says how old
+    // that device was at the time — a device enrolled a minute before the decision is visible).
     signed: !!r?.signature,
+    signedWithDeviceEnrolledAt: r?.signature?.enrolledAt || null,
   }));
   // A 100-approver roster with reasons would push the state record toward the KVS value cap
   // and make the page permanently un-approvable; keep the record bounded and say what was cut.
@@ -99,6 +101,8 @@ export function buildApprovalRecord({ pending, records, outcome, completedBy, co
     completedBy: completedBy ?? null,
     completedByName: completedByName ?? null,
     aiGate: p.aiGate?.required ? { status: p.aiGate.status ?? null, reason: bound(p.aiGate.reason, 320) } : null,
+    // B3: a signature on the REQUEST (direct steward approval, or the AI-only gate's requester).
+    requestSignature: p.requestSignature ? { method: p.requestSignature.method || "totp", verifiedAt: p.requestSignature.verifiedAt || null, enrolledAt: p.requestSignature.enrolledAt || null } : null,
     decisions,
   };
 }
@@ -132,13 +136,16 @@ export function extractApprovalConfig(approval) {
 export async function fetchGroupMembers(group) {
   const ids = [];
   try {
-    const res = await asApp().requestConfluence(route`/wiki/rest/api/group/member?name=${group.name || group.id}&limit=100`);
-    if (res.ok) {
+    // Paginated (Tier B review, finding 9): a 140-member group was silently a 100-member one.
+    for (let start = 0; start < 2000; start += 200) {
+      const res = await asApp().requestConfluence(route`/wiki/rest/api/group/member?name=${group.name || group.id}&limit=200&start=${start}`);
+      if (!res.ok) return { ids, ok: false }; // non-ok — distinguish an outage from a genuinely empty group
       const body = await res.json();
-      for (const u of body?.results || []) if (u.accountId) ids.push(u.accountId);
-      return { ids, ok: true };
+      const page = body?.results || [];
+      for (const u of page) if (u.accountId) ids.push(u.accountId);
+      if (page.length < 200 || !body?._links?.next) break;
     }
-    return { ids, ok: false }; // non-ok — distinguish an outage from a genuinely empty group
+    return { ids, ok: true };
   } catch (_) {
     return { ids, ok: false };
   }
@@ -181,7 +188,7 @@ export function isOrphanApproval(record, pendingExists, nowMs = Date.now()) {
 }
 
 // Open a pending transition + one approval record per approver.
-export async function requestApprovalTransition({ pageId, toStateId, toStateName, spaceKey, approvers, mode, min, actorAccountId, actorName, pinnedVersion, approverNames, aiGate }) {
+export async function requestApprovalTransition({ pageId, toStateId, toStateName, spaceKey, approvers, mode, min, actorAccountId, actorName, pinnedVersion, approverNames, aiGate, requestSignature = null }) {
   const requestedAt = new Date().toISOString();
   for (const acc of approvers) {
     await kvs.set(approvalKey(pageId, toStateId, acc), {
@@ -195,6 +202,9 @@ export async function requestApprovalTransition({ pageId, toStateId, toStateName
     requestedAt, pinnedVersion, approvers, mode, min, spaceKey: spaceKey || null,
     // #46: the AI review axis, AND-composed with the human quorum on the same pinned version.
     aiGate: aiGate?.required ? { required: true, status: "pending", threshold: aiGate.threshold || "medium", reviewedVersion: null, reason: null, enqueuedAt: Date.now() } : null,
+    // B3: with no human approvers the requester (a steward) is the signing authority; their
+    // signature at request time is what the AI-only completion carries (review finding 11).
+    requestSignature: requestSignature || null,
   });
   // A1: the pending record is written — the request is open from here on.
   await recordActivity({
@@ -355,15 +365,6 @@ export async function applyAiVerdict(pageId, reviewedVersion, status, reason) {
 export async function decideApproval({ pageId, approverAccountId, decision, reason, actorName, signatureCode }) {
   const pending = await kvs.get(pendingKey(pageId));
   if (!pending) return { success: false, reason: "No approval is pending for this page" };
-  // B3: a space can require every decision to be SIGNED — a TOTP from the approver's enrolled
-  // device — checked before anything is written, so a failed code leaves no trace.
-  let signature = null;
-  const spaceSettings = await getSpaceWorkflowSettings(pending.spaceKey);
-  if (spaceSettings?.requireSignature) {
-    const v = await verifySignature(approverAccountId, signatureCode);
-    if (!v.ok) return { success: false, reason: v.reason, signatureRequired: true };
-    signature = v.signature;
-  }
   // Segregation of duties: the requester cannot approve their own transition.
   if (pending.requestedBy && approverAccountId === pending.requestedBy) {
     return { success: false, reason: "You cannot approve a transition you requested" };
@@ -377,6 +378,16 @@ export async function decideApproval({ pageId, approverAccountId, decision, reas
     return { success: false, reason: "Your decision has already been recorded" };
   }
   if (decision !== "approved" && decision !== "denied") return { success: false, reason: "Invalid decision" };
+  // B3: a space can require every decision to be SIGNED — a TOTP from the approver's enrolled
+  // device. Verified AFTER every validity check above (review finding 14): a refused decision
+  // must not burn the approver's current code, and a failed code leaves no trace.
+  let signature = null;
+  const spaceSettings = await getSpaceWorkflowSettings(pending.spaceKey);
+  if (spaceSettings?.requireSignature) {
+    const v = await verifySignature(approverAccountId, signatureCode);
+    if (!v.ok) return { success: false, reason: v.reason, signatureRequired: true };
+    signature = v.signature;
+  }
 
   record.status = decision;
   record.decidedAt = new Date().toISOString();

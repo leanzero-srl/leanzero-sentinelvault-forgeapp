@@ -96,10 +96,12 @@ export async function readStatus({ pageId, accountId, record, settings }) {
   const version = requiredVersion(record);
   const mine = accountId ? await kvs.get(ackKey(pageId, accountId)) : null;
   const audience = await resolveAudience(settings);
+  // Parallel, in bounded batches (review finding 9): N sequential gets per ribbon view scaled
+  // badly with a large group.
   let acked = 0;
-  for (const id of audience.ids) {
-    const a = await kvs.get(ackKey(pageId, id));
-    if (ackCounts(a, record)) acked++;
+  for (let i = 0; i < audience.ids.length; i += 25) {
+    const acks = await Promise.all(audience.ids.slice(i, i + 25).map((id) => kvs.get(ackKey(pageId, id)).catch(() => null)));
+    for (const a of acks) if (ackCounts(a, record)) acked++;
   }
   return {
     required: true,
@@ -118,12 +120,17 @@ export async function readReport({ pageId, record, settings }) {
   if (!status.required) return { required: false, readers: [] };
   const audience = await resolveAudience(settings);
   const readers = [];
-  for (const id of audience.ids) {
-    const a = await kvs.get(ackKey(pageId, id));
-    const counts = ackCounts(a, record);
-    let name = audience.names.get(id) || (a?.name) || null;
-    if (!name) name = await displayName(id);
-    readers.push({ accountId: id, name: name || id, confirmed: counts, version: counts ? a.version : null, at: counts ? a.at : null, staleVersion: !counts && a ? a.version : null });
+  for (let i = 0; i < audience.ids.length; i += 25) {
+    const slice = audience.ids.slice(i, i + 25);
+    const acks = await Promise.all(slice.map((id) => kvs.get(ackKey(pageId, id)).catch(() => null)));
+    const names = await Promise.all(slice.map((id, j) => {
+      const known = audience.names.get(id) || acks[j]?.name || null;
+      return known ? Promise.resolve(known) : displayName(id);
+    }));
+    slice.forEach((id, j) => {
+      const a = acks[j]; const counts = ackCounts(a, record);
+      readers.push({ accountId: id, name: names[j] || id, confirmed: counts, version: counts ? a.version : null, at: counts ? a.at : null, staleVersion: !counts && a ? a.version : null });
+    });
   }
   readers.sort((x, y) => Number(x.confirmed) - Number(y.confirmed) || String(x.name).localeCompare(String(y.name)));
   return { ...status, readers };

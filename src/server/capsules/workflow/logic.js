@@ -329,7 +329,14 @@ export async function storeSpaceWorkflow(spaceKey, { workflowId, def, labels, pr
     const entry = sanitizeLabelWorkflows([{ workflowId, name: clean.name, labels, priority }])[0] || { workflowId, name: clean.name, labels: [], priority: 0 };
     await kvs.set(`workflow-settings-${sanitize(spaceKey)}`, { ...settings, labelWorkflows: [...others, entry] });
     const deadEnds = findDeadEndStates(clean);
-    return { success: true, def: clean, warning: deadEnds.length ? `These states have no way out: ${deadEnds.map((id) => findState(clean, id)?.name || id).join(", ")}` : null };
+    // Labels Confluence cannot carry (spaces, uppercase) are dropped by the sanitizer; say so
+    // rather than saving "Workflow saved." over an empty list (review finding 15).
+    const asked = (Array.isArray(labels) ? labels : []).map((l) => String(l).trim()).filter(Boolean);
+    const dropped = asked.filter((l) => !entry.labels.includes(l.toLowerCase()));
+    const warnings = [];
+    if (deadEnds.length) warnings.push(`These states have no way out: ${deadEnds.map((id) => findState(clean, id)?.name || id).join(", ")}`);
+    if (dropped.length) warnings.push(`These labels were not kept (labels are lowercase letters, digits, dots, dashes and underscores): ${dropped.join(", ")}`);
+    return { success: true, def: clean, labels: entry.labels, warning: warnings.length ? warnings.join(". ") : null };
   }
   const r = await storeWorkflowConfig("space", spaceKey, clean);
   return { ...r, def: clean };
@@ -337,13 +344,17 @@ export async function storeSpaceWorkflow(spaceKey, { workflowId, def, labels, pr
 
 export async function deleteSpaceWorkflow(spaceKey, workflowId) {
   if (!spaceKey || !workflowId || workflowId === "default") return { success: false, reason: "Only a label-scoped workflow can be removed" };
-  // Refuse while any page in the space still runs it (first 300 index rows are checked).
+  // Refuse while any page in the space still runs it: the WHOLE index (30 pages, ~3,000 rows,
+  // like the dashboard) on the row's own `workflowId`; only a row written before the field
+  // existed costs a record read. A partial scan let an extra with live pages be deleted and
+  // their enforcement silently stop (review finding 10).
   let q = kvs.query().where("key", WhereConditions.beginsWith(`workflow-idx-${sanitize(spaceKey)}-`)).limit(100);
-  for (let i = 0; i < 3; i++) {
+  for (let i = 0; i < 30; i++) {
     const { results, nextCursor } = await q.getMany();
     for (const { value } of results || []) {
-      const rec = value?.pageId ? await readPageWorkflow(value.pageId) : null;
-      if (rec?.workflowId === workflowId) return { success: false, reason: "Pages in this space still run this workflow — move them to another workflow first" };
+      let wid = value?.workflowId;
+      if (wid === undefined && value?.pageId) wid = (await readPageWorkflow(value.pageId))?.workflowId;
+      if (wid === workflowId) return { success: false, reason: "Pages in this space still run this workflow — move them to another workflow first" };
     }
     if (!nextCursor) break;
     q = kvs.query().where("key", WhereConditions.beginsWith(`workflow-idx-${sanitize(spaceKey)}-`)).limit(100).cursor(nextCursor);
@@ -463,14 +474,22 @@ async function writeStateContentProp(pageId, record) {
 
 // B4: mirror the state as a page label when the space asks for it, and stamp the record so the
 // hourly sweep knows which rows still need the label (or need it removed). Best-effort.
+// The stamp lives in its OWN key (`workflow-label-{pageId}`), never on the state record: the
+// label round-trips take seconds, and writing the whole record back afterwards would clobber a
+// transition that landed meanwhile (review finding 4 — an Approved/enforced record written over
+// a legitimate move to Draft).
+export const labelStampKey = (pageId) => `workflow-label-${pageId}`;
+export async function readLabelStamp(pageId) { return (await kvs.get(labelStampKey(pageId)))?.stateId || null; }
 export async function mirrorStateLabel(pageId, record, settings) {
   if (!record) return null;
   if (!settings?.syncLabels) return null;
   const r = await syncStateLabel(pageId, record.stateId);
-  if (r.ok) {
-    record.labelState = record.stateId;
-    await kvs.set(`workflow-state-${pageId}`, record).catch(() => {});
-  }
+  if (r.ok) await kvs.set(labelStampKey(pageId), { stateId: record.stateId, at: new Date().toISOString() }).catch(() => {});
+  return r;
+}
+export async function clearStateLabel(pageId) {
+  const r = await syncStateLabel(pageId, null);
+  if (r.ok) await kvs.delete(labelStampKey(pageId)).catch(() => {});
   return r;
 }
 
@@ -512,6 +531,7 @@ export async function purgePageWorkflow(pageId, { clearApprovals } = {}) {
   const keys = [
     `workflow-state-${pageId}`, `workflow-pending-${pageId}`, `workflow-autoassigned-${pageId}`,
     `workflow-integrity-notified-${pageId}`, `workflow-review-notified-${pageId}`, `workflow-completing-${pageId}`,
+    `workflow-label-${pageId}`,
   ];
   if (record?.stateId) keys.push(`workflow-idx-${sk}-${record.stateId}-${pageId}`);
   for (const k of keys) await kvs.delete(k).catch(() => {});
@@ -617,6 +637,7 @@ function sanitizeEntryConditions(ec) {
 
 export async function setSpaceWorkflowSettings(spaceKey, settings) {
   if (!spaceKey) return { success: false, reason: "spaceKey required" };
+  const existing = await getSpaceWorkflowSettings(spaceKey);
   // A2/A5: `demoteTo` and `reviewAfterDaysByState` name states, so they are validated against the
   // space's RESOLVED definition and a dead value is refused here rather than ignored at enforce time.
   const def = await resolveWorkflowDef(spaceKey);
@@ -656,7 +677,9 @@ export async function setSpaceWorkflowSettings(spaceKey, settings) {
     // B3: every approval decision must carry a TOTP from the approver's enrolled device.
     requireSignature: settings?.requireSignature === true,
     // B1: label-scoped workflows — [{ workflowId, name, labels, priority }], highest priority wins.
-    labelWorkflows: sanitizeLabelWorkflows(settings?.labelWorkflows),
+    // The settings editor does not own this field (the definition editor does), so a save that
+    // omits it must keep what is stored — not wipe every mapping (Tier B review, finding 1).
+    labelWorkflows: settings?.labelWorkflows === undefined ? (existing.labelWorkflows || []) : sanitizeLabelWorkflows(settings?.labelWorkflows),
   };
   // Optional approval config for the enforce transition (#43). Shape:
   // { approvers: [{ type:"user"|"group", id, name }], mode:"any"|"all"|"min", min }.
@@ -850,7 +873,10 @@ export async function bulkAssignPagesInSpace({ spaceKey, spaceId, cursor, actorA
   let assigned = 0;
   for (const p of pages) {
     if (await readPageWorkflow(p.id)) continue; // idempotent
-    const r = await assignPageWorkflow({ pageId: p.id, spaceKey, actorAccountId, workflowId: settings.workflowId, logReason: "bulk-assigned" });
+    // B1: the same label scoping the created-page path applies (review finding 12).
+    let workflowId = settings.workflowId;
+    if ((settings.labelWorkflows || []).length) workflowId = chooseWorkflowForLabels(settings.labelWorkflows, await fetchPageLabels(p.id)) || workflowId;
+    const r = await assignPageWorkflow({ pageId: p.id, spaceKey, actorAccountId, workflowId, logReason: "bulk-assigned" });
     if (r.success) assigned += 1;
   }
   const nextLink = body?._links?.next;

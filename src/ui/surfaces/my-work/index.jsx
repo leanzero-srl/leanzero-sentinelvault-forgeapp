@@ -183,10 +183,17 @@ const SignatureCard = () => {
     } catch (_) { setMsg({ type: "error", text: "Could not confirm the code." }); }
     finally { setBusy(false); }
   };
+  // Removing (or replacing) the device needs its current code: whoever holds the session must
+  // still hold the device, or the second factor is not one.
+  const [revoking, setRevoking] = useState(false);
+  const [revokeCode, setRevokeCode] = useState("");
   const revoke = async () => {
     setBusy(true); setMsg(null);
-    try { const r = await invoke("revoke-signature", {}); if (r?.success) { setMsg({ type: "ok", text: "Signature removed. Set it up again any time." }); await load(); } }
-    catch (_) { setMsg({ type: "error", text: "Could not remove the signature." }); }
+    try {
+      const r = await invoke("revoke-signature", { code: revokeCode });
+      if (r?.success) { setRevoking(false); setRevokeCode(""); setMsg({ type: "ok", text: "Signature removed. Set it up again any time." }); await load(); }
+      else setMsg({ type: "error", text: r?.reason || "Could not remove the signature." });
+    } catch (_) { setMsg({ type: "error", text: "Could not remove the signature." }); }
     finally { setBusy(false); }
   };
 
@@ -216,10 +223,18 @@ const SignatureCard = () => {
           </div>
         </div>
       )}
-      {status?.enrolled && !enrol && (
+      {status?.enrolled && !enrol && !revoking && (
         <div className="mw-foot">
           <span className="mw-row-meta">Enrolled {status.enrolledAt ? when(status.enrolledAt) : ""}.</span>
-          <button type="button" className="mw-btn mw-btn-deny" disabled={busy} onClick={revoke} data-testid="mw-signature-revoke">Remove signature</button>
+          <button type="button" className="mw-btn mw-btn-deny" disabled={busy} onClick={() => setRevoking(true)} data-testid="mw-signature-revoke">Remove signature</button>
+        </div>
+      )}
+      {status?.enrolled && !enrol && revoking && (
+        <div className="mw-foot" data-testid="mw-signature-revoke-confirm">
+          <span className="mw-row-meta">Enter the current code from your authenticator to remove it.</span>
+          <input className="mw-code" inputMode="numeric" autoComplete="one-time-code" maxLength={8} placeholder="123 456" value={revokeCode} onChange={(e) => setRevokeCode(e.target.value)} aria-label="Authenticator code" data-testid="mw-signature-revoke-code" />
+          <button type="button" className="mw-btn mw-btn-deny" disabled={busy || !revokeCode.trim()} onClick={revoke} data-testid="mw-signature-revoke-go">Remove</button>
+          <button type="button" className="mw-btn mw-btn-more" disabled={busy} onClick={() => { setRevoking(false); setRevokeCode(""); }}>Cancel</button>
         </div>
       )}
     </section>
