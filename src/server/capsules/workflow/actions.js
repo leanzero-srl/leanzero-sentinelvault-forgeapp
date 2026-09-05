@@ -33,6 +33,7 @@ import {
   getPageApprovalStatus,
   listMyApprovals,
   applyAiVerdict,
+  buildApprovalRecord,
 } from "./approvals.js";
 import { enqueueAiGate, resolveRules } from "../validations/actions.js";
 import { evaluateRules } from "../../infra/rules-engine.js";
@@ -111,7 +112,14 @@ const getWorkflow = async (req) => {
     const settings = await getSpaceWorkflowSettings(result.record?.spaceKey || spaceKeyOf(req));
     const hasApprovers = !!extractApprovalConfig(settings.approval);
     result.available = result.available.map((s) => ({ ...s, requiresApproval: !!(s.enforce && hasApprovers) }));
+    // A4: the ribbon's "changed since approval" line says what happens to the edit; that is the
+    // space's enforce mode, which the settings read above already holds.
+    result.enforceMode = settings?.enforceMode === "revert" ? "revert" : "demote";
   }
+  // A4/A6: the page's CURRENT version, so the ribbon can say "changed since approval (now v{n})"
+  // next to the approval evidence without a second resolver call. Best-effort: null on failure
+  // (the ribbon then just omits the stale line — never a guess). Not added to get-workflow-log.
+  if (result?.assigned && result.record?.enforce) result.liveVersion = await fetchLivePageVersion(pageId); // only where the ribbon uses it
   if (req.payload?.withLog) result.log = await getWorkflowLog(pageId);
   return result;
 };
@@ -251,9 +259,17 @@ export const requestTransition = async (req) => {
       return { success: false, reason: "Could not verify the page version — please retry." };
     }
     const snap = (await resolveApproverIds(wfSettings.approval))?.approvers || [];
+    const stewardName = await actorName();
+    // A4: a direct steward approval still leaves an evidence block — no approvers, no decisions,
+    // just who approved which version, when. Same shape as a quorum approval (buildApprovalRecord
+    // with no pending record), so the ribbon renders one thing.
+    const approvalRecord = buildApprovalRecord({
+      pending: { pinnedVersion: approvedVersion }, records: [], outcome: "approved",
+      completedBy: actorAccountId, completedByName: stewardName,
+    });
     return transitionPageWorkflow({
-      pageId, spaceKey, toStateId, actorAccountId, actorName: await actorName(),
-      reason: boundReason(req.payload?.reason), approvers: snap, approvedVersion,
+      pageId, spaceKey, toStateId, actorAccountId, actorName: stewardName,
+      reason: boundReason(req.payload?.reason), approvers: snap, approvedVersion, approvalRecord,
     });
   }
   return transitionPageWorkflow({

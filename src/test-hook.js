@@ -17,8 +17,7 @@ import {
   setSpaceWorkflowSettings,
   bulkAssignPagesInSpace,
   readPageWorkflow,
-  storeWorkflowConfig,
-} from "./server/capsules/workflow/logic.js";
+  storeWorkflowConfig, fetchLivePageVersion } from "./server/capsules/workflow/logic.js";
 import {
   requestApprovalTransition,
   decideApproval,
@@ -388,9 +387,24 @@ export async function testStateTrigger(req) {
         return json(200, { invoked: fn, result: r });
       }
       if (fn === "getWorkflow") {
+        // With an `actor`, go through the REGISTERED resolver (read gate, requiresApproval,
+        // liveVersion, enforceMode — A4) instead of the logic layer; without one, the legacy
+        // logic-layer read the older specs rely on.
+        if (q(req, "actor")) {
+          const r = await byKey(workflowActions, "get-page-workflow")({
+            payload: { pageId: q(req, "pageId"), spaceKey: q(req, "spaceKey"), withLog: !!q(req, "withLog") },
+            context: { accountId: q(req, "actor"), extension: {} },
+          });
+          return json(200, { invoked: fn, result: r });
+        }
         const result = await getPageWorkflow(q(req, "pageId"), q(req, "spaceKey"));
         if (q(req, "withLog")) result.log = await getWorkflowLog(q(req, "pageId"));
         return json(200, { invoked: fn, result });
+      }
+      // A4: the raw workflow log on its own — the approval-evidence spec asserts the transition
+      // entry's details.approvalRecord and the `approval-denied` entry a denial leaves behind.
+      if (fn === "getWorkflowLog") {
+        return json(200, { invoked: fn, result: { log: await getWorkflowLog(q(req, "pageId")) } });
       }
       if (fn === "setSpaceWorkflowSettings") {
         const r = await setSpaceWorkflowSettings(q(req, "spaceKey"), {
@@ -419,7 +433,9 @@ export async function testStateTrigger(req) {
           pageId: q(req, "pageId"), toStateId: q(req, "to"), toStateName: q(req, "toName") || q(req, "to"), spaceKey: q(req, "spaceKey"),
           approvers, mode: q(req, "mode") || "any", min: parseInt(q(req, "min"), 10) || 1,
           actorAccountId: q(req, "actor") || "harness", actorName: "Harness",
-          pinnedVersion: parseInt(q(req, "pinnedVersion"), 10) || null,
+          // Default to the LIVE version, as the request-transition resolver does — a request
+          // pinned to nothing approves nothing (no evidence chip, no version link).
+          pinnedVersion: parseInt(q(req, "pinnedVersion"), 10) || (await fetchLivePageVersion(q(req, "pageId"))) || null,
         });
         return json(200, { invoked: fn, result: r });
       }

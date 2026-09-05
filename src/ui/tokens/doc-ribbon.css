@@ -468,7 +468,7 @@ html[data-color-mode="dark"] .wf-dot-neutral  { background: #64748b; }
 /* Reduced-motion: collapse every move to its instant final state (also closes
    doc-ribbon's previously-missing guard — DESIGN_TOKENS §5.3). */
 @media (prefers-reduced-motion: reduce) {
-  .wf-chip, .wf-menu-item { transition: none; }
+  .wf-chip, .wf-menu-item, .wf-version-link { transition: none; }
   .wf-chip:not(:disabled):hover { transform: none; }
   .wf-seat { animation: none; }
 }
@@ -529,3 +529,28 @@ html[data-color-mode="dark"] .wf-dot-neutral  { background: #64748b; }
 .wf-appr-note { margin-top: 10px; font-size: 11px; color: var(--sv-text-secondary, #475569); }
 .wf-appr-progress { margin-top: 8px; font-size: 11px; font-weight: 800; color: var(--sv-text-secondary, #475569); }
 .wf-appr-outcome { margin: 0 0 8px; font-size: 11px; color: var(--sv-text-secondary, #475569); line-height: 1.45; }
+
+/* ── A4/A6: approval evidence chip + "Approval record" dialog, version links ── */
+/* The chip anchors its own dialog (the state chip's menu anchors to .wf-control). */
+.wf-evidence { position: relative; display: inline-flex; align-items: center; }
+.wf-evidence-panel { width: 360px; }
+/* name · decision · date on one line; a quoted reason drops to its own full-width line. */
+.wf-evidence-row { flex-wrap: wrap; row-gap: 2px; }
+.wf-evidence-row .wf-appr-reason { flex-basis: 100%; }
+.wf-appr-date { font-size: 11px; font-weight: 600; color: var(--sv-text-secondary, #475569); white-space: nowrap; }
+.wf-version-link {
+  display: inline-flex; align-items: center; gap: 5px; margin-top: 10px;
+  font-size: 12px; font-weight: 700; color: var(--sv-interactive-primary, #0891B2);
+  text-decoration: none; transition: color 120ms var(--sv-ease, ease);
+}
+.wf-version-link:hover { color: var(--sv-interactive-primary-hover, #0E7490); text-decoration: underline; }
+.wf-version-link:focus-visible { outline: 2px solid var(--sv-border-focus); outline-offset: 2px; border-radius: 4px; }
+.wf-version-link svg { flex: none; }
+/* Solid caution fill (same amber + dark ink as the caution chip) — the page moved on after approval. */
+.wf-evidence-stale {
+  margin-top: 10px; padding: 8px 10px; border-radius: 8px;
+  background: #d97706; color: #1F2937; font-size: 11px; font-weight: 700; line-height: 1.45;
+}
+
+/* A4: the enforce baseline moved past the reviewed version (an approver/steward edited since). */
+.wf-evidence-baseline { margin: 8px 0 0; font-size: 12px; font-weight: 600; color: var(--wf-text-muted, #5e6c84); }
