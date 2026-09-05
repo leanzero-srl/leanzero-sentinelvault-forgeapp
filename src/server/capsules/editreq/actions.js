@@ -11,6 +11,7 @@ import {
 } from "../../infra/notice-composer.js";
 import { getActiveEditGrant, getActiveSectionEditGrant } from "./logic.js";
 import { canReadPage } from "../../shared/content-access.js";
+import { recordActivity } from "../../infra/activity-log.js";
 
 const COOLDOWN_MS = 48 * 60 * 60 * 1000; // 48h after a denial before re-requesting
 
@@ -98,6 +99,16 @@ const requestEditAccess = async (req) => {
     reason: requestReason,
     status: "pending",
     requestedAt: new Date().toISOString(),
+  });
+  // A1: the request exists from this write on.
+  await recordActivity({
+    type: "editreq.requested",
+    pageId: seal.contentId || null,
+    spaceKey: seal.spaceKey || null,
+    actor: { accountId, name: requesterName },
+    target: { kind: "attachment", id: attachmentId, name: seal.attachmentName || null },
+    details: { scope: "attachment", reason: requestReason, ownerAccountId: seal.lockedBy || null },
+    version: null,
   });
 
   if (seal.contentId && (await notifyEnabled())) {
@@ -227,6 +238,16 @@ export const approveEditRequest = async (req) => {
   }
 
   await kvs.delete(requestKey);
+  // A1: grant written, request consumed — the approval is a fact.
+  await recordActivity({
+    type: "editreq.approved",
+    pageId: seal.contentId || null,
+    spaceKey: seal.spaceKey || null,
+    actor: { accountId, name: seal.lockedBy === accountId ? (seal.lockedByName || null) : null },
+    target: { kind: "attachment", id: attachmentId, name: seal.attachmentName || null },
+    details: { scope: "attachment", requesterAccountId, requesterName: editorName, expiresAt: grant.expiresAt },
+    version: null,
+  });
 
   if (seal.contentId && (await notifyEnabled())) {
     try {
@@ -252,6 +273,16 @@ export const denyEditRequest = async (req) => {
   const existing = await kvs.get(requestKey);
   if (!existing) return { success: false, reason: "Request not found" };
   await kvs.set(requestKey, { ...existing, status: "denied", deniedAt: new Date().toISOString() });
+  // A1
+  await recordActivity({
+    type: "editreq.denied",
+    pageId: seal.contentId || null,
+    spaceKey: seal.spaceKey || null,
+    actor: { accountId, name: seal.lockedBy === accountId ? (seal.lockedByName || null) : null },
+    target: { kind: "attachment", id: attachmentId, name: seal.attachmentName || null },
+    details: { scope: "attachment", requesterAccountId, requesterName: existing.requesterName || null },
+    version: null,
+  });
 
   if (seal.contentId && (await notifyEnabled())) {
     try {
@@ -273,7 +304,20 @@ export const revokeEditGrant = async (req) => {
   if (!seal) return { success: false, reason: "Seal not found" };
   if (!authorized) return { success: false, reason: "Not the seal owner" };
 
-  await kvs.delete(`edit-grant-${attachmentId}-${editorAccountId}`);
+  const grantKey = `edit-grant-${attachmentId}-${editorAccountId}`;
+  if (!(await kvs.get(grantKey))) return { success: false, reason: "No active grant for that editor" };
+  await kvs.delete(grantKey);
+  // A1: the grant is gone from this delete on (and there WAS one — a double click must not
+  // record a second revocation, A1 review F4).
+  await recordActivity({
+    type: "editreq.revoked",
+    pageId: seal.contentId || null,
+    spaceKey: seal.spaceKey || null,
+    actor: { accountId, name: seal.lockedBy === accountId ? (seal.lockedByName || null) : null },
+    target: { kind: "attachment", id: attachmentId, name: seal.attachmentName || null },
+    details: { scope: "attachment", editorAccountId },
+    version: null,
+  });
   return { success: true };
 };
 
@@ -349,6 +393,20 @@ export const requestSectionEdit = async (req) => {
     reason: typeof reason === "string" ? reason.trim().slice(0, 300) : "",
     status: "pending", requestedAt: new Date().toISOString(),
   });
+  // A1 (section scope)
+  await recordActivity({
+    type: "editreq.requested",
+    pageId: seal.pageId || null,
+    spaceKey: seal.spaceKey || null,
+    actor: { accountId, name: requesterName },
+    target: { kind: "section", id: sectionId, name: sectionTitle },
+    details: {
+      scope: "section",
+      reason: typeof reason === "string" ? reason.trim().slice(0, 300) : "",
+      ownerAccountId: seal.lockedBy || null,
+    },
+    version: null,
+  });
 
   if (seal.pageId && (await notifyEnabled())) {
     try { await mailEditRequest(seal.lockedBy, accountId, requesterName, sectionTitle, seal.pageId, reason); }
@@ -409,6 +467,16 @@ export const approveSectionEdit = async (req) => {
   if (expiryMs > Date.now()) await setUntil(grantKey, grant, expiryMs);
   else await kvs.set(grantKey, grant);
   await kvs.delete(requestKey);
+  // A1 (section scope)
+  await recordActivity({
+    type: "editreq.approved",
+    pageId: seal.pageId || null,
+    spaceKey: seal.spaceKey || null,
+    actor: { accountId, name: seal.lockedBy === accountId ? (seal.lockedByName || null) : null },
+    target: { kind: "section", id: sectionId, name: seal.sectionTitle || "Sealed section" },
+    details: { scope: "section", requesterAccountId, requesterName: grant.editorName, expiresAt: grant.expiresAt },
+    version: null,
+  });
 
   if (seal.pageId && (await notifyEnabled())) {
     try { await mailEditApproved(requesterAccountId, seal.sectionTitle || "a sealed section", seal.pageId); } catch (_) { /* best effort */ }
@@ -427,6 +495,16 @@ export const denySectionEdit = async (req) => {
   const existing = await kvs.get(requestKey);
   if (!existing) return { success: false, reason: "Request not found" };
   await kvs.set(requestKey, { ...existing, status: "denied", deniedAt: new Date().toISOString() });
+  // A1 (section scope)
+  await recordActivity({
+    type: "editreq.denied",
+    pageId: seal.pageId || null,
+    spaceKey: seal.spaceKey || null,
+    actor: { accountId, name: seal.lockedBy === accountId ? (seal.lockedByName || null) : null },
+    target: { kind: "section", id: sectionId, name: seal.sectionTitle || "Sealed section" },
+    details: { scope: "section", requesterAccountId, requesterName: existing.requesterName || null },
+    version: null,
+  });
   if (seal.pageId && (await notifyEnabled())) {
     try { await mailEditDenied(requesterAccountId, seal.sectionTitle || "a sealed section", seal.pageId); } catch (_) { /* best effort */ }
   }

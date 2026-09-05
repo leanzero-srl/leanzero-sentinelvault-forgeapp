@@ -2,7 +2,7 @@ import { asApp, asUser, route } from "@forge/api";
 import { kvs, WhereConditions } from "@forge/kvs";
 
 import { authorizeSteward } from "../../shared/steward-checks.js";
-import { canEditPage, canReadPage, mustVerify } from "../../shared/content-access.js";
+import { canEditPage, canReadPage, mustVerify, resolvePageSpaceKey } from "../../shared/content-access.js";
 import { touchSealTimestamp, resolveSealHoldPeriod } from "../sealing/logic.js";
 import { restampIfEnforced } from "../workflow/logic.js";
 import {
@@ -20,6 +20,7 @@ import {
   refreshSectionContentProp,
 } from "./logic.js";
 import { sweepSectionEditAccess } from "../editreq/logic.js";
+import { recordActivity } from "../../infra/activity-log.js";
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const newSectionId = () => {
@@ -122,12 +123,19 @@ export const sealSection = async (req) => {
   const { pageId: payloadPageId, headingIndex, headingText, lockDuration } = req.payload || {};
   const operatorAccountId = req.context.accountId;
   const pageId = payloadPageId || req.context.extension?.content?.id;
-  const realmKey =
-    req.context.extension?.content?.space?.key || req.context.extension?.space?.key;
   let realmId =
     req.context.extension?.content?.space?.id || req.context.extension?.space?.id;
 
   if (!pageId || headingIndex == null) return { success: false, reason: "Missing pageId/headingIndex" };
+
+  // The space is a property of the PAGE being sealed, not of where the caller is standing.
+  // Context supplies it for free on the panel; any other caller (the hook, a future content
+  // action) has none, and without it the seal was written with spaceKey null — no space index
+  // leg for the steward console and, since A1, no space-report entry. Derive it from the page.
+  const realmKey =
+    req.context.extension?.content?.space?.key
+    || req.context.extension?.space?.key
+    || (await resolvePageSpaceKey(pageId));
 
   // SV-SEC-1 (fixed 2026-08-20; see SECURITY-TODO.md and CLAUDE.md). pageId above is attacker-controlled and everything below reads and REWRITES
   // that page through asApp(), which carries site-wide write:confluence-content — so without
@@ -213,6 +221,17 @@ export const sealSection = async (req) => {
     wrapperNode: result.wrapper, bodyContent: result.rangeBlocks,
     hash: contentHash, version: result.version, originalIndex: result.originalIndex,
   });
+  // A1: record + snapshot written — the section is sealed from here on (the page write that
+  // wrapped it already succeeded above, at result.version).
+  await recordActivity({
+    type: "section.sealed",
+    pageId,
+    spaceKey: realmKey || null,
+    actor: { accountId: operatorAccountId, name: operatorName },
+    target: { kind: "section", id: sectionId, name: sectionTitle },
+    details: { expiresAt, lockDuration: holdPeriod, blocks: result.rangeBlocks.length },
+    version: result.version,
+  });
   if (realmId) {
     await kvs.set(`space-section-protection-${realmId}-${sectionId}`, {
       sectionId, pageId, sectionTitle, lockedBy: operatorAccountId,
@@ -247,24 +266,43 @@ export const unsealSection = async (req) => {
   if (!allowed) return { success: false, reason: "Only the section owner or a steward can unseal" };
 
   const pageId = record.pageId;
+  let unwrapped = false; // A1 review F8: the record must say whether the wrapper came off
   for (let attempt = 0; attempt < 3; attempt++) {
     const { pageData, adfDoc } = await readDocBody(pageId);
     const content = adfDoc.content || [];
     const idx = content.findIndex(
       (b) => b.type === "bodiedExtension" && isSealedSectionKey(b.attrs?.extensionKey) && getSectionId(b) === sectionId,
     );
-    if (idx === -1) break; // wrapper already gone — just clean KVS
+    if (idx === -1) { unwrapped = true; break; } // wrapper already gone — just clean KVS
     const body = Array.isArray(content[idx].content) ? content[idx].content : [];
     content.splice(idx, 1, ...body);
     adfDoc.content = content;
     const putRes = await writeDocBody(pageId, pageData, adfDoc, "(Sentinel Vault unsealed a section)");
-    if (putRes.ok) break;
+    if (putRes.ok) { unwrapped = true; break; }
     if (putRes.status === 409) { await sleep(Math.pow(2, attempt) * 500); continue; }
     break;
   }
 
   await kvs.delete(`section-protection-${sectionId}`);
   await kvs.delete(`section-snapshot-${sectionId}`);
+  // A1: the seal record is gone — released. `forced` says a steward did it to someone else's.
+  await recordActivity({
+    type: "section.released",
+    pageId,
+    spaceKey: record.spaceKey || realmKey || null,
+    actor: {
+      accountId: operatorAccountId,
+      name: record.lockedBy === operatorAccountId ? (record.lockedByName || null) : null,
+    },
+    target: { kind: "section", id: sectionId, name: record.sectionTitle || "Sealed section" },
+    details: {
+      forced: record.lockedBy !== operatorAccountId,
+      unwrapped, // false = protection ended but the macro wrapper is still on the page (write failed)
+      ownerAccountId: record.lockedBy || null,
+      ownerName: record.lockedByName || null,
+    },
+    version: null,
+  });
   if (record.spaceId) {
     try { await kvs.delete(`space-section-protection-${record.spaceId}-${sectionId}`); }
     catch (_) { /* best effort */ }

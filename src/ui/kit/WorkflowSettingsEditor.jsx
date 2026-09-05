@@ -35,7 +35,7 @@ const MODE_OPTS = [
 ];
 
 // Small custom select (no native <select>), mirroring ValidationsEditor's MiniSelect.
-const MiniSelect = ({ value, options, onChange, ariaLabel }) => {
+export const MiniSelect = ({ value, options, onChange, ariaLabel }) => {
   const [open, setOpen] = useState(false);
   const current = options.find((o) => o.value === value);
   return (

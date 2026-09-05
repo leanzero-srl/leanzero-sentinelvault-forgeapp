@@ -5,6 +5,7 @@ import { enablePaletteSync } from "../../kit/palette-sync";
 import { flashArtifactSealed, flashArtifactUnsealed } from "../../kit/flash-messages";
 import ThumbnailPreview from "../../kit/ThumbnailPreview";
 import { formatRemaining } from "../../kit/format-duration";
+import ActivityFeed from "../../kit/ActivityFeed";
 
 // ── Column definitions ──────────────────────────────────
 const OVERLAY_COLUMNS = [
@@ -1215,9 +1216,19 @@ const ArtifactControlPanel = () => {
             )}
 
             {!loading && !error && fileList.length === 0 && (
-              <div className="alert-info">
-                This page has no files attached.
-              </div>
+              <>
+                <div className="alert-info">
+                  This page has no files attached.
+                </div>
+                {/* A1: the page's activity is still worth reading when there are no files. */}
+                <div className="sv-card-section sv-activity-section">
+                  <div className="sv-card-section-header">
+                    <span className="sv-card-section-title">Activity</span>
+                    <span className="sv-card-section-note">Everything Sentinel Vault did or was asked to do on this page</span>
+                  </div>
+                  <ActivityFeed pageId={pageId} pageSize={10} />
+                </div>
+              </>
             )}
 
             {!loading && !error && fileList.length > 0 && (
@@ -1397,6 +1408,15 @@ const ArtifactControlPanel = () => {
                     End of file list
                   </div>
                 )}
+
+                {/* A1: Activity beneath the file list — the record of what happened on this page. */}
+                <div className="sv-card-section sv-activity-section">
+                  <div className="sv-card-section-header">
+                    <span className="sv-card-section-title">Activity</span>
+                    <span className="sv-card-section-note">Everything Sentinel Vault did or was asked to do on this page</span>
+                  </div>
+                  <ActivityFeed pageId={pageId} pageSize={10} />
+                </div>
               </div>
             )}
           </div>

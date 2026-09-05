@@ -69,6 +69,7 @@ Each capsule encapsulates a domain. Files follow a consistent pattern: `actions.
 | **panels** | 12 | Macro resolvers | Enumerate page artifacts, upload, delete, label/unlabel, panel inject/extract, panel status, thumbnail preview |
 | **policies** | 8 | Settings | Load/store global and realm-level configuration, ruleset CRUD |
 | **realms** | 11 | Space admin | List sealed artifacts per space, force-unseal, steward access requests (request/check/list/approve/deny), background scan worker, role checking |
+| **activity** | 2 | Activity log | Read side of the A1 activity record (`infra/activity-log.js` writes it from every seal/section/edit-access/workflow/validation site): per-page feed gated on page read, per-space report gated on stewardship with server-side type/date/page/actor filters and cursor pagination |
 
 All capsule actions are aggregated in `src/server/registry.js`, which creates a single Forge Resolver that routes incoming requests by action key. A `heartbeat` action provides health checking.
 
@@ -87,6 +88,8 @@ All capsule actions are aggregated in `src/server/registry.js`, which creates a 
 **Panels:** `enumerate-panel-artifacts`, `label-artifact`, `unlabel-artifact`, `delete-artifact`, `check-panel-status`, `store-doc-panel-prefs`, `upload-artifact`, `discover-panel-key`, `resolve-artifact-preview` (`inject-panel`/`extract-panel`/`register-panel-key` removed 2026-09-05: no callers, asApp writes behind payload ids)
 
 **Entitlements:** `load-session`, `check-license`, `steward-override-enabled`
+
+**Activity:** `get-page-activity`, `get-space-activity` (A1, 2026-09-05; keys `activity-page-*` / `activity-space-*`, no back-fill of history before it shipped — `get-workflow-log` still reads the legacy `workflow-log-*`)
 
 ## Surfaces
 

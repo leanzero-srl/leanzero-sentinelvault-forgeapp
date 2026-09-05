@@ -4,6 +4,7 @@ import { removeSealContentProp, touchSealTimestamp } from "./logic.js";
 import { notifyWatchers, sweepWatchers } from "../bulletins/logic.js";
 import { sweepEditAccess } from "../editreq/logic.js";
 import { triggerPanelEmbed, removePanelNode } from "../../infra/doc-surgery.js";
+import { recordActivity } from "../../infra/activity-log.js";
 
 /**
  * Tear a seal down completely.
@@ -25,9 +26,14 @@ import { triggerPanelEmbed, removePanelNode } from "../../infra/doc-surgery.js";
  * Best-effort by design: a failure to notify or to tidy the panel must not leave the
  * seal record half-deleted. The one hard failure is the seal record itself.
  *
+ * `autoRelease` (A1): set by the expiry sweep ONLY — `{ reason, noticeCount, noticeLimit }` —
+ * and it makes this teardown record a `seal.auto-released` activity entry with the app as the
+ * actor. A resolver-driven release records its own entry (owner release vs. steward force are
+ * different events, and only the resolver knows which), so it leaves this unset.
+ *
  * @returns {{ success: boolean, reason?: string }}
  */
-export async function releaseSeal(attachmentId, sealRecord, { fallbackSpaceKey = null, notify = true } = {}) {
+export async function releaseSeal(attachmentId, sealRecord, { fallbackSpaceKey = null, notify = true, autoRelease = null } = {}) {
   if (!attachmentId || !sealRecord) return { success: false, reason: "Nothing to release" };
 
   await kvs.delete(`protection-${attachmentId}`);
@@ -39,6 +45,26 @@ export async function releaseSeal(attachmentId, sealRecord, { fallbackSpaceKey =
   }
 
   await touchSealTimestamp();
+
+  if (autoRelease) {
+    // The seal is confirmed gone (read-back above) — the release is a fact from here on.
+    await recordActivity({
+      type: "seal.auto-released",
+      pageId: sealRecord.contentId || null,
+      spaceKey: sealRecord.spaceKey || fallbackSpaceKey || null,
+      actor: null,
+      target: { kind: "attachment", id: attachmentId, name: sealRecord.attachmentName || null },
+      details: {
+        reason: autoRelease.reason || "lapse-policy",
+        noticeCount: autoRelease.noticeCount ?? null,
+        noticeLimit: autoRelease.noticeLimit ?? null,
+        expiredAt: sealRecord.expiresAt || null,
+        ownerAccountId: sealRecord.lockedBy || null,
+        ownerName: sealRecord.lockedByName || null,
+      },
+      version: null,
+    });
+  }
 
   if (sealRecord.contentId) {
     await removeSealContentProp(sealRecord.contentId).catch((e) =>

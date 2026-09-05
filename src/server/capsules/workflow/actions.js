@@ -253,7 +253,7 @@ export const requestTransition = async (req) => {
     const snap = (await resolveApproverIds(wfSettings.approval))?.approvers || [];
     return transitionPageWorkflow({
       pageId, spaceKey, toStateId, actorAccountId, actorName: await actorName(),
-      reason: req.payload?.reason, approvers: snap, approvedVersion,
+      reason: boundReason(req.payload?.reason), approvers: snap, approvedVersion,
     });
   }
   return transitionPageWorkflow({
@@ -262,13 +262,18 @@ export const requestTransition = async (req) => {
     toStateId,
     actorAccountId,
     actorName: await actorName(),
-    reason: req.payload?.reason,
+    reason: boundReason(req.payload?.reason),
   });
 };
 
+// A free-text reason is stored in the durable record; a 1 KB one would push the entry past the
+// details cap and blank the fields that matter (A1 review F3). Same bound edit requests use.
+const boundReason = (r) => (typeof r === "string" && r.trim() ? r.trim().slice(0, 300) : null);
+
 const decideApprovalAction = async (req) => {
   const pageId = pageIdOf(req);
-  const { decision, reason } = req.payload || {};
+  const { decision } = req.payload || {};
+  const reason = boundReason(req.payload?.reason);
   if (!pageId) return { success: false, reason: "No page context" };
   return decideApproval({ pageId, approverAccountId: req.context?.accountId, decision, reason, actorName: await actorName() });
 };
