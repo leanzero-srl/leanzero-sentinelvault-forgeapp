@@ -3,6 +3,7 @@
 // enforcement DECISION with SYNTHETIC actors (enforceDecision hook) and the revert MECHANISM
 // directly (sweepRevert hook), and seed drift via the dev KVS hook. Asserts on real page
 // bodies + workflow-state records.
+// @covers resolver:get-workflow-dashboard
 import { readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";

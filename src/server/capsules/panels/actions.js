@@ -309,55 +309,6 @@ export const deleteArtifact = async (req) => {
 };
 
 /**
- * Inject the panel into a page (manual trigger from UI)
- */
-const injectPanel = async (req) => {
-  const { pageId } = req.payload;
-
-  if (!pageId) {
-    return { success: false, reason: "Missing pageId" };
-  }
-
-  // SV-SEC-1. insertPanelNode reads and REWRITES this page through asApp(), which carries
-  // site-wide write:confluence-content, and pageId comes straight off the payload — so
-  // ungated this let any logged-in user append a node to, and bump the version of, any page
-  // on the site. Unconditional: this is a write, and a context id would only prove the
-  // caller can see the page, not change it.
-  if (!(await canEditPage(req.context.accountId, pageId))) {
-    return { success: false, reason: "You do not have permission to edit this page" };
-  }
-
-  const extensionKey = await resolveExtensionKey();
-  if (!extensionKey) {
-    return {
-      success: false,
-      reason: "Could not determine the macro extension key.",
-    };
-  }
-
-  return await insertPanelNode(pageId, extensionKey);
-};
-
-/**
- * Remove the panel from a page
- */
-const extractPanel = async (req) => {
-  const { pageId } = req.payload;
-
-  if (!pageId) {
-    return { success: false, reason: "Missing pageId" };
-  }
-
-  // SV-SEC-1, mirror of injectPanel: removePanelNode is the same asApp() read+write. Stripping
-  // the panel off a page is removing the protection surface, so it needs the edit bar too.
-  if (!(await canEditPage(req.context.accountId, pageId))) {
-    return { success: false, reason: "You do not have permission to edit this page" };
-  }
-
-  return await removePanelNode(pageId);
-};
-
-/**
  * Check if the panel exists on a page + get page-level panel settings
  */
 const checkPanelStatus = async (req) => {
@@ -546,40 +497,6 @@ const uploadArtifact = async (req) => {
 };
 
 /**
- * Store the panel's extension key in KVS
- */
-const registerPanelKey = async (req) => {
-  const { extensionKey } = req.payload;
-
-  if (!extensionKey) {
-    return { success: false, reason: "Missing extensionKey" };
-  }
-
-  // SV-SEC-1. This value is TENANT-GLOBAL and the app stamps it, as the app, into the ADF of
-  // every page it auto-embeds the panel onto — so an arbitrary string accepted here is written
-  // site-wide under write:confluence-content. Nothing in the UI calls this action; the correct
-  // key is derivable from the Forge app context, so the caller's value is MATCHED against the
-  // derived one rather than believed. If the context cannot produce one, fall back to a shape
-  // check behind a site-admin gate rather than accepting anything.
-  const canonical = deriveExtensionKeyFromContext();
-  if (canonical) {
-    if (extensionKey !== canonical) {
-      return { success: false, reason: "Rejected: not this app's macro key" };
-    }
-  } else if (!isPanelExtensionKey(extensionKey)
-    || !(await isOperatorSiteAdmin(req.context.accountId))) {
-    return { success: false, reason: "Not authorized" };
-  }
-
-  const existing = await kvs.get("macro-extension-key");
-  if (existing !== extensionKey) {
-    await kvs.set("macro-extension-key", extensionKey);
-  }
-
-  return { success: true };
-};
-
-/**
  * Discover the panel's extensionKey by reading the page ADF.
  */
 const discoverPanelKey = async (req) => {
@@ -644,17 +561,17 @@ const resolvePreview = async (req) => {
   return resolveArtifactPreview(artifactId, contentId);
 };
 
+// inject-panel / extract-panel / register-panel-key were removed 2026-09-05: nothing called
+// them (auto-insert runs through triggerPanelEmbed from the seal path; the extension key is
+// discovered from context), and each carried an asApp() page write behind a payload-named id.
 export const actions = [
   ["enumerate-panel-artifacts", enumeratePanelArtifacts],
   ["label-artifact", labelArtifact],
   ["unlabel-artifact", unlabelArtifact],
   ["delete-artifact", deleteArtifact],
-  ["inject-panel", injectPanel],
-  ["extract-panel", extractPanel],
   ["check-panel-status", checkPanelStatus],
   ["store-doc-panel-prefs", storeDocPanelPrefs],
   ["upload-artifact", uploadArtifact],
-  ["register-panel-key", registerPanelKey],
   ["discover-panel-key", discoverPanelKey],
   ["resolve-artifact-preview", resolvePreview],
 ];

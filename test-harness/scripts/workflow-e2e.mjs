@@ -6,6 +6,7 @@
 //
 // Env: SV_* (test-harness/.env) + SENTINEL_TESTHOOK_URL + HARNESS_SECRET
 //      (test-harness/.env or ~/Projects/forge-live-harness/.env — same fallback as ensure-fixture).
+// @covers resolver:assign-workflow resolver:get-workflow-log
 import { readFileSync, existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
