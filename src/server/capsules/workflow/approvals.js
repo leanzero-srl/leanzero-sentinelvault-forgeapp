@@ -12,6 +12,14 @@
  *        = { status: pending|approved|denied, requestedAt, decidedAt, reason, pinnedVersion, approverName }
  *   workflow-pending-{pageId}
  *        = { toStateId, approvalId, requestedBy, requestedByName, requestedAt, pinnedVersion, approvers[], mode, min }
+ *   workflow-inbox-{approverAccountId}-{pageId}
+ *        = { pageId, stateId, requestedAt }
+ *        The per-approver INDEX the inbox reads. Added 2026-09-05: listMyApprovals used to scan
+ *        every workflow-approval-* record on the site (cap 1,500) and pick out the caller's —
+ *        on a site with a few hundred orphaned records from deleted pages the scan never
+ *        reached a freshly opened approval, so "Approvals waiting on you" rendered nothing while
+ *        the page banner still showed the request. Written with the approval records, deleted
+ *        with them, backfilled hourly by workflowSweep for approvals opened before this shipped.
  */
 import { asApp, route } from "@forge/api";
 import { kvs, WhereConditions } from "@forge/kvs";
@@ -106,6 +114,20 @@ export async function resolveApproverIds(approval) {
 
 const approvalKey = (pageId, stateId, accountId) => `workflow-approval-${pageId}-${stateId}-${APPROVAL_ID}-${accountId}`;
 const pendingKey = (pageId) => `workflow-pending-${pageId}`;
+export const inboxKey = (accountId, pageId) => `workflow-inbox-${accountId}-${pageId}`;
+
+// Pure (unit-tested). An approval record is an ORPHAN when its page has no pending transition
+// any more (page deleted mid-approval, or a teardown path that cleared the pending record by
+// query and missed a key) — but only once it is old enough that it cannot be the record of a
+// request that is being opened right now: requestApprovalTransition writes the approval
+// records BEFORE the pending record, and the sweep must never eat that window.
+export const ORPHAN_APPROVAL_MIN_AGE_MS = 60 * 60 * 1000;
+export function isOrphanApproval(record, pendingExists, nowMs = Date.now()) {
+  if (pendingExists) return false;
+  const at = Date.parse(record?.requestedAt || "");
+  if (!Number.isFinite(at)) return true; // no provenance at all: nothing can be waiting on it
+  return nowMs - at >= ORPHAN_APPROVAL_MIN_AGE_MS;
+}
 
 // Open a pending transition + one approval record per approver.
 export async function requestApprovalTransition({ pageId, toStateId, toStateName, spaceKey, approvers, mode, min, actorAccountId, actorName, pinnedVersion, approverNames, aiGate }) {
@@ -115,6 +137,7 @@ export async function requestApprovalTransition({ pageId, toStateId, toStateName
       pageId, stateId: toStateId, approverAccountId: acc, approverName: (approverNames && approverNames[acc]) || null,
       status: "pending", requestedAt, decidedAt: null, reason: null, pinnedVersion,
     });
+    await kvs.set(inboxKey(acc, pageId), { pageId, stateId: toStateId, requestedAt });
   }
   await kvs.set(pendingKey(pageId), {
     toStateId, toStateName: toStateName || null, approvalId: APPROVAL_ID, requestedBy: actorAccountId || null, requestedByName: actorName || null,
@@ -145,13 +168,19 @@ export async function clearPageApprovals(pageId, stateId, approvers) {
   if (Array.isArray(approvers) && approvers.length) {
     // Delete the exact keys the engine created (strongly consistent) — don't leak
     // phantom-pending records into listMyApprovals via an eventually-consistent query.
-    for (const acc of approvers) await kvs.delete(approvalKey(pageId, stateId, acc)).catch(() => {});
+    for (const acc of approvers) {
+      await kvs.delete(approvalKey(pageId, stateId, acc)).catch(() => {});
+      await kvs.delete(inboxKey(acc, pageId)).catch(() => {});
+    }
     return;
   }
   // Fallback for a sweep with no known list (e.g. workflow unassign): best-effort query.
   const prefix = stateId ? `workflow-approval-${pageId}-${stateId}-` : `workflow-approval-${pageId}-`;
   const { results } = await kvs.query().where("key", WhereConditions.beginsWith(prefix)).limit(100).getMany();
-  for (const { key } of results || []) await kvs.delete(key).catch(() => {});
+  for (const { key, value } of results || []) {
+    await kvs.delete(key).catch(() => {});
+    if (value?.approverAccountId) await kvs.delete(inboxKey(value.approverAccountId, pageId)).catch(() => {});
+  }
 }
 
 // Complete an approved transition — shared by the human path (decideApproval) and the AI
@@ -300,19 +329,76 @@ export async function getPageApprovalStatus(pageId) {
   };
 }
 
-// Inbox: all pending approval records assigned to this account (bounded cursor scan).
+// Inbox: the caller's pending approval records, read through the per-approver index
+// (workflow-inbox-{account}-*) and confirmed per key against the approval record itself —
+// a strongly-consistent get, so a decision recorded a moment ago is never listed again.
+// An index row whose approval record is gone is stale (cleared by a path that predates the
+// index, or a lost delete) and is removed on the way past.
 export async function listMyApprovals(accountId) {
   if (!accountId) return [];
   const out = [];
-  let query = kvs.query().where("key", WhereConditions.beginsWith("workflow-approval-")).limit(100);
+  const prefix = `workflow-inbox-${accountId}-`;
+  let query = kvs.query().where("key", WhereConditions.beginsWith(prefix)).limit(100);
   let iterations = 0;
   do {
     const { results, nextCursor } = await query.getMany();
-    for (const { value } of results || []) {
-      if (value?.approverAccountId === accountId && value?.status === "pending") out.push(value);
+    for (const { key, value: row } of results || []) {
+      if (!row?.pageId || !row?.stateId) { await kvs.delete(key).catch(() => {}); continue; }
+      const record = await kvs.get(approvalKey(row.pageId, row.stateId, accountId));
+      if (record?.status === "pending") { out.push(record); continue; }
+      if (!record) await kvs.delete(key).catch(() => {});
     }
     if (!nextCursor || ++iterations >= 15) break;
-    query = kvs.query().where("key", WhereConditions.beginsWith("workflow-approval-")).limit(100).cursor(nextCursor);
+    query = kvs.query().where("key", WhereConditions.beginsWith(prefix)).limit(100).cursor(nextCursor);
   } while (true);
   return out;
+}
+
+// Hourly housekeeping (called from workflowSweep):
+//   (a) BACKFILL — every pending transition's approvers get an index row if they lack one, so
+//       approvals opened before the index existed reach the inbox within an hour of upgrade.
+//   (b) ORPHANS — a bounded page of workflow-approval-* records whose page has no pending
+//       transition (and that are old enough not to be one being opened right now) is deleted
+//       together with their index rows. Without this the record population only ever grows:
+//       a page deleted mid-approval leaves its records behind forever.
+export async function sweepApprovalIndex({ nowMs = Date.now(), maxOrphanPages = 5 } = {}) {
+  const stats = { backfilled: 0, orphansRemoved: 0 };
+  let pq = kvs.query().where("key", WhereConditions.beginsWith("workflow-pending-")).limit(100);
+  let piter = 0;
+  do {
+    const { results, nextCursor } = await pq.getMany();
+    for (const { key, value: pend } of results || []) {
+      const pageId = String(key).replace(/^workflow-pending-/, "");
+      for (const acc of pend?.approvers || []) {
+        try {
+          if (!(await kvs.get(inboxKey(acc, pageId)))) {
+            await kvs.set(inboxKey(acc, pageId), { pageId, stateId: pend.toStateId, requestedAt: pend.requestedAt || null });
+            stats.backfilled++;
+          }
+        } catch (e) { console.warn("[WORKFLOW-SWEEP] inbox backfill", e); }
+      }
+    }
+    if (!nextCursor || ++piter >= 20) break;
+    pq = kvs.query().where("key", WhereConditions.beginsWith("workflow-pending-")).limit(100).cursor(nextCursor);
+  } while (true);
+
+  let aq = kvs.query().where("key", WhereConditions.beginsWith("workflow-approval-")).limit(100);
+  let aiter = 0;
+  const pendingSeen = new Map(); // pageId -> boolean, one strong get per page per run
+  do {
+    const { results, nextCursor } = await aq.getMany();
+    for (const { key, value: rec } of results || []) {
+      try {
+        const pageId = rec?.pageId || String(key).split("-")[2];
+        if (!pendingSeen.has(pageId)) pendingSeen.set(pageId, !!(await kvs.get(pendingKey(pageId))));
+        if (!isOrphanApproval(rec, pendingSeen.get(pageId), nowMs)) continue;
+        await kvs.delete(key);
+        if (rec?.approverAccountId) await kvs.delete(inboxKey(rec.approverAccountId, pageId)).catch(() => {});
+        stats.orphansRemoved++;
+      } catch (e) { console.warn("[WORKFLOW-SWEEP] orphan approval", e); }
+    }
+    if (!nextCursor || ++aiter >= maxOrphanPages) break;
+    aq = kvs.query().where("key", WhereConditions.beginsWith("workflow-approval-")).limit(100).cursor(nextCursor);
+  } while (true);
+  return stats;
 }

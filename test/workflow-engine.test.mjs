@@ -11,7 +11,7 @@ import {
   shouldAutoAssign,
   findDeadEndStates,
 } from "../src/server/capsules/workflow/logic.js";
-import { evaluateApproval, resolveApprovers } from "../src/server/capsules/workflow/approvals.js";
+import { evaluateApproval, resolveApprovers, inboxKey, isOrphanApproval, ORPHAN_APPROVAL_MIN_AGE_MS } from "../src/server/capsules/workflow/approvals.js";
 import { eq, ok, report } from "./_assert.mjs";
 
 // --- findState / getInitialState ---
@@ -117,5 +117,20 @@ eq("DEFAULT_WORKFLOW has NO dead-end states", findDeadEndStates(DEFAULT_WORKFLOW
 }
 eq("findDeadEndStates tolerates a malformed def", findDeadEndStates(null).length, 0);
 eq("findDeadEndStates tolerates missing transitions", findDeadEndStates({ states: [{ id: "a" }] }).length, 0);
+
+// --- inbox index (2026-09-05): the per-approver key, and the orphan predicate the hourly sweep uses ---
+eq("inboxKey is per approver then page", inboxKey("712020:abc", "123"), "workflow-inbox-712020:abc-123");
+{
+  const NOW = Date.parse("2026-09-05T12:00:00Z");
+  const fresh = { requestedAt: new Date(NOW - 5 * 60 * 1000).toISOString() };
+  const old = { requestedAt: new Date(NOW - 2 * ORPHAN_APPROVAL_MIN_AGE_MS).toISOString() };
+  const edge = { requestedAt: new Date(NOW - ORPHAN_APPROVAL_MIN_AGE_MS).toISOString() };
+  ok("a record whose page still has a pending transition is never an orphan, however old", !isOrphanApproval(old, true, NOW));
+  ok("a FRESH record with no pending yet is the request-being-opened window — not an orphan", !isOrphanApproval(fresh, false, NOW));
+  ok("an old record with no pending transition is an orphan", isOrphanApproval(old, false, NOW));
+  ok("exactly at the age threshold counts as old", isOrphanApproval(edge, false, NOW));
+  ok("a record with no requestedAt and no pending is an orphan (nothing can be waiting on it)", isOrphanApproval({}, false, NOW));
+  ok("a record with a garbage requestedAt and no pending is an orphan", isOrphanApproval({ requestedAt: "yesterday" }, false, NOW));
+}
 
 report("workflow-engine");
