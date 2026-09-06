@@ -42,8 +42,12 @@ correctly refused now. Real ones available: Mihai `712020:937bc860-…`, Gabriel
 `SVSEC1P` space, which is how the negative case is manufactured. Synthetic ids remain fine where
 the path filters on the caller's own accountId and never touches content.
 
-## Open, pre-existing
+## Violation-comment dedup — the two races are closed (it69, 2026-09-06)
 
-Two violation-**comment** dedup races in `triggers.js` — details and evidence in
-`SECURITY-TODO.md`. They make `violation-dedup.spec.ts` and `sealed-media-attrs.spec.ts` fail
-intermittently. Protection itself is unaffected; the restore happens every time.
+`SECURITY-TODO.md` "Known, pre-existing" records two races that made `violation-dedup.spec.ts`
+and `sealed-media-attrs.spec.ts` fail about one run in three. Both are closed by two rules in
+`src/server/shared/notice-dedup.js` (pure, unit-tested) that `triggers.js` calls: a clean save
+re-arms the comment only when a USER authored the version read (the app's own restore never
+does), and a claim is write → settle → re-read → announce only if this run's token still stands.
+If you touch the marker code, keep both; the design and the timelines are in
+`.claude/skills/sentinel-vault-quality-loop/state/DEDUP-RACES-DESIGN.md`.
