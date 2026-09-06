@@ -663,3 +663,21 @@ html[data-color-mode="dark"] .wf-read-count { color: #67E8F9; border-color: #67E
 .wf-appr-signed { display: inline-flex; align-items: center; padding: 1px 7px; border-radius: 9999px; background: #7C3AED; color: #fff; font-size: 10px; font-weight: 800; letter-spacing: 0.02em; }
 /* Chips never wrap mid-label (the bar wraps whole chips instead). */
 .wf-review-btn, .wf-review-due, .wf-read-btn, .wf-read-count, .wf-read-done { white-space: nowrap; }
+
+/* The details chip: outlined so it reads as secondary to the solid state chip, in the ink of its
+   tone (green while approved, red when overdue, slate otherwise); fills solid on hover. */
+.wf-details { position: relative; display: inline-flex; align-items: center; }
+.wf-chip-outline { background: transparent; border: 1.5px solid currentColor; padding: 1px 9px 1px 8px; }
+.wf-chip-outline-success { color: #15803d; }
+.wf-chip-outline-critical { color: #dc2626; }
+.wf-chip-outline-neutral { color: var(--sv-text-secondary, #475569); }
+.wf-chip-outline:hover { color: #ffffff; }
+.wf-chip-outline-success:hover { background: #15803d; border-color: #15803d; }
+.wf-chip-outline-critical:hover { background: #dc2626; border-color: #dc2626; }
+.wf-chip-outline-neutral:hover { background: var(--sv-text-secondary, #475569); border-color: var(--sv-text-secondary, #475569); }
+html[data-color-mode="dark"] .wf-chip-outline-success { color: #4ade80; }
+html[data-color-mode="dark"] .wf-chip-outline-critical { color: #f87171; }
+html[data-color-mode="dark"] .wf-chip-outline-success:hover, html[data-color-mode="dark"] .wf-chip-outline-critical:hover { color: #0f172a; }
+.wf-dialog-host .wf-details-panel { max-width: 460px; }
+.wf-details-section + .wf-details-section { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--sv-border-primary, #E2E8F0); }
+.wf-details-section .wf-appr-list { margin-top: 8px; }

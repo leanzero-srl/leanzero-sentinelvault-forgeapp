@@ -2169,3 +2169,12 @@ html[data-color-mode="dark"] .sv-activity-chip-validation.is-active { background
 /* The colour picker keeps to its column (the shared mini-select otherwise insists on 180px and
    runs under the First/Approved controls). */
 .wf-def-row .mini-select { min-width: 0; width: 100%; }
+
+/* Workflow tab sections: four titled groups instead of one wall of rows. A solid ink title, a
+   one-line description, the rows; a full top border between sections (no left rails). */
+.settings-sections { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+.settings-section { padding: 18px 0 6px; border-top: 1px solid var(--sv-border-primary); }
+.settings-section-head { margin: 0 0 6px; }
+.settings-section-title { margin: 0; font-size: 15px; font-weight: 800; letter-spacing: -0.01em; color: var(--sv-text-primary); }
+.settings-section-desc { margin: 3px 0 0; font-size: 13px; color: var(--sv-text-secondary); max-width: 720px; }
+.settings-section .settings-row { padding-left: 0; padding-right: 0; }
