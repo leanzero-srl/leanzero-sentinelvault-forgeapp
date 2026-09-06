@@ -1,6 +1,6 @@
 # Coverage Proof — Sentinel Vault
 
-Generated 2026-09-05T23:25:38.745Z by `scripts/coverage-proof.mjs` (parsed inventory — never hand-maintained; do not edit).
+Generated 2026-09-06T05:20:36.612Z by `scripts/coverage-proof.mjs` (parsed inventory — never hand-maintained; do not edit).
 
 **222 inventory items** — 159 string-verified, 51 annotated, 12 gaps.
 Evidence: 117 files (harness specs, app e2e scripts, unit tests).
