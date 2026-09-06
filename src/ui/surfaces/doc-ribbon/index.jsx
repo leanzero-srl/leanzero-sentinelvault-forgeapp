@@ -425,8 +425,10 @@ const WorkflowControl = ({ workflow, approvals, operatorId, pageId, spaceKey, si
       const res = await invoke("request-transition", { pageId, spaceKey, toStateId, ...(moveCode ? { code: moveCode } : {}) });
       if (res?.signatureRequired) {
         // The space requires a signed decision and this move IS the decision (no approvers,
-        // or an AI-only gate): ask for the code and retry with it.
-        setSignMove({ toStateId, reason: res.reason || "" });
+        // or an AI-only gate): ask for the code and retry with it. A code that was SENT and
+        // refused is an error inside the dialog, not a new subtitle.
+        if (moveCode) { setError(res.reason || "That code did not match"); }
+        else { setSignMove({ toStateId, reason: res.reason || "" }); }
         setMoveCode("");
         setMenuOpen(false);
         return;
@@ -446,7 +448,9 @@ const WorkflowControl = ({ workflow, approvals, operatorId, pageId, spaceKey, si
       setError("Transition failed");
     } finally {
       setBusy(false);
-      requestAnimationFrame(() => btnRef.current?.focus()); // return focus to the trigger
+      // Return focus to the trigger — unless the sign dialog is still up, where the code field
+      // is the thing to retry.
+      requestAnimationFrame(() => (signRef.current?.querySelector('[data-testid="wf-sign-move-code"]') || btnRef.current)?.focus());
     }
   }, [moveCode, pageId, spaceKey, onTransitioned]);
 
@@ -605,8 +609,9 @@ const WorkflowControl = ({ workflow, approvals, operatorId, pageId, spaceKey, si
           </div>
           <div className="wf-appr-actions">
             <button type="button" className="wf-appr-approve" disabled={busy || !moveCode.trim()} onClick={() => { const to = signMove.toStateId; doTransition(to); }} data-testid="wf-sign-move-go">Sign &amp; move</button>
-            <button type="button" className="wf-appr-deny" onClick={() => { setSignMove(null); setMoveCode(""); }}>Cancel</button>
+            <button type="button" className="wf-review-clear" onClick={() => { setSignMove(null); setMoveCode(""); setError(null); }}>Cancel</button>
           </div>
+          {error && <div className="wf-error" role="alert" data-testid="wf-sign-move-error">{error}</div>}
         </div>
       ))}
       {menuOpen && inHost(host, (
@@ -628,7 +633,7 @@ const WorkflowControl = ({ workflow, approvals, operatorId, pageId, spaceKey, si
           ))}
         </div>
       ))}
-      {error && <span className="wf-error" role="alert">{error}</span>}
+      {error && !signMove && <span className="wf-error" role="alert">{error}</span>}
     </span>
   );
 };

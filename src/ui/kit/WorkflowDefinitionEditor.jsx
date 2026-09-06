@@ -171,7 +171,7 @@ export default function WorkflowDefinitionEditor({ spaceKey, onSaved = null }) {
         <div>
           <h3 className="wf-dash-title">Workflow definitions</h3>
           <p className="wf-dash-sub">
-            The states pages move through and the moves allowed between them. {data.source === "builtin" ? "This space uses the built-in workflow; saving makes a copy for this space." : data.source === "global" ? "This space uses the site-wide workflow; saving makes a copy for this space." : "This space has its own workflow."}
+            The states pages move through and the moves allowed between them. {data.source === "builtin" ? "This space uses the built-in workflow; saving makes a copy for this space." : data.source === "global" ? "This space uses the site-wide workflow; saving makes a copy for this space." : "This space has its own workflow."}{open ? " Each workflow saves with its own button; the bar at the bottom saves the settings above, not the workflows." : ""}
           </p>
         </div>
         <button type="button" className="wf-dash-export" onClick={() => setOpen((o) => !o)} aria-expanded={open} data-testid="wf-defs-toggle">{open ? "Hide editor" : "Edit workflows"}</button>
