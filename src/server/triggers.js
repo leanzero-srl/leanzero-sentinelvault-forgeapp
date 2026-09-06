@@ -41,7 +41,8 @@ import { setWithTtl, setUntil } from "./shared/kvs-ttl.js";
 // released automatically. The decision is time-based, so it lives in a pure zero-import module
 // that unit tests can hand clocks to rather than waiting three days for a live sweep.
 import { decideLapseAction, resolveLapsePolicy, priorNoticeCount } from "./shared/lapse-policy.js";
-import { decideAnnounce, decideRelease } from "./shared/notice-dedup.js";
+import { decideAnnounce, decideRelease, confirmClaim, decideClear } from "./shared/notice-dedup.js";
+import { randomUUID } from "node:crypto";
 // A1: the activity record. Written ONLY on a CONFIRMED outcome (after the successful page
 // write / attachment restore / KVS purge), never on an attempt, and never between a dedup
 // marker claim and the side effect that marker protects (T6). It never throws.
@@ -83,16 +84,40 @@ function noticeMarkerKey(pageId, targetId, klass) {
 // sibling. The KEY is still the aliased class, so both share one 24h window; the OUTCOME is the
 // raw verb, which is what actually differs in the comment the user reads. The decision itself is
 // pure and lives in shared/notice-dedup.js with its tests.
+// it69: KVS has no compare-and-swap, so the claim is check-then-act. The marker carries a
+// per-outcome claim TOKEN: write, wait CLAIM_SETTLE_MS, re-read, and announce only if our own
+// token still stands. Two deliveries that both read "no marker" now resolve to ONE speaker (the
+// last writer); the other backs off without releasing anything. A marker that a sibling OUTCOME's
+// writer clobbered in that window (the F2 delete/content-removal pair) is merged back once, so a
+// materially different message is never lost to the token. The residual window is a claimer whose
+// own get→set stalls longer than the settle interval — a KVS round-trip that slow is a platform
+// incident, not a code path.
+const CLAIM_SETTLE_MS = 400;
 async function claimViolationNotice(pageId, targetId, klass) {
   const effective = NOTICE_CLASS_ALIASES[klass] || klass;
   if (!DEDUPED_NOTICE_CLASSES.includes(effective)) return true;
   const key = noticeMarkerKey(pageId, targetId, klass);
   try {
-    const existing = await kvs.get(key);
-    const { announce, marker } = decideAnnounce(existing, klass);
+    const token = randomUUID();
+    let existing = await kvs.get(key);
+    const { announce, marker } = decideAnnounce(existing, klass, token);
     if (!announce) return false;
     await setWithTtl(key, { ...(existing || {}), at: new Date().toISOString(), ...marker }, VIOLATION_NOTICE_TTL_MS);
-    return true;
+    for (let round = 0; round < 2; round++) {
+      await new Promise((r) => setTimeout(r, CLAIM_SETTLE_MS));
+      existing = await kvs.get(key);
+      const verdict = confirmClaim(existing, klass, token);
+      if (verdict === "held") return true;
+      if (verdict === "lost") {
+        console.warn(`[NOTICE-DEDUP] ${klass} on ${pageId}/${targetId}: a concurrent run holds the claim — staying silent`);
+        return false;
+      }
+      // clobbered: merge our outcome back beside the sibling's and confirm once more
+      const again = decideAnnounce(existing, klass, token);
+      if (!again.announce) return false; // the sibling's write already carries our outcome
+      await setWithTtl(key, { ...(existing || {}), at: new Date().toISOString(), ...again.marker }, VIOLATION_NOTICE_TTL_MS);
+    }
+    return true; // two merges and still unsettled: announce rather than lose the message
   } catch (e) {
     console.error("[NOTICE-DEDUP] marker claim failed — notifying anyway:", e);
     return true; // marker infra failure must not suppress a real violation notice
@@ -300,6 +325,10 @@ export async function pageContentTrigger(event) {
           pageData,
           adfDoc,
           currentVersion: pageData.version?.number,
+          // it69: who saved the version this run is judging. The app's own restore is never a
+          // "clean save" that re-arms the comment (decideClear).
+          readAuthorId: pageData.version?.authorId || null,
+          appAccountId: systemAccountId,
           changed: false,
           enforcedRevert: false, // #44: set by Pass 0 to short-circuit A/B + suppress SV-M5
           notifications: [],
@@ -630,7 +659,11 @@ async function restoreMediaPass(ctx, sealFileMap, probeCache = new Map()) {
     // never have seen a violation: an at-least-once DUPLICATE delivery that loses the 409 race
     // re-reads the sibling's restored body, judges it "clean", and would clear the marker the
     // winner just claimed (observed live — twin invocations 400ms apart on one tamper).
-    if (attrViolations === 0 && !probeCache.get("__saw-violations")) {
+    // it69: ...and the body judged clean must be a USER's save — a late/duplicate delivery that
+    // reads the app's own restore (version.authorId == app) is looking at the fix, not at a
+    // clean save, and would otherwise release the window its sibling just claimed (SECURITY-TODO
+    // race 1, observed ~1 run in 3). Pure rule: shared/notice-dedup.js decideClear.
+    if (attrViolations === 0 && decideClear({ sawViolations: !!probeCache.get("__saw-violations"), readAuthorId: ctx.readAuthorId, appAccountId: ctx.appAccountId })) {
       for (const { seal } of sealFileMap) {
         if (seal.attachmentId) await clearViolationNotices(ctx.pageId, seal.attachmentId);
       }
@@ -997,7 +1030,8 @@ async function restoreSealedSectionsPass(ctx, sectionSeals, probeCache = new Map
       // winner just claimed — costing the 24h suppression window, so the NEXT occurrence comments
       // when it should have been swallowed. Found 2026-08-27 while fact-checking the write-up of
       // the media-surface fix: the comment above claimed "mirror" while missing the guard.
-      if (!probeCache.get("__saw-violations")) {
+      // it69: same clear rule as the media surface — a user's clean save, never the app's restore.
+      if (decideClear({ sawViolations: !!probeCache.get("__saw-violations"), readAuthorId: ctx.readAuthorId, appAccountId: ctx.appAccountId })) {
         await clearViolationNotices(ctx.pageId, seal.sectionId, SECTION_NOTICE_CLASSES);
       }
       continue; // every copy matches the seal — untouched

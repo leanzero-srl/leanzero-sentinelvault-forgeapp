@@ -1,4 +1,4 @@
-import { decideAnnounce, decideRelease } from "../src/server/shared/notice-dedup.js";
+import { decideAnnounce, decideRelease, confirmClaim, decideClear } from "../src/server/shared/notice-dedup.js";
 import { composeViolationLayout, composeLapseNoticeLayout, composeAutoReleaseLayout }
   from "../src/server/infra/notice-blueprints.js";
 import { eq, ok, report } from "./_assert.mjs";
@@ -165,6 +165,45 @@ for (const verb of ["edit", "delete", "content-removal", "permanently-deleted", 
   ok("the release notice says it happened automatically", storageBody.includes("automatically"));
   ok("...after how many reminders", storageBody.includes("3 reminder"));
   ok("...and that the file is available again", storageBody.includes("available to everyone again"));
+}
+
+
+// ── it69: the two races (SECURITY-TODO "Known, pre-existing") ─────────────────────────────
+
+// Race 2 — no CAS: both deliveries read "no marker" and write. The token decides who speaks.
+{
+  const a = decideAnnounce(null, "layout-changed", "tok-a");
+  const b = decideAnnounce(null, "layout-changed", "tok-b");
+  eq("both claimers are told to announce by the first read (that is the race)", a.announce && b.announce, true);
+  // B's write landed last, so the stored marker carries tok-b.
+  eq("A re-reads and finds another token → lost", confirmClaim(b.marker, "layout-changed", "tok-a"), "lost");
+  eq("B re-reads and finds its own → held", confirmClaim(b.marker, "layout-changed", "tok-b"), "held");
+  eq("a marker with no claims (pre-it69) → clobbered, so the claimer merges and re-confirms",
+    confirmClaim({ outcomes: ["layout-changed"] }, "layout-changed", "tok-a"), "clobbered");
+  eq("no marker at all → clobbered", confirmClaim(null, "layout-changed", "tok-a"), "clobbered");
+}
+
+// F2 must survive the token: two DIFFERENT outcomes racing on one key must both announce.
+{
+  const del = decideAnnounce(null, "delete", "tok-trash");
+  const rem = decideAnnounce(null, "content-removal", "tok-page");   // wrote last → clobbered del
+  eq("the trash handler's outcome is gone from the stored marker", confirmClaim(rem.marker, "delete", "tok-trash"), "clobbered");
+  const merged = decideAnnounce(rem.marker, "delete", "tok-trash");  // it merges back in
+  eq("the merge keeps the sibling's claim", merged.marker.claims["content-removal"], "tok-page");
+  eq("...and records its own", merged.marker.claims.delete, "tok-trash");
+  eq("after the merge both hold", confirmClaim(merged.marker, "delete", "tok-trash") + "/" + confirmClaim(merged.marker, "content-removal", "tok-page"), "held/held");
+  eq("a release drops only its own claim", JSON.stringify(decideRelease(merged.marker, "delete").marker.claims), JSON.stringify({ "content-removal": "tok-page" }));
+}
+
+// Race 1 — a late duplicate delivery reads the app's own restore and would "clean-save" the
+// marker away. Only a USER's save re-arms the comment.
+{
+  const APP = "712020:app-0000";
+  eq("run that saw a violation never clears (409 twin)", decideClear({ sawViolations: true, readAuthorId: "712020:user", appAccountId: APP }), false);
+  eq("body authored by the app → a restore, not a clean save → no clear", decideClear({ sawViolations: false, readAuthorId: APP, appAccountId: APP }), false);
+  eq("body authored by a user and clean → clear (re-arm)", decideClear({ sawViolations: false, readAuthorId: "712020:user", appAccountId: APP }), true);
+  eq("author unknown → keep the old behaviour (clear)", decideClear({ sawViolations: false, readAuthorId: null, appAccountId: APP }), true);
+  eq("app account unresolved → keep the old behaviour (clear)", decideClear({ sawViolations: false, readAuthorId: "x", appAccountId: null }), true);
 }
 
 report("notice-dedup");
