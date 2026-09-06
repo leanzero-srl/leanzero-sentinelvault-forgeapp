@@ -17,6 +17,18 @@ const SettingsRow = ({ label, description, children }) => (
   </div>
 );
 
+// The Workflow tab groups its rows into titled sections so the page reads as four decisions,
+// not one wall of toggles: the workflow itself, approval, protection of approved pages, readers.
+const Section = ({ title, description, children, testId }) => (
+  <section className="settings-section" data-testid={testId}>
+    <div className="settings-section-head">
+      <h4 className="settings-section-title">{title}</h4>
+      {description && <p className="settings-section-desc">{description}</p>}
+    </div>
+    {children}
+  </section>
+);
+
 const Toggle = ({ checked, onChange, label }) => (
   <label className="form-checkbox">
     <input type="checkbox" aria-label={label} checked={checked} onChange={onChange} />
@@ -261,21 +273,41 @@ export default function WorkflowSettingsEditor({ spaceKey = null, defRev = 0 }) 
       </SettingsRow>
 
       {settings.enabled && (
-        <div className="nested-control">
+        <div className="settings-sections">
+        <Section title="Workflow" description="Which pages run it, and the states they move through. States and transitions are edited in Workflow definitions, further down." testId="wf-section-workflow">
+          <SettingsRow label="Workflow states" description="The states every page moves through.">
+            <div className="wf-state-preview">
+              {states.map((s, i) => (
+                <React.Fragment key={s.id}>
+                  <span className={`wf-state-chip wf-state-${s.color || "neutral"}`}>{s.name}</span>
+                  {i < states.length - 1 && <span className="wf-state-arrow" aria-hidden="true">→</span>}
+                </React.Fragment>
+              ))}
+            </div>
+          </SettingsRow>
           <SettingsRow
             label="Auto-start workflow on new pages"
-            description="Every new page created in this space starts the workflow automatically, at its first state."
+            description="Every new page created in this space starts the workflow automatically, at its first state (or the workflow its labels select)."
           >
             <Toggle label="Auto-start workflow on new pages" checked={settings.autoAssignNew} onChange={(e) => setSettings((p) => ({ ...p, autoAssignNew: e.target.checked }))} />
           </SettingsRow>
-
+          <SettingsRow
+            label="Apply to existing pages"
+            description="Start the workflow on pages in this space that don't have one yet. Large spaces are processed in batches — run again to continue."
+          >
+            <button className="btn-secondary" onClick={applyToExisting} disabled={applying}>
+              {applying ? "Applying…" : "Apply to existing pages"}
+            </button>
+          </SettingsRow>
           <SettingsRow
             label="Show the state as a page label"
             description="Adds a label like sv-state-approved to each page and keeps it in step with the workflow, so Content by Label, the Page Properties Report and CQL can filter on it. Turning it off removes the labels within the hour."
           >
             <Toggle label="Show the state as a page label" checked={!!settings.syncLabels} onChange={(e) => setSettings((p) => ({ ...p, syncLabels: e.target.checked }))} />
           </SettingsRow>
+        </Section>
 
+        <Section title="Readers" description="Ask an audience to confirm they have read each approved version." testId="wf-section-readers">
           <SettingsRow
             label="Ask readers to confirm they have read Approved pages"
             description="While a page is Approved, the people and groups below are asked to confirm they have read the approved version; the ribbon shows who has. A new approved version asks again."
@@ -299,24 +331,9 @@ export default function WorkflowSettingsEditor({ spaceKey = null, defRev = 0 }) 
             </div>
           )}
 
-          <SettingsRow
-            label="Require a signed decision"
-            description="Every Approve or Deny must carry the current code from the approver's authenticator app (set up once on their My work page). The approval record marks each decision as signed."
-          >
-            <Toggle label="Require a signed decision" checked={!!settings.requireSignature} onChange={(e) => setSettings((p) => ({ ...p, requireSignature: e.target.checked }))} />
-          </SettingsRow>
+        </Section>
 
-          <SettingsRow label="Workflow states" description="The states every page moves through.">
-            <div className="wf-state-preview">
-              {states.map((s, i) => (
-                <React.Fragment key={s.id}>
-                  <span className={`wf-state-chip wf-state-${s.color || "neutral"}`}>{s.name}</span>
-                  {i < states.length - 1 && <span className="wf-state-arrow" aria-hidden="true">→</span>}
-                </React.Fragment>
-              ))}
-            </div>
-          </SettingsRow>
-
+        <Section title="Approval" description={`Who signs off before a page becomes ${enforceName}, and what must be true first.`} testId="wf-section-approval">
           <SettingsRow
             label="Require approval to reach Approved"
             description="Instead of moving straight to Approved, require the people below to sign off first. Until they do, the page stays In Review and shows “Awaiting approval” on its ribbon."
@@ -368,8 +385,49 @@ export default function WorkflowSettingsEditor({ spaceKey = null, defRev = 0 }) 
           )}
 
           <SettingsRow
-            label="If an Approved page is edited by a non-approver"
-            description="Approved is an enforced state. Choose what happens when someone who isn’t an approver (and isn’t a steward) edits an Approved page. “Move it back” keeps their edit — you choose where it lands below; “Revert” restores the approved version and is stricter."
+            label="Require a signed decision"
+            description="Every Approve or Deny must carry the current code from the approver's authenticator app (set up once on their My work page). The approval record marks each decision as signed."
+          >
+            <Toggle label="Require a signed decision" checked={!!settings.requireSignature} onChange={(e) => setSettings((p) => ({ ...p, requireSignature: e.target.checked }))} />
+          </SettingsRow>
+          <SettingsRow
+            label="Require content rules before Approved"
+            description="Before a page can reach Approved, the required headings, tables, labels and length limits set in Validations must all pass. The person moving it sees exactly what's missing and can't proceed until it's fixed."
+          >
+            <Toggle
+              label="Require content rules before Approved"
+              checked={!!settings.entryConditions?.approved?.requireRules}
+              onChange={(e) => setSettings((p) => ({ ...p, entryConditions: { ...p.entryConditions, approved: { requireAi: false, aiThreshold: "medium", onBudgetExhausted: "block", ...(p.entryConditions?.approved || {}), requireRules: e.target.checked } } }))}
+            />
+          </SettingsRow>
+          <SettingsRow
+            label="Require an AI content review before Approved"
+            description="An automated review of the page runs before it can be Approved and becomes one more sign-off alongside your reviewers. Uses the AI set up in Validations."
+          >
+            <Toggle
+              label="Require an AI content review before Approved"
+              checked={!!settings.entryConditions?.approved?.requireAi}
+              onChange={(e) => setSettings((p) => ({ ...p, entryConditions: { ...p.entryConditions, approved: { requireRules: false, aiThreshold: "medium", onBudgetExhausted: "block", ...(p.entryConditions?.approved || {}), requireAi: e.target.checked } } }))}
+            />
+          </SettingsRow>
+          {settings.entryConditions?.approved?.requireAi && (
+            <div className="nested-control">
+              <SettingsRow label="AI review strictness" description="How strong an issue has to be to block approval.">
+                <MiniSelect
+                  ariaLabel="AI review strictness"
+                  value={settings.entryConditions?.approved?.aiThreshold || "medium"}
+                  options={[{ value: "low", label: "Strict (flag any issue)" }, { value: "medium", label: "Balanced" }, { value: "high", label: "Lenient (serious issues only)" }]}
+                  onChange={(v) => setSettings((p) => ({ ...p, entryConditions: { ...p.entryConditions, approved: { ...(p.entryConditions?.approved || {}), aiThreshold: v } } }))}
+                />
+              </SettingsRow>
+            </div>
+          )}
+        </Section>
+
+        <Section title={`Protecting ${enforceName} pages`} description={`${enforceName} pages are protected: an edit by someone who is not an approver or a steward is undone or sends the page back, and every ${enforceName} page carries a review date.`} testId="wf-section-protection">
+          <SettingsRow
+            label={`If an ${enforceName} page is edited by a non-approver`}
+            description="Choose what happens when someone who isn’t an approver (and isn’t a steward) edits the page. “Move it back” keeps their edit — you choose where it lands below; “Revert” restores the approved version and is stricter."
           >
             <MiniSelect
               ariaLabel="Enforcement when an approved page is edited"
@@ -448,49 +506,7 @@ export default function WorkflowSettingsEditor({ spaceKey = null, defRev = 0 }) 
             </SettingsRow>
           )}
 
-          <SettingsRow
-            label="Require content rules before Approved"
-            description="Before a page can reach Approved, the required headings, tables, labels and length limits set in Validations must all pass. The person moving it sees exactly what's missing and can't proceed until it's fixed."
-          >
-            <Toggle
-              label="Require content rules before Approved"
-              checked={!!settings.entryConditions?.approved?.requireRules}
-              onChange={(e) => setSettings((p) => ({ ...p, entryConditions: { ...p.entryConditions, approved: { requireAi: false, aiThreshold: "medium", onBudgetExhausted: "block", ...(p.entryConditions?.approved || {}), requireRules: e.target.checked } } }))}
-            />
-          </SettingsRow>
-
-          <SettingsRow
-            label="Require an AI content review before Approved"
-            description="An automated review of the page runs before it can be Approved and becomes one more sign-off alongside your reviewers. Uses the AI set up in Validations."
-          >
-            <Toggle
-              label="Require an AI content review before Approved"
-              checked={!!settings.entryConditions?.approved?.requireAi}
-              onChange={(e) => setSettings((p) => ({ ...p, entryConditions: { ...p.entryConditions, approved: { requireRules: false, aiThreshold: "medium", onBudgetExhausted: "block", ...(p.entryConditions?.approved || {}), requireAi: e.target.checked } } }))}
-            />
-          </SettingsRow>
-
-          {settings.entryConditions?.approved?.requireAi && (
-            <div className="nested-control">
-              <SettingsRow label="AI review strictness" description="How strong an issue has to be to block approval.">
-                <MiniSelect
-                  ariaLabel="AI review strictness"
-                  value={settings.entryConditions?.approved?.aiThreshold || "medium"}
-                  options={[{ value: "low", label: "Strict (flag any issue)" }, { value: "medium", label: "Balanced" }, { value: "high", label: "Lenient (serious issues only)" }]}
-                  onChange={(v) => setSettings((p) => ({ ...p, entryConditions: { ...p.entryConditions, approved: { ...(p.entryConditions?.approved || {}), aiThreshold: v } } }))}
-                />
-              </SettingsRow>
-            </div>
-          )}
-
-          <SettingsRow
-            label="Apply to existing pages"
-            description="Start the workflow on pages in this space that don't have one yet. Large spaces are processed in batches — run again to continue."
-          >
-            <button className="btn-secondary" onClick={applyToExisting} disabled={applying}>
-              {applying ? "Applying…" : "Apply to existing pages"}
-            </button>
-          </SettingsRow>
+        </Section>
         </div>
       )}
 

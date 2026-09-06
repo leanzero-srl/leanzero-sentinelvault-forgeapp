@@ -91,217 +91,220 @@ const UTC_SHORT = { month: "short", day: "numeric", timeZone: "UTC" };
 const UTC_LONG = { weekday: "long", year: "numeric", month: "long", day: "numeric", timeZone: "UTC" };
 const UTC_NUMERIC = { timeZone: "UTC" };
 
-// A5: the review-due indicator. For a steward it is a button that opens a small dialog with the
-// app's own month grid (never a native date input), Clear and Save; `set-review-due` is gated
-// server-side on edit + steward and its refusal reason is shown inline. Everyone else sees the
-// plain indicator. A steward with no clock on the page gets a quiet "Set review date" so Clear
-// is not a one-way door.
-const ReviewDue = ({ workflow, pageId, isSteward, host, onSaved }) => {
+// ONE secondary chip beside the state chip — "Approved v3 · review due Feb 2" — in place of the
+// three that used to crowd the banner (approval record, review date, read count). Its popover
+// holds, in order: the approval record (A4/A6), the review date (A5; a steward edits it here with
+// the app's own month grid), and the readers' confirmations (B2; names for a steward). Everything
+// renders into the in-flow host row, never absolutely over the bar (the banner iframe only grows
+// with in-flow content).
+const WorkflowDetails = ({ workflow, siteUrl, pageId, isSteward, host, onSaved, readStatus, readReportAllowed }) => {
   const record = workflow.record || {};
-  const [open, setOpen] = useState(false);
-  const [dueAt, setDueAt] = useState(record.reviewDueAt || null);
-  const [picked, setPicked] = useState(null); // "YYYY-MM-DD" chosen in the grid, null = untouched
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState(null);
-  const panelRef = useRef(null);
-  const btnRef = useRef(null);
-  useDismissableDialog(open, setOpen, panelRef, btnRef);
-  useEffect(() => { setDueAt(record.reviewDueAt || null); }, [record.reviewDueAt]);
-  useEffect(() => { if (!open) { setPicked(null); setError(null); } }, [open]);
-
-  const dueMs = dueAt ? new Date(dueAt).getTime() : NaN;
-  const hasDue = Number.isFinite(dueMs);
-  const overdue = hasDue && dueMs < Date.now();
-  const shortDate = hasDue ? new Date(dueMs).toLocaleDateString(undefined, UTC_SHORT) : null;
-  const longDate = hasDue ? new Date(dueMs).toLocaleDateString(undefined, UTC_LONG) : null;
-  const label = overdue ? "Review overdue" : hasDue ? `Review due ${shortDate}` : "Set review date";
-  // "will move to Expired" only when the page's state actually has that transition; a state
-  // without one stays put, overdue, and the sweep says so in a comment instead.
-  const expiresFromHere = Array.isArray(workflow?.available) && workflow.available.some((s) => s?.id === "expired");
-  const title = overdue ? (expiresFromHere ? "The review period has elapsed — this page will move to Expired." : "The review period has elapsed — review this page and move it on, or set a new date.")
-    : hasDue ? `Due for re-review on ${new Date(dueMs).toLocaleDateString(undefined, UTC_NUMERIC)}.` : "Give this page a review date.";
-
-  if (!isSteward) {
-    if (!hasDue) return null;
-    return (
-      <span className={`wf-review-due${overdue ? " wf-review-overdue" : ""}`} title={title} data-testid="wf-review-due">{label}</span>
-    );
-  }
-
-  const tomorrow = toYmd(new Date(Date.now() + 24 * 3600 * 1000));
-  const currentYmd = ymdOfIso(dueAt);
-  const selectedYmd = picked || currentYmd;
-  const canSave = !!picked && picked !== currentYmd;
-
-  const save = async (next) => {
-    setBusy(true); setError(null);
-    try {
-      const r = await invoke("set-review-due", { pageId, reviewDueAt: next });
-      if (r?.success) {
-        setDueAt(r.reviewDueAt ?? next ?? null);
-        setOpen(false);
-        await onSaved?.();
-        requestAnimationFrame(() => btnRef.current?.focus());
-      } else {
-        setError(r?.reason || "Could not change the review date.");
-      }
-    } catch (_) {
-      setError("Could not change the review date.");
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  return (
-    <span className="wf-review">
-      <button
-        ref={btnRef}
-        type="button"
-        className={`wf-review-due wf-review-btn${overdue ? " wf-review-overdue" : ""}${hasDue ? "" : " wf-review-unset"}`}
-        onClick={() => setOpen((o) => !o)}
-        aria-haspopup="dialog"
-        aria-expanded={open}
-        title={`${title} Click to change it.`}
-        data-testid={hasDue ? "wf-review-due" : "wf-review-due-set"}
-      >
-        <svg className="wf-chip-icon" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-          <circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" />
-        </svg>
-        <span>{label}</span>
-        <span className="wf-chip-caret" aria-hidden="true">▾</span>
-      </button>
-      {open && inHost(host, (
-        <div className="wf-appr-panel wf-review-panel" role="dialog" aria-label="Review date" ref={panelRef} tabIndex={-1} data-testid="wf-review-due-dialog">
-          <div className="wf-appr-head">Review date</div>
-          <div className="wf-appr-sub" data-testid="wf-review-due-current">
-            {hasDue
-              ? (overdue ? `Was due ${longDate} — overdue.` : `Currently due ${longDate}.`)
-              : "No review date is set on this page."}
-            {" "}Pick a day to change it; it has to be in the future.
-          </div>
-          <DatePicker value={selectedYmd} min={tomorrow} onChange={setPicked} onClose={() => { setOpen(false); btnRef.current?.focus(); }} ariaLabel="Review date" />
-          {picked && picked !== currentYmd && (
-            <div className="wf-review-pick" data-testid="wf-review-due-picked">New date: <strong>{new Date(`${picked}T12:00:00Z`).toLocaleDateString(undefined, UTC_LONG)}</strong></div>
-          )}
-          <div className="wf-appr-actions wf-review-actions">
-            <button type="button" className="wf-review-clear" onClick={() => save(null)} disabled={busy || !hasDue} data-testid="wf-review-due-clear" title={hasDue ? "Remove the review date — the page will not be flagged for re-review." : "There is no review date to clear."}>Clear</button>
-            <button type="button" className="wf-review-save" onClick={() => save(endOfDayIso(picked))} disabled={busy || !canSave} data-testid="wf-review-due-save">{busy ? "Saving…" : "Save"}</button>
-          </div>
-          {error && <div className="wf-error wf-review-error" role="alert" data-testid="wf-review-due-error">{error}</div>}
-        </div>
-      ))}
-    </span>
-  );
-};
-
-// A4: the evidence chip beside an enforced Approved state, and the "Approval record" dialog it
-// opens. Pages approved before the record shipped have no approvalRecord — say so rather than
-// invent names.
-const ApprovalEvidence = ({ workflow, siteUrl, pageId, host }) => {
   const [open, setOpen] = useState(false);
   const panelRef = useRef(null);
   const chipRef = useRef(null);
   useDismissableDialog(open, setOpen, panelRef, chipRef);
 
-  const record = workflow.record;
+  // --- Approval record ---
+  const enforced = !!record.enforce && record.approvedVersion != null;
   const ar = record.approvalRecord || null;
   // The chip and the link name the version that was REVIEWED (the record's pin). The enforce
   // baseline (record.approvedVersion) moves forward on every sanctioned edit; when it has, the
-  // dialog says so on its own line rather than linking to a version nobody approved.
+  // panel says so on its own line rather than linking to a version nobody approved.
   const reviewedVersion = (typeof ar?.pinnedVersion === "number" ? ar.pinnedVersion : null) ?? record.approvedVersion;
-  const approvedVersion = reviewedVersion;
   const baselineVersion = record.approvedVersion;
   const baselineMoved = typeof baselineVersion === "number" && baselineVersion !== reviewedVersion;
   const decisions = Array.isArray(ar?.decisions) ? ar.decisions : [];
   const live = typeof workflow.liveVersion === "number" ? workflow.liveVersion : null;
   const changedSince = live != null && typeof baselineVersion === "number" && live > baselineVersion;
-  const enforceMode = workflow.enforceMode || workflow.settings?.enforceMode || record.enforceMode || null;
+  const enforceMode = workflow.enforceMode || null;
   // CL-5: revert is downgraded to demote when the approver snapshot is empty — say what the app
   // will actually do, not what the setting says.
   const hasApproverSnapshot = Array.isArray(record.approvers) && record.approvers.length > 0;
-  const consequence = enforceMode === "revert" && hasApproverSnapshot ? "reverted"
-    : enforceMode ? "moved back for review"
-      : "handled";
+  const consequence = enforceMode === "revert" && hasApproverSnapshot ? "reverted" : enforceMode ? "moved back for review" : "handled";
   const outcomeWord = ar?.outcome === "denied" ? "Denied" : "Approved";
-
-  let summary;
-  if (!ar) {
-    summary = `Approved on ${fmtDate(record.approvedAt)} (details were not recorded for this approval).`;
-  } else if (decisions.length === 0) {
-    summary = `${outcomeWord} by ${ar.completedByName || "a space steward"} on ${fmtDate(ar.completedAt)}.`;
-  } else {
-    summary = `${outcomeWord} for version ${ar.pinnedVersion ?? approvedVersion} on ${fmtDate(ar.completedAt)} · ${modeLabel(ar.mode, ar.min)}`;
+  let summary = null;
+  if (enforced) {
+    if (!ar) summary = `Approved on ${fmtDate(record.approvedAt)} (details were not recorded for this approval).`;
+    else if (decisions.length === 0) summary = `${outcomeWord} by ${ar.completedByName || "a space steward"} on ${fmtDate(ar.completedAt)}.`;
+    else summary = `${outcomeWord} for version ${ar.pinnedVersion ?? reviewedVersion} on ${fmtDate(ar.completedAt)} · ${modeLabel(ar.mode, ar.min)}`;
   }
 
+  // --- Review date ---
+  const [dueAt, setDueAt] = useState(record.reviewDueAt || null);
+  const [editing, setEditing] = useState(false);
+  const [picked, setPicked] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(null);
+  useEffect(() => { setDueAt(record.reviewDueAt || null); }, [record.reviewDueAt]);
+  useEffect(() => { if (!open) { setEditing(false); setPicked(null); setError(null); } }, [open]);
+  const dueMs = dueAt ? new Date(dueAt).getTime() : NaN;
+  const hasDue = Number.isFinite(dueMs);
+  const overdue = hasDue && dueMs < Date.now();
+  const shortDate = hasDue ? new Date(dueMs).toLocaleDateString(undefined, UTC_SHORT) : null;
+  const longDate = hasDue ? new Date(dueMs).toLocaleDateString(undefined, UTC_LONG) : null;
+  const expiresFromHere = Array.isArray(workflow?.available) && workflow.available.some((s) => s?.id === "expired");
+  const tomorrow = toYmd(new Date(Date.now() + 24 * 3600 * 1000));
+  const currentYmd = ymdOfIso(dueAt);
+  const selectedYmd = picked || currentYmd;
+  const canSave = !!picked && picked !== currentYmd;
+  const saveDue = async (next) => {
+    setBusy(true); setError(null);
+    try {
+      const r = await invoke("set-review-due", { pageId, reviewDueAt: next });
+      if (r?.success) { setDueAt(r.reviewDueAt ?? next ?? null); setEditing(false); setPicked(null); await onSaved?.(); }
+      else setError(r?.reason || "Could not change the review date.");
+    } catch (_) { setError("Could not change the review date."); }
+    finally { setBusy(false); }
+  };
+
+  // --- Readers ---
+  const rc = workflow.readConfirmation;
+  const readers = rc?.required && readStatus?.required ? readStatus : null;
+  const [report, setReport] = useState(null);
+  useEffect(() => {
+    if (!open || !readers || !readReportAllowed) { setReport(null); return undefined; }
+    let alive = true;
+    (async () => { try { const r = await invoke("get-read-report", { pageId }); if (alive) setReport(r); } catch (_) { if (alive) setReport({ readers: [] }); } })();
+    return () => { alive = false; };
+  }, [open, pageId, readers, readReportAllowed]);
+
+  // --- The chip ---
+  const parts = [];
+  if (enforced) parts.push(`Approved v${reviewedVersion}`);
+  if (hasDue) parts.push(overdue ? "review overdue" : `review due ${shortDate}`);
+  if (readers && readReportAllowed) parts.push(`read ${readers.ackedCount}/${readers.audienceCount}${readers.unresolved ? "+" : ""}`);
+  if (!parts.length) {
+    if (!isSteward) return null;
+    parts.push("Set review date"); // a steward can give any state a review date
+  }
+  const tone = overdue ? "critical" : enforced ? "success" : "neutral";
+  const title = overdue
+    ? (expiresFromHere ? "The review period has elapsed — this page will move to Expired. Open for details." : "The review period has elapsed — review this page and move it on, or set a new date.")
+    : "Approval record, review date and readers — open for details.";
+
   return (
-    <span className="wf-evidence">
+    <span className="wf-details">
       <button
         ref={chipRef}
         type="button"
-        className="wf-chip wf-chip-success wf-chip-evidence"
+        className={`wf-chip wf-chip-outline wf-chip-outline-${tone}`}
         onClick={() => setOpen((o) => !o)}
         aria-haspopup="dialog"
         aria-expanded={open}
-        data-testid="wf-evidence-chip"
-        title="Open the approval record"
+        title={title}
+        data-testid="wf-details-chip"
+        data-enforced={enforced ? "1" : "0"}
+        data-overdue={overdue ? "1" : "0"}
       >
         <svg className="wf-chip-icon" width="10" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
           <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /><path d="m9 12 2 2 4-4" />
         </svg>
-        {/* Not "Approved v7": the state chip beside it already reads "Approved", and two green
-            "Approved" chips are one click apart from each other's job. This one is the record. */}
-        <span className="wf-chip-label">Approval record · v{approvedVersion}</span>
+        <span className="wf-chip-label">{parts.join(" · ")}</span>
         <span className="wf-chip-caret" aria-hidden="true">▾</span>
       </button>
       {open && inHost(host, (
-        <div className="wf-appr-panel wf-evidence-panel" role="dialog" aria-label="Approval record" ref={panelRef} tabIndex={-1} data-testid="wf-evidence-panel">
-          <div className="wf-appr-head">Approval record</div>
-          <div className="wf-appr-sub">{summary}</div>
-          {ar?.requestedByName && (
-            <div className="wf-appr-sub">Requested by {ar.requestedByName} on {fmtDate(ar.requestedAt)}</div>
-          )}
-          {(decisions.length > 0 || ar?.aiGate) && (
-            <ul className="wf-appr-list">
-              {decisions.map((d, i) => (
-                <li key={d.accountId || i} className="wf-appr-row wf-evidence-row" data-testid="wf-evidence-decision">
-                  <span className="wf-appr-name">{d.name || "Approver"}</span>
-                  <span className={`wf-appr-badge wf-appr-${d.decision === "denied" ? "denied" : d.decision === "approved" ? "approved" : "pending"}`}>{d.decision === "denied" ? "Denied" : d.decision === "approved" ? "Approved" : "No decision before completion"}</span>
-                  <span className="wf-appr-date">{fmtDate(d.decidedAt)}</span>
-                  {d.signed ? <span className="wf-appr-signed" title="Signed with the approver's enrolled authenticator" data-testid="wf-evidence-signed">Signed</span> : null}
-                  {d.reason ? <span className="wf-appr-reason">“{d.reason}”</span> : null}
-                </li>
-              ))}
-              {ar?.requestSignature && (
-                <li className="wf-appr-row wf-evidence-row" data-testid="wf-evidence-request-signed">
-                  <span className="wf-appr-name">{ar.completedByName || "Approver"}</span>
-                  <span className="wf-appr-badge wf-appr-approved">Approved</span>
-                  <span className="wf-appr-date">{fmtDate(ar.requestSignature.verifiedAt)}</span>
-                  <span className="wf-appr-signed" title="Signed with the approver's enrolled authenticator">Signed</span>
-                </li>
+        <div className="wf-appr-panel wf-details-panel" role="dialog" aria-label="Workflow details" ref={panelRef} tabIndex={-1} data-testid="wf-details-panel">
+          {enforced && (
+            <section className="wf-details-section" data-testid="wf-evidence-panel">
+              <div className="wf-appr-head">Approval record</div>
+              <div className="wf-appr-sub">{summary}</div>
+              {ar?.requestedByName && <div className="wf-appr-sub">Requested by {ar.requestedByName} on {fmtDate(ar.requestedAt)}</div>}
+              {(decisions.length > 0 || ar?.aiGate || ar?.requestSignature) && (
+                <ul className="wf-appr-list">
+                  {decisions.map((d, i) => (
+                    <li key={d.accountId || i} className="wf-appr-row wf-evidence-row" data-testid="wf-evidence-decision">
+                      <span className="wf-appr-name">{d.name || "Approver"}</span>
+                      <span className={`wf-appr-badge wf-appr-${d.decision === "denied" ? "denied" : d.decision === "approved" ? "approved" : "pending"}`}>{d.decision === "denied" ? "Denied" : d.decision === "approved" ? "Approved" : "No decision before completion"}</span>
+                      <span className="wf-appr-date">{fmtDate(d.decidedAt)}</span>
+                      {d.signed ? <span className="wf-appr-signed" title="Signed with the approver's enrolled authenticator" data-testid="wf-evidence-signed">Signed</span> : null}
+                      {d.reason ? <span className="wf-appr-reason">“{d.reason}”</span> : null}
+                    </li>
+                  ))}
+                  {ar?.requestSignature && (
+                    <li className="wf-appr-row wf-evidence-row" data-testid="wf-evidence-request-signed">
+                      <span className="wf-appr-name">{ar.completedByName || "Approver"}</span>
+                      <span className="wf-appr-badge wf-appr-approved">Approved</span>
+                      <span className="wf-appr-date">{fmtDate(ar.requestSignature.verifiedAt)}</span>
+                      <span className="wf-appr-signed" title="Signed with the approver's enrolled authenticator">Signed</span>
+                    </li>
+                  )}
+                  {ar?.aiGate && (
+                    <li className="wf-appr-row wf-evidence-row" data-testid="wf-evidence-ai">
+                      <span className="wf-appr-name">AI content review</span>
+                      <span className={`wf-appr-badge wf-appr-${ar.aiGate.status === "passed" ? "approved" : ar.aiGate.status === "failed" ? "denied" : "pending"}`}>
+                        {ar.aiGate.status === "passed" ? "Passed" : ar.aiGate.status === "failed" ? "Failed" : "Skipped"}
+                      </span>
+                      {ar.aiGate.reason ? <span className="wf-appr-reason">“{ar.aiGate.reason}”</span> : null}
+                    </li>
+                  )}
+                </ul>
               )}
-              {ar?.aiGate && (
-                <li className="wf-appr-row wf-evidence-row" data-testid="wf-evidence-ai">
-                  <span className="wf-appr-name">AI content review</span>
-                  <span className={`wf-appr-badge wf-appr-${ar.aiGate.status === "passed" ? "approved" : ar.aiGate.status === "failed" ? "denied" : "pending"}`}>
-                    {ar.aiGate.status === "passed" ? "Passed" : ar.aiGate.status === "failed" ? "Failed" : "Skipped"}
-                  </span>
-                  {ar.aiGate.reason ? <span className="wf-appr-reason">“{ar.aiGate.reason}”</span> : null}
-                </li>
-              )}
-            </ul>
-          )}
-          <VersionLink siteUrl={siteUrl} pageId={pageId} version={approvedVersion} testId="wf-approved-version-link">
-            View approved version (v{approvedVersion})
-          </VersionLink>
-          {baselineMoved && (
+              <VersionLink siteUrl={siteUrl} pageId={pageId} version={reviewedVersion} testId="wf-approved-version-link">
+                View approved version (v{reviewedVersion})
+              </VersionLink>
+              {baselineMoved && (
                 <p className="wf-evidence-baseline" data-testid="wf-evidence-baseline">
                   Sanctioned baseline is now v{baselineVersion} (edited by an approver or steward since the review).
                 </p>
               )}
               {changedSince && (
-            <div className="wf-evidence-stale" data-testid="wf-evidence-stale">
-              This page has changed since approval (now v{live}). Unsanctioned edits are {consequence} automatically.
+                <div className="wf-evidence-stale" data-testid="wf-evidence-stale">
+                  This page has changed since approval (now v{live}). Unsanctioned edits are {consequence} automatically.
+                </div>
+              )}
+            </section>
+          )}
+
+          <section className="wf-details-section" data-testid="wf-review-due-dialog">
+            <div className="wf-appr-head">Review date</div>
+            <div className="wf-appr-sub" data-testid="wf-review-due-current">
+              {hasDue
+                ? (overdue ? `Was due ${longDate} — overdue.${expiresFromHere ? " This page will move to Expired." : ""}` : `Due for re-review on ${longDate}.`)
+                : "No review date is set on this page."}
             </div>
+            {isSteward && !editing && (
+              <div className="wf-appr-actions wf-review-actions">
+                <button type="button" className="wf-review-save" onClick={() => setEditing(true)} data-testid="wf-review-due-change">{hasDue ? "Change date" : "Set a date"}</button>
+                <button type="button" className="wf-review-clear" onClick={() => saveDue(null)} disabled={busy || !hasDue} data-testid="wf-review-due-clear" title={hasDue ? "Remove the review date — the page will not be flagged for re-review." : "There is no review date to clear."}>Clear</button>
+              </div>
+            )}
+            {isSteward && editing && (
+              <>
+                <DatePicker value={selectedYmd} min={tomorrow} onChange={setPicked} onClose={() => { setEditing(false); setPicked(null); }} ariaLabel="Review date" />
+                {picked && picked !== currentYmd && (
+                  <div className="wf-review-pick" data-testid="wf-review-due-picked">New date: <strong>{new Date(`${picked}T12:00:00Z`).toLocaleDateString(undefined, UTC_LONG)}</strong></div>
+                )}
+                <div className="wf-appr-actions wf-review-actions">
+                  <button type="button" className="wf-review-save" onClick={() => saveDue(endOfDayIso(picked))} disabled={busy || !canSave} data-testid="wf-review-due-save">{busy ? "Saving…" : "Save"}</button>
+                  <button type="button" className="wf-review-clear" onClick={() => { setEditing(false); setPicked(null); }} disabled={busy}>Cancel</button>
+                </div>
+              </>
+            )}
+            {error && <div className="wf-error wf-review-error" role="alert" data-testid="wf-review-due-error">{error}</div>}
+          </section>
+
+          {readers && (
+            <section className="wf-details-section" data-testid="wf-read-dialog">
+              <div className="wf-appr-head">Readers</div>
+              <div className="wf-appr-sub">
+                {readers.audienceCount > 0
+                  ? `${readers.ackedCount} of ${readers.audienceCount}${readers.unresolved ? "+" : ""} people asked to read this page have confirmed version ${readers.version ?? "?"}.`
+                  : "Nobody is in the audience yet — add people or groups on the space's Workflow tab."}
+                {readers.unresolved ? " One or more groups could not be expanded right now." : ""}
+                {readers.myAck ? ` You confirmed on ${new Date(readers.myAck.at).toLocaleDateString()}.` : ""}
+              </div>
+              {readReportAllowed && !report && readers.audienceCount > 0 && <div className="wf-read-loading">Loading…</div>}
+              {readReportAllowed && report?.readers?.length > 0 && (
+                <ul className="wf-read-list">
+                  {report.readers.map((r) => (
+                    <li key={r.accountId} className={`wf-read-row${r.confirmed ? " wf-read-row-yes" : ""}`} data-testid="wf-read-row" data-confirmed={r.confirmed ? "1" : "0"}>
+                      <span className="wf-read-name">{r.name}</span>
+                      <span className="wf-read-state">{r.confirmed ? `Read v${r.version ?? "?"}` : r.staleVersion != null ? `Read v${r.staleVersion}, not v${readers.version ?? "?"}` : "Not yet"}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
           )}
         </div>
       ))}
@@ -309,75 +312,26 @@ const ApprovalEvidence = ({ workflow, siteUrl, pageId, host }) => {
   );
 };
 
-// B2: read confirmations. While a page asks for them (an approved page in a space with the
-// setting on), everyone sees "Confirm I've read v{N}" until they have, then "Read v{N} ✓"; a
-// steward also sees "Read by X of Y" and can open the list of who has and has not. The counts
-// come from get-read-status (one call), the names from get-read-report (steward-gated).
-const ReadConfirm = ({ workflow, pageId, host }) => {
-  const rc = workflow?.readConfirmation;
-  const [status, setStatus] = useState(null);
+// B2: the one action a reader has — a solid button until they confirm, then a quiet mark.
+const ReadConfirmButton = ({ pageId, status, onConfirmed }) => {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
-  const [open, setOpen] = useState(false);
-  const [report, setReport] = useState(null);
-  const btnRef = useRef(null);
-  const panelRef = useRef(null);
-  useDismissableDialog(open, setOpen, panelRef, btnRef);
-
-  const load = useCallback(async () => {
-    try { setStatus(await invoke("get-read-status", { pageId })); } catch (_) { setStatus(null); }
-  }, [pageId]);
-  useEffect(() => { if (rc?.required) load(); else setStatus(null); }, [rc?.required, rc?.version, load]);
-  useEffect(() => {
-    if (!open) { setReport(null); return; }
-    (async () => { try { setReport(await invoke("get-read-report", { pageId })); } catch (_) { setReport({ readers: [] }); } })();
-  }, [open, pageId]);
-
-  if (!rc?.required || !status?.required) return null;
-  const v = status.version;
-  const vLabel = v != null ? `v${v}` : "this version";
+  if (!status?.required) return null;
+  const vLabel = status.version != null ? `v${status.version}` : "this version";
   const confirm = async () => {
     setBusy(true); setError(null);
     try {
       const r = await invoke("confirm-read", { pageId });
-      if (r?.success) await load(); else setError(r?.reason || "Could not record your confirmation.");
+      if (r?.success) await onConfirmed?.(); else setError(r?.reason || "Could not record your confirmation.");
     } catch (_) { setError("Could not record your confirmation."); }
     finally { setBusy(false); }
   };
-
   return (
     <span className="wf-read" data-testid="wf-read">
       {status.myAck
         ? <span className="wf-read-done" title={`You confirmed reading ${vLabel} on ${new Date(status.myAck.at).toLocaleDateString()}.`} data-testid="wf-read-done">Read {vLabel} ✓</span>
-        : (
-          <button type="button" className="wf-read-btn" onClick={confirm} disabled={busy} title="Record that you have read the approved version of this page." data-testid="wf-read-confirm">
-            {busy ? "Saving…" : `Confirm I've read ${vLabel}`}
-          </button>
-        )}
-      {rc.canReport && (
-        <button ref={btnRef} type="button" className="wf-read-count" onClick={() => setOpen((o) => !o)} aria-haspopup="dialog" aria-expanded={open} title="Who has confirmed reading this version." data-testid="wf-read-count">
-          Read by {status.ackedCount} of {status.audienceCount}{status.unresolved ? "+" : ""} <span className="wf-chip-caret" aria-hidden="true">▾</span>
-        </button>
-      )}
+        : <button type="button" className="wf-read-btn" onClick={confirm} disabled={busy} title="Record that you have read the approved version of this page." data-testid="wf-read-confirm">{busy ? "Saving…" : `Confirm I've read ${vLabel}`}</button>}
       {error && <span className="wf-read-error" role="alert">{error}</span>}
-      {open && inHost(host, (
-        <div className="wf-appr-panel wf-read-panel" role="dialog" aria-label="Read confirmations" ref={panelRef} tabIndex={-1} data-testid="wf-read-dialog">
-          <div className="wf-appr-head">Read confirmations · {vLabel}</div>
-          <div className="wf-appr-sub">{status.ackedCount} of {status.audienceCount} people asked to read this page have confirmed the approved version.{status.unresolved ? " One or more groups could not be expanded right now." : ""}</div>
-          {!report && <div className="wf-read-loading">Loading…</div>}
-          {report && report.readers?.length === 0 && <div className="wf-read-loading">Nobody is in the audience yet — add people or groups on the space's Workflow tab.</div>}
-          {report && report.readers?.length > 0 && (
-            <ul className="wf-read-list">
-              {report.readers.map((r) => (
-                <li key={r.accountId} className={`wf-read-row${r.confirmed ? " wf-read-row-yes" : ""}`} data-testid="wf-read-row" data-confirmed={r.confirmed ? "1" : "0"}>
-                  <span className="wf-read-name">{r.name}</span>
-                  <span className="wf-read-state">{r.confirmed ? `Read v${r.version ?? "?"}` : r.staleVersion != null ? `Read v${r.staleVersion}, not ${vLabel}` : "Not yet"}</span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-      ))}
     </span>
   );
 };
@@ -391,6 +345,11 @@ const WorkflowControl = ({ workflow, approvals, operatorId, pageId, spaceKey, si
   const [panelOpen, setPanelOpen] = useState(false);
   const [reason, setReason] = useState("");
   const [sigCode, setSigCode] = useState(""); // B3: the approver's authenticator code, when the space requires one
+  const [readStatus, setReadStatus] = useState(null); // B2: counts + my ack, fetched only when the page asks for confirmations
+  const loadReadStatus = useCallback(async () => {
+    try { setReadStatus(await invoke("get-read-status", { pageId })); } catch (_) { setReadStatus(null); }
+  }, [pageId]);
+  useEffect(() => { if (workflow?.readConfirmation?.required) loadReadStatus(); else setReadStatus(null); }, [workflow?.readConfirmation?.required, workflow?.readConfirmation?.version, loadReadStatus]);
   const [signMove, setSignMove] = useState(null); // B3: { toStateId, reason } — a move that must be signed (direct steward approval / AI-only gate)
   const [moveCode, setMoveCode] = useState("");
   const signRef = useRef(null);
@@ -632,11 +591,8 @@ const WorkflowControl = ({ workflow, approvals, operatorId, pageId, spaceKey, si
         <span className="wf-chip-label">{state.name}</span>
         {canMove && <span className="wf-chip-caret" aria-hidden="true">▾</span>}
       </button>
-      {workflow.record?.enforce && workflow.record?.approvedVersion != null && (
-        <ApprovalEvidence workflow={workflow} siteUrl={siteUrl} pageId={pageId} host={host} />
-      )}
-      <ReviewDue workflow={workflow} pageId={pageId} isSteward={isSteward} host={host} onSaved={onTransitioned} />
-      <ReadConfirm workflow={workflow} pageId={pageId} host={host} />
+      <WorkflowDetails workflow={workflow} siteUrl={siteUrl} pageId={pageId} isSteward={isSteward} host={host} onSaved={onTransitioned} readStatus={readStatus} readReportAllowed={!!workflow.readConfirmation?.canReport} />
+      <ReadConfirmButton pageId={pageId} status={readStatus} onConfirmed={loadReadStatus} />
       {signMove && inHost(host, (
         <div className="wf-appr-panel wf-sign-panel" role="dialog" aria-label="Sign this move" ref={signRef} tabIndex={-1} data-testid="wf-sign-move">
           <div className="wf-appr-head">Sign this move</div>

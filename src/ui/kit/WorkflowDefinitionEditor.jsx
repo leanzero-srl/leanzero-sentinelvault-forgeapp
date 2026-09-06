@@ -85,7 +85,7 @@ const DefinitionForm = ({ initial, isExtra, onSave, onDelete, saving, message })
 
       <div className="wf-def-table" role="table" aria-label="States">
         <div className="wf-def-row wf-def-row-head" role="row">
-          <span>State</span><span>Colour</span><span>First</span><span>Approved</span><span>Re-review after (days)</span><span>Can move to</span><span></span>
+          <span>State</span><span>Colour</span><span title="The state every new page starts in">First</span><span title="Pages in this state are protected: an edit by someone who is not an approver or a steward is undone or sends the page back">Protected</span><span>Re-review after (days)</span><span>Can move to</span><span></span>
         </div>
         {states.map((s) => (
           <div key={s.id} className="wf-def-row" role="row" data-testid="wf-def-state" data-state-id={s.id}>
@@ -95,7 +95,7 @@ const DefinitionForm = ({ initial, isExtra, onSave, onDelete, saving, message })
             </span>
             <span><MiniSelect ariaLabel={`Colour of ${s.name}`} value={s.color || "neutral"} options={COLOR_OPTS} onChange={(color) => patchState(s.id, { color })} testId={`wf-def-color-${s.id}`} /></span>
             <span><input type="radio" name={`initial-${def.id}`} checked={!!s.initial} onChange={() => setInitial(s.id)} aria-label={`${s.name} is the first state`} data-testid="wf-def-initial" /></span>
-            <span><input type="checkbox" checked={!!s.enforce} onChange={(e) => patchState(s.id, { enforce: e.target.checked })} aria-label={`${s.name} is an approved (enforced) state`} data-testid="wf-def-enforce" /></span>
+            <span><input type="checkbox" checked={!!s.enforce} onChange={(e) => patchState(s.id, { enforce: e.target.checked })} aria-label={`${s.name} is a protected (approved) state`} data-testid="wf-def-enforce" /></span>
             <span><input className="form-input wf-def-days" type="number" min="1" max="3650" value={s.reviewAfterDays ?? ""} onChange={(e) => patchState(s.id, { reviewAfterDays: e.target.value === "" ? null : parseInt(e.target.value, 10) })} aria-label={`Re-review ${s.name} after days`} /></span>
             <span className="wf-def-targets">
               {states.filter((t) => t.id !== s.id).map((t) => (
