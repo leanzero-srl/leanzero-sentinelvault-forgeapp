@@ -112,9 +112,9 @@ height) are part of what is sealed.*
 state is physically enforced*. The strategic line from the 2026-07-05 expansion research still
 holds and is now shipped: **everyone else tracks, Sentinel Vault enforces**.
 
-## 4. Not yet live in production (as of 2026-09-05)
+## 4. Not yet live in production (as of 2026-09-06)
 
-Production (Marketplace) is 4.1.0, deployed 2026-08-20. Dev is at commit `44cf891`. Everything
+Production (Marketplace) is 4.1.0, deployed 2026-08-20. Dev is at commit `269d63f`. Everything
 between is built and verified on dev but not shipped:
 
 - it60, the owner's six feedback items: approve-vs-deny asymmetry on lapsed seals surfaced with a
@@ -138,11 +138,16 @@ between is built and verified on dev but not shipped:
   B2 read confirmations, B3 signed decisions (TOTP), B1 definition editor + label-scoped
   workflows. **B5 webhook deliberately not built** — it needs an egress permission (major
   version, re-consent, loss of "Runs on Atlassian"); that trade is the owner's to make.
+- **UX pass (it68, 2026-09-06, owner: "bring it to production ready"):** the banner shows the
+  state chip and ONE details chip (approval record, review date, readers behind a sectioned
+  popover) instead of three; the Workflow tab is four titled sections (Workflow, Readers,
+  Approval, Protecting Approved pages); the sign-to-move dialog reports a refused code inside
+  the dialog; pickers, definitions grid, My work dark mode reviewed from screenshots.
 
 Shipping requires the paid plan to be live in the Partner portal (`deploy-prod.sh` refuses
 without `--licensing-live`) and is a minor bump — none of it61–it66 adds a scope; the
 `confluence:globalPage` module was proven a minor bump on dev (6.97 → 6.100, no re-consent).
-Last full-suite verdict on the dev build: PASS, 79/79 specs (`sv-it67-final`, commit 7be951a, Tier B included).
+Last full-suite verdict on the dev build: `sv-it68-final` on 269d63f — RUNNING (see SKILL.md it68); previous: PASS, 79/79 specs (`sv-it67-final`, commit 7be951a, Tier B included).
 
 ## 5. Comala-parity gap analysis — what we could add
 
