@@ -509,6 +509,8 @@ html[data-color-mode="dark"] .wf-review-clear:disabled { border-color: #475569; 
 .wf-dot-ai       { background: #7c3aed; }
 .wf-dot-seal     { background: #0e7490; }
 .wf-error { font-size: 11px; font-weight: 600; color: var(--sv-interactive-danger, #dc2626); white-space: nowrap; }
+/* Inside a dialog the refusal wraps to the panel; it must not run past its edge. */
+.wf-sign-panel .wf-error, .wf-appr-panel .wf-error { white-space: normal; margin-top: 8px; line-height: 1.4; }
 
 html[data-color-mode="dark"] .wf-chip-neutral { background: #64748b; }
 html[data-color-mode="dark"] .wf-dot-neutral  { background: #64748b; }
