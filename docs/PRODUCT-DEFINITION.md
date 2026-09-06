@@ -114,7 +114,7 @@ holds and is now shipped: **everyone else tracks, Sentinel Vault enforces**.
 
 ## 4. Not yet live in production (as of 2026-09-06)
 
-Production (Marketplace) is 4.1.0, deployed 2026-08-20. Dev is at commit `269d63f`. Everything
+Production (Marketplace) is 4.1.0, deployed 2026-08-20. Dev is at commit `3c7ce48`+. Everything
 between is built and verified on dev but not shipped:
 
 - it60, the owner's six feedback items: approve-vs-deny asymmetry on lapsed seals surfaced with a
@@ -143,6 +143,9 @@ between is built and verified on dev but not shipped:
   popover) instead of three; the Workflow tab is four titled sections (Workflow, Readers,
   Approval, Protecting Approved pages); the sign-to-move dialog reports a refused code inside
   the dialog; pickers, definitions grid, My work dark mode reviewed from screenshots.
+- **it69 (2026-09-06):** the two violation-comment dedup races (`SECURITY-TODO.md`, pre-existing,
+  ~1 run in 3) are closed — a clean save re-arms the comment only when a user authored it, and a
+  comment claim is confirmed by token after a settle interval. Restores were never affected.
 
 Shipping requires the paid plan to be live in the Partner portal (`deploy-prod.sh` refuses
 without `--licensing-live`) and is a minor bump — none of it61–it66 adds a scope; the
