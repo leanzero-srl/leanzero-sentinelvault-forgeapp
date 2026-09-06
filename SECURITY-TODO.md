@@ -70,7 +70,14 @@ provisioned. That is the standing `SV_USER_B` gap.
 
 ---
 
-## Known, pre-existing, NOT part of SV-SEC-1
+## ✅ Known, pre-existing, NOT part of SV-SEC-1 — **CLOSED 2026-09-06 (it69)**
+
+**Closed:** race 1 by `decideClear` (a clean save re-arms the comment only when a USER authored the
+version read — the app's own restore never does; v2 `version.authorId`), race 2 by a per-outcome
+claim token with a settle-and-re-read (`confirmClaim`). Pure rules in `shared/notice-dedup.js`,
+60 unit assertions; live, the two specs went 8/8 on the fixed build against the ~1-in-3 failure
+rate below. Design: `.claude/skills/sentinel-vault-quality-loop/state/DEDUP-RACES-DESIGN.md`.
+The original analysis is kept below for the record.
 
 Both surfaced while running the full live suite against the fix. Neither is a regression from it —
 `triggers.js` imports nothing that the authorization work changed — and both are in violation

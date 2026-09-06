@@ -663,7 +663,11 @@ async function restoreMediaPass(ctx, sealFileMap, probeCache = new Map()) {
     // reads the app's own restore (version.authorId == app) is looking at the fix, not at a
     // clean save, and would otherwise release the window its sibling just claimed (SECURITY-TODO
     // race 1, observed ~1 run in 3). Pure rule: shared/notice-dedup.js decideClear.
-    if (attrViolations === 0 && decideClear({ sawViolations: !!probeCache.get("__saw-violations"), readAuthorId: ctx.readAuthorId, appAccountId: ctx.appAccountId })) {
+    const clearOk = decideClear({ sawViolations: !!probeCache.get("__saw-violations"), readAuthorId: ctx.readAuthorId, appAccountId: ctx.appAccountId });
+    if (attrViolations === 0 && !clearOk && ctx.readAuthorId && ctx.readAuthorId === ctx.appAccountId) {
+      console.log(`[NOTICE-DEDUP] v${ctx.currentVersion} of ${ctx.pageId} is the app's own restore — dedup markers kept (late/duplicate delivery)`);
+    }
+    if (attrViolations === 0 && clearOk) {
       for (const { seal } of sealFileMap) {
         if (seal.attachmentId) await clearViolationNotices(ctx.pageId, seal.attachmentId);
       }
