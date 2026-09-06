@@ -1884,6 +1884,9 @@ html[data-color-mode="dark"] .wf-state-neutral { background: #64748b; }
 
 /* ── Approver picker (#43 workflow settings) ──────────── */
 .wf-userpicker { position: relative; width: 280px; max-width: 100%; }
+/* The base .form-input is 80px wide (a number box); a search box inherits that and clips its
+   placeholder to "Search peop" — same trap the validation cards hit. */
+.wf-userpicker .form-input { width: 100%; box-sizing: border-box; text-align: left; }
 .wf-userpicker-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; }
 .wf-userchip { display: inline-flex; align-items: center; gap: 4px; padding: 3px 6px 3px 10px; border-radius: 9999px; background: #1d4ed8; color: #fff; font-size: 12px; font-weight: 600; }
 .wf-userchip-x { border: none; background: transparent; color: #fff; font-size: 15px; line-height: 1; cursor: pointer; padding: 0 2px; opacity: 0.85; }
