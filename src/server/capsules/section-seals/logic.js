@@ -102,14 +102,30 @@ export async function removeSectionContentProp(pageId) {
  */
 export async function refreshSectionContentProp(pageId) {
   if (!pageId) return;
-  const { results } = await kvs
-    .query()
-    .where("key", WhereConditions.beginsWith("section-protection-"))
-    .limit(100)
-    .getMany();
-  const sections = (results || [])
-    .map(({ value }) => value)
-    .filter((v) => v?.pageId === pageId && v?.sectionId)
+  const sections = (await listSectionSealRecordsForPage(pageId))
     .map((v) => ({ sectionId: v.sectionId, lockedBy: v.lockedBy, expiresAt: v.expiresAt }));
   await writeSectionContentProp(pageId, sections);
+}
+
+/**
+ * Every section-protection-* record for ONE page, cursor-paginated. Review F1 (2026-09-14): the
+ * two writers above and in actions.js each took a single limit(100) slice of the SITE-WIDE prefix
+ * and filtered by pageId — past 100 sealed sections anywhere, a page's seals silently fell off
+ * the content property and the trigger's fast path stopped protecting them. Same defect the
+ * trigger's own reader had already fixed (audit B4); one loop now serves all three.
+ */
+export async function listSectionSealRecordsForPage(pageId, { maxPages = 50 } = {}) {
+  const out = [];
+  let q = kvs.query().where("key", WhereConditions.beginsWith("section-protection-")).limit(100);
+  let iters = 0;
+  do {
+    const { results, nextCursor } = await q.getMany();
+    for (const { value: v } of results || []) {
+      if (v?.pageId === pageId && v?.sectionId) out.push(v);
+    }
+    if (!nextCursor) break;
+    q = kvs.query().where("key", WhereConditions.beginsWith("section-protection-")).limit(100).cursor(nextCursor);
+  } while (++iters < maxPages);
+  if (iters >= maxPages) console.warn(`[SECTION] listSectionSealRecordsForPage(${pageId}) hit the ${maxPages}-page cap`);
+  return out;
 }

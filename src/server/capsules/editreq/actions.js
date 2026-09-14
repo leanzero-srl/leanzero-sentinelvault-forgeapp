@@ -49,7 +49,7 @@ const requestEditAccess = async (req) => {
   const requestReason = typeof reason === "string" ? reason.trim().slice(0, 300) : "";
 
   const seal = await kvs.get(`protection-${attachmentId}`);
-  if (!seal || !seal.lockedBy) return { success: false, reason: "This file is not sealed" };
+  if (!seal || !seal.lockedBy || seal.trashedOnly) return { success: false, reason: "This file is not sealed" };
   // The owner check runs FIRST deliberately: it is self-knowledge (you are this record's
   // lockedBy), so it discloses nothing, and the owner gets the accurate message rather than the
   // deliberately-vague one below.
