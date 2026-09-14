@@ -4,6 +4,7 @@ import { kvs, WhereConditions } from "@forge/kvs";
 import { authorizeSteward } from "../../shared/steward-checks.js";
 import { canEditPage, canReadPage, mustVerify, resolvePageSpaceKey } from "../../shared/content-access.js";
 import { touchSealTimestamp, resolveSealHoldPeriod } from "../sealing/logic.js";
+import { listSectionSealRecordsForPage } from "./logic.js";
 import { restampIfEnforced } from "../workflow/logic.js";
 import {
   readDocBody,
@@ -90,14 +91,7 @@ export const enumerateSectionSeals = async (req) => {
     return { sections: [] };
   }
   try {
-    const { results } = await kvs
-      .query()
-      .where("key", WhereConditions.beginsWith("section-protection-"))
-      .limit(100)
-      .getMany();
-    const sections = (results || [])
-      .map(({ value }) => value)
-      .filter((v) => v?.pageId === pageId && v?.sectionId)
+    const sections = (await listSectionSealRecordsForPage(pageId))
       .map((v) => ({
         sectionId: v.sectionId,
         sectionTitle: v.sectionTitle || "Sealed section",
@@ -157,6 +151,9 @@ export const sealSection = async (req) => {
 
   const extensionKey = await resolveSealedSectionKey();
   if (!extensionKey) return { success: false, reason: "Could not resolve section macro key" };
+  if (headingIndex == null || !Number.isInteger(Number(headingIndex)) || Number(headingIndex) < 0) {
+    return { success: false, reason: "Section not found — refresh and try again" };
+  }
 
   const holdPeriod = await resolveSealHoldPeriod(realmKey, lockDuration);
   const expiresAt = new Date(Date.now() + holdPeriod * 1000).toISOString();
@@ -176,7 +173,10 @@ export const sealSection = async (req) => {
     const content = adfDoc.content || [];
     const block = content[headingIndex];
     if (!block) return { success: false, reason: "Section not found — refresh and try again" };
-    if (headingText && block.type === "heading" && textOfHeading(block) !== headingText) {
+    // Review F4: the picker named a heading; if what sits at that index is no longer THAT
+    // heading (a paragraph inserted above, a retitle), the page changed under the user — never
+    // seal whatever happens to be there now.
+    if (headingText && (block.type !== "heading" || textOfHeading(block) !== headingText)) {
       return { success: false, reason: "Page changed — refresh and try again" };
     }
     if (block.type === "bodiedExtension" && isSealedSectionKey(block.attrs?.extensionKey)) {
@@ -185,6 +185,12 @@ export const sealSection = async (req) => {
 
     const { start, end } = computeSectionRange(content, headingIndex);
     const rangeBlocks = content.slice(start, end).map((b) => JSON.parse(JSON.stringify(b)));
+    // Review F5: a heading whose range already holds a sealed sub-section must not be sealed
+    // over it — the outer snapshot would then include the inner wrapper, and every legitimate
+    // inner-owner edit would read as tampering of the outer one.
+    if (rangeBlocks.some((b) => b?.type === "bodiedExtension" && isSealedSectionKey(b.attrs?.extensionKey))) {
+      return { success: false, reason: "This section already contains a sealed section — unseal that one first" };
+    }
     const wrapper = buildSealedSectionNode({ sectionId, extensionKey, bodyContent: rangeBlocks });
     content.splice(start, end - start, wrapper);
     adfDoc.content = content;
@@ -260,8 +266,20 @@ export const unsealSection = async (req) => {
 
   let allowed = record.lockedBy === operatorAccountId;
   if (!allowed) {
-    try { allowed = await authorizeSteward(operatorAccountId, record.spaceKey || realmKey); }
+    // Review F3: the space is a property of the RECORD's page, never of where the caller is
+    // standing (CLAUDE.md — the confused-deputy shape). A record with no spaceKey is resolved
+    // from its page; a steward of some other space stays refused.
+    const objectSpaceKey = record.spaceKey || (record.pageId ? await resolvePageSpaceKey(record.pageId) : null);
+    try { allowed = !!objectSpaceKey && await authorizeSteward(operatorAccountId, objectSpaceKey); }
     catch (_) { /* deny */ }
+  }
+  if (!allowed) {
+    // Review F6: no sweep releases an expired section seal, and the panel offers "Unseal" on an
+    // expired one to everyone — so anyone who may edit the page may release a lapsed seal.
+    const expired = !!(record.expiresAt && new Date(record.expiresAt) < new Date());
+    if (expired && record.pageId) {
+      try { allowed = await canEditPage(operatorAccountId, record.pageId); } catch (_) { /* deny */ }
+    }
   }
   if (!allowed) return { success: false, reason: "Only the section owner or a steward can unseal" };
 

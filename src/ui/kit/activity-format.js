@@ -313,7 +313,14 @@ export const ACTIVITY_CSV_COLUMNS = Object.freeze([
 ]);
 
 export function activityToCsv(entries) {
-  const esc = (v) => `"${String(v ?? "").replace(/"/g, '""')}"`;
+  // Review: a cell that starts with = + - @ (or a tab / CR) is a formula to Excel and
+  // LibreOffice. Attachment names, section titles and reasons are user-typed, so a file named
+  // =HYPERLINK(...) would run on the steward's machine. A leading apostrophe makes it text.
+  const esc = (v) => {
+    let s = String(v ?? "");
+    if (/^[=+\-@\t\r]/.test(s)) s = "'" + s;
+    return `"${s.replace(/"/g, '""')}"`;
+  };
   const rows = (entries || []).map((e) => [
     e.ts, e.type, categoryOf(e.type), e.pageId, e.pageTitle || (e.target?.kind === "page" ? e.target?.name : "") || "",
     e.actor?.accountId, e.actor?.name, e.target?.kind, e.target?.id, e.target?.name, e.version,

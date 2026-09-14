@@ -24,6 +24,23 @@
  * import so `test/activity-log.test.mjs` can pin them.
  */
 import { kvs, WhereConditions } from "@forge/kvs";
+import { asApp, route } from "@forge/api";
+
+// Twenty-odd call sites write `actor: { accountId, name: null }` (triggers, stewards acting on
+// another owner's seal, realm actions) and the feed then read "Someone denied edit access" —
+// the record had the id all along. Resolve it once here, as the app, and cache per invocation.
+const actorNameCache = new Map();
+export async function resolveActorName(accountId) {
+  if (!accountId || typeof accountId !== "string") return null;
+  if (actorNameCache.has(accountId)) return actorNameCache.get(accountId);
+  let name = null;
+  try {
+    const res = await asApp().requestConfluence(route`/wiki/rest/api/user?accountId=${accountId}`);
+    if (res.ok) { const d = await res.json(); name = d?.displayName || d?.publicName || null; }
+  } catch (_) { /* best effort — the record still carries the id */ }
+  actorNameCache.set(accountId, name);
+  return name;
+}
 
 /** Exact type strings — the UI formatter switches on them; the unit test pins uniqueness. */
 export const ACTIVITY_TYPES = Object.freeze([
@@ -156,6 +173,7 @@ export async function recordActivity(entry) {
     const actor = entry.actor && (entry.actor.accountId || entry.actor.name)
       ? { accountId: entry.actor.accountId || null, name: entry.actor.name || null }
       : { accountId: null, name: null };
+    if (actor.accountId && !actor.name) actor.name = await resolveActorName(actor.accountId);
     const target = {
       kind: entry.target?.kind || "page",
       id: entry.target?.id != null ? String(entry.target.id) : (pageId || null),

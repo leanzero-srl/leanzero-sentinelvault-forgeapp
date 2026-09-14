@@ -1857,6 +1857,8 @@ export async function handleSealedArtifactTrash(sealRecord, artifactId, contentI
       const fresh = (await kvs.get(`protection-${artifactId}`)) || sealRecord;
       await kvs.set(`protection-${artifactId}`, { ...fresh, trashedOnly: true });
       await touchSealTimestamp();
+      // Review F2: same teardown discipline as every other seal end (release, purge, re-seal).
+      await sweepEditAccess(artifactId).catch((e) => console.warn("[TRASH-RESTORE] edit-access sweep failed:", e));
       console.warn(`[TRASH-RESTORE] owner ${atlassianId} trashed their own sealed ${artifactId} — seal released (trashedOnly tracking record)`);
       // A1: the seal ended here (owner intent, S3) — a feed that shows "sealed" and then nothing
       // while the file sits in the trash would be lying by omission (A1 review F6).

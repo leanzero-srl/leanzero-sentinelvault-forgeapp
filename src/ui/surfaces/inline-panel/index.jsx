@@ -1267,6 +1267,7 @@ const SealedSectionsGroup = ({ pageId, onChanged }) => {
 
   const unseal = async (sectionId) => {
     setBusy(sectionId);
+    setSealError(null);
     try {
       const r = await invoke("unseal-section", { sectionId });
       if (r?.success) {
@@ -1297,7 +1298,7 @@ const SealedSectionsGroup = ({ pageId, onChanged }) => {
         <button
           className="action-btn lock"
           style={{ marginLeft: "auto" }}
-          onClick={picking ? () => setPicking(false) : openPicker}
+          onClick={picking ? () => { setPicking(false); setSealError(null); } : openPicker}
         >
           {picking ? "Cancel" : "Seal a section"}
         </button>

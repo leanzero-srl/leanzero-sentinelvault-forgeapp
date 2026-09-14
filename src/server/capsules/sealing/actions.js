@@ -6,7 +6,7 @@ import { BASELINE_HOLD_SPAN, sanitizeHoldDuration } from "../../shared/baseline.
 import { keysetPage, encodeKeysetCursor, decodeKeysetCursor } from "../../shared/pagination.js";
 import { restampIfEnforced } from "../workflow/logic.js";
 import { authorizeSteward } from "../../shared/steward-checks.js";
-import { canEditPage, canReadPage, mustVerify } from "../../shared/content-access.js";
+import { canEditPage, canReadPage, mustVerify, resolvePageSpaceKey } from "../../shared/content-access.js";
 import { resolveBulletinToggles } from "../../shared/bulletin-flags.js";
 import { setUntil } from "../../shared/kvs-ttl.js";
 
@@ -594,7 +594,10 @@ export const extendSeal = async (req) => {
   let authorized = sealRecord.lockedBy === operatorAccountId;
   if (!authorized) {
     try {
-      authorized = await authorizeSteward(operatorAccountId, sealRecord.spaceKey || contextSpaceKey);
+      // Review: the record's own space, or its page's — never the caller's context space
+      // (a steward of any space could otherwise extend a spaceKey-less seal anywhere).
+      const objectSpaceKey = sealRecord.spaceKey || (sealRecord.contentId ? await resolvePageSpaceKey(sealRecord.contentId) : null);
+      authorized = !!objectSpaceKey && await authorizeSteward(operatorAccountId, objectSpaceKey);
     } catch (_) { authorized = false; }
   }
   if (!authorized) {
@@ -1150,6 +1153,9 @@ export const restoreSealedArtifact = async (req) => {
   // Clean up tracking-only records (not real seals) after restore
   if (sealRecord?.trashedOnly) {
     await kvs.delete(`protection-${attachmentId}`);
+    // Review F2: the seal is gone for good — requests and grants against it would otherwise
+    // outlive it as ghost rows on "My work" that Approve can no longer act on.
+    await sweepEditAccess(attachmentId).catch((e) => console.warn("[RESTORE] edit-access sweep failed:", e));
   }
 
   await touchSealTimestamp();

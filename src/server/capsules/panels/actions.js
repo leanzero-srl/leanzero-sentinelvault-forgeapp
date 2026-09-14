@@ -296,6 +296,10 @@ export const deleteArtifact = async (req) => {
         await kvs.set(`protection-${attachmentId}`, { ...freshSeal, trashedOnly: true });
         const { touchSealTimestamp } = await import("../sealing/logic.js");
         await touchSealTimestamp();
+        // Review F2: the live seal ended here — pending requests and grants end with it, or
+        // "My work" keeps offering an Approve that mints a grant on a file in the trash.
+        const { sweepEditAccess } = await import("../editreq/logic.js");
+        await sweepEditAccess(attachmentId).catch((e) => console.warn("[DELETE] edit-access sweep failed:", e));
         // A1: the seal ended here by the owner's own delete (A1 review F6).
         await recordActivity({
           type: "seal.released",
