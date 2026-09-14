@@ -20,8 +20,9 @@ import {
   computeSectionRange,
   refreshSectionContentProp,
 } from "./logic.js";
-import { sweepSectionEditAccess } from "../editreq/logic.js";
+import { sweepSectionEditAccess, getActiveSectionEditGrant } from "../editreq/logic.js";
 import { recordActivity } from "../../infra/activity-log.js";
+import { validateReleaseReason } from "../../shared/release-reason.js";
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const newSectionId = () => {
@@ -255,7 +256,7 @@ export const sealSection = async (req) => {
  * Owner or steward.
  */
 export const unsealSection = async (req) => {
-  const { sectionId } = req.payload || {};
+  const { sectionId, reason: rawReason } = req.payload || {};
   const operatorAccountId = req.context.accountId;
   const realmKey =
     req.context.extension?.content?.space?.key || req.context.extension?.space?.key;
@@ -264,7 +265,8 @@ export const unsealSection = async (req) => {
   const record = await kvs.get(`section-protection-${sectionId}`);
   if (!record) return { success: false, reason: "Section is not sealed" };
 
-  let allowed = record.lockedBy === operatorAccountId;
+  const isOwner = record.lockedBy === operatorAccountId;
+  let allowed = isOwner;
   if (!allowed) {
     // Review F3: the space is a property of the RECORD's page, never of where the caller is
     // standing (CLAUDE.md — the confused-deputy shape). A record with no spaceKey is resolved
@@ -282,6 +284,14 @@ export const unsealSection = async (req) => {
     }
   }
   if (!allowed) return { success: false, reason: "Only the section owner or a steward can unseal" };
+  // Part 3.5: break-glass (steward, or anyone releasing a lapsed seal) needs a TYPED reason that
+  // the trail shows. ONE rule with the attachment paths — shared/release-reason.js.
+  let forcedReason = null;
+  if (!isOwner) {
+    const v = validateReleaseReason(rawReason);
+    if (!v.ok) return { success: false, reason: v.error };
+    forcedReason = v.reason;
+  }
 
   const pageId = record.pageId;
   let unwrapped = false; // A1 review F8: the record must say whether the wrapper came off
@@ -314,7 +324,8 @@ export const unsealSection = async (req) => {
     },
     target: { kind: "section", id: sectionId, name: record.sectionTitle || "Sealed section" },
     details: {
-      forced: record.lockedBy !== operatorAccountId,
+      forced: !isOwner,
+      ...(forcedReason ? { reason: forcedReason } : {}), // Part 3.5: the typed break-glass reason
       unwrapped, // false = protection ended but the macro wrapper is still on the page (write failed)
       ownerAccountId: record.lockedBy || null,
       ownerName: record.lockedByName || null,
@@ -361,10 +372,45 @@ const refreshSectionSnapshot = async (req) => {
   return { success: true };
 };
 
+/**
+ * GAP 3 (req 2.3): read-only seal status for ONE section, for the editor lock banner.
+ * Payload { sectionId } → { sealed, isMine, hasGrant, ownerName, ownerAccountId, expiresAt,
+ * isExpired, pageId }. The record names who holds the seal on which page, so it is only
+ * returned to a caller who can READ that page (SV-SEC-1 disclosure side; fails closed to
+ * { sealed: false } — the same answer an unsealed id gets, so the refusal says nothing).
+ */
+const sectionSealStatus = async (req) => {
+  const { sectionId } = req.payload || {};
+  const operatorAccountId = req.context.accountId;
+  const closed = { sealed: false };
+  if (!sectionId || typeof sectionId !== "string" || !operatorAccountId) return closed;
+  try {
+    const record = await kvs.get(`section-protection-${sectionId}`);
+    if (!record?.lockedBy || !record.pageId) return closed;
+    if (!(await canReadPage(operatorAccountId, record.pageId))) return closed;
+    const isMine = record.lockedBy === operatorAccountId;
+    const hasGrant = !isMine && !!(await getActiveSectionEditGrant(sectionId, operatorAccountId));
+    return {
+      sealed: true,
+      isMine,
+      hasGrant,
+      ownerName: record.lockedByName || null,
+      ownerAccountId: record.lockedBy,
+      expiresAt: record.expiresAt || null,
+      isExpired: !!(record.expiresAt && new Date(record.expiresAt).getTime() <= Date.now()),
+      pageId: record.pageId,
+    };
+  } catch (e) {
+    console.error("[SECTION] status failed:", e);
+    return closed;
+  }
+};
+
 export const actions = [
   ["list-page-headings", listPageHeadings],
   ["enumerate-section-seals", enumerateSectionSeals],
   ["seal-section", sealSection],
   ["unseal-section", unsealSection],
   ["refresh-section-snapshot", refreshSectionSnapshot],
+  ["section-seal-status", sectionSealStatus],
 ];

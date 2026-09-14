@@ -10,7 +10,7 @@ import {
   mailEditDenied,
 } from "../../infra/notice-composer.js";
 import { getActiveEditGrant, getActiveSectionEditGrant, writeOwnerIndex, dropOwnerIndex, listPendingRequestsForOwner } from "./logic.js";
-import { canReadPage } from "../../shared/content-access.js";
+import { canReadPage, resolvePageSpaceKey } from "../../shared/content-access.js";
 import { recordActivity } from "../../infra/activity-log.js";
 
 const COOLDOWN_MS = 48 * 60 * 60 * 1000; // 48h after a denial before re-requesting
@@ -344,7 +344,13 @@ async function loadSectionForOwnerAction(sectionId, accountId) {
   if (!seal || !seal.lockedBy) return { seal: null, authorized: false };
   let authorized = seal.lockedBy === accountId;
   if (!authorized) {
-    try { authorized = await authorizeSteward(accountId, seal.spaceKey); } catch (_) { /* deny */ }
+    // GAP 4 (req 2.3): the space is a property of the RECORD's page (CLAUDE.md — never the
+    // caller's context space). A record sealed without a spaceKey used to refuse every steward;
+    // resolve it from the page like unsealSection does.
+    try {
+      const objectSpaceKey = seal.spaceKey || (seal.pageId ? await resolvePageSpaceKey(seal.pageId) : null);
+      authorized = !!objectSpaceKey && await authorizeSteward(accountId, objectSpaceKey);
+    } catch (_) { /* deny */ }
   }
   return { seal, authorized };
 }
@@ -503,6 +509,34 @@ export const denySectionEdit = async (req) => {
   return { success: true };
 };
 
+/**
+ * GAP 5 (req 2.3): revoke an active SECTION edit grant (owner/steward). Deletes the key
+ * approveSectionEdit writes; mirrors revokeEditGrant for attachments.
+ */
+export const revokeSectionEditGrant = async (req) => {
+  const { sectionId, editorAccountId } = req.payload || {};
+  const accountId = req.context.accountId;
+  if (!sectionId || !editorAccountId) return { success: false, reason: "Missing params" };
+  const { seal, authorized } = await loadSectionForOwnerAction(sectionId, accountId);
+  if (!seal) return { success: false, reason: "Section not found" };
+  if (!authorized) return { success: false, reason: "Not the section owner" };
+
+  const grantKey = `section-edit-grant-${sectionId}-${editorAccountId}`;
+  if (!(await kvs.get(grantKey))) return { success: false, reason: "No active grant for that editor" };
+  await kvs.delete(grantKey);
+  // A1 (section scope): the grant is gone from this delete on, and there WAS one.
+  await recordActivity({
+    type: "editreq.revoked",
+    pageId: seal.pageId || null,
+    spaceKey: seal.spaceKey || null,
+    actor: { accountId, name: seal.lockedBy === accountId ? (seal.lockedByName || null) : null },
+    target: { kind: "section", id: sectionId, name: seal.sectionTitle || "Sealed section" },
+    details: { scope: "section", editorAccountId },
+    version: null,
+  });
+  return { success: true };
+};
+
 export const actions = [
   ["request-edit-access", requestEditAccess],
   ["check-edit-request", checkEditRequest],
@@ -517,4 +551,5 @@ export const actions = [
   ["list-section-edit-requests", listSectionEditRequests],
   ["approve-section-edit", approveSectionEdit],
   ["deny-section-edit", denySectionEdit],
+  ["revoke-section-edit-grant", revokeSectionEditGrant],
 ];

@@ -4,6 +4,7 @@ import { invoke, view } from "@forge/bridge";
 import { enablePaletteSync } from "../../kit/palette-sync";
 import ValidationsEditor from "../../kit/ValidationsEditor";
 import LicenseBanner from "../../kit/LicenseBanner";
+import ClassificationTab from "../../kit/ClassificationTab";
 import { formatDurationHours } from "../../kit/format-duration";
 import logo from "../../assets/icons/icon.png";
 import { BUILD_INFO } from "../../../build-info.js";
@@ -234,6 +235,13 @@ const GlobalPolicyEditor = () => {
           onClick={() => setActiveTab("validations")}
         >
           Validations
+        </button>
+        <button
+          className={`tab-button ${activeTab === "classification" ? "active" : ""}`}
+          onClick={() => setActiveTab("classification")}
+          data-testid="tab-classification"
+        >
+          Classification
         </button>
       </div>
 
@@ -540,9 +548,12 @@ const GlobalPolicyEditor = () => {
         )}
 
         {activeTab === "validations" && <ValidationsEditor scope="global" />}
+        {activeTab === "classification" && <ClassificationTab />}
       </div>
 
-      {activeTab !== "validations" && (
+      {/* The Validations and Classification tabs save their own state; the policy Apply bar is
+          for the General/Alerts settings only. */}
+      {activeTab !== "validations" && activeTab !== "classification" && (
         <div className="action-bar">
           <button className="btn-primary" onClick={onSavePreferences} disabled={loading}>
             {loading ? "Updating..." : "Apply Configuration"}

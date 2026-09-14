@@ -24,7 +24,9 @@ import { confirmAttachmentPurged } from "../../infra/attachment-status.js";
 import { findSealedMediaSingle, capturePresentation } from "../../infra/media-presentation.js";
 import { purgeAllSealState } from "./confluence-sync.js";
 import { releaseSeal } from "./release.js";
+import { listSectionSealRecordsForPage } from "../section-seals/logic.js";
 import { recordActivity } from "../../infra/activity-log.js";
+import { validateReleaseReason } from "../../shared/release-reason.js";
 
 // Import from sibling capsules
 import { notifyWatchers, sweepWatchers } from "../bulletins/logic.js";
@@ -461,7 +463,7 @@ const sealArtifact = async (req) => {
  * Unseal an artifact (owner or steward override)
  */
 const unsealArtifact = async (req) => {
-  const { attachmentId, adminOverride } = req.payload;
+  const { attachmentId, adminOverride, reason: rawReason } = req.payload;
   const operatorAccountId = req.context.accountId;
   const realmKey =
     req.context.extension?.content?.space?.key ||
@@ -474,6 +476,7 @@ const unsealArtifact = async (req) => {
 
   let canRelease = false;
   let releaseReason = "";
+  let forcedReason = null; // Part 3.5: the typed break-glass reason (steward path only)
 
   if (sealRecord.lockedBy === operatorAccountId) {
     canRelease = true;
@@ -490,6 +493,10 @@ const unsealArtifact = async (req) => {
       sealRecord.spaceKey || realmKey,
     );
     if (hasStewardAccess) {
+      // Part 3.5: same rule as unseal-section / steward-unseal — shared/release-reason.js.
+      const v = validateReleaseReason(rawReason);
+      if (!v.ok) return { success: false, reason: v.error };
+      forcedReason = v.reason;
       canRelease = true;
       releaseReason = "admin override";
     } else {
@@ -519,7 +526,7 @@ const unsealArtifact = async (req) => {
       },
       target: { kind: "attachment", id: attachmentId, name: sealRecord.attachmentName || null },
       details: releaseReason === "admin override"
-        ? { ownerAccountId: sealRecord.lockedBy || null, ownerName: sealRecord.lockedByName || null }
+        ? { forced: true, reason: forcedReason, ownerAccountId: sealRecord.lockedBy || null, ownerName: sealRecord.lockedByName || null }
         : {},
       version: null,
     });
@@ -1272,7 +1279,105 @@ export const purgeSealRecord = async (req) => {
   return { success: true };
 };
 
+
+/**
+ * Bug 2.4 — the ONE question the page ribbon asks: "is there anything on this page worth a
+ * banner row?" Counts sealed attachments and sealed sections for the page and, crucially,
+ * says WHY a count is zero (`reason`), so a production "the ribbon never shows" case is
+ * settled from the Forge log instead of re-diagnosed.
+ *
+ * Why not enumerate-doc-artifacts: that one takes the id from context only (silently [] on a
+ * blogpost or a missing context id), fetches as the USER (a 403 reads as "no attachments"),
+ * pages 10 at a time and never counts section seals. This reads as asApp() so the count is
+ * the page's truth, not the caller's view of it — and the caller is only allowed to ask about
+ * a page they can READ: the context id is authentic (SV-SEC-1: rendering inside it implies
+ * read), a payload id is entitlement-checked before anything is fetched.
+ */
+const RIBBON_ATTACHMENT_PAGE_CAP = 20; // 20 × 250 = 5 000 attachments; past that we stop counting
+const ribbonSummary = async (req) => {
+  const contextId = req.context?.extension?.content?.id ?? null;
+  const contentType = req.context?.extension?.content?.type ?? null;
+  const accountId = req.context?.accountId ?? null;
+  const payloadId = req.payload?.pageId != null && req.payload.pageId !== "" ? String(req.payload.pageId) : null;
+  const out = {
+    ok: false, pageId: null, contentIdSeen: contextId != null, contentType,
+    attachments: 0, sealedAttachments: 0, sealedByMe: false, sectionSeals: 0, reason: "none",
+  };
+  const empty = (reason, detail) => {
+    console.warn(`[RIBBON] summary empty — ${reason}: page=${out.pageId} ctx=${contextId} type=${contentType} ${detail || ""}`.trim());
+    return { ...out, reason };
+  };
+
+  let pageId = contextId != null ? String(contextId) : null;
+  if (!pageId && payloadId) {
+    if (mustVerify(payloadId, contextId) && !(await canReadPage(accountId, payloadId))) {
+      return empty("payload-page-unreadable");
+    }
+    pageId = payloadId;
+  }
+  out.pageId = pageId;
+  if (!pageId) return empty("no-context-id");
+
+  // Attachments as the app: the count is the page's, not the caller's (a viewer whose user
+  // token gets a 403 on attachments still sees the seal exists). v2 has one collection per
+  // content type; a blogpost id on the /pages route is a 404, so pick by type and fall back.
+  const ids = [];
+  const collection = contentType === "blogpost" ? "blogposts" : "pages";
+  const fetchAll = async (coll) => {
+    let cursor = null;
+    for (let i = 0; i < RIBBON_ATTACHMENT_PAGE_CAP; i++) {
+      const url = coll === "blogposts"
+        ? (cursor ? route`/wiki/api/v2/blogposts/${pageId}/attachments?limit=250&cursor=${cursor}` : route`/wiki/api/v2/blogposts/${pageId}/attachments?limit=250`)
+        : (cursor ? route`/wiki/api/v2/pages/${pageId}/attachments?limit=250&cursor=${cursor}` : route`/wiki/api/v2/pages/${pageId}/attachments?limit=250`);
+      const res = await asApp().requestConfluence(url);
+      if (!res.ok) return res.status;
+      const data = await res.json();
+      for (const att of data?.results || []) if (att?.id) ids.push(String(att.id));
+      const next = data?._links?.next;
+      if (!next) return 200;
+      try { cursor = new URL(next, "https://example.com").searchParams.get("cursor"); } catch (_) { cursor = null; }
+      if (!cursor) return 200;
+    }
+    console.warn(`[RIBBON] attachments for ${pageId} hit the ${RIBBON_ATTACHMENT_PAGE_CAP}-page cap`);
+    return 200;
+  };
+  let status;
+  try {
+    status = await fetchAll(collection);
+    if (status === 404 && collection === "pages" && !contentType) status = await fetchAll("blogposts");
+  } catch (e) {
+    console.error("[RIBBON] attachments fetch threw:", e);
+    status = 0;
+  }
+  if (status !== 200) return empty(`attachments-http-${status}`);
+  out.attachments = ids.length;
+
+  // A protection-* record is a seal unless it is the S7 trashedOnly TRACKING record (triggers.js).
+  for (let i = 0; i < ids.length; i += 25) {
+    const records = await Promise.all(ids.slice(i, i + 25).map((id) => kvs.get(`protection-${id}`).catch(() => null)));
+    for (const r of records) {
+      if (!r || r.trashedOnly) continue;
+      out.sealedAttachments += 1;
+      if (accountId && r.lockedBy === accountId) out.sealedByMe = true;
+    }
+  }
+
+  try {
+    out.sectionSeals = (await listSectionSealRecordsForPage(pageId)).length;
+  } catch (e) {
+    console.error(`[RIBBON] section-seal listing threw for ${pageId}:`, e);
+  }
+
+  out.ok = true;
+  if (out.sealedAttachments === 0 && out.sectionSeals === 0) {
+    console.info(`[RIBBON] nothing sealed on ${pageId}: attachments=${out.attachments} (type=${contentType})`);
+    return { ...out, reason: "none" };
+  }
+  return { ...out, reason: "sealed" };
+};
+
 export const actions = [
+  ["ribbon-summary", ribbonSummary],
   ["seal-artifact", sealArtifact],
   ["unseal-artifact", unsealArtifact],
   ["extend-seal", extendSeal],

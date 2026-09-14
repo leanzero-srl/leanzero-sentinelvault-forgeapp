@@ -12,6 +12,7 @@ import { actions as sectionSealActions } from "./capsules/section-seals/actions.
 import { actions as validationActions } from "./capsules/validations/actions.js";
 import { actions as workflowActions } from "./capsules/workflow/actions.js";
 import { actions as activityActions } from "./capsules/activity/actions.js";
+import { actions as classificationActions } from "./capsules/classification/actions.js";
 
 const router = new Resolver();
 
@@ -28,6 +29,7 @@ const allActions = [
   ...validationActions,
   ...workflowActions,
   ...activityActions,
+  ...classificationActions,
 ];
 
 allActions.forEach(([key, fn]) => router.define(key, fn));
