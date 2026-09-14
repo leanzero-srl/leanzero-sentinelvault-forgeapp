@@ -1208,6 +1208,7 @@ const SealedSectionsGroup = ({ pageId, onChanged }) => {
   const [headingsLoading, setHeadingsLoading] = useState(false);
   const [sealingIndex, setSealingIndex] = useState(null);
   const [collapsed, setCollapsed] = useState(false);
+  const [sealError, setSealError] = useState(null);  // why the last seal/unseal was refused
 
   const load = useCallback(async () => {
     if (!pageId) return;
@@ -1226,13 +1227,16 @@ const SealedSectionsGroup = ({ pageId, onChanged }) => {
 
   const openPicker = async () => {
     setPicking(true);
+    setSealError(null);
     setHeadingsLoading(true);
     try {
       const r = await invoke("list-page-headings", { pageId });
       setHeadings(r?.headings || []);
+      if (r && r.success === false) setSealError(r.reason || "Could not read the page headings.");
     } catch (e) {
       console.error("List headings failed:", e);
       setHeadings([]);
+      setSealError("Could not reach Sentinel Vault. Try again.");
     } finally {
       setHeadingsLoading(false);
     }
@@ -1240,6 +1244,7 @@ const SealedSectionsGroup = ({ pageId, onChanged }) => {
 
   const sealHeading = async (h) => {
     setSealingIndex(h.index);
+    setSealError(null);
     try {
       const r = await invoke("seal-section", { pageId, headingIndex: h.index, headingText: h.text });
       if (r?.success) {
@@ -1247,10 +1252,14 @@ const SealedSectionsGroup = ({ pageId, onChanged }) => {
         await load();
         if (onChanged) onChanged();
       } else {
+        // A refusal has a reason (permission, page changed, already sealed, write failed) — the
+        // user must see it. Silently warning to the console read as "it just doesn't work".
         console.warn("seal-section declined:", r?.reason);
+        setSealError(r?.reason || "Could not seal this section.");
       }
     } catch (e) {
       console.error("Seal section failed:", e);
+      setSealError("Could not reach Sentinel Vault. Try again.");
     } finally {
       setSealingIndex(null);
     }
@@ -1263,9 +1272,12 @@ const SealedSectionsGroup = ({ pageId, onChanged }) => {
       if (r?.success) {
         await load();
         if (onChanged) onChanged();
+      } else {
+        setSealError(r?.reason || "Could not unseal this section.");
       }
     } catch (e) {
       console.error("Unseal section failed:", e);
+      setSealError("Could not reach Sentinel Vault. Try again.");
     } finally {
       setBusy(null);
     }
@@ -1293,6 +1305,12 @@ const SealedSectionsGroup = ({ pageId, onChanged }) => {
 
       {!collapsed && (
         <>
+          {sealError && (
+            <div className="card-row card-action-error" role="alert">
+              <span className="card-action-error-text">{sealError}</span>
+              <button className="card-action-error-dismiss" onClick={() => setSealError(null)} aria-label="Dismiss">×</button>
+            </div>
+          )}
           {picking && (
             <div className="sv-section-picker">
               {headingsLoading && <div className="sv-panel-loading">Reading page…</div>}

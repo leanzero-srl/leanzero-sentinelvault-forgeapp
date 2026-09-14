@@ -47,13 +47,20 @@ const SectionMacro = () => {
     })();
   }, []);
 
+  const [error, setError] = useState(null);
   const onInsert = async () => {
+    setError(null);
     try {
-      await view.submit({});
+      // The editor validates the payload: `config` MUST be an object (it rejected `{}` with
+      // 'Invalid "config" provided. Expected object' — 2026-09-14, seen in dev AND prod). An empty
+      // config is the whole configuration of this macro: the sectionId is issued server-side
+      // when the section is sealed from the panel.
+      await view.submit({ config: {} });
       setStatus("Inserted");
     } catch (e) {
       console.error("[SECTION-UI] submit failed:", e);
       setStatus("Could not insert");
+      setError(e?.message || "The editor refused the insert. Close this dialog and try again.");
     }
   };
 
@@ -73,6 +80,7 @@ const SectionMacro = () => {
           steward) can release it at any time.
         </p>
         <button className="sec-btn" onClick={onInsert}>{status || "Insert section"}</button>
+        {error && <p className="sec-config-error" role="alert">{error}</p>}
       </div>
     );
   }

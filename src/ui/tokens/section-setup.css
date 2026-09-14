@@ -122,3 +122,13 @@ body {
   background: var(--sec-brand-strong);
   border-color: var(--sec-brand-strong);
 }
+
+.sec-config-error {
+  margin: 10px 0 0;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: #de350b;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+}
