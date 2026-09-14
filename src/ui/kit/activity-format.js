@@ -20,7 +20,7 @@ export const ACTIVITY_CATEGORIES = Object.freeze([
     "seal.deleted", "seal.revert-failed",
   ]) },
   { id: "sections", label: "Sections", types: Object.freeze([
-    "section.sealed", "section.released", "section.restored", "section.reverted",
+    "section.sealed", "section.released", "section.restored", "section.reverted", "section.rebaselined",
   ]) },
   { id: "editreq", label: "Edit access", types: Object.freeze([
     "editreq.requested", "editreq.approved", "editreq.denied", "editreq.revoked",
@@ -155,9 +155,9 @@ export function formatActivity(entry) {
       return { ...base, label: "File unsealed", glyph: "unlock", tone: "neutral",
         sentence: `${who} unsealed ${file()}` };
     case "seal.forced":
-      return { ...base, label: "Seal removed by steward", glyph: "unlock", tone: "caution",
-        sentence: `${who} removed the seal on ${file()} as a space steward`,
-        detail: d.ownerName ? `sealed by ${d.ownerName}` : "" };
+      return { ...base, label: "Seal removed by space admin", glyph: "unlock", tone: "caution",
+        sentence: `${who} removed the seal on ${file()} as a space admin`,
+        detail: [d.ownerName ? `sealed by ${d.ownerName}` : "", d.reason ? `reason: ${d.reason}` : ""].filter(Boolean).join(" — ") };
     case "seal.extended":
       return { ...base, label: "Seal extended", glyph: "clock", tone: "seal",
         sentence: d.expiresAt
@@ -196,8 +196,25 @@ export function formatActivity(entry) {
       return { ...base, label: "Section sealed", glyph: "section", tone: "seal",
         sentence: `${who} sealed section ${section()}` };
     case "section.released":
+      // Break-glass (3.5): a release by someone other than the owner always carries a typed
+      // reason and reads as a forced release, never as an ordinary unseal.
+      if (d.forced) {
+        return { ...base, label: "Section released by space admin", glyph: "unlock", tone: "caution",
+          sentence: `${who} released sealed section ${section()} without owning it`,
+          detail: d.reason ? `reason: ${d.reason}` : "" };
+      }
       return { ...base, label: "Section unsealed", glyph: "unlock", tone: "neutral",
         sentence: `${who} unsealed section ${section()}` };
+    case "section.rebaselined": {
+      const diff = d.diff || {};
+      const parts = [];
+      if (diff.changedBlocks) parts.push(`${diff.changedBlocks} changed`);
+      if (diff.added) parts.push(`${diff.added} added`);
+      if (diff.removed) parts.push(`${diff.removed} removed`);
+      return { ...base, label: "Section re-sealed", glyph: "section", tone: "seal",
+        sentence: `${who} edited sealed section ${section()} as ${d.by === "grantee" ? "an approved editor" : "the owner"} — the seal now protects the new content${version}`,
+        detail: [parts.length ? `blocks: ${parts.join(", ")}` : "", diff.sample ? `“${diff.sample}”` : ""].filter(Boolean).join(" — ") };
+    }
     case "section.restored":
       return { ...base, label: "Section restored", glyph: "undo", tone: "caution",
         sentence: `Sealed section ${section()} was edited — ${APP_NAME} put its content back${version}` };

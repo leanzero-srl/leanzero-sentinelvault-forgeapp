@@ -1,35 +1,59 @@
-/* Sealed Section macro — LeanZero design system (self-contained tokens) */
+/* Sealed Section macro — LeanZero design system (self-contained tokens)
+ *
+ * Every `--sec-*` USE carries a hard fallback (the light value). The sheet is a separate
+ * request from the bundle: on a slow load (Blisk, 2026-09-14) the JSX painted before the
+ * tokens existed, and an undefined custom property resolves to `initial` — for `background`
+ * that is transparent, which a colour-scheme-mismatched nested iframe then paints as an
+ * opaque near-black canvas. The fallbacks make the first paint correct without the sheet.
+ *
+ * Forge injects the `--ds-*` Atlaskit tokens only after view.theme.enable() resolves, so
+ * they are consulted at the root definitions with our own value behind them: native wins
+ * when present, and nothing depends on it being present.
+ */
 
 :root {
-  --sec-bg: #FFFFFF;
-  --sec-bg-subtle: #F8FAFC;
-  --sec-text: #0F172A;
-  --sec-text-secondary: #475569;
-  --sec-border: #E2E8F0;
+  --sec-bg: var(--ds-surface, #FFFFFF);
+  --sec-bg-subtle: var(--ds-surface-sunken, #F8FAFC);
+  --sec-text: var(--ds-text, #0F172A);
+  --sec-text-secondary: var(--ds-text-subtle, #475569);
+  --sec-border: var(--ds-border, #E2E8F0);
   --sec-brand: #0891B2;
   --sec-brand-strong: #0E7490;
   --sec-on-brand: #FFFFFF;
   --sec-shadow: 0 1px 3px rgba(15, 23, 42, 0.08);
 }
 
+/* Dark palette aligned to the Confluence dark surface (#1F1F21) — the old #020617 was a
+ * black box on that surface even when nothing was broken. */
 html[data-color-mode="dark"] {
-  --sec-bg: #020617;
-  --sec-bg-subtle: #0F172A;
-  --sec-text: #F8FAFC;
-  --sec-text-secondary: #CBD5E1;
-  --sec-border: #334155;
+  --sec-bg: var(--ds-surface, #1F1F21);
+  --sec-bg-subtle: var(--ds-surface-sunken, #242528);
+  --sec-text: var(--ds-text, #B6C2CF);
+  --sec-text-secondary: var(--ds-text-subtle, #8C9BAB);
+  --sec-border: var(--ds-border, #3D3F43);
   --sec-brand: #22D3EE;
   --sec-brand-strong: #67E8F9;
   --sec-on-brand: #022F3A;
   --sec-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
 }
 
+/* The app document's colour scheme MUST match the nested ADF-renderer iframe's: when the
+ * iframe element's scheme differs from the embedded document's, Chromium paints the embedded
+ * canvas opaque in the Canvas colour (near-black in dark). palette-sync sets
+ * html[data-color-mode] from view.theme.enable(); the scheme follows that attribute. */
+html, body {
+  background: transparent;
+  color-scheme: light;
+}
+html[data-color-mode="dark"] {
+  color-scheme: dark;
+}
+
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
 body {
   font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
-  background: transparent;
-  color: var(--sec-text);
+  color: var(--sec-text, #0F172A);
   font-size: 14px;
   line-height: 20px;
   -webkit-font-smoothing: antialiased;
@@ -44,8 +68,8 @@ body {
   gap: 6px;
   padding: 4px 10px;
   border-radius: 9999px;
-  background: var(--sec-brand);
-  color: var(--sec-on-brand);
+  background: var(--sec-brand, #0891B2);
+  color: var(--sec-on-brand, #FFFFFF);
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.02em;
@@ -53,40 +77,90 @@ body {
 
 /* ── View mode: sealed frame ─────────────────────── */
 .sec-frame {
-  border: 2px solid var(--sec-brand);
+  border: 2px solid var(--sec-brand, #0891B2);
   border-radius: 12px;
-  background: var(--sec-bg);
-  box-shadow: var(--sec-shadow);
+  background: var(--sec-bg, #FFFFFF);
+  box-shadow: var(--sec-shadow, 0 1px 3px rgba(15, 23, 42, 0.08));
   overflow: hidden;
 }
 .sec-frame.sec-loading {
   padding: 16px;
-  color: var(--sec-text-secondary);
+  color: var(--sec-text-secondary, #475569);
   border-style: dashed;
 }
 .sec-frame-head {
   display: flex;
   align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
   padding: 8px 12px;
-  background: var(--sec-bg-subtle);
-  border-bottom: 1px solid var(--sec-border);
+  background: var(--sec-bg-subtle, #F8FAFC);
+  border-bottom: 1px solid var(--sec-border, #E2E8F0);
+}
+
+/* The body area: the explanation text sits BEHIND the renderer iframe, and the iframe is
+ * only put in flow once the renderer has answered `forge-adf-renderer-ready`. A renderer
+ * that never answers (third-party frame partitioning, a blocked handshake) leaves the text
+ * on screen — never a blank box. */
+.sec-body {
+  position: relative;
 }
 .sec-body-frame {
-  width: 100%;
-  border: 0;
-  min-height: 80px;
   display: block;
+  width: calc(100% - 24px);   /* aligns the body with the badge: 12px inset, same as the head */
+  margin: 4px 12px 8px;
+  border: 0;
+  background: var(--sec-bg, #FFFFFF);
+  color-scheme: inherit;
+}
+.sec-body-frame.sec-body-frame--pending {
+  position: absolute;
+  inset: 0;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
 }
 .sec-body-fallback {
-  padding: 16px;
-  color: var(--sec-text-secondary);
+  padding: 12px 12px 16px;
+  color: var(--sec-text-secondary, #475569);
   font-size: 13px;
 }
+
+/* ── Editor lock banner (req 2.3, layer 3) ───────── */
+/* Solid, saturated danger fill; full block, no left rail, no tint. */
+.sec-lock {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  background: #C9372C;
+  color: #FFFFFF;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 18px;
+}
+.sec-lock svg { flex: 0 0 auto; margin-top: 2px; }
+.sec-lock-hint {
+  display: block;
+  font-weight: 500;
+  margin-top: 2px;
+}
+.sec-editable {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  color: var(--sec-text-secondary, #475569);
+  font-size: 12px;
+  font-weight: 600;
+  border-bottom: 1px solid var(--sec-border, #E2E8F0);
+}
+.sec-editable svg { color: #1F845A; }
 
 /* ── Config mode ─────────────────────────────────── */
 .sec-config {
   padding: 20px;
-  background: var(--sec-bg);
+  background: var(--sec-bg, #FFFFFF);
   border-radius: 12px;
 }
 .sec-config-head {
@@ -98,11 +172,11 @@ body {
 .sec-config-title {
   font-size: 16px;
   font-weight: 700;
-  color: var(--sec-text);
+  color: var(--sec-text, #0F172A);
 }
 .sec-config-desc {
   font-size: 13px;
-  color: var(--sec-text-secondary);
+  color: var(--sec-text-secondary, #475569);
   margin-bottom: 16px;
 }
 .sec-btn {
@@ -110,17 +184,17 @@ body {
   align-items: center;
   padding: 8px 16px;
   border-radius: 8px;
-  border: 1px solid var(--sec-brand);
-  background: var(--sec-brand);
-  color: var(--sec-on-brand);
+  border: 1px solid var(--sec-brand, #0891B2);
+  background: var(--sec-brand, #0891B2);
+  color: var(--sec-on-brand, #FFFFFF);
   font-size: 13px;
   font-weight: 600;
   cursor: pointer;
   font-family: inherit;
 }
 .sec-btn:hover {
-  background: var(--sec-brand-strong);
-  border-color: var(--sec-brand-strong);
+  background: var(--sec-brand-strong, #0E7490);
+  border-color: var(--sec-brand-strong, #0E7490);
 }
 
 .sec-config-error {
@@ -132,3 +206,7 @@ body {
   font-size: 12px;
   font-weight: 600;
 }
+
+/* the lock notice inside the config dialog sits between the head and the description */
+.sec-config .sec-lock, .sec-config .sec-editable { margin: 0 0 12px; border-radius: 8px; }
+.sec-config .sec-editable { border: 1px solid var(--sec-border, #E2E8F0); }

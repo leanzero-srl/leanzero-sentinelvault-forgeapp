@@ -712,6 +712,133 @@ export function replaceSectionBody(adfDoc, sectionId, snapshotContent) {
   return false;
 }
 
+/** Visible text of an ADF subtree, whitespace-collapsed (shared by the diff summary). */
+function blockText(node) {
+  let t = "";
+  const walk = (x) => { if (x?.type === "text") t += x.text || ""; if (Array.isArray(x?.content)) x.content.forEach(walk); };
+  walk(node);
+  return t.replace(/\s+/g, " ").trim();
+}
+
+export const ADF_DIFF_SAMPLE_MAX = 120;
+
+/**
+ * Part 3.5 — compact summary of how a sealed body changed between two baselines, for the
+ * activity trail (never the body itself). Blocks are compared in their CANONICAL form (the same
+ * canonicalizeAdf hashAdf uses, so editor-volatile attrs never count as a change). Blocks
+ * present on both sides are unchanged; the leftovers are paired positionally as EDITED blocks
+ * (changedBlocks), and whatever cannot be paired is an addition or a removal. `sample` is the
+ * text of the first edited-or-added block (falling back to the first removed one), cut to
+ * ADF_DIFF_SAMPLE_MAX chars — so the whole object stays far under the 1 KB details cap.
+ *
+ * PURE. Returns { removed, added, changedBlocks, sample }.
+ */
+export function summarizeAdfDiff(prevBlocks, nextBlocks) {
+  const prev = Array.isArray(prevBlocks) ? prevBlocks : [];
+  const next = Array.isArray(nextBlocks) ? nextBlocks : [];
+  const key = (b) => JSON.stringify(canonicalizeAdf(b));
+  const prevKeys = prev.map(key);
+  const nextKeys = next.map(key);
+  const prevCount = new Map();
+  for (const k of prevKeys) prevCount.set(k, (prevCount.get(k) || 0) + 1);
+  const nextLeft = []; // next blocks with no identical partner on the prev side
+  for (let i = 0; i < next.length; i++) {
+    const k = nextKeys[i];
+    const n = prevCount.get(k) || 0;
+    if (n > 0) prevCount.set(k, n - 1); else nextLeft.push(next[i]);
+  }
+  const prevLeft = [];
+  const nextCount = new Map();
+  for (const k of nextKeys) nextCount.set(k, (nextCount.get(k) || 0) + 1);
+  for (let i = 0; i < prev.length; i++) {
+    const k = prevKeys[i];
+    const n = nextCount.get(k) || 0;
+    if (n > 0) nextCount.set(k, n - 1); else prevLeft.push(prev[i]);
+  }
+  const changedBlocks = Math.min(prevLeft.length, nextLeft.length);
+  const sampleSrc = nextLeft[0] || prevLeft[0] || null;
+  const sample = sampleSrc ? blockText(sampleSrc).slice(0, ADF_DIFF_SAMPLE_MAX) : "";
+  return {
+    removed: prevLeft.length - changedBlocks,
+    added: nextLeft.length - changedBlocks,
+    changedBlocks,
+    sample,
+  };
+}
+
+/**
+ * Requirement 2.3 GAP 1 — adopt an ORPHANED sealed-section wrapper.
+ *
+ * The editor's copy/paste (and any REST PUT) can hand back a Sealed Section wrapper whose
+ * `guestParams.sectionId` was stripped or regenerated. The restore pass then finds NO wrapper
+ * for the seal, splices the snapshot back in — and leaves the stripped copy in the body as an
+ * UNPROTECTED duplicate that survives every save. This locates that copy before the seal is
+ * treated as "removed": a wrapper (same macro key) whose id is not any KNOWN seal on the page
+ * and whose first heading text equals the seal's title, OR whose canonical body hash equals the
+ * snapshot hash. Exactly one candidate → it is re-stamped with the seal's id (and localId, if
+ * the node carries one) so the normal compare/restore runs on it. Two or more → ambiguous: all
+ * of them are removed so the caller's snapshot splice is the only copy left. A wrapper whose id
+ * IS a known seal is never touched — it belongs to another seal's own pass.
+ *
+ * PURE (mutates adfDoc in place). Returns { adopted, removed }.
+ */
+export function adoptOrphanWrappers(adfDoc, { sectionId, sectionTitle, snapshotHash, knownSectionIds, extensionKeyTest } = {}) {
+  const result = { adopted: 0, removed: 0 };
+  if (!adfDoc?.content || !sectionId) return result;
+  const isKey = typeof extensionKeyTest === "function" ? extensionKeyTest : isSealedSectionKey;
+  const known = new Set((knownSectionIds || []).filter(Boolean));
+  known.add(sectionId);
+  const title = typeof sectionTitle === "string" ? sectionTitle.trim() : "";
+
+  const firstHeadingText = (node) => {
+    const first = Array.isArray(node?.content) ? node.content[0] : null;
+    if (first?.type !== "heading") return null;
+    let t = "";
+    const walk = (x) => { if (x?.type === "text") t += x.text || ""; if (Array.isArray(x?.content)) x.content.forEach(walk); };
+    walk(first);
+    return t.trim();
+  };
+
+  // Deep scan (a moved section lives in a layout column / expand / table cell — it25).
+  const candidates = []; // { node, parent, index }
+  const visit = (node, parent, index) => {
+    if (!node || typeof node !== "object") return;
+    if (node.type === "bodiedExtension" && isKey(node.attrs?.extensionKey)) {
+      const id = getSectionId(node);
+      if (!known.has(id)) {
+        const byTitle = !!title && firstHeadingText(node) === title;
+        const byHash = !!snapshotHash && hashAdf(node.content) === snapshotHash;
+        if (byTitle || byHash) candidates.push({ node, parent, index });
+      }
+      return; // a wrapper's body is the seal's own content — never a nesting site
+    }
+    if (Array.isArray(node.content)) node.content.forEach((c, i) => visit(c, node, i));
+  };
+  adfDoc.content.forEach((c, i) => visit(c, adfDoc, i));
+
+  if (candidates.length === 0) return result;
+  if (candidates.length === 1) {
+    const { node } = candidates[0];
+    node.attrs = node.attrs || {};
+    node.attrs.parameters = node.attrs.parameters || {};
+    node.attrs.parameters.guestParams = node.attrs.parameters.guestParams || {};
+    node.attrs.parameters.guestParams.sectionId = sectionId;
+    if (node.attrs.parameters.sectionId != null) node.attrs.parameters.sectionId = sectionId;
+    if (node.attrs.localId != null) node.attrs.localId = sectionId;
+    result.adopted = 1;
+    return result;
+  }
+  // Ambiguous: remove every orphan. Highest index first within each parent so splicing one
+  // never shifts a sibling still to be removed.
+  const sorted = [...candidates].sort((a, b) => (a.parent === b.parent ? b.index - a.index : 0));
+  for (const { parent, index, node } of sorted) {
+    if (parent.content[index] === node) parent.content.splice(index, 1);
+    else { const at = parent.content.indexOf(node); if (at >= 0) parent.content.splice(at, 1); }
+    result.removed++;
+  }
+  return result;
+}
+
 /**
  * Re-insert removed Sealed Section wrapper nodes at their original positions.
  * Processes insertions in descending index order to avoid offset drift.

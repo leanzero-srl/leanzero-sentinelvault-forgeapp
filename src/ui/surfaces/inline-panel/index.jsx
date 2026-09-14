@@ -1107,6 +1107,10 @@ const SectionRow = ({ section: s, onUnseal, unsealing }) => {
   const [editStatus, setEditStatus] = useState(null); // others' sections
   const [showReason, setShowReason] = useState(false);
   const [reasonText, setReasonText] = useState("");
+  // Break-glass (3.5): releasing a seal you do not own (an expired one, or as a space admin)
+  // requires a typed reason that lands in the trail. Owners release without one.
+  const [showForce, setShowForce] = useState(false);
+  const [forceReason, setForceReason] = useState("");
   const [busy, setBusy] = useState(false);
   const [requests, setRequests] = useState(null); // owner inbox
   const [reqBusy, setReqBusy] = useState(null);
@@ -1149,8 +1153,10 @@ const SectionRow = ({ section: s, onUnseal, unsealing }) => {
         <span className="sv-section-row-title" title={s.sectionTitle}>{s.sectionTitle}</span>
         <span className="sv-section-row-meta">{s.isExpired ? "Expired" : (s.expiresAt ? `until ${renderLapseDate(s.expiresAt)}` : "")}</span>
         {(s.isMine || s.isExpired) ? (
-          <button className={`action-btn unlock ${unsealing ? "is-busy" : ""}`} disabled={unsealing} onClick={() => onUnseal(s.sectionId)}>
-            {unsealing ? <>Releasing<span className="btn-busy-bar" /></> : "Unseal"}
+          <button className={`action-btn unlock ${unsealing ? "is-busy" : ""}`} disabled={unsealing}
+            onClick={() => (s.isMine ? onUnseal(s.sectionId) : setShowForce(true))}
+            title={s.isMine ? "Release this section" : "Release an expired seal you do not own — a reason is required"}>
+            {unsealing ? <>Releasing<span className="btn-busy-bar" /></> : (s.isMine ? "Unseal" : "Release")}
           </button>
         ) : editStatus === "granted" ? (
           <span className="action-btn editgrant" title="The owner approved your edit access">Can Edit</span>
@@ -1164,6 +1170,23 @@ const SectionRow = ({ section: s, onUnseal, unsealing }) => {
           <span className="sv-section-row-lockedby"><OperatorChip accountId={s.lockedByAccountId} /></span>
         )}
       </div>
+      {showForce && (
+        <div className="card-reason-bar">
+          <input
+            className="card-reason-input"
+            placeholder="Why are you releasing a seal you do not own? (required, 3–300 characters)"
+            value={forceReason}
+            maxLength={300}
+            autoFocus
+            onChange={(e) => setForceReason(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter" && forceReason.trim().length >= 3) { onUnseal(s.sectionId, forceReason.trim()); setShowForce(false); } if (e.key === "Escape") { setShowForce(false); setForceReason(""); } }}
+          />
+          <span className="confirm-actions">
+            <button className="action-btn unlock" disabled={unsealing || forceReason.trim().length < 3} onClick={() => { onUnseal(s.sectionId, forceReason.trim()); setShowForce(false); }}>Release</button>
+            <button className="action-btn confirm-no" onClick={() => { setShowForce(false); setForceReason(""); }}>Cancel</button>
+          </span>
+        </div>
+      )}
       {showReason && (
         <div className="card-reason-bar">
           <input
@@ -1265,11 +1288,11 @@ const SealedSectionsGroup = ({ pageId, onChanged }) => {
     }
   };
 
-  const unseal = async (sectionId) => {
+  const unseal = async (sectionId, reason) => {
     setBusy(sectionId);
     setSealError(null);
     try {
-      const r = await invoke("unseal-section", { sectionId });
+      const r = await invoke("unseal-section", reason ? { sectionId, reason } : { sectionId });
       if (r?.success) {
         await load();
         if (onChanged) onChanged();
