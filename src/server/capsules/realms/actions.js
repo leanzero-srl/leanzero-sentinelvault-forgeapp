@@ -14,6 +14,7 @@ import {
 } from "../../infra/notice-composer.js";
 import { recordActivity } from "../../infra/activity-log.js";
 import { resolvePageSpaceKey } from "../../shared/content-access.js";
+import { validateReleaseReason } from "../../shared/release-reason.js";
 
 // Queue for background realm scanning
 // it57: realm-audit-queue is constructed lazily at push time (see launch-realm-audit) so this module
@@ -242,12 +243,23 @@ const checkAuditStatus = async (req) => {
  * Unseal an artifact as realm steward (steward override)
  */
 const stewardUnseal = async (req) => {
-  const { attachmentId, spaceKey, spaceId } = req.payload;
+  const { attachmentId, spaceKey, spaceId, reason: rawReason } = req.payload;
   const operatorAccountId = req.context.accountId;
   const sealRecord = await kvs.get(`protection-${attachmentId}`);
 
   if (!sealRecord) {
     return { success: false, reason: "Attachment is not locked" };
+  }
+
+  // Part 3.5: this console action releases someone ELSE's seal on both branches below (the
+  // lapsed one has no steward gate, the live one does). Unless the caller happens to own it, a
+  // typed reason is required and lands in the trail. ONE rule — shared/release-reason.js.
+  const isOwner = !!sealRecord.lockedBy && sealRecord.lockedBy === operatorAccountId;
+  let forcedReason = null;
+  if (!isOwner) {
+    const v = validateReleaseReason(rawReason);
+    if (!v.ok) return { success: false, reason: v.error };
+    forcedReason = v.reason;
   }
 
   // SV-SEC-1: the seal's OWN space id first. This used to prefer the payload's, so a caller
@@ -299,7 +311,11 @@ const stewardUnseal = async (req) => {
         spaceKey: sealRecord.spaceKey || (sealRecord.contentId ? await resolvePageSpaceKey(sealRecord.contentId) : null) || null,
         actor: { accountId: operatorAccountId, name: null },
         target: { kind: "attachment", id: attachmentId, name: sealRecord.attachmentName || null },
-        details: { reason: "lapsed", via: "steward-unseal", ownerAccountId: sealRecord.lockedBy || null },
+        details: {
+          forced: !isOwner,
+          ...(forcedReason ? { reason: forcedReason } : {}), // Part 3.5: the typed reason (was the literal "lapsed")
+          lapsed: true, via: "steward-unseal", ownerAccountId: sealRecord.lockedBy || null,
+        },
         version: null,
       });
 
@@ -346,7 +362,11 @@ const stewardUnseal = async (req) => {
     spaceKey: effectiveRealmKey,
     actor: { accountId: operatorAccountId, name: null },
     target: { kind: "attachment", id: attachmentId, name: sealRecord.attachmentName || null },
-    details: { ownerAccountId: sealRecord.lockedBy || null, ownerName: sealRecord.lockedByName || null, via: "realm-console" },
+    details: {
+      forced: !isOwner,
+      ...(forcedReason ? { reason: forcedReason } : {}), // Part 3.5
+      ownerAccountId: sealRecord.lockedBy || null, ownerName: sealRecord.lockedByName || null, via: "realm-console",
+    },
     version: null,
   });
 

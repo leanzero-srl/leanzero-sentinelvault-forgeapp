@@ -188,16 +188,22 @@ button:focus-visible {
    ============================================================ */
 
 /* Main ribbon bar */
+/* Bug 2.4: ONE row, 40px tall, no outer margin — the whole banner (bar + border) stays under the
+   48px cap Atlassian is holding for page banners. Nothing wraps; whatever does not fit in the row
+   lives in the popover host below it. */
 .ribbon-bar {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 10px 16px;
+  gap: 10px;
+  height: 40px;
+  padding: 0 12px;
   background: var(--sv-bg-secondary);
   border: 1px solid var(--sv-interactive-primary);
   box-shadow: 0 1px 4px rgba(8, 145, 178, 0.08), 0 1px 2px rgba(0, 0, 0, 0.04);
   border-radius: 10px;
-  margin: 8px 0;
+  margin: 0;
+  overflow: hidden;
+  white-space: nowrap;
 }
 
 html[data-color-mode="dark"] .ribbon-bar {
@@ -232,8 +238,12 @@ html[data-color-mode="dark"] .ribbon-bar {
   font-size: 12px;
   color: var(--sv-text-secondary);
   flex: 1;
+  min-width: 0;
   display: flex;
   align-items: center;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* Loading pulse bar */
@@ -256,12 +266,14 @@ html[data-color-mode="dark"] .ribbon-bar {
   background: transparent;
   border: 1px solid var(--sv-interactive-primary);
   color: var(--sv-interactive-primary);
-  padding: 6px 16px;
+  padding: 4px 14px;
   border-radius: 9999px;
   font-size: 12px;
   font-weight: 600;
+  line-height: 1.4;
   cursor: pointer;
   white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .ribbon-action:hover {
@@ -269,7 +281,20 @@ html[data-color-mode="dark"] .ribbon-bar {
   color: var(--sv-text-on-primary);
 }
 
-/* Alert section */
+/* Dismiss (×): closes the banner via view.close(); the same state stays closed for the session. */
+.ribbon-dismiss {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 26px; height: 26px; padding: 0; flex-shrink: 0;
+  background: transparent; border: 1px solid var(--sv-border-primary); border-radius: 50%;
+  color: var(--sv-text-secondary); cursor: pointer;
+}
+.ribbon-dismiss:hover { background: var(--sv-interactive-danger); border-color: var(--sv-interactive-danger); color: #ffffff; }
+
+/* Alert chip in the row — solid amber, dark ink (same pair as the awaiting-approval chip). */
+.ribbon-chip-alert { background: #F59E0B; color: #1F2937; border: none; cursor: pointer; font-family: inherit; }
+.ribbon-chip-alert:hover { background: #D97706; }
+
+/* Alert popover (renders in the .wf-dialog-host row, never in the bar) */
 .ribbon-alert {
   display: flex;
   flex-direction: column;
@@ -277,7 +302,6 @@ html[data-color-mode="dark"] .ribbon-bar {
   padding: 10px 16px;
   background: #FFFBEB;
   border-radius: 10px;
-  margin-top: 6px;
 }
 
 html[data-color-mode="dark"] .ribbon-alert {

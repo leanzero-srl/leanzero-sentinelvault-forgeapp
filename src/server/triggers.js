@@ -33,10 +33,11 @@ import { fetchPageStatuses } from "./shared/page-status.js";
 import { postEnforceComment } from "./infra/approval-blueprints.js";
 import { isAccountStewardAsApp } from "./shared/steward-checks.js";
 import { postValidationComment } from "./infra/validation-blueprints.js";
-import { readDocBody, readDocBodyAtVersion, writeDocBody, collectMediaFileIds, extractMediaSingleNodes, spliceMediaNodes, locateBodiedSectionNodes, spliceSectionWrapper, hashAdf, canonicalizeAdf, nonEmptySectionBody } from "./infra/doc-surgery.js";
+import { readDocBody, readDocBodyAtVersion, writeDocBody, collectMediaFileIds, extractMediaSingleNodes, spliceMediaNodes, locateBodiedSectionNodes, spliceSectionWrapper, hashAdf, canonicalizeAdf, nonEmptySectionBody, adoptOrphanWrappers, summarizeAdfDiff } from "./infra/doc-surgery.js";
 import { probeAttachmentStatus, restoreAttachmentFromTrash, decideMediaRestoreAction, confirmAttachmentPurged } from "./infra/attachment-status.js";
 import { findSealedMediaSingle, findAllSealedMediaSingles, capturePresentation, presentationDiffers, applyPresentation } from "./infra/media-presentation.js";
 import { setWithTtl, setUntil } from "./shared/kvs-ttl.js";
+import { decideSectionRetry, nextRetryMarker, sectionRetryKey, SECTION_RETRY_PREFIX, SECTION_RETRY_TTL_MS, SECTION_RETRY_SWEEP_CAP } from "./shared/section-retry.js";
 // F5 (owner feedback 2026-08-27): a lapsed seal gets a bounded run of reminders and is then
 // released automatically. The decision is time-based, so it lives in a pure zero-import module
 // that unit tests can hand clocks to rather than waiting three days for a live sweep.
@@ -314,6 +315,7 @@ export async function pageContentTrigger(event) {
     let enforceReverted = false; // #44: a Pass-0 revert actually wrote (for the SV-M2 notice)
     let enforceRevertVersion = null;
     let enforceObservedEqual = false; // #44: the revert pass CONFIRMED content-equality (no write needed)
+    let sectionChanged = false; // GAP 2: the last attempt's section pass had a restore pending
 
     for (let attempt = 0; hasBodyWork && attempt < MAX_RETRIES; attempt++) {
       let ctx;
@@ -354,6 +356,10 @@ export async function pageContentTrigger(event) {
         try { await restoreSealedSectionsPass(ctx, sectionSeals, mediaProbeCache); }
         catch (e) { console.error("[PAGE-PROTECT] section pass error:", e); }
       }
+      // GAP 2 (req 2.3): remember whether the SECTION pass wants a write — Pass 0 skips A, and B
+      // runs after, so at this point ctx.changed is the section pass's verdict alone. Read after
+      // the loop to decide the retry marker when no attempt confirmed a write.
+      sectionChanged = !ctx.enforcedRevert && ctx.changed;
       // Pass B: sealed-media restore
       if (!ctx.enforcedRevert && sealFileMap.length > 0) {
         try { await restoreMediaPass(ctx, sealFileMap, mediaProbeCache); }
@@ -401,6 +407,21 @@ export async function pageContentTrigger(event) {
       const errorText = await putRes.text();
       console.error(`[PAGE-PROTECT] Failed to patch page: ${putRes.status} — ${errorText}`);
       break;
+    }
+
+    // GAP 2 (req 2.3): every attempt 409'd/errored with a section restore pending → the tamper is
+    // still on the page. Leave a marker so the hourly sweep retries; clear it on a clean run.
+    if (sectionSeals.length > 0) {
+      try {
+        if (decideSectionRetry({ sectionChanged, anyChange })) {
+          const prev = await kvs.get(sectionRetryKey(pageId));
+          const marker = nextRetryMarker(prev, pageId, new Date().toISOString());
+          await setWithTtl(sectionRetryKey(pageId), marker, SECTION_RETRY_TTL_MS);
+          console.warn(`[SECTION-RETRY] page ${pageId}: restore not written after ${MAX_RETRIES} attempts — marker set (attempt ${marker.attempts})`);
+        } else {
+          await kvs.delete(sectionRetryKey(pageId)); // a confirmed write or a clean pass: nothing pending
+        }
+      } catch (e) { console.error("[SECTION-RETRY] marker update failed:", e); }
     }
 
     // SV-M2: only notify after a CONFIRMED write. If every attempt 409'd or errored
@@ -927,6 +948,24 @@ function sectionHeadingText(node) {
   return t.trim();
 }
 
+// Part 3.5: a re-baseline (the owner's or a grantee's edit becoming the new sealed body) is a
+// fact in the trail, with a compact diff of what changed — never the body. Recorded AFTER the
+// snapshot write (the re-baseline is confirmed by then); the page version is the one being
+// judged, which is the version that carries the edit.
+async function recordSectionRebaseline(ctx, seal, by, prevBody, newBody) {
+  let diff = null;
+  try { diff = summarizeAdfDiff(prevBody, newBody); } catch (_) { diff = null; }
+  await recordActivity({
+    type: "section.rebaselined",
+    pageId: ctx.pageId,
+    spaceKey: seal.spaceKey || null,
+    actor: { accountId: ctx.atlassianId || null, name: by === "owner" ? (seal.lockedByName || null) : null },
+    target: { kind: "section", id: seal.sectionId, name: seal.sectionTitle || "Sealed section" },
+    details: { by, ownerAccountId: seal.lockedBy || null, diff },
+    version: ctx.currentVersion || null,
+  });
+}
+
 async function restoreSealedSectionsPass(ctx, sectionSeals, probeCache = new Map()) {
   if (ctx.enforcedRevert) return; // #44: suppress SV-M5 re-baseline + restore while enforcing
   const now = Date.now();
@@ -943,7 +982,33 @@ async function restoreSealedSectionsPass(ctx, sectionSeals, probeCache = new Map
     wrappersById.set(w.sectionId, list);
   }
 
+  const knownSectionIds = sectionSeals.map((s) => s.sectionId);
   for (const seal of sectionSeals) {
+    // GAP 1 (req 2.3): no wrapper carries this seal's id, but the macro may still be on the page
+    // with its guestParams.sectionId stripped (editor copy/paste, REST). Without this the pass
+    // splices the snapshot back AND leaves that copy behind as an unprotected duplicate that
+    // survives every save. Adopt a lone candidate (matched by heading title or body hash) so the
+    // normal owner / grant / compare / restore logic below runs on it; two candidates are
+    // ambiguous and are removed so the snapshot splice is the only copy left. Expired seals are
+    // inert here as everywhere else. A re-stamp is a body change, so it must be written.
+    if (!(wrappersById.get(seal.sectionId) || []).length
+      && !(seal.expiresAt && new Date(seal.expiresAt).getTime() <= now)) {
+      try {
+        const snap = await kvs.get(`section-snapshot-${seal.sectionId}`);
+        const { adopted, removed } = adoptOrphanWrappers(ctx.adfDoc, {
+          sectionId: seal.sectionId, sectionTitle: seal.sectionTitle,
+          snapshotHash: snap?.hash || seal.contentHash || null, knownSectionIds,
+        });
+        if (adopted || removed) {
+          ctx.changed = true;
+          console.warn(`[SECTION] Orphaned wrapper(s) for ${seal.sectionId}: adopted ${adopted}, removed ${removed}`);
+          if (adopted) {
+            const found = locateBodiedSectionNodes(ctx.adfDoc).filter((w) => w.sectionId === seal.sectionId);
+            if (found.length) wrappersById.set(seal.sectionId, found);
+          }
+        }
+      } catch (e) { console.error("[SECTION] orphan adoption failed:", e); }
+    }
     // Owner edits their own sealed section freely — but RE-BASELINE the snapshot (SV-M5),
     // otherwise a later unrelated non-owner save sees the stale hash and reverts the owner's
     // own edit, destroying it and falsely blaming the non-owner.
@@ -954,6 +1019,7 @@ async function restoreSealedSectionsPass(ctx, sectionSeals, probeCache = new Map
         if (seal.contentHash && ownHash !== seal.contentHash) {
           try {
             const newBody = JSON.parse(JSON.stringify(ownWrap.node.content || []));
+            const prevSnap = await kvs.get(`section-snapshot-${seal.sectionId}`);
             await kvs.set(`section-protection-${seal.sectionId}`, { ...seal, contentHash: ownHash });
             await kvs.set(`section-snapshot-${seal.sectionId}`, {
               wrapperNode: JSON.parse(JSON.stringify(ownWrap.node)),
@@ -961,6 +1027,7 @@ async function restoreSealedSectionsPass(ctx, sectionSeals, probeCache = new Map
             });
             await touchSealTimestamp(); // hunt H2-F5: S5 — every seal mutation touches the stamp
             console.warn(`[SECTION] Owner re-baselined section ${seal.sectionId}`);
+            await recordSectionRebaseline(ctx, seal, "owner", prevSnap?.bodyContent, newBody);
           } catch (e) { console.error("[SECTION] owner re-baseline failed:", e); }
         }
       }
@@ -1048,6 +1115,7 @@ async function restoreSealedSectionsPass(ctx, sectionSeals, probeCache = new Map
         const edited = changedWrappers[0];
         const newBody = JSON.parse(JSON.stringify(edited.node.content || []));
         const newHash = hashAdf(newBody);
+        const prevBody = snapshot?.bodyContent; // read above, before the snapshot is overwritten
         await kvs.set(`section-protection-${seal.sectionId}`, { ...seal, contentHash: newHash });
         await kvs.set(`section-snapshot-${seal.sectionId}`, {
           wrapperNode: JSON.parse(JSON.stringify(edited.node)),
@@ -1064,6 +1132,7 @@ async function restoreSealedSectionsPass(ctx, sectionSeals, probeCache = new Map
         }
         await touchSealTimestamp(); // hunt H2-F5: S5 — same stamp duty as the owner re-baseline
         console.warn(`[SECTION] Allowed approved edit of section ${seal.sectionId} by ${ctx.atlassianId} — re-baselined (${changedWrappers.length} cop${changedWrappers.length === 1 ? "y" : "ies"})`);
+        await recordSectionRebaseline(ctx, seal, "grantee", prevBody, newBody);
       } catch (e) { console.error("[SECTION] re-baseline failed:", e); }
       continue;
     }
@@ -2084,9 +2153,104 @@ export async function lifecycleTrigger(event) {
   }
 }
 
+// --- GAP 2 (req 2.3): re-run the sealed-section restore for one page, outside the trigger ---
+// Same passes and the same write/notify path the trigger uses (restoreSealedSectionsPass →
+// writeDocBody → dispatchPipelineNotification), with the actor taken from the version being
+// judged (its author), so an owner's own last edit re-baselines exactly as it would have in
+// the trigger. Returns { clean } — true when the page was confirmed clean (nothing to write, or
+// the restore was written); false when the write could not be confirmed and the marker should
+// stay for the next sweep.
+export async function runSectionRestoreForPage(pageId) {
+  const systemAccountId = await resolveAppAccountId();
+  if (!systemAccountId) return { clean: false, reason: "app account unresolved" };
+  const globalPolicy = await kvs.get("admin-settings-global");
+  if (globalPolicy?.enableContentProtection === false) return { clean: true, reason: "content protection off" };
+  const sectionSeals = await collectSectionSealsForPage(pageId);
+  if (sectionSeals.length === 0) return { clean: true, reason: "no section seals" };
+
+  const MAX_RETRIES = 3;
+  const probeCache = new Map();
+  for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+    let ctx;
+    try {
+      const { pageData, adfDoc } = await readDocBody(pageId);
+      const authorId = pageData.version?.authorId || null;
+      ctx = {
+        pageId, atlassianId: authorId, pageData, adfDoc,
+        currentVersion: pageData.version?.number, readAuthorId: authorId, appAccountId: systemAccountId,
+        changed: false, enforcedRevert: false, notifications: [],
+      };
+    } catch (err) {
+      console.error(`[SECTION-RETRY] page ${pageId}: read failed:`, err);
+      return { clean: false, reason: "read failed" };
+    }
+    if (ctx.atlassianId === systemAccountId) {
+      // Our own write is the live version: the restore landed. The page is clean by definition.
+      return { clean: true, reason: "app authored the live version" };
+    }
+    try { await restoreSealedSectionsPass(ctx, sectionSeals, probeCache); }
+    catch (e) { console.error("[SECTION-RETRY] section pass error:", e); return { clean: false, reason: "pass error" }; }
+    if (!ctx.changed) return { clean: true, reason: "nothing to write" };
+
+    const putRes = await writeDocBody(ctx.pageId, ctx.pageData, ctx.adfDoc, "(Sentinel Vault restored protected content)");
+    if (putRes.ok) {
+      const writtenVersion = (ctx.currentVersion || 0) + 1;
+      for (const n of ctx.notifications) {
+        try { await dispatchPipelineNotification(n, writtenVersion); }
+        catch (e) { console.error("[SECTION-RETRY] notify error:", e); }
+      }
+      await touchSealTimestamp();
+      return { clean: true, reason: "restored", version: writtenVersion };
+    }
+    if (putRes.status === 409) {
+      await new Promise((r) => setTimeout(r, Math.pow(2, attempt) * 500));
+      continue;
+    }
+    console.error(`[SECTION-RETRY] page ${pageId}: write failed ${putRes.status}`);
+    return { clean: false, reason: `write ${putRes.status}` };
+  }
+  return { clean: false, reason: "409 exhausted" };
+}
+
+// Walk the section-restore-pending-* markers (≤ SECTION_RETRY_SWEEP_CAP per run) and retry each.
+async function sweepSectionRestoreRetries() {
+  let retried = 0, cleaned = 0;
+  let q = kvs.query().where("key", WhereConditions.beginsWith(SECTION_RETRY_PREFIX)).limit(100);
+  let iters = 0;
+  do {
+    const { results, nextCursor } = await q.getMany();
+    for (const { key, value } of results || []) {
+      if (retried >= SECTION_RETRY_SWEEP_CAP) return { retried, cleaned };
+      retried++;
+      const pageId = value?.pageId || key.slice(SECTION_RETRY_PREFIX.length);
+      try {
+        const res = await runSectionRestoreForPage(pageId);
+        if (res.clean) {
+          await kvs.delete(key);
+          cleaned++;
+          console.warn(`[SECTION-RETRY] page ${pageId}: clean (${res.reason}) — marker cleared`);
+        } else {
+          await setWithTtl(key, nextRetryMarker(value, pageId, new Date().toISOString()), SECTION_RETRY_TTL_MS);
+          console.warn(`[SECTION-RETRY] page ${pageId}: still pending (${res.reason}) — will retry next sweep`);
+        }
+      } catch (e) { console.error(`[SECTION-RETRY] page ${pageId}: retry error:`, e); }
+    }
+    if (!nextCursor || ++iters >= 5) break;
+    q = kvs.query().where("key", WhereConditions.beginsWith(SECTION_RETRY_PREFIX)).limit(100).cursor(nextCursor);
+  } while (true);
+  return { retried, cleaned };
+}
+
 // --- Expiry Sweep Task (Scheduled Job) ---
 export async function expirySweepTask() {
   try {
+    // GAP 2 (req 2.3): section-restore retries run FIRST and regardless of the auto-unseal policy
+    // below — a restore that lost its 409 race has nothing to do with expiry.
+    try {
+      const r = await sweepSectionRestoreRetries();
+      if (r.retried) console.warn(`[SECTION-RETRY] sweep: ${r.retried} retried, ${r.cleaned} cleaned`);
+    } catch (e) { console.error("[SECTION-RETRY] sweep failed:", e); }
+
     // Read policy and bulletin toggles once for the entire task
     const systemPolicy = await kvs.get("admin-settings-global");
     const autoUnsealActive = systemPolicy?.autoUnlockEnabled !== false;

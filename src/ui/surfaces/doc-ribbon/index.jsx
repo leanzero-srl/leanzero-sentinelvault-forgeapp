@@ -1,9 +1,10 @@
 /**
  * Document Ribbon — Primary UI Surface
  *
- * Always-visible ribbon on every Confluence page.
- * Shows artifact seal count and a button to open the full management overlay.
- * Also displays conflict/expiry alerts when relevant.
+ * Page banner that shows ONLY when the page has something to report — a sealed attachment, a
+ * sealed section, a workflow, an alert or a validation state (bug 2.4). Otherwise it closes
+ * itself via view.close(). Shows the seal counts and a button to open the management overlay;
+ * conflict/expiry alerts open from a chip into the popover host.
  */
 
 import React, { useState, useEffect, useCallback, useRef } from "react";
@@ -638,11 +639,29 @@ const WorkflowControl = ({ workflow, approvals, operatorId, pageId, spaceKey, si
   );
 };
 
+// Bug 2.4 — visibility is decided ONCE per evaluation from one server answer (`ribbon-summary`)
+// plus the workflow/alert/validation reads, and the decision is acted on with the bridge:
+// hidden = view.close() (Confluence drops the banner row), shown = view.open(). A page with
+// attachments but nothing sealed stays closed (owner's rule). Every branch logs "[ribbon]" so a
+// production "it never shows" is settled from the console, not re-diagnosed.
+const UNSUPPORTED_TYPES = new Set(["space", "database", "whiteboard", "folder", "embed", "attachment", "comment"]);
+const hashKey = (str) => { let h = 5381; for (let i = 0; i < str.length; i++) h = ((h << 5) + h + str.charCodeAt(i)) | 0; return (h >>> 0).toString(36); };
+const stateKeyOf = ({ summary, workflow, alerts, validationState }) => hashKey(JSON.stringify({
+  a: summary?.sealedAttachments || 0, s: summary?.sectionSeals || 0,
+  w: workflow?.state?.id || workflow?.state?.name || null, al: (alerts || []).map((x) => x.id).sort(), v: validationState || null,
+}));
+const dismissKey = (pageId, stateKey) => `sv-ribbon-dismissed:${pageId}:${stateKey}`;
+const memoryDismissed = new Set(); // fallback when the sandbox denies sessionStorage
+const isDismissed = (key) => { try { if (window.sessionStorage.getItem(key)) return true; } catch (_) { /* sandboxed */ } return memoryDismissed.has(key); };
+const rememberDismissed = (key) => { memoryDismissed.add(key); try { window.sessionStorage.setItem(key, "1"); } catch (_) { /* sandboxed */ } };
+const bridgeClose = () => { try { const r = view.close(); if (r && r.catch) r.catch((e) => console.info("[ribbon] view.close rejected", e?.message || e)); } catch (e) { console.info("[ribbon] view.close unavailable", e?.message || e); } };
+const bridgeOpen = () => { try { const r = view.open?.(); if (r && r.catch) r.catch((e) => console.info("[ribbon] view.open rejected", e?.message || e)); } catch (e) { console.info("[ribbon] view.open unavailable", e?.message || e); } };
+
 const DocumentRibbon = () => {
-  const [sealedCount, setSealedCount] = useState(0);
-  const [totalCount, setTotalCount] = useState(0);
+  const [summary, setSummary] = useState(null); // ribbon-summary answer
   const [alerts, setAlerts] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [visible, setVisible] = useState(false);
   const [validationState, setValidationState] = useState(null); // "passed"|"failed"|"awaiting-approval"
   const [aiCount, setAiCount] = useState(null); // number of latest AI findings, or null
   const [workflow, setWorkflow] = useState(null); // { assigned, state, available, def } or null
@@ -652,194 +671,247 @@ const DocumentRibbon = () => {
   const [spaceKey, setSpaceKey] = useState(null);
   const [siteUrl, setSiteUrl] = useState(null); // A6: version links must leave the iframe to the site
   const [dialogHost, setDialogHost] = useState(null); // in-flow row every popover renders into
+  const [alertOpen, setAlertOpen] = useState(false);
+  const alertBtnRef = useRef(null);
+  const alertPanelRef = useRef(null);
+  useDismissableDialog(alertOpen, setAlertOpen, alertPanelRef, alertBtnRef);
+  const pageIdRef = useRef(null); // the content id the current evaluation belongs to
+  const openStateRef = useRef(null); // true after view.open(), false after view.close(), null = untouched
+  const evalSeq = useRef(0);
+
+  // Apply a decision to the bridge exactly when it changes.
+  const applyVisibility = useCallback((show, why) => {
+    setVisible(show);
+    if (openStateRef.current === show) return;
+    openStateRef.current = show;
+    console.info("[ribbon]", show ? "OPEN" : "CLOSE", why);
+    if (show) bridgeOpen(); else bridgeClose();
+  }, []);
 
   const reloadWorkflow = useCallback(async () => {
-    if (!pageId) return;
+    const id = pageIdRef.current;
+    if (!id) return;
     try {
-      const res = await invoke("get-page-workflow", { pageId, spaceKey });
+      const res = await invoke("get-page-workflow", { pageId: id, spaceKey });
       setWorkflow(res?.assigned ? res : null);
     } catch (_) {
       setWorkflow(null);
     }
     try {
-      const appr = await invoke("get-page-approvals", { pageId, spaceKey });
+      const appr = await invoke("get-page-approvals", { pageId: id, spaceKey });
       setApprovals(appr?.pending ? appr : null);
     } catch (_) {
       setApprovals(null);
     }
-  }, [pageId, spaceKey]);
+  }, [spaceKey]);
 
-  const fetchArtifactStats = useCallback(async () => {
+  const fetchSummary = useCallback(async (id) => {
     try {
-      const result = await invoke("enumerate-doc-artifacts", { cursor: null, limit: 50 });
-      const artifacts = result?.attachments || [];
-      setTotalCount(artifacts.length);
-      setSealedCount(
-        artifacts.filter(
-          (f) => f.lockStatus === "HELD" || f.lockStatus === "HELD_BY_ACTOR",
-        ).length,
-      );
+      const res = await invoke("ribbon-summary", { pageId: id });
+      console.info("[ribbon] summary", res);
+      setSummary(res || null);
+      return res || null;
     } catch (err) {
-      console.error("Failed to fetch artifact stats:", err);
+      console.error("[ribbon] ribbon-summary failed:", err);
+      setSummary(null);
+      return null;
     }
   }, []);
 
-  const fetchAlerts = useCallback(async (pageId, operatorId) => {
+  const fetchAlerts = useCallback(async (id, operator) => {
     try {
-      const result = await invoke("recent-dispatches", { pageId });
-      if (result?.success && result.notifications?.length > 0) {
-        const relevant = result.notifications.filter(
-          (n) => n.ownerAccountId === operatorId || n.editorAccountId === operatorId,
-        );
-        setAlerts(relevant);
-      } else {
-        setAlerts([]);
-      }
+      const result = await invoke("recent-dispatches", { pageId: id });
+      const relevant = result?.success && result.notifications?.length > 0
+        ? result.notifications.filter((n) => n.ownerAccountId === operator || n.editorAccountId === operator)
+        : [];
+      setAlerts(relevant);
+      return relevant;
     } catch (err) {
-      console.error("Failed to fetch alerts:", err);
+      console.error("[ribbon] recent-dispatches failed:", err);
+      setAlerts([]);
+      return [];
     }
   }, []);
 
-  useEffect(() => {
-    const init = async () => {
-      try {
-        await enablePaletteSync();
+  // The whole evaluation, for the content the bridge context names RIGHT NOW. Re-run on SPA
+  // navigation, on focus/visibility when the content id changed, and on a seal-stamp change.
+  const evaluate = useCallback(async (why) => {
+    const seq = ++evalSeq.current;
+    const stale = () => seq !== evalSeq.current;
+    try {
+      const context = await view.getContext();
+      const ctxPageId = context?.extension?.content?.id || context?.contentId || null;
+      const ctxSpaceKey = context?.extension?.content?.space?.key || context?.extension?.space?.key || null;
+      const contentType = context?.extension?.content?.type || null;
+      const operator = context?.accountId || null;
+      console.info("[ribbon] evaluate", why, { pageId: ctxPageId, contentType, location: context?.extension?.location || null });
 
-        const context = await view.getContext();
-        const ctxPageId = context?.extension?.content?.id || context?.contentId;
-        const ctxSpaceKey = context?.extension?.content?.space?.key || context?.extension?.space?.key || null;
-        const contentType = context?.extension?.content?.type;
-        const location = context?.extension?.location || "";
-        const operatorId = context?.accountId;
-
-        // Only show ribbon on actual content pages (not space apps, settings, or admin pages)
-        const isSpaceAppPage = location.includes("/apps/") || location.includes("/settings/");
-        const isContentPage = contentType === "page" || contentType === "blogpost";
-        if (!ctxPageId || isSpaceAppPage || (contentType && !isContentPage)) {
-          setLoading(false);
-          return;
-        }
-        setPageId(ctxPageId);
-        setSpaceKey(ctxSpaceKey);
-        setOperatorId(operatorId || null);
-        setSiteUrl(context?.siteUrl || null);
-
-        await fetchArtifactStats();
-
-        // Page workflow state + any pending approval (best-effort; independent of seals).
-        try {
-          const wf = await invoke("get-page-workflow", { pageId: ctxPageId, spaceKey: ctxSpaceKey });
-          if (wf?.assigned) setWorkflow(wf);
-        } catch (_) { /* none */ }
-        // A5: the review-date control shows for whoever `get-page-workflow` says may set it
-        // (`canSetReviewDue`, the SAME gate `set-review-due` applies) — a separate role probe
-        // answered a different question and drifted from it when admin override was off.
-        try {
-          const appr = await invoke("get-page-approvals", { pageId: ctxPageId, spaceKey: ctxSpaceKey });
-          if (appr?.pending) setApprovals(appr);
-        } catch (_) { /* none */ }
-
-        if (operatorId) {
-          await fetchAlerts(ctxPageId, operatorId);
-        }
-
-        // Page-level validation + AI status (best-effort; independent of seals).
-        try {
-          const vs = await invoke("get-validation-state", { pageId: ctxPageId });
-          if (vs?.state?.state) setValidationState(vs.state.state);
-        } catch (_) { /* none */ }
-        try {
-          const ai = await invoke("get-ai-findings", { pageId: ctxPageId });
-          if (ai?.findings?.findings) setAiCount(ai.findings.findings.length);
-        } catch (_) { /* none */ }
-      } catch (err) {
-        console.error("Ribbon init error:", err);
-      } finally {
+      // Only the content-type check remains: any page-like content the context reports is
+      // supported (page, blogpost, and Live Docs whatever type string they carry). The old
+      // location.includes("/apps/") heuristic hid the banner on real pages whose location
+      // happened to contain it.
+      if (!ctxPageId || (contentType && UNSUPPORTED_TYPES.has(String(contentType).toLowerCase()))) {
+        if (stale()) return;
+        pageIdRef.current = null;
+        setPageId(null);
         setLoading(false);
+        applyVisibility(false, !ctxPageId ? "no content id in context" : `unsupported content type ${contentType}`);
+        return;
       }
-    };
-    init();
-  }, [fetchArtifactStats, fetchAlerts]);
+      if (pageIdRef.current !== ctxPageId) {
+        setLoading(true);
+        setWorkflow(null); setApprovals(null); setValidationState(null); setAiCount(null); setAlerts([]); setSummary(null);
+      }
+      pageIdRef.current = ctxPageId;
+      setPageId(ctxPageId);
+      setSpaceKey(ctxSpaceKey);
+      setOperatorId(operator);
+      setSiteUrl(context?.siteUrl || null);
 
-  // Poll for seal changes made in other surfaces (inline panel, overlay)
+      const [sum, wf, appr, al, vs, ai] = await Promise.all([
+        fetchSummary(ctxPageId),
+        invoke("get-page-workflow", { pageId: ctxPageId, spaceKey: ctxSpaceKey }).catch(() => null),
+        invoke("get-page-approvals", { pageId: ctxPageId, spaceKey: ctxSpaceKey }).catch(() => null),
+        operator ? fetchAlerts(ctxPageId, operator) : Promise.resolve([]),
+        invoke("get-validation-state", { pageId: ctxPageId }).catch(() => null),
+        invoke("get-ai-findings", { pageId: ctxPageId }).catch(() => null),
+      ]);
+      if (stale()) return;
+      const wfVal = wf?.assigned ? wf : null;
+      const vsVal = vs?.state?.state || null;
+      setWorkflow(wfVal);
+      setApprovals(appr?.pending ? appr : null);
+      setValidationState(vsVal);
+      setAiCount(ai?.findings?.findings ? ai.findings.findings.length : null);
+
+      const sealed = (sum?.sealedAttachments || 0) > 0 || (sum?.sectionSeals || 0) > 0;
+      const show = sealed || !!wfVal || al.length > 0 || !!vsVal;
+      const key = dismissKey(ctxPageId, stateKeyOf({ summary: sum, workflow: wfVal, alerts: al, validationState: vsVal }));
+      const dismissed = show && isDismissed(key);
+      const branch = !show
+        ? `nothing to show (reason=${sum?.reason || "no-summary"}, attachments=${sum?.attachments ?? "?"})`
+        : dismissed ? `dismissed for this state (${key})`
+          : `show: sealedAttachments=${sum?.sealedAttachments || 0} sectionSeals=${sum?.sectionSeals || 0} workflow=${!!wfVal} alerts=${al.length} validation=${vsVal || "-"}`;
+      console.info("[ribbon] decision", branch);
+      applyVisibility(show && !dismissed, branch);
+    } catch (err) {
+      console.error("[ribbon] evaluate error:", err);
+    } finally {
+      if (!stale()) setLoading(false);
+    }
+  }, [applyVisibility, fetchSummary, fetchAlerts]);
+
   useEffect(() => {
-    if (loading || totalCount === 0) return;
+    let disposed = false;
+    let unlisten = null;
+    (async () => {
+      try { await enablePaletteSync(); } catch (_) { /* palette is cosmetic */ }
+      if (disposed) return;
+      await evaluate("init");
+      // SPA navigation: the bridge history (where the module supports it) …
+      try {
+        const history = await view.createHistory();
+        if (history?.listen) unlisten = history.listen(() => evaluate("history"));
+      } catch (e) {
+        console.info("[ribbon] createHistory unavailable:", e?.message || e);
+      }
+    })();
+    // … plus focus/visibility: re-read the context and re-evaluate when the content id moved.
+    const recheck = async (why) => {
+      if (document.visibilityState === "hidden") return;
+      try {
+        const ctx = await view.getContext();
+        const id = ctx?.extension?.content?.id || ctx?.contentId || null;
+        if (id !== pageIdRef.current) evaluate(`${why}: content ${pageIdRef.current} → ${id}`);
+      } catch (_) { /* no bridge */ }
+    };
+    const onVis = () => recheck("visibilitychange");
+    const onFocus = () => recheck("focus");
+    document.addEventListener("visibilitychange", onVis);
+    window.addEventListener("focus", onFocus);
+    return () => {
+      disposed = true;
+      document.removeEventListener("visibilitychange", onVis);
+      window.removeEventListener("focus", onFocus);
+      try { unlisten?.(); } catch (_) { /* none */ }
+    };
+  }, [evaluate]);
+
+  // Poll for seal changes made in other surfaces (inline panel, overlay) AND for a content id
+  // change the bridge history did not report — regardless of what the page currently shows.
+  useEffect(() => {
     let lastStamp = null;
     const poll = async () => {
       try {
         const { stamp } = await invoke("check-seal-stamp");
-        if (lastStamp !== null && stamp !== lastStamp) {
-          fetchArtifactStats();
-        }
+        if (lastStamp !== null && stamp !== lastStamp) evaluate("seal stamp changed");
         lastStamp = stamp;
       } catch (e) {
         // Polling failures are non-critical
       }
+      try {
+        const ctx = await view.getContext();
+        const id = ctx?.extension?.content?.id || ctx?.contentId || null;
+        if (id !== pageIdRef.current) evaluate(`poll: content ${pageIdRef.current} → ${id}`);
+      } catch (_) { /* no bridge */ }
     };
     const interval = setInterval(poll, 5000);
     poll();
     return () => clearInterval(interval);
-  }, [loading, totalCount, fetchArtifactStats]);
+  }, [evaluate]);
 
   const openManageOverlay = useCallback(() => {
     const overlay = new Modal({
       resource: "overlay",
       size: "max",
       onClose: () => {
-        fetchArtifactStats();
+        evaluate("overlay closed");
       },
     });
     overlay.open();
-  }, [fetchArtifactStats]);
+  }, [evaluate]);
 
-  const dismissAlert = useCallback(
-    async (alertId) => {
-      try {
-        await invoke("acknowledge-dispatch", { dispatchId: alertId });
-        setAlerts((prev) => prev.filter((a) => a.id !== alertId));
-      } catch (err) {
-        console.error("Failed to dismiss alert:", err);
-      }
-    },
-    [],
-  );
+  const dismissAlert = useCallback(async (alertId) => {
+    try {
+      await invoke("acknowledge-dispatch", { dispatchId: alertId });
+      setAlerts((prev) => prev.filter((a) => a.id !== alertId));
+    } catch (err) {
+      console.error("Failed to dismiss alert:", err);
+    }
+  }, []);
 
-  // Hide ribbon entirely when the page has nothing to report (only after loading)
-  if (!loading && totalCount === 0 && alerts.length === 0 && !validationState && aiCount === null && !workflow) {
-    return null;
-  }
+  const dismissRibbon = useCallback(() => {
+    const key = dismissKey(pageIdRef.current, stateKeyOf({ summary, workflow, alerts, validationState }));
+    rememberDismissed(key);
+    applyVisibility(false, `dismissed by the viewer (${key})`);
+  }, [summary, workflow, alerts, validationState, applyVisibility]);
 
+  if (!visible) return null;
+
+  const sealedCount = summary?.sealedAttachments || 0;
+  const sectionCount = summary?.sectionSeals || 0;
+  const totalCount = summary?.attachments || 0;
   const primaryAlert = alerts.length > 0 ? alerts[0] : null;
+  const parts = [];
+  if (sealedCount > 0) parts.push(`${sealedCount} attachment${sealedCount !== 1 ? "s" : ""} sealed on this page`);
+  else if (totalCount > 0) parts.push(`${totalCount} attachment${totalCount !== 1 ? "s" : ""} on this page — none sealed`);
+  if (sectionCount > 0) parts.push(`${sectionCount} section${sectionCount !== 1 ? "s" : ""} sealed`);
+  const statusText = parts.length ? parts.join(" · ") : "No attachments on this page";
 
   return (
     <div>
-      {/* Main ribbon bar */}
-      <div className="ribbon-bar">
+      {/* Main ribbon bar — ONE row, ≤48px including margins */}
+      <div className="ribbon-bar" data-testid="ribbon-bar">
         <div className="ribbon-icon">
-          <svg
-            width="18"
-            height="18"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
           </svg>
         </div>
 
         <span className="ribbon-title">Sentinel Vault</span>
 
-        <span className="ribbon-status">
-          {loading ? (
-            <span className="ribbon-loading-bar" />
-          ) : sealedCount > 0
-            ? `${sealedCount} attachment${sealedCount !== 1 ? "s" : ""} sealed on this page`
-            : totalCount > 0
-              ? `${totalCount} attachment${totalCount !== 1 ? "s" : ""} on this page — none sealed`
-              : "No attachments on this page"}
+        <span className="ribbon-status" data-testid="ribbon-status">
+          {loading ? <span className="ribbon-loading-bar" /> : statusText}
         </span>
 
         {!loading && workflow && (
@@ -867,18 +939,38 @@ const DocumentRibbon = () => {
           </span>
         )}
 
+        {/* Alerts live in the row as a chip; the full text sits in the shared popover host. */}
+        {primaryAlert && (
+          <button
+            ref={alertBtnRef}
+            type="button"
+            className="ribbon-chip ribbon-chip-alert"
+            onClick={() => setAlertOpen((o) => !o)}
+            aria-haspopup="dialog"
+            aria-expanded={alertOpen}
+            title="Seal alerts on this page"
+            data-testid="ribbon-alert-chip"
+          >
+            ⚠ {alerts.length} alert{alerts.length !== 1 ? "s" : ""}
+          </button>
+        )}
+
         <button className="ribbon-action" onClick={openManageOverlay}>
           Manage Attachments
         </button>
+        <button type="button" className="ribbon-dismiss" onClick={dismissRibbon} aria-label="Dismiss" title="Dismiss" data-testid="ribbon-dismiss">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" aria-hidden="true">
+            <path d="M6 6l12 12M18 6L6 18" />
+          </svg>
+        </button>
       </div>
 
-      {/* In-flow host for every workflow popover — see inHost(). Empty (and display:none) when
+      {/* In-flow host for every popover — see inHost(). Empty (and display:none) when
           nothing is open so the banner reserves no space. */}
       <div className="wf-dialog-host" ref={setDialogHost} data-testid="wf-dialog-host" />
 
-      {/* Alert section */}
-      {primaryAlert && (
-        <div className="ribbon-alert">
+      {primaryAlert && alertOpen && inHost(dialogHost, (
+        <div className="wf-appr-panel ribbon-alert" role="dialog" aria-label="Seal alerts" ref={alertPanelRef} tabIndex={-1} data-testid="ribbon-alert-panel">
           <div className="ribbon-alert-item">
             <span className="ribbon-alert-icon">⚠</span>
             <div className="ribbon-alert-text">
@@ -904,16 +996,12 @@ const DocumentRibbon = () => {
                 </span>
               )}
             </div>
-
-            <button
-              className="ribbon-alert-dismiss"
-              onClick={() => dismissAlert(primaryAlert.id)}
-            >
+            <button className="ribbon-alert-dismiss" onClick={() => dismissAlert(primaryAlert.id)}>
               Dismiss
             </button>
           </div>
         </div>
-      )}
+      ))}
     </div>
   );
 };

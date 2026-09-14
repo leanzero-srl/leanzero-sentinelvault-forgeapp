@@ -167,6 +167,11 @@ const SortPicker = ({ orderField, orderDir, onSort }) => {
 };
 
 const RealmClaimedCard = ({ artifact, onForceRelease, onWatch, isWatching, forceReleaseActive, visibleColumns, busyAction, siteUrl }) => {
+  // Break-glass (3.5): a space admin releasing someone else's seal must type a reason; it is
+  // recorded on the activity row and shown in every trail. No native prompt — an inline bar.
+  const [showForce, setShowForce] = useState(false);
+  const [forceReason, setForceReason] = useState("");
+  const submitForce = () => { if (forceReason.trim().length >= 3) { onForceRelease(artifact.id, forceReason.trim()); setShowForce(false); setForceReason(""); } };
   const [expanded, setExpanded] = useState(false);
   const [cachedPreview, setCachedPreview] = useState(null);
   // Fix 5: stale-parity with the overlay/panel (incident 2026-07-22: a trashed attachment's
@@ -254,12 +259,29 @@ const RealmClaimedCard = ({ artifact, onForceRelease, onWatch, isWatching, force
             <span className={`status-lozenge ${statusClass}`}>{statusText}</span>
           )}
           {vc.actions !== false && forceReleaseActive && onForceRelease && (
-            <button className={`action-btn unlock ${busyAction === "unseal" ? "is-busy" : ""}`} onClick={() => onForceRelease(artifact.id)} disabled={busyAction && busyAction !== "unseal"} title="Override the seal as a steward and release this file">
-              {busyAction === "unseal" ? <>Unsealing<span className="btn-busy-bar" /></> : "Force Unseal"}
+            <button className={`action-btn unlock ${busyAction === "unseal" ? "is-busy" : ""}`} onClick={() => setShowForce((v) => !v)} disabled={busyAction && busyAction !== "unseal"} title="Release this file as a space admin — a reason is required and recorded">
+              {busyAction === "unseal" ? <>Releasing<span className="btn-busy-bar" /></> : "Force release"}
             </button>
           )}
         </span>
       </div>
+      {showForce && (
+        <div className="card-row card-reason-bar">
+          <input
+            className="card-reason-input"
+            placeholder="Why are you releasing this seal? (required, 3–300 characters)"
+            value={forceReason}
+            maxLength={300}
+            autoFocus
+            onChange={(e) => setForceReason(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") submitForce(); if (e.key === "Escape") { setShowForce(false); setForceReason(""); } }}
+          />
+          <span className="confirm-actions">
+            <button className="action-btn unlock" disabled={forceReason.trim().length < 3 || busyAction === "unseal"} onClick={submitForce}>Release</button>
+            <button className="action-btn confirm-no" onClick={() => { setShowForce(false); setForceReason(""); }}>Cancel</button>
+          </span>
+        </div>
+      )}
       {metaItems.length > 0 && (
         <div className="card-row card-row-secondary">
           <span className="card-secondary-left">
@@ -1427,7 +1449,7 @@ const RealmPolicyDashboard = () => {
     }
   }, [reservedFiles]);
 
-  const onForceRelease = async (artifactId) => {
+  const onForceRelease = async (artifactId, reason) => {
     setBusyAction({ id: artifactId, action: "unseal" });
     try {
       setMessage(null);
@@ -1437,6 +1459,7 @@ const RealmPolicyDashboard = () => {
         attachmentId: artifactId,
         spaceKey: realmKey,
         spaceId: realmId,
+        reason: reason || undefined,
       });
 
       if (result.success) {

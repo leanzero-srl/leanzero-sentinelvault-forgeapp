@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { createRoot } from "react-dom/client";
-import { view } from "@forge/bridge";
+import { view, invoke } from "@forge/bridge";
 import { enablePaletteSync } from "../../kit/palette-sync";
 
 // Sentinel Vault "Sealed Section" bodied macro.
@@ -15,21 +15,101 @@ const ShieldGlyph = () => (
     <path d="M9 12l2 2 4-4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
   </svg>
 );
+const LockGlyph = () => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+    <rect x="5" y="11" width="14" height="10" rx="2" stroke="currentColor" strokeWidth="2" />
+    <path d="M8 11V7a4 4 0 0 1 8 0v4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+  </svg>
+);
+const CheckGlyph = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+    <path d="M5 12l4 4 10-10" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+  </svg>
+);
+
+// The renderer iframe (view.createAdfRendererIframeProps) is Atlassian's ADF renderer; the
+// bridge posts the body to it only after it sends this message (10 s blind fallback). We
+// watch for the same message so the iframe is only put in flow once it has actually answered.
+const RENDERER_READY = "forge-adf-renderer-ready";
+// After this long without the handshake the frame stays hidden and the explanation text stands.
+const RENDERER_WAIT_MS = 12_000;
+
+const isRendererReady = (data) => {
+  if (!data) return false;
+  if (typeof data === "string") return data.includes(RENDERER_READY);
+  try { return JSON.stringify(data).includes(RENDERER_READY); } catch (_) { return false; }
+};
+
+// The app writes the section id into attrs.parameters.guestParams.sectionId (doc-surgery
+// buildSealedSectionNode); the macro context exposes it under one of these — both handled.
+const readSectionId = (ext) =>
+  ext?.config?.sectionId ||
+  ext?.config?.guestParams?.sectionId ||
+  ext?.macro?.params?.sectionId ||
+  ext?.macro?.params?.guestParams?.sectionId ||
+  null;
+
+const fmtUntil = (iso) => {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  return ` until ${d.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" })}`;
+};
+
+// Test seam: a harness can stub the status the surface would have fetched (only one real
+// browser identity exists, so the non-owner branch cannot be reached live).
+const readStubbedStatus = () => {
+  try { const s = window.__svSectionStatusStub; return s && typeof s === "object" ? s : null; } catch (_) { return null; }
+};
+
+const fetchSealStatus = async (sectionId) => {
+  const stub = readStubbedStatus();
+  if (stub) return stub;
+  if (!sectionId) return { sealed: false };
+  try {
+    const r = await invoke("section-seal-status", { sectionId });
+    return r && typeof r === "object" ? r : { sealed: false };
+  } catch (e) {
+    console.warn("[SECTION-UI] section-seal-status failed:", e?.message);
+    return { sealed: false };
+  }
+};
 
 const SectionMacro = () => {
   const [ready, setReady] = useState(false);
   const [mode, setMode] = useState("view"); // "view" | "config"
   const [bodyProps, setBodyProps] = useState(null);
+  const [rendererReady, setRendererReady] = useState(false);
+  const [rendererTimedOut, setRendererTimedOut] = useState(false);
   const [status, setStatus] = useState(null);
+  const [editing, setEditing] = useState(false);
+  const [seal, setSeal] = useState(null); // section-seal-status result (editor only)
+  const [existingConfig, setExistingConfig] = useState(null); // config already on the node (edit dialog)
 
   useEffect(() => {
     (async () => {
       try { await enablePaletteSync(); } catch (_) { /* non-critical */ }
       try {
         const context = await view.getContext();
-        const hasBody = !!context?.extension?.macro?.body;
+        const ext = context?.extension || {};
+        const hasBody = !!ext.macro?.body;
         // The config panel opens on insert before a body exists.
         setMode(hasBody ? "view" : "config");
+
+        const isEditing = !!ext.isEditing;
+        setEditing(isEditing);
+        const sectionId = readSectionId(ext);
+        // Logged once so the context shape is visible in the console when it matters.
+        console.info("[SECTION-UI] context", { isEditing, sectionId, configKeys: Object.keys(ext.config || {}), paramKeys: Object.keys(ext.macro?.params || {}) });
+
+        if (ext.config && typeof ext.config === "object") setExistingConfig(ext.config);
+        // In the editor a BODIED macro is rendered natively by ProseMirror (title chrome +
+        // editable body) — the app iframe is never mounted there. The only app surface the
+        // editor shows is this CONFIG dialog (the node's edit button), so the lock status is
+        // fetched whenever we are in an editing context, body or not.
+        if (isEditing || sectionId) {
+          fetchSealStatus(sectionId).then(setSeal);
+        }
 
         // Best-effort: render the protected body inline in view mode.
         if (hasBody && typeof view.createAdfRendererIframeProps === "function") {
@@ -47,16 +127,36 @@ const SectionMacro = () => {
     })();
   }, []);
 
+  // Handshake watch: reveal the renderer iframe only once it has said it is ready.
+  useEffect(() => {
+    if (!bodyProps) return undefined;
+    let done = false;
+    const onMessage = (e) => {
+      if (done || !isRendererReady(e.data)) return;
+      done = true;
+      setRendererReady(true);
+    };
+    window.addEventListener("message", onMessage);
+    const timer = setTimeout(() => {
+      if (done) return;
+      done = true;
+      console.warn("[SECTION-UI] ADF renderer never answered; showing the explanation text instead");
+      setRendererTimedOut(true);
+    }, RENDERER_WAIT_MS);
+    return () => { window.removeEventListener("message", onMessage); clearTimeout(timer); };
+  }, [bodyProps]);
+
   const [error, setError] = useState(null);
   const onInsert = async () => {
     setError(null);
     try {
       // The editor validates the payload: `config` MUST be an object (it rejected `{}` with
       // 'Invalid "config" provided. Expected object' — 2026-09-14, seen in dev AND prod). An empty
-      // config is the whole configuration of this macro: the sectionId is issued server-side
-      // when the section is sealed from the panel.
-      await view.submit({ config: {} });
-      setStatus("Inserted");
+      // config is the whole configuration of a NEW macro: the sectionId is issued server-side
+      // when the section is sealed from the panel. On an EXISTING node the config already carries
+      // that sectionId and MUST be preserved — submitting `{}` would strip it and orphan the seal.
+      await view.submit({ config: { ...(existingConfig || {}) } });
+      setStatus(existingConfig?.sectionId ? "Saved" : "Inserted");
     } catch (e) {
       console.error("[SECTION-UI] submit failed:", e);
       setStatus("Could not insert");
@@ -66,37 +166,70 @@ const SectionMacro = () => {
 
   if (!ready) return <div className="sec-frame sec-loading">Loading…</div>;
 
+  // Editor lock banner (req 2.3): locked for a non-owner without a grant; quiet line for
+  // the owner or a grantee; nothing when the section is not sealed or the seal has lapsed.
+  const sealed = !!(seal?.sealed && !seal.isExpired);
+  const canEdit = sealed && (seal.isMine || seal.hasGrant);
+  const locked = sealed && !canEdit;
+  const lockNotice = locked ? (
+    <div className="sec-lock" role="alert">
+      <LockGlyph />
+      <span>
+        Locked by {seal.ownerName || "the seal owner"}{fmtUntil(seal.expiresAt)} — edits you publish here are reverted automatically.
+        <span className="sec-lock-hint">Ask to edit from the Sentinel Vault panel.</span>
+      </span>
+    </div>
+  ) : canEdit ? (
+    <div className="sec-editable"><CheckGlyph /> You can edit this section</div>
+  ) : null;
+  const sealState = locked ? "locked" : canEdit ? "editable" : "none";
+
   if (mode === "config") {
+    const existing = !!existingConfig?.sectionId;
     return (
-      <div className="sec-config">
+      <div className="sec-config" data-editing={editing ? "true" : "false"} data-seal={sealState}>
         <div className="sec-config-head">
           <span className="sec-badge"><ShieldGlyph /> Sentinel Vault</span>
           <h1 className="sec-config-title">Sealed Section</h1>
         </div>
+        {lockNotice}
         <p className="sec-config-desc">
           Place the content you want to protect inside this section. To seal it against
           unauthorized edits, open the <strong>Sentinel Vault</strong> panel on this page
           and use <strong>Sealed Sections → Seal a section</strong>. The seal owner (or a
-          steward) can release it at any time.
+          space admin) can release the seal at any time.
         </p>
-        <button className="sec-btn" onClick={onInsert}>{status || "Insert section"}</button>
+        <button className="sec-btn" onClick={onInsert}>{status || (existing ? "Done" : "Insert section")}</button>
         {error && <p className="sec-config-error" role="alert">{error}</p>}
       </div>
     );
   }
 
+  const showFrame = !!bodyProps && rendererReady;
+  const showFallback = !bodyProps || !rendererReady;
+  const framePending = !!bodyProps && !rendererReady && !rendererTimedOut;
+
   return (
-    <div className="sec-frame">
+    <div className="sec-frame" data-editing={editing ? "true" : "false"} data-seal={sealState}>
       <div className="sec-frame-head">
         <span className="sec-badge"><ShieldGlyph /> Sealed by Sentinel Vault</span>
       </div>
-      {bodyProps ? (
-        <iframe title="Sealed section content" className="sec-body-frame" {...bodyProps} />
-      ) : (
-        <div className="sec-body-fallback">
-          This section is protected. Unauthorized edits are automatically reverted.
-        </div>
-      )}
+      {editing && lockNotice}
+      <div className="sec-body">
+        {showFallback && (
+          <div className="sec-body-fallback">
+            This section is sealed. Unauthorized edits are automatically reverted.
+          </div>
+        )}
+        {bodyProps && !rendererTimedOut && (
+          <iframe
+            {...bodyProps}
+            title="Sealed section content"
+            className={`sec-body-frame${framePending ? " sec-body-frame--pending" : ""}`}
+            data-ready={showFrame ? "true" : "false"}
+          />
+        )}
+      </div>
     </div>
   );
 };
