@@ -1,5 +1,13 @@
 # Security items
 
+## ✅ AMS-62653 — lodash CVE-2021-23337 / CVE-2026-4800 (Ecoscanner, Forge Dependency Scanner) — **SHIPPED 2026-08-20 (4.1.0); ticket is against the UNPUBLISHED 4.0.0 build 2002030**
+
+The ticket (created 2026-08-14, `App Version Visibility: Unpublished`, build 2002030 = the 4.0.0 approval
+submission) is visibility-only: no enforcement, auto-closes within 30 days, and only a resubmission of that
+build updates it. lodash 4.18.1 has shipped in 4.1.0 and 4.2.0 (both listed). 2026-09-14: the remaining
+within-major fixes were taken (npm audit 15 → 8; see commit 80e434c); the 8 left are the @forge/react 11→12
+major, which needs its own live-verified pass before the next major submission is scanned as Unpublished again.
+
 ## ✅ SV-SEC-2 — dead resolvers that still answered — **CLOSED 2026-09-05**
 
 Found by a coverage triage (which resolver keys have no caller anywhere in `src/ui`), not by an
