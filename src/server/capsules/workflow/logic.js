@@ -775,6 +775,22 @@ export async function transitionPageWorkflow({ pageId, spaceKey, toStateId, acto
     ...enforceFields,
   };
   await persistState(pageId, record, current.stateId);
+  // Review #1: a transition that is NOT the completion of the page's pending approval (no
+  // approvalRecord rides it: a plain request-transition to an open state, the review-clock
+  // expiry, a re-assign) leaves that approval pointing at a page that is no longer where the
+  // approvers reviewed it. Left in place it can never complete (finalize finds no edge from the
+  // new state and keeps the record) and the ribbon shows "Awaiting approval" instead of the
+  // state menu — nobody can move the page from the UI. Void it, with its inbox rows.
+  if (!approvalRecord) {
+    try {
+      const pending = await kvs.get(`workflow-pending-${pageId}`);
+      if (pending) {
+        const { clearPageApprovals } = await import("./approvals.js");
+        await clearPageApprovals(pageId, pending.toStateId, pending.approvers);
+        console.warn(`[WORKFLOW] pending approval to ${pending.toStateId} voided: page ${pageId} moved ${current.stateId} → ${toStateId}`);
+      }
+    } catch (e) { console.warn("[WORKFLOW] could not void the pending approval:", e); }
+  }
   await mirrorStateLabel(pageId, record, settings).catch(() => {});
   await appendWorkflowLog(pageId, {
     from: current.stateId,

@@ -234,6 +234,12 @@ export const requestTransition = async (req) => {
     if (target?.enforce && !(spec?.approvers?.length) && !(await authorizeSteward(actorAccountId, spaceKey))) {
       return { success: false, reason: `Entering "${target?.name || toStateId}" requires steward approval` };
     }
+    // Review #2: an approver GROUP that could not be expanded must not open a request that
+    // nobody can complete (0 of 0, pending forever) or silently shrink an "all approvers" rule
+    // to "all the ones we could resolve". Refuse with the cause; the steward can retry.
+    if (spec?.unresolved) {
+      return { success: false, reason: "The approver groups could not be resolved right now — try again in a moment" };
+    }
     // Don't let a re-request silently discard approvers' / the AI's in-flight review.
     const existing = await getPageApprovalStatus(pageId);
     if (existing?.pending && existing.requestedBy !== actorAccountId && !(await authorizeSteward(actorAccountId, spaceKey))) {

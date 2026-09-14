@@ -87,4 +87,11 @@ const [head, row] = csv.split("\r\n");
 eq("csv header", head, '"ts","type","category","pageId","pageTitle","actorAccountId","actorName","targetKind","targetId","targetName","version","details"');
 ok("csv row carries the details as escaped JSON", row.includes('"{""expiresAt"":""2026-09-12T00:00:00.000Z""}"') && row.startsWith('"2026-09-05T10:00:00.000Z","seal.created","seals","100100"'));
 
+// CSV formula injection (review 2026-09-14): a user-typed cell that starts with = + - @ must
+// not reach Excel/LibreOffice as a formula.
+const inj = activityToCsv([base("seal.created", { target: { kind: "attachment", id: "att1", name: '=HYPERLINK("http://evil","x")' }, details: { reason: "-1+1" } })]).split("\r\n")[1];
+ok("formula-leading target name is neutralised", inj.includes(`"'=HYPERLINK(""http://evil"",""x"")"`));
+ok("formula-leading detail inside JSON is untouched (JSON cell starts with {)", inj.includes('"{""reason"":""-1+1""}"'));
+ok("a plain name is not prefixed", activityToCsv([base("seal.created", { target: { kind: "attachment", id: "a", name: "plan.png" } })]).includes('"plan.png"'));
+
 report("activity-format");
