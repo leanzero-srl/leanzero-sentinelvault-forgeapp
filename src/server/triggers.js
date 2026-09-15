@@ -266,6 +266,9 @@ export async function pageContentTrigger(event) {
   try {
     const { atlassianId, content } = event;
     const pageId = content?.id;
+    // Delivery instrument (2026-09-15): one line per invocation, whatever happens next — the
+    // only way to tell "event never arrived" from "arrived and exited silently" in forge logs.
+    console.info(`[PAGE-EVENT] ${event?.eventType || "?"} page=${pageId} v=${content?.version?.number ?? "?"} by=${atlassianId || "?"}`);
 
     if (!pageId) {
       console.error("[PAGE-PROTECT] Invalid page event payload — no content.id");
