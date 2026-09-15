@@ -4,6 +4,7 @@
  * delegate to logic.js. Enforcement (#44) and the approver model (#43) land later.
  */
 import { asApp, asUser, route } from "@forge/api";
+import { currentUserProfile } from "../../shared/user-or-app.js";
 import { kvs, WhereConditions } from "@forge/kvs";
 
 import { authorizeSteward, isOperatorSiteAdmin } from "../../shared/steward-checks.js";
@@ -100,12 +101,9 @@ async function callerMayReadPage(req, pageId) {
   return canReadPage(req.context?.accountId, pageId);
 }
 
-async function actorName() {
-  try {
-    const res = await asUser().requestConfluence(route`/wiki/rest/api/user/current`);
-    if (res.ok) return (await res.json()).displayName || null;
-  } catch (_) { /* best-effort */ }
-  return null;
+async function actorName(accountId) {
+  try { return (await currentUserProfile(accountId)).displayName || null; }
+  catch (_) { return null; }
 }
 
 const getWorkflow = async (req) => {
@@ -168,7 +166,7 @@ const assignWorkflow = async (req) => {
     pageId,
     spaceKey,
     actorAccountId,
-    actorName: await actorName(),
+    actorName: await actorName(req.context?.accountId),
     workflowId: req.payload?.workflowId,
   });
 };
@@ -261,7 +259,7 @@ export const requestTransition = async (req) => {
     const result = await requestApprovalTransition({
       pageId, toStateId, toStateName: target?.name || toStateId, spaceKey,
       approvers: spec?.approvers || [], mode: spec?.mode || "any", min: spec?.min || 1,
-      actorAccountId, actorName: await actorName(), pinnedVersion, approverNames: names,
+      actorAccountId, actorName: await actorName(req.context?.accountId), pinnedVersion, approverNames: names,
       aiGate: needsAi ? { required: true, threshold: entryCond.aiThreshold } : null,
       requestSignature,
     });
@@ -298,7 +296,7 @@ export const requestTransition = async (req) => {
       requestSignature = v.signature;
     }
     const snap = (await resolveApproverIds(wfSettings.approval))?.approvers || [];
-    const stewardName = await actorName();
+    const stewardName = await actorName(req.context?.accountId);
     // A4: a direct steward approval still leaves an evidence block — no approvers, no decisions,
     // just who approved which version, when. Same shape as a quorum approval (buildApprovalRecord
     // with no pending record), so the ribbon renders one thing.
@@ -316,7 +314,7 @@ export const requestTransition = async (req) => {
     spaceKey,
     toStateId,
     actorAccountId,
-    actorName: await actorName(),
+    actorName: await actorName(req.context?.accountId),
     reason: boundReason(req.payload?.reason),
   });
 };
@@ -342,7 +340,7 @@ const setReviewDue = async (req) => {
     pageId,
     reviewDueAt: req.payload?.reviewDueAt ?? null,
     actorAccountId,
-    actorName: await actorName(),
+    actorName: await actorName(req.context?.accountId),
     reason: boundReason(req.payload?.reason),
   });
   if (!r.success) return { success: false, reason: r.reason };
@@ -361,7 +359,7 @@ const confirmReadAction = async (req) => {
   if (!record) return { success: false, reason: "Page has no workflow assigned" };
   const settings = await getSpaceWorkflowSettings(record.spaceKey);
   if (!readConfirmationRequired(settings, record)) return { success: false, reason: "This page does not ask for read confirmations" };
-  return confirmRead({ pageId, accountId, name: await actorName(), record });
+  return confirmRead({ pageId, accountId, name: await actorName(req.context?.accountId), record });
 };
 
 const getReadStatusAction = async (req) => {
@@ -394,7 +392,7 @@ const decideApprovalAction = async (req) => {
   const { decision } = req.payload || {};
   const reason = boundReason(req.payload?.reason);
   if (!pageId) return { success: false, reason: "No page context" };
-  return decideApproval({ pageId, approverAccountId: req.context?.accountId, decision, reason, actorName: await actorName(), signatureCode: typeof req.payload?.code === "string" ? req.payload.code : null });
+  return decideApproval({ pageId, approverAccountId: req.context?.accountId, decision, reason, actorName: await actorName(req.context?.accountId), signatureCode: typeof req.payload?.code === "string" ? req.payload.code : null });
 };
 
 const getPageApprovals = async (req) => {
@@ -419,7 +417,7 @@ const signatureStatusAction = async (req) => signatureStatus(req.context?.accoun
 const enrollSignatureAction = async (req) => {
   const accountId = req.context?.accountId;
   if (!accountId) return { success: false, reason: "No account" };
-  return startEnrollment(accountId, { accountLabel: (await actorName()) || accountId, code: typeof req.payload?.code === "string" ? req.payload.code : null });
+  return startEnrollment(accountId, { accountLabel: (await actorName(req.context?.accountId)) || accountId, code: typeof req.payload?.code === "string" ? req.payload.code : null });
 };
 const confirmSignatureAction = async (req) => confirmEnrollment(req.context?.accountId, typeof req.payload?.code === "string" ? req.payload.code : "");
 const revokeSignatureAction = async (req) => revokeSignature(req.context?.accountId, { code: typeof req.payload?.code === "string" ? req.payload.code : null });

@@ -61,8 +61,9 @@ caller sends `Idempotency-Key: <their id>` and that IS the job id. Same key twic
 second submission is `409 conflict` while the first is running and `202` (no-op, receipt already
 there) once it is done. Callers without the header get `400 invalid`.
 
-Processing is asynchronous: the handler validates, authenticates, stores the job (`api-job-<id>`,
-TTL 7 days) and pushes it to the existing async queue infrastructure (`config-api-queue` consumer),
+Processing is asynchronous: the handler authenticates, validates, stores the job
+(`api-job-<tokenId>:<key>`, TTL 7 days — the key is scoped to the token, so two tokens using the
+same key get two independent jobs) and pushes it to the existing async queue infrastructure (`config-api-queue` consumer),
 so a large bundle never hits the 25 s web-trigger limit. The consumer applies each operation and
 writes the receipt.
 
@@ -110,7 +111,7 @@ Rules that make it safe to re-run:
 
 ## The receipt (the read side)
 
-After the consumer finishes, `api-job-<id>` holds:
+After the consumer finishes, `api-job-<tokenId>:<key>` holds:
 
 ```json
 { "id": "…", "status": "done|partial|failed|running", "submittedBy": "712020:…", "role": "admin",
@@ -126,9 +127,21 @@ on the site page named in `site.receiptPageId` (optional). The customer reads it
 curl -u "$EMAIL:$TOKEN" "$SITE/wiki/api/v2/spaces/$SPACE_ID/properties?key=sentinel-vault-receipt"
 ```
 
-The effective configuration is mirrored the same way (`sentinel-vault-config`, written on every
-config write from the UI or the API), so **export** is a Confluence GET, and a config can be
-version-controlled by reading it, editing it and POSTing it back as a bundle.
+The `sentinel-vault-config` property (space property per configured space; content property on
+the receipt page for the site) is written on every config write from the UI or the API, but it
+carries only the **public part** of the effective config — a space property is readable by every
+viewer of the space, and the site property by every reader of the receipt page, so nothing the
+app's own resolvers withhold from non-stewards lands there. The mirror holds:
+
+- `policy` — durations and toggles, **without** `adminUsers` / `adminGroups`;
+- `validation` — `{ enabled, modes }` only (rule text and `ai` prompts stay private);
+- `workflows` — `[ { workflowId, name, labels, priority } ]`, no definitions; `classificationDefault`;
+- site: `classification.levels` (the public level list).
+
+`spaceAdmins`, `workflowSettings` (approver rosters, entry conditions) and `validation.ai` are never
+mirrored. The **full** export — the shape that can be edited and POSTed back as a bundle — is the
+gated `export-space-config` (steward of that space) / `export-site-config` (site admin) resolver,
+i.e. the Export button in the console.
 
 ## What stays in the UI
 
@@ -150,3 +163,74 @@ version-controlled by reading it, editing it and POSTing it back as a bundle.
 
 Eligibility is evaluated on the manifest, not on runtime behaviour. A dynamic trigger present but
 unused still disqualifies the app. Static is the only shape that keeps the badge.
+
+## Implementation notes (server, 2026-09-15)
+
+Code: `src/server/capsules/config-api/` — `tokens-core.js` (pure store, CogniRunner mirror),
+`tokens.js` (KVS binding), `bundle.js` (`validateBundle` / `planBundle`, pure), `admission.js`
+(`decideAdmission`, pure), `pure.js` (consumer/mirror helpers, pure), `trigger.js` (the static
+web trigger), `consumer.js` (the queue consumer), `resolvers.js` (handler lookup by key),
+`export.js` (`exportSpaceConfig` / `exportSiteConfig`), `mirror.js` (property mirrors),
+`actions.js` (the resolvers). Unit guard: `test/config-api.test.mjs`. Live guard:
+`forge-live-harness/scenarios/sentinel-vault/config-api.spec.ts`.
+
+**Static trigger request access — settled empirically on dev (2026-09-15).** The handler of a
+`response.type: static` web trigger receives the request exactly as a dynamic one does:
+`method`, `headers`, `queryParameters`, `body` (a string), `path`, `context`. Only the
+response is fixed. Log line: `[CONFIG-API] request-shape method=POST
+keys=method,call,headers,queryParameters,body,path,userPath,context,contextToken
+hasBody=true bodyType=string`. So the body carries the bundle and `Idempotency-Key` is a
+header. `?op=` and `?idempotency-key=` remain as query alternatives; the body is the only
+carrier of the bundle (the `?b=` base64 fallback was removed once the body was proven to arrive).
+
+**Shapes the implementation fixed:**
+- `$replace` on an array: JSON arrays cannot carry a flag, so the object form is
+  `"workflows": { "$replace": true, "items": [ ... ] }` (same for `validation.rules`). A bare
+  array is merged: workflows by `workflowId`, rules by `id`. Validation configs are upserted
+  (shallow overlay, `modes` merged) because `store-validation-config` replaces the row.
+- `spaces.<KEY>.spaceAdmins` maps to `store-policy` (scope space) with `adminUsers` /
+  `adminGroups` — that is the row the UI writes and the gate (A1) it goes through.
+- `seal-attachment` on a file the minter already holds (unexpired) is recorded as
+  `applied` with reason `already sealed by you — no-op`; the expiry is not touched. The check
+  reads through `enumerate-page-seals`, never KVS.
+- `whoami` is open to any live token (viewer included); `bundle` / `dry-run` need `editor`
+  for content-only bundles and `admin` as soon as `site` or `spaces` is non-empty.
+- A `403` (role) still writes `api-job-<tokenId>:<key>` with `status: "refused"` and the reason;
+  a later POST with the same key is a `202` no-op, so pick a new key after fixing the token.
+- Check order: method → token → the minter is still a site admin (else `401`, `whoami` included)
+  → op / key shape → admission (`409` / `429`, settled key = `202` no-op) → role (`403`) →
+  bundle validation (`400`). Role before validation, so an under-privileged token cannot use
+  `400` as a validation oracle for config it may not submit.
+- `429 busy` is judged from `api-active-<tokenId>` (15-minute TTL) and only while that job is
+  still queued/running. A job left `running` for longer than the consumer timeout (300 s) is
+  reclaimed: the next POST with its key, or the consumer, settles it as `failed` with reason
+  `consumer timed out; resubmit with a new Idempotency-Key`, and it no longer counts as busy.
+- Two submissions racing on one key: the row is written only if absent and re-read; the loser
+  (its nonce did not land) answers `409` and queues nothing.
+- `site.receiptPageId` is honoured only if the minter can edit that page; otherwise the receipt
+  carries a `skipped` result for `site.receiptPageId` and nothing is mirrored onto it.
+- The consumer never forges a page/space context from the payload: every resolver derives the
+  space from the object it acts on (`seal-artifact` from the attachment's page, after its own
+  edit gate).
+- The receipt row drops the stored bundle when the job settles; `plan[]` stays.
+- Space properties: `write:space:confluence` IS consented on the dev install (major 7), so
+  both `sentinel-vault-receipt` and `sentinel-vault-config` land on the space (verified over
+  v2 REST with a plain Confluence API token).
+- The endpoint URL on dev: `forge webtrigger create -f config-api -s wolfaenpak.atlassian.net
+  -p Confluence -e development`; the UI reads it via `webTrigger.getUrl("config-api")`, cached
+  in KVS `webtrigger-url:config-api`.
+
+**No user session in the consumer.** Resolvers invoked from the queue run with
+`context.accountId = token.createdBy` but no `asUser()` session. `isOperatorSiteAdmin` now
+asks the same question as the app (naming the same subject — `isAccountStewardAsApp`'s arm 2)
+when the user call fails, and the metadata reads in `seal-artifact` / `seal-section` /
+workflow `actorName` go through `shared/user-or-app.js`. Authorization still goes through
+`content-access.js` / `steward-checks.js` — nothing new is granted.
+
+The `sentinel-vault-config` mirror is refreshed after an API apply and after every config write
+from the UI (`refreshConfigMirror`, registry.js), always through `redactConfigForMirror`.
+
+**Runs on Atlassian:** `forge eligibility -e development` reports "a webtrigger module that
+can egress data" — the dev environment also carries the DYNAMIC `harness-test-state` trigger,
+so the static one cannot be proven eligible from dev. Verify on staging/production, where only
+`config-api` exists.

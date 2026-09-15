@@ -204,9 +204,11 @@ export async function resolveSpaceId(request, pageId) {
  * branch answers 403 and is logged, nothing more. Page (content) properties are covered by
  * write:content.property:confluence, which is granted.
  */
-export async function mirrorProperty(request, base, value, log = () => {}) {
+export async function mirrorProperty(request, base, value, log = () => {}, key = PROPERTY_KEY) {
+  // `key` defaults to the classification property; the config API reuses this for its
+  // `sentinel-vault-receipt` / `sentinel-vault-config` mirrors (config-api/mirror.js).
   try {
-    const gres = await request(`${base}/properties?key=${PROPERTY_KEY}`, { headers: { Accept: "application/json" } });
+    const gres = await request(`${base}/properties?key=${key}`, { headers: { Accept: "application/json" } });
     if (!gres.ok) { log(`[CLASSIFICATION] property read on ${base} → ${gres.status}`); return false; }
     const existing = (await readJson(gres))?.results?.[0];
     const json = { Accept: "application/json", "Content-Type": "application/json" };
@@ -216,9 +218,9 @@ export async function mirrorProperty(request, base, value, log = () => {}) {
       res = await request(`${base}/properties/${existing.id}`, { method: "DELETE" });
     } else if (existing) {
       const number = (existing.version?.number || 1) + 1;
-      res = await request(`${base}/properties/${existing.id}`, { method: "PUT", headers: json, body: JSON.stringify({ key: PROPERTY_KEY, value, version: { number } }) });
+      res = await request(`${base}/properties/${existing.id}`, { method: "PUT", headers: json, body: JSON.stringify({ key, value, version: { number } }) });
     } else {
-      res = await request(`${base}/properties`, { method: "POST", headers: json, body: JSON.stringify({ key: PROPERTY_KEY, value }) });
+      res = await request(`${base}/properties`, { method: "POST", headers: json, body: JSON.stringify({ key, value }) });
     }
     if (!res.ok) log(`[CLASSIFICATION] property write on ${base} → ${res.status}`);
     return !!res.ok;
