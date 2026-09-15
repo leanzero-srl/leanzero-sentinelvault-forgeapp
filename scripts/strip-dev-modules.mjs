@@ -15,10 +15,15 @@ const doc = yaml.load(readFileSync(src, "utf8"));
 const modules = doc?.modules || {};
 let removed = [];
 
-// 1. Drop the webtrigger module(s).
+// 1. Drop the DYNAMIC webtrigger module(s) only. A webtrigger whose response is `static`
+// (config-api, docs/REST-CONFIG-API.md) cannot egress anything the manifest did not spell
+// out and stays eligible for Runs on Atlassian — proven on staging 2026-09-15. Dropping all
+// of them (the rule until today) would have shipped production without the config API.
 if (Array.isArray(modules.webtrigger)) {
-  removed.push(...modules.webtrigger.map((w) => `webtrigger:${w.key}`));
-  delete modules.webtrigger;
+  const isStatic = (w) => w?.response?.type === "static";
+  removed.push(...modules.webtrigger.filter((w) => !isStatic(w)).map((w) => `webtrigger:${w.key}`));
+  modules.webtrigger = modules.webtrigger.filter(isStatic);
+  if (!modules.webtrigger.length) delete modules.webtrigger;
 }
 
 // 2. Drop the function that backs the harness (boot.testStateTrigger).

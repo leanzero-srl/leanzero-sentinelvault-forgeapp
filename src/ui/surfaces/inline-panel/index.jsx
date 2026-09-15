@@ -837,6 +837,8 @@ const SectionRow = ({ section: s, onUnseal, unsealing, viewer, siteUrl, pageId }
   const [busy, setBusy] = useState(false);
   const [requests, setRequests] = useState(null); // owner inbox
   const [reqBusy, setReqBusy] = useState(null);
+  const [grants, setGrants] = useState(null); // owner: editors currently granted access
+  const [grantBusy, setGrantBusy] = useState(null);
   const [error, setError] = useState(null);
   const [copied, setCopied] = useState(false);
 
@@ -846,6 +848,9 @@ const SectionRow = ({ section: s, onUnseal, unsealing, viewer, siteUrl, pageId }
       invoke("list-section-edit-requests", { sectionId: s.sectionId })
         .then((r) => { if (!cancelled) setRequests(r?.requests || []); })
         .catch(() => { if (!cancelled) setRequests([]); });
+      invoke("list-section-edit-grants", { sectionId: s.sectionId })
+        .then((r) => { if (!cancelled) setGrants(r?.grants || []); })
+        .catch(() => { if (!cancelled) setGrants([]); });
     } else if (!s.isExpired) {
       invoke("check-section-edit", { sectionId: s.sectionId })
         .then((r) => { if (!cancelled) setEditStatus(r?.status || "none"); })
@@ -868,10 +873,23 @@ const SectionRow = ({ section: s, onUnseal, unsealing, viewer, siteUrl, pageId }
     setReqBusy(`${requesterAccountId}:${action}`); setError(null);
     try {
       const r = await invoke(action === "approve" ? "approve-section-edit" : "deny-section-edit", { sectionId: s.sectionId, requesterAccountId });
-      if (r?.success) setRequests((p) => (p || []).filter((x) => x.requesterAccountId !== requesterAccountId));
+      if (r?.success) {
+        setRequests((p) => (p || []).filter((x) => x.requesterAccountId !== requesterAccountId));
+        if (action === "approve") invoke("list-section-edit-grants", { sectionId: s.sectionId }).then((g) => setGrants(g?.grants || [])).catch(() => {});
+      }
       else setError(r?.reason || (action === "approve" ? "Could not grant edit access." : "Could not decline the request."));
     } catch (e) { console.error("Resolve section request failed:", e); setError("Could not reach Sentinel Vault. Try again."); }
     finally { setReqBusy(null); }
+  };
+
+  const revokeGrant = async (editorAccountId) => {
+    setGrantBusy(editorAccountId); setError(null);
+    try {
+      const r = await invoke("revoke-section-edit-grant", { sectionId: s.sectionId, editorAccountId });
+      if (r?.success) setGrants((p) => (p || []).filter((g) => g.editorAccountId !== editorAccountId));
+      else setError(r?.reason || "Could not revoke this editor's access.");
+    } catch (e) { console.error("Revoke section grant failed:", e); setError("Could not reach Sentinel Vault. Try again."); }
+    finally { setGrantBusy(null); }
   };
 
   const copyLink = async () => {
@@ -917,6 +935,7 @@ const SectionRow = ({ section: s, onUnseal, unsealing, viewer, siteUrl, pageId }
       <ErrorRow message={error} onDismiss={() => setError(null)} testId="sv-section-error" />
       {bar && <ReasonBar mode={bar} kind="section" value={reasonText} onChange={setReasonText} onSubmit={submitBar} onCancel={() => { setBar(null); setReasonText(""); }} busy={busy || unsealing} testId="sv-section-reason-bar" />}
       {s.isMine && <RequestInbox requests={requests} name={`section ${s.sectionTitle}`} reqBusy={reqBusy} onDecide={resolve} firstDecidedAbove={primary.kind === "decide"} testId="sv-section-inbox" />}
+      {s.isMine && <GrantInbox grants={grants} name={`section ${s.sectionTitle}`} grantBusy={grantBusy} onRevoke={revokeGrant} testId="sv-section-grants-inbox" />}
     </div>
   );
 };

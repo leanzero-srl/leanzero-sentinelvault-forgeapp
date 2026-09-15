@@ -234,3 +234,8 @@ from the UI (`refreshConfigMirror`, registry.js), always through `redactConfigFo
 can egress data" — the dev environment also carries the DYNAMIC `harness-test-state` trigger,
 so the static one cannot be proven eligible from dev. Verify on staging/production, where only
 `config-api` exists.
+
+
+## Production packaging (2026-09-15)
+
+`scripts/deploy-prod.sh --licensing-live` runs `scripts/strip-dev-modules.mjs`, which removes only DYNAMIC web triggers (the harness hook). The static `config-api` trigger survives the strip; the stripped manifest was deployed to staging and reported eligible for Runs on Atlassian.
