@@ -6,11 +6,16 @@ import { flashArtifactSealed, flashArtifactUnsealed } from "../../kit/flash-mess
 import ThumbnailPreview from "../../kit/ThumbnailPreview";
 import { formatRemaining } from "../../kit/format-duration";
 import ActivityFeed from "../../kit/ActivityFeed";
+import ActionMenu from "../../kit/ActionMenu";
+import { ConfirmDialog } from "../../kit/Dialog";
+import RovingList from "../../kit/RovingList";
+import { attachmentRow, rowActions, statusChip, copyText } from "../../kit/seal-row.js";
+import { PrimarySlot, ReasonBar, RequestInbox, ErrorRow, CopiedNote } from "../../kit/SealRowParts";
 
 // ── Column definitions ──────────────────────────────────
 const OVERLAY_COLUMNS = [
   { key: "name",      label: "Name",                 defaultOn: true,  alwaysOn: true },
-  { key: "status",    label: "Status",               defaultOn: true },
+  { key: "status",    label: "Status",               defaultOn: true, alwaysOn: true },
   { key: "heldBy",    label: "Held by",              defaultOn: true },
   { key: "lapses",    label: "Expires",               defaultOn: true },
   { key: "watch",     label: "Watch for Unseal", defaultOn: true },
@@ -260,11 +265,21 @@ const SortPicker = ({ orderField, orderDir, onSort }) => {
   );
 };
 
-const OverlayArtifactCard = ({ artifact, visibleColumns, onSecure, onRelease, onExtend, onWatch, onRestore, onPurge, onDelete, isWatching, busyAction, formatRemainingTime, formatFileSize, siteUrl, spaceKey, pageId, pageLocation }) => {
-  const [pendingConfirm, setPendingConfirm] = useState(null); // "delete" | "purge" | null
+// One attachment card in the overlay. The primary action and the ⋯ items come from the SAME row
+// rule as the inline panel and the page-details modal (kit/seal-row.js → row-state.js); the
+// parent owns the resolver calls through `run` so a refusal lands on THIS card's error row.
+const OverlayArtifactCard = ({ artifact, visibleColumns, run, busyAction, errorMessage, onClearError, isWatching, viewer, formatRemainingTime, formatFileSize, siteUrl, spaceKey, pageId, pageLocation }) => {
+  const [pendingConfirm, setPendingConfirm] = useState(null); // "delete" | "purge" | null → kit ConfirmDialog
   const [expanded, setExpanded] = useState(false);
   const [cachedPreview, setCachedPreview] = useState(null);
-  const isSealed = artifact.lockStatus === "HELD" || artifact.lockStatus === "HELD_BY_ACTOR";
+  const [editStatus, setEditStatus] = useState(null); // none|pending|granted|denied (others' seals)
+  const [editExpiresAt, setEditExpiresAt] = useState(null);
+  const [bar, setBar] = useState(null); // "request" | "force" | null
+  const [reasonText, setReasonText] = useState("");
+  const [myRequests, setMyRequests] = useState(null); // owner: pending edit requests
+  const [reqBusy, setReqBusy] = useState(null);
+  const [copied, setCopied] = useState(false);
+
   const isSealedByMe = artifact.lockStatus === "HELD_BY_ACTOR";
   const isSealedByOther = artifact.lockStatus === "HELD";
   const isStale = artifact.isStale === true;
@@ -281,60 +296,73 @@ const OverlayArtifactCard = ({ artifact, visibleColumns, onSecure, onRelease, on
     ? `${siteUrl}/wiki/pages/editattachment.action?pageId=${pageId}&fileName=${encodeURIComponent(artifact.title)}&isFromPageView=true`
     : null;
 
-  let statusClass = "unlocked";
-  let statusText = "Available";
-  if (isStale && isRecoverable) {
-    statusClass = "trashed";
-    statusText = "Trash";
-  } else if (isStale) {
-    statusClass = "stale";
-    statusText = "Missing";
-  } else if (artifact.isExpired && isSealed) {
-    statusClass = "expired";
-    statusText = "Overdue";
-  } else if (isSealedByMe) {
-    statusClass = "locked-by-me";
-    // it37: converge on the app's dominant ownership term. "Reservation" is the pervasive
-    // metaphor (Reservation Duration, Reservation cleared, "Reserve this file"), and the held
-    // state reads "My Reservation" in the inline-panel + realm-console; only this overlay said
-    // "Yours". Align the outlier (same .status-lozenge.locked-by-me styling as the panel).
-    statusText = "My Seal";
-  } else if (isSealed) {
-    statusClass = "locked";
-    statusText = "Sealed";
-  }
-
-  // Primary action
-  let primaryAction = null;
-  if (visibleColumns.actions) {
-    if (isStale && isRecoverable && artifact.allowRestore) {
-      primaryAction = (
-        <button className={`action-btn restore ${busyAction === "restore" ? "is-busy" : ""}`} onClick={() => onRestore(artifact.id)} disabled={busyAction && busyAction !== "restore"} title="Restore this trashed attachment back to the page">
-          {busyAction === "restore" ? <>Restoring<span className="btn-busy-bar" /></> : "Restore"}
-        </button>
-      );
-    } else if (isStale) {
-      primaryAction = null;
-    } else if (!isSealed) {
-      primaryAction = (
-        <button className={`action-btn lock ${busyAction === "seal" ? "is-busy" : ""}`} onClick={() => onSecure(artifact.id)} disabled={busyAction && busyAction !== "seal"} title="Reserve this file so only you can modify it">
-          {busyAction === "seal" ? <>Sealing<span className="btn-busy-bar" /></> : "Seal"}
-        </button>
-      );
-    } else if (isSealedByMe) {
-      primaryAction = (
-        <>
-          {/* F4: a way to renew the retention period without unseal-and-seal-again. */}
-          <button className={`action-btn extend ${busyAction === "extend" ? "is-busy" : ""}`} onClick={() => onExtend(artifact.id)} disabled={busyAction && busyAction !== "extend"} title="Give this seal a fresh retention period">
-            {busyAction === "extend" ? <>Extending<span className="btn-busy-bar" /></> : "Extend"}
-          </button>
-          <button className={`action-btn unlock ${busyAction === "unseal" ? "is-busy" : ""}`} onClick={() => onRelease(artifact.id)} disabled={busyAction && busyAction !== "unseal"} title="Release your seal and allow others to modify this file">
-            {busyAction === "unseal" ? <>Unsealing<span className="btn-busy-bar" /></> : "Unseal"}
-          </button>
-        </>
-      );
+  useEffect(() => {
+    let cancelled = false;
+    if (isSealedByOther && !isStale && editStatus === null) {
+      invoke("check-edit-request", { attachmentId: artifact.id })
+        .then((r) => { if (!cancelled) { setEditStatus(r?.status || "none"); setEditExpiresAt(r?.expiresAt || null); } })
+        .catch(() => { if (!cancelled) setEditStatus("none"); });
     }
-  }
+    return () => { cancelled = true; };
+  }, [isSealedByOther, isStale, artifact.id, editStatus]);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (isSealedByMe && !isStale) {
+      invoke("list-edit-requests", { attachmentId: artifact.id })
+        .then((r) => { if (!cancelled) setMyRequests(r?.requests || []); })
+        .catch(() => { if (!cancelled) setMyRequests([]); });
+    }
+    return () => { cancelled = true; };
+  }, [isSealedByMe, isStale, artifact.id]);
+
+  const resolveEditReq = async (requesterAccountId, action) => {
+    setReqBusy(`${requesterAccountId}:${action}`);
+    const ok = await run(action, action === "approve" ? "approve-edit-request" : "deny-edit-request", { attachmentId: artifact.id, requesterAccountId }, { refresh: false });
+    if (ok) setMyRequests((p) => (p || []).filter((x) => x.requesterAccountId !== requesterAccountId));
+    setReqBusy(null);
+  };
+
+  const copyLink = async () => {
+    const href = downloadHref || (siteUrl && pageId ? `${siteUrl}/wiki/pages/viewpage.action?pageId=${pageId}` : "");
+    if (!href) return;
+    setCopied(await copyText(href));
+    setTimeout(() => setCopied(false), 1800);
+  };
+
+  const row = attachmentRow(artifact, { editStatus, editExpiresAt, pendingRequests: myRequests || [], watching: isWatching });
+  const { primary, menu } = rowActions(row, viewer, { allowRestore: artifact.allowRestore, allowPurge: artifact.allowPurge, allowDelete: artifact.allowDelete, viewUrl, propertiesUrl });
+  const chip = statusChip(artifact);
+
+  const onMenu = (id) => {
+    switch (id) {
+      case "extend": run("extend", "extend-seal", { attachmentId: artifact.id }); break;
+      case "release": run("unseal", "unseal-artifact", { attachmentId: artifact.id }, { flash: "unsealed" }); break;
+      case "watch": run("watch", "watch-artifact", { attachmentId: artifact.id }, { refresh: false, watch: true }); break;
+      case "unwatch": run("watch", "unwatch-artifact", { attachmentId: artifact.id }, { refresh: false, watch: false }); break;
+      case "copy-link": copyLink(); break;
+      case "force-release": setReasonText(""); setBar("force"); break;
+      case "view": if (viewUrl) router.open(viewUrl); break;
+      case "properties": if (propertiesUrl) router.open(propertiesUrl); break;
+      case "delete": setPendingConfirm("delete"); break;
+      case "purge": setPendingConfirm("purge"); break;
+      default: break;
+    }
+  };
+  const handlers = {
+    seal: () => run("seal", "seal-artifact", { attachmentId: artifact.id }, { flash: "sealed" }),
+    release: () => run("unseal", "unseal-artifact", { attachmentId: artifact.id }, { flash: "unsealed" }),
+    decide: resolveEditReq,
+    request: () => { setReasonText(""); setBar("request"); },
+    restore: () => run("restore", "restore-sealed-artifact", { attachmentId: artifact.id }),
+    purge: () => setPendingConfirm("purge"),
+  };
+  const submitBar = async () => {
+    const ok = bar === "force"
+      ? await run("unseal", "unseal-artifact", { attachmentId: artifact.id, adminOverride: true, reason: reasonText.trim() }, { flash: "unsealed" })
+      : await run("editreq", "request-edit-access", { attachmentId: artifact.id, reason: reasonText.trim() }, { refresh: false });
+    if (ok) { if (bar === "request") setEditStatus("pending"); setBar(null); setReasonText(""); }
+  };
 
   // Meta items gated by visibleColumns
   const metaItems = [];
@@ -346,7 +374,7 @@ const OverlayArtifactCard = ({ artifact, visibleColumns, onSecure, onRelease, on
       </span>
     );
   }
-  if (visibleColumns.lapses && isSealed) {
+  if (visibleColumns.lapses && row.sealed) {
     metaItems.push(<span key="lapses" className="card-meta-item">{formatRemainingTime(artifact)}</span>);
   }
   if (visibleColumns.fileSize && artifact.fileSize) {
@@ -371,83 +399,25 @@ const OverlayArtifactCard = ({ artifact, visibleColumns, onSecure, onRelease, on
       metaItems.push(<span key="ver" className="card-meta-item">v{ver}</span>);
     }
   }
+  if (visibleColumns.watch && isWatching && isSealedByOther) {
+    metaItems.push(<span key="watching" className="card-meta-item card-meta-watching" role="status">Watching for release</span>);
+  }
 
-  // Labels
   const showLabels = visibleColumns.labels && artifact.labels?.length > 0;
-
-  // Secondary actions
-  const secondaryActions = [];
-  if (isStale && isRecoverable) {
-    // Trashed: show Purge (permanent delete)
-    if (artifact.allowPurge) {
-      secondaryActions.push(
-        <button
-          key="purge"
-          className={`action-btn purge ${busyAction === "purge" ? "is-busy" : ""}`}
-          onClick={() => setPendingConfirm("purge")}
-          disabled={busyAction && busyAction !== "purge"}
-          title="Permanently delete this attachment"
-        >
-          {busyAction === "purge" ? <>Purging<span className="btn-busy-bar" /></> : "Purge"}
-        </button>
-      );
-    }
-  } else if (isStale) {
-    // Permanently deleted — Purge to clean up record
-    if (artifact.allowPurge) {
-      secondaryActions.push(
-        <button
-          key="purge"
-          className={`action-btn purge ${busyAction === "purge" ? "is-busy" : ""}`}
-          onClick={() => setPendingConfirm("purge")}
-          disabled={busyAction && busyAction !== "purge"}
-          title="Remove this stale record"
-        >
-          {busyAction === "purge" ? <>Purging<span className="btn-busy-bar" /></> : "Purge"}
-        </button>
-      );
-    }
-  } else if (visibleColumns.watch && isSealedByOther) {
-    secondaryActions.push(
-      <button
-        key="watch"
-        className={`action-btn watch ${isWatching ? "watching" : ""} ${busyAction === "watch" ? "is-busy" : ""}`}
-        onClick={() => onWatch(artifact.id)}
-        disabled={busyAction && busyAction !== "watch"}
-        title={isWatching ? "Stop watching" : "Get notified when relinquished"}
-      >
-        {busyAction === "watch" ? <>Updating<span className="btn-busy-bar" /></> : (isWatching ? "Watching" : "Watch")}
-      </button>
-    );
-  }
-  // Delete button: available on all live items (unsealed or sealed by me)
-  if (!isStale && artifact.allowDelete && (!isSealed || isSealedByMe)) {
-    secondaryActions.push(
-      <button
-        key="delete"
-        className={`action-btn delete ${busyAction === "delete" ? "is-busy" : ""}`}
-        onClick={() => setPendingConfirm("delete")}
-        disabled={busyAction && busyAction !== "delete"}
-        title="Send to trash"
-      >
-        {busyAction === "delete" ? <>Removing<span className="btn-busy-bar" /></> : "Delete"}
-      </button>
-    );
-  }
-
-  const hasSecondLine = metaItems.length > 0 || showLabels || secondaryActions.length > 0;
+  const hasSecondLine = metaItems.length > 0 || showLabels;
 
   return (
-    <div className={`artifact-card status-${statusClass}`}>
+    <div className={`artifact-card status-${chip.cls}`} role="listitem" data-roving-card tabIndex={-1} aria-label={chip.aria} data-testid="sv-card" data-primary={primary.kind}>
       <div className="card-row card-row-primary">
         <span className="card-filename">
           <button
             className={`card-expand-toggle ${expanded ? "is-expanded" : ""}`}
             onClick={() => setExpanded((prev) => !prev)}
             aria-expanded={expanded}
+            aria-label={expanded ? "Collapse details" : "Show details"}
             title={expanded ? "Collapse details" : "Show details"}
           >
-            <svg width="12" height="12" viewBox="0 0 12 12">
+            <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
               <path d="M3 5l3 3 3-3" stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinecap="round" />
             </svg>
           </button>
@@ -475,13 +445,13 @@ const OverlayArtifactCard = ({ artifact, visibleColumns, onSecure, onRelease, on
           )}
         </span>
         <span className="card-row-right">
-          {visibleColumns.status && (
-            <span className={`status-lozenge ${statusClass}`}>{statusText}</span>
-          )}
-          {primaryAction}
+          {/* Always visible: state must never be colour-only (UX review P1-8), and it is named. */}
+          <span className={`status-lozenge ${chip.cls}`} role="status" aria-label={chip.aria} title={chip.aria}>{chip.text}</span>
+          {visibleColumns.actions && <PrimarySlot primary={primary} name={artifact.title} busy={busyAction} reqBusy={reqBusy} on={handlers} />}
+          {visibleColumns.actions && <ActionMenu items={menu} onPick={onMenu} label={`More actions for ${artifact.title}`} testId="sv-kebab" />}
         </span>
       </div>
-      {hasSecondLine && !pendingConfirm && (
+      {hasSecondLine && (
         <div className="card-row card-row-secondary">
           <span className="card-secondary-left">
             {metaItems.length > 0 && (
@@ -503,30 +473,35 @@ const OverlayArtifactCard = ({ artifact, visibleColumns, onSecure, onRelease, on
               </span>
             )}
           </span>
-          {secondaryActions.length > 0 && (
-            <span className="card-secondary-right">{secondaryActions}</span>
-          )}
         </div>
       )}
 
-      {/* Inline confirmation bar */}
-      {pendingConfirm && (
-        <div className="card-row card-confirm-bar">
-          <span className="confirm-message">
-            {pendingConfirm === "delete"
-              ? `Remove "${artifact.title}"? It will be sent to the trash.`
-              : `Permanently delete "${artifact.title}"? This cannot be undone.`}
-          </span>
-          <span className="confirm-actions">
-            <button className="action-btn confirm-yes" onClick={() => {
-              const action = pendingConfirm;
-              setPendingConfirm(null);
-              action === "delete" ? onDelete(artifact.id) : onPurge(artifact.id);
-            }}>Confirm</button>
-            <button className="action-btn confirm-no" onClick={() => setPendingConfirm(null)}>Cancel</button>
-          </span>
-        </div>
+      <CopiedNote shown={copied} />
+      <ErrorRow message={errorMessage} onDismiss={onClearError} />
+
+      {pendingConfirm === "delete" && (
+        <ConfirmDialog
+          title={`Delete ${artifact.title}?`}
+          message="It goes to the trash. The seal stays on the record until the file is restored or the record is removed."
+          confirmLabel="Delete"
+          busy={busyAction === "delete"}
+          onCancel={() => setPendingConfirm(null)}
+          onConfirm={() => { setPendingConfirm(null); run("delete", "delete-artifact", { attachmentId: artifact.id }, { afterDelete: true }); }}
+        />
       )}
+      {pendingConfirm === "purge" && (
+        <ConfirmDialog
+          title={isRecoverable ? `Delete ${artifact.title} permanently?` : `Remove the seal record for ${artifact.title}?`}
+          message={isRecoverable ? "The file is purged from the trash and its seal record removed. This cannot be undone." : "The file is already gone; this removes the seal record that still points at it. This cannot be undone."}
+          confirmLabel={isRecoverable ? "Delete permanently" : "Remove record"}
+          busy={busyAction === "purge"}
+          onCancel={() => setPendingConfirm(null)}
+          onConfirm={() => { setPendingConfirm(null); run("purge", "purge-seal-record", { attachmentId: artifact.id }); }}
+        />
+      )}
+
+      {bar && <ReasonBar mode={bar} value={reasonText} onChange={setReasonText} onSubmit={submitBar} onCancel={() => { setBar(null); setReasonText(""); }} busy={busyAction === "unseal" || busyAction === "editreq"} />}
+      {isSealedByMe && <RequestInbox requests={myRequests} name={artifact.title} reqBusy={reqBusy} onDecide={resolveEditReq} firstDecidedAbove={primary.kind === "decide"} />}
 
       {/* Expand panel: thumbnail + view link */}
       {expanded && (
@@ -562,6 +537,10 @@ const ArtifactControlPanel = () => {
   const [watchStatus, setWatchStatus] = useState({});
   // Track which artifact + action is currently in flight
   const [busyAction, setBusyAction] = useState(null);
+  // Per-card action errors (the resolver's reason on refusal) — keyed by artifact id.
+  const [cardErrors, setCardErrors] = useState({});
+  // What the row rule needs to know about the caller (row-state.js `viewer`); see the panel.
+  const [viewer, setViewer] = useState({ canEditPage: true, isSpaceAdmin: false });
   // Site context for download/preview URLs
   const [siteUrl, setSiteUrl] = useState(null);
   const [spaceKey, setSpaceKey] = useState(null);
@@ -652,7 +631,9 @@ const ArtifactControlPanel = () => {
       try {
         const ctx = await view.getContext();
         setSiteUrl(ctx.siteUrl || null);
-        setSpaceKey(ctx.extension?.content?.space?.key || ctx.extension?.space?.key || null);
+        const sk = ctx.extension?.content?.space?.key || ctx.extension?.space?.key || null;
+        setSpaceKey(sk);
+        if (sk) invoke("check-user-role", { spaceKey: sk }).then((r) => setViewer((v) => ({ ...v, isSpaceAdmin: r?.role === "steward" }))).catch(() => {});
         setPageId(ctx.extension?.content?.id || null);
         setPageLocation(ctx.extension?.location || null);
       } catch (e) {
@@ -761,158 +742,40 @@ const ArtifactControlPanel = () => {
     view.close();
   };
 
-  const onSecureFile = async (artifactId) => {
-    setBusyAction({ id: artifactId, action: "seal" });
+  // ONE call path for every card action. A refusal (`success:false`) lands on THAT card's error
+  // row with the resolver's reason and never flashes success — the review caught the overlay
+  // flashing "Unsealed" on a refused unseal because onReleaseFile never read the result.
+  const runCardAction = async (artifactId, busyKey, action, payload, { refresh = true, flash = null, watch = null, afterDelete = false } = {}) => {
+    setBusyAction({ id: artifactId, action: busyKey });
+    setCardErrors((p) => ({ ...p, [artifactId]: null }));
     try {
-      // Find artifact name for dispatch
-      const artifact = fileList.find((att) => att.id === artifactId);
-      const artifactName = artifact?.title || "attachment";
-
-      const result = await invoke("seal-artifact", { attachmentId: artifactId });
-      if (result && result.success === false) {
-        setError(result.reason || "Could not seal attachment.");
-        await retrieveFileData();
-        return;
+      const r = await invoke(action, payload);
+      if (!r || r.success === false || r.ok === false) {
+        setCardErrors((p) => ({ ...p, [artifactId]: r?.reason || "That did not work. Try again." }));
+        return false;
       }
-      await retrieveFileData();
-
-      // Show success flash (Option 1)
-      try {
-        await flashArtifactSealed(artifactName);
-      } catch (notifyErr) {
-        // Flash failed, but seal succeeded - continue
-      }
-    } catch (err) {
-      console.error("Failed to seal artifact:", err);
-      setError("Could not seal attachment.");
-    } finally {
-      setBusyAction(null);
-    }
-  };
-
-  const onReleaseFile = async (artifactId) => {
-    setBusyAction({ id: artifactId, action: "unseal" });
-    try {
-      // Find artifact name for dispatch
-      const artifact = fileList.find((att) => att.id === artifactId);
-      const artifactName = artifact?.title || "attachment";
-
-      await invoke("unseal-artifact", { attachmentId: artifactId });
-      await retrieveFileData();
-
-      // Show success flash (Option 1)
-      try {
-        await flashArtifactUnsealed(artifactName);
-      } catch (notifyErr) {
-        // Flash failed, but unseal succeeded - continue
-      }
-    } catch (err) {
-      console.error("Failed to unseal artifact:", err);
-      setError("Could not unseal attachment.");
-    } finally {
-      setBusyAction(null);
-    }
-  };
-
-  // F4: renew the retention period in place — the only previous exit from Overdue was
-  // unseal-and-seal-again, which drops the labels, the comment and every edit grant.
-  const onExtendSeal = async (artifactId) => {
-    setBusyAction({ id: artifactId, action: "extend" });
-    setError(null);
-    try {
-      const r = await invoke("extend-seal", { attachmentId: artifactId });
-      if (r?.success) await retrieveFileData();
-      else setError(r?.reason || "Could not extend this seal.");
-    } catch (err) {
-      console.error("Failed to extend seal:", err);
-      setError("Could not extend this seal.");
-    } finally {
-      setBusyAction(null);
-    }
-  };
-
-  const onWatchToggle = async (artifactId) => {
-    setBusyAction({ id: artifactId, action: "watch" });
-    const isCurrentlyRequested = watchStatus[artifactId];
-
-    try {
-      if (isCurrentlyRequested) {
-        const result = await invoke("unwatch-artifact", {
-          attachmentId: artifactId,
-        });
-        if (result.success) {
-          setWatchStatus((prev) => ({ ...prev, [artifactId]: false }));
-        }
-      } else {
-        const result = await invoke("watch-artifact", { attachmentId: artifactId });
-        if (result.success) {
-          setWatchStatus((prev) => ({ ...prev, [artifactId]: true }));
-        }
-      }
-    } catch (err) {
-      console.error("Failed to toggle dispatch:", err);
-    } finally {
-      setBusyAction(null);
-    }
-  };
-
-  const onRestoreFile = async (artifactId) => {
-    setBusyAction({ id: artifactId, action: "restore" });
-    try {
-      const result = await invoke("restore-sealed-artifact", { attachmentId: artifactId });
-      if (result && result.success) {
-        await retrieveFileData();
-      } else {
-        setError(result?.reason || "Restore unsuccessful");
-      }
-    } catch (err) {
-      console.error("Failed to restore artifact:", err);
-      setError("Could not restore attachment.");
-    } finally {
-      setBusyAction(null);
-    }
-  };
-
-  const onDeleteFile = async (artifactId) => {
-    setBusyAction({ id: artifactId, action: "delete" });
-    try {
-      const result = await invoke("delete-artifact", { attachmentId: artifactId });
-      if (result && result.success) {
-        // Wait for Confluence to process the trash before re-fetching
-        await new Promise(r => setTimeout(r, 1000));
-        // Re-fetch both seals (to show trashed items) and attachments
+      if (watch !== null) setWatchStatus((prev) => ({ ...prev, [artifactId]: watch }));
+      if (afterDelete) {
+        // Wait for Confluence to process the trash before re-fetching, then re-fetch the seals
+        // (to show the trashed item) and the attachments.
+        await new Promise((res) => setTimeout(res, 1000));
         try {
           const seals = await invoke("enumerate-page-seals", { pageId: null });
-          if (seals?.claimedArtifacts?.length > 0) {
-            setFileList(seals.claimedArtifacts);
-          } else {
-            setFileList([]);
-          }
+          setFileList(seals?.claimedArtifacts?.length > 0 ? seals.claimedArtifacts : []);
         } catch (_) { /* fall through */ }
         await retrieveFileData(false, null, true);
-      } else {
-        setError(result?.reason || "Delete unsuccessful");
-      }
-    } catch (err) {
-      console.error("Failed to delete attachment:", err);
-      setError("Could not delete attachment.");
-    } finally {
-      setBusyAction(null);
-    }
-  };
-
-  const onPurgeFile = async (artifactId) => {
-    setBusyAction({ id: artifactId, action: "purge" });
-    try {
-      const result = await invoke("purge-seal-record", { attachmentId: artifactId });
-      if (result && result.success) {
+      } else if (refresh) {
         await retrieveFileData();
-      } else {
-        setError(result?.reason || "Cleanup unsuccessful");
       }
+      if (flash) {
+        const name = fileList.find((att) => att.id === artifactId)?.title || "attachment";
+        try { await (flash === "sealed" ? flashArtifactSealed(name) : flashArtifactUnsealed(name)); } catch (_) { /* the write succeeded; the flash is decoration */ }
+      }
+      return true;
     } catch (err) {
-      console.error("Failed to purge seal:", err);
-      setError("Could not remove seal data.");
+      console.error(`[OVERLAY] ${action} failed:`, err);
+      setCardErrors((p) => ({ ...p, [artifactId]: "Could not reach Sentinel Vault. Try again." }));
+      return false;
     } finally {
       setBusyAction(null);
     }
@@ -1251,20 +1114,17 @@ const ArtifactControlPanel = () => {
                             <span className="sv-card-section-title">Sealed</span>
                             <span className="sv-card-section-count">{claimedFiles.length}</span>
                           </div>
-                          <div className="sv-card-list" data-cols="3">
+                          <RovingList className="sv-card-list" data-cols="3" label="Sealed attachments">
                             {claimedFiles.map((artifact) => (
                               <OverlayArtifactCard
                                 key={artifact.id}
                                 artifact={artifact}
                                 visibleColumns={visibleColumns}
-                                onSecure={onSecureFile}
-                                onRelease={onReleaseFile}
-                                onExtend={onExtendSeal}
-                                onWatch={onWatchToggle}
-                                onRestore={onRestoreFile}
-                                onPurge={onPurgeFile}
-                                onDelete={onDeleteFile}
+                                run={(busyKey, action, payload, opts) => runCardAction(artifact.id, busyKey, action, payload, opts)}
+                                errorMessage={cardErrors[artifact.id] || null}
+                                onClearError={() => setCardErrors((p) => ({ ...p, [artifact.id]: null }))}
                                 isWatching={watchStatus[artifact.id]}
+                                viewer={viewer}
                                 busyAction={busyAction?.id === artifact.id ? busyAction.action : null}
                                 formatRemainingTime={formatRemainingTime}
                                 formatFileSize={formatFileSize}
@@ -1274,7 +1134,7 @@ const ArtifactControlPanel = () => {
                                 pageLocation={pageLocation}
                               />
                             ))}
-                          </div>
+                          </RovingList>
                         </div>
                       )}
                       {staleFiles.length > 0 && (
@@ -1283,20 +1143,17 @@ const ArtifactControlPanel = () => {
                             <span className="sv-card-section-title">Trash</span>
                             <span className="sv-card-section-count badge-stale">{staleFiles.length}</span>
                           </div>
-                          <div className="sv-card-list" data-cols="3">
+                          <RovingList className="sv-card-list" data-cols="3" label="Trashed attachments">
                             {staleFiles.map((artifact) => (
                               <OverlayArtifactCard
                                 key={artifact.id}
                                 artifact={artifact}
                                 visibleColumns={visibleColumns}
-                                onSecure={onSecureFile}
-                                onRelease={onReleaseFile}
-                                onExtend={onExtendSeal}
-                                onWatch={onWatchToggle}
-                                onRestore={onRestoreFile}
-                                onPurge={onPurgeFile}
-                                onDelete={onDeleteFile}
+                                run={(busyKey, action, payload, opts) => runCardAction(artifact.id, busyKey, action, payload, opts)}
+                                errorMessage={cardErrors[artifact.id] || null}
+                                onClearError={() => setCardErrors((p) => ({ ...p, [artifact.id]: null }))}
                                 isWatching={watchStatus[artifact.id]}
+                                viewer={viewer}
                                 busyAction={busyAction?.id === artifact.id ? busyAction.action : null}
                                 formatRemainingTime={formatRemainingTime}
                                 formatFileSize={formatFileSize}
@@ -1306,7 +1163,7 @@ const ArtifactControlPanel = () => {
                                 pageLocation={pageLocation}
                               />
                             ))}
-                          </div>
+                          </RovingList>
                         </div>
                       )}
                       {availableFiles.length > 0 && (
@@ -1315,20 +1172,17 @@ const ArtifactControlPanel = () => {
                             <span className="sv-card-section-title">Available</span>
                             <span className="sv-card-section-count">{availableFiles.length}</span>
                           </div>
-                          <div className="sv-card-list" data-cols="3">
+                          <RovingList className="sv-card-list" data-cols="3" label="Available attachments">
                             {availableFiles.map((artifact) => (
                               <OverlayArtifactCard
                                 key={artifact.id}
                                 artifact={artifact}
                                 visibleColumns={visibleColumns}
-                                onSecure={onSecureFile}
-                                onRelease={onReleaseFile}
-                                onExtend={onExtendSeal}
-                                onWatch={onWatchToggle}
-                                onRestore={onRestoreFile}
-                                onPurge={onPurgeFile}
-                                onDelete={onDeleteFile}
+                                run={(busyKey, action, payload, opts) => runCardAction(artifact.id, busyKey, action, payload, opts)}
+                                errorMessage={cardErrors[artifact.id] || null}
+                                onClearError={() => setCardErrors((p) => ({ ...p, [artifact.id]: null }))}
                                 isWatching={watchStatus[artifact.id]}
+                                viewer={viewer}
                                 busyAction={busyAction?.id === artifact.id ? busyAction.action : null}
                                 formatRemainingTime={formatRemainingTime}
                                 formatFileSize={formatFileSize}
@@ -1338,7 +1192,7 @@ const ArtifactControlPanel = () => {
                                 pageLocation={pageLocation}
                               />
                             ))}
-                          </div>
+                          </RovingList>
                         </div>
                       )}
                       {enriching && (

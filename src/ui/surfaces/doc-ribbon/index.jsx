@@ -1,10 +1,13 @@
 /**
- * Document Ribbon — Primary UI Surface
+ * Document Ribbon — Primary UI Surface (5.0, mockup docs/mockups/sv-status-surfaces.html §2/§3)
  *
- * Page banner that shows ONLY when the page has something to report — a sealed attachment, a
- * sealed section, a workflow, an alert or a validation state (bug 2.4). Otherwise it closes
- * itself via view.close(). Shows the seal counts and a button to open the management overlay;
- * conflict/expiry alerts open from a chip into the popover host.
+ * ONE row: the left block is the page's classification (solid level colour, lock glyph when the
+ * page holds a seal, level name, source); the right half holds exactly ONE urgent thing for the
+ * viewer — a state pill, one sentence, and the buttons (Request edit · Open · ×). Whether the row
+ * opens at all is the pure rule in kit/ribbon-rules.js (decideRibbon), fed by the steward's
+ * `ribbonMode` ("exceptions" | "always") and `ribbonThresholdRank`, the `ribbon-summary` answer
+ * (classification, waiting-on-me, lockedFor), the viewer's alerts and the page's workflow /
+ * validation state. Hidden = view.close() (Confluence drops the banner row), shown = view.open().
  */
 
 import React, { useState, useEffect, useCallback, useRef } from "react";
@@ -12,7 +15,9 @@ import { createRoot } from "react-dom/client";
 import { createPortal } from "react-dom";
 import { invoke, view, Modal, router } from "@forge/bridge";
 import { enablePaletteSync } from "../../kit/palette-sync";
+import { useActionMenu } from "../../kit/ActionMenu";
 import DatePicker, { toYmd, fromYmd } from "../../kit/DatePicker";
+import { decideRibbon, untilLabel } from "../../kit/ribbon-rules";
 
 /**
  * Workflow state chip + transition control (#42). Shows the page's current
@@ -126,7 +131,7 @@ const WorkflowDetails = ({ workflow, siteUrl, pageId, isSteward, host, onSaved, 
   let summary = null;
   if (enforced) {
     if (!ar) summary = `Approved on ${fmtDate(record.approvedAt)} (details were not recorded for this approval).`;
-    else if (decisions.length === 0) summary = `${outcomeWord} by ${ar.completedByName || "a space steward"} on ${fmtDate(ar.completedAt)}.`;
+    else if (decisions.length === 0) summary = `${outcomeWord} by ${ar.completedByName || "a space admin"} on ${fmtDate(ar.completedAt)}.`;
     else summary = `${outcomeWord} for version ${ar.pinnedVersion ?? reviewedVersion} on ${fmtDate(ar.completedAt)} · ${modeLabel(ar.mode, ar.min)}`;
   }
 
@@ -245,7 +250,7 @@ const WorkflowDetails = ({ workflow, siteUrl, pageId, isSteward, host, onSaved, 
               </VersionLink>
               {baselineMoved && (
                 <p className="wf-evidence-baseline" data-testid="wf-evidence-baseline">
-                  Sanctioned baseline is now v{baselineVersion} (edited by an approver or steward since the review).
+                  Sanctioned baseline is now v{baselineVersion} (edited by an approver or space admin since the review).
                 </p>
               )}
               {changedSince && (
@@ -342,7 +347,6 @@ const WorkflowControl = ({ workflow, approvals, operatorId, pageId, spaceKey, si
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
   const [seat, setSeat] = useState(false);
-  const [activeIndex, setActiveIndex] = useState(0);
   const [panelOpen, setPanelOpen] = useState(false);
   const [reason, setReason] = useState("");
   const [sigCode, setSigCode] = useState(""); // B3: the approver's authenticator code, when the space requires one
@@ -360,7 +364,6 @@ const WorkflowControl = ({ workflow, approvals, operatorId, pageId, spaceKey, si
   const [decideMsg, setDecideMsg] = useState(null);
   const btnRef = useRef(null);
   const menuRef = useRef(null);
-  const itemRefs = useRef([]);
   const panelRef = useRef(null);
   const apprBtnRef = useRef(null);
 
@@ -389,36 +392,9 @@ const WorkflowControl = ({ workflow, approvals, operatorId, pageId, spaceKey, si
     }
   }, [pageId, reason, sigCode, onTransitioned]); // B3: the code is read at click time, not from the first render
 
-  // Close on outside click, or when focus leaves both the trigger and the menu.
-  useEffect(() => {
-    if (!menuOpen) return undefined;
-    const outside = (e) => !menuRef.current?.contains(e.target) && !btnRef.current?.contains(e.target);
-    const onDown = (e) => { if (outside(e)) setMenuOpen(false); };
-    const onFocusIn = (e) => { if (outside(e)) setMenuOpen(false); };
-    document.addEventListener("mousedown", onDown);
-    document.addEventListener("focusin", onFocusIn);
-    return () => { document.removeEventListener("mousedown", onDown); document.removeEventListener("focusin", onFocusIn); };
-  }, [menuOpen]);
-
-  // ARIA menu pattern: on open, move focus to the first transition.
-  useEffect(() => {
-    if (menuOpen) { setActiveIndex(0); requestAnimationFrame(() => itemRefs.current[0]?.focus()); }
-  }, [menuOpen]);
-
-  const moveActive = useCallback((next) => { setActiveIndex(next); itemRefs.current[next]?.focus(); }, []);
-
-  const onMenuKey = useCallback((e) => {
-    const n = available.length;
-    if (!n) return;
-    switch (e.key) {
-      case "ArrowDown": e.preventDefault(); moveActive((activeIndex + 1) % n); break;
-      case "ArrowUp": e.preventDefault(); moveActive((activeIndex - 1 + n) % n); break;
-      case "Home": e.preventDefault(); moveActive(0); break;
-      case "End": e.preventDefault(); moveActive(n - 1); break;
-      case "Escape": e.preventDefault(); setMenuOpen(false); requestAnimationFrame(() => btnRef.current?.focus()); break;
-      default: break;
-    }
-  }, [available.length, activeIndex, moveActive]);
+  // The menu behaviour (outside click / focus-out close, roving items, Arrow/Home/End, Escape
+  // back to the chip) is the kit's: this was the original and now lives in kit/ActionMenu.jsx.
+  const { onMenuKey, itemProps } = useActionMenu({ open: menuOpen, setOpen: setMenuOpen, count: available.length, triggerRef: btnRef, menuRef });
 
   const doTransition = useCallback(async (toStateId) => {
     setBusy(true); setError(null); setMenuOpen(false);
@@ -622,9 +598,7 @@ const WorkflowControl = ({ workflow, approvals, operatorId, pageId, spaceKey, si
             <button
               key={s.id}
               type="button"
-              role="menuitem"
-              tabIndex={i === activeIndex ? 0 : -1}
-              ref={(el) => { itemRefs.current[i] = el; }}
+              {...itemProps(i)}
               className="wf-menu-item"
               onClick={() => doTransition(s.id)}
             >
@@ -649,7 +623,24 @@ const hashKey = (str) => { let h = 5381; for (let i = 0; i < str.length; i++) h 
 const stateKeyOf = ({ summary, workflow, alerts, validationState }) => hashKey(JSON.stringify({
   a: summary?.sealedAttachments || 0, s: summary?.sectionSeals || 0, t: summary?.trashedSeals || 0,
   w: workflow?.state?.id || workflow?.state?.name || null, al: (alerts || []).map((x) => x.id).sort(), v: validationState || null,
+  // 5.0: a new request, an approval, a grant, a different locked seal or a re-classification is a
+  // NEW state — a dismissed "Locked" row comes back when the state changes (mockup §2 note).
+  m: summary?.ribbonMode || null, l: summary?.classification?.level?.id || null, src: summary?.classification?.source || null,
+  r: summary?.waitingOnMe?.requests || 0, ap: summary?.waitingOnMe?.approvals || 0,
+  g: (summary?.waitingOnMe?.grantsActive || []).map((x) => x.id).sort(),
+  lf: summary?.lockedFor ? [summary.lockedFor.kind, summary.lockedFor.id, summary.lockedFor.myRequest] : null,
 }));
+// The decision input, built ONCE from the same four reads the evaluation made.
+const ribbonInput = ({ summary, workflow, alerts, validationState }) => ({
+  mode: summary?.ribbonMode,
+  classification: summary?.classification || { level: null, source: "none" },
+  threshold: summary?.threshold || { rank: summary?.ribbonThresholdRank },
+  waitingOnMe: summary?.waitingOnMe || { requests: 0, approvals: 0, grantsActive: [] },
+  lockedFor: summary?.lockedFor || null,
+  alerts: alerts || [],
+  workflow: workflow || null,
+  validation: validationState || null,
+});
 const dismissKey = (pageId, stateKey) => `sv-ribbon-dismissed:${pageId}:${stateKey}`;
 const memoryDismissed = new Set(); // fallback when the sandbox denies sessionStorage
 const isDismissed = (key) => { try { if (window.sessionStorage.getItem(key)) return true; } catch (_) { /* sandboxed */ } return memoryDismissed.has(key); };
@@ -657,8 +648,60 @@ const rememberDismissed = (key) => { memoryDismissed.add(key); try { window.sess
 const bridgeClose = () => { try { const r = view.close(); if (r && r.catch) r.catch((e) => console.info("[ribbon] view.close rejected", e?.message || e)); } catch (e) { console.info("[ribbon] view.close unavailable", e?.message || e); } };
 const bridgeOpen = () => { try { const r = view.open?.(); if (r && r.catch) r.catch((e) => console.info("[ribbon] view.open rejected", e?.message || e)); } catch (e) { console.info("[ribbon] view.open unavailable", e?.message || e); } };
 
+// One sentence per alert kind the server actually RECORDS (recordDispatch call sites, 2026-09-15):
+// SEAL_CONFLICT (artifact-fetch.js, carries display names); edit-reverted / content-reverted /
+// trash-restored / presentation-restored / seal-released (triggers.js sendViolationNotifications);
+// section-reverted / section-restored; revert-failed; seal-auto-released; reservation-expired;
+// periodic-reminder. The old chip only knew SEAL_CONFLICT and a SEAL_EXPIRED nothing writes, and
+// read `artifactName` — a field no record carries (it is `attachmentName`) — so it opened empty (P1-7).
+// The reader is the seal owner OR the editor (recent-dispatches is filtered to those two), so the
+// phrasing is picked from which one is looking.
+const alertSentence = (a, operatorId) => {
+  const name = a.attachmentName || a.artifactName || "an attachment";
+  const asEditor = !!operatorId && a.editorAccountId === operatorId && a.ownerAccountId !== operatorId;
+  const days = Number.isFinite(Number(a.daysSealed)) ? Number(a.daysSealed) : null;
+  switch (a.type) {
+    case "SEAL_CONFLICT":
+      return <><strong>{a.editorDisplayName || "Someone"}</strong> tried to modify <strong>{name}</strong>, which is sealed by <strong>{a.ownerDisplayName || "its owner"}</strong>. The change was reverted automatically.</>;
+    case "edit-reverted":
+      return asEditor ? <>Your change to <strong>{name}</strong> was reverted — the attachment is sealed by its owner.</> : <>A change to your sealed attachment <strong>{name}</strong> was reverted automatically.</>;
+    case "content-reverted":
+      return asEditor ? <>Your removal of <strong>{name}</strong> from the page was reverted — the attachment is sealed.</> : <><strong>{name}</strong> was removed from the page; the sealed content was put back.</>;
+    case "trash-restored":
+      return asEditor ? <>You moved <strong>{name}</strong> to the trash; it was restored because it is sealed.</> : <>Your sealed attachment <strong>{name}</strong> was moved to the trash and restored.</>;
+    case "presentation-restored":
+      return asEditor ? <>Your layout change to <strong>{name}</strong> was reverted — the attachment is sealed.</> : <>The layout of your sealed attachment <strong>{name}</strong> was changed and restored.</>;
+    case "seal-released":
+      return <><strong>{name}</strong> was permanently deleted; its seal was released.</>;
+    case "section-reverted":
+      return asEditor ? <>Your edit to the sealed section <strong>{name}</strong> was reverted.</> : <>An edit to your sealed section <strong>{name}</strong> was reverted automatically.</>;
+    case "section-restored":
+      return asEditor ? <>You removed the sealed section <strong>{name}</strong>; it was put back.</> : <>Your sealed section <strong>{name}</strong> was removed and put back.</>;
+    case "revert-failed":
+      return <>Sentinel Vault could not restore <strong>{name}</strong> after a change — check its version history.</>;
+    case "seal-auto-released":
+      return <>The seal on <strong>{name}</strong> lapsed and was released automatically.</>;
+    case "reservation-expired":
+      return <>Your seal on <strong>{name}</strong> is overdue. Extend it or unseal it when you are done.</>;
+    case "periodic-reminder":
+      return <><strong>{name}</strong> has been sealed for {days !== null ? `${days} day${days === 1 ? "" : "s"}` : "a while"}. Still needed?</>;
+    default:
+      return <>Sentinel Vault recorded <strong>{String(a.type || "an event").replace(/[_-]+/g, " ")}</strong> on <strong>{name}</strong>.</>;
+  }
+};
+
+// Test seam (mirrors the section surface's __svSectionStatusStub): a harness can stand in for
+// the `ribbon-summary` answer — an object is returned as-is, a function is awaited, and
+// `{ throw: true }` throws — because the resolver's failure branches (asApp() attachment
+// listing 5xx, a thrown listing) cannot be provoked from a browser against a healthy tenant.
+const readSummaryStub = () => {
+  try { const s = window.__svRibbonSummaryStub; return s && (typeof s === "object" || typeof s === "function") ? s : null; } catch (_) { return null; }
+};
+
 const DocumentRibbon = () => {
   const [summary, setSummary] = useState(null); // ribbon-summary answer
+  const [summaryError, setSummaryError] = useState(null); // reason string when the summary could not be read
+  const [booting, setBooting] = useState(true); // true until the first visibility decision (skeleton row)
   const [alerts, setAlerts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [visible, setVisible] = useState(false);
@@ -671,10 +714,6 @@ const DocumentRibbon = () => {
   const [spaceKey, setSpaceKey] = useState(null);
   const [siteUrl, setSiteUrl] = useState(null); // A6: version links must leave the iframe to the site
   const [dialogHost, setDialogHost] = useState(null); // in-flow row every popover renders into
-  const [alertOpen, setAlertOpen] = useState(false);
-  const alertBtnRef = useRef(null);
-  const alertPanelRef = useRef(null);
-  useDismissableDialog(alertOpen, setAlertOpen, alertPanelRef, alertBtnRef);
   const pageIdRef = useRef(null); // the content id the current evaluation belongs to
   const openStateRef = useRef(null); // true after view.open(), false after view.close(), null = untouched
   const evalSeq = useRef(0);
@@ -705,16 +744,27 @@ const DocumentRibbon = () => {
     }
   }, [spaceKey]);
 
+  // Returns { res, error }: `error` is set when the summary THREW or answered ok:false with a
+  // reason that is not the confirmed "nothing to show". Only a confirmed nothing may close the
+  // banner (P1-7); everything else is an error row with Retry.
   const fetchSummary = useCallback(async (id) => {
     try {
-      const res = await invoke("ribbon-summary", { pageId: id });
+      const stub = readSummaryStub();
+      let res;
+      if (stub) {
+        res = typeof stub === "function" ? await stub() : stub;
+        if (res && res.throw) throw new Error("stubbed ribbon-summary failure");
+      } else {
+        res = await invoke("ribbon-summary", { pageId: id });
+      }
       console.info("[ribbon] summary", res);
-      setSummary(res || null);
-      return res || null;
+      const failed = !res || typeof res !== "object" || (res.ok !== true && res.reason !== "none");
+      setSummary(failed ? null : res);
+      return failed ? { res: null, error: res?.reason || "no-summary" } : { res, error: null };
     } catch (err) {
       console.error("[ribbon] ribbon-summary failed:", err);
       setSummary(null);
-      return null;
+      return { res: null, error: err?.message || "threw" };
     }
   }, []);
 
@@ -755,12 +805,13 @@ const DocumentRibbon = () => {
         pageIdRef.current = null;
         setPageId(null);
         setLoading(false);
+        setSummaryError(null);
         applyVisibility(false, !ctxPageId ? "no content id in context" : `unsupported content type ${contentType}`);
         return;
       }
       if (pageIdRef.current !== ctxPageId) {
         setLoading(true);
-        setWorkflow(null); setApprovals(null); setValidationState(null); setAiCount(null); setAlerts([]); setSummary(null);
+        setWorkflow(null); setApprovals(null); setValidationState(null); setAiCount(null); setAlerts([]); setSummary(null); setSummaryError(null);
       }
       pageIdRef.current = ctxPageId;
       setPageId(ctxPageId);
@@ -768,7 +819,7 @@ const DocumentRibbon = () => {
       setOperatorId(operator);
       setSiteUrl(context?.siteUrl || null);
 
-      const [sum, wf, appr, al, vs, ai] = await Promise.all([
+      const [sumRes, wf, appr, al, vs, ai] = await Promise.all([
         fetchSummary(ctxPageId),
         invoke("get-page-workflow", { pageId: ctxPageId, spaceKey: ctxSpaceKey }).catch(() => null),
         invoke("get-page-approvals", { pageId: ctxPageId, spaceKey: ctxSpaceKey }).catch(() => null),
@@ -777,6 +828,7 @@ const DocumentRibbon = () => {
         invoke("get-ai-findings", { pageId: ctxPageId }).catch(() => null),
       ]);
       if (stale()) return;
+      const sum = sumRes?.res || null;
       const wfVal = wf?.assigned ? wf : null;
       const vsVal = vs?.state?.state || null;
       setWorkflow(wfVal);
@@ -784,20 +836,36 @@ const DocumentRibbon = () => {
       setValidationState(vsVal);
       setAiCount(ai?.findings?.findings ? ai.findings.findings.length : null);
 
-      const sealed = (sum?.sealedAttachments || 0) > 0 || (sum?.sectionSeals || 0) > 0 || (sum?.trashedSeals || 0) > 0;
-      const show = sealed || !!wfVal || al.length > 0 || !!vsVal;
+      if (sumRes?.error) {
+        // Not a confirmed "nothing to show": say so in the row instead of vanishing (P1-7).
+        setSummaryError(sumRes.error);
+        console.info("[ribbon] decision", `error row (summary: ${sumRes.error})`);
+        applyVisibility(true, `summary failed: ${sumRes.error}`);
+        return;
+      }
+      setSummaryError(null);
+
+      // 5.0 (mockup §2/§3): the pure show rule decides; the row shows what the rule saw.
+      const decision = decideRibbon(ribbonInput({ summary: sum, workflow: wfVal, alerts: al, validationState: vsVal }));
+      const show = decision.show;
       const key = dismissKey(ctxPageId, stateKeyOf({ summary: sum, workflow: wfVal, alerts: al, validationState: vsVal }));
-      const dismissed = show && isDismissed(key);
+      // An explicit Retry (the error row's button) is a request to see the result — it overrides
+      // a dismissal of that same state made earlier in the session; every other evaluation honours it.
+      const dismissed = show && why !== "retry" && isDismissed(key);
       const branch = !show
-        ? `nothing to show (reason=${sum?.reason || "no-summary"}, attachments=${sum?.attachments ?? "?"})`
+        ? `nothing to show (mode=${decision.mode} level=${sum?.classification?.level?.id || "-"} sealedAttachments=${sum?.sealedAttachments || 0} sectionSeals=${sum?.sectionSeals || 0} reason=${sum?.reason || "no-summary"})`
         : dismissed ? `dismissed for this state (${key})`
-          : `show: sealedAttachments=${sum?.sealedAttachments || 0} sectionSeals=${sum?.sectionSeals || 0} workflow=${!!wfVal} alerts=${al.length} validation=${vsVal || "-"}`;
+          : `show: ${decision.reasons.join("+")} (mode=${decision.mode} level=${sum?.classification?.level?.id || "-"} urgent=${decision.urgent?.kind || "-"} workflow=${!!wfVal} alerts=${al.length} validation=${vsVal || "-"})`;
       console.info("[ribbon] decision", branch);
       applyVisibility(show && !dismissed, branch);
     } catch (err) {
       console.error("[ribbon] evaluate error:", err);
+      if (!stale()) {
+        setSummaryError(err?.message || "evaluate threw");
+        applyVisibility(true, `evaluate threw: ${err?.message || err}`);
+      }
     } finally {
-      if (!stale()) setLoading(false);
+      if (!stale()) { setLoading(false); setBooting(false); }
     }
   }, [applyVisibility, fetchSummary, fetchAlerts]);
 
@@ -860,15 +928,14 @@ const DocumentRibbon = () => {
     return () => clearInterval(interval);
   }, [evaluate]);
 
-  const openManageOverlay = useCallback(() => {
-    const overlay = new Modal({
-      resource: "overlay",
-      size: "max",
-      onClose: () => {
-        evaluate("overlay closed");
-      },
-    });
-    overlay.open();
+  // "Open" → the page-details modal (mockup §4), the SAME resource the byline chip renders. The
+  // resource picks its mode from the module that opened it (renderForModule: only a *seal-action*
+  // key renders mode "seal"), so opened from the banner it renders the details hub, and it reads
+  // the page id from the banner's own context (extension.content.id). The old "Manage Attachments"
+  // overlay is the modal's Attachments tab now.
+  const openDetails = useCallback(() => {
+    const modal = new Modal({ resource: "page-details-ui", size: "large", onClose: () => { evaluate("details closed"); } });
+    modal.open();
   }, [evaluate]);
 
   const dismissAlert = useCallback(async (alertId) => {
@@ -884,79 +951,59 @@ const DocumentRibbon = () => {
     const key = dismissKey(pageIdRef.current, stateKeyOf({ summary, workflow, alerts, validationState }));
     rememberDismissed(key);
     applyVisibility(false, `dismissed by the viewer (${key})`);
-  }, [summary, workflow, alerts, validationState, applyVisibility]);
+    // The "Restored" row IS the alert (there is no alert popover any more): dismissing it
+    // acknowledges the dispatch it showed, so the same reverted edit does not come back tomorrow.
+    if (alerts.length > 0) dismissAlert(alerts[0].id);
+  }, [summary, workflow, alerts, validationState, applyVisibility, dismissAlert]);
 
+  // Journey 2 — "Request edit" on a seal the viewer does not own: an inline reason field in the
+  // row (no popover, no native prompt), then request-edit-access / request-section-edit.
+  const [asking, setAsking] = useState(false);
+  const [askReason, setAskReason] = useState("");
+  const [askBusy, setAskBusy] = useState(false);
+  const [askError, setAskError] = useState(null);
+  const askRef = useRef(null);
+  useEffect(() => { if (asking) requestAnimationFrame(() => askRef.current?.focus()); else { setAskReason(""); setAskError(null); } }, [asking]);
+  const sendRequest = useCallback(async () => {
+    const seal = summary?.lockedFor;
+    if (!seal) return;
+    setAskBusy(true); setAskError(null);
+    try {
+      const r = seal.kind === "section"
+        ? await invoke("request-section-edit", { sectionId: seal.id, reason: askReason })
+        : await invoke("request-edit-access", { attachmentId: seal.id, reason: askReason });
+      if (r?.success) { setAsking(false); await evaluate("edit request sent"); }
+      else setAskError(r?.reason || "Could not send the request.");
+    } catch (_) { setAskError("Could not send the request."); }
+    finally { setAskBusy(false); }
+  }, [summary, askReason, evaluate]);
+
+  // First paint (P1-7): until the first decision, a 40px skeleton row — never text that then
+  // flips or vanishes. The host shows the banner slot before view.open()/close() has been called.
+  if (booting && !visible) {
+    return (
+      <div className="ribbon-bar ribbon-bar--skeleton" data-testid="ribbon-skeleton" aria-busy="true" aria-label="Sentinel Vault is checking this page">
+        <span className="ribbon-skel ribbon-skel-icon" /><span className="ribbon-skel ribbon-skel-title" /><span className="ribbon-skel ribbon-skel-text" /><span className="ribbon-skel ribbon-skel-btn" />
+      </div>
+    );
+  }
   if (!visible) return null;
 
-  const sealedCount = summary?.sealedAttachments || 0;
-  const sectionCount = summary?.sectionSeals || 0;
-  const totalCount = summary?.attachments || 0;
-  const primaryAlert = alerts.length > 0 ? alerts[0] : null;
-  const parts = [];
-  if (sealedCount > 0) parts.push(`${sealedCount} attachment${sealedCount !== 1 ? "s" : ""} sealed on this page`);
-  else if (totalCount > 0) parts.push(`${totalCount} attachment${totalCount !== 1 ? "s" : ""} on this page — none sealed`);
-  if (sectionCount > 0) parts.push(`${sectionCount} section${sectionCount !== 1 ? "s" : ""} sealed`);
-  const statusText = parts.length ? parts.join(" · ") : "No attachments on this page";
-
-  return (
-    <div>
-      {/* Main ribbon bar — ONE row, ≤48px including margins */}
-      <div className="ribbon-bar" data-testid="ribbon-bar">
-        <div className="ribbon-icon">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+  // Error row (P1-7): the summary threw or refused — one row, same height, with Retry.
+  if (summaryError) {
+    return (
+      <div className="ribbon-bar ribbon-bar--error" data-testid="ribbon-bar" data-state="error">
+        <div className="ribbon-icon ribbon-icon--error">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /><path d="M12 8v5M12 16h.01" />
           </svg>
         </div>
-
         <span className="ribbon-title">Sentinel Vault</span>
-
-        <span className="ribbon-status" data-testid="ribbon-status">
-          {loading ? <span className="ribbon-loading-bar" /> : statusText}
+        <span className="ribbon-status ribbon-status--error" role="alert" data-testid="ribbon-error" title={`ribbon-summary: ${summaryError}`}>
+          Sentinel Vault could not check this page
         </span>
-
-        {!loading && workflow && (
-          <WorkflowControl
-            workflow={workflow}
-            approvals={approvals}
-            operatorId={operatorId}
-            pageId={pageId}
-            spaceKey={spaceKey}
-            siteUrl={siteUrl}
-            isSteward={!!workflow?.canSetReviewDue}
-            host={dialogHost}
-            onTransitioned={reloadWorkflow}
-          />
-        )}
-
-        {!loading && validationState && (
-          <span className={`ribbon-chip ribbon-chip-${validationState}`} title="Page content validation status">
-            {validationState === "passed" ? "Validation: passed" : validationState === "failed" ? "Validation: issues" : "Validation: awaiting approval"}
-          </span>
-        )}
-        {!loading && aiCount !== null && aiCount > 0 && (
-          <span className="ribbon-chip ribbon-chip-ai" title="AI content review findings">
-            AI check: {aiCount} finding{aiCount !== 1 ? "s" : ""}
-          </span>
-        )}
-
-        {/* Alerts live in the row as a chip; the full text sits in the shared popover host. */}
-        {primaryAlert && (
-          <button
-            ref={alertBtnRef}
-            type="button"
-            className="ribbon-chip ribbon-chip-alert"
-            onClick={() => setAlertOpen((o) => !o)}
-            aria-haspopup="dialog"
-            aria-expanded={alertOpen}
-            title="Seal alerts on this page"
-            data-testid="ribbon-alert-chip"
-          >
-            ⚠ {alerts.length} alert{alerts.length !== 1 ? "s" : ""}
-          </button>
-        )}
-
-        <button className="ribbon-action" onClick={openManageOverlay}>
-          Manage Attachments
+        <button type="button" className="ribbon-action ribbon-retry" onClick={() => { setLoading(true); evaluate("retry"); }} disabled={loading} data-testid="ribbon-retry">
+          {loading ? "Checking…" : "Retry"}
         </button>
         <button type="button" className="ribbon-dismiss" onClick={dismissRibbon} aria-label="Dismiss" title="Dismiss" data-testid="ribbon-dismiss">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" aria-hidden="true">
@@ -964,44 +1011,137 @@ const DocumentRibbon = () => {
           </svg>
         </button>
       </div>
+    );
+  }
 
-      {/* In-flow host for every popover — see inHost(). Empty (and display:none) when
+  const decision = decideRibbon(ribbonInput({ summary, workflow, alerts, validationState }));
+  const level = decision.classification?.level || null;
+  const source = decision.classification?.source || "none";
+  const hasSeal = (summary?.sealedAttachments || 0) > 0 || (summary?.sectionSeals || 0) > 0 || (summary?.trashedSeals || 0) > 0;
+  const urgent = decision.urgent;
+  const lockedSeal = summary?.lockedFor || null;
+  const sourceText = source === "page" ? "set on this page" : source === "space" ? "space default" : null;
+  const untilOf = (iso) => untilLabel(iso);
+
+  // ONE state pill + ONE sentence, by the urgent kind (mockup §2). `pill` is null when nothing is
+  // urgent: in "always" the right half is then EMPTY (mockup §3 decision); in "exceptions" the row
+  // is open because the level met the threshold, and the level's own description is the sentence.
+  let pill = null;
+  let sentence = null;
+  switch (urgent?.kind) {
+    case "restored":
+      pill = { tone: "alert", text: "Restored", n: urgent.count > 1 ? urgent.count : null };
+      sentence = alertSentence(urgent.alert, operatorId);
+      break;
+    case "waiting-for-you": {
+      const r = urgent.requests, a = urgent.approvals;
+      pill = { tone: "wait", text: "Waiting for you", n: urgent.count };
+      const parts = [];
+      if (r) parts.push(`${r} edit request${r === 1 ? "" : "s"} on your sealed content on this page`);
+      if (a) parts.push(`${a} approval${a === 1 ? "" : "s"} waiting for your decision`);
+      sentence = <>{parts.join(" · ")}</>;
+      break;
+    }
+    case "edit-now":
+      pill = { tone: "ok", text: "Edit now" };
+      sentence = <>Your request on <b>{urgent.grant.name}</b> was approved — you can edit{urgent.grant.until ? <> until <b>{untilOf(urgent.grant.until)}</b></> : null}</>;
+      break;
+    case "waiting-for-owner":
+      pill = { tone: "wait", text: `Waiting for ${urgent.seal.owner}` };
+      sentence = <>Your edit request on <b>{urgent.seal.name}</b> was sent</>;
+      break;
+    case "locked":
+      pill = { tone: "lock", text: "Locked" };
+      sentence = <><b>{urgent.seal.name}</b> is sealed by <b>{urgent.seal.owner}</b>{urgent.seal.until ? <> until <b>{untilOf(urgent.seal.until)}</b></> : <> with no expiry</>}</>;
+      break;
+    default:
+      sentence = decision.mode === "exceptions" && decision.overThreshold && level?.description ? <>{level.description}</> : null;
+  }
+  const canRequest = urgent?.kind === "locked" && !!lockedSeal;
+  const levelColor = level?.color || null;
+  const glyph = hasSeal
+    ? <svg viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2" /><path d="M8 11V7a4 4 0 0 1 8 0v4" /></svg>
+    : <svg viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" aria-hidden="true"><circle cx="12" cy="12" r="8" /></svg>;
+
+  return (
+    <div>
+      {/* Main ribbon bar — ONE row, 44px inside the 48px cap (mockup decision 2) */}
+      <div className="ribbon-bar" data-testid="ribbon-bar" data-state={urgent?.kind || "none"} data-mode={decision.mode} data-level={level?.id || "none"} data-source={source}>
+        <div className={`rb-class${level ? "" : " rb-class--none"}`} style={levelColor ? { background: levelColor } : undefined} data-testid="ribbon-class" title={level ? `${level.name}${sourceText ? ` · ${sourceText}` : ""}` : "This page has no classification"}>
+          <span className="rb-glyph" data-glyph={hasSeal ? "lock" : "dot"}>{glyph}</span>
+          <span className="rb-lvname" data-testid="ribbon-level">{level ? level.name : "Unclassified"}</span>
+          {level && sourceText && <span className="rb-lvsrc" data-testid="ribbon-source">· {sourceText}</span>}
+        </div>
+
+        <div className={`rb-body${pill || sentence || workflow || validationState ? "" : " rb-body--empty"}`} data-testid="ribbon-body">
+          {loading && <span className="ribbon-loading-bar" />}
+          {!loading && pill && (
+            <span className={`rb-state rb-state--${pill.tone}`} data-testid="ribbon-pill">
+              {pill.n != null && <span className="rb-state-n">{pill.n}</span>}{pill.text}
+            </span>
+          )}
+          {!loading && asking && canRequest ? (
+            <span className="rb-ask" data-testid="ribbon-ask">
+              <input
+                ref={askRef}
+                className="rb-ask-input"
+                value={askReason}
+                maxLength={300}
+                placeholder={`Why do you need to edit ${lockedSeal.name}?`}
+                onChange={(e) => setAskReason(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") sendRequest(); if (e.key === "Escape") setAsking(false); }}
+                aria-label="Reason for your edit request"
+                data-testid="ribbon-ask-reason"
+              />
+              <button type="button" className="rb-btn rb-btn--primary" onClick={sendRequest} disabled={askBusy} data-testid="ribbon-ask-send">{askBusy ? "Sending…" : "Send"}</button>
+              <button type="button" className="rb-btn rb-btn--quiet" onClick={() => setAsking(false)} disabled={askBusy}>Cancel</button>
+              {askError && <span className="rb-msg rb-msg--error" role="alert" data-testid="ribbon-ask-error">{askError}</span>}
+            </span>
+          ) : (
+            !loading && sentence && <span className="rb-msg" data-testid="ribbon-status">{sentence}</span>
+          )}
+
+          {!loading && workflow && (
+            <WorkflowControl
+              workflow={workflow}
+              approvals={approvals}
+              operatorId={operatorId}
+              pageId={pageId}
+              spaceKey={spaceKey}
+              siteUrl={siteUrl}
+              isSteward={!!workflow?.canSetReviewDue}
+              host={dialogHost}
+              onTransitioned={reloadWorkflow}
+            />
+          )}
+          {!loading && validationState && (
+            <span className={`ribbon-chip ribbon-chip-${validationState}`} title="Page content validation status">
+              {validationState === "passed" ? "Validation: passed" : validationState === "failed" ? "Validation: issues" : "Validation: awaiting approval"}
+            </span>
+          )}
+          {!loading && aiCount !== null && aiCount > 0 && (
+            <span className="ribbon-chip ribbon-chip-ai" title="AI content review findings">
+              AI check: {aiCount} finding{aiCount !== 1 ? "s" : ""}
+            </span>
+          )}
+        </div>
+
+        <div className="rb-actions">
+          {canRequest && !asking && (
+            <button type="button" className="rb-btn rb-btn--quiet" onClick={() => setAsking(true)} data-testid="ribbon-request-edit">Request edit</button>
+          )}
+          <button type="button" className="rb-btn rb-btn--primary" onClick={openDetails} data-testid="ribbon-open">Open</button>
+          <button type="button" className="ribbon-dismiss" onClick={dismissRibbon} aria-label="Dismiss" title="Dismiss" data-testid="ribbon-dismiss">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" aria-hidden="true">
+              <path d="M6 6l12 12M18 6L6 18" />
+            </svg>
+          </button>
+        </div>
+      </div>
+
+      {/* In-flow host for the workflow popovers — see inHost(). Empty (and display:none) when
           nothing is open so the banner reserves no space. */}
       <div className="wf-dialog-host" ref={setDialogHost} data-testid="wf-dialog-host" />
-
-      {primaryAlert && alertOpen && inHost(dialogHost, (
-        <div className="wf-appr-panel ribbon-alert" role="dialog" aria-label="Seal alerts" ref={alertPanelRef} tabIndex={-1} data-testid="ribbon-alert-panel">
-          <div className="ribbon-alert-item">
-            <span className="ribbon-alert-icon">⚠</span>
-            <div className="ribbon-alert-text">
-              {primaryAlert.type === "SEAL_CONFLICT" && (
-                <>
-                  <strong>{primaryAlert.editorDisplayName}</strong> tried to
-                  modify <strong>{primaryAlert.artifactName}</strong> which
-                  is held by{" "}
-                  <strong>{primaryAlert.ownerDisplayName}</strong>. The
-                  modification was automatically rolled back.
-                </>
-              )}
-              {primaryAlert.type === "SEAL_EXPIRED" && (
-                <>
-                  Your seal on{" "}
-                  <strong>{primaryAlert.artifactName}</strong> is overdue.
-                  Use the unseal button when you are done.
-                </>
-              )}
-              {alerts.length > 1 && (
-                <span className="sv-text-subtle" style={{ fontSize: "11px", marginLeft: "8px" }}>
-                  + {alerts.length - 1} more
-                </span>
-              )}
-            </div>
-            <button className="ribbon-alert-dismiss" onClick={() => dismissAlert(primaryAlert.id)}>
-              Dismiss
-            </button>
-          </div>
-        </div>
-      ))}
     </div>
   );
 };

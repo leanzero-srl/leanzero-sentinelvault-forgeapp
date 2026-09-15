@@ -15,6 +15,51 @@ import { WorkflowDashboard } from "../../kit/WorkflowDashboard";
 import ActivityReport from "../../kit/ActivityReport";
 import logo from "../../assets/icons/icon.png";
 import { BUILD_INFO } from "../../../build-info.js";
+// P2 (UX review 2026-09-14 §3): the settings tabs render from the schema — one copy of the
+// keys, effect text, engine defaults and the dependency table, shared with the site console.
+import {
+  control, readAllEffective, readEffective, formatDefault, formatValue, dependencyState,
+} from "../../../server/capsules/policies/settings-schema.js";
+
+/**
+ * A settings row drawn from its descriptor: label, one-line effect, "Effective default" and —
+ * for a space override — "Site default: …" (the effective GLOBAL value the space admin is
+ * overriding). A row whose parent is off is indented (same-scope parent) or locked with the
+ * reason (a global master the site admin holds), never silently inert.
+ */
+const SchemaRow = ({ desc, values, siteValues, children, testId }) => {
+  const dep = dependencyState(desc.key, values, siteValues);
+  const sameScopeParent = desc.parent && control(desc.parent)?.scope === desc.scope;
+  const siteDefault = desc.siteKey ? formatValue(desc.siteKey, siteValues?.[desc.siteKey]) : null;
+  return (
+    <div
+      className={`settings-row${sameScopeParent ? " is-dependent depth-1" : ""}${dep.enabled ? "" : " is-locked"}`}
+      data-testid={testId || `sv-row-${desc.key}`}
+      data-locked={dep.enabled ? "false" : "true"}
+    >
+      <div className="settings-row-info">
+        <p className="settings-row-label">{desc.label}</p>
+        <p className="settings-row-description">{desc.text}</p>
+        <p className="settings-row-default" data-testid={`sv-default-${desc.key}`}>
+          <span>Effective default:</span> {formatDefault(desc.key)}
+          {siteDefault && <><span className="settings-row-default-sep">·</span><span>Site default:</span> <span data-testid={`sv-site-default-${desc.key}`} style={{ fontWeight: 400 }}>{siteDefault}</span></>}
+        </p>
+        {!dep.enabled && <p className="settings-row-reason" data-testid={`sv-reason-${desc.key}`}>{dep.reason}</p>}
+      </div>
+      <div className="settings-row-control">{children}</div>
+    </div>
+  );
+};
+
+const GroupCard = ({ id, title, text, children }) => (
+  <section className="sv-group" data-testid={`sv-group-${id}`}>
+    <header className="sv-group-head">
+      <h3 className="sv-group-title">{title}</h3>
+      <p className="sv-group-text">{text}</p>
+    </header>
+    <div className="sv-group-body">{children}</div>
+  </section>
+);
 
 const SkeletonRow = ({ cols = 5 }) => (
   <tr className="skeleton-row">
@@ -442,10 +487,11 @@ const RealmPolicyDashboard = () => {
   const [realmName, setRealmName] = useState("Current Space");
 
   const [realmPrefs, setRealmPrefs] = useState({
-    activation: "use-system-default",
     autoUnlockTimeoutHours: null,
     adminUsers: [],
     adminGroups: [],
+    // P1-4: "normal" | "quiet" — quiet posts no comments / @mentions in this space.
+    notificationsMode: "normal",
   });
 
   const [reservedFiles, setReservedFiles] = useState([]);
@@ -459,8 +505,8 @@ const RealmPolicyDashboard = () => {
   // Teams custom dropdown state
   const [showTeamDropdown, setShowTeamDropdown] = useState(false);
   const [teamSearchTerm, setTeamSearchTerm] = useState("");
-  // Activation dropdown state
-  const [showActivationDropdown, setShowActivationDropdown] = useState(false);
+  // The site's effective policy (schema-coerced) — the "Site default: …" every space override shows.
+  const [siteValues, setSiteValues] = useState(() => readAllEffective("global", null));
   // Steward override state
   const [forceReleaseActive, setForceReleaseActive] = useState(true);
   // Track global auto-unlock enabled status
@@ -593,20 +639,24 @@ const RealmPolicyDashboard = () => {
           setSystemExpiryAlertsActive(
             globalSettings?.autoUnlockEnabled !== false,
           );
+          setSiteValues(readAllEffective("global", globalSettings));
 
           const settings = await invoke("load-policy", {
             scope: "space",
             key: realmKeyValue,
           });
 
+          // `activation` is gone: no server reader ever resolved it (UX review §3.2), so the
+          // console no longer offers it and store-policy drops the key.
           setRealmPrefs({
-            activation: settings?.activation || "use-system-default",
             autoUnlockTimeoutHours: settings?.autoUnlockTimeoutHours || null,
             adminUsers: settings?.adminUsers || [],
             adminGroups: settings?.adminGroups || [],
             autoInsertMacro: settings?.autoInsertMacro !== false,
             // it57: was never loaded → the saved insert position silently reset to "bottom" on every reload.
             macroInsertPosition: settings?.macroInsertPosition || "bottom",
+            // P1-4: anything but "quiet" reads as "normal" (same coercion the server applies).
+            notificationsMode: settings?.notificationsMode === "quiet" ? "quiet" : "normal",
           });
           // it26 (LIVE-BROWSER FIX): the essential data (space key, role, policy) is loaded —
           // RENDER the console NOW. The seals list + the group/user dropdown pre-fills are
@@ -744,7 +794,7 @@ const RealmPolicyDashboard = () => {
           const refreshed = await invoke("load-policy", { scope: "space", key: realmKey });
           setRealmPrefs((prev) => ({ ...prev, adminUsers: refreshed?.adminUsers || prev.adminUsers }));
         } catch (e) { /* non-critical */ }
-        setMessage("Steward access granted.");
+        setMessage("Space admin access granted.");
         setMessageType("success");
       } else {
         setMessage(result?.reason || "Failed to approve request.");
@@ -1366,36 +1416,22 @@ const RealmPolicyDashboard = () => {
     setShowTeamDropdown(false);
   };
 
-  const activationChoices = [
+  // P1-4: per-space notification mode. Two solid options, no native select. The server enforces
+  // it at the one comment choke point (outbound-notify.js); the console only stores the choice.
+  const notificationsModeChoices = [
     {
-      value: "use-system-default",
-      label: "Use System Default",
-      description: "This space follows the global settings configured by your organization's administrators.",
+      value: "normal",
+      label: "Normal",
+      description: "Comments and @mentions follow the global notification settings.",
     },
     {
-      value: "enabled",
-      label: "Active",
-      description: "Sentinel Vault is enabled for all pages in this space.",
-    },
-    {
-      value: "disabled",
-      label: "Inactive",
-      description: "Sentinel Vault is disabled for this space. Users cannot seal or unseal attachments.",
+      value: "quiet",
+      label: "Quiet",
+      description: "Posts no comments or @mentions in this space. In-app alerts (toasts, ribbon, activity) still show.",
     },
   ];
-
-  const onActivationPick = (value) => {
-    setRealmPrefs((prev) => ({
-      ...prev,
-      activation: value,
-    }));
-    setShowActivationDropdown(false);
-  };
-
-  const activationDisplayText = (value) => {
-    return (
-      activationChoices.find((option) => option.value === value)?.label || value
-    );
+  const onNotificationsModePick = (value) => {
+    setRealmPrefs((prev) => ({ ...prev, notificationsMode: value === "quiet" ? "quiet" : "normal" }));
   };
 
   // it57: removed the dead local formatCountdown — superseded by the shared formatRemaining (kit/format-duration).
@@ -1474,7 +1510,7 @@ const RealmPolicyDashboard = () => {
         setMessageType("error");
       }
     } catch (err) {
-      setMessage(`Steward unseal failed: ${err.message}`);
+      setMessage(`Admin unseal failed: ${err.message}`);
       setMessageType("error");
     } finally {
       setBusyAction(null);
@@ -1592,23 +1628,23 @@ const RealmPolicyDashboard = () => {
               <div>
                 <strong>Want to manage all sealed files in this space?</strong>
                 <p style={{ margin: "4px 0 0", fontSize: "12px", color: "var(--sv-text-secondary)" }}>
-                  As a steward you can view all sealed files and force unseal them when needed.
+                  As a space admin you can see every sealed file in this space and force-unseal it when needed.
                 </p>
               </div>
-              <button className={`action-btn lock ${stewardRequestBusy ? "is-busy" : ""}`} onClick={handleRequestSteward} disabled={stewardRequestBusy} title="Ask a space admin to grant you steward permissions">
-                {stewardRequestBusy ? <>Requesting<span className="btn-busy-bar" /></> : "Request Steward Access"}
+              <button className={`action-btn lock ${stewardRequestBusy ? "is-busy" : ""}`} onClick={handleRequestSteward} disabled={stewardRequestBusy} title="Ask a space admin to grant you admin access to Sentinel Vault in this space">
+                {stewardRequestBusy ? <>Requesting<span className="btn-busy-bar" /></> : "Request admin access"}
               </button>
             </div>
           )}
           {(stewardRequestSent || stewardRequestStatus === "pending") && (
             <div className="steward-request-banner" style={{ borderColor: "var(--sv-status-success)" }}>
-              <span>Your steward access request has been submitted. A space admin or steward will review it.</span>
+              <span>Your request has been submitted. A space admin will review it.</span>
             </div>
           )}
           {stewardRequestStatus === "denied" && (
             <div className="steward-request-banner" style={{ borderColor: "var(--sv-status-warning)" }}>
               <div>
-                <strong>Your steward access request was denied.</strong>
+                <strong>Your admin access request was denied.</strong>
                 <p style={{ margin: "4px 0 0", fontSize: "12px", color: "var(--sv-text-secondary)" }}>
                   {stewardRequestDeniedAt ? (() => {
                     const deniedTime = new Date(stewardRequestDeniedAt).getTime();
@@ -1629,7 +1665,7 @@ const RealmPolicyDashboard = () => {
               <div className="settings-card-header">
                 <h3>Edit Requests</h3>
                 <p className="settings-card-desc">
-                  Approve to let a user edit your sealed file without giving them steward access. Access lasts until the seal expires.
+                  Approve to let a user edit your sealed file without giving them admin access. Access lasts until the seal expires.
                 </p>
               </div>
               <div className="settings-card-body">
@@ -1815,44 +1851,62 @@ const RealmPolicyDashboard = () => {
 
       {activeTab === "permissions" && userRole === "steward" && (
         <div className="tab-content">
-          {/* Realm Activation */}
-          <div className="settings-card">
+          {/* P1-4: Notifications — per-space quiet mode */}
+          <div className="settings-card" data-testid="sv-notifications-mode-card">
             <div className="settings-card-header">
-              <h3>Space Activation</h3>
-              <p className="settings-card-desc">Choose whether Sentinel Vault is enabled or disabled for this space.</p>
+              <h3>Notifications</h3>
+              <p className="settings-card-desc">
+                Sentinel Vault never sends email. A notification is a comment on the page that @mentions the
+                people involved; Confluence itself may then email them, according to their own preferences.
+                Quiet stops every such comment in this space — violations, seals created or released, edit
+                requests and approvals — while the in-app toasts, ribbon and activity trail keep working.
+              </p>
             </div>
             <div className="settings-card-body">
-              <div className="custom-select-container">
-                <div
-                  className="custom-select"
-                  onClick={() => setShowActivationDropdown(!showActivationDropdown)}
-                  tabIndex={0}
-                  onBlur={() => {
-                    setTimeout(() => setShowActivationDropdown(false), 200);
-                  }}
-                >
-                  <span className="select-value">
-                    {activationDisplayText(realmPrefs.activation)}
-                  </span>
-                  <span className={`select-arrow ${showActivationDropdown ? "open" : ""}`}>
-                    ▼
-                  </span>
-                </div>
-
-                {showActivationDropdown && (
-                  <div className="custom-select-dropdown">
-                    {activationChoices.map((option) => (
-                      <div
-                        key={option.value}
-                        className={`select-option ${realmPrefs.activation === option.value ? "selected" : ""}`}
-                        onClick={() => onActivationPick(option.value)}
-                      >
-                        <div className="option-label">{option.label}</div>
-                        <div className="option-description">{option.description}</div>
+              <p className="settings-row-default" data-testid="sv-default-notificationsMode" style={{ margin: "0 0 12px" }}>
+                <span>Effective default:</span> {formatDefault("notificationsMode")}
+                <span className="settings-row-default-sep">·</span>
+                <span>Site default:</span> <span data-testid="sv-site-default-notificationsMode" style={{ fontWeight: 400 }}>
+                  {siteValues.enableEmailDispatches ? "Comments that mention people are On site-wide" : "Comments that mention people are Off site-wide — Quiet changes nothing until a site admin turns them on"}
+                </span>
+              </p>
+              <div
+                role="radiogroup"
+                aria-label="Notifications"
+                style={{ display: "flex", gap: "12px", flexWrap: "wrap" }}
+              >
+                {notificationsModeChoices.map((option) => {
+                  const selected = (realmPrefs.notificationsMode || "normal") === option.value;
+                  const accent = option.value === "quiet" ? "var(--sv-interactive-danger)" : "var(--sv-interactive-primary)";
+                  return (
+                    <button
+                      key={option.value}
+                      type="button"
+                      role="radio"
+                      aria-checked={selected}
+                      data-testid={`sv-notifications-mode-${option.value}`}
+                      onClick={() => onNotificationsModePick(option.value)}
+                      style={{
+                        flex: "1 1 220px",
+                        textAlign: "left",
+                        cursor: "pointer",
+                        padding: "12px 14px",
+                        borderRadius: "8px",
+                        border: `2px solid ${selected ? accent : "var(--sv-border-primary)"}`,
+                        background: selected ? accent : "var(--sv-surface-raised)",
+                        color: selected ? "var(--sv-text-inverse)" : "var(--sv-text-primary)",
+                        fontFamily: "inherit",
+                      }}
+                    >
+                      <div style={{ fontWeight: 700, fontSize: "14px", marginBottom: "4px" }}>
+                        {option.label}
                       </div>
-                    ))}
-                  </div>
-                )}
+                      <div style={{ fontSize: "12px", lineHeight: 1.4, opacity: selected ? 0.95 : 1 }}>
+                        {option.description}
+                      </div>
+                    </button>
+                  );
+                })}
               </div>
             </div>
           </div>
@@ -1860,10 +1914,10 @@ const RealmPolicyDashboard = () => {
           {/* Stewards */}
           <div className="settings-card">
             <div className="settings-card-header">
-              <h3>Stewards</h3>
+              <h3>Space admins</h3>
               <p className="settings-card-desc">
-                Stewards can view all sealed attachments in this space and force-unseal them if needed.
-                Space admins and organization admins are stewards automatically.
+                Space admins can see every sealed attachment in this space and force-unseal it.
+                Confluence space admins and organisation admins have this access automatically.
               </p>
             </div>
             <div className="settings-card-body">
@@ -1877,14 +1931,14 @@ const RealmPolicyDashboard = () => {
                     <div key={accountId || index} className="steward-card">
                       <div className="steward-avatar">{initials}</div>
                       <span className="steward-name">{displayName}</span>
-                      <button className="steward-remove" onClick={() => onRemoveOperator(operator)} title="Remove steward">&times;</button>
+                      <button className="steward-remove" onClick={() => onRemoveOperator(operator)} title="Remove space admin">&times;</button>
                     </div>
                   );
                 })}
                 {/* Add Operator card */}
                 <div className="steward-card steward-card-add" onClick={() => { setShowOperatorSearch(!showOperatorSearch); }}>
                   <div className="steward-avatar steward-avatar-add">+</div>
-                  <span className="steward-name">Add Steward</span>
+                  <span className="steward-name">Add space admin</span>
                 </div>
               </div>
 
@@ -2017,7 +2071,7 @@ const RealmPolicyDashboard = () => {
               {/* Guilds section */}
               <div className="steward-guilds">
                 <h4 className="steward-guilds-title">Groups</h4>
-                <p className="steward-guilds-desc">Members of these Confluence groups are automatically granted steward access to this space.</p>
+                <p className="steward-guilds-desc">Members of these Confluence groups are automatically granted admin access to this space.</p>
                 <div className="guild-chips">
                   {realmPrefs.adminGroups.map((group) => (
                     <span key={group} className="guild-chip">
@@ -2095,7 +2149,7 @@ const RealmPolicyDashboard = () => {
             <div className="settings-card-header">
               <h3>Pending Access Requests</h3>
               <p className="settings-card-desc">
-                Users who have requested steward access to this space. Use Approve to grant access or Deny to reject the request.
+                Users who have requested admin access to this space. Use Approve to grant access or Deny to reject the request.
               </p>
             </div>
             <div className="settings-card-body">
@@ -2121,7 +2175,7 @@ const RealmPolicyDashboard = () => {
                               className={`action-btn lock ${requestActionBusy?.id === request.accountId && requestActionBusy.action === "approve" ? "is-busy" : ""}`}
                               onClick={() => handleApproveRequest(request.accountId)}
                               disabled={!!requestActionBusy}
-                              title="Grant steward access to this user"
+                              title="Grant admin access to this user"
                             >
                               {requestActionBusy?.id === request.accountId && requestActionBusy.action === "approve" ? <>Approving<span className="btn-busy-bar" /></> : "Approve"}
                             </button>
@@ -2131,7 +2185,7 @@ const RealmPolicyDashboard = () => {
                               className={`action-btn unlock ${requestActionBusy?.id === request.accountId && requestActionBusy.action === "deny" ? "is-busy" : ""}`}
                               onClick={() => handleDenyRequest(request.accountId)}
                               disabled={!!requestActionBusy}
-                              title="Deny this steward access request"
+                              title="Deny this admin access request"
                             >
                               {requestActionBusy?.id === request.accountId && requestActionBusy.action === "deny" ? <>Denying<span className="btn-busy-bar" /></> : "Deny"}
                             </button>
@@ -2147,7 +2201,7 @@ const RealmPolicyDashboard = () => {
 
           {/* Note */}
           <div className="settings-note">
-            <strong>Note:</strong> Space Stewards and Confluence Administrators always have these privileges.
+            <strong>Note:</strong> Confluence space admins and site admins always have these privileges.
           </div>
           {/* it48: removed a duplicate "Apply Configuration" action-bar here — the generic
               steward action-bar below (activeTab !== validations/workflow) already renders one
@@ -2157,161 +2211,125 @@ const RealmPolicyDashboard = () => {
 
       {activeTab === "unlock-timeouts" && userRole === "steward" && (
         <div className="tab-content">
-          <div className="settings-panel">
-            <div className="settings-row">
-              <div className="settings-row-info">
-                <p className="settings-row-label">Use System Default Seal Duration</p>
-                <p className="settings-row-description">
-                  When checked, this space uses the default seal duration set by your organization's administrators.
-                </p>
-              </div>
-              <div className="settings-row-control">
-                <label className="form-checkbox">
-                  <input
-                    type="checkbox"
-                    checked={realmPrefs.autoUnlockTimeoutHours === null}
-                    onChange={(e) => {
-                      if (e.target.checked) {
+          <div className="settings-panel sv-groups">
+            <GroupCard id="expiry" title="Expiry" text="How long a seal lasts in this space. Expiry notices, overdue reminders and the release itself follow the site settings.">
+              <div className="settings-row" data-testid="sv-row-useSiteDuration">
+                <div className="settings-row-info">
+                  <p className="settings-row-label">Use System Default Seal Duration</p>
+                  <p className="settings-row-description">
+                    New seals in this space last as long as the site default set by a site admin.
+                  </p>
+                  <p className="settings-row-default" data-testid="sv-default-useSiteDuration">
+                    <span>Site default:</span> <span data-testid="sv-site-default-autoUnlockTimeoutHours" style={{ fontWeight: 400 }}>{formatValue("defaultLockDuration", siteValues.defaultLockDuration)}</span>
+                    {!systemExpiryAlertsActive && <><span className="settings-row-default-sep">·</span>Seals never expire on this site (a site admin turned “Seals expire” off), so the duration only sets when a seal shows as overdue.</>}
+                  </p>
+                </div>
+                <div className="settings-row-control">
+                  <label className="form-checkbox">
+                    <input
+                      type="checkbox"
+                      aria-label="Use System Default Seal Duration"
+                      checked={realmPrefs.autoUnlockTimeoutHours === null}
+                      onChange={(e) => {
                         setRealmPrefs((prev) => ({
                           ...prev,
-                          autoUnlockTimeoutHours: null,
+                          autoUnlockTimeoutHours: e.target.checked ? null : Math.max(1, Math.round((siteValues.defaultLockDuration || 0) / 3600)) || 48,
                         }));
-                      } else {
-                        setRealmPrefs((prev) => ({
-                          ...prev,
-                          autoUnlockTimeoutHours: 48,
-                        }));
-                      }
-                    }}
-                  />
-                </label>
+                      }}
+                    />
+                  </label>
+                </div>
               </div>
-            </div>
 
-            {realmPrefs.autoUnlockTimeoutHours !== null && (
-              <div className="nested-control">
-                <div className="settings-row">
-                  <div className="settings-row-info">
-                    <p className="settings-row-label">Custom Seal Duration</p>
-                    <p className="settings-row-description">
-                      Seals on attachments in this space will expire after{" "}
-                      <span className="dynamic-value">
-                        {realmPrefs.autoUnlockTimeoutHours} hours
-                        {realmPrefs.autoUnlockTimeoutHours >= 24 ? ` (${formatDurationHours(realmPrefs.autoUnlockTimeoutHours)})` : ""}
-                      </span>
-                      . This overrides the global default seal duration for
-                      this space only.
-                    </p>
-                  </div>
-                  <div className="settings-row-control">
-                    <div className="input-with-unit">
-                      <input
-                        className="form-input"
-                        type="number"
-                        value={realmPrefs.autoUnlockTimeoutHours}
-                        onChange={(e) => {
-                          const value = parseInt(e.target.value);
-                          if (!isNaN(value) && value > 0) {
-                            setRealmPrefs((prev) => ({
-                              ...prev,
-                              autoUnlockTimeoutHours: value,
-                            }));
-                          }
-                        }}
-                        min="1"
-                      />
-                      <span className="input-unit">hrs</span>
-                    </div>
+              <div className={`settings-row is-dependent depth-1${realmPrefs.autoUnlockTimeoutHours === null ? " is-locked" : ""}`} data-testid="sv-row-autoUnlockTimeoutHours" data-locked={realmPrefs.autoUnlockTimeoutHours === null ? "true" : "false"}>
+                <div className="settings-row-info">
+                  <p className="settings-row-label">{control("autoUnlockTimeoutHours").label}</p>
+                  <p className="settings-row-description">
+                    {control("autoUnlockTimeoutHours").text}
+                    {realmPrefs.autoUnlockTimeoutHours !== null && (
+                      <>{" "}Seals will expire after{" "}
+                        <span className="dynamic-value">
+                          {realmPrefs.autoUnlockTimeoutHours} hours
+                          {realmPrefs.autoUnlockTimeoutHours >= 24 ? ` (${formatDurationHours(realmPrefs.autoUnlockTimeoutHours)})` : ""}
+                        </span>.
+                      </>
+                    )}
+                  </p>
+                  <p className="settings-row-default" data-testid="sv-default-autoUnlockTimeoutHours">
+                    <span>Effective default:</span> {formatDefault("autoUnlockTimeoutHours")}
+                    <span className="settings-row-default-sep">·</span>
+                    <span>Site default:</span> <span style={{ fontWeight: 400 }}>{formatValue("defaultLockDuration", siteValues.defaultLockDuration)}</span>
+                  </p>
+                  {realmPrefs.autoUnlockTimeoutHours === null && <p className="settings-row-reason" data-testid="sv-reason-autoUnlockTimeoutHours">Turn off Use System Default Seal Duration first</p>}
+                </div>
+                <div className="settings-row-control">
+                  <div className="input-with-unit">
+                    <input
+                      className="form-input"
+                      type="number"
+                      aria-label="Custom Seal Duration"
+                      value={realmPrefs.autoUnlockTimeoutHours ?? Math.max(1, Math.round((siteValues.defaultLockDuration || 0) / 3600))}
+                      disabled={realmPrefs.autoUnlockTimeoutHours === null}
+                      onChange={(e) => {
+                        const value = parseInt(e.target.value);
+                        if (!isNaN(value) && value > 0) {
+                          setRealmPrefs((prev) => ({ ...prev, autoUnlockTimeoutHours: value }));
+                        }
+                      }}
+                      min="1"
+                    />
+                    <span className="input-unit">hrs</span>
                   </div>
                 </div>
               </div>
-            )}
+            </GroupCard>
           </div>
         </div>
       )}
 
       {activeTab === "macro-settings" && userRole === "steward" && (
         <div className="tab-content">
-          <div className="settings-panel">
-            <div className="settings-row">
-              <div className="settings-row-info">
-                <p className="settings-row-label">Auto-Insert Macro</p>
-                <p className="settings-row-description">
-                  When checked, Sentinel Vault automatically adds its macro to a page
-                  in this space the first time an attachment is sealed. The macro displays
-                  seal status, labels, and actions for all attachments. This can be
-                  overridden on individual pages.
-                </p>
-              </div>
-              <div className="settings-row-control">
+          <div className="settings-panel sv-groups">
+            <GroupCard id="advanced" title="Advanced" text="The Sentinel Vault panel macro on pages in this space. The site-wide switch is held by a site admin; this space can only opt out and choose the position.">
+              <SchemaRow desc={control("autoInsertMacro")} values={{ autoInsertMacro: realmPrefs.autoInsertMacro !== false, macroInsertPosition: readEffective("macroInsertPosition", realmPrefs.macroInsertPosition) }} siteValues={siteValues}>
                 <label className="form-checkbox">
                   <input
                     type="checkbox"
+                    aria-label="Auto-Insert Macro"
                     checked={realmPrefs.autoInsertMacro !== false}
+                    disabled={!siteValues.globalAutoInsertMacro}
                     onChange={(e) => {
-                      setRealmPrefs((prev) => ({
-                        ...prev,
-                        autoInsertMacro: e.target.checked,
-                      }));
+                      setRealmPrefs((prev) => ({ ...prev, autoInsertMacro: e.target.checked }));
                     }}
                   />
                 </label>
-              </div>
-            </div>
+              </SchemaRow>
 
-            <div
-              style={{
-                opacity: realmPrefs.autoInsertMacro === false ? 0.45 : 1,
-                pointerEvents:
-                  realmPrefs.autoInsertMacro === false ? "none" : "auto",
-                transition: "opacity 0.2s",
-              }}
-            >
-              <div className="settings-row">
-                <div className="settings-row-info">
-                  <p className="settings-row-label">Macro Position</p>
-                  <p className="settings-row-description">
-                    Choose whether the macro is inserted at the top or bottom of the
-                    page content. To move an already-inserted macro, edit the page
-                    in the Confluence editor.
-                  </p>
-                </div>
-                <div className="settings-row-control">
-                  <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-                    <label className="checkbox-control" style={{ marginBottom: 0 }}>
+              <SchemaRow desc={control("macroInsertPosition")} values={{ autoInsertMacro: siteValues.globalAutoInsertMacro && realmPrefs.autoInsertMacro !== false }} siteValues={siteValues}>
+                <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+                  {[["top", "Top"], ["bottom", "Bottom"]].map(([pos, label]) => (
+                    <label key={pos} className="checkbox-control" style={{ marginBottom: 0 }}>
                       <input
                         type="radio"
                         name="panelInsertPosition"
-                        value="top"
-                        checked={realmPrefs.macroInsertPosition === "top"}
+                        value={pos}
+                        disabled={!(siteValues.globalAutoInsertMacro && realmPrefs.autoInsertMacro !== false)}
+                        checked={readEffective("macroInsertPosition", realmPrefs.macroInsertPosition) === pos}
                         onChange={() => {
-                          setRealmPrefs((prev) => ({
-                            ...prev,
-                            macroInsertPosition: "top",
-                          }));
+                          setRealmPrefs((prev) => ({ ...prev, macroInsertPosition: pos }));
                         }}
                       />
-                      <span className="checkbox-label">Top</span>
+                      <span className="checkbox-label">{label}</span>
                     </label>
-                    <label className="checkbox-control" style={{ marginBottom: 0 }}>
-                      <input
-                        type="radio"
-                        name="panelInsertPosition"
-                        value="bottom"
-                        checked={realmPrefs.macroInsertPosition !== "top"}
-                        onChange={() => {
-                          setRealmPrefs((prev) => ({
-                            ...prev,
-                            macroInsertPosition: "bottom",
-                          }));
-                        }}
-                      />
-                      <span className="checkbox-label">Bottom</span>
-                    </label>
-                  </div>
+                  ))}
                 </div>
-              </div>
-            </div>
+              </SchemaRow>
+              {siteValues.replaceAttachmentsMacro && (
+                <p className="sv-group-note" data-testid="sv-replace-note">
+                  The site replaces Confluence's Attachments macro with the panel when a page has one; the position above only applies to pages without it.
+                </p>
+              )}
+            </GroupCard>
           </div>
         </div>
       )}

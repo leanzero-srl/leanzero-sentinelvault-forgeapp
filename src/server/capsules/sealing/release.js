@@ -5,6 +5,7 @@ import { notifyWatchers, sweepWatchers } from "../bulletins/logic.js";
 import { sweepEditAccess } from "../editreq/logic.js";
 import { triggerPanelEmbed, removePanelNode } from "../../infra/doc-surgery.js";
 import { recordActivity } from "../../infra/activity-log.js";
+import { refreshByline } from "../page-details/byline.js"; // 5.0 byline chip
 
 /**
  * Tear a seal down completely.
@@ -126,6 +127,7 @@ export async function releaseSeal(attachmentId, sealRecord, { fallbackSpaceKey =
       console.warn("[RELEASE] Panel management failed:", panelErr);
     }
   }
+  if (sealRecord.contentId) await refreshByline(sealRecord.contentId).catch((e) => console.warn("[BYLINE] release refresh failed:", e?.message || e));
 
   return { success: true };
 }

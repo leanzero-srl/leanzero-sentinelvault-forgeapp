@@ -1,4 +1,4 @@
-# Sentinel Vault 5.0 — what changes for Confluence admins (re-consent note)
+# Sentinel Vault 7.0 — what changes for Confluence admins (re-consent note)
 
 Status: DRAFT, written 2026-09-14 ahead of the batched major release. Nothing in this note is
 deployed to production yet; the manifest changes below are staged together so admins consent once.
@@ -6,9 +6,9 @@ deployed to production yet; the manifest changes below are staged together so ad
 ## Why a new major version
 
 Forge requires a new major version, and an admin's explicit approval, whenever an app asks for a
-new permission scope or adds a module that changes where it appears. Version 5.0 does both. Until
+new permission scope or adds a module that changes where it appears. Version 7.0 does both. Until
 an admin approves it under **Confluence admin → Manage apps → Sentinel Vault → Update**, the site
-keeps running 4.x and none of the features below activate. Minor releases (4.x) continue to
+keeps running 4.x (the dev line jumped to 7 because two majors were cut while testing) and none of the features below activate. Minor releases (4.x) continue to
 auto-update as before.
 
 ## What is new

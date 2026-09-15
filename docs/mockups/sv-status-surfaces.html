@@ -1,0 +1,276 @@
+<title>Sentinel Vault Status Surfaces</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
+<style>
+:root{
+  --page-bg:#F1F5F9; --page-text:#0F172A; --page-muted:#475569; --page-line:#CBD5E1; --page-note:#0E7490;
+}
+@media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){ --page-bg:#0B1220; --page-text:#E2E8F0; --page-muted:#94A3B8; --page-line:#1E293B; --page-note:#22D3EE; } }
+:root[data-theme="dark"]{ --page-bg:#0B1220; --page-text:#E2E8F0; --page-muted:#94A3B8; --page-line:#1E293B; --page-note:#22D3EE; }
+*{box-sizing:border-box}
+body{margin:0;background:var(--page-bg);color:var(--page-text);font-family:"Inter",-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;padding:32px 24px 64px}
+h1{font-size:22px;font-weight:700;margin:0 0 4px;letter-spacing:-.01em}
+.lede{color:var(--page-muted);font-size:14px;max-width:70ch;margin:0 0 28px;line-height:1.5}
+h2{font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--page-muted);margin:36px 0 12px}
+.pair{display:grid;grid-template-columns:repeat(auto-fit,minmax(360px,1fr));gap:16px}
+.board{border:1px solid var(--page-line);border-radius:8px;overflow:hidden}
+.board-label{font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;padding:6px 10px;color:var(--page-muted);border-bottom:1px solid var(--page-line)}
+.stage{padding:20px 18px}
+.note{font-size:12.5px;color:var(--page-muted);line-height:1.5;max-width:75ch;margin:8px 0 0}
+.note b{color:var(--page-note)}
+
+/* ---- the app's own tokens, scoped per theme board ---- */
+.t-light{ --sv-bg-primary:#FFFFFF; --sv-bg-secondary:#F8FAFC; --sv-bg-tertiary:#F1F5F9; --sv-bg-hover:#E2E8F0; --sv-text-primary:#0F172A; --sv-text-secondary:#475569; --sv-text-subtle:#94A3B8; --sv-text-inverse:#FFFFFF; --sv-border-primary:#E2E8F0; --sv-interactive-primary:#0891B2; --sv-interactive-danger:#DC2626; --sv-shadow:rgba(2,6,23,.10); --host-bg:#FFFFFF; --host-title:#172B4D; --host-muted:#626F86; --host-line:#DFE1E6; }
+.t-dark { --sv-bg-primary:#0F172A; --sv-bg-secondary:#111C31; --sv-bg-tertiary:#1E293B; --sv-bg-hover:#273449; --sv-text-primary:#F1F5F9; --sv-text-secondary:#CBD5E1; --sv-text-subtle:#94A3B8; --sv-text-inverse:#FFFFFF; --sv-border-primary:#273449; --sv-interactive-primary:#22D3EE; --sv-interactive-danger:#F87171; --sv-shadow:rgba(0,0,0,.45); --host-bg:#1D2125; --host-title:#B6C2CF; --host-muted:#8C9BAB; --host-line:#2C333A; }
+.t-light,.t-dark{background:var(--host-bg);color:var(--sv-text-primary)}
+/* classification level colours: solid, saturated, the same in both themes; text on them is always white */
+.lv-public{--lv:#15803D} .lv-internal{--lv:#1D4ED8} .lv-confidential{--lv:#B45309} .lv-restricted{--lv:#B91C1C}
+
+/* host page chrome (for context only) */
+.host-title{font-size:26px;font-weight:600;color:var(--host-title);margin:0 0 6px;letter-spacing:-.01em}
+.byline{display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-size:13px;color:var(--host-muted)}
+.byline .av{width:22px;height:22px;border-radius:50%;background:#0891B2;color:#fff;font-size:10px;font-weight:700;display:inline-flex;align-items:center;justify-content:center}
+.byline .sep{color:var(--host-line)}
+
+/* ---- CHIP (confluence:contentBylineItem) ---- */
+.chip{display:inline-flex;align-items:center;gap:6px;height:22px;padding:0 8px 0 4px;border-radius:11px;background:var(--lv);color:#fff;font-size:12px;font-weight:600;line-height:1;cursor:pointer;border:0;font-family:inherit}
+.chip .dot{width:14px;height:14px;border-radius:50%;background:rgba(255,255,255,.22);display:inline-flex;align-items:center;justify-content:center}
+.chip .dot svg{width:9px;height:9px}
+.chip .src{font-weight:400;opacity:.9}
+.chip .badge{margin-left:2px;min-width:16px;height:16px;padding:0 5px;border-radius:8px;background:#fff;color:var(--lv);font-size:10.5px;font-weight:700;display:inline-flex;align-items:center;justify-content:center}
+.chip:focus-visible{outline:2px solid var(--sv-interactive-primary);outline-offset:2px}
+
+/* ---- RIBBON (confluence:pageBanner), one row, 44px inside a 48px cap ---- */
+.ruler{position:relative;height:48px;margin:14px 0 0}
+.ruler::before{content:"48px cap";position:absolute;right:0;top:-16px;font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--sv-text-subtle)}
+.ruler::after{content:"";position:absolute;inset:0;border:1px dashed var(--sv-text-subtle);border-radius:6px;pointer-events:none;opacity:.55}
+.ribbon{position:absolute;left:0;right:0;top:2px;height:44px;display:flex;align-items:center;gap:0;border-radius:6px;background:var(--sv-bg-primary);border:1px solid var(--sv-border-primary);box-shadow:0 1px 3px var(--sv-shadow);font-size:13px;color:var(--sv-text-primary);overflow:hidden}
+.rb-class{display:flex;align-items:center;gap:10px;height:100%;padding:0 14px 0 12px;background:var(--lv);color:#fff;font-weight:600;flex:none}
+.rb-class .glyph{width:18px;height:18px;border-radius:50%;background:rgba(255,255,255,.22);display:inline-flex;align-items:center;justify-content:center}
+.rb-class .glyph svg{width:11px;height:11px}
+.rb-class .lvname{letter-spacing:.01em}
+.rb-class .lvsrc{font-weight:400;opacity:.9;font-size:12px}
+.rb-body{display:flex;align-items:center;gap:10px;flex:1;min-width:0;padding:0 12px}
+.rb-body .msg{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.rb-body .msg b{font-weight:600}
+.state{display:inline-flex;align-items:center;gap:6px;height:24px;padding:0 9px;border-radius:12px;font-size:12px;font-weight:600;color:#fff;flex:none}
+.state.wait{background:#B45309}.state.ok{background:#15803D}.state.alert{background:#B91C1C}.state.lock{background:#475569}
+.state .n{min-width:16px;height:16px;padding:0 5px;border-radius:8px;background:#fff;color:inherit;display:inline-flex;align-items:center;justify-content:center;font-size:10.5px}
+.state.wait .n{color:#B45309}.state.alert .n{color:#B91C1C}
+.rb-actions{display:flex;align-items:center;gap:6px;padding:0 6px 0 0;flex:none}
+.btn{height:28px;padding:0 12px;border-radius:6px;border:0;font-family:inherit;font-size:12.5px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:6px}
+.btn.primary{background:var(--sv-interactive-primary);color:#fff}
+.btn.quiet{background:transparent;color:var(--sv-text-secondary);border:1px solid var(--sv-border-primary)}
+.btn:focus-visible{outline:2px solid var(--sv-interactive-primary);outline-offset:2px}
+.dismiss{width:28px;height:28px;border-radius:6px;border:0;background:transparent;color:var(--sv-text-subtle);font-size:18px;line-height:1;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;font-family:inherit}
+.dismiss:hover{background:var(--sv-bg-hover);color:var(--sv-text-primary)}
+.rb-body.empty .msg{color:var(--sv-text-subtle);font-style:normal}
+
+/* ---- MODAL (viewportContainer: modal) ---- */
+.modal{max-width:720px;margin:0 auto;background:var(--sv-bg-primary);color:var(--sv-text-primary);border:1px solid var(--sv-border-primary);border-radius:10px;box-shadow:0 12px 40px var(--sv-shadow);overflow:hidden;font-size:13px}
+.m-head{display:flex;align-items:center;gap:12px;padding:16px 20px 12px;border-bottom:1px solid var(--sv-border-primary)}
+.m-head h3{margin:0;font-size:16px;font-weight:700;flex:1}
+.m-tabs{display:flex;gap:2px;padding:0 20px;border-bottom:1px solid var(--sv-border-primary);background:var(--sv-bg-secondary)}
+.m-tab{padding:10px 12px;font-size:12.5px;font-weight:600;color:var(--sv-text-secondary);border-bottom:2px solid transparent;cursor:pointer}
+.m-tab.on{color:var(--sv-interactive-primary);border-bottom-color:var(--sv-interactive-primary)}
+.m-body{padding:16px 20px 20px;display:grid;gap:16px}
+.m-sec h4{margin:0 0 8px;font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--sv-text-subtle)}
+.cls-row{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.cls-row .desc{color:var(--sv-text-secondary);flex:1;min-width:200px}
+.pill{display:inline-flex;align-items:center;gap:8px;height:28px;padding:0 12px 0 6px;border-radius:14px;background:var(--lv);color:#fff;font-weight:600}
+.pill .glyph{width:16px;height:16px;border-radius:50%;background:rgba(255,255,255,.22);display:inline-flex;align-items:center;justify-content:center}
+.pill .glyph svg{width:10px;height:10px}
+.override{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.dd{height:30px;padding:0 10px;border-radius:6px;border:1px solid var(--sv-border-primary);background:var(--sv-bg-primary);color:var(--sv-text-primary);font-size:12.5px;display:inline-flex;align-items:center;gap:8px;min-width:190px;justify-content:space-between}
+.dd .sw{width:10px;height:10px;border-radius:50%;background:var(--lv)}
+.list{display:grid;gap:8px}
+.row{display:grid;grid-template-columns:24px 1fr auto;align-items:center;gap:10px;padding:10px 12px;border:1px solid var(--sv-border-primary);border-radius:8px;background:var(--sv-bg-secondary)}
+.row .ic{width:24px;height:24px;border-radius:6px;display:inline-flex;align-items:center;justify-content:center;color:#fff;font-size:10px;font-weight:700}
+.ic.file{background:#475569}.ic.sec{background:#1D4ED8}
+.row .t{min-width:0}
+.row .t .n{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.row .t .m{color:var(--sv-text-secondary);font-size:12px;margin-top:2px}
+.row .a{display:flex;align-items:center;gap:6px}
+.kebab{width:28px;height:28px;border-radius:6px;border:1px solid var(--sv-border-primary);background:transparent;color:var(--sv-text-secondary);font-family:inherit;font-weight:700;cursor:pointer}
+.trail{display:grid;gap:0;border:1px solid var(--sv-border-primary);border-radius:8px;overflow:hidden}
+.tr{display:grid;grid-template-columns:22px 1fr auto;gap:10px;align-items:start;padding:9px 12px;border-bottom:1px solid var(--sv-border-primary);background:var(--sv-bg-primary)}
+.tr:last-child{border-bottom:0}
+.tr .g{width:20px;height:20px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;color:#fff;font-size:10px;font-weight:700}
+.g.ok{background:#15803D}.g.req{background:#1D4ED8}.g.rev{background:#B91C1C}.g.app{background:#475569}
+.tr .w{font-size:12.5px}
+.tr .w em{font-style:normal;color:var(--sv-text-secondary)}
+.tr .when{font-size:11.5px;color:var(--sv-text-subtle);white-space:nowrap}
+.m-foot{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:12px 20px;border-top:1px solid var(--sv-border-primary);background:var(--sv-bg-secondary);font-size:12px;color:var(--sv-text-secondary)}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+@media (max-width:480px){ .rb-class .lvsrc{display:none} .rb-body .msg{display:none} }
+</style>
+
+<h1>Sentinel Vault status surfaces</h1>
+<p class="lede">Static mockups for review before any Custom UI is built: the byline chip (always present under the title), the page ribbon in both steward modes (one row, inside the 48px cap), and the details modal the chip opens. Each is shown in light and dark with the app's own <code>--sv-</code> tokens. Copy uses the renamed vocabulary: space, space admin, user, group, attachment, seal.</p>
+
+<h2>1 · Byline chip — always present under the title</h2>
+<div class="pair">
+  <div class="board"><div class="board-label">Light · four states</div><div class="stage t-light">
+    <p class="host-title">Q3 vendor contracts</p>
+    <div class="byline"><span class="av">MP</span> Mihai Perdum <span class="sep">·</span> Updated 2 h ago <span class="sep">·</span>
+      <button class="chip lv-restricted"><span class="dot"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg></span>Restricted <span class="src">· set on this page</span><span class="badge">2</span></button>
+    </div>
+    <div class="byline" style="margin-top:14px;gap:8px">
+      <button class="chip lv-internal"><span class="dot"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3"><circle cx="12" cy="12" r="8"/></svg></span>Internal <span class="src">· space default</span></button>
+      <button class="chip lv-confidential"><span class="dot"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg></span>Confidential <span class="src">· space default</span></button>
+      <button class="chip lv-public"><span class="dot"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3"><circle cx="12" cy="12" r="8"/></svg></span>Public <span class="src">· space default</span></button>
+    </div>
+    <p class="note">Solid level colour, white text. The lock glyph replaces the dot when the page holds at least one seal. The white counter is the <b>waiting-on-you</b> badge (requests + approvals for the viewer, on this page); it is absent when zero. Title text and icon are rendered by Confluence from a content property, so the chip costs no resolver call.</p>
+  </div></div>
+  <div class="board"><div class="board-label">Dark · same states</div><div class="stage t-dark">
+    <p class="host-title">Q3 vendor contracts</p>
+    <div class="byline"><span class="av">MP</span> Mihai Perdum <span class="sep">·</span> Updated 2 h ago <span class="sep">·</span>
+      <button class="chip lv-restricted"><span class="dot"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg></span>Restricted <span class="src">· set on this page</span><span class="badge">2</span></button>
+    </div>
+    <div class="byline" style="margin-top:14px;gap:8px">
+      <button class="chip lv-internal"><span class="dot"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3"><circle cx="12" cy="12" r="8"/></svg></span>Internal <span class="src">· space default</span></button>
+      <button class="chip lv-confidential"><span class="dot"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg></span>Confidential <span class="src">· space default</span></button>
+      <button class="chip lv-public"><span class="dot"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3"><circle cx="12" cy="12" r="8"/></svg></span>Public <span class="src">· space default</span></button>
+    </div>
+    <p class="note">Level colours do not change between themes; only the host ground and the text around the chip do. Contrast of white on each level colour is ≥ 4.5:1 (Public 15803D, Internal 1D4ED8, Confidential B45309, Restricted B91C1C).</p>
+  </div></div>
+</div>
+
+<h2>2 · Ribbon — mode “Exceptions only” (default)</h2>
+<div class="pair">
+  <div class="board"><div class="board-label">Light · (b) the viewer owns a seal with a request waiting</div><div class="stage t-light">
+    <div class="ruler"><div class="ribbon lv-restricted">
+      <div class="rb-class"><span class="glyph"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg></span><span class="lvname">Restricted</span><span class="lvsrc">· set on this page</span></div>
+      <div class="rb-body"><span class="state wait"><span class="n">1</span>Waiting for you</span><span class="msg"><b>Gabriela Perdum</b> asked to edit <b>contract-v3.pdf</b> — “totals need fixing”</span></div>
+      <div class="rb-actions"><button class="btn primary">Open</button><button class="dismiss" aria-label="Dismiss">×</button></div>
+    </div></div>
+    <div class="ruler" style="margin-top:22px"><div class="ribbon lv-confidential">
+      <div class="rb-class"><span class="glyph"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg></span><span class="lvname">Confidential</span><span class="lvsrc">· space default</span></div>
+      <div class="rb-body"><span class="state ok">Edit now</span><span class="msg">Your request on <b>budget.xlsx</b> was approved — you can edit until <b>Fri 17:00</b></span></div>
+      <div class="rb-actions"><button class="btn primary">Open</button><button class="dismiss" aria-label="Dismiss">×</button></div>
+    </div></div>
+    <div class="ruler" style="margin-top:22px"><div class="ribbon lv-internal">
+      <div class="rb-class"><span class="glyph"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg></span><span class="lvname">Internal</span><span class="lvsrc">· space default</span></div>
+      <div class="rb-body"><span class="state alert"><span class="n">1</span>Restored</span><span class="msg">An edit to sealed section <b>“Pricing”</b> by <b>Alex Chen</b> was reverted 2 min ago</span></div>
+      <div class="rb-actions"><button class="btn primary">Open</button><button class="dismiss" aria-label="Dismiss">×</button></div>
+    </div></div>
+    <p class="note">Left half is the classification (colour + level + source). Right half holds exactly one urgent thing: a solid state pill, one sentence, and one button. The three rows are the three triggers that open the ribbon in this mode: (a) level ≥ threshold, (b) an action waiting on the viewer, (c) an active violation alert. A page with none of these renders nothing — <b>view.close()</b>, not an empty bar.</p>
+  </div></div>
+  <div class="board"><div class="board-label">Dark · (c) collaborator hits a seal · (a) threshold only</div><div class="stage t-dark">
+    <div class="ruler"><div class="ribbon lv-restricted">
+      <div class="rb-class"><span class="glyph"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg></span><span class="lvname">Restricted</span><span class="lvsrc">· set on this page</span></div>
+      <div class="rb-body"><span class="state lock">Locked</span><span class="msg"><b>contract-v3.pdf</b> is sealed by <b>Mihai Perdum</b> until <b>Mon 09:00</b></span></div>
+      <div class="rb-actions"><button class="btn quiet">Request edit</button><button class="btn primary">Open</button><button class="dismiss" aria-label="Dismiss">×</button></div>
+    </div></div>
+    <div class="ruler" style="margin-top:22px"><div class="ribbon lv-restricted">
+      <div class="rb-class"><span class="glyph"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3"><circle cx="12" cy="12" r="8"/></svg></span><span class="lvname">Restricted</span><span class="lvsrc">· space default</span></div>
+      <div class="rb-body"><span class="msg">Highest sensitivity. Access is logged and reviewed.</span></div>
+      <div class="rb-actions"><button class="btn primary">Open</button><button class="dismiss" aria-label="Dismiss">×</button></div>
+    </div></div>
+    <div class="ruler" style="margin-top:22px"><div class="ribbon lv-restricted">
+      <div class="rb-class"><span class="glyph"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg></span><span class="lvname">Restricted</span><span class="lvsrc">· set on this page</span></div>
+      <div class="rb-body"><span class="state wait">Waiting for Mihai</span><span class="msg">Your edit request on <b>contract-v3.pdf</b> was sent 10 min ago</span></div>
+      <div class="rb-actions"><button class="btn primary">Open</button><button class="dismiss" aria-label="Dismiss">×</button></div>
+    </div></div>
+    <p class="note">The collaborator journey in three frames: locked (with a one-click <b>Request edit</b>, reason asked inline in the modal), then “Waiting for {owner}” once sent, then “Edit now until {time}” once approved (light board, row 2). Dismissal is remembered per user + page + state, so a dismissed “Locked” row stays away until the state changes (a new request, an approval, an alert).</p>
+  </div></div>
+</div>
+
+<h2>3 · Ribbon — mode “Always show classification”</h2>
+<div class="pair">
+  <div class="board"><div class="board-label">Light · nothing pending, right half empty</div><div class="stage t-light">
+    <div class="ruler"><div class="ribbon lv-internal">
+      <div class="rb-class"><span class="glyph"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3"><circle cx="12" cy="12" r="8"/></svg></span><span class="lvname">Internal</span><span class="lvsrc">· space default</span></div>
+      <div class="rb-body empty"><span class="msg">Nothing waiting on you</span></div>
+      <div class="rb-actions"><button class="btn primary">Open</button><button class="dismiss" aria-label="Dismiss">×</button></div>
+    </div></div>
+    <div class="ruler" style="margin-top:22px"><div class="ribbon lv-public">
+      <div class="rb-class"><span class="glyph"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3"><circle cx="12" cy="12" r="8"/></svg></span><span class="lvname">Public</span><span class="lvsrc">· space default</span></div>
+      <div class="rb-body empty"><span class="msg"></span></div>
+      <div class="rb-actions"><button class="btn primary">Open</button><button class="dismiss" aria-label="Dismiss">×</button></div>
+    </div></div>
+    <p class="note">Same row, same geometry. For regulated customers the level is permanently visible; the right half stays quiet unless something is urgent (then it looks exactly like mode 2). Two candidates for the empty state are shown: a subtle “Nothing waiting on you”, or plain empty. I recommend <b>empty</b> — the chip already says the level, the ribbon should not manufacture text.</p>
+  </div></div>
+  <div class="board"><div class="board-label">Dark · same, with one pending item</div><div class="stage t-dark">
+    <div class="ruler"><div class="ribbon lv-confidential">
+      <div class="rb-class"><span class="glyph"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg></span><span class="lvname">Confidential</span><span class="lvsrc">· space default</span></div>
+      <div class="rb-body empty"><span class="msg"></span></div>
+      <div class="rb-actions"><button class="btn primary">Open</button><button class="dismiss" aria-label="Dismiss">×</button></div>
+    </div></div>
+    <div class="ruler" style="margin-top:22px"><div class="ribbon lv-confidential">
+      <div class="rb-class"><span class="glyph"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg></span><span class="lvname">Confidential</span><span class="lvsrc">· space default</span></div>
+      <div class="rb-body"><span class="state wait"><span class="n">3</span>Waiting for you</span><span class="msg">3 edit requests on your sealed files across this page</span></div>
+      <div class="rb-actions"><button class="btn primary">Open</button><button class="dismiss" aria-label="Dismiss">×</button></div>
+    </div></div>
+    <p class="note">At phone width the source (“· space default”) and the sentence drop first; the level name, the state pill and the buttons always survive.</p>
+  </div></div>
+</div>
+
+<h2>4 · Details modal — opened by the chip or “Open” (viewportContainer: modal)</h2>
+<div class="pair">
+  <div class="board"><div class="board-label">Light · owner’s view, one request waiting</div><div class="stage t-light" style="background:var(--sv-bg-tertiary)">
+    <div class="modal">
+      <div class="m-head"><h3>Q3 vendor contracts</h3><button class="dismiss" aria-label="Close">×</button></div>
+      <div class="m-tabs"><span class="m-tab on">Overview</span><span class="m-tab">Attachments</span><span class="m-tab">Activity</span></div>
+      <div class="m-body">
+        <div class="m-sec"><h4>Classification</h4>
+          <div class="cls-row"><span class="pill lv-restricted"><span class="glyph"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg></span>Restricted</span>
+            <span class="desc">Set on this page by Mihai Perdum, 12 Sep. The space default is <b>Confidential</b>.</span>
+            <span class="override"><span class="dd lv-restricted"><span><span class="sw"></span> Restricted</span><span>▾</span></span><button class="btn quiet">Use space default</button></span></div>
+        </div>
+        <div class="m-sec"><h4>Seals on this page · 3</h4>
+          <div class="list">
+            <div class="row"><span class="ic file">F</span><div class="t"><div class="n">contract-v3.pdf</div><div class="m">Sealed by you · until Mon 09:00 · <b>Gabriela Perdum</b> is waiting: “totals need fixing”</div></div><div class="a"><button class="btn primary">Approve</button><button class="btn quiet">Decline</button><button class="kebab" aria-label="More">⋯</button></div></div>
+            <div class="row"><span class="ic file">F</span><div class="t"><div class="n">budget.xlsx</div><div class="m">Sealed by Gabriela Perdum · until Fri 17:00 · you can edit until then</div></div><div class="a"><span class="state ok">Edit now</span><button class="kebab" aria-label="More">⋯</button></div></div>
+            <div class="row"><span class="ic sec">§</span><div class="t"><div class="n">Section “Pricing”</div><div class="m">Sealed by you · no expiry · last restored 2 min ago (edit by Alex Chen)</div></div><div class="a"><button class="btn quiet">Release</button><button class="kebab" aria-label="More">⋯</button></div></div>
+          </div>
+        </div>
+        <div class="m-sec"><h4>Recent activity</h4>
+          <div class="trail">
+            <div class="tr"><span class="g rev">↺</span><div class="w"><b>Sentinel Vault</b> restored section “Pricing” <em>· edit by Alex Chen reverted</em></div><span class="when">2 min ago</span></div>
+            <div class="tr"><span class="g req">?</span><div class="w"><b>Gabriela Perdum</b> asked to edit contract-v3.pdf <em>· “totals need fixing”</em></div><span class="when">10 min ago</span></div>
+            <div class="tr"><span class="g ok">✓</span><div class="w"><b>Gabriela Perdum</b> approved your edit on budget.xlsx <em>· until Fri 17:00</em></div><span class="when">1 h ago</span></div>
+            <div class="tr"><span class="g app">L</span><div class="w"><b>Mihai Perdum</b> set the classification to Restricted <em>· was Confidential (space default)</em></div><span class="when">12 Sep</span></div>
+          </div>
+        </div>
+      </div>
+      <div class="m-foot"><span>One primary action per row; everything else under ⋯ (Extend, Watch, Copy link, Force release — space admins, reason required).</span><button class="btn quiet">Open My work</button></div>
+    </div>
+  </div></div>
+  <div class="board"><div class="board-label">Dark · collaborator’s view (cannot change classification)</div><div class="stage t-dark" style="background:#0B1220">
+    <div class="modal">
+      <div class="m-head"><h3>Q3 vendor contracts</h3><button class="dismiss" aria-label="Close">×</button></div>
+      <div class="m-tabs"><span class="m-tab on">Overview</span><span class="m-tab">Attachments</span><span class="m-tab">Activity</span></div>
+      <div class="m-body">
+        <div class="m-sec"><h4>Classification</h4>
+          <div class="cls-row"><span class="pill lv-restricted"><span class="glyph"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg></span>Restricted</span>
+            <span class="desc">Set on this page. Highest sensitivity: access is logged and reviewed. Only space admins and page editors can change it.</span></div>
+        </div>
+        <div class="m-sec"><h4>Seals on this page · 3</h4>
+          <div class="list">
+            <div class="row"><span class="ic file">F</span><div class="t"><div class="n">contract-v3.pdf</div><div class="m">Sealed by Mihai Perdum · until Mon 09:00</div></div><div class="a"><button class="btn primary">Request edit</button><button class="kebab" aria-label="More">⋯</button></div></div>
+            <div class="row"><span class="ic file">F</span><div class="t"><div class="n">budget.xlsx</div><div class="m">Sealed by you · until Fri 17:00 · Mihai Perdum can edit until then</div></div><div class="a"><button class="btn quiet">Release</button><button class="kebab" aria-label="More">⋯</button></div></div>
+            <div class="row"><span class="ic sec">§</span><div class="t"><div class="n">Section “Pricing”</div><div class="m">Sealed by Mihai Perdum · no expiry</div></div><div class="a"><span class="state wait">Waiting for Mihai</span><button class="kebab" aria-label="More">⋯</button></div></div>
+          </div>
+        </div>
+        <div class="m-sec"><h4>Recent activity</h4>
+          <div class="trail">
+            <div class="tr"><span class="g req">?</span><div class="w"><b>You</b> asked to edit section “Pricing” <em>· “update the FX rate”</em></div><span class="when">just now</span></div>
+            <div class="tr"><span class="g rev">↺</span><div class="w"><b>Sentinel Vault</b> restored section “Pricing” <em>· an edit by Alex Chen was reverted</em></div><span class="when">2 min ago</span></div>
+            <div class="tr"><span class="g app">L</span><div class="w"><b>Mihai Perdum</b> set the classification to Restricted</div><span class="when">12 Sep</span></div>
+          </div>
+        </div>
+      </div>
+      <div class="m-foot"><span>The existing “Manage Attachments” overlay becomes the Attachments tab here.</span><button class="btn quiet">Open My work</button></div>
+    </div>
+  </div></div>
+</div>
+
+<h2>Decisions the mockups embody — say which to change</h2>
+<p class="note" style="max-width:80ch">
+1. Level colours are fixed and solid (green / blue / amber / red) and identical in both themes; native levels bring their own colour from Confluence and are used as-is.<br>
+2. The ribbon is 44px tall inside the 48px cap, with 2px margin; nothing wraps, nothing stacks. Popovers are gone: everything deeper lives in the modal.<br>
+3. “Exceptions only” opens for three triggers only (threshold, waiting-on-you, active alert). “Locked by … · Request edit” for a collaborator counts as waiting-on-you.<br>
+4. The chip’s counter is the viewer’s waiting-on-you count for this page; the ribbon’s pill repeats it. My work carries the cross-space total.<br>
+5. One primary action per seal row, by state: Seal · Request edit · Waiting for {owner} · Edit now until {time} · Release. Extend, Watch, Copy link and Force release (space admins, typed reason) sit under ⋯.<br>
+6. Copy uses the renamed vocabulary throughout: space, space admin, user, group, attachment, seal.
+</p>

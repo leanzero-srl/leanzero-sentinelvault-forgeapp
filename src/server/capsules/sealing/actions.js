@@ -32,6 +32,13 @@ import { validateReleaseReason } from "../../shared/release-reason.js";
 import { notifyWatchers, sweepWatchers } from "../bulletins/logic.js";
 import { sweepEditAccess } from "../editreq/logic.js";
 import { triggerPanelEmbed, removePanelNode } from "../../infra/doc-surgery.js";
+import { refreshByline } from "../page-details/byline.js"; // 5.0 byline chip — one line per seal write, never awaited into the result
+// 5.0 ribbon (mockup §2/§3): the summary carries the classification, the steward's ribbon setting,
+// the viewer's waiting-on-me numbers for THIS page and the first seal the viewer does not own.
+import { getClassificationProvider } from "../classification/provider.js";
+import { getActiveEditGrant, getActiveSectionEditGrant, listPendingRequestsForOwner, listPendingSectionRequestsForOwner } from "../editreq/logic.js";
+import { listMyApprovals } from "../workflow/approvals.js";
+import { normalizeRibbonSettings } from "../../../ui/kit/ribbon-rules.js";
 
 /**
  * Get attachments for the current page with seal status
@@ -350,6 +357,7 @@ const sealArtifact = async (req) => {
     downloadLink: artifactDownloadLink,
     mediaBaseline,
     embedded,
+    note: typeof req.payload.note === "string" && req.payload.note.trim() ? req.payload.note.trim().slice(0, 300) : null, // 5.0 seal action: the optional note
   };
 
   // Hunt H2-F5b: the expired-other-user re-seal above removed `protection-{id}` but not the
@@ -455,6 +463,7 @@ const sealArtifact = async (req) => {
       console.warn("[SEAL-ARTIFACT] Panel auto-insert failed:", e);
     }
   }
+  if (contentId) await refreshByline(contentId).catch((e) => console.warn("[BYLINE] seal refresh failed:", e?.message || e));
 
   return { success: true };
 };
@@ -608,7 +617,7 @@ export const extendSeal = async (req) => {
     } catch (_) { authorized = false; }
   }
   if (!authorized) {
-    return { success: false, reason: "Only the seal owner or a space steward can extend this seal" };
+    return { success: false, reason: "Only the seal owner or a space admin can extend this seal" };
   }
 
   // How long to add: an explicit request wins, otherwise the same policy chain a fresh
@@ -1211,7 +1220,7 @@ export const purgeSealRecord = async (req) => {
       ? await authorizeSteward(operatorAccountId, effectiveRealmKey)
       : false;
     if (!hasStewardAccess) {
-      return { success: false, reason: "Only the seal owner or a steward can purge" };
+      return { success: false, reason: "Only the seal owner or a space admin can purge" };
     }
     // With no seal record there is no trustworthy space for the TARGET at all, so the steward
     // check above can only ever have been about somewhere else. Purge is permanent and
@@ -1353,14 +1362,17 @@ const ribbonSummary = async (req) => {
   out.attachments = ids.length;
 
   // A protection-* record is a seal unless it is the S7 trashedOnly TRACKING record (triggers.js).
+  const liveSeals = []; // { id, record } — the page's live attachment seals, for the viewer's half below
   for (let i = 0; i < ids.length; i += 25) {
-    const records = await Promise.all(ids.slice(i, i + 25).map((id) => kvs.get(`protection-${id}`).catch(() => null)));
-    for (const r of records) {
-      if (!r) continue;
-      if (r.trashedOnly) { out.trashedSeals += 1; continue; }
+    const batch = ids.slice(i, i + 25);
+    const records = await Promise.all(batch.map((id) => kvs.get(`protection-${id}`).catch(() => null)));
+    records.forEach((r, j) => {
+      if (!r) return;
+      if (r.trashedOnly) { out.trashedSeals += 1; return; }
       out.sealedAttachments += 1;
       if (accountId && r.lockedBy === accountId) out.sealedByMe = true;
-    }
+      liveSeals.push({ id: batch[j], record: r });
+    });
   }
   // A sealed file sitting in the trash is still something to show: the overlay's Trash card is
   // where its owner restores it, and the ribbon is the only door to that overlay. The default
@@ -1375,11 +1387,19 @@ const ribbonSummary = async (req) => {
     }
   } catch (e) { console.warn("[RIBBON] trashed-attachment probe failed:", e?.message || e); }
 
+  let sectionRecords = [];
   try {
-    out.sectionSeals = (await listSectionSealRecordsForPage(pageId)).length;
+    sectionRecords = (await listSectionSealRecordsForPage(pageId)).filter((s) => s?.lockedBy);
+    out.sectionSeals = sectionRecords.length;
   } catch (e) {
     console.error(`[RIBBON] section-seal listing threw for ${pageId}:`, e);
   }
+
+  // ── 5.0 (mockup §2/§3): what the ROW shows. Every read below is bounded by this page's own
+  // seals or by the viewer's own index prefix — never a site-wide scan. Each block is best effort
+  // and logged: a failure degrades that block to "nothing", it never turns the summary into an
+  // error row (the seal counts above are the truth the ribbon closes on).
+  Object.assign(out, await ribbonViewerHalf({ pageId, accountId, liveSeals, sectionRecords }));
 
   out.ok = true;
   if (out.sealedAttachments === 0 && out.sectionSeals === 0 && out.trashedSeals === 0) {
@@ -1388,6 +1408,71 @@ const ribbonSummary = async (req) => {
   }
   return { ...out, reason: "sealed" };
 };
+
+const isLapsed = (iso) => !!(iso && new Date(iso).getTime() <= Date.now());
+
+/**
+ * The classification, the steward's ribbon setting, the viewer's waiting-on-me numbers scoped to
+ * this page, and `lockedFor`: the FIRST live seal on the page the viewer does not own (journey 2:
+ * "Locked by {owner} until {time} · Request edit"), with the viewer's own request status on it.
+ * `waitingOnMe.grantsActive` lists the viewer's active edit grants on this page's seals.
+ */
+async function ribbonViewerHalf({ pageId, accountId, liveSeals, sectionRecords }) {
+  const half = {
+    classification: { level: null, source: "none" },
+    ribbonMode: "exceptions", ribbonThresholdRank: 4, threshold: { rank: 4 },
+    waitingOnMe: { requests: 0, approvals: 0, grantsActive: [] },
+    lockedFor: null,
+  };
+  const settle = (label, p, fallback) => p.catch((e) => { console.warn(`[RIBBON] ${label} failed:`, e?.message || e); return fallback; });
+
+  const [settings, cls] = await Promise.all([
+    settle("settings", kvs.get("admin-settings-global"), null),
+    settle("classification", (async () => { const { provider } = await getClassificationProvider(); return provider.effectiveLevel(pageId); })(), null),
+  ]);
+  const norm = normalizeRibbonSettings(settings);
+  half.ribbonMode = norm.ribbonMode;
+  half.ribbonThresholdRank = norm.ribbonThresholdRank;
+  half.threshold = { rank: norm.ribbonThresholdRank };
+  if (cls?.level) {
+    const l = cls.level;
+    half.classification = { level: { id: String(l.id), name: l.name, color: l.color || null, rank: Number(l.rank) || 0, description: typeof l.description === "string" ? l.description.slice(0, 160) : "" }, source: cls.source || "page" };
+  }
+  if (!accountId) return half;
+
+  // Waiting on ME, on THIS page: the same owner/approver index reads count-my-work uses, filtered
+  // to this page (every record carries the page id it belongs to).
+  const same = (id) => String(id || "") === String(pageId);
+  const [fileReqs, sectionReqs, approvals] = await Promise.all([
+    settle("file requests", listPendingRequestsForOwner(accountId), []),
+    settle("section requests", listPendingSectionRequestsForOwner(accountId), []),
+    settle("approvals", listMyApprovals(accountId), []),
+  ]);
+  half.waitingOnMe.requests = fileReqs.filter((r) => same(r.pageId)).length + sectionReqs.filter((r) => same(r.pageId)).length;
+  half.waitingOnMe.approvals = approvals.filter((r) => same(r.pageId)).length;
+
+  // The seals the viewer does NOT own on this page: grants (Edit now) and the first locked one.
+  const foreign = [
+    ...liveSeals.filter(({ record }) => record.lockedBy && record.lockedBy !== accountId && !isLapsed(record.expiresAt))
+      .map(({ id, record }) => ({ kind: "attachment", id, name: record.attachmentName || "an attachment", owner: record.lockedByName || "its owner", until: record.expiresAt || null })),
+    ...sectionRecords.filter((s) => s.lockedBy !== accountId && !isLapsed(s.expiresAt))
+      .map((s) => ({ kind: "section", id: s.sectionId, name: s.sectionTitle || "Sealed section", owner: s.lockedByName || "its owner", until: s.expiresAt || null })),
+  ];
+  if (!foreign.length) return half;
+  const probes = await Promise.all(foreign.map(async (seal) => {
+    const grant = await settle(`grant ${seal.id}`, seal.kind === "attachment" ? getActiveEditGrant(seal.id, accountId) : getActiveSectionEditGrant(seal.id, accountId), null);
+    if (grant) return { seal, grant };
+    const req = await settle(`request ${seal.id}`, kvs.get(seal.kind === "attachment" ? `edit-request-${seal.id}-${accountId}` : `section-edit-request-${seal.id}-${accountId}`), null);
+    return { seal, grant: null, myRequest: req?.status === "pending" ? "pending" : "none" };
+  }));
+  half.waitingOnMe.grantsActive = probes.filter((p) => p.grant).map(({ seal, grant }) => ({ name: seal.name, kind: seal.kind, id: seal.id, until: grant.expiresAt || seal.until || null }));
+  // "Locked" is the state of a seal the viewer can neither edit nor has been granted; a seal with
+  // a pending request from the viewer comes first ("Waiting for {owner}" is the more specific state).
+  const locked = probes.filter((p) => !p.grant);
+  const pick = locked.find((p) => p.myRequest === "pending") || locked[0] || null;
+  if (pick) half.lockedFor = { ...pick.seal, myRequest: pick.myRequest };
+  return half;
+}
 
 export const actions = [
   ["ribbon-summary", ribbonSummary],

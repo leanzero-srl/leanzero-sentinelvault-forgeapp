@@ -20,6 +20,7 @@ import { canEditPage, canReadPage, mustVerify } from "../../shared/content-acces
 import { authorizeSteward, isAccountStewardAsApp, isOperatorSiteAdmin } from "../../shared/steward-checks.js";
 import { getAppProvider, getClassificationProvider, resetProviderCache } from "./provider.js";
 import { isContentId, validateLevels } from "./logic.js";
+import { refreshByline } from "../page-details/byline.js"; // 5.0 byline chip (page writes only; a space default refreshes lazily on open)
 
 const NOT_AUTHORIZED = "Not authorized";
 
@@ -165,6 +166,7 @@ export const setPage = async (req) => {
     const { provider } = await getClassificationProvider();
     if (levelId == null) await provider.resetPage(pageId);
     else await provider.setPageLevel(pageId, levelId);
+    await refreshByline(pageId).catch((e) => console.warn("[BYLINE] set-page refresh failed:", e?.message || e));
     return { ok: true, effective: await provider.effectiveLevel(pageId), pageLevelId: levelId };
   } catch (e) {
     console.error("[CLASSIFICATION] set-page failed:", e);

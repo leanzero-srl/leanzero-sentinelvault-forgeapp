@@ -162,7 +162,7 @@ const assignWorkflow = async (req) => {
   if (!spaceKey) return { success: false, reason: "Could not resolve this page's space" };
   // Assigning a workflow is a steward act in v1 (per-page-owner assignment arrives with #43).
   if (!(await authorizeSteward(actorAccountId, spaceKey))) {
-    return { success: false, reason: "Only a space steward can assign a workflow" };
+    return { success: false, reason: "Only a space admin can assign a workflow" };
   }
   return assignPageWorkflow({
     pageId,
@@ -207,7 +207,7 @@ export const requestTransition = async (req) => {
   const from = findState(def, current.stateId);
   if (from?.enforce && !target?.enforce
     && !(await authorizeSteward(actorAccountId, spaceKey))) {
-    return { success: false, reason: `Leaving "${from.name}" requires steward approval` };
+    return { success: false, reason: `Leaving "${from.name}" requires space admin approval` };
   }
 
   // #46: transition conditions run BEFORE the enforce/approval branch. Content conditions
@@ -232,7 +232,7 @@ export const requestTransition = async (req) => {
     // enforce target with no human approvers still requires the requester to be a steward —
     // otherwise turning on "require AI review" would DOWNGRADE the gate to "anyone + AI".
     if (target?.enforce && !(spec?.approvers?.length) && !(await authorizeSteward(actorAccountId, spaceKey))) {
-      return { success: false, reason: `Entering "${target?.name || toStateId}" requires steward approval` };
+      return { success: false, reason: `Entering "${target?.name || toStateId}" requires space admin approval` };
     }
     // Review #2: an approver GROUP that could not be expanded must not open a request that
     // nobody can complete (0 of 0, pending forever) or silently shrink an "all approvers" rule
@@ -283,7 +283,7 @@ export const requestTransition = async (req) => {
     // enforce, no approvers, no AI → #42/#44 direct steward gate. The steward IS the reviewing
     // authority acting on what they see now: capture approvedVersion, fail CLOSED on null.
     if (!(await authorizeSteward(actorAccountId, spaceKey))) {
-      return { success: false, reason: `Entering "${target.name}" requires steward approval` };
+      return { success: false, reason: `Entering "${target.name}" requires space admin approval` };
     }
     const approvedVersion = await fetchLivePageVersion(pageId);
     if (approvedVersion == null) {
@@ -336,7 +336,7 @@ const setReviewDue = async (req) => {
   if (!current) return { success: false, reason: "Page has no workflow assigned" };
   const spaceKey = current.spaceKey || await resolvePageSpaceKey(pageId);
   if (!spaceKey || !(await authorizeSteward(actorAccountId, spaceKey))) {
-    return { success: false, reason: "Only a space steward can change the review date" };
+    return { success: false, reason: "Only a space admin can change the review date" };
   }
   const r = await setPageReviewDue({
     pageId,
@@ -380,7 +380,7 @@ const getReadReportAction = async (req) => {
   const record = await readPageWorkflow(pageId);
   if (!record) return { required: false, readers: [] };
   const spaceKey = record.spaceKey || await resolvePageSpaceKey(pageId);
-  if (!spaceKey || !(await authorizeSteward(req.context?.accountId, spaceKey))) return { required: false, readers: [], reason: "Only a space steward can see who has read this page" };
+  if (!spaceKey || !(await authorizeSteward(req.context?.accountId, spaceKey))) return { required: false, readers: [], reason: "Only a space admin can see who has read this page" };
   const settings = await getSpaceWorkflowSettings(spaceKey);
   return readReport({ pageId, record, settings });
 };
@@ -499,7 +499,7 @@ const storeConfig = async (req) => {
     ? await authorizeSteward(caller, key || spaceKeyOf(req))
     : await isOperatorSiteAdmin(caller));
   if (!authorized) {
-    return { success: false, reason: scope === "space" ? "Only a space steward can edit workflow definitions" : "Only a site admin can edit the global workflow definition" };
+    return { success: false, reason: scope === "space" ? "Only a space admin can edit workflow definitions" : "Only a site admin can edit the global workflow definition" };
   }
   return storeWorkflowConfig(scope || "global", key, def);
 };
@@ -508,18 +508,18 @@ const storeConfig = async (req) => {
 // on it), so a steward of that space edits that space's workflows and nothing else.
 const listSpaceWorkflowsAction = async (req) => {
   const spaceKey = spaceKeyOf(req);
-  if (!spaceKey || !(await authorizeSteward(req.context?.accountId, spaceKey))) return { error: "Only a space steward can view workflow definitions" };
+  if (!spaceKey || !(await authorizeSteward(req.context?.accountId, spaceKey))) return { error: "Only a space admin can view workflow definitions" };
   return listSpaceWorkflows(spaceKey);
 };
 const storeSpaceWorkflowAction = async (req) => {
   const spaceKey = spaceKeyOf(req);
-  if (!spaceKey || !(await authorizeSteward(req.context?.accountId, spaceKey))) return { success: false, reason: "Only a space steward can edit workflow definitions" };
+  if (!spaceKey || !(await authorizeSteward(req.context?.accountId, spaceKey))) return { success: false, reason: "Only a space admin can edit workflow definitions" };
   const { workflowId, def, labels, priority } = req.payload || {};
   return storeSpaceWorkflow(spaceKey, { workflowId: typeof workflowId === "string" ? workflowId : null, def, labels, priority });
 };
 const deleteSpaceWorkflowAction = async (req) => {
   const spaceKey = spaceKeyOf(req);
-  if (!spaceKey || !(await authorizeSteward(req.context?.accountId, spaceKey))) return { success: false, reason: "Only a space steward can edit workflow definitions" };
+  if (!spaceKey || !(await authorizeSteward(req.context?.accountId, spaceKey))) return { success: false, reason: "Only a space admin can edit workflow definitions" };
   return deleteSpaceWorkflow(spaceKey, String(req.payload?.workflowId || ""));
 };
 
@@ -540,7 +540,7 @@ const getSpaceSettings = async (req) => {
 const setSpaceSettings = async (req) => {
   const spaceKey = spaceKeyOf(req);
   if (!(await authorizeSteward(req.context?.accountId, spaceKey))) {
-    return { success: false, reason: "Only a space steward can change workflow settings" };
+    return { success: false, reason: "Only a space admin can change workflow settings" };
   }
   return setSpaceWorkflowSettings(spaceKey, req.payload?.settings || {});
 };
@@ -550,7 +550,7 @@ const setSpaceSettings = async (req) => {
 const bulkAssign = async (req) => {
   const spaceKey = spaceKeyOf(req);
   if (!(await authorizeSteward(req.context?.accountId, spaceKey))) {
-    return { success: false, reason: "Only a space steward can apply workflows" };
+    return { success: false, reason: "Only a space admin can apply workflows" };
   }
   const settings = await getSpaceWorkflowSettings(spaceKey);
   if (!settings.enabled) return { success: false, reason: "Enable workflow for this space first" };
@@ -579,7 +579,7 @@ export const getWorkflowDashboard = async (req) => {
   // up to 100 page titles and webui URLs fetched with the app's identity, per-state counts and
   // review-overdue flags. It is the steward-only dashboard (WorkflowDashboard.jsx:22).
   if (!(await authorizeSteward(req.context?.accountId, spaceKey))) {
-    return { error: "Only a space steward can view the workflow dashboard" };
+    return { error: "Only a space admin can view the workflow dashboard" };
   }
   const prefix = `workflow-idx-${sanitize(spaceKey)}-`;
   const entries = [];

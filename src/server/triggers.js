@@ -48,6 +48,7 @@ import { randomUUID } from "node:crypto";
 // write / attachment restore / KVS purge), never on an attempt, and never between a dedup
 // marker claim and the side effect that marker protects (T6). It never throws.
 import { recordActivity } from "./infra/activity-log.js";
+import { refreshByline } from "./capsules/page-details/byline.js"; // 5.0 byline chip — refreshed once per page save, after the restore passes
 
 // --- Fix 3 (CORE T6 extension): cross-run violation-comment dedup ---
 // K1: `violation-noticed-{pageId}-{targetId}-{class}`, TTL 24h, claimed BEFORE the footer
@@ -434,6 +435,8 @@ export async function pageContentTrigger(event) {
       }
       await touchSealTimestamp();
     }
+
+    await refreshByline(pageId).catch((e) => console.warn("[BYLINE] trigger refresh failed:", e?.message || e));
 
     // #44: the enforce-revert notice — only after a CONFIRMED write (SV-M2).
     if (anyChange && enforceReverted) {
@@ -2360,6 +2363,7 @@ export async function expirySweepTask() {
                   value.attachmentName || "Unknown Attachment",
                   value.contentId,
                   { noticeLimit: lapseNoticeLimit },
+                  value.spaceKey || null, // P1-4: the seal's own space → quiet mode without a page lookup
                 );
               } catch (noticeError) {
                 console.error("Error posting auto-release notice:", noticeError);
@@ -2405,15 +2409,21 @@ export async function expirySweepTask() {
                     noticeLimit: lapseNoticeLimit,
                     releaseDate: new Date(releaseAtMs).toLocaleDateString("en-US", dateOpts),
                   },
+                  value.spaceKey || null, // P1-4
                 )
                 : await mailExpiryNotice(
                   value.lockedBy,
                   value.attachmentName || "Unknown Attachment",
                   value.contentId,
                   expiresAt.toLocaleDateString("en-US", dateOpts),
+                  value.spaceKey || null, // P1-4
                 );
 
-              noticePosted = noticeResult?.success === true;
+              // P1-4: a DELIBERATE non-post (the space is in quiet mode, or the comment channel is
+              // opt-out) counts like the toggle-off branch below — the owner chose not to be
+              // told on the page, and the ribbon / activity still say so — so the countdown to
+              // the release advances. Only a transport failure holds the counter.
+              noticePosted = noticeResult?.success === true || noticeResult?.suppressed === true;
               if (!noticePosted) {
                 console.warn(
                   `Failed to post lapse notice ${noticeNumber}/${lapseNoticeLimit}: ${noticeResult?.reason} — counter NOT advanced (will retry next sweep)`,
@@ -2482,13 +2492,17 @@ export async function expirySweepTask() {
               value.attachmentName || "Unknown Attachment",
               value.contentId,
               expiryDate,
+              value.spaceKey || null, // P1-4: the seal's own space → quiet mode without a page lookup
             );
 
-            if (result.success) {
+            // P1-4: a suppressed reminder (quiet space / channel opt-out) is marked as handled
+            // too — re-composing it every hourly sweep would only burn page reads for a comment
+            // the space asked not to receive.
+            if (result.success || result.suppressed) {
               await setUntil(halfwayKey, {
                 sentAt: now.toISOString(),
               }, expiresAt.getTime() + 7 * 86400000); // audit C5: die with the seal
-              halfwayAlertsSent++;
+              if (result.success) halfwayAlertsSent++;
             } else {
               console.warn(
                 `Failed to post halfway reminder for ${artifactId}: ${result.reason}`,

@@ -23,6 +23,7 @@ import {
 import { sweepSectionEditAccess, getActiveSectionEditGrant } from "../editreq/logic.js";
 import { recordActivity } from "../../infra/activity-log.js";
 import { validateReleaseReason } from "../../shared/release-reason.js";
+import { refreshByline } from "../page-details/byline.js"; // 5.0 byline chip
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const newSectionId = () => {
@@ -248,6 +249,7 @@ export const sealSection = async (req) => {
   await refreshSectionContentProp(pageId);
   await touchSealTimestamp();
   if (pageId) await restampIfEnforced(pageId); // #44 §2.7: keep an enforced baseline seal-complete
+  await refreshByline(pageId).catch((e) => console.warn("[BYLINE] seal-section refresh failed:", e?.message || e));
   return { success: true, sectionId };
 };
 
@@ -283,7 +285,7 @@ export const unsealSection = async (req) => {
       try { allowed = await canEditPage(operatorAccountId, record.pageId); } catch (_) { /* deny */ }
     }
   }
-  if (!allowed) return { success: false, reason: "Only the section owner or a steward can unseal" };
+  if (!allowed) return { success: false, reason: "Only the section owner or a space admin can unseal" };
   // Part 3.5: break-glass (steward, or anyone releasing a lapsed seal) needs a TYPED reason that
   // the trail shows. ONE rule with the attachment paths — shared/release-reason.js.
   let forcedReason = null;
@@ -339,6 +341,7 @@ export const unsealSection = async (req) => {
   await sweepSectionEditAccess(sectionId);
   await refreshSectionContentProp(pageId);
   await touchSealTimestamp();
+  await refreshByline(pageId).catch((e) => console.warn("[BYLINE] unseal-section refresh failed:", e?.message || e));
   return { success: true };
 };
 

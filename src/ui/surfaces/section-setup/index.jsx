@@ -85,6 +85,7 @@ const SectionMacro = () => {
   const [editing, setEditing] = useState(false);
   const [seal, setSeal] = useState(null); // section-seal-status result (editor only)
   const [existingConfig, setExistingConfig] = useState(null); // config already on the node (edit dialog)
+  const [contextSectionId, setContextSectionId] = useState(null); // the id the macro context carries, if any
 
   useEffect(() => {
     (async () => {
@@ -93,26 +94,28 @@ const SectionMacro = () => {
         const context = await view.getContext();
         const ext = context?.extension || {};
         const hasBody = !!ext.macro?.body;
-        // The config panel opens on insert before a body exists.
-        setMode(hasBody ? "view" : "config");
 
         const isEditing = !!ext.isEditing;
         setEditing(isEditing);
         const sectionId = readSectionId(ext);
+        setContextSectionId(sectionId);
         // Logged once so the context shape is visible in the console when it matters.
         console.info("[SECTION-UI] context", { isEditing, sectionId, configKeys: Object.keys(ext.config || {}), paramKeys: Object.keys(ext.macro?.params || {}) });
 
         if (ext.config && typeof ext.config === "object") setExistingConfig(ext.config);
         // In the editor a BODIED macro is rendered natively by ProseMirror (title chrome +
-        // editable body) — the app iframe is never mounted there. The only app surface the
-        // editor shows is this CONFIG dialog (the node's edit button), so the lock status is
-        // fetched whenever we are in an editing context, body or not.
-        if (isEditing || sectionId) {
-          fetchSealStatus(sectionId).then(setSeal);
-        }
+        // editable body) — the app iframe is never mounted there (platform fact, confirmed
+        // 2026-09-14). The only app surface the editor shows is this CONFIG dialog (insert, or
+        // the node's Edit button), so an editing context IS the dialog, body or not: it gets the
+        // config chrome (Done / Insert + Cancel), never the read-only view frame (P1-6).
+        setMode(isEditing || !hasBody ? "config" : "view");
+        // The seal status drives the lock banner in the dialog AND the badge in view mode —
+        // "Sealed by …" is only claimed when the resolver says so (P1-6). One call per render;
+        // without a section id the fetch short-circuits to { sealed: false }.
+        fetchSealStatus(sectionId).then(setSeal);
 
-        // Best-effort: render the protected body inline in view mode.
-        if (hasBody && typeof view.createAdfRendererIframeProps === "function") {
+        // Best-effort: render the protected body inline in view mode (the dialog never shows it).
+        if (hasBody && !isEditing && typeof view.createAdfRendererIframeProps === "function") {
           try {
             const props = await view.createAdfRendererIframeProps(context);
             if (props && typeof props === "object") setBodyProps(props);
@@ -147,6 +150,10 @@ const SectionMacro = () => {
   }, [bodyProps]);
 
   const [error, setError] = useState(null);
+  const onCancel = () => {
+    // The editor owns the dialog; close() dismisses it without touching the node's config.
+    try { const r = view.close(); if (r && r.catch) r.catch((e) => console.info("[SECTION-UI] view.close rejected:", e?.message || e)); } catch (e) { console.info("[SECTION-UI] view.close unavailable:", e?.message || e); }
+  };
   const onInsert = async () => {
     setError(null);
     try {
@@ -155,8 +162,10 @@ const SectionMacro = () => {
       // config is the whole configuration of a NEW macro: the sectionId is issued server-side
       // when the section is sealed from the panel. On an EXISTING node the config already carries
       // that sectionId and MUST be preserved — submitting `{}` would strip it and orphan the seal.
-      await view.submit({ config: { ...(existingConfig || {}) } });
-      setStatus(existingConfig?.sectionId ? "Saved" : "Inserted");
+      const cfg = { ...(existingConfig || {}) };
+      if (!cfg.sectionId && contextSectionId) cfg.sectionId = contextSectionId;
+      await view.submit({ config: cfg });
+      setStatus(cfg.sectionId ? "Saved" : "Inserted");
     } catch (e) {
       console.error("[SECTION-UI] submit failed:", e);
       setStatus("Could not insert");
@@ -185,7 +194,7 @@ const SectionMacro = () => {
   const sealState = locked ? "locked" : canEdit ? "editable" : "none";
 
   if (mode === "config") {
-    const existing = !!existingConfig?.sectionId;
+    const existing = !!(existingConfig?.sectionId || contextSectionId);
     return (
       <div className="sec-config" data-editing={editing ? "true" : "false"} data-seal={sealState}>
         <div className="sec-config-head">
@@ -199,7 +208,10 @@ const SectionMacro = () => {
           and use <strong>Sealed Sections → Seal a section</strong>. The seal owner (or a
           space admin) can release the seal at any time.
         </p>
-        <button className="sec-btn" onClick={onInsert}>{status || (existing ? "Done" : "Insert section")}</button>
+        <div className="sec-config-actions">
+          <button className="sec-btn" onClick={onInsert} data-testid="sec-submit">{status || (existing ? "Done" : "Insert section")}</button>
+          <button type="button" className="sec-btn sec-btn-subtle" onClick={onCancel} data-testid="sec-cancel">Cancel</button>
+        </div>
         {error && <p className="sec-config-error" role="alert">{error}</p>}
       </div>
     );
@@ -209,16 +221,28 @@ const SectionMacro = () => {
   const showFallback = !bodyProps || !rendererReady;
   const framePending = !!bodyProps && !rendererReady && !rendererTimedOut;
 
+  // The badge claims exactly what the resolver answered (P1-6): pending until it has, then
+  // sealed / expired / unsealed. The frame border follows the same state (brand / amber / grey).
+  const viewState = seal === null ? "pending" : seal.sealed && seal.isExpired ? "expired" : seal.sealed ? "sealed" : "unsealed";
+  const badgeText = viewState === "pending" ? "Sentinel Vault"
+    : viewState === "sealed" ? `Sealed by ${seal.ownerName || "the seal owner"}`
+      : viewState === "expired" ? "Expired seal"
+        : "Not sealed yet — seal it from the Sentinel Vault panel";
+  const fallbackText = viewState === "sealed" ? "This section is sealed. Unauthorized edits are automatically reverted."
+    : viewState === "expired" ? "The seal on this section has expired. Edits are no longer reverted; the owner can seal it again from the Sentinel Vault panel."
+      : viewState === "unsealed" ? "This section is not sealed yet. Open the Sentinel Vault panel and use Sealed Sections → Seal a section."
+        : "Checking the seal…";
+
   return (
-    <div className="sec-frame" data-editing={editing ? "true" : "false"} data-seal={sealState}>
+    <div className="sec-frame" data-editing={editing ? "true" : "false"} data-seal={sealState} data-state={viewState}>
       <div className="sec-frame-head">
-        <span className="sec-badge"><ShieldGlyph /> Sealed by Sentinel Vault</span>
+        <span className="sec-badge" data-testid="sec-view-badge" data-state={viewState}><ShieldGlyph /> {badgeText}</span>
       </div>
       {editing && lockNotice}
       <div className="sec-body">
         {showFallback && (
           <div className="sec-body-fallback">
-            This section is sealed. Unauthorized edits are automatically reverted.
+            {fallbackText}
           </div>
         )}
         {bodyProps && !rendererTimedOut && (

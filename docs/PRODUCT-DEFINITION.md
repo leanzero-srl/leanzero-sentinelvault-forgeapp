@@ -17,7 +17,7 @@ and keeps a record.**
 Everything in the app is one of four things: a way to make that declaration (seal, seal a section,
 approve into an enforced state, define a rule), the machine that enforces it (the two triggers and
 their restore passes), the release valves that keep enforcement from becoming a hostage situation
-(edit requests and grants, expiry, steward override, lapse release), or the administration and
+(edit requests and grants, expiry, space admin override, lapse release), or the administration and
 telemetry around it (consoles, notifications, dashboard).
 
 ## 2. The five business capabilities
@@ -34,11 +34,11 @@ Sliced by the job the customer is hiring the app for, not by capsule.
   sealed binary is re-uploaded as a new version, so the intruder's work stays in version history.
 - Trash by a non-owner is undone; permanent delete is detected, cleaned up and announced; the
   owner trashing their own file releases the seal instead of fighting it.
-- Release valves: request-to-edit with owner/steward approval and revocable grants that die with
+- Release valves: request-to-edit with owner/space admin approval and revocable grants that die with
   the seal; watch-for-release; halfway reminder; lapse reminders then auto-release after N notices;
-  steward force-unseal behind a global toggle; pause-all-timers.
+  space admin force-unseal behind a global toggle; pause-all-timers.
 - Surfaces: page banner counts, inline panel cards, a full-table overlay, "My Sealed Files" and a
-  steward "Sealed Files" audit tab, thumbnails for images, upload/label/delete/restore/purge.
+  space admin "Sealed Files" audit tab, thumbnails for images, upload/label/delete/restore/purge.
 
 ### BC-2 Freezing a piece of a page (nobody else has this)
 
@@ -47,7 +47,7 @@ Sliced by the job the customer is hiring the app for, not by capsule.
 - Server-side wrap of a heading range into a bodied macro with a stable id, snapshot of the ADF,
   content hash plus structural compare, restore of every duplicate copy, re-insert by heading
   anchor when the wrapper is cut, owner and grantee edits re-baseline, expired seals go inert.
-- Same request/approve/deny/grant model as files. Same lapse and steward rules.
+- Same request/approve/deny/grant model as files. Same lapse and space admin rules.
 
 ### BC-3 Enforced page-body integrity for embedded sealed media
 
@@ -61,7 +61,7 @@ height) are part of what is sealed.*
 
 ### BC-4 Document workflow with an enforced Approved state (the Comala job, done our way)
 
-*A steward turns on a review workflow for a space; Approved pages cannot drift.*
+*A space admin turns on a review workflow for a space; Approved pages cannot drift.*
 
 - State machine Draft → In Review → Approved → Expired with a by-state index, transition log
   (no TTL, compliance record), auto-assign on page create, bulk assign to existing pages.
@@ -73,13 +73,13 @@ height) are part of what is sealed.*
   approver" with a threshold and a budget-exhausted policy.
 - Enforcement of Approved: demote (page returns to Draft, content kept) or revert (body restored
   to the highest sanctioned version, editor's work stays in history). Privileged editors (the
-  approver snapshot, live stewards) edit freely and re-stamp the baseline. Hourly sweep catches
+  approver snapshot, live space admins) edit freely and re-stamp the baseline. Hourly sweep catches
   drift the trigger missed and expires pages past their review date.
 - Dashboard: exact per-state counts, overdue count, recent pages, CSV export.
 
 ### BC-5 Content rules and AI review (a Comala-adjacent job)
 
-*Stewards define what a compliant page looks like; pages are checked on every save.*
+*Space admins define what a compliant page looks like; pages are checked on every save.*
 
 - Seven rule types, warn/block severity, three modes that are a union (advisory comment, gate
   status property, revert to last-good version), a global block-rule floor spaces cannot weaken.
@@ -129,7 +129,7 @@ between is built and verified on dev but not shipped:
   records) and SV-SEC-2 (eight dead resolvers removed, one of them ungated).
 - **A1** Activity log per page + space Activity tab with filters and CSV (`activity-*` family).
 - **A4 + A6** Approval record kept after the approval; "View approved version" links.
-- **A2 + A5** Configurable demote target; per-state review clocks and a steward-editable review
+- **A2 + A5** Configurable demote target; per-state review clocks and a space admin-editable review
   date on the page (UTC end-of-day, custom date picker).
 - Trashed pages leave the workflow dashboard, inbox and sweep; purged pages lose their keys.
 - **A7** Cross-space "My work" global page (approvals, edit requests on my seals, my seals).
@@ -165,7 +165,7 @@ Effort is not a ranking axis. "Blast" is the reach of the change.
 | A2 | **Reset-on-edit and "updated" transition semantics as configurable behaviour** | Comala: editing a page in Approved returns it to Review (their only protection) | We have demote, but demote goes to the *initial* state. Add per-space `onTamper: demote-to` target (e.g. In Review) and expose "who edited, which version" in the demote comment. | `collectWorkflowEnforcementForPage`, settings editor |
 | A3 | **Per-state page restrictions as an optional add-on to enforcement** | Comala: `add/set/remove-restrictions` triggers, "remove restrictions on final state" | Optional per-state view/edit restriction (users/groups/@approvers) applied on entry and removed on exit. Needs live probe of the v1 restrictions API under Forge first. Off by default; enforcement stays revert-based. | New scope likely (`write:confluence-props`? verify) → major bump |
 | A4 | **Approval decision comments and "Approved and version N" evidence macro** | Comala Document Approvals macro shows reviewer, decision, date, page version at decision | We pin the version already. Add an optional reason on approve/deny (the dialog has a reason field for deny; make it symmetric), and a read-only "Approval record" block in the panel/dialog listing reviewer, decision, date, version. | `decide-approval`, `get-page-approvals`, dialog |
-| A5 | **Workflow parameters: due-date editing by users, per-state expiry** | Comala: due date per state, editable from the dialog, `set-expiration` | We have `reviewAfterDays` on Approved only. Add per-state `expiresAfterDays` and an "edit review date" affordance in the banner dialog for stewards. | `computeReviewDueAt`, sweep, dialog |
+| A5 | **Workflow parameters: due-date editing by users, per-state expiry** | Comala: due date per state, editable from the dialog, `set-expiration` | We have `reviewAfterDays` on Approved only. Add per-state `expiresAfterDays` and an "edit review date" affordance in the banner dialog for space admins. | `computeReviewDueAt`, sweep, dialog |
 | A6 | **"View approved version" link and stale-approval banner copy** | Comala: link to last approved version in the dialog | We know `approvedVersion`; link to `/pages/viewpageversion.action` from the chip. One-line UI change. | doc-ribbon |
 | A7 | **Cross-space "My work" page** (approvals waiting on me + my seals + my requests) | Comala: Document Report filters "My assigned/pending approvals"; Lockpoint: none | `list-my-approvals`, `enumerate-operator-seals`, `list-my-edit-requests` all exist; add a `confluence:globalPage` that composes them. | Built 2026-09-05 (it65). PROVEN: a module without a scope is a MINOR version (dev 6.97 → 6.100, install stayed Up-to-date) — ships on a minor prod deploy |
 

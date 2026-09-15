@@ -10,39 +10,39 @@
   --sv-bg-hover: #E2E8F0;
   --sv-text-primary: #0F172A;
   --sv-text-secondary: #475569;
-  --sv-text-subtle: #94A3B8;
+  --sv-text-subtle: #5B6B80;
   --sv-text-disabled: #CBD5E1;
   --sv-text-inverse: #FFFFFF;
   --sv-text-on-primary: #FFFFFF;
   --sv-border-primary: #E2E8F0;
   --sv-border-secondary: #E2E8F0;
-  --sv-border-focus: #0891B2;
+  --sv-border-focus: #0E7490;
   --sv-surface-raised: #FFFFFF;
   --sv-surface-overlay: #FFFFFF;
-  --sv-status-success: #0891B2;
+  --sv-status-success: #0E7490;
   --sv-status-success-bg: #ECFEFF;
   --sv-status-success-border: #A5F3FC;
   --sv-status-warning: #DC2626;
   --sv-status-warning-bg: #FEF2F2;
   --sv-status-warning-border: #FECACA;
-  --sv-status-info: #0891B2;
+  --sv-status-info: #0E7490;
   --sv-status-info-bg: #ECFEFF;
   --sv-status-info-border: #A5F3FC;
   --sv-status-neutral: #64748B;
   --sv-status-neutral-bg: #F8FAFC;
   --sv-status-neutral-border: #E2E8F0;
-  --sv-interactive-primary: #0891B2;
-  --sv-interactive-primary-hover: #0E7490;
-  --sv-interactive-primary-active: #155E75;
-  --sv-interactive-success: #0891B2;
-  --sv-interactive-success-hover: #0E7490;
-  --sv-interactive-success-active: #155E75;
+  --sv-interactive-primary: #0E7490;
+  --sv-interactive-primary-hover: #155E75;
+  --sv-interactive-primary-active: #164E63;
+  --sv-interactive-success: #0E7490;
+  --sv-interactive-success-hover: #155E75;
+  --sv-interactive-success-active: #164E63;
   --sv-interactive-danger: #DC2626;
   /* F4: Extend gets its own solid hue — cyan is Seal, red is Unseal, violet is
      Request Edit. Mirrors foundation.css; each surface CSS carries its own copy of
      the token block because webpack copies ONE flat file per surface. */
-  --sv-interactive-extend: #059669;
-  --sv-interactive-extend-hover: #047857;
+  --sv-interactive-extend: #047857;
+  --sv-interactive-extend-hover: #065F46;
   --sv-interactive-danger-hover: #B91C1C;
   --sv-interactive-danger-active: #991B1B;
   --sv-scrollbar-track: #F1F5F9;
@@ -65,7 +65,7 @@ html[data-color-mode="dark"] {
   --sv-bg-hover: #334155;
   --sv-text-primary: #F8FAFC;
   --sv-text-secondary: #CBD5E1;
-  --sv-text-subtle: #64748B;
+  --sv-text-subtle: #94A3B8;
   --sv-text-disabled: #475569;
   --sv-text-inverse: #FFFFFF;
   --sv-text-on-primary: #0F172A;
@@ -87,8 +87,8 @@ html[data-color-mode="dark"] {
   --sv-status-neutral-bg: #1E293B;
   --sv-status-neutral-border: #334155;
   --sv-interactive-primary: #22D3EE;
-  --sv-interactive-primary-hover: #0891B2;
-  --sv-interactive-primary-active: #0E7490;
+  --sv-interactive-primary-hover: #06B6D4;
+  --sv-interactive-primary-active: #0891B2;
   --sv-interactive-success: #22D3EE;
   --sv-interactive-success-hover: #67E8F9;
   --sv-interactive-success-active: #A5F3FC;
@@ -339,22 +339,24 @@ textarea:focus {
 
 /* Alert messages */
 .alert-error {
-  background-color: var(--sv-status-warning-bg);
+  background-color: var(--sv-interactive-danger);
   border: none;
   border-radius: 10px;
   padding: 12px 16px;
   margin-bottom: 16px;
-  color: var(--sv-status-warning);
+  color: var(--sv-text-on-primary);
   font-size: 13px;
+  font-weight: 500;
 }
 
 .alert-info {
-  background-color: var(--sv-status-success-bg);
+  background-color: var(--sv-interactive-primary);
   border: none;
   border-radius: 10px;
   padding: 12px 16px;
-  color: var(--sv-status-success);
+  color: var(--sv-text-on-primary);
   font-size: 13px;
+  font-weight: 500;
 }
 
 .loading-text {
@@ -405,7 +407,7 @@ textarea:focus {
 
 /* ── Artifact card ─────────────────────────────── */
 .artifact-card {
-  border: 1px solid var(--sv-border-primary);
+  border: 2px solid var(--sv-border-primary);
   border-radius: 8px;
   padding: 10px 16px;
   background: var(--sv-bg-secondary);
@@ -418,19 +420,20 @@ textarea:focus {
   box-shadow: 0 2px 6px var(--sv-shadow-light);
 }
 
-/* Status conveyed by a solid full border (+ the status lozenge) — never a left rail */
-.artifact-card.status-unlocked { border-color: #0891B2; }
-.artifact-card.status-locked-by-me { border-color: #6366F1; }
-.artifact-card.status-locked { border-color: #F59E0B; }
-.artifact-card.status-expired { border-color: #EF4444; }
+/* Status conveyed by a solid 2px full border in the lozenge's own hue (+ the lozenge) — never a left rail.
+   Hex values mirror the STATE COLOUR MAP in foundation.css. */
+.artifact-card.status-unlocked { border-color: #0E7490; }
+.artifact-card.status-locked-by-me { border-color: #4F46E5; }
+.artifact-card.status-locked { border-color: #B45309; }
+.artifact-card.status-expired { border-color: #DC2626; }
+.artifact-card.status-stale { border-color: #475569; }
+.artifact-card.status-trashed { border-color: #C2410C; }
 html[data-color-mode="dark"] .artifact-card.status-unlocked { border-color: #22D3EE; }
 html[data-color-mode="dark"] .artifact-card.status-locked-by-me { border-color: #818CF8; }
 html[data-color-mode="dark"] .artifact-card.status-locked { border-color: #FBBF24; }
 html[data-color-mode="dark"] .artifact-card.status-expired { border-color: #F87171; }
-.artifact-card.status-stale { border-color: #9CA3AF; }
-.artifact-card.status-trashed { border-color: #F59E0B; }
-html[data-color-mode="dark"] .artifact-card.status-stale { border-color: #6B7280; }
-html[data-color-mode="dark"] .artifact-card.status-trashed { border-color: #FBBF24; }
+html[data-color-mode="dark"] .artifact-card.status-stale { border-color: #94A3B8; }
+html[data-color-mode="dark"] .artifact-card.status-trashed { border-color: #FB923C; }
 
 /* ── Card row layout ──────────────────────────── */
 .card-row {
@@ -526,41 +529,27 @@ html[data-color-mode="dark"] .artifact-card.status-trashed { border-color: #FBBF
   gap: 4px;
   padding: 2px 10px;
   border-radius: 9999px;
-  font-size: 10px;
+  font-size: 11px; /* review §7.2: never below 11px */
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.3px;
   white-space: nowrap;
   border: none;
 }
-.status-lozenge.locked {
-  background: var(--sv-status-warning-bg);
-  color: var(--sv-status-warning);
-}
-.status-lozenge.locked-by-me {
-  background: var(--sv-status-info-bg);
-  color: var(--sv-status-info);
-}
-.status-lozenge.unlocked {
-  background: var(--sv-status-success-bg);
-  color: var(--sv-status-success);
-}
-.status-lozenge.expired {
-  background: var(--sv-status-neutral-bg);
-  color: var(--sv-status-neutral);
-}
-.status-lozenge.stale {
-  background: var(--sv-surface-tertiary);
-  color: var(--sv-text-secondary);
-}
-.status-lozenge.trashed {
-  background: #FEF3C7;
-  color: #92400E;
-}
-html[data-color-mode="dark"] .status-lozenge.trashed {
-  background: #78350F;
-  color: #FDE68A;
-}
+/* State lozenges — solid fills, AA ink. Hex values mirror the STATE COLOUR MAP in
+   foundation.css; keep the two in step. */
+.status-lozenge.locked { background: #B45309; color: #FFFFFF; }
+.status-lozenge.locked-by-me { background: #4F46E5; color: #FFFFFF; }
+.status-lozenge.unlocked { background: #0E7490; color: #FFFFFF; }
+.status-lozenge.expired { background: #DC2626; color: #FFFFFF; }
+.status-lozenge.stale { background: #475569; color: #FFFFFF; }
+.status-lozenge.trashed { background: #C2410C; color: #FFFFFF; }
+html[data-color-mode="dark"] .status-lozenge.locked { background: #FBBF24; color: #0F172A; }
+html[data-color-mode="dark"] .status-lozenge.locked-by-me { background: #818CF8; color: #0F172A; }
+html[data-color-mode="dark"] .status-lozenge.unlocked { background: #22D3EE; color: #0F172A; }
+html[data-color-mode="dark"] .status-lozenge.expired { background: #F87171; color: #0F172A; }
+html[data-color-mode="dark"] .status-lozenge.stale { background: #94A3B8; color: #0F172A; }
+html[data-color-mode="dark"] .status-lozenge.trashed { background: #FB923C; color: #0F172A; }
 
 /* ── Action buttons ────────────────────────────── */
 .action-btn {
@@ -592,7 +581,7 @@ html[data-color-mode="dark"] .status-lozenge.trashed {
 }
 .action-btn.unlock {
   background: var(--sv-interactive-danger);
-  color: var(--sv-text-inverse);
+  color: var(--sv-text-on-primary);
   border-color: var(--sv-interactive-danger);
 }
 .action-btn.unlock:hover:not(:disabled) {
@@ -644,22 +633,6 @@ html[data-color-mode="dark"] .status-lozenge.trashed {
 }
 
 /* Inline confirmation bar */
-.card-confirm-bar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  margin-top: 4px;
-  padding: 6px 8px;
-  border-radius: 4px;
-  background: var(--sv-surface-secondary, #fff7d6);
-  font-size: 12px;
-}
-.confirm-message {
-  flex: 1;
-  min-width: 0;
-  color: var(--sv-text-secondary, #7f5f01);
-}
 .confirm-actions {
   display: flex;
   gap: 4px;
@@ -691,8 +664,12 @@ html[data-color-mode="dark"] .status-lozenge.trashed {
 }
 
 .badge-stale {
-  background: var(--sv-surface-tertiary) !important;
-  color: var(--sv-text-secondary) !important;
+  background: #475569 !important;
+  color: #FFFFFF !important;
+}
+html[data-color-mode="dark"] .badge-stale {
+  background: #94A3B8 !important;
+  color: #0F172A !important;
 }
 
 /* Label chip */
@@ -704,8 +681,8 @@ html[data-color-mode="dark"] .status-lozenge.trashed {
   border-radius: 9999px;
   font-size: 11px;
   font-weight: 500;
-  background: var(--sv-status-info-bg);
-  color: var(--sv-status-info);
+  background: var(--sv-label-bg, #0E7490);
+  color: var(--sv-label-text, #FFFFFF);
   border: none;
   max-width: 120px;
   overflow: hidden;
@@ -767,7 +744,7 @@ html[data-color-mode="dark"] .status-lozenge.trashed {
 
 .btn-warning:hover {
   background-color: var(--sv-interactive-danger);
-  color: var(--sv-text-inverse);
+  color: var(--sv-text-on-primary);
   box-shadow: none;
 }
 
@@ -1123,15 +1100,12 @@ html[data-color-mode="dark"] .status-lozenge.trashed {
 /* ── F4: Extend the retention period ─────────────── */
 .action-btn.extend {
   background: var(--sv-interactive-extend);
-  color: #ffffff;
+  color: var(--sv-text-on-primary);
   border-color: var(--sv-interactive-extend);
 }
 .action-btn.extend:hover:not(:disabled) {
   background: var(--sv-interactive-extend-hover);
   border-color: var(--sv-interactive-extend-hover);
-}
-html[data-color-mode="dark"] .action-btn.extend {
-  color: #04231A;
 }
 
 /* ── F3: card-row image thumbnail ────────────────── */
@@ -1302,3 +1276,59 @@ html[data-color-mode="dark"] .sv-activity-chip-validation.is-active { background
 .sv-card-section-note { font-size: 11px; color: var(--sv-text-subtle); margin-left: auto; text-align: right; }
 /* The overlay's section headers sit at 32px; keep the feed on the same gutter. */
 .sv-activity-section .sv-activity-feed { padding: 4px 32px 12px; }
+
+/* ── One state, one action (UX review 2026-09-14 §2, §7) ──────────────────────────────────
+   The ⋯ menu (kit/ActionMenu — portal onto body, so the fixed z-index is the only stacking
+   that matters), the primary-slot state chips, the kit Dialog, and the focus rings the roving
+   card list needs. Solid fills only; no tints, no left rails, nothing native. */
+.sv-kebab {
+  width: 26px; height: 26px; flex: 0 0 auto;
+  border-radius: 9999px; border: 1.5px solid var(--sv-border-secondary);
+  background: transparent; color: var(--sv-text-secondary);
+  font-size: 15px; font-weight: 800; line-height: 1; cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center; padding: 0;
+}
+.sv-kebab:hover, .sv-kebab[aria-expanded="true"] { border-color: var(--sv-text-primary); color: var(--sv-text-primary); background: var(--sv-bg-tertiary); }
+.sv-kebab:focus-visible, .artifact-card:focus-visible, .sv-section-block:focus-visible { outline: 2px solid var(--sv-border-focus); outline-offset: 2px; }
+.sv-menu {
+  min-width: 200px; background: var(--sv-bg-elevated); border: 1px solid var(--sv-border-primary);
+  border-radius: 10px; box-shadow: var(--sv-shadow-medium); z-index: 1000; padding: 4px; display: grid;
+}
+.sv-menu-item {
+  text-align: left; border: 0; background: transparent; color: var(--sv-text-primary);
+  padding: 8px 10px; border-radius: 6px; font-size: 12.5px; font-weight: 600; cursor: pointer;
+  white-space: nowrap; font-family: inherit;
+}
+.sv-menu-item:hover, .sv-menu-item:focus-visible { background: var(--sv-interactive-primary); color: var(--sv-text-on-primary); outline: none; }
+.sv-menu-item.danger { color: var(--sv-interactive-danger); }
+.sv-menu-item.danger:hover, .sv-menu-item.danger:focus-visible { background: var(--sv-interactive-danger); color: var(--sv-text-on-primary); }
+.sv-menu-item:disabled { color: var(--sv-text-subtle); cursor: default; background: transparent; }
+
+/* State chips in the primary slot: a state, not a button — named for the screen reader. */
+.sv-state { display: inline-flex; align-items: center; height: 24px; padding: 0 10px; border-radius: 9999px; font-size: 11.5px; font-weight: 700; white-space: nowrap; }
+.sv-state.wait { background: #B45309; color: #FFFFFF; }
+.sv-state.ok { background: #15803D; color: #FFFFFF; }
+.sv-state.expired { background: #DC2626; color: #FFFFFF; }
+.sv-state.trashed { background: #475569; color: #FFFFFF; }
+html[data-color-mode="dark"] .sv-state.wait { background: #FBBF24; color: #0F172A; }
+html[data-color-mode="dark"] .sv-state.ok { background: #22C55E; color: #052E16; }
+html[data-color-mode="dark"] .sv-state.expired { background: #F87171; color: #0F172A; }
+html[data-color-mode="dark"] .sv-state.trashed { background: #94A3B8; color: #0F172A; }
+
+/* Kit Dialog: focus-trapped, Escape closes, focus returns to the opener. */
+.sv-dialog-backdrop { position: fixed; inset: 0; background: rgba(15, 23, 42, 0.55); display: flex; align-items: center; justify-content: center; z-index: 2000; padding: 16px; }
+.sv-dialog {
+  width: min(440px, 100%); background: var(--sv-bg-elevated); color: var(--sv-text-primary);
+  border: 2px solid var(--sv-border-primary); border-radius: 12px; box-shadow: var(--sv-shadow-medium);
+  padding: 18px 20px; outline: none;
+}
+.sv-dialog.danger { border-color: var(--sv-interactive-danger); }
+.sv-dialog-title { margin: 0 0 8px; font-size: 15px; font-weight: 800; }
+.sv-dialog-body { font-size: 13px; line-height: 1.45; color: var(--sv-text-secondary); }
+.sv-dialog-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; }
+.sv-dialog .action-btn.confirm-yes, .sv-dialog .action-btn.confirm-no { font-size: 12.5px; padding: 7px 14px; border-radius: 9999px; }
+.sv-dialog .action-btn:focus-visible { outline: 2px solid var(--sv-border-focus); outline-offset: 2px; }
+
+.card-copied { font-size: 11px; font-weight: 700; color: var(--sv-interactive-primary); margin-top: 4px; }
+.card-meta-watching { font-weight: 700; color: var(--sv-interactive-success); }
+.card-editreq-hint { color: var(--sv-text-subtle); font-style: italic; }

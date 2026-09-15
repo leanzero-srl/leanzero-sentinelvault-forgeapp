@@ -3,14 +3,18 @@
  *
  * Posts a footer comment on a page using `asApp().requestConfluence()`.
  * When the storage body contains `<ac:link><ri:user ri:account-id="..."/></ac:link>`
- * mention tags, Confluence's notification engine emails the mentioned user
- * (subject to their personal notification preferences).
+ * mention tags, Confluence's own notification engine notifies the mentioned user
+ * (and may email them, subject to their personal notification preferences).
  *
- * No external egress, no API keys — qualifies for the "Runs on Atlassian" badge.
+ * No external egress, no API keys, no email service — this app never sends mail and never will;
+ * "email" anywhere in this codebase means only "an @mention in a comment, which Confluence itself
+ * may email". Qualifies for the "Runs on Atlassian" badge.
  */
 
 import { asApp, route } from "@forge/api";
-import { resolveBulletinToggles } from "../shared/bulletin-flags.js";
+import { resolveBulletinToggles, resolveSpaceNotificationsMode } from "../shared/bulletin-flags.js";
+import { shouldPostComment } from "../shared/notice-policy.js";
+import { resolvePageSpaceKey } from "../shared/content-access.js";
 
 const RETRY_CONFIG = {
   maxRetries: 3,
@@ -25,12 +29,25 @@ const isRetryableStatus = (status) => status === 429 || (status >= 500 && status
 /**
  * Post a footer comment on a Confluence page.
  *
+ * THE single choke point for every comment (+ @mention) this app posts (P1-4). Two gates run
+ * here, in order, and BOTH the global opt-in flags and the per-space quiet mode are enforced for
+ * every caller — violations, seal created / released / forced, edit requests, approvals,
+ * validations, the expiry sweep — whether or not the caller passed `spaceKey`.
+ *
  * @param {Object} options
  * @param {string} options.pageId - ID of the Confluence page where the comment is posted
  * @param {string} options.storageBody - Confluence storage XML body (may contain mention tags)
- * @returns {Promise<{success: boolean, commentId?: string, reason?: string}>}
+ * @param {string} [options.spaceKey] - the page's space. Pass it when you have it; when absent it
+ *   is derived from the page (`resolvePageSpaceKey`, two asApp reads). A caller that only holds a
+ *   pageId therefore still gets the space's quiet mode applied — it just pays the lookup.
+ * @param {string} [options.noticeType] - one of notice-composer's ALERT_CATEGORIES (or a caller
+ *   label), for the log line and the pure decision.
+ * @returns {Promise<{success: boolean, commentId?: string, reason?: string, suppressed?: boolean}>}
+ *   `suppressed: true` marks a DELIBERATE non-post (a flag off, or quiet mode) as opposed to a
+ *   transport failure — callers that count notices (the lapse sweep) advance on it; callers that
+ *   claim a dedup marker (postDedupedFootnote) release it, so a later un-quiet gets its comment.
  */
-export async function postCommentWithMention({ pageId, storageBody }) {
+export async function postCommentWithMention({ pageId, storageBody, spaceKey = null, noticeType = null }) {
   if (!pageId) {
     return { success: false, reason: "Missing pageId" };
   }
@@ -39,8 +56,25 @@ export async function postCommentWithMention({ pageId, storageBody }) {
   }
 
   const toggles = await resolveBulletinToggles();
-  if (!toggles.ENABLE_NATIVE_NOTIFICATIONS) {
-    return { success: false, reason: "Native notifications disabled" };
+  // Quiet mode is per space; derive the space from the PAGE when the caller did not pass it
+  // (never from any payload — the page is the object being commented on). Fail OPEN: an
+  // unresolvable page (deleted, or an asApp blip) is treated as "normal" so a genuine notice is
+  // not lost silently — the global flags still apply. The miss is logged.
+  let resolvedSpaceKey = spaceKey;
+  if (!resolvedSpaceKey) {
+    resolvedSpaceKey = await resolvePageSpaceKey(pageId);
+    if (!resolvedSpaceKey) {
+      console.warn(`[NOTIFY] Could not resolve the space of page ${pageId} — quiet mode not applied (fail open)`);
+    }
+  }
+  const mode = await resolveSpaceNotificationsMode(resolvedSpaceKey);
+  const decision = shouldPostComment({ mode, flags: toggles, noticeType });
+  if (!decision.post) {
+    const why = decision.reason === "quiet-mode"
+      ? `space ${resolvedSpaceKey} is in quiet mode`
+      : "comments with @mentions are switched off (opt-in)";
+    console.info(`[NOTIFY] ${noticeType || "comment"} on page ${pageId} not posted: ${why}`);
+    return { success: false, suppressed: true, reason: `Not posted: ${why}` };
   }
 
   let lastReason = null;
