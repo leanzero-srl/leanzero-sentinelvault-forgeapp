@@ -89,6 +89,43 @@ modules:
   webtrigger:
     - key: harness-test-state
       function: testStateFn
+    # Config REST API (docs/REST-CONFIG-API.md). STATIC response on purpose: a static trigger
+    # cannot egress anything the manifest did not spell out, which keeps "Runs on Atlassian".
+    # The job id is the caller's Idempotency-Key; the receipt is read from Confluence properties.
+    - key: config-api
+      function: config-api-fn
+      urlFormat: v2
+      response:
+        type: static
+        outputs:
+          - key: accepted
+            statusCode: 202
+            contentType: application/json
+            body: '{"status":"accepted"}'
+          - key: invalid
+            statusCode: 400
+            contentType: application/json
+            body: '{"status":"invalid"}'
+          - key: unauthorized
+            statusCode: 401
+            contentType: application/json
+            body: '{"status":"unauthorized"}'
+          - key: forbidden
+            statusCode: 403
+            contentType: application/json
+            body: '{"status":"forbidden"}'
+          - key: not-allowed
+            statusCode: 405
+            contentType: application/json
+            body: '{"status":"not-allowed"}'
+          - key: conflict
+            statusCode: 409
+            contentType: application/json
+            body: '{"status":"conflict"}'
+          - key: busy
+            statusCode: 429
+            contentType: application/json
+            body: '{"status":"busy"}'
 
   # Backend resolver functions
   function:
@@ -116,6 +153,11 @@ modules:
     - key: ai-validation-fn
       handler: boot.aiValidationConsumer
       timeoutSeconds: 120
+    - key: config-api-fn
+      handler: boot.configApiTrigger
+    - key: config-api-consumer-fn
+      handler: boot.configApiConsumer
+      timeoutSeconds: 300
 
   # Queue consumer for async realm admin scanning
   consumer:
@@ -127,6 +169,10 @@ modules:
     - key: ai-validation-queue
       queue: ai-validation-queue
       function: ai-validation-fn
+    # Config REST API jobs (a bundle can outlive the 25 s web-trigger limit).
+    - key: config-api-queue
+      queue: config-api-queue
+      function: config-api-consumer-fn
 
   # Attachment events trigger
   trigger:

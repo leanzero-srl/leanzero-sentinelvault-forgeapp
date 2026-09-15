@@ -1,4 +1,5 @@
 import { asUser, asApp, route } from "@forge/api";
+import { requestUserOrApp, currentUserProfile } from "../../shared/user-or-app.js";
 import { kvs, WhereConditions } from "@forge/kvs";
 
 // Import from shared
@@ -241,21 +242,16 @@ const sealArtifact = async (req) => {
     if (realmPolicy?.spaceId) realmId = realmPolicy.spaceId;
   }
 
-  const holdPeriod = await resolveSealHoldPeriod(realmKey, req.payload.lockDuration);
-  const expiresAt = new Date(Date.now() + holdPeriod * 1000).toISOString();
+  // holdPeriod / expiresAt are computed AFTER the space derivation below: with no panel context
+  // the space (and so its policy's default duration) is known only once the file's page is.
 
   // Fetch current operator's email and display name
   let operatorEmail = null;
   let operatorDisplayName = "Current User";
   try {
-    const operatorResponse = await asUser().requestConfluence(
-      route`/wiki/rest/api/user/current`,
-    );
-    if (operatorResponse.ok) {
-      const operatorData = await operatorResponse.json();
-      operatorEmail = operatorData.email || null;
-      operatorDisplayName = operatorData.displayName || "Current User";
-    }
+    const prof = await currentUserProfile(operatorAccountId);
+    operatorEmail = prof.email || null;
+    operatorDisplayName = prof.displayName || "Current User";
   } catch (error) {
     console.warn("Failed to fetch operator email:", error);
   }
@@ -270,7 +266,7 @@ const sealArtifact = async (req) => {
   let artifactPageId = null;
   try {
     const artifactRoute = route`/wiki/api/v2/attachments/${attachmentId}`;
-    const artifactResponse = await asUser().requestConfluence(artifactRoute);
+    const artifactResponse = await requestUserOrApp(artifactRoute);
     if (artifactResponse.ok) {
       const artifactData = await artifactResponse.json();
       artifactName = artifactData.title || "Unknown Attachment";
@@ -303,12 +299,30 @@ const sealArtifact = async (req) => {
   if (artifactPageId && String(artifactPageId) !== String(contentId || "")) {
     contentId = String(artifactPageId);
   }
+  // No panel context (the config API consumer, the hook): the space is a property of the page
+  // the file LIVES on, derived from the object itself — never from a caller-supplied context.
+  if (!realmKey && contentId) {
+    realmKey = await resolvePageSpaceKey(contentId);
+    if (realmKey && !realmId) {
+      try {
+        const sres = await asApp().requestConfluence(route`/wiki/api/v2/spaces?keys=${realmKey}&limit=1`, { headers: { Accept: "application/json" } });
+        const sid = sres.ok ? (await sres.json())?.results?.[0]?.id : null;
+        if (sid != null) realmId = String(sid);
+      } catch (_) { /* index leg keyed by the policy row's spaceId below, if any */ }
+      if (!realmId) {
+        const realmPolicy = await kvs.get(`admin-settings-space-${realmKey.replace(/[^a-zA-Z0-9:._\s-#]/g, "_")}`);
+        if (realmPolicy?.spaceId) realmId = realmPolicy.spaceId;
+      }
+    }
+  }
+  const holdPeriod = await resolveSealHoldPeriod(realmKey, req.payload.lockDuration);
+  const expiresAt = new Date(Date.now() + holdPeriod * 1000).toISOString();
 
   // Fetch page title
   let pageTitle = "Unknown Page";
   if (contentId) {
     try {
-      const pageResponse = await asUser().requestConfluence(
+      const pageResponse = await requestUserOrApp(
         route`/wiki/api/v2/pages/${contentId}`,
       );
       if (pageResponse.ok) {

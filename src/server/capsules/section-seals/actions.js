@@ -1,4 +1,5 @@
 import { asApp, asUser, route } from "@forge/api";
+import { currentUserProfile } from "../../shared/user-or-app.js";
 import { kvs, WhereConditions } from "@forge/kvs";
 
 import { authorizeSteward } from "../../shared/steward-checks.js";
@@ -164,8 +165,8 @@ export const sealSection = async (req) => {
   let operatorName = "Current User";
   let operatorEmail = null;
   try {
-    const r = await asUser().requestConfluence(route`/wiki/rest/api/user/current`);
-    if (r.ok) { const d = await r.json(); operatorName = d.displayName || operatorName; operatorEmail = d.email || null; }
+    const prof = await currentUserProfile(operatorAccountId);
+    operatorName = prof.displayName || operatorName; operatorEmail = prof.email || null;
   } catch (_) { /* best effort */ }
 
   let result = null;

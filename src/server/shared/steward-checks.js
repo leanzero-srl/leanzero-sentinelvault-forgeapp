@@ -153,10 +153,22 @@ export async function isOperatorInStewardCohorts(operatorAccountId, realmKey) {
  * @returns {Promise<boolean>} - True if operator is site/org admin
  */
 export async function isOperatorSiteAdmin(operatorAccountId) {
+  if (!operatorAccountId) return false;
   try {
-    const response = await asUser().requestConfluence(
-      route`/wiki/rest/api/user?accountId=${operatorAccountId}&expand=operations`,
-    );
+    let response = null;
+    try {
+      response = await asUser().requestConfluence(
+        route`/wiki/rest/api/user?accountId=${operatorAccountId}&expand=operations`,
+      );
+    } catch (_) { response = null; }
+    // No user session (the config-api queue consumer acting as the token's minter — see
+    // shared/user-or-app.js): the same question, as the app, naming the SAME subject. That is
+    // exactly isAccountStewardAsApp's arm 2, so it grants nothing that arm does not already.
+    if (!response || !response.ok) {
+      response = await asApp().requestConfluence(
+        route`/wiki/rest/api/user?accountId=${operatorAccountId}&expand=operations`,
+      );
+    }
 
     if (response.ok) {
       const operatorData = await response.json();
