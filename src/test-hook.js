@@ -190,6 +190,24 @@ export async function testStateTrigger(req) {
     // deterministically (no waiting for the daily/hourly cron).
     if (what === "invoke") {
       const fn = q(req, "fn");
+      // Config REST API (docs/REST-CONFIG-API.md): mint/revoke a token as an ACTOR so the live
+      // spec (config-api.spec.ts) can drive the static web trigger with plain fetch. The seam
+      // calls the same tokens.js store the resolver does; the site-admin gate is the resolver's
+      // (the hook is dev-only and secret-gated).
+      if (fn === "createApiToken") {
+        const { createApiToken } = await import("./server/capsules/config-api/tokens.js");
+        const r = await createApiToken({ name: q(req, "name") || "harness", role: q(req, "role") || undefined, accountId: q(req, "actor") });
+        return json(200, { invoked: fn, result: r });
+      }
+      if (fn === "revokeApiToken") {
+        const { revokeApiToken } = await import("./server/capsules/config-api/tokens.js");
+        return json(200, { invoked: fn, result: await revokeApiToken(q(req, "id")) });
+      }
+      if (fn === "runApiJob") {
+        // Drive the consumer synchronously when the queue is slow (dev queues can lag minutes).
+        const { runJob } = await import("./server/capsules/config-api/consumer.js");
+        return json(200, { invoked: fn, result: await runJob(q(req, "id")) });
+      }
       if (fn === "expirySweep") {
         const r = await expirySweepTask();
         let result = null;
@@ -447,6 +465,19 @@ export async function testStateTrigger(req) {
       if (fn === "refreshByline") {
         const r = await refreshByline(q(req, "pageId"), { force: q(req, "force") === "1" });
         return json(200, { invoked: fn, result: r });
+      }
+      // Generic actor seam (2026-09-15): drive ANY registered resolver as an actor through the exact
+      // handler the router would call. Dev-only (HARNESS_SECRET gate) — the resolver's own gates
+      // still apply to the actor named, which is the whole point of driving it this way.
+      if (fn === "invoke") {
+        const key = q(req, "key");
+        let payload = {};
+        try { payload = q(req, "payload") ? JSON.parse(q(req, "payload")) : {}; } catch (_) { payload = {}; }
+        const { wrappedActions } = await import("./server/registry.js");
+        const handler = byKey(wrappedActions, key);
+        if (!handler) return json(400, { error: `unknown resolver key ${key}` });
+        const r = await handler({ payload, context: { accountId: q(req, "actor"), extension: {} } });
+        return json(200, { invoked: key, result: r });
       }
       if (fn.startsWith("classification.")) {
         const key = "classification-" + fn.slice("classification.".length);

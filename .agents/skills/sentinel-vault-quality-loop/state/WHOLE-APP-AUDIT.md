@@ -1,0 +1,205 @@
+# Sentinel Vault — Adversarial Audit Synthesis (SYNTHESIZER)
+
+> **REMEDIATION STATUS (2026-07-08, branch `aql/workflow-state-engine`).**
+> **FIXED + verified (full grade PASS):** A1 (policies authz + merge), A2 (webtrigger split → `scripts/deploy-prod.sh`), A3 (3 phantom fail-open toggles), A4 (nested-media duplication — 10 unit assertions), A5 (real seal→revert E2E, wired into the grade), B1+B2 (attachment revert retry + loud failure), B3 (uninstall cursor), B4 (collector cursor-paginate), B5 (AI prompt-injection fence), B6 (approvePageGate/enqueuePageValidation IDOR), C1 (expiry-sweep + nudge cursor), **C2 (enumerateOperatorSeals offset-vs-cursor — page 2 no longer empty), C3 (expired attachment seal now stops enforcing), C4 (transient trash-restore retries + keeps the seal, no false "deleted"), C5 (dedup flags TTL'd to the seal lifetime).**
+> **C7 (LLM output-truncation now fails the gate CLOSED — detected defensively across `finish_reason`/`stop_reason`).**
+> **C6 RESOLVED → COMPLIANCE FLOOR (owner-approved).** `mergeEffectiveRules`: global BLOCK-severity rules ALWAYS apply (a space can't silently drop an org-mandatory rule); a space's own rules are added on top and replace only the advisory (warn) global rules; empty space rules inherit everything. Wired into both `resolveEffectiveConfig` (post-save) and `resolveRules` (the #46 gate). UI updated to say so; +6 unit assertions; grade PASS. (Deliberate semantic change from the old override-everything — the correct default for a compliance tool.)
+> **D-tier: D4 (normalizeFindings no longer drops a ruleRef/suggestion-only finding — a false-pass), D5 (edit-grant list+REVOKE UI wired into the inline panel + editgrant-revoke-e2e 7/7 — the last phantom feature closed), D7 (steward-request KVS keys sanitized — no throw on `~`-spaces) FIXED + tested.** **D8 REMOVED (web-verified):** `write:confluence-space` covers space WRITES (create/update space + set permissions, requiring Admin); the app makes zero such calls, and the steward path's `/space/{key}/permission/check` is a READ covered by the held `read:confluence-space.summary` — so the scope was dropped (app deploys + the workflow steward-path suites run clean). Smaller consent surface. DEFERRED with reasons: D1 (global-vs-realm AI budget accounting — product call), D2 (steward group pagination — needs live verify), D3/D6 (TOCTOU / feed-CAS — low blast, KVS-no-CAS).
+> **Per-page seal INDEX: DEFERRED BY RECOMMENDATION (not a bug).** B4 already made the collectors correct up to ~5000 seals; the index is a PERF optimization that only matters at extreme scale AND carries real correctness risk (a legacy-seal backfill miss or a missed delete-site = a silently-unenforced seal, worse than today). Build it with dedicated design + migration + a completeness guarantee only when an instance approaches that scale. Instead, seal-core COVERAGE was extended: seal-revert-e2e now also asserts the attachment TRASH→restore path (verifies C4 live — the seal survives restore, no hard-delete). Honest limitation: A1/A3/B6 authz can't be positively driven from the harness (asUser has no webtrigger context — same as #44).
+
+
+
+Six lenses, 33 raw findings, deduped to 26 distinct defects. Ranked by **IMPACT × CONFIDENCE**, not effort. Where my confidence in the *diagnosis* or the *fix* is lower, it is flagged inline.
+
+Legend: **Impact** = blast radius on the app's trust promise. **Conf** = how sure I am the defect is real and the fix is safe. Confidence is HIGH unless flagged.
+
+---
+
+## 1. Ranked, deduped findings
+
+### TIER A — Trust-breaking, high confidence (fix before any "production-ready" claim)
+
+**A1. `policies` capsule writes admin/steward settings with ZERO authorization → any reader becomes steward or site-admin of any space.**
+`src/server/capsules/policies/actions.js` — `storePolicy:59`, `storeGlobalRuleset:151`, `storeRealmRuleset:175`, `discardRealmRuleset:212`. None check `req.context.accountId`. I confirmed live: all four `kvs.set` straight from payload; `admin-settings-{global,space-*}` is exactly what `steward-checks.js` reads for steward/override status. Any authenticated user who can open the inline panel or page ribbon (every reader on any page) calls `invoke("store-policy",{scope:"space",key:"<any>",data:{adminUsers:[{accountId:"<self>"}]}})` and gains force-unseal / edit-grant-approval / validation-gate authority; `scope:"global"` flips `allowAdminOverride` and seeds site-wide admins. **Contrast `realms/actions.js:443` (`approveStewardRequest`) which DOES gate the identical write with `isOperatorSteward` — proof the gate helper exists and the pattern is known; policies just skips it.** Impact HIGH, Conf HIGH. **← THE PICK (plan in §2).**
+
+**A2. Dev harness webtrigger ships in the production manifest.** `manifest.yml:55-63` → `test-hook.js`. Two harms: (a) its mere presence blocks *Runs-on-Atlassian* eligibility (only egress-capable module in the app — every other lens confirmed egress is otherwise clean); (b) latent full-state backdoor — if `HARNESS_SECRET` is ever set in prod, `what=set/delete` do arbitrary `kvs.set/delete` on any key (forge/delete seals, escalate via `admin-settings-global`) and `what=invoke` drives real mutating engine fns. Non-constant-time compare. Impact HIGH (eligibility is a stated product goal), Conf HIGH. Reported by two lenses (security HIGH-2, prod #7).
+
+**A3. Three security/behavior toggles are PHANTOM (UI writes key X, engine reads key Y) — and all fail OPEN.** `src/ui/surfaces/steward-console/index.jsx`:
+- `:127` `allowStewardOverride` vs engine `allowAdminOverride` (`steward-checks.js:211`, `entitlements/actions.js:23`) → **"disable steward override" is impossible; any steward can always force-unseal.** Security control that cannot be turned off.
+- `:128` `autoUnsealEnabled` vs engine `autoUnlockEnabled` (~10 sites incl `triggers.js:1189,1372`) → **"hold seals indefinitely" is impossible; seals always auto-release on expiry.** Also breaks the pause/resume timer-extension branch (`policies/actions.js:65`).
+- `:126` `defaultSealDuration` vs engine `defaultLockDuration` (`sealing/actions.js:226`) → configured default seal duration is inert; every seal uses the hardcoded `BASELINE_HOLD_SPAN`.
+Root cause: a UI-only Lock→Seal/Admin→Steward rename never applied to the engine, plus `store-policy`'s whole-object overwrite dropping the real keys. Impact HIGH (two are security/core-promise), Conf HIGH — key mismatch is mechanically verifiable. Realm console (`realm-console/index.jsx:540`) reads the same dead `autoUnlockEnabled` and so always disagrees with the toggle.
+
+**A4. Sealed media nested in a container (table/list/layout/expand) is DUPLICATED on a legit edit — direct S6 violation, silent page corruption.** `triggers.js:342` (`restoreMediaPass` flags missing purely on `!presentFileIds.has`), `doc-surgery.js:212` (`extractMediaSingleNodes` clones the whole top-level block), `:234` (`spliceMediaNodes` is insert-only, no replace/dedup). Non-owner edits a table containing a sealed image and removes just the image → version N−1's entire table is re-inserted alongside the user's edited one; every other cell they changed is duplicated. App re-save absorbed by T1 → silent, persistent. Impact HIGH, Conf HIGH (design is correct only for bare top-level `mediaSingle`).
+
+**A5. Green grade is a FALSE signal — the flagship attachment seal→revert path has ZERO automated assertion.** `test-harness/scripts/seal-lifecycle-e2e.mjs` only smoke-checks a pre-existing seal (property exists, no log errors); never creates a seal, edits, or asserts a revert. `live-trigger-e2e.mjs:7` self-declares it does not test seal/revert. So `handleSealedArtifactEdit/Trash/Deleted` (S1/S2/S3), section false-revert-on-noop (X4), AI worker (V5), uninstall wipe (K4), edit-grant lifecycle — all unproven. A green grade certifies "workflow + doesn't crash," not the core promise. Impact HIGH (this is why the other bugs survived), Conf HIGH.
+
+### TIER B — Real fail-open / correctness gaps, high confidence
+
+**B1. Attachment revert fails SILENTLY and fails OPEN — owner believes the file is protected when it is not.** `triggers.js:993/1006/1030` every failure branch is `console.error; return`; only success notifies the owner (`:1039`). No steward-visible signal (the workflow path posts a `revert-failed` comment; this path posts nothing). Impact HIGH, Conf HIGH.
+
+**B2. Attachment revert has NO retry — a single transient 429/5xx on download or re-upload permanently bypasses the seal.** `triggers.js:1030`. No backoff, and no attachment-side sweep backstop anywhere (unlike the page 3× loop and hourly `workflowSweep`). One API blip = silent seal bypass until the next edit event that may never come. Impact HIGH, Conf HIGH. (B1+B2 are the same code region; fix together.)
+
+**B3. Uninstall wipe deletes only the first 1000 KVS keys (no cursor loop).** `triggers.js:1174`. Orphans everything past 1000 — including never-TTL'd `workflow-log-*` compliance history and page snapshots — a data-retention/compliance leak on a mature tenant. Impact HIGH, Conf HIGH. (data #1 = prod #4.)
+
+**B4. Enforcement fast-path collectors miss seals above 100 records instance-wide.** `triggers.js:311` (`collectMediaSealsForPage`) and `:414` (`collectSectionSealsForPage`) probe correctly then fetch with a single `.limit(100)` and filter by pageId. Once >100 seal records exist, a page's seal can sort outside the window → probe says "work exists," fetch drops it → **tamper silently not reverted, no error.** Same class corrupts the panel-removal decision (`sealing/actions.js:513`, strips the indicator from a page that still has seals) and under-reports `enumeratePageSeals`/`enumerateOperatorSeals` (`sealing/actions.js:786/560`). Impact HIGH, Conf HIGH.
+
+**B5. Prompt injection via page body yields a false AI "pass" in gate mode.** `validations/logic.js:188` concatenates raw page text after `---\n` with no delimiter/defense. Body text instructing the model to emit `{"findings":[]}` clears `handleGateReview` → `applyAiVerdict("passed")`. Impact HIGH *if AI gate mode is enabled*, Conf HIGH on the mechanism. Flag: impact is conditional on gate mode being turned on, so real-world blast radius depends on adoption.
+
+**B6. `approvePageGate` IDOR — steward check bound to caller-supplied `spaceKey`, write targets an independent caller-supplied `pageId`.** `validations/actions.js:87-100`. A steward of space A passes `spaceKey=A` + `pageId=<page in space B>` and force-marks B's validation gate "passed." Same split lets `enqueuePageValidation` (`:119`, no authz at all) burn any space's AI budget. Impact MED-HIGH, Conf HIGH.
+
+### TIER C — Scale / integrity, high confidence, narrower blast radius
+
+**C1. `expirySweepTask` (`triggers.js:1205`) and `recurringNudgeTask` (`:1399`) process only the first 100 seals forever (no cursor).** Permanent blind spot for expiry/50% notices beyond 100 active seals. `workflowSweep` already paginates — the pattern exists in-repo. Impact MED, Conf HIGH.
+
+**C2. `enumerateOperatorSeals` crosses a numeric offset with the KVS opaque cursor (`sealing/actions.js:564,750`).** `query.cursor("10")` throws → caught → page 2 of "my sealed files" returns empty for any operator with >10 seals. Impact MED, Conf HIGH.
+
+**C3. Expired-but-unswept attachment seal keeps reverting other users' edits.** `handleSealedArtifactEdit` (`triggers.js:975`) never reads `expiresAt`; sections got the X5 inert-when-expired guard, attachments did not. Dead seal denies service. Impact MED, Conf HIGH.
+
+**C4. Trashing a sealed attachment: a TRANSIENT restore failure permanently deletes the seal and falsely tells the owner "deleted."** `triggers.js:1078`, single PUT, any non-ok → hard-delete all seal state + permanent-loss email even though the file is still restorable in trash. Impact MED, Conf HIGH.
+
+**C5. `expiry-notified-*` / `fifty-percent-reminder-sent-*` dedup flags have no TTL and are never swept.** `triggers.js:1273,1326`. Accumulate forever; a stale flag suppresses the expiry notice when the same attachment is re-sealed. Impact MED, Conf HIGH.
+
+**C6. Space validation rules REPLACE global rules instead of merging.** `validations/logic.js:64`, `actions.js:33`. Adding one space rule silently drops all global block-severity rules for that space — and this feeds both revert enforcement and the workflow gate. Empty array = inherit-all (opposite of intuition). Impact MED, Conf HIGH but flag: this may be *intended* precedence semantics — verify with product intent before "fixing," since a merge changes behavior for existing tenants.
+
+**C7. LLM output truncation (`max_completion_tokens` 4096) is undetected → salvaged JSON drops findings → false gate pass.** `forge-llm.js:96`, never reads `finish_reason`. Impact MED, Conf MED — flag: requires a large finding count to trigger; the `finish_reason` field name/shape for the Forge LLM adapter should be verified against the actual response before coding the fix.
+
+### TIER D — Lower impact / hardening
+
+- **D1.** Global AI token budget enforced per-space not globally (`validations/actions.js:136`) → N× overspend across spaces. Conf HIGH. Flag: fix requires deciding the intended accounting unit (global vs realm) — a product call.
+- **D2.** Steward group-membership check unpaginated (`steward-checks.js:30`) — may revert a legitimate group-based steward if their group falls outside the bounded `?expand=groups` page. **Conf LOWER — this is where confidence in current behavior is lowest; the REST group-completeness must be verified live before trusting or "fixing" it.**
+- **D3.** Token-budget guard is TOCTOU (`validations/actions.js:135`) — concurrent enqueues all pass. Conf HIGH, low blast radius.
+- **D4.** `normalizeFindings` drops findings lacking both excerpt and explanation (`logic.js:219`). Conf HIGH, low probability.
+- **D5.** Edit-grant `revoke`/`list` resolvers implemented + registered (`editreq/actions.js:402`) but NO UI calls them — approved edit access is a black hole with no revoke surface. Conf HIGH.
+- **D6.** `recent-notifications` read-modify-write, no CAS (`bulletins/logic.js:62`) — concurrent dispatches drop feed events. Conf HIGH, low blast radius (1h TTL cache).
+- **D7.** `steward-request-*` keys use raw unsanitized spaceKey (`realms/actions.js:361`) → throws on personal `~`-spaces; `listStewardRequests` unpaginated. Conf HIGH, edge case.
+- **D8.** `write:confluence-space` scope granted but never exercised (`manifest.yml:177`) — widens consent surface. Conf HIGH.
+
+**Dedup note:** raw findings collapsed — uninstall-wipe (data#1 ≡ prod#4→B3), recordDispatch CAS (data#7 ≡ prod#6→D6), dev-webtrigger (sec-HIGH2 ≡ prod#7→A2), expiry-sweep-cursor (data#6 ≡ prod#4→C1), and the four "global capped scan" findings (core-M3, data#2/#3/#6) unified under B4/C1.
+
+---
+
+## 2. THE single highest-value solid solution to execute now
+
+### Gate every write in the `policies` capsule (fix A1)
+
+This is the pick because it is the app's **worst trust failure** (a total authorization bypass that hands any page reader steward/site-admin power, which then defeats *every other* protection the app sells — force-unseal, edit-grant approval, validation-gate clearing), the **diagnosis is maximally confident** (an identical write two files over already gates correctly), and it is **cleanly buildable** with the exact helper the codebase already uses. Fixing it converts "any reader owns the instance" into "only stewards/admins mutate policy," which is the precondition for calling anything else here trustworthy.
+
+**File:** `src/server/capsules/policies/actions.js`
+
+**Change — add a guard at the top of each mutating resolver, mirroring `realms/actions.js:443`:**
+
+1. Import the existing helpers (both already exported from `src/server/shared/steward-checks.js`, confirmed):
+   `import { isOperatorSteward, isOperatorSiteAdmin } from "../../shared/steward-checks.js";`
+
+2. `storePolicy` (`:59`): before any `kvs.set`, read `const caller = req.context.accountId;`
+   - `scope === "global"` branch → require `await isOperatorSiteAdmin(caller)`; else `return { success:false, reason:"Not authorized" }`.
+   - `scope === "space"` branch → require `await isOperatorSteward(caller, key)`; else deny.
+
+3. `storeGlobalRuleset` (`:151`) → require `isOperatorSiteAdmin(caller)`.
+
+4. `storeRealmRuleset` (`:175`) and `discardRealmRuleset` (`:212`) → require `isOperatorSteward(caller, spaceKey)`.
+
+   (`loadPolicy`/`loadGlobalRuleset`/`loadRealmRuleset`/`enumerateRealmRulesets` are reads — leave them, or restrict `enumerateRealmRulesets` to site-admin separately; not required for the escalation fix.)
+
+**Bootstrapping caveat to handle deliberately (this is the one subtle spot):** on a space with an empty `adminUsers`, `isOperatorSteward` may return false for everyone, which could lock out the *first* legitimate steward configuring a brand-new space. Verify how a space's first steward is meant to be seeded — the realms flow uses `approveStewardRequest` (an existing steward approves), and site-admins pass `isOperatorSiteAdmin` unconditionally. So the correct gate for space writes is `isOperatorSteward(caller,key) || isOperatorSiteAdmin(caller)`, letting a Confluence site-admin bootstrap the first steward while blocking ordinary readers. Confirm `isOperatorSiteAdmin` semantics (it checks Confluence admin perms) before shipping.
+
+**How to verify:**
+1. Unit/log check: call each resolver with `req.context.accountId` = a non-steward and assert `{success:false}` and no `kvs.set` occurred (spy/mocked kvs).
+2. Live (dev tenant, via the harness webtrigger `what=invoke`): as a non-privileged account, `invoke("store-policy",{scope:"space",key:"<test space>",data:{adminUsers:[{accountId:"<self>"}]}})` → expect denial; confirm `admin-settings-space-*` is unchanged. Repeat `scope:"global"` → denied. Then as a site-admin → allowed. Then as the seeded steward → space write allowed.
+3. Regression: existing steward-console save flow (a real steward saving settings) still succeeds — run the steward-console save path in the dev tenant and confirm the settings persist.
+4. Add a permanent guard: a harness E2E asserting a non-steward `store-policy` is rejected, wired into `grade.sh` so this can never silently regress (ties into A5).
+
+Confidence: **HIGH** on the vulnerability and the fix shape; the *only* judgment call is the bootstrap gate (site-admin OR steward), which the plan resolves explicitly.
+
+---
+
+## 3. Next 3–5 (ranked by impact × confidence)
+
+1. **A2 — Split the dev webtrigger out of the prod manifest** (`manifest.yml:55-63` + `boot.js`). Unblocks Runs-on-Atlassian eligibility (a stated goal) and removes the only latent state-mutation backdoor. Maintain a `manifest.dev.yml` overlay for the dev deploy. High confidence.
+
+2. **A3 — Reconcile the three phantom toggle keys** (`steward-console/index.jsx:126-128`). Persist/read the engine's real keys (`allowAdminOverride`, `autoUnlockEnabled`, `defaultLockDuration`), or map them inside `store-policy`. Two of the three are security/core-promise controls that currently cannot be enforced. High confidence; mechanically verifiable. (Fix the realm-console read `:540` in the same pass.)
+
+3. **B1+B2 — Make attachment revert loud and durable** (`triggers.js:993-1035`). Wrap download+reupload in bounded 429/5xx backoff; on definitive failure, dispatch a `revert-failed` violation notice to owner+stewards (reuse `sendViolationNotifications`), matching the workflow path. Turns a silent fail-open on the headline feature into a truthful, retried enforcement. High confidence.
+
+4. **A5 — Add a real seal→edit→assert-revert E2E and wire it into `grade.sh`.** Without this the grade will keep certifying green while A4/B1/B4 rot. This is the meta-fix that makes every other fix stick. High confidence on need; moderate effort to author a faithful two-user revert assertion.
+
+5. **B3 + C1 — Cursor-paginate the uninstall wipe, expiry sweep, and nudge task** (`triggers.js:1174,1205,1399`). Copy the in-repo `workflowSweep` `do/while nextCursor` pattern. Fixes a compliance-data retention leak and a permanent notification blind spot in one consistent change. High confidence.
+
+(Honorable mention: **B4** — the >100-record enforcement miss — is arguably co-#1 in impact because it silently defeats *enforcement itself* at scale, but the correct fix needs a per-page/per-owner index that doesn't exist yet, so confidence in a clean fix is lower than the five above. Flag it as the next design task after the index question is settled.)
+
+---
+
+## 4. Verdict — brutally honest one paragraph
+
+Sentinel Vault is a **feature-rich demo wearing a production costume**: the workflow engine (#42–#48) is recent, adversarially reviewed, and genuinely the sturdiest part — but the *older core that the whole product is named for* is where the rot is. The headline attachment-seal→revert path fails **open and silent** (no retry, no owner signal), corrupts pages when sealed media is nested in a table/layout (A4), silently stops enforcing above 100 seals per instance (B4), and — most damning — is **certified green by tests that never once assert a revert happens** (A5), so nobody would notice. On top of that sits a **critical authorization hole** (A1: any reader can make themselves a steward or site-admin) and a **phantom security console** (A3) where the two most important controls — "disable steward override" and "hold seals indefinitely" — are wired to dead keys and cannot actually be turned on, both failing open. The egress story is clean and Runs-on-Atlassian is within reach once the dev webtrigger is split out (A2). Net: the workflow layer is solid; the content-protection core is fragile and partly phantom, and it is currently **not trustworthy to defend content against a motivated editor or a curious reader.** The single most valuable move is to gate the policies capsule (§2) — everything else the app enforces is meaningless while any reader can grant themselves the keys.
+
+---
+
+## 5. v1 Confluence REST sunset — two live findings (B11, 2026-07-15)
+
+Surfaced while running the real Forge LLM for B11. The v1 Confluence content REST endpoints now return **410 Gone** for the app, breaking two code paths that still used them.
+
+**5a. FIXED — page→space authz used a dead endpoint (HIGH).** `validations/actions.js resolvePageSpaceKey` read `/wiki/rest/api/content/{id}?expand=space` (v1) → **410 Gone for every page** → returned null. Both callers — `approvePageGate` and `enqueuePageValidation` — resolve the page's REAL space this way for authorization, so with null they **denied EVERY steward** ("Only a steward of this page's space can …"). Page-gate approval and manual AI review were silently broken for all users. Confidence: **HIGH** (root cause reproduced via a testhook probe: v1 = "HTTP 410", v2 = "WFH", authz flipped false→true). Fixed by resolving via the v2 API the rest of the app already uses (page → `spaceId` → space key). Live-verified end to end; guarded by `ai-validation-live.spec.ts` (negative + positive authz). Committed `b021f1e`.
+
+**5b. FLAGGED (not fixed) — native content-state pill is a silent no-op (LOW).** `workflow/native-state.js` (#47) mirrors the workflow state onto Confluence's native content-status pill via `/wiki/rest/api/content/{id}/state` (v1). Empirically confirmed broken: on a disposable page, PUT-mirror "in_review" then read-back returns `current: null` — the projection does nothing. Same v1-sunset class as 5a. **Why not fixed here:** it is explicitly best-effort (all failures swallowed) and the app's own ribbon chip is the working source of truth, so there is NO user-facing breakage beyond the *native* pill not reflecting state — LOW severity. The fix needs its own research (the current/replacement content-state API surface) or a decision to remove the dead #47 projection. Confidence: **HIGH** that it is a no-op; **MEDIUM** on exact cause (read swallows the HTTP status, but the sibling 410 on `/content/{id}` strongly implies `/content/{id}/state` is likewise gone). Owner decision: repair against the current API vs remove #47.
+
+---
+
+## 6. Phase 4 tail — B12–B15 (2026-07-15)
+
+Closed the longer-tail batch. All live-verified via the dev testhook; commits under leanzero-srl.
+
+**B15 — FIXED, SECURITY (HIGH).** `enumerate-realm-rulesets` (`policies/actions.js`) was UNGATED — the handler didn't even accept `req`. Any logged-in Confluence user could name the action through the router and harvest EVERY space's `admin-settings-*`: the steward roster (`adminUsers`), `adminGroups`, and per-space policy. Now site-admin gated (`canWriteGlobal`), returns `[]` on deny. Live proof: `admin-settings-space-WFH.adminUsers` is non-empty yet a non-admin caller gets `[]` — the gate suppresses real data, not an empty store. Confidence HIGH.
+
+**B14 — FIXED, seal-duration bounds (HIGH).** The it55 `>=60s` guard lived in dead code (`policies/logic.js:savePolicyRuleset`, no callers), and `sealing/actions.js` OVERRODE the sanitized `holdPeriod` with RAW stored policy values (`autoUnlockTimeoutHours`/`defaultLockDuration`) → a bad stored value yielded a PAST/overflowing `expiresAt` (sealed-but-unprotected, or a Date crash). Two-layer fix: re-run the FINAL `holdPeriod` through `sanitizeHoldDuration` at the seal boundary (robust backstop), and validate at the `store-policy` WRITE boundary (`withinHoldBounds`) for immediate admin feedback. +14 units.
+
+**B14-A — FIXED, silent-stuck workflow (#7, MED→done).** A custom def could save a state a page can enter but never leave (target with no outgoing edge) → the ribbon shows a disabled pill with no explanation. `findDeadEndStates` + a non-blocking save-time warning naming the stuck states. Chose the save boundary over the ribbon (a disabled pill on a legitimately-terminal state is correct; blanket "no transitions" labels would be noise). The DEFAULT_WORKFLOW has no dead-ends — this only guards hand-authored defs. +6 units.
+
+**B13 — FIXED, perm-delete ordering bug (MED-HIGH).** `handleSealedArtifactDeleted` ran the final notice UNGUARDED before the record purge, so a notice failure (e.g. the page is already gone) aborted every `kvs.delete` → `protection-*`/`space-protection-*`/grants orphaned with no retry (the deleted attachment read as "still sealed" forever). Wrapped the notice best-effort; purge always runs. Live proof: fired with a fake page (notice 4xx) → all four records still purged.
+
+**B12 — COVERED, invasive trigger/cron guards (guard-only).** Added testhook seams that exercise ONLY the early-return guards, never the scan bodies: `lifecycleTrigger` (canary survives a non-uninstall event → no KVS mass-wipe) and `recurringNudgeTask` (returns `reminderCount:0` when auto-unseal active; the seam self-refuses if auto-unseal is disabled, so it can never reach the instance-wide scan). **Residual (documented, NOT tested live):** `sealIndexCron` and `realmScanConsumer` have no clean pure guard — forcing their skip risks an instance-wide `protection-*` scan + realm-audit-queue fanout on the dev site, so they are left uncovered by design. Their guard seams are documented in the B12 trace (change-detection gate at `scan-worker.js:196`; no pure guard for the consumer).
+
+### Owner-decision register — still NOT acted on (flag only)
+- `check-license` stub (always licensed) — paywall could lock the dev install; investigate, don't change.
+- `purge-seal-record` "anyone-if-no-seal" (it46 verified) — housekeeping vs require owner/steward — owner call.
+- `halfway-check-task` dead-wire removal — MANIFEST change (guardrail).
+- `app-account-id` cache never invalidated / `artifactEventTrigger` self-revert asymmetry — diagnose first.
+- "Operator" rename — deferred (separate call).
+- **5b (from §5)** native content-state pill no-op — repair vs remove #47 — owner call.
+
+---
+
+## 7. Owner-decision register — RESOLVED (C1–C6, 2026-07-15)
+
+Owner said "fix all". Investigated all six via a parallel workflow, then implemented + live-verified.
+
+**C2 — FIXED, SECURITY (HIGH).** `purgeSealRecord` (sealing/actions.js) gated the no-seal path only by the global `allowSealPurge` toggle — so with purge enabled, ANY user could PERMANENTLY purge ANY attachment by id. Hoisted the owner/steward gate OUT of the `if (sealRecord && lockedBy)` guard so it applies unconditionally, with a `sealRecord?.spaceKey` fallback for realmKey. Live: no-seal non-steward → denied; a real WFH steward → still allowed (no over-tighten).
+
+**C3 — DONE, dead-code removal (HIGH).** `halfwayCheckTask` was a no-op merged into expirySweepTask. Removed from triggers.js + boot.js + the orphaned `manifest.yml` function entry (function-only — NO scope/module change; deploy validated clean).
+
+**C4 — FIXED, latent revert-loop (HIGH).** `artifactEventTrigger` failed OPEN when the app account id was unresolved (`if (systemAccountId && atlassianId === systemAccountId)`) — in the fresh-install / persistent-`/user/current`-failure window, the app's own revert re-save isn't recognised as self → unbounded revert/version-churn loop. Now fails CLOSED, mirroring pageContentTrigger's accepted SV-M3 guard. (The `app-account-id` cache "never invalidated" concern is BENIGN — the id is immutable per-install and KVS is wiped on uninstall; no fix needed, documented.)
+
+**C1 — FIXED, stub replaced (HIGH).** `check-license` was a hardcoded `{isLicensed:true}` lie. Now reads `req.context.license.active`, biased FAIL-OPEN (`active !== false`) so a dev/harness install (where `context.license` is undefined) is never locked out; reports unlicensed only on an explicit `active===false`. Zero consumers today → no behavior change, just stops lying. Live-verified all three cases. NOTE: actually turning ON gating needs `app.licensing.enabled` in the manifest + a paid listing = a SEPARATE scope decision, deliberately NOT bundled.
+
+**C5 — DONE, terminology (Option A).** "Operator" was a stale, overloaded synonym for "user" that clashed with the surrounding "Steward" copy (6 user-facing strings in realm-console). Renamed the action to "Add Steward" and the directory-search copy to "user/users" (the searched people are candidates, not stewards yet). Copy-only, one file; internal identifiers / resolver keys / the operators capsule left untouched (contract stability). Live-verified in-browser (Add Steward card + "search for users" placeholder render; console stays mounted).
+
+**C6 — REMOVED #47 native content-status pill (evidence-based).** The going-in "v1 endpoint is 410 Gone" hypothesis was WRONG — live probes proved the v1 content-state API is fully alive as-app (PUT of an existing space state → 200, persists). The REAL cause of the silent no-op: `mirrorNativeState` PUTs app-specific CUSTOM states ("Draft/In Review/Approved/Expired") that must be created on the fly, and that create **409-conflicts** — while the function **swallows every error**, so it silently set nothing (read-back always null, live-confirmed). Decision = REMOVE (not "API gone"): the projection was non-functional + unreliable, needlessly writes app custom states into customer spaces, and is redundant with the app's own authoritative doc-ribbon chip. Deleted native-state.js + its import/call site in logic.js + the test-hook seam; preserved the triggers.js app-account tamper guard (still needed for revert version bumps). Workflow transitions verified unaffected (workflow-e2e 13/13). If a native pill is ever wanted, it must be built as a real feature (provision the space's states, map to them, surface failures — not swallow them).
+
+Owner-decision items still deferred: `app.licensing.enabled` manifest enablement (scope/pricing decision, separate from C1).
+
+---
+
+## 8. Paid-via-Atlassian licensing enabled (2026-07-15)
+
+Owner: "set licensing cost — this can't stay free." Implemented the technical enablers (the price itself is a Partner-portal action — see the handoff).
+
+- **manifest.yml**: added `app.licensing.enabled: true`. Forge now populates `context.license` — but ONLY in the PRODUCTION Marketplace listing; it stays `undefined` in dev/custom envs, so the dev install and the E2E harness keep working (verified: dev checkLicense → isLicensed:true, app fully alive after the upgrade).
+- **Enforcement = SOFT-DEGRADE, never block.** `check-license` (C1) now has a real consumer: a non-blocking amber nag banner (`LicenseBanner` in the two admin consoles) that shows only when explicitly unlicensed (`shouldShowLicenseBanner`, pure + unit-tested, 6 assertions). A content-protection app must NEVER stop protecting sealed content on a lapsed license — Atlassian's Marketplace billing does the real payment enforcement; this is only the graceful in-app signal. Live-verified in-browser (forced-on: solid amber banner, correct copy, on-brand; forced-off/dev: hidden, console renders clean).
+- **CSS gotcha found+fixed:** each surface bundles its OWN token CSS (webpack copies one `*.css` per surface → `styles.css`; `foundation.css` is never bundled). The banner style had to live in `realm-console.css` + `steward-console.css`, not `foundation.css`.
+- **NOT done (owner action / separate decisions):** the actual price + tiers (Partner portal), and the release sequencing (publish the paid pricing plan BEFORE releasing the licensing-enabled build to production, or existing installs read unlicensed). Do NOT deploy this manifest change to PROD until the pricing plan is live.
+
+### Pricing decision (owner, 2026-07-15)
+Runtime cost to the developer is ~$0: Forge free tier (200k GB-s compute, 0.1GB KVS r/w, 1GB logs per app/mo) covers it, the AI/LLM (Forge LLM) is billed to the CUSTOMER's org not the developer, and there's no egress (Runs on Atlassian). So this is cost-recovery pricing, not profit.
+Owner's steer: keep it VERY cheap, benchmark to CogniRunner (a heavier-AI sibling app) — free ≤10 users, ~$500/yr @ 100 users ($5/user/yr) dropping at higher tiers. Sentinel Vault is lighter on AI → match or undercut.
+Model = Paid via Atlassian, FREE for ≤10 users, low per-user above. The code already supports this (licensing.enabled + soft-degrade banner); free-tier installs read as licensed so the banner won't nag them (verify once the plan is live — trivial to adjust if not). The actual price/tiers are set in the Partner portal (owner action), NOT in code.
