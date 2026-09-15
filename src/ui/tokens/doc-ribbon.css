@@ -191,25 +191,75 @@ button:focus-visible {
 /* Bug 2.4: ONE row, 40px tall, no outer margin — the whole banner (bar + border) stays under the
    48px cap Atlassian is holding for page banners. Nothing wraps; whatever does not fit in the row
    lives in the popover host below it. */
+/* 5.0 (mockup §2/§3, decision 2): 44px inside the 48px cap, 2px margin, uniform 1px border —
+   never a left rail; the solid classification block on the left IS the colour. */
 .ribbon-bar {
   display: flex;
   align-items: center;
-  gap: 10px;
-  height: 40px;
-  padding: 0 12px;
-  background: var(--sv-bg-secondary);
-  border: 1px solid var(--sv-interactive-primary);
-  box-shadow: 0 1px 4px rgba(8, 145, 178, 0.08), 0 1px 2px rgba(0, 0, 0, 0.04);
-  border-radius: 10px;
-  margin: 0;
+  gap: 0;
+  height: 44px;
+  margin: 2px 0;
+  padding: 0;
+  background: var(--sv-bg-primary);
+  border: 1px solid var(--sv-border-primary);
+  box-shadow: 0 1px 3px var(--sv-shadow-medium);
+  border-radius: 6px;
   overflow: hidden;
   white-space: nowrap;
+  font-size: 13px;
+  color: var(--sv-text-primary);
 }
+/* The skeleton and error rows have no classification block: give them the old inner padding. */
+.ribbon-bar--skeleton, .ribbon-bar--error { gap: 10px; padding: 0 12px; }
 
-html[data-color-mode="dark"] .ribbon-bar {
-  background: var(--sv-bg-secondary);
-  border-color: var(--sv-interactive-primary);
-  box-shadow: 0 1px 4px rgba(34, 211, 238, 0.1), 0 1px 2px rgba(0, 0, 0, 0.2);
+/* Left block: solid level colour (inline style from the level), white text, lock/dot glyph. */
+.rb-class {
+  display: flex; align-items: center; gap: 10px; height: 100%; padding: 0 14px 0 12px;
+  background: #475569; color: #ffffff; font-weight: 600; flex: none; max-width: 46%;
+}
+.rb-class--none { background: #475569; }
+.rb-glyph { width: 18px; height: 18px; border-radius: 50%; background: rgba(255, 255, 255, 0.22); display: inline-flex; align-items: center; justify-content: center; flex: none; }
+.rb-glyph svg { width: 11px; height: 11px; }
+.rb-lvname { letter-spacing: 0.01em; overflow: hidden; text-overflow: ellipsis; }
+.rb-lvsrc { font-weight: 400; opacity: 0.9; font-size: 12px; }
+
+/* Right half: one state pill, one sentence (ellipsis), the existing workflow/validation chips. */
+.rb-body { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0; padding: 0 12px; }
+.rb-body .rb-msg { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; color: var(--sv-text-primary); }
+.rb-body .rb-msg b, .rb-body .rb-msg strong { font-weight: 600; }
+.rb-msg--error { color: var(--sv-interactive-danger); font-weight: 600; }
+.rb-state { display: inline-flex; align-items: center; gap: 6px; height: 24px; padding: 0 9px; border-radius: 12px; font-size: 12px; font-weight: 600; color: #ffffff; flex: none; }
+.rb-state--wait { background: #B45309; }
+.rb-state--ok { background: #15803D; }
+.rb-state--alert { background: #B91C1C; }
+.rb-state--lock { background: #475569; }
+.rb-state-n { min-width: 16px; height: 16px; padding: 0 5px; border-radius: 8px; background: #ffffff; color: #B45309; display: inline-flex; align-items: center; justify-content: center; font-size: 10.5px; }
+.rb-state--alert .rb-state-n { color: #B91C1C; }
+.rb-state--lock .rb-state-n { color: #475569; }
+.rb-state--ok .rb-state-n { color: #15803D; }
+
+/* Journey 2: the inline reason field takes the sentence's slot, still one row. */
+.rb-ask { display: flex; align-items: center; gap: 6px; flex: 1; min-width: 0; }
+.rb-ask-input {
+  flex: 1; min-width: 120px; height: 28px; padding: 0 10px; border-radius: 6px; font-family: inherit; font-size: 12.5px;
+  border: 1px solid var(--sv-border-primary); background: var(--sv-bg-primary); color: var(--sv-text-primary);
+}
+.rb-ask-input:focus-visible { outline: 2px solid var(--sv-border-focus); outline-offset: 1px; }
+
+/* Buttons: Request edit (quiet, Locked only) · Open (primary) · × */
+.rb-actions { display: flex; align-items: center; gap: 6px; padding: 0 8px 0 0; flex: none; }
+.rb-btn { height: 28px; padding: 0 12px; border-radius: 6px; border: 0; font-family: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.rb-btn--primary { background: var(--sv-interactive-primary); color: var(--sv-text-on-primary); }
+.rb-btn--primary:hover:not(:disabled) { background: var(--sv-interactive-primary-hover); }
+.rb-btn--quiet { background: transparent; color: var(--sv-text-secondary); border: 1px solid var(--sv-border-primary); }
+.rb-btn--quiet:hover:not(:disabled) { background: var(--sv-bg-hover); color: var(--sv-text-primary); }
+.rb-btn:disabled { opacity: 0.7; cursor: wait; }
+
+/* Phone width: the source and the sentence drop first; level, pill and buttons survive (mockup §3). */
+@media (max-width: 480px) {
+  .rb-lvsrc { display: none; }
+  .rb-body .rb-msg { display: none; }
+  .rb-class { max-width: 40%; }
 }
 
 /* Shield icon area */
@@ -261,6 +311,22 @@ html[data-color-mode="dark"] .ribbon-bar {
   50% { opacity: 1; transform: scaleX(1); }
 }
 
+/* First-paint skeleton (P1-7): the same 40px row with solid pulsing blocks, no text. */
+.ribbon-bar--skeleton { border-color: var(--sv-border-primary); box-shadow: none; }
+.ribbon-skel { display: inline-block; height: 12px; border-radius: 6px; background: var(--sv-interactive-primary); animation: ribbon-pulse 1.2s ease-in-out infinite; flex-shrink: 0; }
+.ribbon-skel-icon { width: 18px; height: 18px; border-radius: 50%; }
+.ribbon-skel-title { width: 92px; }
+.ribbon-skel-text { width: 180px; flex: 0 1 180px; }
+.ribbon-skel-btn { width: 132px; height: 26px; border-radius: 8px; margin-left: auto; }
+
+/* Error row (P1-7): solid danger border and ink; the Retry button is a solid danger fill. */
+.ribbon-bar--error { border-color: var(--sv-interactive-danger); box-shadow: none; }
+.ribbon-icon--error { color: var(--sv-interactive-danger); }
+.ribbon-status--error { color: var(--sv-interactive-danger); font-weight: 600; }
+.ribbon-retry { background: var(--sv-interactive-danger); border-color: var(--sv-interactive-danger); color: #ffffff; }
+.ribbon-retry:hover { filter: brightness(0.9); }
+.ribbon-retry:disabled { opacity: 0.7; cursor: wait; }
+
 /* Manage button */
 .ribbon-action {
   background: transparent;
@@ -284,9 +350,9 @@ html[data-color-mode="dark"] .ribbon-bar {
 /* Dismiss (×): closes the banner via view.close(); the same state stays closed for the session. */
 .ribbon-dismiss {
   display: inline-flex; align-items: center; justify-content: center;
-  width: 26px; height: 26px; padding: 0; flex-shrink: 0;
-  background: transparent; border: 1px solid var(--sv-border-primary); border-radius: 50%;
-  color: var(--sv-text-secondary); cursor: pointer;
+  width: 28px; height: 28px; padding: 0; flex-shrink: 0;
+  background: transparent; border: 0; border-radius: 6px;
+  color: var(--sv-text-subtle); cursor: pointer;
 }
 .ribbon-dismiss:hover { background: var(--sv-interactive-danger); border-color: var(--sv-interactive-danger); color: #ffffff; }
 
@@ -294,18 +360,16 @@ html[data-color-mode="dark"] .ribbon-bar {
 .ribbon-chip-alert { background: #F59E0B; color: #1F2937; border: none; cursor: pointer; font-family: inherit; }
 .ribbon-chip-alert:hover { background: #D97706; }
 
-/* Alert popover (renders in the .wf-dialog-host row, never in the bar) */
+/* Alert popover (renders in the .wf-dialog-host row, never in the bar). Surface colour with a
+ * solid amber stroke — the old #FFFBEB wash was a faded tint (owner's rule). */
 .ribbon-alert {
   display: flex;
   flex-direction: column;
   gap: 8px;
   padding: 10px 16px;
-  background: #FFFBEB;
+  background: var(--sv-bg-secondary);
+  border: 2px solid #F59E0B;
   border-radius: 10px;
-}
-
-html[data-color-mode="dark"] .ribbon-alert {
-  background: #1A1500;
 }
 
 .ribbon-alert-item {

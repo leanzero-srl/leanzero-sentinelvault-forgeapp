@@ -4,6 +4,11 @@ import { invoke, view, router } from "@forge/bridge";
 import { enablePaletteSync } from "../../kit/palette-sync";
 import ThumbnailPreview from "../../kit/ThumbnailPreview";
 import ActivityFeed from "../../kit/ActivityFeed";
+import ActionMenu from "../../kit/ActionMenu";
+import { ConfirmDialog } from "../../kit/Dialog";
+import RovingList from "../../kit/RovingList";
+import { attachmentRow, sectionRow, rowActions, statusChip, copyText } from "../../kit/seal-row.js";
+import { PrimarySlot, ReasonBar, RequestInbox, GrantInbox, ErrorRow, CopiedNote } from "../../kit/SealRowParts";
 
 // ── Icon components ──────────────────────────────────
 
@@ -269,44 +274,45 @@ const UploadZone = ({ onUploadComplete }) => {
 
 // ── Artifact card component ─────────────────────────
 
-const ArtifactCard = ({ att, onRefresh, columns, siteUrl, spaceKey, pageId, pageLocation }) => {
+const ArtifactCard = ({ att, onRefresh, columns, siteUrl, spaceKey, pageId, pageLocation, viewer }) => {
   const [actionBusy, setActionBusy] = useState(null);
-  const [pendingConfirm, setPendingConfirm] = useState(null); // { action, message }
-  const [actionError, setActionError] = useState(null); // inline error (no native alert)
+  const [pendingConfirm, setPendingConfirm] = useState(null); // "delete" | "purge" | null → kit ConfirmDialog
+  const [actionError, setActionError] = useState(null); // inline error row (no native alert)
   const [expanded, setExpanded] = useState(false);
   const [cachedPreview, setCachedPreview] = useState(null);
   const [editStatus, setEditStatus] = useState(att.editStatus || null); // none|pending|granted|denied
-  const [showReason, setShowReason] = useState(false);
+  const [editExpiresAt, setEditExpiresAt] = useState(null);
+  const [bar, setBar] = useState(null); // "request" | "force" | null — the typed-reason bar
   const [reasonText, setReasonText] = useState("");
   const [myRequests, setMyRequests] = useState(null); // owner: pending edit requests on this file
   const [reqBusy, setReqBusy] = useState(null);
   const [myGrants, setMyGrants] = useState(null); // audit D5: owner — active granted editors
   const [grantBusy, setGrantBusy] = useState(null);
+  const [copied, setCopied] = useState(false);
 
-  const isSealed = att.lockStatus === "HELD" || att.lockStatus === "HELD_BY_ACTOR";
   const isSealedByMe = att.lockStatus === "HELD_BY_ACTOR";
   const isSealedByOther = att.lockStatus === "HELD";
+  const isRecoverable = att.staleReason === "trashed";
 
   // Lazily resolve this user's edit-access status for files sealed by others.
   useEffect(() => {
     let cancelled = false;
     if (isSealedByOther && editStatus === null) {
       invoke("check-edit-request", { attachmentId: att.id })
-        .then((r) => { if (!cancelled) setEditStatus(r?.status || "none"); })
+        .then((r) => { if (!cancelled) { setEditStatus(r?.status || "none"); setEditExpiresAt(r?.expiresAt || null); } })
         .catch(() => { if (!cancelled) setEditStatus("none"); });
     }
     return () => { cancelled = true; };
   }, [isSealedByOther, att.id, editStatus]);
 
-  // Owner: load pending edit requests for this file so they can approve in place.
+  // Owner: pending edit requests (Approve/Decline is the row's primary while one waits) and the
+  // ACTIVE granted editors so the owner can REVOKE access (audit D5).
   useEffect(() => {
     let cancelled = false;
     if (isSealedByMe) {
       invoke("list-edit-requests", { attachmentId: att.id })
         .then((r) => { if (!cancelled) setMyRequests(r?.requests || []); })
         .catch(() => { if (!cancelled) setMyRequests([]); });
-      // audit D5: also load the ACTIVE granted editors so the owner can REVOKE access —
-      // previously an approved grant was permanent with no surface to take it back.
       invoke("list-edit-grants", { attachmentId: att.id })
         .then((r) => { if (!cancelled) setMyGrants(r?.grants || []); })
         .catch(() => { if (!cancelled) setMyGrants([]); });
@@ -314,33 +320,41 @@ const ArtifactCard = ({ att, onRefresh, columns, siteUrl, spaceKey, pageId, page
     return () => { cancelled = true; };
   }, [isSealedByMe, att.id]);
 
-  const revokeGrant = async (editorAccountId) => {
-    setGrantBusy(editorAccountId);
+  // ONE call path for every resolver action: a refusal (`success:false`) shows the resolver's
+  // reason in the card's error row and never reads as success (review: ~20 silent click failures).
+  const run = async (busyKey, action, payload, { refresh = true, onOk } = {}) => {
+    setActionBusy(busyKey);
+    setActionError(null);
     try {
-      const r = await invoke("revoke-edit-grant", { attachmentId: att.id, editorAccountId });
-      if (r?.success) setMyGrants((p) => (p || []).filter((g) => g.editorAccountId !== editorAccountId));
+      const r = await invoke(action, payload);
+      if (!r || r.success === false || r.ok === false) {
+        setActionError(r?.reason || "That did not work. Try again.");
+        return false;
+      }
+      if (onOk) onOk(r);
+      if (refresh) onRefresh();
+      return true;
     } catch (e) {
-      console.error("Revoke edit grant failed:", e);
+      console.error(`[PANEL] ${action} failed:`, e);
+      setActionError("Could not reach Sentinel Vault. Try again.");
+      return false;
     } finally {
-      setGrantBusy(null);
+      setActionBusy(null);
     }
   };
 
-  const submitEditRequest = async () => {
-    setActionBusy("editreq");
+  const revokeGrant = async (editorAccountId) => {
+    setGrantBusy(editorAccountId);
+    setActionError(null);
     try {
-      const result = await invoke("request-edit-access", { attachmentId: att.id, reason: reasonText.trim() });
-      if (result && result.success) {
-        setEditStatus("pending");
-        setShowReason(false);
-        setReasonText("");
-      } else {
-        setActionError(result?.reason || "Could not send the request");
-      }
+      const r = await invoke("revoke-edit-grant", { attachmentId: att.id, editorAccountId });
+      if (r?.success) setMyGrants((p) => (p || []).filter((g) => g.editorAccountId !== editorAccountId));
+      else setActionError(r?.reason || "Could not revoke this editor's access");
     } catch (e) {
-      console.error("Edit request failed:", e);
+      console.error("Revoke edit grant failed:", e);
+      setActionError("Could not reach Sentinel Vault. Try again.");
     } finally {
-      setActionBusy(null);
+      setGrantBusy(null);
     }
   };
 
@@ -351,10 +365,9 @@ const ArtifactCard = ({ att, onRefresh, columns, siteUrl, spaceKey, pageId, page
       const r = await invoke(action === "approve" ? "approve-edit-request" : "deny-edit-request", { attachmentId: att.id, requesterAccountId });
       if (r?.success) {
         setMyRequests((p) => (p || []).filter((x) => x.requesterAccountId !== requesterAccountId));
+        if (action === "approve") invoke("list-edit-grants", { attachmentId: att.id }).then((g) => setMyGrants(g?.grants || [])).catch(() => {});
       } else {
-        // F1: this used to be a bare `if (r?.success)` with no else, so a refusal left the row
-        // sitting there looking like a dead button — which is exactly what an overdue seal
-        // produced, every time, on approve but never on deny. A refusal must say so.
+        // F1: a refusal must say so — an overdue seal refused approve, every time, silently.
         setActionError(r?.reason || (action === "approve" ? "Could not grant edit access" : "Could not decline the request"));
       }
     } catch (e) {
@@ -364,9 +377,7 @@ const ArtifactCard = ({ att, onRefresh, columns, siteUrl, spaceKey, pageId, page
       setReqBusy(null);
     }
   };
-  const canUnseal = isSealedByMe;
-  const isStale = att.isStale === true;
-  const isRecoverable = att.staleReason === "trashed";
+
   const isImage = att.mediaType?.startsWith("image/");
   const downloadHref = siteUrl && pageId && att.title
     ? `${siteUrl}/wiki/download/attachments/${pageId}/${encodeURIComponent(att.title)}?api=v2`
@@ -379,157 +390,47 @@ const ArtifactCard = ({ att, onRefresh, columns, siteUrl, spaceKey, pageId, page
     ? `${siteUrl}/wiki/pages/editattachment.action?pageId=${pageId}&fileName=${encodeURIComponent(att.title)}&isFromPageView=true`
     : null;
 
-  const handleSeal = async () => {
-    setActionBusy("seal");
-    setActionError(null);
-    try {
-      const result = await invoke("seal-artifact", { attachmentId: att.id });
-      if (result && result.success === false) {
-        setActionError(result.reason || "Seal unsuccessful");
-      }
-      onRefresh();
-    } catch (e) {
-      console.error("Seal failed:", e);
-    } finally {
-      setActionBusy(null);
+  const copyLink = async () => {
+    const href = downloadHref || (siteUrl && pageId ? `${siteUrl}/wiki/pages/viewpage.action?pageId=${pageId}` : "");
+    if (!href) { setActionError("No link is available for this file yet."); return; }
+    setCopied(await copyText(href));
+    setTimeout(() => setCopied(false), 1800);
+  };
+
+  // ── the ONE row rule (mockup decision 5) ───────────────────────────────────────────────────
+  const row = attachmentRow(att, { editStatus, editExpiresAt, pendingRequests: myRequests || [], watching: att.notifyRequested });
+  const { primary, menu } = rowActions(row, viewer, { allowRestore: att.allowRestore, allowPurge: att.allowPurge, allowDelete: att.allowDelete, viewUrl, propertiesUrl });
+  const chip = statusChip(att);
+
+  const onMenu = (id) => {
+    switch (id) {
+      case "extend": run("extend", "extend-seal", { attachmentId: att.id }); break;
+      case "release": run("unseal", "unseal-artifact", { attachmentId: att.id }); break;
+      case "watch": run("watch", "watch-artifact", { attachmentId: att.id }); break;
+      case "unwatch": run("watch", "unwatch-artifact", { attachmentId: att.id }); break;
+      case "copy-link": copyLink(); break;
+      case "force-release": setReasonText(""); setBar("force"); break;
+      case "view": if (viewUrl) router.open(viewUrl); break;
+      case "properties": if (propertiesUrl) router.open(propertiesUrl); break;
+      case "delete": setPendingConfirm("delete"); break;
+      case "purge": setPendingConfirm("purge"); break;
+      default: break;
     }
   };
 
-  const handleUnseal = async () => {
-    setActionBusy("unseal");
-    setActionError(null);
-    try {
-      const r = await invoke("unseal-artifact", { attachmentId: att.id });
-      if (r && r.success === false) setActionError(r.reason || "Could not unseal this file");
-      else onRefresh();
-    } catch (e) {
-      console.error("Unseal failed:", e);
-      setActionError("Could not reach Sentinel Vault. Try again.");
-    } finally {
-      setActionBusy(null);
-    }
+  const primaryHandlers = {
+    seal: () => run("seal", "seal-artifact", { attachmentId: att.id }),
+    release: () => run("unseal", "unseal-artifact", { attachmentId: att.id }),
+    decide: resolveEditReq,
+    request: () => { setReasonText(""); setBar("request"); },
+    restore: () => run("restore", "restore-sealed-artifact", { attachmentId: att.id }),
+    purge: () => setPendingConfirm("purge"),
   };
 
-  // F4: renew the retention period in place. Before this the only exit from Overdue was
-  // unseal-and-seal-again, which drops the labels, the comment and every edit grant.
-  const handleExtend = async () => {
-    setActionBusy("extend");
-    setActionError(null);
-    try {
-      const r = await invoke("extend-seal", { attachmentId: att.id });
-      if (r?.success) onRefresh();
-      else setActionError(r?.reason || "Could not extend this seal");
-    } catch (e) {
-      console.error("Extend seal failed:", e);
-      setActionError("Could not reach Sentinel Vault. Try again.");
-    } finally {
-      setActionBusy(null);
-    }
+  const submitBar = () => {
+    if (bar === "force") run("unseal", "unseal-artifact", { attachmentId: att.id, adminOverride: true, reason: reasonText.trim() }, { onOk: () => { setBar(null); setReasonText(""); } });
+    else run("editreq", "request-edit-access", { attachmentId: att.id, reason: reasonText.trim() }, { refresh: false, onOk: () => { setEditStatus("pending"); setBar(null); setReasonText(""); } });
   };
-
-  const handleDelete = () => {
-    setPendingConfirm({
-      action: "delete",
-      message: `Remove "${att.title}"? It will be sent to the trash.`,
-    });
-  };
-
-  const executeDelete = async () => {
-    setPendingConfirm(null);
-    setActionBusy("delete");
-    setActionError(null);
-    try {
-      const result = await invoke("delete-artifact", { attachmentId: att.id });
-      if (result.success) {
-        onRefresh();
-      } else {
-        setActionError(result.reason || "Removal unsuccessful");
-      }
-    } catch (e) {
-      console.error("Delete failed:", e);
-    } finally {
-      setActionBusy(null);
-    }
-  };
-
-  const handleDispatch = async () => {
-    setActionBusy("watch");
-    try {
-      if (att.notifyRequested) {
-        const result = await invoke("unwatch-artifact", { attachmentId: att.id });
-        if (result.success) onRefresh();
-      } else {
-        const result = await invoke("watch-artifact", { attachmentId: att.id });
-        if (result.success) onRefresh();
-      }
-    } catch (e) {
-      console.error("Dispatch toggle failed:", e);
-    } finally {
-      setActionBusy(null);
-    }
-  };
-
-  const handleRestore = async () => {
-    setActionBusy("restore");
-    setActionError(null);
-    try {
-      const result = await invoke("restore-sealed-artifact", { attachmentId: att.id });
-      if (result && result.success) {
-        onRefresh();
-      } else {
-        setActionError(result?.reason || "Restore unsuccessful");
-      }
-    } catch (e) {
-      console.error("Restore failed:", e);
-    } finally {
-      setActionBusy(null);
-    }
-  };
-
-  const handlePurge = () => {
-    setPendingConfirm({
-      action: "purge",
-      message: `Permanently delete "${att.title}"? This cannot be undone.`,
-    });
-  };
-
-  const executePurge = async () => {
-    setPendingConfirm(null);
-    setActionBusy("purge");
-    setActionError(null);
-    try {
-      const result = await invoke("purge-seal-record", { attachmentId: att.id });
-      if (result && result.success) {
-        onRefresh();
-      } else {
-        setActionError(result?.reason || "Cleanup unsuccessful");
-      }
-    } catch (e) {
-      console.error("Purge failed:", e);
-    } finally {
-      setActionBusy(null);
-    }
-  };
-
-  // Status
-  let statusClass = "unlocked";
-  let statusText = "Available";
-  if (isStale && isRecoverable) {
-    statusClass = "trashed";
-    statusText = "Trash";
-  } else if (isStale) {
-    statusClass = "stale";
-    statusText = "Missing";
-  } else if (att.isExpired && isSealed) {
-    statusClass = "expired";
-    statusText = "Overdue";
-  } else if (isSealedByMe) {
-    statusClass = "locked-by-me";
-    statusText = "My Seal";
-  } else if (isSealed) {
-    statusClass = "locked";
-    statusText = "Sealed";
-  }
 
   // Meta items (second line)
   const metaItems = [];
@@ -553,146 +454,26 @@ const ArtifactCard = ({ att, onRefresh, columns, siteUrl, spaceKey, pageId, page
   if (columns.comment && att.comment) {
     metaItems.push(<span key="cmt" className="card-meta-item card-meta-comment" title={att.comment}>{att.comment}</span>);
   }
-
-  // Primary action (line 1)
-  let primaryActionBtn = null;
-  if (columns.actions) {
-    if (isStale && isRecoverable && att.allowRestore) {
-      primaryActionBtn = (
-        <button className={`action-btn restore ${actionBusy === "restore" ? "is-busy" : ""}`} onClick={handleRestore} disabled={actionBusy && actionBusy !== "restore"} title="Restore this trashed attachment back to the page">
-          {actionBusy === "restore" ? <>Restoring<span className="btn-busy-bar" /></> : "Restore"}
-        </button>
-      );
-    } else if (isStale) {
-      // Permanently deleted — no primary action possible
-      primaryActionBtn = null;
-    } else if (!isSealed) {
-      primaryActionBtn = (
-        <button className={`action-btn lock ${actionBusy === "seal" ? "is-busy" : ""}`} onClick={handleSeal} disabled={actionBusy && actionBusy !== "seal"} title="Reserve this file so only you can modify it">
-          {actionBusy === "seal" ? <>Sealing<span className="btn-busy-bar" /></> : "Seal"}
-        </button>
-      );
-    } else if (canUnseal) {
-      primaryActionBtn = (
-        <>
-          {/* F4: "a button to extend the retention period next to overdue - unseal". Offered on
-              every seal the caller holds, not only lapsed ones — renewing before the deadline is
-              the behaviour the reminders ask for. */}
-          <button className={`action-btn extend ${actionBusy === "extend" ? "is-busy" : ""}`} onClick={handleExtend} disabled={actionBusy && actionBusy !== "extend"} title="Give this seal a fresh retention period">
-            {actionBusy === "extend" ? <>Extending<span className="btn-busy-bar" /></> : "Extend"}
-          </button>
-          <button className={`action-btn unlock ${actionBusy === "unseal" ? "is-busy" : ""}`} onClick={handleUnseal} disabled={actionBusy && actionBusy !== "unseal"} title="Release your seal and allow others to modify this file">
-            {actionBusy === "unseal" ? <>Unsealing<span className="btn-busy-bar" /></> : "Unseal"}
-          </button>
-        </>
-      );
-    }
-  }
-
-  // Secondary actions (line 2)
-  const secondaryActions = [];
-  if (columns.actions) {
-    if (isStale && isRecoverable) {
-      // Trashed: show Purge (permanent delete)
-      if (att.allowPurge) {
-        secondaryActions.push(
-          <button
-            key="purge"
-            className={`action-btn purge ${actionBusy === "purge" ? "is-busy" : ""}`}
-            onClick={handlePurge}
-            disabled={actionBusy && actionBusy !== "purge"}
-            title="Permanently delete this attachment"
-          >
-            {actionBusy === "purge" ? <>Purging<span className="btn-busy-bar" /></> : "Purge"}
-          </button>
-        );
-      }
-    } else if (isStale) {
-      // Permanently deleted — show Purge to clean up seal record
-      if (att.allowPurge) {
-        secondaryActions.push(
-          <button
-            key="purge"
-            className={`action-btn purge ${actionBusy === "purge" ? "is-busy" : ""}`}
-            onClick={handlePurge}
-            disabled={actionBusy && actionBusy !== "purge"}
-            title="Remove this stale record"
-          >
-            {actionBusy === "purge" ? <>Purging<span className="btn-busy-bar" /></> : "Purge"}
-          </button>
-        );
-      }
-    } else if (isSealedByOther) {
-      // Sealed by someone else — Watch button
-      secondaryActions.push(
-        <button
-          key="watch"
-          className={`action-btn watch ${att.notifyRequested ? "watching" : ""} ${actionBusy === "watch" ? "is-busy" : ""}`}
-          onClick={handleDispatch}
-          disabled={actionBusy && actionBusy !== "watch"}
-          title={att.notifyRequested ? "Stop watching" : "Get notified when relinquished"}
-        >
-          {actionBusy === "watch" ? <>Updating<span className="btn-busy-bar" /></> : (att.notifyRequested ? "Watching" : "Watch")}
-        </button>
-      );
-      // Edit Requests — ask the seal owner for edit access
-      if (editStatus === "granted") {
-        secondaryActions.push(
-          <span key="editgrant" className="action-btn editgrant" title="The owner approved your edit access">Can Edit</span>
-        );
-      } else if (editStatus === "pending") {
-        secondaryActions.push(
-          <span key="editpending" className="action-btn editpending" title="Edit request awaiting owner approval">Requested</span>
-        );
-      } else if (editStatus === "denied") {
-        secondaryActions.push(
-          <span key="editdenied" className="action-btn editdenied" title="Your edit request was declined">Declined</span>
-        );
-      } else if (editStatus === "none") {
-        secondaryActions.push(
-          <button
-            key="editreq"
-            className={`action-btn editreq ${actionBusy === "editreq" ? "is-busy" : ""}`}
-            onClick={() => setShowReason(true)}
-            disabled={actionBusy && actionBusy !== "editreq"}
-            title="Ask the seal owner for permission to edit this file"
-          >
-            {actionBusy === "editreq" ? <>Requesting<span className="btn-busy-bar" /></> : "Request Edit"}
-          </button>
-        );
-      }
-    }
-    // Delete button: available on all live items (unsealed or sealed by me)
-    if (!isStale && att.allowDelete && (!isSealed || isSealedByMe)) {
-      secondaryActions.push(
-        <button
-          key="delete"
-          className={`action-btn delete ${actionBusy === "delete" ? "is-busy" : ""}`}
-          onClick={handleDelete}
-          disabled={actionBusy && actionBusy !== "delete"}
-          title="Send to trash"
-        >
-          {actionBusy === "delete" ? <>Removing<span className="btn-busy-bar" /></> : "Delete"}
-        </button>
-      );
-    }
+  if (att.notifyRequested && isSealedByOther) {
+    metaItems.push(<span key="watching" className="card-meta-item card-meta-watching" role="status">Watching for release</span>);
   }
 
   const showLabels = columns.labels;
-  const hasSecondLine = metaItems.length > 0 || showLabels || secondaryActions.length > 0;
+  const hasSecondLine = metaItems.length > 0 || showLabels;
 
   return (
-    <div className={`artifact-card status-${statusClass}`}>
-      {/* Line 1: filename + status + primary action */}
+    <div className={`artifact-card status-${chip.cls}`} role="listitem" data-roving-card tabIndex={-1} aria-label={chip.aria} data-testid="sv-card" data-primary={primary.kind}>
+      {/* Line 1: filename + status + ONE primary action + ⋯ */}
       <div className="card-row card-row-primary">
         <span className="card-filename">
           <button
             className={`card-expand-toggle ${expanded ? "is-expanded" : ""}`}
             onClick={() => setExpanded((prev) => !prev)}
             aria-expanded={expanded}
+            aria-label={expanded ? "Collapse details" : "Show details"}
             title={expanded ? "Collapse details" : "Show details"}
           >
-            <svg width="12" height="12" viewBox="0 0 12 12">
+            <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
               <path d="M3 5l3 3 3-3" stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinecap="round" />
             </svg>
           </button>
@@ -722,14 +503,15 @@ const ArtifactCard = ({ att, onRefresh, columns, siteUrl, spaceKey, pageId, page
         </span>
         <span className="card-row-right">
           {columns.status && (
-            <span className={`status-lozenge ${statusClass}`}>{statusText}</span>
+            <span className={`status-lozenge ${chip.cls}`} role="status" aria-label={chip.aria} title={chip.aria}>{chip.text}</span>
           )}
-          {primaryActionBtn}
+          {columns.actions && <PrimarySlot primary={primary} name={att.title} busy={actionBusy} reqBusy={reqBusy} on={primaryHandlers} />}
+          {columns.actions && <ActionMenu items={menu} onPick={onMenu} label={`More actions for ${att.title}`} testId="sv-kebab" />}
         </span>
       </div>
 
-      {/* Line 2: meta + labels + secondary actions */}
-      {hasSecondLine && !pendingConfirm && (
+      {/* Line 2: meta + labels */}
+      {hasSecondLine && (
         <div className="card-row card-row-secondary">
           <span className="card-secondary-left">
             {metaItems.length > 0 && (
@@ -745,96 +527,38 @@ const ArtifactCard = ({ att, onRefresh, columns, siteUrl, spaceKey, pageId, page
               <LabelCluster labels={att.labels || []} artifactId={att.id} onRefresh={onRefresh} />
             )}
           </span>
-          {secondaryActions.length > 0 && (
-            <span className="card-secondary-right">
-              {secondaryActions}
-            </span>
-          )}
         </div>
       )}
 
-      {/* Inline confirmation bar */}
-      {pendingConfirm && (
-        <div className="card-row card-confirm-bar">
-          <span className="confirm-message">{pendingConfirm.message}</span>
-          <span className="confirm-actions">
-            <button className="action-btn confirm-yes" onClick={pendingConfirm.action === "delete" ? executeDelete : executePurge}>Confirm</button>
-            <button className="action-btn confirm-no" onClick={() => setPendingConfirm(null)}>Cancel</button>
-          </span>
-        </div>
+      <CopiedNote shown={copied} />
+      <ErrorRow message={actionError} onDismiss={() => setActionError(null)} />
+
+      {/* Destructive confirmations: a real dialog (focus trap, Escape, focus back to the opener). */}
+      {pendingConfirm === "delete" && (
+        <ConfirmDialog
+          title={`Delete ${att.title}?`}
+          message="It goes to the trash. The seal stays on the record until the file is restored or the record is removed."
+          confirmLabel="Delete"
+          busy={actionBusy === "delete"}
+          onCancel={() => setPendingConfirm(null)}
+          onConfirm={() => { setPendingConfirm(null); run("delete", "delete-artifact", { attachmentId: att.id }); }}
+        />
+      )}
+      {pendingConfirm === "purge" && (
+        <ConfirmDialog
+          title={isRecoverable ? `Delete ${att.title} permanently?` : `Remove the seal record for ${att.title}?`}
+          message={isRecoverable ? "The file is purged from the trash and its seal record removed. This cannot be undone." : "The file is already gone; this removes the seal record that still points at it. This cannot be undone."}
+          confirmLabel={isRecoverable ? "Delete permanently" : "Remove record"}
+          busy={actionBusy === "purge"}
+          onCancel={() => setPendingConfirm(null)}
+          onConfirm={() => { setPendingConfirm(null); run("purge", "purge-seal-record", { attachmentId: att.id }); }}
+        />
       )}
 
-      {actionError && (
-        <div className="card-row card-action-error" role="alert">
-          <span className="card-action-error-text">{actionError}</span>
-          <button className="card-action-error-dismiss" onClick={() => setActionError(null)} title="Dismiss">&times;</button>
-        </div>
-      )}
+      {bar && <ReasonBar mode={bar} value={reasonText} onChange={setReasonText} onSubmit={submitBar} onCancel={() => { setBar(null); setReasonText(""); }} busy={actionBusy === "unseal" || actionBusy === "editreq"} />}
 
-      {/* Reason input for an edit request (no native prompt) */}
-      {showReason && (
-        <div className="card-row card-reason-bar">
-          <input
-            type="text"
-            className="card-reason-input"
-            placeholder="Why do you need to edit this file? (optional)"
-            value={reasonText}
-            maxLength={300}
-            autoFocus
-            onChange={(e) => setReasonText(e.target.value)}
-            onKeyDown={(e) => { if (e.key === "Enter") submitEditRequest(); if (e.key === "Escape") { setShowReason(false); setReasonText(""); } }}
-          />
-          <span className="confirm-actions">
-            <button className="action-btn editreq" onClick={submitEditRequest} disabled={actionBusy === "editreq"}>
-              {actionBusy === "editreq" ? <>Sending<span className="btn-busy-bar" /></> : "Send request"}
-            </button>
-            <button className="action-btn confirm-no" onClick={() => { setShowReason(false); setReasonText(""); }}>Cancel</button>
-          </span>
-        </div>
-      )}
-
-      {/* Owner: approve/deny pending edit requests for this file, in place */}
-      {isSealedByMe && myRequests && myRequests.length > 0 && (
-        <div className="card-row card-editreq-inbox">
-          <span className="card-editreq-title">Edit requests ({myRequests.length})</span>
-          {myRequests.map((r) => {
-            const name = r.requesterName || "Unknown user";
-            return (
-              <div key={r.requesterAccountId} className="card-editreq-row">
-                <span className="card-editreq-who">{name}{r.reason ? <em className="card-editreq-reason"> — “{r.reason}”</em> : null}</span>
-                <span className="confirm-actions">
-                  <button className="action-btn lock" disabled={!!reqBusy} onClick={() => resolveEditReq(r.requesterAccountId, "approve")}>
-                    {reqBusy === `${r.requesterAccountId}:approve` ? <>Approving<span className="btn-busy-bar" /></> : "Approve"}
-                  </button>
-                  <button className="action-btn unlock" disabled={!!reqBusy} onClick={() => resolveEditReq(r.requesterAccountId, "deny")}>
-                    {reqBusy === `${r.requesterAccountId}:deny` ? <>Denying<span className="btn-busy-bar" /></> : "Deny"}
-                  </button>
-                </span>
-              </div>
-            );
-          })}
-        </div>
-      )}
-
-      {/* Owner: active granted editors — revoke access in place (audit D5) */}
-      {isSealedByMe && myGrants && myGrants.length > 0 && (
-        <div className="card-row card-editreq-inbox">
-          <span className="card-editreq-title">Editors with access ({myGrants.length})</span>
-          {myGrants.map((g) => {
-            const name = g.editorName || "Unknown user";
-            return (
-              <div key={g.editorAccountId} className="card-editreq-row">
-                <span className="card-editreq-who">{name}{g.grantedAt ? <em className="card-editreq-reason"> — since {new Date(g.grantedAt).toLocaleDateString()}</em> : null}</span>
-                <span className="confirm-actions">
-                  <button className="action-btn unlock" disabled={grantBusy === g.editorAccountId} onClick={() => revokeGrant(g.editorAccountId)}>
-                    {grantBusy === g.editorAccountId ? <>Revoking<span className="btn-busy-bar" /></> : "Revoke"}
-                  </button>
-                </span>
-              </div>
-            );
-          })}
-        </div>
-      )}
+      {isSealedByMe && <RequestInbox requests={myRequests} name={att.title} reqBusy={reqBusy} onDecide={resolveEditReq} firstDecidedAbove={primary.kind === "decide"} />}
+      {isSealedByMe && <GrantInbox grants={myGrants} name={att.title} grantBusy={grantBusy} onRevoke={revokeGrant} />}
 
       {/* Expand panel: thumbnail + view link */}
       {expanded && (
@@ -1102,18 +826,19 @@ const ValidationStatus = ({ pageId }) => {
 
 // ── Sealed Sections group (Content Sealing) ──────────
 
-// One sealed section: unseal (owner), request edit (others), approve (owner).
-const SectionRow = ({ section: s, onUnseal, unsealing }) => {
+// One sealed section — the SAME row rule as the attachment cards (row-state.js): Release for the
+// owner (or anyone who can edit the page once the seal has expired, server rule F6), Request edit
+// / Waiting for {owner} / Edit now until {time} for everyone else, Approve/Decline for the owner
+// while someone waits. Copy link and Force release (space admin, typed reason) sit under ⋯.
+const SectionRow = ({ section: s, onUnseal, unsealing, viewer, siteUrl, pageId }) => {
   const [editStatus, setEditStatus] = useState(null); // others' sections
-  const [showReason, setShowReason] = useState(false);
+  const [bar, setBar] = useState(null); // "request" | "force" | null — the typed-reason bar
   const [reasonText, setReasonText] = useState("");
-  // Break-glass (3.5): releasing a seal you do not own (an expired one, or as a space admin)
-  // requires a typed reason that lands in the trail. Owners release without one.
-  const [showForce, setShowForce] = useState(false);
-  const [forceReason, setForceReason] = useState("");
   const [busy, setBusy] = useState(false);
   const [requests, setRequests] = useState(null); // owner inbox
   const [reqBusy, setReqBusy] = useState(null);
+  const [error, setError] = useState(null);
+  const [copied, setCopied] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -1130,99 +855,73 @@ const SectionRow = ({ section: s, onUnseal, unsealing }) => {
   }, [s.sectionId, s.isMine, s.isExpired]);
 
   const submitReq = async () => {
-    setBusy(true);
+    setBusy(true); setError(null);
     try {
       const r = await invoke("request-section-edit", { sectionId: s.sectionId, reason: reasonText.trim() });
-      if (r?.success) { setEditStatus("pending"); setShowReason(false); setReasonText(""); }
-    } catch (e) { console.error("Section edit request failed:", e); }
+      if (r?.success) { setEditStatus("pending"); setBar(null); setReasonText(""); }
+      else setError(r?.reason || "Could not send the request.");
+    } catch (e) { console.error("Section edit request failed:", e); setError("Could not reach Sentinel Vault. Try again."); }
     finally { setBusy(false); }
   };
 
   const resolve = async (requesterAccountId, action) => {
-    setReqBusy(`${requesterAccountId}:${action}`);
+    setReqBusy(`${requesterAccountId}:${action}`); setError(null);
     try {
       const r = await invoke(action === "approve" ? "approve-section-edit" : "deny-section-edit", { sectionId: s.sectionId, requesterAccountId });
       if (r?.success) setRequests((p) => (p || []).filter((x) => x.requesterAccountId !== requesterAccountId));
-    } catch (e) { console.error("Resolve section request failed:", e); }
+      else setError(r?.reason || (action === "approve" ? "Could not grant edit access." : "Could not decline the request."));
+    } catch (e) { console.error("Resolve section request failed:", e); setError("Could not reach Sentinel Vault. Try again."); }
     finally { setReqBusy(null); }
   };
 
+  const copyLink = async () => {
+    const href = siteUrl && pageId ? `${siteUrl}/wiki/pages/viewpage.action?pageId=${pageId}` : "";
+    if (!href) { setError("No link is available yet."); return; }
+    setCopied(await copyText(href));
+    setTimeout(() => setCopied(false), 1800);
+  };
+
+  const row = sectionRow(s, { editStatus, pendingRequests: requests || [] });
+  const { primary, menu } = rowActions(row, viewer);
+  // A non-owner's Release (expired seal) goes through the typed-reason bar (server: reason required).
+  const forced = primary.kind === "release" && !s.isMine;
+  const untilText = s.isExpired ? "expired" : (s.expiresAt ? `until ${renderLapseDate(s.expiresAt)}` : "no expiry");
+  const aria = `Section ${s.sectionTitle}: sealed by ${s.isMine ? "you" : (s.lockedByName || "another user")}, ${untilText}`;
+
+  const onMenu = (id) => {
+    if (id === "release") onUnseal(s.sectionId);
+    else if (id === "copy-link") copyLink();
+    else if (id === "force-release") { setReasonText(""); setBar("force"); }
+  };
+  const handlers = {
+    release: () => (forced ? (setReasonText(""), setBar("force")) : onUnseal(s.sectionId)),
+    decide: resolve,
+    request: () => { setReasonText(""); setBar("request"); },
+  };
+  const submitBar = () => {
+    if (bar === "force") { onUnseal(s.sectionId, reasonText.trim()); setBar(null); setReasonText(""); }
+    else submitReq();
+  };
+
   return (
-    <div className="sv-section-block">
+    <div className="sv-section-block" role="listitem" data-roving-card tabIndex={-1} aria-label={aria} data-testid="sv-section-row" data-primary={primary.kind}>
       <div className="sv-section-row">
         <span className="sv-section-row-title" title={s.sectionTitle}>{s.sectionTitle}</span>
         <span className="sv-section-row-meta">{s.isExpired ? "Expired" : (s.expiresAt ? `until ${renderLapseDate(s.expiresAt)}` : "")}</span>
-        {(s.isMine || s.isExpired) ? (
-          <button className={`action-btn unlock ${unsealing ? "is-busy" : ""}`} disabled={unsealing}
-            onClick={() => (s.isMine ? onUnseal(s.sectionId) : setShowForce(true))}
-            title={s.isMine ? "Release this section" : "Release an expired seal you do not own — a reason is required"}>
-            {unsealing ? <>Releasing<span className="btn-busy-bar" /></> : (s.isMine ? "Unseal" : "Release")}
-          </button>
-        ) : editStatus === "granted" ? (
-          <span className="action-btn editgrant" title="The owner approved your edit access">Can Edit</span>
-        ) : editStatus === "pending" ? (
-          <span className="action-btn editpending" title="Awaiting owner approval">Requested</span>
-        ) : editStatus === "denied" ? (
-          <span className="action-btn editdenied" title="Your request was declined">Declined</span>
-        ) : editStatus === "none" ? (
-          <button className="action-btn editreq" onClick={() => setShowReason(true)} title="Ask the owner for permission to edit this section">Request Edit</button>
-        ) : (
-          <span className="sv-section-row-lockedby"><OperatorChip accountId={s.lockedByAccountId} /></span>
-        )}
+        {primary.kind === "none" && editStatus === null && !s.isMine && !s.isExpired
+          ? <span className="sv-section-row-lockedby"><OperatorChip accountId={s.lockedByAccountId} /></span>
+          : <PrimarySlot primary={{ ...primary, forced }} name={`section ${s.sectionTitle}`} kind="section" busy={unsealing ? "unseal" : (busy ? "editreq" : null)} reqBusy={reqBusy} on={handlers} />}
+        <ActionMenu items={menu} onPick={onMenu} label={`More actions for section ${s.sectionTitle}`} testId="sv-section-kebab" />
       </div>
-      {showForce && (
-        <div className="card-reason-bar">
-          <input
-            className="card-reason-input"
-            placeholder="Why are you releasing a seal you do not own? (required, 3–300 characters)"
-            value={forceReason}
-            maxLength={300}
-            autoFocus
-            onChange={(e) => setForceReason(e.target.value)}
-            onKeyDown={(e) => { if (e.key === "Enter" && forceReason.trim().length >= 3) { onUnseal(s.sectionId, forceReason.trim()); setShowForce(false); } if (e.key === "Escape") { setShowForce(false); setForceReason(""); } }}
-          />
-          <span className="confirm-actions">
-            <button className="action-btn unlock" disabled={unsealing || forceReason.trim().length < 3} onClick={() => { onUnseal(s.sectionId, forceReason.trim()); setShowForce(false); }}>Release</button>
-            <button className="action-btn confirm-no" onClick={() => { setShowForce(false); setForceReason(""); }}>Cancel</button>
-          </span>
-        </div>
-      )}
-      {showReason && (
-        <div className="card-reason-bar">
-          <input
-            className="card-reason-input"
-            placeholder="Why do you need to edit this section? (optional)"
-            value={reasonText}
-            maxLength={300}
-            autoFocus
-            onChange={(e) => setReasonText(e.target.value)}
-            onKeyDown={(e) => { if (e.key === "Enter") submitReq(); if (e.key === "Escape") { setShowReason(false); setReasonText(""); } }}
-          />
-          <span className="confirm-actions">
-            <button className="action-btn editreq" onClick={submitReq} disabled={busy}>{busy ? <>Sending<span className="btn-busy-bar" /></> : "Send request"}</button>
-            <button className="action-btn confirm-no" onClick={() => { setShowReason(false); setReasonText(""); }}>Cancel</button>
-          </span>
-        </div>
-      )}
-      {s.isMine && requests && requests.length > 0 && (
-        <div className="card-editreq-inbox">
-          <span className="card-editreq-title">Edit requests ({requests.length})</span>
-          {requests.map((r) => (
-            <div key={r.requesterAccountId} className="card-editreq-row">
-              <span className="card-editreq-who">{r.requesterName || "Unknown user"}{r.reason ? <em className="card-editreq-reason"> — “{r.reason}”</em> : null}</span>
-              <span className="confirm-actions">
-                <button className="action-btn lock" disabled={!!reqBusy} onClick={() => resolve(r.requesterAccountId, "approve")}>{reqBusy === `${r.requesterAccountId}:approve` ? <>Approving<span className="btn-busy-bar" /></> : "Approve"}</button>
-                <button className="action-btn unlock" disabled={!!reqBusy} onClick={() => resolve(r.requesterAccountId, "deny")}>{reqBusy === `${r.requesterAccountId}:deny` ? <>Denying<span className="btn-busy-bar" /></> : "Deny"}</button>
-              </span>
-            </div>
-          ))}
-        </div>
-      )}
+      <CopiedNote shown={copied} />
+      <ErrorRow message={error} onDismiss={() => setError(null)} testId="sv-section-error" />
+      {bar && <ReasonBar mode={bar} kind="section" value={reasonText} onChange={setReasonText} onSubmit={submitBar} onCancel={() => { setBar(null); setReasonText(""); }} busy={busy || unsealing} testId="sv-section-reason-bar" />}
+      {s.isMine && <RequestInbox requests={requests} name={`section ${s.sectionTitle}`} reqBusy={reqBusy} onDecide={resolve} firstDecidedAbove={primary.kind === "decide"} testId="sv-section-inbox" />}
     </div>
   );
 };
 
-const SealedSectionsGroup = ({ pageId, onChanged }) => {
+const SealedSectionsGroup = ({ pageId, onChanged, viewer, siteUrl }) => {
   const [sections, setSections] = useState([]);
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(null);            // sectionId being unsealed
@@ -1360,9 +1059,13 @@ const SealedSectionsGroup = ({ pageId, onChanged }) => {
             <div className="sv-panel-loading">Loading sealed sections…</div>
           )}
 
-          {sections.map((s) => (
-            <SectionRow key={s.sectionId} section={s} unsealing={busy === s.sectionId} onUnseal={unseal} />
-          ))}
+          {sections.length > 0 && (
+            <RovingList label="Sealed sections" className="sv-section-list">
+              {sections.map((s) => (
+                <SectionRow key={s.sectionId} section={s} unsealing={busy === s.sectionId} onUnseal={unseal} viewer={viewer} siteUrl={siteUrl} pageId={pageId} />
+              ))}
+            </RovingList>
+          )}
         </>
       )}
     </div>
@@ -1437,6 +1140,11 @@ const ArtifactGridView = () => {
   const [siteUrl, setSiteUrl] = useState(null);
   const [spaceKey, setSpaceKey] = useState(null);
   const [pageLocation, setPageLocation] = useState(null);
+  // What the row rule needs to know about the caller (row-state.js `viewer`). canEditPage is
+  // assumed: the macro renders in view mode for anyone who can read the page, and every write is
+  // gated server-side — a refusal now shows its reason on the row instead of a dead button.
+  // isSpaceAdmin comes from check-user-role (it decides only whether "Force release…" is offered).
+  const [viewer, setViewer] = useState({ canEditPage: true, isSpaceAdmin: false });
   const [isEditing, setIsEditing] = useState(false);
   const [hasMore, setHasMore] = useState(false);
   const [nextCursor, setNextCursor] = useState(null);
@@ -1530,9 +1238,15 @@ const ArtifactGridView = () => {
 
       setPageId(pid);
       setSiteUrl(ctx.siteUrl || null);
-      setSpaceKey(ctx.extension?.content?.space?.key || ctx.extension?.space?.key || null);
+      const sk = ctx.extension?.content?.space?.key || ctx.extension?.space?.key || null;
+      setSpaceKey(sk);
       setPageLocation(ctx.extension?.location || null);
       setIsEditing(editing);
+      if (sk) {
+        invoke("check-user-role", { spaceKey: sk })
+          .then((r) => setViewer((v) => ({ ...v, isSpaceAdmin: r?.role === "steward" })))
+          .catch(() => {});
+      }
 
       // Discover and store extension key from page ADF (one-time discovery)
       // Custom UI context does NOT expose extensionKey, so the backend
@@ -1627,7 +1341,7 @@ const ArtifactGridView = () => {
 
   const renderCards = (files) =>
     files.map((att) => (
-      <ArtifactCard key={att.id} att={att} columns={cols} onRefresh={onRefresh} siteUrl={siteUrl} spaceKey={spaceKey} pageId={pageId} pageLocation={pageLocation} />
+      <ArtifactCard key={att.id} att={att} columns={cols} onRefresh={onRefresh} siteUrl={siteUrl} spaceKey={spaceKey} pageId={pageId} pageLocation={pageLocation} viewer={viewer} />
     ));
 
   return (
@@ -1673,7 +1387,7 @@ const ArtifactGridView = () => {
                 <span className="sv-card-section-title">Sealed</span>
                 <span className="sv-card-section-count">{claimedFiles.length}</span>
               </div>
-              <div {...gridProps}>{renderCards(claimedFiles)}</div>
+              <RovingList {...gridProps} label="Sealed attachments">{renderCards(claimedFiles)}</RovingList>
             </div>
           )}
           {staleFiles.length > 0 && (
@@ -1682,7 +1396,7 @@ const ArtifactGridView = () => {
                 <span className="sv-card-section-title">Missing</span>
                 <span className="sv-card-section-count badge-stale">{staleFiles.length}</span>
               </div>
-              <div {...gridProps}>{renderCards(staleFiles)}</div>
+              <RovingList {...gridProps} label="Missing attachments">{renderCards(staleFiles)}</RovingList>
             </div>
           )}
           {availableFiles.length > 0 && (
@@ -1691,7 +1405,7 @@ const ArtifactGridView = () => {
                 <span className="sv-card-section-title">Available</span>
                 <span className="sv-card-section-count">{availableFiles.length}</span>
               </div>
-              <div {...gridProps}>{renderCards(availableFiles)}</div>
+              <RovingList {...gridProps} label="Available attachments">{renderCards(availableFiles)}</RovingList>
             </div>
           )}
           {enriching && (
@@ -1743,7 +1457,7 @@ const ArtifactGridView = () => {
 
       {/* Sealed Sections (Content Sealing) — page CONTENT, not files. Kept last and visually
           divided from everything above so the two are never read as one surface. */}
-      {!loading && !isEditing && <SealedSectionsGroup pageId={pageId} onChanged={onRefresh} />}
+      {!loading && !isEditing && <SealedSectionsGroup pageId={pageId} onChanged={onRefresh} viewer={viewer} siteUrl={siteUrl} />}
 
       {/* Activity (A1) — the record of what happened on this page, newest first. Last, because it
           is a log to consult rather than a control to act on. */}

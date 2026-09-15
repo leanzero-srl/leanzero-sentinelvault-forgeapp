@@ -29,9 +29,9 @@ const Section = ({ title, description, children, testId }) => (
   </section>
 );
 
-const Toggle = ({ checked, onChange, label }) => (
-  <label className="form-checkbox">
-    <input type="checkbox" aria-label={label} checked={checked} onChange={onChange} />
+const Toggle = ({ checked, onChange, label, disabled }) => (
+  <label className={`form-checkbox${disabled ? " is-disabled" : ""}`}>
+    <input type="checkbox" aria-label={label} checked={checked} onChange={onChange} disabled={disabled} />
   </label>
 );
 
@@ -379,17 +379,24 @@ export default function WorkflowSettingsEditor({ spaceKey = null, defRev = 0 }) 
                 </SettingsRow>
               )}
               {(settings.approval.approvers || []).length === 0 && settings.enforceMode === "revert" && (
-                <p className="alert-error" role="alert">No approvers are set, so every non-steward edit to an Approved page would be reverted. Add an approver, or use “Move it back to an earlier state” below.</p>
+                <p className="alert-error" role="alert">No approvers are set, so every edit by someone who is not an approver or space admin to an Approved page would be reverted. Add an approver, or use “Move it back to an earlier state” below.</p>
               )}
             </div>
           )}
 
-          <SettingsRow
-            label="Require a signed decision"
-            description="Every Approve or Deny must carry the current code from the approver's authenticator app (set up once on their My work page). The approval record marks each decision as signed."
-          >
-            <Toggle label="Require a signed decision" checked={!!settings.requireSignature} onChange={(e) => setSettings((p) => ({ ...p, requireSignature: e.target.checked }))} />
-          </SettingsRow>
+          {/* P2 (UX review §3): a signed decision only exists where there is a decision — this row
+              depends on "Require approval" and says so instead of sitting flat beside it. */}
+          <div className={`settings-row is-dependent depth-1${settings.approval ? "" : " is-locked"}`} data-testid="wf-row-requireSignature" data-locked={settings.approval ? "false" : "true"}>
+            <div className="settings-row-info">
+              <p className="settings-row-label">Require a signed decision</p>
+              <p className="settings-row-description">Every Approve or Deny must carry the current code from the approver's authenticator app (set up once on their My work page). The approval record marks each decision as signed.</p>
+              <p className="settings-row-default"><span>Effective default:</span> Off</p>
+              {!settings.approval && <p className="settings-row-reason" data-testid="wf-reason-requireSignature">Turn on Require approval to reach Approved first</p>}
+            </div>
+            <div className="settings-row-control">
+              <Toggle label="Require a signed decision" checked={!!settings.requireSignature} disabled={!settings.approval} onChange={(e) => setSettings((p) => ({ ...p, requireSignature: e.target.checked }))} />
+            </div>
+          </div>
           <SettingsRow
             label="Require content rules before Approved"
             description="Before a page can reach Approved, the required headings, tables, labels and length limits set in Validations must all pass. The person moving it sees exactly what's missing and can't proceed until it's fixed."
@@ -424,10 +431,10 @@ export default function WorkflowSettingsEditor({ spaceKey = null, defRev = 0 }) 
           )}
         </Section>
 
-        <Section title={`Protecting ${enforceName} pages`} description={`${enforceName} pages are protected: an edit by someone who is not an approver or a steward is undone or sends the page back, and every ${enforceName} page carries a review date.`} testId="wf-section-protection">
+        <Section title={`Protecting ${enforceName} pages`} description={`${enforceName} pages are protected: an edit by someone who is not an approver or a space admin is undone or sends the page back, and every ${enforceName} page carries a review date.`} testId="wf-section-protection">
           <SettingsRow
             label={`If an ${enforceName} page is edited by a non-approver`}
-            description="Choose what happens when someone who isn’t an approver (and isn’t a steward) edits the page. “Move it back” keeps their edit — you choose where it lands below; “Revert” restores the approved version and is stricter."
+            description="Choose what happens when someone who isn’t an approver (and isn’t a space admin) edits the page. “Move it back” keeps their edit — you choose where it lands below; “Revert” restores the approved version and is stricter."
           >
             <MiniSelect
               ariaLabel="Enforcement when an approved page is edited"
@@ -476,7 +483,7 @@ export default function WorkflowSettingsEditor({ spaceKey = null, defRev = 0 }) 
           {clockStates.length > 0 && (
             <SettingsRow
               label="Review clocks"
-              description={`How long a page may sit in each state before it is due for review. Its ribbon shows the date, and a steward can move it from there. Leave a state blank to use the workflow's own value, or none. ${enforceName} pages use the setting above.`}
+              description={`How long a page may sit in each state before it is due for review. Its ribbon shows the date, and a space admin can move it from there. Leave a state blank to use the workflow's own value, or none. ${enforceName} pages use the setting above.`}
             >
               <div className="wf-clock-list">
                 {clockStates.map((s) => (

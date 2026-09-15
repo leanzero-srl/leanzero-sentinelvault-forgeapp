@@ -50,6 +50,18 @@ const CARDS_PER_ROW_OPTIONS = [
   { value: 3, label: "3 per row" },
 ];
 
+// The bridge can stall (P1-6: "Please wait…" forever, Apply that never returns). Every bridge
+// call is raced against a deadline so the dialog always reaches a state with a button in it.
+const CONTEXT_WAIT_MS = 10_000;
+const SUBMIT_WAIT_MS = 15_000;
+const withDeadline = (promise, ms, what) => new Promise((resolve, reject) => {
+  const t = setTimeout(() => reject(new Error(`${what} did not answer within ${Math.round(ms / 1000)}s`)), ms);
+  Promise.resolve(promise).then((v) => { clearTimeout(t); resolve(v); }, (e) => { clearTimeout(t); reject(e); });
+});
+const bridgeClose = () => {
+  try { const r = view.close(); if (r && r.catch) r.catch((e) => console.info("[PANEL-SETUP] view.close rejected:", e?.message || e)); } catch (e) { console.info("[PANEL-SETUP] view.close unavailable:", e?.message || e); }
+};
+
 const INITIAL_CONFIG = {
   columns: COLUMN_OPTIONS.reduce((acc, col) => ({ ...acc, [col.key]: col.defaultOn }), {}),
   rowsPerPage: 15,
@@ -110,26 +122,41 @@ const GridLayoutEditor = () => {
   const [config, setConfig] = useState(INITIAL_CONFIG);
   const [loading, setLoading] = useState(true);
   const [status, setStatus] = useState(null);
+  const [initError, setInitError] = useState(null); // the saved config could not be read
+  const [busy, setBusy] = useState(false);
+  const [loadSeq, setLoadSeq] = useState(0); // bumped by "Try again" on the init path
 
   useEffect(() => {
+    let cancelled = false;
     (async () => {
-      await enablePaletteSync();
-      const ctx = await view.getContext();
-      const saved = ctx.extension?.config;
-      if (saved) {
-        setConfig({
-          columns: { ...INITIAL_CONFIG.columns, ...(saved.columns || {}) },
-          rowsPerPage: saved.rowsPerPage ?? INITIAL_CONFIG.rowsPerPage,
-          showUploadZone: saved.showUploadZone ?? INITIAL_CONFIG.showUploadZone,
-          cardsPerRow: saved.cardsPerRow ?? INITIAL_CONFIG.cardsPerRow,
-        });
+      setLoading(true);
+      setInitError(null);
+      try { await withDeadline(enablePaletteSync(), CONTEXT_WAIT_MS, "the theme bridge"); } catch (e) { console.info("[PANEL-SETUP] palette sync skipped:", e?.message || e); }
+      try {
+        const ctx = await withDeadline(view.getContext(), CONTEXT_WAIT_MS, "the editor");
+        const saved = ctx?.extension?.config;
+        if (!cancelled && saved) {
+          setConfig({
+            columns: { ...INITIAL_CONFIG.columns, ...(saved.columns || {}) },
+            rowsPerPage: saved.rowsPerPage ?? INITIAL_CONFIG.rowsPerPage,
+            showUploadZone: saved.showUploadZone ?? INITIAL_CONFIG.showUploadZone,
+            cardsPerRow: saved.cardsPerRow ?? INITIAL_CONFIG.cardsPerRow,
+          });
+        }
+      } catch (e) {
+        console.error("[PANEL-SETUP] could not read the saved preferences:", e);
+        // The form still renders (defaults) so the dialog never hangs; Apply would overwrite
+        // the saved preferences with defaults, so the banner says so and offers a retry.
+        if (!cancelled) setInitError(e?.message || "The editor did not answer.");
       }
-      setLoading(false);
+      if (!cancelled) setLoading(false);
     })();
-  }, []);
+    return () => { cancelled = true; };
+  }, [loadSeq]);
 
+  // Success clears itself; an error stays until the user retries or changes something.
   useEffect(() => {
-    if (!status) return;
+    if (!status || status.type !== "success") return undefined;
     const t = setTimeout(() => setStatus(null), 3000);
     return () => clearTimeout(t);
   }, [status]);
@@ -143,17 +170,24 @@ const GridLayoutEditor = () => {
   };
 
   const onApply = async () => {
+    if (busy) return;
+    setBusy(true);
+    setStatus(null);
     try {
-      await view.submit({ config });
+      await withDeadline(view.submit({ config }), SUBMIT_WAIT_MS, "the editor");
       setStatus({ type: "success", message: "Preferences applied" });
+      // The editor keeps the dialog open after a submit it accepted (P1-6); close it ourselves.
+      bridgeClose();
     } catch (e) {
-      console.error("Failed to submit config:", e);
-      setStatus({ type: "error", message: "Could not apply" });
+      console.error("[PANEL-SETUP] submit failed:", e);
+      setStatus({ type: "error", message: `Could not apply the preferences — ${e?.message || "the editor refused the change"}.` });
+    } finally {
+      setBusy(false);
     }
   };
 
   if (loading) {
-    return <div className="mc-panel loading">Please wait…</div>;
+    return <div className="mc-panel loading" data-testid="mc-loading">Please wait…</div>;
   }
 
   return (
@@ -162,6 +196,13 @@ const GridLayoutEditor = () => {
         <h1 className="mc-title">Sentinel Vault</h1>
         <span className="mc-subtitle">Panel preferences</span>
       </div>
+
+      {initError && (
+        <div className="mc-status error" role="alert" data-testid="mc-init-error">
+          <span>Could not read the saved preferences ({initError}). Defaults are shown; applying now would replace what was saved.</span>
+          <button type="button" className="mc-status-retry" onClick={() => setLoadSeq((n) => n + 1)}>Try again</button>
+        </div>
+      )}
 
       {/* Columns */}
       <div className="mc-section">
@@ -244,16 +285,21 @@ const GridLayoutEditor = () => {
         <button
           className={`mc-btn-primary ${status?.type === "success" ? "saved" : ""}`}
           onClick={onApply}
+          disabled={busy}
+          data-testid="mc-apply"
         >
-          {status?.type === "success" ? "Applied" : "Apply"}
+          {busy ? "Applying…" : status?.type === "success" ? "Applied" : "Apply"}
         </button>
-        <button className="mc-btn-subtle" onClick={() => view.close()}>
-          Discard
+        <button type="button" className="mc-btn-subtle" onClick={bridgeClose} data-testid="mc-cancel">
+          Cancel
         </button>
       </div>
 
       {status && status.type === "error" && (
-        <div className={`mc-status ${status.type}`}>{status.message}</div>
+        <div className="mc-status error" role="alert" data-testid="mc-apply-error">
+          <span>{status.message}</span>
+          <button type="button" className="mc-status-retry" onClick={onApply} disabled={busy}>Retry</button>
+        </div>
       )}
     </div>
   );

@@ -64,6 +64,14 @@ import {
   sealSection,
   unsealSection,
 } from "./server/capsules/section-seals/actions.js";
+// 5.0 byline chip + page-details modal: the property writer and the summary resolver (both light —
+// classification/provider + section-seals/logic + editreq/logic, all already in the bundle).
+import { refreshByline } from "./server/capsules/page-details/byline.js";
+import { pageDetailsSummary } from "./server/capsules/page-details/actions.js";
+// 5.0 classification: the six resolvers as an ACTOR, so the authorization negatives (a real
+// non-admin account naming a page it cannot edit, a non-site-admin managing levels) can be driven
+// from a spec — the browser only ever carries the harness user's own token.
+import { actions as classificationActions } from "./server/capsules/classification/actions.js";
 // B7: plain-user persona resolvers (realms/actions.js is now import-safe after the it57 lazy-Queue
 // refactor). check-user-role returns "user" for a synthetic actor (asUser has no webtrigger context);
 // the steward-request flow is asApp + KVS.
@@ -119,7 +127,7 @@ const q = (req, n) => {
 // Resolve a capsule's registered action by key — for resolvers the capsule does not export by
 // name. Dispatching through the same `actions` list registry.js consumes means the seam drives the
 // exact function the router would, not a copy.
-const byKey = (list, key) => list.find(([k]) => k === key)[1];
+const byKey = (list, key) => (list.find(([k]) => k === key) || [])[1];
 
 export async function testStateTrigger(req) {
   const secret = process.env.HARNESS_SECRET;
@@ -432,6 +440,25 @@ export async function testStateTrigger(req) {
       // B1: the created-page auto-assign path with label-scoped selection, driven directly.
       if (fn === "autoAssign") {
         const r = await autoAssignOnEvent({ pageId: q(req, "pageId"), spaceKey: q(req, "spaceKey"), actorAccountId: q(req, "actor"), actorName: q(req, "actor") });
+        return json(200, { invoked: fn, result: r });
+      }
+      // 5.0: recompute + write the byline property for a page (what every seal/section/classification
+      // write does with one line), and the page-details summary for an actor.
+      if (fn === "refreshByline") {
+        const r = await refreshByline(q(req, "pageId"), { force: q(req, "force") === "1" });
+        return json(200, { invoked: fn, result: r });
+      }
+      if (fn.startsWith("classification.")) {
+        const key = "classification-" + fn.slice("classification.".length);
+        let payload = {};
+        try { payload = q(req, "payload") ? JSON.parse(q(req, "payload")) : {}; } catch (_) { payload = {}; }
+        const handler = byKey(classificationActions, key);
+        if (!handler) return json(400, { error: `unknown classification fn ${key}` });
+        const r = await handler({ payload, context: { accountId: q(req, "actor"), extension: {} } });
+        return json(200, { invoked: fn, result: r });
+      }
+      if (fn === "pageDetailsSummary") {
+        const r = await pageDetailsSummary({ payload: { pageId: q(req, "pageId") }, context: { accountId: q(req, "actor"), extension: {} } });
         return json(200, { invoked: fn, result: r });
       }
       // B1: the definition editor's resolvers (steward-gated on the space named).

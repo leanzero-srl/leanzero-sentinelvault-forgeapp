@@ -138,7 +138,7 @@ const LevelsEditor = ({ levels, onSaved, onError }) => {
         <div className="cls-level-row" key={`${l.id}-${i}`} data-testid={`cls-level-row-${l.id}`}>
           <SwatchPicker value={l.color} onChange={(color) => update(i, { color })} label={`Colour for ${l.name || "level"}`} />
           <input className="form-input" value={l.name} placeholder="Level name" onChange={(e) => update(i, { name: e.target.value })} aria-label="Level name" />
-          <input className="form-input cls-rank" type="number" min={1} max={99} value={l.rank} onChange={(e) => update(i, { rank: e.target.value })} aria-label="Rank" />
+          <input className="form-input cls-rank" type="text" inputMode="numeric" pattern="[0-9]*" value={l.rank} onChange={(e) => update(i, { rank: e.target.value.replace(/[^0-9]/g, "").slice(0, 2) })} aria-label="Rank" />
           <input className="form-input" value={l.description || ""} placeholder="What this level means" onChange={(e) => update(i, { description: e.target.value })} aria-label="Description" />
           <button type="button" className="cls-level-remove" onClick={() => remove(i)} disabled={draft.length <= 1} aria-label={`Remove ${l.name || "level"}`}>×</button>
         </div>
@@ -161,6 +161,8 @@ export default function ClassificationTab() {
   const [bulkBusy, setBulkBusy] = useState(false);
   const [notice, setNotice] = useState(null); // { type: "success" | "error", text }
   const [filter, setFilter] = useState("");
+  // Personal spaces (~accountId keys) are noise for a site-wide default policy; hidden by default (UAT defect 9).
+  const [hidePersonal, setHidePersonal] = useState(true);
 
   const load = useCallback(async () => {
     setState((s) => ({ ...s, loading: true, error: null }));
@@ -182,8 +184,9 @@ export default function ClassificationTab() {
   const levelById = useMemo(() => new Map(state.levels.map((l) => [l.id, l])), [state.levels]);
   const visible = useMemo(() => {
     const q = filter.trim().toLowerCase();
-    return q ? state.spaces.filter((s) => s.name.toLowerCase().includes(q) || s.key.toLowerCase().includes(q)) : state.spaces;
-  }, [state.spaces, filter]);
+    const pool = hidePersonal ? state.spaces.filter((s) => !String(s.key).startsWith("~") && s.type !== "personal") : state.spaces;
+    return q ? pool.filter((s) => s.name.toLowerCase().includes(q) || s.key.toLowerCase().includes(q)) : pool;
+  }, [state.spaces, filter, hidePersonal]);
 
   const applyResults = (results, levelId) => {
     const okIds = new Set(results.filter((r) => r.ok).map((r) => String(r.spaceId)));
@@ -237,7 +240,7 @@ export default function ClassificationTab() {
   return (
     <div className="settings-panel cls-tab" data-testid="cls-tab">
       {notice && (
-        <div className={notice.type === "success" ? "alert-success" : "alert-error"} data-testid="cls-notice" onClick={() => setNotice(null)}>{notice.text}</div>
+        <div className={`cls-notice-sticky ${notice.type === "success" ? "alert-success" : "alert-error"}`} role="status" data-testid="cls-notice" onClick={() => setNotice(null)}>{notice.text}</div>
       )}
 
       <section className="cls-section">
@@ -276,6 +279,7 @@ export default function ClassificationTab() {
         <div className="cls-section-head">
           <h4 className="cls-section-title">Space defaults</h4>
           <input className="form-input cls-filter" placeholder="Filter spaces…" value={filter} onChange={(e) => setFilter(e.target.value)} aria-label="Filter spaces" />
+          <label className="cls-personal-toggle"><label className="form-checkbox"><input type="checkbox" checked={!hidePersonal} onChange={(e) => setHidePersonal(!e.target.checked)} aria-label="Show personal spaces" /></label><span>Show personal spaces</span></label>
         </div>
         <p className="settings-row-description">A page with no classification of its own takes its space's default. {state.siteAdmin ? "You see every space on the site." : "You see the spaces you administer."}</p>
 
@@ -296,10 +300,10 @@ export default function ClassificationTab() {
             <table className="cls-table" data-testid="cls-spaces-table">
               <thead>
                 <tr>
-                  <th scope="col" className="cls-col-check"><input type="checkbox" checked={allVisibleSelected} onChange={(e) => toggleAll(e.target.checked)} aria-label="Select all shown spaces" /></th>
-                  <th scope="col">Key</th>
+                  <th scope="col" className="cls-col-check"><label className="form-checkbox"><input type="checkbox" checked={allVisibleSelected} onChange={(e) => toggleAll(e.target.checked)} aria-label="Select all shown spaces" /></label></th>
+                  <th scope="col" className="cls-col-key">Key</th>
                   <th scope="col">Space</th>
-                  <th scope="col">Type</th>
+                  <th scope="col" className="cls-col-type">Type</th>
                   <th scope="col">Default level</th>
                   <th scope="col">Change</th>
                 </tr>
@@ -307,10 +311,10 @@ export default function ClassificationTab() {
               <tbody>
                 {visible.map((s) => (
                   <tr key={s.id} data-testid={`cls-space-row-${s.key}`} className={selected.has(s.id) ? "sel" : ""}>
-                    <td className="cls-col-check"><input type="checkbox" checked={selected.has(s.id)} onChange={(e) => setSelected((prev) => { const n = new Set(prev); if (e.target.checked) n.add(s.id); else n.delete(s.id); return n; })} aria-label={`Select ${s.name}`} /></td>
+                    <td className="cls-col-check"><label className="form-checkbox"><input type="checkbox" checked={selected.has(s.id)} onChange={(e) => setSelected((prev) => { const n = new Set(prev); if (e.target.checked) n.add(s.id); else n.delete(s.id); return n; })} aria-label={`Select ${s.name}`} /></label></td>
                     <td className="cls-key">{s.key}</td>
                     <td>{s.name}</td>
-                    <td className="cls-type">{s.type}</td>
+                    <td className="cls-type cls-col-type">{String(s.type || "").replace(/_/g, " ")}</td>
                     <td><LevelChip level={levelById.get(s.defaultLevelId) || null} testId={`cls-space-level-${s.key}`} /></td>
                     <td>
                       <LevelPicker value={s.defaultLevelId || NONE} levels={state.levels} onChange={(v) => setOne(s, v)} ariaLabel={`Default level for ${s.name}`} testId={`cls-space-picker-${s.key}`} disabled={busyRows.has(s.id)} />

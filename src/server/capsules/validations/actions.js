@@ -60,7 +60,7 @@ const storeConfig = async (req) => {
   const authorized = !!caller && ((scope === "space" && key)
     ? await isOperatorSteward(caller, key)
     : await isOperatorSiteAdmin(caller));
-  if (!authorized) return { success: false, reason: "Not authorized — steward or admin access required." };
+  if (!authorized) return { success: false, reason: "Not authorized — space admin access required." };
   // Cost backstop: never persist a non-Haiku AI model.
   if (data.ai && data.ai.model && !isForgeLlmModelAllowed(data.ai.model)) {
     data.ai.model = FORGE_LLM_DEFAULT_MODEL;
@@ -133,7 +133,7 @@ const approvePageGate = async (req) => {
   const spaceKey = await resolvePageSpaceKey(pageId);
   let allowed = false;
   try { allowed = !!spaceKey && await authorizeSteward(accountId, spaceKey); } catch (_) { /* deny */ }
-  if (!allowed) return { success: false, reason: "Only a steward of this page's space can approve it" };
+  if (!allowed) return { success: false, reason: "Only an admin of this page's space can approve it" };
 
   await writeValidationState(pageId, {
     state: "passed",
@@ -165,7 +165,7 @@ export const enqueuePageValidation = async (req) => {
   const spaceKey = await resolvePageSpaceKey(pageId);
   let allowed = false;
   try { allowed = !!spaceKey && await authorizeSteward(accountId, spaceKey); } catch (_) { /* deny */ }
-  if (!allowed) return { success: false, reason: "Only a steward of this page's space can run an AI review" };
+  if (!allowed) return { success: false, reason: "Only an admin of this page's space can run an AI review" };
 
   const ai = await resolveAiConfig(spaceKey);
   if (!ai || ai.enabled !== true) {

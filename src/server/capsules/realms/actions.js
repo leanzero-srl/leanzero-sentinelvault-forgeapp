@@ -3,11 +3,11 @@ import { kvs, WhereConditions } from "@forge/kvs";
 import { resolveRealm } from "./logic.js";
 import { Queue } from "@forge/events";
 
-import { authorizeSteward, isOperatorSteward } from "../../shared/steward-checks.js";
+import { authorizeSteward, isOperatorSteward, isOperatorSiteAdmin, isOperatorRealmSteward, isOperatorInStewardCohorts } from "../../shared/steward-checks.js";
 import { probeAttachmentStatus } from "../../infra/attachment-status.js";
 import { removeSealContentProp, touchSealTimestamp } from "../sealing/logic.js";
 import { notifyWatchers, sweepWatchers } from "../bulletins/logic.js";
-import { sweepEditAccess } from "../editreq/logic.js";
+import { sweepEditAccess, writeSpaceIndex, listSpacesWithPendingStewardRequests, listPendingStewardRequestsInSpace } from "../editreq/logic.js";
 import {
   mailStewardOverrideNotice,
   fetchOperatorProfile,
@@ -15,6 +15,7 @@ import {
 import { recordActivity } from "../../infra/activity-log.js";
 import { resolvePageSpaceKey } from "../../shared/content-access.js";
 import { validateReleaseReason } from "../../shared/release-reason.js";
+import { refreshByline } from "../page-details/byline.js"; // 5.0 byline chip
 
 // Queue for background realm scanning
 // it57: realm-audit-queue is constructed lazily at push time (see launch-realm-audit) so this module
@@ -324,6 +325,7 @@ const stewardUnseal = async (req) => {
         contentId: sealRecord.contentId,
       });
 
+      if (sealRecord.contentId) await refreshByline(sealRecord.contentId).catch((e) => console.warn("[BYLINE] steward-unseal (expired) refresh failed:", e?.message || e));
       return { success: true, reason: "lock expired" };
     }
   }
@@ -420,6 +422,7 @@ const stewardUnseal = async (req) => {
         sealRecord.attachmentName || "Unknown Attachment",
         sealRecord.contentId,
         unsealDate,
+        sealRecord.spaceKey || null, // P1-4: the seal's own space → quiet mode without a page lookup
       );
     } catch (noticeError) {
       console.error(
@@ -429,6 +432,7 @@ const stewardUnseal = async (req) => {
     }
   }
 
+  if (sealRecord.contentId) await refreshByline(sealRecord.contentId).catch((e) => console.warn("[BYLINE] steward-unseal refresh failed:", e?.message || e));
   return { success: true, reason: "admin override" };
 };
 
@@ -480,6 +484,8 @@ export const requestStewardAccess = async (req) => {
       requestedAt: new Date().toISOString(),
       status: "pending",
     });
+    // P1-3: the space joins the "someone is waiting" index with the record (read back by key).
+    await writeSpaceIndex(await kvs.get(`steward-request-${skKey(spaceKey)}-${accountId}`)).catch((e) => console.warn("[REQUEST-STEWARD] space index", e));
     return { success: true };
   } catch (e) {
     console.error("[REQUEST-STEWARD] Error:", e);
@@ -504,6 +510,7 @@ export const checkStewardRequest = async (req) => {
       if (deniedAt && (Date.now() - deniedAt.getTime()) >= cooldownMs) {
         // Cooldown elapsed — clear the denied record so user can retry
         await kvs.delete(`steward-request-${skKey(spaceKey)}-${accountId}`);
+        await listPendingStewardRequestsInSpace(spaceKey).catch(() => {}); // heals the space index row
         return { status: "none" };
       }
       return { status: "denied", deniedAt: existing.deniedAt };
@@ -577,6 +584,7 @@ const approveStewardRequest = async (req) => {
 
     // Delete the request
     await kvs.delete(requestKey);
+    await listPendingStewardRequestsInSpace(spaceKey).catch(() => {}); // heals the space index row
 
     return { success: true };
   } catch (e) {
@@ -608,11 +616,54 @@ const denyStewardRequest = async (req) => {
       status: "denied",
       deniedAt: new Date().toISOString(),
     });
+    await listPendingStewardRequestsInSpace(spaceKey).catch(() => {}); // heals the space index row
     return { success: true };
   } catch (e) {
     console.error("[DENY-STEWARD] Error:", e);
     return { success: false, reason: e.message };
   }
+};
+
+/**
+ * P1-3: the space-admin access requests the CALLER may decide, across every space. The approver
+ * of a request is a role, not an account, so there is no per-approver index; instead the space
+ * index says which spaces have someone waiting (a handful, normally none), and every one of them
+ * is gated on the caller's role in THAT space (SV-SEC-1: the caller must be a space admin of each
+ * space it aggregates; the payload names nothing). A site admin passes every gate at once.
+ * `eligible` tells the UI whether the caller decides access requests at all: a site admin, a
+ * configured admin user, or an admin of at least one space with someone waiting.
+ */
+export async function listMyStewardRequestsCore(accountId) {
+  if (!accountId) return { requests: [], eligible: false };
+  const siteAdmin = await isOperatorSiteAdmin(accountId);
+  let eligible = siteAdmin;
+  if (!eligible) {
+    try {
+      const globalConfig = await kvs.get("admin-settings-global");
+      eligible = (globalConfig?.adminUsers || []).some((u) => (typeof u === "string" ? u : u?.accountId) === accountId);
+    } catch (_) { /* stays false */ }
+  }
+  const spaces = (await listSpacesWithPendingStewardRequests()).slice(0, 25);
+  const requests = [];
+  for (const spaceKey of spaces) {
+    let allowed = siteAdmin;
+    if (!allowed) {
+      try { allowed = (await isOperatorRealmSteward(accountId, spaceKey)) || (await isOperatorInStewardCohorts(accountId, spaceKey)); }
+      catch (_) { allowed = false; }
+    }
+    if (!allowed) continue;
+    eligible = true;
+    for (const r of await listPendingStewardRequestsInSpace(spaceKey)) {
+      requests.push({ spaceKey: r.spaceKey || spaceKey, accountId: r.accountId, displayName: r.displayName || null, requestedAt: r.requestedAt || null });
+    }
+  }
+  requests.sort((a, b) => String(b.requestedAt || "").localeCompare(String(a.requestedAt || "")));
+  return { requests, eligible };
+}
+
+const listMyStewardRequests = async (req) => {
+  try { return await listMyStewardRequestsCore(req.context?.accountId); }
+  catch (e) { console.error("[LIST-MY-STEWARD-REQUESTS] Error:", e); throw e; } // a failure must reach the UI as one, not as "nothing waiting"
 };
 
 export const actions = [
@@ -625,6 +676,7 @@ export const actions = [
   ["request-steward-access", requestStewardAccess],
   ["check-steward-request", checkStewardRequest],
   ["list-steward-requests", listStewardRequests],
+  ["list-my-steward-requests", listMyStewardRequests],
   ["approve-steward-request", approveStewardRequest],
   ["deny-steward-request", denyStewardRequest],
 ];

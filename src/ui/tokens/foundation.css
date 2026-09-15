@@ -1,6 +1,36 @@
 /* Sentinel Vault — LeanZero Design System */
 /* Theme detection via Confluence data-color-mode attribute */
 
+/* ═══════════════════════════════════════════════════════════════════════════
+   STATE COLOUR MAP (2026-09-15, UX review P1-1 / P1-2 / P1-8 / P3-3)
+   ───────────────────────────────────────────────────────────────────────────
+   Every state lozenge, chip and card border uses ONE solid, saturated fill with
+   white or near-black ink — never a pastel tint. The surfaces do not share a
+   stylesheet (webpack copies one flat file per surface), so the SAME hex values
+   are repeated verbatim in overlay.css, inline-panel.css, realm-console.css and
+   steward-console.css. Change them here first, then mirror.
+
+   State (class)              LIGHT fill / ink          DARK fill / ink
+   Available   (.unlocked)    #0E7490 / #FFFFFF 5.36   #22D3EE / #0F172A 9.88
+   My Seal     (.locked-by-me)#4F46E5 / #FFFFFF 6.29   #818CF8 / #0F172A 5.98
+   Sealed      (.locked)      #B45309 / #FFFFFF 5.02   #FBBF24 / #0F172A 10.69
+   Overdue     (.expired)     #DC2626 / #FFFFFF 4.83   #F87171 / #0F172A 6.45
+   Missing     (.stale)       #475569 / #FFFFFF 7.58   #94A3B8 / #0F172A 6.96
+   Trashed     (.trashed)     #C2410C / #FFFFFF 5.18   #FB923C / #0F172A 7.89
+   Requested   (.editpending) #F59E0B / #1F2937 6.83   #F59E0B / #1F2937 6.83
+   Can Edit    (.editgrant)   #15803D / #FFFFFF 5.02   #22C55E / #052E16
+   Declined    (.editdenied)  = Overdue                = Overdue
+   Watching    (.watching)    = primary                = primary
+   Card borders use the state fill at 2px (all >= 3:1 on the card background).
+
+   Primary (brand cyan): light #0E7490 / #FFFFFF 5.36 (hover #155E75, active
+   #164E63); dark #22D3EE / #0F172A 9.88 (hover #06B6D4, active #0891B2).
+   The old #0891B2 under white ink was 3.68:1 — do not reintroduce it.
+   Danger and Extend buttons take --sv-text-on-primary (flips per theme), never
+   --sv-text-inverse (always white, 2.77:1 on the dark-mode red).
+   Full table: docs/CONTRAST-2026-09-15.md
+   ═══════════════════════════════════════════════════════════════════════════ */
+
 :root {
   /* ── Backgrounds (slate) ────────────────────────── */
   --sv-bg-primary: #FFFFFF;
@@ -13,7 +43,7 @@
   /* ── Text (slate) ──────────────────────────────── */
   --sv-text-primary: #0F172A;
   --sv-text-secondary: #475569;
-  --sv-text-subtle: #94A3B8;
+  --sv-text-subtle: #5B6B80; /* 4.97:1 on --sv-bg-tertiary; was #94A3B8 = 2.56:1 */
   --sv-text-disabled: #CBD5E1;
   --sv-text-inverse: #FFFFFF;
   --sv-text-on-primary: #FFFFFF;
@@ -21,15 +51,15 @@
   /* ── Borders (slate) ───────────────────────────── */
   --sv-border-primary: #E2E8F0;
   --sv-border-secondary: #E2E8F0;
-  --sv-border-focus: #0891B2;
+  --sv-border-focus: #0E7490;
 
   /* ── Surfaces ───────────────────────────────────── */
   --sv-surface-raised: #FFFFFF;
   --sv-surface-overlay: #FFFFFF;
 
   /* ── Status: Success (teal) ────────────────────── */
-  --sv-status-success: #0891B2;
-  --sv-status-success-bg: #ECFEFF;
+  --sv-status-success: #0E7490;
+  --sv-status-success-bg: #ECFEFF; /* legacy tint — NOT for new work; state chips use the solid map above */
   --sv-status-success-border: #A5F3FC;
 
   /* ── Status: Warning / Danger ───────────────────── */
@@ -38,7 +68,7 @@
   --sv-status-warning-border: #FECACA;
 
   /* ── Status: Info ───────────────────────────────── */
-  --sv-status-info: #0891B2;
+  --sv-status-info: #0E7490;
   --sv-status-info-bg: #ECFEFF;
   --sv-status-info-border: #A5F3FC;
 
@@ -48,14 +78,14 @@
   --sv-status-neutral-border: #E2E8F0;
 
   /* ── Interactive: Primary (Teal) ────────────────── */
-  --sv-interactive-primary: #0891B2;
-  --sv-interactive-primary-hover: #0E7490;
-  --sv-interactive-primary-active: #155E75;
+  --sv-interactive-primary: #0E7490;
+  --sv-interactive-primary-hover: #155E75;
+  --sv-interactive-primary-active: #164E63;
 
   /* ── Interactive: Success ────────────────────────── */
-  --sv-interactive-success: #0891B2;
-  --sv-interactive-success-hover: #0E7490;
-  --sv-interactive-success-active: #155E75;
+  --sv-interactive-success: #0E7490;
+  --sv-interactive-success-hover: #155E75;
+  --sv-interactive-success-active: #164E63;
 
   /* ── Interactive: Danger ─────────────────────────── */
   --sv-interactive-danger: #DC2626;
@@ -65,8 +95,8 @@
   /* ── Interactive: Extend (emerald) ───────────────── */
   /* F4: renewing a seal is its own action and needs its own hue — the card already spends
      cyan on Seal, red on Unseal, violet on Request Edit and amber on Requested. */
-  --sv-interactive-extend: #059669;
-  --sv-interactive-extend-hover: #047857;
+  --sv-interactive-extend: #047857; /* 5.48:1 under white; #059669 was 3.77 */
+  --sv-interactive-extend-hover: #065F46;
 
   /* ── Scrollbar ──────────────────────────────────── */
   --sv-scrollbar-track: #F1F5F9;
@@ -99,8 +129,8 @@
   --sv-font-family: "Inter", -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", system-ui, sans-serif;
 
   /* ── Label colors ───────────────────────────────── */
-  --sv-label-bg: #ECFEFF;
-  --sv-label-text: #0E7490;
+  --sv-label-bg: #0E7490; /* solid label chip, white ink */
+  --sv-label-text: #FFFFFF;
   --sv-label-border: #A5F3FC;
   --sv-label-remove-hover: #DC2626;
 
@@ -120,7 +150,7 @@ html[data-color-mode="dark"] {
 
   --sv-text-primary: #F8FAFC;
   --sv-text-secondary: #CBD5E1;
-  --sv-text-subtle: #64748B;
+  --sv-text-subtle: #94A3B8; /* 6.96:1 on #0F172A; #64748B was 3.75 */
   --sv-text-disabled: #475569;
   --sv-text-inverse: #FFFFFF;
   --sv-text-on-primary: #0F172A;
@@ -149,8 +179,8 @@ html[data-color-mode="dark"] {
   --sv-status-neutral-border: #334155;
 
   --sv-interactive-primary: #22D3EE;
-  --sv-interactive-primary-hover: #0891B2;
-  --sv-interactive-primary-active: #0E7490;
+  --sv-interactive-primary-hover: #06B6D4;
+  --sv-interactive-primary-active: #0891B2;
 
   --sv-interactive-success: #22D3EE;
   --sv-interactive-success-hover: #67E8F9;
@@ -175,8 +205,8 @@ html[data-color-mode="dark"] {
   --sv-gradient-header: #020617;
   --sv-gradient-footer: #020617;
 
-  --sv-label-bg: #083344;
-  --sv-label-text: #22D3EE;
+  --sv-label-bg: #22D3EE;
+  --sv-label-text: #0F172A;
   --sv-label-border: #155E75;
   --sv-label-remove-hover: #F87171;
 }

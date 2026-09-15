@@ -300,17 +300,17 @@ export function composeStewardOverrideLayout({
 }) {
   const stewardLabel = stewardAccountId
     ? mention(stewardAccountId)
-    : `<strong>${escapeXml(stewardDisplayName || "A steward")}</strong>`;
+    : `<strong>${escapeXml(stewardDisplayName || "A space admin")}</strong>`;
 
   const storageBody = `
-<p>${HEADER} — <strong>Steward Override</strong></p>
+<p>${HEADER} — <strong>Space admin override</strong></p>
 <p>${mention(ownerAccountId)} — ${stewardLabel} released your seal on <strong>"${escapeXml(artifactName)}"</strong> (<em>${escapeXml(pageTitle)}</em>)${unlockDate ? ` on <strong>${escapeXml(unlockDate)}</strong>` : ""}.</p>
-<p>You no longer hold exclusive access to this file. Re-seal if you still need it, or contact the steward if this was unintended.</p>
+<p>You no longer hold exclusive access to this file. Re-seal if you still need it, or contact the space admin if this was unintended.</p>
 ${ctaLink(pageUrl, "Open the page")}
 `.trim();
 
   return {
-    summary: `Steward released your seal on "${artifactName}"`,
+    summary: `A space admin released your seal on "${artifactName}"`,
     storageBody,
   };
 }

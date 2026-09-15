@@ -33,7 +33,7 @@ export async function flashMessagesEnabled() {
 export function flashSealConflict(sealerName, artifactName) {
   return showFlag({
     id: "seal-conflict-" + Date.now(),
-    title: "File currently reserved",
+    title: "File currently sealed",
     description: `"${artifactName}" is held by ${sealerName}. Your modifications will not persist.`,
     type: "warning",
     appearance: "warning",
@@ -109,7 +109,7 @@ export function flashArtifactUnsealed(artifactName) {
 export function flashArtifactSealed(artifactName) {
   return showFlag({
     id: "seal-acquired-" + Date.now(),
-    title: "File reserved",
+    title: "File sealed",
     description: `"${artifactName}" is now under your exclusive control.`,
     type: "success",
     appearance: "success",

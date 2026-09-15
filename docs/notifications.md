@@ -1,6 +1,6 @@
 # Notifications
 
-Sentinel Vault uses four independent notification channels. Each can be enabled or disabled through the steward console (global settings).
+Sentinel Vault uses four independent notification channels. Each can be enabled or disabled through the site settings console (global settings).
 
 ## Channels
 
@@ -9,7 +9,7 @@ Sentinel Vault uses four independent notification channels. Each can be enabled 
 | **Toast** | In-app popup via `showFlag` API | Seal/unseal actions, immediate feedback, violation alerts |
 | **Page banner** | Persistent bar on the Confluence page | Seal violations, expiry warnings, status changes, seal counts |
 | **Confluence comment** | Footer comment with `@mention` of the recipient | Lifecycle events (seal/violation/expiry/release) — Confluence's notification engine emails the mentioned user |
-| **Watch** | Comment with `@mention` of each watcher | Seal released (manual, expiry, or steward override) |
+| **Watch** | Comment with `@mention` of each watcher | Seal released (manual, expiry, or space admin override) |
 
 Toast and page banner notifications are handled in the frontend. Confluence comments and watch notifications are dispatched from the server.
 
@@ -17,7 +17,7 @@ There is no external email egress. The app qualifies for the **"Runs on Atlassia
 
 ## Feature Flags
 
-All notification toggles are managed through the steward console UI (Alerts tab). When no configuration exists, defaults from `src/server/shared/baseline.js` apply (all enabled).
+All notification toggles are managed through the site settings console UI (Alerts tab). When no configuration exists, defaults from `src/server/shared/baseline.js` apply (all enabled).
 
 At runtime, `src/server/shared/bulletin-flags.js` resolves the active configuration by reading the global settings from Forge KVS and falling back to defaults on error.
 
@@ -37,7 +37,7 @@ The native-notifications master toggle (`ENABLE_NATIVE_NOTIFICATIONS`) must be o
 
 ### Settings-to-Code Mapping
 
-The steward console stores settings with camelCase keys under `admin-settings-global` in KVS. The KVS key names are unchanged from earlier versions (when the channel was email) so existing installations keep their values; `bulletin-flags.js` maps them to the current code constants:
+The site settings console stores settings with camelCase keys under `admin-settings-global` in KVS. The KVS key names are unchanged from earlier versions (when the channel was email) so existing installations keep their values; `bulletin-flags.js` maps them to the current code constants:
 
 | KVS Setting Key | Code Constant |
 |---|---|
@@ -63,7 +63,7 @@ All comments are posted through the centralized `dispatchNotice()` function in `
 | **Expiry notification** | `EXPIRY_NOTIFICATION` | Seal has expired, action required | Seal owner |
 | **Auto-release notice** | `AUTO_RELEASE` | Seal expired and was automatically released | Seal owner |
 | **Release notification** | `RELEASE_NOTIFICATION` | Seal manually released by owner | Watchers |
-| **Steward override** | `STEWARD_OVERRIDE_RELEASE` | Steward force-unseals another user's attachment | Seal owner (steward also mentioned) |
+| **Space admin override** | `STEWARD_OVERRIDE_RELEASE` | Space admin force-unseals another user's attachment | Seal owner (space admin also mentioned) |
 
 `PERIODIC_REMINDER` exists as a category but is not used as a comment — periodic reminders are delivered via the page banner only (see `recurringNudgeTask` in `triggers.js`).
 
@@ -93,9 +93,9 @@ Users can watch attachments sealed by other users to be notified when the seal i
 
 ### How It Works
 
-1. User clicks **Watch** on a sealed attachment (available in inline panel, overlay, and realm console)
+1. User clicks **Watch** on a sealed attachment (available in inline panel, overlay, and space console)
 2. A watch request is stored in KVS as `notify-request-{artifactId}-{accountId}`
-3. When the seal is released (manually, by expiry, or by steward override):
+3. When the seal is released (manually, by expiry, or by space admin override):
    - The `notifyWatchers()` function in `bulletins/logic.js` queries all `notify-request-{artifactId}-*` keys
    - Posts a release-notice comment that mentions each watcher
    - Cleans up the watch request keys
@@ -109,7 +109,7 @@ Three scheduled tasks generate notifications:
 |---|---|---|
 | **Expiry sweep** | Hourly | Expiry comments, halfway reminder comments, page banners |
 | **Recurring nudge** | Daily | Periodic reminder banners (no comment) — fires only when auto-unseal is disabled |
-| **Seal index cron** | Hourly | None directly (indexes seals for realm console queries) |
+| **Seal index cron** | Hourly | None directly (indexes seals for space console queries) |
 
 The expiry sweep scans all active seals, posts expiry comments for expired seals, and posts halfway reminders for seals past 50% of their duration.
 
@@ -142,7 +142,7 @@ The recurring nudge checks the `reminder-sent-*` timestamp against the configure
 3. Page banner alert stored
 
 ### Sealed Attachment Permanently Deleted
-1. Seal records cleaned up (KVS, content property, realm index)
+1. Seal records cleaned up (KVS, content property, space index)
 2. Footer comment with mentions
 
 ### Sealed Media Embed Removed from Page
@@ -161,8 +161,8 @@ The recurring nudge checks the `reminder-sent-*` timestamp against the configure
 2. Toast notification (immediate, frontend)
 3. Page banner updated
 
-### Steward Force-Unseal
-1. Steward override comment mentioning both the original owner and the steward
+### Space admin force-unseal
+1. Space admin override comment mentioning both the original owner and the space admin
 2. Release notification comment to watchers
 3. Page banner updated
 

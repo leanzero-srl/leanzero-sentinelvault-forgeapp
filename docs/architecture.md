@@ -62,13 +62,13 @@ Each capsule encapsulates a domain. Files follow a consistent pattern: `actions.
 
 | Capsule | Actions | Domain | Key Responsibilities |
 |---------|---------|--------|---------------------|
-| **sealing** | 8 | Lock management | Seal/unseal artifacts, version tracking, Confluence content property sync, realm index management, restore from trash, purge orphaned seals |
-| **bulletins** | 9 | Notifications | Record dispatch events, post Confluence comments, watch/unwatch artifacts, notify watchers on release, dispatch acknowledgement |
-| **entitlements** | 3 | Permissions | Session loading, license checks, steward override status |
+| **sealing** | 8 | Lock management | Seal/unseal attachments, version tracking, Confluence content property sync, space index management, restore from trash, purge orphaned seals |
+| **bulletins** | 9 | Notifications | Record dispatch events, post Confluence comments, watch/unwatch attachments, notify watchers on release, dispatch acknowledgement |
+| **entitlements** | 3 | Permissions | Session loading, license checks, space admin override status |
 | **operators** | 5 | Users | User lookup, profile resolution, CQL-based search, team enumeration |
-| **panels** | 12 | Macro resolvers | Enumerate page artifacts, upload, delete, label/unlabel, panel inject/extract, panel status, thumbnail preview |
-| **policies** | 8 | Settings | Load/store global and realm-level configuration, ruleset CRUD |
-| **realms** | 11 | Space admin | List sealed artifacts per space, force-unseal, steward access requests (request/check/list/approve/deny), background scan worker, role checking |
+| **panels** | 12 | Macro resolvers | Enumerate page attachments, upload, delete, label/unlabel, panel inject/extract, panel status, thumbnail preview |
+| **policies** | 8 | Settings | Load/store global and space-level configuration, ruleset CRUD |
+| **realms** | 11 | Space admin | List sealed attachments per space, force-unseal, space admin access requests (request/check/list/approve/deny), background scan worker, role checking |
 | **activity** | 2 | Activity log | Read side of the A1 activity record (`infra/activity-log.js` writes it from every seal/section/edit-access/workflow/validation site): per-page feed gated on page read, per-space report gated on stewardship with server-side type/date/page/actor filters and cursor pagination |
 
 All capsule actions are aggregated in `src/server/registry.js`, which creates a single Forge Resolver that routes incoming requests by action key. A `heartbeat` action provides health checking.
@@ -79,11 +79,11 @@ All capsule actions are aggregated in `src/server/registry.js`, which creates a 
 
 **Bulletins:** `load-bulletin-toggles`, `recent-dispatches`, `operator-dispatches`, `acknowledge-dispatch`, `watch-artifact`, `check-watch`, `unwatch-artifact`, `flush-operator-dispatches`, `list-breach-dispatches`
 
-**Policies:** `load-policy`, `store-policy`, `enumerate-realm-rulesets` (the legacy `*-ruleset` actions were removed 2026-09-05: unused, and one answered any user with the steward roster)
+**Policies:** `load-policy`, `store-policy`, `enumerate-realm-rulesets` (the legacy `*-ruleset` actions were removed 2026-09-05: unused, and one answered any user with the space admin roster)
 
-**Realms:** `identify-realm`, `enumerate-realm-seals`, `launch-realm-audit`, `check-audit-status`, `steward-unseal`, `check-user-role`, `request-steward-access`, `check-steward-request`, `list-steward-requests`, `approve-steward-request`, `deny-steward-request`
+**Spaces:** `identify-realm`, `enumerate-realm-seals`, `launch-realm-audit`, `check-audit-status`, `steward-unseal`, `check-user-role`, `request-steward-access`, `check-steward-request`, `list-steward-requests`, `approve-steward-request`, `deny-steward-request`
 
-**Operators:** `identify-operator`, `search-operators`, `current-operator`, `enumerate-operators`, `enumerate-teams`
+**Users:** `identify-operator`, `search-operators`, `current-operator`, `enumerate-operators`, `enumerate-teams`
 
 **Panels:** `enumerate-panel-artifacts`, `label-artifact`, `unlabel-artifact`, `delete-artifact`, `check-panel-status`, `store-doc-panel-prefs`, `upload-artifact`, `discover-panel-key`, `resolve-artifact-preview` (`inject-panel`/`extract-panel`/`register-panel-key` removed 2026-09-05: no callers, asApp writes behind payload ids)
 
@@ -98,20 +98,20 @@ Each surface is a standalone React application bundled by Webpack and served as 
 | Surface | Forge Module | Purpose |
 |---------|-------------|---------|
 | **inline-panel** | `macro` | Embedded panel showing seal status for page attachments, with seal/unseal, upload, labels, delete/restore/purge, expandable card rows |
-| **overlay** | Modal (invoked from surfaces) | Full artifact management: search, filter, sort, column picker (localStorage), pagination, panel visibility toggle |
+| **overlay** | Modal (invoked from surfaces) | Full attachment management: search, filter, sort, column picker (localStorage), pagination, panel visibility toggle |
 | **doc-ribbon** | `confluence:pageBanner` | Persistent page banner showing seal counts, conflict and expiry alerts, "Manage Attachments" button. Polls every 5 seconds via `check-seal-stamp`. |
 | **steward-console** | `confluence:globalSettings` | Site-wide admin: 2 tabs (General + Alerts), 17 settings for seal behavior and notifications |
-| **realm-console** | `confluence:spacePage` | Space admin: 5 tabs (My Sealed Files, Realm Sealed Files, Access Control, Reservation Duration, Macro). Role-adaptive UI (user vs. steward). |
+| **realm-console** | `confluence:spacePage` | Space admin: 5 tabs (My Sealed Files, Sealed Files, Access Control, Seal Duration, Macro). Role-adaptive UI (user vs. space admin). |
 | **panel-setup** | Macro `config` | Configure inline-panel display: column visibility, rows per page, cards per row, upload zone toggle |
 
 ## Infrastructure
 
 The `infra/` layer provides cross-cutting services used by multiple capsules:
 
-- **notice-composer.js** -- Centralized native-notification orchestration. All notices flow through `dispatchNotice(type, data)` which resolves the recipient's display name, builds a storage-format comment body, and posts a footer comment via `asApp().requestConfluence()`. Confluence's own notification engine emails the mentioned user (subject to their personal notification preferences). Supports 7 notice types defined in `ALERT_CATEGORIES`: seal violation, seal created, 50% reminder, auto-release / expiry notification, release notification, steward override release. (`PERIODIC_REMINDER` is a defined category but is delivered via banner only.)
+- **notice-composer.js** -- Centralized native-notification orchestration. All notices flow through `dispatchNotice(type, data)` which resolves the recipient's display name, builds a storage-format comment body, and posts a footer comment via `asApp().requestConfluence()`. Confluence's own notification engine emails the mentioned user (subject to their personal notification preferences). Supports 7 notice types defined in `ALERT_CATEGORIES`: seal violation, seal created, 50% reminder, auto-release / expiry notification, release notification, space admin override release. (`PERIODIC_REMINDER` is a defined category but is delivered via banner only.)
 - **notice-blueprints.js** -- Storage-format comment body builders, one per notice type. Each emits Confluence storage XML with `<ac:link><ri:user ri:account-id="..."/></ac:link>` mention tags so Confluence can route the notification email.
 - **outbound-notify.js** -- Confluence footer-comment POST helper with retry logic (3 retries, exponential backoff starting at 600ms, capped at 5s on 429 / 5xx). No external egress — qualifies for the "Runs on Atlassian" badge.
-- **artifact-fetch.js** -- Attachment metadata resolution and violation handling. Detects unauthorized changes, posts a comment, and reverts the attachment to the previous version.
+- **attachment-fetch.js** -- Attachment metadata resolution and violation handling. Detects unauthorized changes, posts a comment, and reverts the attachment to the previous version.
 - **doc-surgery.js** -- ADF (Atlassian Document Format) manipulation utilities:
   - **Panel management**: `triggerPanelEmbed()` auto-inserts the Sentinel Vault macro into page content. `removePanelNode()` removes it when no seals remain. `panelExistsInDoc()` checks for existing panel presence.
   - **Media protection**: `collectMediaFileIds()` extracts all media file IDs from a page. `extractMediaSingleNodes()` finds top-level blocks containing sealed media. `spliceMediaNodes()` re-inserts missing media blocks at their original positions.
@@ -130,7 +130,7 @@ Defined in `manifest.yml`, these map to Forge platform capabilities:
 | Expiry sweep (hourly) | `expiry-sweep-task` | `boot.expirySweepTask` |
 | Recurring nudge (daily) | `recurring-nudge-task` | `boot.recurringNudgeTask` |
 | Halfway check (legacy) | `halfway-check-task` | `boot.halfwayCheckTask` |
-| Realm scan consumer | `realm-scan-consumer-fn` | `boot.realmScanConsumer` |
+| Space scan consumer | `realm-scan-consumer-fn` | `boot.realmScanConsumer` |
 | Seal index cron (hourly) | `seal-index-cron-fn` | `boot.sealIndexCron` |
 
 ## Triggers
@@ -144,7 +144,7 @@ Listens to three attachment events:
 
 **Behavior per event:**
 - **Updated**: Checks if attachment is sealed. If uploader is not the seal owner or the app itself, downloads the previous version and re-uploads it. Sends violation notifications (comment, email, banner, toast).
-- **Trashed**: If sealed, attempts to restore from trash. If restoration fails (permanently deleted), cleans up all seal state (KVS record, content property, realm index).
+- **Trashed**: If sealed, attempts to restore from trash. If restoration fails (permanently deleted), cleans up all seal state (KVS record, content property, space index).
 - **Deleted**: Cleans up all seal records and notifies the seal owner.
 
 Prevents infinite loops by comparing the event actor against a cached app account ID stored in KVS (`app-account-id`).
@@ -176,14 +176,14 @@ On uninstall: deletes all KVS records for complete cleanup.
 |------|----------|----------|
 | **Expiry Sweep** | Hourly | Queries all `protection-*` keys. For expired seals: sends expiry emails (if enabled), records dispatch events, sets dedup flag `expiry-notified-{artifactId}`, auto-releases if expiry notifications are on. For non-expired seals past 50% duration: sends halfway reminder emails, sets dedup flag `fifty-percent-reminder-sent-{artifactId}`. Respects auto-unlock pause state (extends seal times by pause duration when resumed). |
 | **Recurring Nudge** | Daily | Sends periodic reminder emails every N days (default 7) when expiry notifications are **disabled**. Uses dedup key `reminder-sent-{artifactId}`. Only active when `autoUnlockEnabled=false` and periodic reminder emails are enabled. |
-| **Seal Index Cron** | Hourly | Rebuilds realm-seal indexes for fast space-level queries. Uses `protections-last-modified` timestamp to skip if nothing changed since last run. |
+| **Seal Index Cron** | Hourly | Rebuilds space-seal indexes for fast space-level queries. Uses `protections-last-modified` timestamp to skip if nothing changed since last run. |
 | **Halfway Check** | -- | Legacy no-op. Functionality was merged into the Expiry Sweep. Kept in manifest for compatibility. |
 
 ## Queue System
 
 | Queue | Consumer | Timeout | Purpose |
 |-------|----------|---------|---------|
-| `realm-audit-queue` | `realmScanConsumer` | 900s | Background realm auditing. Scans all pages in a space using cursor pagination, fetches attachments for each page, and writes `space-protection-{realmId}-{artifactId}` index keys for every sealed attachment found. Updates `space-scan-status-{realmId}` with progress. Triggered by stewards from the realm console. |
+| `realm-audit-queue` | `realmScanConsumer` | 900s | Background space auditing. Scans all pages in a space using cursor pagination, fetches attachments for each page, and writes `space-protection-{realmId}-{artifactId}` index keys for every sealed attachment found. Updates `space-scan-status-{realmId}` with progress. Triggered by space admins from the space console. |
 
 ## Data Flow
 
@@ -191,7 +191,7 @@ On uninstall: deletes all KVS records for complete cleanup.
 
 1. User clicks "Seal" in the inline-panel or overlay
 2. UI invokes `seal-artifact` action via Forge Bridge
-3. Sealing capsule resolves effective seal duration (realm policy → global policy → baseline)
+3. Sealing capsule resolves effective seal duration (space policy → global policy → baseline)
 4. Fetches attachment details (fileId, size, creator, download link)
 5. Writes seal record to Forge KVS (`protection-{artifactId}`)
 6. Writes space-indexed key (`space-protection-{realmId}-{artifactId}`)
@@ -229,7 +229,7 @@ On uninstall: deletes all KVS records for complete cleanup.
 2. `artifactEventTrigger` checks if the trashed attachment has an active seal
 3. If sealed: attempts to restore the attachment from trash via Confluence API
 4. If restoration succeeds: seal remains active, notifications sent
-5. If restoration fails (permanently deleted): calls `purgeAllSealState()` to clean up KVS record, content property, and realm index
+5. If restoration fails (permanently deleted): calls `purgeAllSealState()` to clean up KVS record, content property, and space index
 
 ## Storage Model
 
@@ -238,21 +238,21 @@ All persistent data uses Forge KVS with key prefixes:
 | Key Pattern | Content | TTL |
 |------------|---------|-----|
 | `protection-{artifactId}` | Seal record (lockedBy, expiresAt, contentId, version, downloadLink, etc.) | Persistent |
-| `space-protection-{realmId}-{artifactId}` | Space-indexed seal for realm queries | Persistent |
+| `space-protection-{realmId}-{artifactId}` | Space-indexed seal for space queries | Persistent |
 | `admin-settings-global` | Global policy configuration | Persistent |
 | `admin-settings-space-{realmKey}` | Space-level policy overrides | Persistent |
 | `app-account-id` | Cached app account ID (loop prevention) | Persistent |
 | `protections-last-modified` | Timestamp for seal index cron optimization | Persistent |
 | `macro-extension-key` | Cached panel macro extension key | Persistent |
 | `confluence-webhook-id` | Stored Confluence webhook ID | Persistent |
-| `space-scan-status-{realmId}` | Realm scan job progress and status | Persistent |
+| `space-scan-status-{realmId}` | Space scan job progress and status | Persistent |
 | `expiry-notified-{artifactId}` | Deduplication flag for expiry emails | Persistent |
 | `fifty-percent-reminder-sent-{artifactId}` | Deduplication flag for halfway reminder emails | Persistent |
 | `reminder-sent-{artifactId}` | Deduplication flag for periodic nudge emails | Persistent |
 | `notification-{ts}-{rand}` | Toast dispatch event | 5 minutes |
 | `recent-notifications` | Page banner dispatch events list | 1 hour |
 | `violation-alert-{owner}-{artifact}-{ts}` | Violation toast for seal owner | 1 hour |
-| `notify-request-{artifactId}-*` | Watch/notify-me requests per artifact | Configurable |
+| `notify-request-{artifactId}-*` | Watch/notify-me requests per attachment | Configurable |
 | `protection-` (content property) | CQL-searchable seal marker on page | Persistent (Confluence) |
 
 ## Performance Patterns
@@ -261,5 +261,5 @@ All persistent data uses Forge KVS with key prefixes:
 - **Polling** -- The doc-ribbon polls every 5 seconds using `check-seal-stamp` (which reads `protections-last-modified`) to detect changes made in other surfaces (overlay, inline panel) without a full page refresh.
 - **CQL queryability** -- Content properties (`protection-`) on pages enable CQL-based discovery of sealed attachments without scanning KVS.
 - **Lazy thumbnails** -- The `ThumbnailPreview` component loads image previews on demand via `resolve-artifact-preview` and caches the result in parent component state to avoid repeated fetches.
-- **Realm index optimization** -- The `sealIndexCron` only rebuilds indexes when `protections-last-modified` indicates changes since the last run, avoiding unnecessary KVS scans.
-- **Deduplication keys** -- Email notifications use per-artifact flags (`expiry-notified-*`, `fifty-percent-reminder-sent-*`, `reminder-sent-*`) to prevent duplicate emails across scheduled task runs.
+- **Space index optimization** -- The `sealIndexCron` only rebuilds indexes when `protections-last-modified` indicates changes since the last run, avoiding unnecessary KVS scans.
+- **Deduplication keys** -- Email notifications use per-attachment flags (`expiry-notified-*`, `fifty-percent-reminder-sent-*`, `reminder-sent-*`) to prevent duplicate emails across scheduled task runs.

@@ -10,32 +10,33 @@
   --sv-bg-hover: #E2E8F0;
   --sv-text-primary: #0F172A;
   --sv-text-secondary: #475569;
-  --sv-text-subtle: #94A3B8;
+  --sv-text-subtle: #5B6B80;
   --sv-text-disabled: #CBD5E1;
   --sv-text-inverse: #FFFFFF;
+  --sv-text-on-primary: #FFFFFF;
   --sv-border-primary: #E2E8F0;
   --sv-border-secondary: #E2E8F0;
-  --sv-border-focus: #0891B2;
+  --sv-border-focus: #0E7490;
   --sv-surface-raised: #FFFFFF;
   --sv-surface-overlay: #FFFFFF;
-  --sv-status-success: #0891B2;
+  --sv-status-success: #0E7490;
   --sv-status-success-bg: #ECFEFF;
   --sv-status-success-border: #A5F3FC;
   --sv-status-warning: #DC2626;
   --sv-status-warning-bg: #FEF2F2;
   --sv-status-warning-border: #FECACA;
-  --sv-status-info: #0891B2;
+  --sv-status-info: #0E7490;
   --sv-status-info-bg: #ECFEFF;
   --sv-status-info-border: #A5F3FC;
   --sv-status-neutral: #64748B;
   --sv-status-neutral-bg: #F8FAFC;
   --sv-status-neutral-border: #E2E8F0;
-  --sv-interactive-primary: #0891B2;
-  --sv-interactive-primary-hover: #0E7490;
-  --sv-interactive-primary-active: #155E75;
-  --sv-interactive-success: #0891B2;
-  --sv-interactive-success-hover: #0E7490;
-  --sv-interactive-success-active: #155E75;
+  --sv-interactive-primary: #0E7490;
+  --sv-interactive-primary-hover: #155E75;
+  --sv-interactive-primary-active: #164E63;
+  --sv-interactive-success: #0E7490;
+  --sv-interactive-success-hover: #155E75;
+  --sv-interactive-success-active: #164E63;
   --sv-interactive-danger: #DC2626;
   --sv-interactive-danger-hover: #B91C1C;
   --sv-interactive-danger-active: #991B1B;
@@ -59,9 +60,10 @@ html[data-color-mode="dark"] {
   --sv-bg-hover: #334155;
   --sv-text-primary: #F8FAFC;
   --sv-text-secondary: #CBD5E1;
-  --sv-text-subtle: #64748B;
+  --sv-text-subtle: #94A3B8;
   --sv-text-disabled: #475569;
   --sv-text-inverse: #FFFFFF;
+  --sv-text-on-primary: #0F172A;
   --sv-border-primary: #334155;
   --sv-border-secondary: #334155;
   --sv-border-focus: #22D3EE;
@@ -80,8 +82,8 @@ html[data-color-mode="dark"] {
   --sv-status-neutral-bg: #1E293B;
   --sv-status-neutral-border: #334155;
   --sv-interactive-primary: #22D3EE;
-  --sv-interactive-primary-hover: #0891B2;
-  --sv-interactive-primary-active: #0E7490;
+  --sv-interactive-primary-hover: #06B6D4;
+  --sv-interactive-primary-active: #0891B2;
   --sv-interactive-success: #22D3EE;
   --sv-interactive-success-hover: #67E8F9;
   --sv-interactive-success-active: #A5F3FC;
@@ -328,22 +330,24 @@ textarea:focus {
 
 /* Alert messages */
 .alert-error {
-  background-color: var(--sv-status-warning-bg);
+  background-color: var(--sv-interactive-danger);
   border: none;
   border-radius: 10px;
   padding: 12px 16px;
   margin-bottom: 16px;
-  color: var(--sv-status-warning);
+  color: var(--sv-text-on-primary);
   font-size: 13px;
+  font-weight: 500;
 }
 
 .alert-info {
-  background-color: var(--sv-status-success-bg);
+  background-color: var(--sv-interactive-primary);
   border: none;
   border-radius: 10px;
   padding: 12px 16px;
-  color: var(--sv-status-success);
+  color: var(--sv-text-on-primary);
   font-size: 13px;
+  font-weight: 500;
 }
 
 .loading-text {
@@ -529,7 +533,7 @@ textarea:focus {
 
 .btn-warning:hover {
   background-color: var(--sv-interactive-danger);
-  color: var(--sv-text-inverse);
+  color: var(--sv-text-on-primary);
   box-shadow: none;
 }
 

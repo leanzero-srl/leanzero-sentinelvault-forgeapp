@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { createRoot } from "react-dom/client";
 import { invoke, view } from "@forge/bridge";
 import { enablePaletteSync } from "../../kit/palette-sync";
@@ -8,150 +8,315 @@ import ClassificationTab from "../../kit/ClassificationTab";
 import { formatDurationHours } from "../../kit/format-duration";
 import logo from "../../assets/icons/icon.png";
 import { BUILD_INFO } from "../../../build-info.js";
+// P2 (UX review 2026-09-14 §3): the console renders FROM the schema — keys, labels, one-line
+// descriptions, engine defaults and the dependency table all live in settings-schema.js, which
+// reads its defaults from the same baseline.js the engine reads. No second copy here.
+import {
+  GROUPS, controlsFor, control, readAllEffective, formatDefault, dependencyState,
+  SEAL_DURATION_PRESETS, ALERT_PROFILES, buildSetupPayload, needsSetup,
+} from "../../../server/capsules/policies/settings-schema.js";
 
-const SettingsRow = ({ label, description, children }) => (
-  <div className="settings-row">
-    <div className="settings-row-info">
-      <p className="settings-row-label">{label}</p>
-      <p className="settings-row-description">{description}</p>
-    </div>
-    <div className="settings-row-control">{children}</div>
-  </div>
-);
-
-const Toggle = ({ checked, onChange }) => (
-  <label className="form-checkbox">
-    <input type="checkbox" checked={checked} onChange={onChange} />
+const Toggle = ({ checked, onChange, disabled, label }) => (
+  <label className={`form-checkbox${disabled ? " is-disabled" : ""}`}>
+    <input type="checkbox" aria-label={label} checked={checked} onChange={onChange} disabled={disabled} />
   </label>
 );
 
-const GlobalPolicyEditor = () => {
-  const [activeTab, setActiveTab] = useState("general");
-  const [settings, setSettings] = useState({
-    defaultSealDurationHours: 24,
-    allowStewardOverride: false,
-    autoUnsealEnabled: true,
-    allowArtifactDelete: false,
-    allowSealRestore: false,
-    allowSealPurge: false,
-    enableContentProtection: true,
-    reminderIntervalDays: 7,
-    enableFlashMessages: true,
-    enableDocRibbons: true,
-    enableConfluenceDispatches: true,
-    enableEmailDispatches: true,
-    enableSealExpiryReminderEmail: true,
-    enableAutoUnsealDispatchEmail: true,
-    enablePeriodicReminderEmail: true,
-    globalAutoInsertMacro: false,
-    replaceAttachmentsMacro: false,
-  });
+// 5.0 ribbon mode — a two-option choice drawn by the app (never a native <select>): each option is
+// a solid block when chosen, an outlined one otherwise, with its one-line description under the name.
+const RIBBON_MODE_OPTIONS = [
+  { id: "exceptions", name: "Exceptions only", text: "The ribbon opens only when the page is classified at or above the threshold, something is waiting on the viewer, the viewer hits a seal they do not own, or a change was reverted." },
+  { id: "always", name: "Always show classification", text: "The classification block is always visible on every page; the right half stays empty until something is urgent." },
+];
+const ChoiceBlocks = ({ value, onChange, options, ariaLabel, testPrefix, disabled, minWidth = 320 }) => (
+  <div role="radiogroup" aria-label={ariaLabel} className="sv-choice-blocks" style={{ minWidth, maxWidth: 420 }} data-testid={`${testPrefix}-choice`}>
+    {options.map((o) => {
+      const on = value === o.id;
+      return (
+        <button
+          key={o.id}
+          type="button"
+          role="radio"
+          aria-checked={on}
+          disabled={disabled}
+          onClick={() => onChange(o.id)}
+          data-testid={`${testPrefix}-${o.id}`}
+          className={`sv-choice-block${on ? " is-on" : ""}`}
+        >
+          <span className="sv-choice-name">{o.name}</span>
+          {o.text && <span className="sv-choice-text">{o.text}</span>}
+        </button>
+      );
+    })}
+  </div>
+);
 
+/** Depth of a control under parents of the SAME scope (a space child of a global master stays at 0). */
+const depthOf = (key) => {
+  let d = 0;
+  let c = control(key);
+  while (c && c.parent) {
+    const p = control(c.parent);
+    if (!p || p.scope !== c.scope) break;
+    d++;
+    c = p;
+  }
+  return d;
+};
+
+/**
+ * One control, rendered from its descriptor: label, the one-line "what happens when this is on",
+ * the effective default the engine applies when the key is unset, and the input. A control with
+ * a parent is indented under it and DISABLED with the reason while the parent is off — visibly
+ * dependent, never silently inert.
+ */
+export const ControlRow = ({ desc, values, siteValues, onChange, children, siteDefaultText }) => {
+  const dep = dependencyState(desc.key, values, siteValues);
+  const depth = depthOf(desc.key);
+  const val = values[desc.key];
+  const set = (v) => onChange(desc.key, v);
+  const disabled = !dep.enabled;
+  let input = children;
+  if (!input) {
+    switch (desc.kind) {
+      case "toggle":
+        input = <Toggle label={desc.label} checked={!!val} disabled={disabled} onChange={(e) => set(e.target.checked)} />;
+        break;
+      case "seconds-as-hours": {
+        const hours = Math.max(1, Math.round((val || desc.default) / 3600));
+        input = (
+          <div className="input-with-unit">
+            <input className="form-input" type="number" min="1" value={hours} disabled={disabled} aria-label={desc.label}
+              onChange={(e) => { const n = parseInt(e.target.value, 10); if (!isNaN(n)) set(Math.max(1, n) * 3600); }} />
+            <span className="input-unit">hrs</span>
+            {hours >= 24 && <span className="input-hint">= {formatDurationHours(hours)}</span>}
+          </div>
+        );
+        break;
+      }
+      case "hours":
+      case "days":
+      case "count": {
+        const unit = desc.kind === "hours" ? "hrs" : desc.kind === "days" ? "days" : desc.key === "ribbonThresholdRank" ? "rank" : "";
+        input = (
+          <div className="input-with-unit">
+            <input className="form-input" type="number" min={desc.min ?? 0} max={desc.max} value={val ?? ""} disabled={disabled} aria-label={desc.label}
+              data-testid={desc.key === "ribbonThresholdRank" ? "ribbon-threshold-rank" : undefined}
+              onChange={(e) => {
+                const n = parseInt(e.target.value, 10);
+                if (isNaN(n)) return;
+                let v = n;
+                if (desc.min !== undefined) v = Math.max(desc.min, v);
+                if (desc.max !== undefined) v = Math.min(desc.max, v);
+                set(v);
+              }} />
+            {unit && <span className="input-unit">{unit}</span>}
+          </div>
+        );
+        break;
+      }
+      case "choice":
+        if (desc.key === "ribbonMode") input = <ChoiceBlocks value={val} onChange={set} options={RIBBON_MODE_OPTIONS} ariaLabel="Ribbon mode" testPrefix="ribbon-mode" disabled={disabled} />;
+        break;
+      default:
+        input = null;
+    }
+  }
+  return (
+    <div
+      className={`settings-row${depth > 0 ? ` is-dependent depth-${depth}` : ""}${disabled ? " is-locked" : ""}`}
+      data-testid={`sv-row-${desc.key}`}
+      data-locked={disabled ? "true" : "false"}
+    >
+      <div className="settings-row-info">
+        <p className="settings-row-label">{desc.label}</p>
+        <p className="settings-row-description">{desc.text}</p>
+        <p className="settings-row-default" data-testid={`sv-default-${desc.key}`}>
+          <span>Effective default:</span> {formatDefault(desc.key)}
+          {siteDefaultText && <><span className="settings-row-default-sep">·</span><span>Site default:</span> {siteDefaultText}</>}
+        </p>
+        {disabled && <p className="settings-row-reason" data-testid={`sv-reason-${desc.key}`}>{dep.reason}</p>}
+      </div>
+      <div className="settings-row-control">{input}</div>
+    </div>
+  );
+};
+
+/** A group card: solid header (name + one line), then its rows. */
+export const GroupCard = ({ group, children, extra }) => (
+  <section className="sv-group" data-testid={`sv-group-${group.id}`}>
+    <header className="sv-group-head">
+      <h3 className="sv-group-title">{group.name}</h3>
+      <p className="sv-group-text">{group.text}</p>
+    </header>
+    <div className="sv-group-body">{children}{extra}</div>
+  </section>
+);
+
+// ── First-run setup ────────────────────────────────────────────────────────────────────────
+
+const PROVIDER_TEXT = {
+  native: "Using your site's Confluence classification levels. Levels are managed in Confluence's own classification settings; Sentinel Vault reads them.",
+  app: "Using Sentinel Vault's built-in levels (Public, Internal, Confidential, Restricted). You can rename, recolour, add or remove them later in the Classification tab.",
+};
+
+const SetupWizard = ({ onFinished, onSkipped, initialHours }) => {
+  const [step, setStep] = useState(1);
+  const [preset, setPreset] = useState("1w");
+  const [customHours, setCustomHours] = useState(initialHours || 48);
+  const [profile, setProfile] = useState("standard");
+  const [provider, setProvider] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    invoke("classification-provider", {})
+      .then((r) => setProvider(r?.name === "native" ? "native" : "app"))
+      .catch(() => setProvider("app"));
+  }, []);
+
+  const hours = preset === "custom" ? Number(customHours) : SEAL_DURATION_PRESETS.find((p) => p.id === preset)?.hours;
+
+  const write = async (data) => {
+    setBusy(true); setError(null);
+    try {
+      const r = await invoke("store-policy", { scope: "global", data });
+      if (!r?.success) { setError(r?.reason || "Could not save the setup."); return false; }
+      return true;
+    } catch (e) {
+      setError("Could not save the setup. Verify your access rights.");
+      return false;
+    } finally { setBusy(false); }
+  };
+
+  const finish = async () => {
+    const payload = buildSetupPayload({ hours, profile });
+    if (!payload.ok) { setError(payload.reason); return; }
+    if (await write(payload.data)) onFinished(payload.data);
+  };
+  const skip = async () => {
+    const stamp = new Date().toISOString();
+    if (await write({ setupCompletedAt: stamp })) onSkipped(stamp);
+  };
+
+  return (
+    <div className="sv-setup" data-testid="sv-setup">
+      <div className="sv-setup-steps" aria-label="Setup progress">
+        {[1, 2, 3].map((n) => (
+          <span key={n} className={`sv-setup-step${step === n ? " is-current" : step > n ? " is-done" : ""}`} data-testid={`sv-setup-step-${n}`}>
+            <span className="sv-setup-step-num">{n}</span>
+            {n === 1 ? "Seal duration" : n === 2 ? "Alerts" : "Classification"}
+          </span>
+        ))}
+      </div>
+
+      {error && <div className="alert-error sv-setup-alert" data-testid="sv-setup-error">{error}</div>}
+
+      {step === 1 && (
+        <div className="sv-setup-panel" data-testid="sv-setup-panel-1">
+          <h2 className="sv-setup-title">How long should a seal last?</h2>
+          <p className="sv-setup-text">A seal keeps an attachment from being replaced or removed until it runs out or its owner releases it. Spaces can set their own duration later.</p>
+          <div className="sv-preset-grid" role="radiogroup" aria-label="Default seal duration">
+            {SEAL_DURATION_PRESETS.map((p) => (
+              <button key={p.id} type="button" role="radio" aria-checked={preset === p.id}
+                className={`sv-preset${preset === p.id ? " is-on" : ""}`} data-testid={`sv-setup-duration-${p.id}`}
+                onClick={() => setPreset(p.id)}>
+                {p.label}
+              </button>
+            ))}
+          </div>
+          {preset === "custom" && (
+            <div className="input-with-unit sv-setup-custom">
+              <input className="form-input" type="number" min="1" value={customHours} aria-label="Custom seal duration in hours" data-testid="sv-setup-custom-hours"
+                onChange={(e) => { const n = parseInt(e.target.value, 10); if (!isNaN(n)) setCustomHours(Math.max(1, n)); }} />
+              <span className="input-unit">hrs</span>
+              {Number(customHours) >= 24 && <span className="input-hint">= {formatDurationHours(Number(customHours))}</span>}
+            </div>
+          )}
+        </div>
+      )}
+
+      {step === 2 && (
+        <div className="sv-setup-panel" data-testid="sv-setup-panel-2">
+          <h2 className="sv-setup-title">How loud should Sentinel Vault be?</h2>
+          <p className="sv-setup-text">The app sends no email. A notice is a comment on the page that @mentions the people involved; Confluence then notifies them. Pop-ups and the page ribbon are always on.</p>
+          <ChoiceBlocks value={profile} onChange={setProfile} options={ALERT_PROFILES} ariaLabel="Alert profile" testPrefix="sv-setup-profile" minWidth={0} />
+        </div>
+      )}
+
+      {step === 3 && (
+        <div className="sv-setup-panel" data-testid="sv-setup-panel-3">
+          <h2 className="sv-setup-title">Where do classification levels come from?</h2>
+          <p className="sv-setup-text">Sentinel Vault labels pages with a classification level and can open the ribbon for the sensitive ones. It detects the source on its own.</p>
+          <div className="sv-provider" data-testid="sv-setup-provider" data-provider={provider || "detecting"}>
+            <span className={`sv-provider-badge ${provider || "detecting"}`}>{provider === "native" ? "Native" : provider === "app" ? "App" : "Detecting…"}</span>
+            <p className="sv-provider-text">{provider ? PROVIDER_TEXT[provider] : "Checking whether this site has Confluence classification levels…"}</p>
+          </div>
+          <dl className="sv-provider-legend">
+            <dt>Native</dt><dd>The site has defined Confluence classification levels. They apply everywhere and Sentinel Vault follows them.</dd>
+            <dt>App</dt><dd>The site has none, so the app's own four levels are used and stored on each page as a content property.</dd>
+          </dl>
+        </div>
+      )}
+
+      <div className="sv-setup-actions">
+        <button type="button" className="sv-link" onClick={skip} disabled={busy} data-testid="sv-setup-skip">Skip setup</button>
+        <span className="sv-setup-spacer" />
+        {step > 1 && <button type="button" className="btn-secondary" onClick={() => setStep(step - 1)} disabled={busy} data-testid="sv-setup-back">Back</button>}
+        {step < 3 && <button type="button" className="btn-primary" onClick={() => setStep(step + 1)} disabled={busy || (step === 1 && !(Number(hours) >= 1))} data-testid="sv-setup-next">Next</button>}
+        {step === 3 && <button type="button" className="btn-primary" onClick={finish} disabled={busy} data-testid="sv-setup-finish">{busy ? "Saving…" : "Finish"}</button>}
+      </div>
+    </div>
+  );
+};
+
+// ── The console ────────────────────────────────────────────────────────────────────────────
+
+const GlobalPolicyEditor = () => {
+  const [activeTab, setActiveTab] = useState("settings");
+  const [values, setValues] = useState(() => readAllEffective("global", null));
+  const [setupDone, setSetupDone] = useState(true);
+  const [rerunSetup, setRerunSetup] = useState(false);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState(null);
   const [messageType, setMessageType] = useState(null);
-  const [currentRealmKey, setCurrentRealmKey] = useState(null);
-  const [currentRealmName, setCurrentRealmName] = useState("Current Space");
+
+  const applyRecord = (rec) => {
+    setValues(readAllEffective("global", rec));
+    setSetupDone(!needsSetup(rec));
+  };
 
   useEffect(() => {
     const fetchPreferences = async () => {
       try {
         await enablePaletteSync();
-
         setLoading(true);
         setMessage(null);
         setMessageType(null);
-
-        const globalSettings = await invoke("load-policy", {
-          scope: "global",
-        });
-
-        const context = await view.getContext();
-        const realmKey = context.extension?.content?.space?.key;
-
-        if (realmKey) {
-          setCurrentRealmKey(realmKey);
-          setCurrentRealmName(
-            context.extension.content.space?.name || "Current Space",
-          );
-        }
-
-        setSettings({
-          // audit A3: read the ENGINE's real keys (defaultLockDuration / allowAdminOverride /
-          // autoUnlockEnabled) — the UI previously read defaultSealDuration/allowStewardOverride/
-          // autoUnsealEnabled, which the engine never writes or reads, so these controls were inert.
-          defaultSealDurationHours: Math.round(
-            (globalSettings?.defaultLockDuration || 86400) / 3600,
-          ),
-          allowStewardOverride: globalSettings?.allowAdminOverride !== false,
-          autoUnsealEnabled: globalSettings?.autoUnlockEnabled !== false,
-          allowArtifactDelete: globalSettings?.allowArtifactDelete === true,
-          allowSealRestore: globalSettings?.allowSealRestore === true,
-          allowSealPurge: globalSettings?.allowSealPurge === true,
-          enableContentProtection: globalSettings?.enableContentProtection !== false,
-          reminderIntervalDays: globalSettings?.reminderIntervalDays || 7,
-          enableFlashMessages:
-            globalSettings?.enableFlashMessages !== false,
-          enableDocRibbons: globalSettings?.enableDocRibbons !== false,
-          enableConfluenceDispatches:
-            globalSettings?.enableConfluenceDispatches !== false,
-          enableEmailDispatches:
-            globalSettings?.enableEmailDispatches !== false,
-          enableSealExpiryReminderEmail:
-            globalSettings?.enableSealExpiryReminderEmail !== false,
-          enableAutoUnsealDispatchEmail:
-            globalSettings?.enableAutoUnsealDispatchEmail !== false,
-          enablePeriodicReminderEmail:
-            globalSettings?.enablePeriodicReminderEmail !== false,
-          globalAutoInsertMacro:
-            globalSettings?.globalAutoInsertMacro === true,
-          replaceAttachmentsMacro:
-            globalSettings?.replaceAttachmentsMacro === true,
-        });
+        const globalSettings = await invoke("load-policy", { scope: "global" });
+        await view.getContext().catch(() => null);
+        applyRecord(globalSettings);
       } catch (err) {
-        setMessage(
-          "Unable to load preferences. Verify your access rights.",
-        );
+        setMessage("Unable to load preferences. Verify your access rights.");
         setMessageType("error");
       } finally {
         setLoading(false);
       }
     };
-
     fetchPreferences();
   }, []);
+
+  const onChange = (key, v) => setValues((prev) => ({ ...prev, [key]: v }));
 
   const onSavePreferences = async () => {
     try {
       setLoading(true);
       setMessage(null);
       setMessageType(null);
-
-      const saveResult = await invoke("store-policy", {
-        scope: "global",
-        data: {
-          // audit A3: write the ENGINE's real keys so these controls actually take effect.
-          defaultLockDuration: settings.defaultSealDurationHours * 3600,
-          allowAdminOverride: settings.allowStewardOverride,
-          autoUnlockEnabled: settings.autoUnsealEnabled,
-          allowArtifactDelete: settings.allowArtifactDelete,
-          allowSealRestore: settings.allowSealRestore,
-          allowSealPurge: settings.allowSealPurge,
-          enableContentProtection: settings.enableContentProtection,
-          reminderIntervalDays: settings.reminderIntervalDays,
-          enableFlashMessages: settings.enableFlashMessages,
-          enableDocRibbons: settings.enableDocRibbons,
-          enableConfluenceDispatches: settings.enableConfluenceDispatches,
-          enableEmailDispatches: settings.enableEmailDispatches,
-          enableSealExpiryReminderEmail: settings.enableSealExpiryReminderEmail,
-          enableAutoUnsealDispatchEmail:
-            settings.enableAutoUnsealDispatchEmail,
-          enablePeriodicReminderEmail: settings.enablePeriodicReminderEmail,
-          globalAutoInsertMacro: settings.globalAutoInsertMacro,
-          replaceAttachmentsMacro: settings.replaceAttachmentsMacro,
-        },
-      });
-
+      // Every key the schema owns, under its persisted name — `values` is already keyed by them.
+      const data = {};
+      for (const c of controlsFor("global")) data[c.key] = values[c.key];
+      const saveResult = await invoke("store-policy", { scope: "global", data });
       // it16: store-policy returns { success:false, reason } on an authz denial (audit A1)
       // rather than throwing — a blind success message would falsely claim the save persisted.
       if (saveResult?.success) {
@@ -162,26 +327,26 @@ const GlobalPolicyEditor = () => {
         setMessageType("error");
       }
     } catch (err) {
-      setMessage(
-        "Unable to save preferences. Verify your access rights.",
-      );
+      setMessage("Unable to save preferences. Verify your access rights.");
       setMessageType("error");
     } finally {
       setLoading(false);
     }
   };
 
+  const groupRows = useMemo(() => Object.fromEntries(GROUPS.map((g) => [g.id, controlsFor("global", g.id)])), []);
+
   if (loading) {
     return (
       <div className="loading-container">
         <div className="loading-spinner"></div>
         <h2 className="loading-title">Preparing Settings</h2>
-        <p className="loading-text">
-          Retrieving system preferences...
-        </p>
+        <p className="loading-text">Retrieving system preferences...</p>
       </div>
     );
   }
+
+  const showSetup = !setupDone || rerunSetup;
 
   return (
     // data-sv-build: deploy-staleness stamp (webpack inlines BUILD_INFO at build time) — lets the
@@ -189,16 +354,11 @@ const GlobalPolicyEditor = () => {
     <div className="admin-container" data-sv-build={BUILD_INFO.gitSha}>
       <div className="admin-header">
         <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-          <img
-            src={logo}
-            alt="Sentinel Vault Logo"
-            style={{ height: "32px", width: "auto" }}
-          />
+          <img src={logo} alt="Sentinel Vault Logo" style={{ height: "32px", width: "auto" }} />
           <div>
-            <h1 className="admin-title">System-Wide Preferences</h1>
+            <h1 className="admin-title">Sentinel Vault — Site settings</h1>
             <p className="admin-subtitle">
-              Manage global preferences for Sentinel Vault across every
-              space
+              {showSetup ? "Three questions to get started. Everything can be changed later." : "Manage global preferences for Sentinel Vault across every space"}
             </p>
           </div>
         </div>
@@ -207,366 +367,106 @@ const GlobalPolicyEditor = () => {
       <LicenseBanner />
 
       {message && (
-        <div
-          className={
-            messageType === "success" ? "alert-success" : "alert-error"
-          }
-        >
-          {message}
-        </div>
+        <div className={messageType === "success" ? "alert-success" : "alert-error"}>{message}</div>
       )}
 
-      {/* Tab Navigation */}
-      <div className="tab-navigation">
-        <button
-          className={`tab-button ${activeTab === "general" ? "active" : ""}`}
-          onClick={() => setActiveTab("general")}
-        >
-          General
-        </button>
-        <button
-          className={`tab-button ${activeTab === "alerts" ? "active" : ""}`}
-          onClick={() => setActiveTab("alerts")}
-        >
-          Alerts
-        </button>
-        <button
-          className={`tab-button ${activeTab === "validations" ? "active" : ""}`}
-          onClick={() => setActiveTab("validations")}
-        >
-          Validations
-        </button>
-        <button
-          className={`tab-button ${activeTab === "classification" ? "active" : ""}`}
-          onClick={() => setActiveTab("classification")}
-          data-testid="tab-classification"
-        >
-          Classification
-        </button>
-      </div>
-
-      {/* Tab Content */}
-      <div className="tab-content">
-        {activeTab === "general" && (
-          <div className="settings-panel">
-            <SettingsRow
-              label="Default Seal Duration"
-              description="How long attachments stay sealed by default (minimum 1 hour). Individual spaces can override this with their own duration."
-            >
-              <div className="input-with-unit">
-                <input
-                  className="form-input"
-                  type="number"
-                  value={settings.defaultSealDurationHours}
-                  onChange={(e) => {
-                    const value = parseInt(e.target.value);
-                    if (!isNaN(value)) {
-                      setSettings((prev) => ({
-                        ...prev,
-                        defaultSealDurationHours: Math.max(1, value),
-                      }));
-                    }
-                  }}
-                  min="1"
-                />
-                <span className="input-unit">hrs</span>
-                {settings.defaultSealDurationHours >= 24 && (
-                  <span style={{ marginLeft: "8px", fontSize: "12px", color: "var(--sv-text-subtle)", whiteSpace: "nowrap" }}>
-                    = {formatDurationHours(settings.defaultSealDurationHours)}
-                  </span>
-                )}
-              </div>
-            </SettingsRow>
-
-            <SettingsRow
-              label="Allow Steward Force-Unseal"
-              description="Allow stewards to unseal attachments that were sealed by other users."
-            >
-              <Toggle
-                checked={settings.allowStewardOverride}
-                onChange={(e) =>
-                  setSettings((prev) => ({
-                    ...prev,
-                    allowStewardOverride: e.target.checked,
-                  }))
-                }
-              />
-            </SettingsRow>
-
-            <SettingsRow
-              label="Enable Seal Expiry Notifications"
-              description={
-                settings.autoUnsealEnabled
-                  ? "Users will receive notifications when their seals expire, reminding them to unseal attachments. Attachments are not unsealed automatically."
-                  : "Attachments stay sealed until manually unsealed. Seal timers will show 'Overdue' once the seal duration has passed."
-              }
-            >
-              <Toggle
-                checked={settings.autoUnsealEnabled}
-                onChange={(e) =>
-                  setSettings((prev) => ({
-                    ...prev,
-                    autoUnsealEnabled: e.target.checked,
-                  }))
-                }
-              />
-            </SettingsRow>
-
-            <SettingsRow
-              label="Allow Attachment Removal from Page"
-              description="When enabled, users can delete unsealed attachments directly from the Sentinel Vault panel in the page banner. Deleted attachments are moved to the trash and can be recovered. Sealed attachments cannot be deleted."
-            >
-              <Toggle
-                checked={settings.allowArtifactDelete}
-                onChange={(e) =>
-                  setSettings((prev) => ({
-                    ...prev,
-                    allowArtifactDelete: e.target.checked,
-                  }))
-                }
-              />
-            </SettingsRow>
-
-            <SettingsRow
-              label="Allow Attachment Restore from Page"
-              description="When enabled, users and stewards can restore trashed attachments that still have seal data in Sentinel Vault. Permanently deleted attachments cannot be restored."
-            >
-              <Toggle
-                checked={settings.allowSealRestore}
-                onChange={(e) =>
-                  setSettings((prev) => ({
-                    ...prev,
-                    allowSealRestore: e.target.checked,
-                  }))
-                }
-              />
-            </SettingsRow>
-
-            <SettingsRow
-              label="Allow Seal Cleanup from Page"
-              description="When enabled, users and stewards can remove leftover seal entries for attachments that have been deleted from the page. This cleans up seal data that is no longer needed."
-            >
-              <Toggle
-                checked={settings.allowSealPurge}
-                onChange={(e) =>
-                  setSettings((prev) => ({
-                    ...prev,
-                    allowSealPurge: e.target.checked,
-                  }))
-                }
-              />
-            </SettingsRow>
-
-            <SettingsRow
-              label="Protect Sealed Attachments in Page Body"
-              description="Automatically undo page edits that remove sealed attachments embedded in the page content (such as images or files inserted into the body)."
-            >
-              <Toggle
-                checked={settings.enableContentProtection}
-                onChange={(e) =>
-                  setSettings((prev) => ({
-                    ...prev,
-                    enableContentProtection: e.target.checked,
-                  }))
-                }
-              />
-            </SettingsRow>
-
-            <SettingsRow
-              label="Auto-Insert Macro on Seal"
-              description="When enabled, the Sentinel Vault panel macro is automatically inserted into the page when an attachment is sealed. Individual spaces can still disable this in their own settings. When disabled, no auto-insertion happens regardless of space settings."
-            >
-              <Toggle
-                checked={settings.globalAutoInsertMacro}
-                onChange={(e) =>
-                  setSettings((prev) => ({
-                    ...prev,
-                    globalAutoInsertMacro: e.target.checked,
-                  }))
-                }
-              />
-            </SettingsRow>
-
-            {settings.globalAutoInsertMacro && (
-              <div className="nested-control">
-                <SettingsRow
-                  label="Replace Attachments Macro"
-                  description="When inserting the Sentinel Vault panel, replace the built-in Confluence Attachments macro instead of adding the panel alongside it. If no Attachments macro is found on the page, the panel is inserted at the position configured in space settings."
-                >
-                  <Toggle
-                    checked={settings.replaceAttachmentsMacro}
-                    onChange={(e) =>
-                      setSettings((prev) => ({
-                        ...prev,
-                        replaceAttachmentsMacro: e.target.checked,
-                      }))
-                    }
-                  />
-                </SettingsRow>
-              </div>
-            )}
-
-            {!settings.autoUnsealEnabled && (
-              <SettingsRow
-                label="Reminder Frequency"
-                description={`Users receive a reminder email every ${settings.reminderIntervalDays} day${settings.reminderIntervalDays === 1 ? "" : "s"} about attachments they have sealed. This helps prevent forgotten seals when automatic expiry notifications are turned off.`}
-              >
-                <div className="input-with-unit">
-                  <input
-                    className="form-input"
-                    type="number"
-                    value={settings.reminderIntervalDays}
-                    onChange={(e) => {
-                      const value = parseInt(e.target.value);
-                      if (!isNaN(value)) {
-                        setSettings((prev) => ({
-                          ...prev,
-                          reminderIntervalDays: Math.max(1, value),
-                        }));
-                      }
-                    }}
-                    min="1"
-                  />
-                  <span className="input-unit">days</span>
-                </div>
-              </SettingsRow>
-            )}
+      {showSetup ? (
+        <SetupWizard
+          initialHours={Math.round((values.defaultLockDuration || 0) / 3600)}
+          onFinished={(data) => {
+            setValues((prev) => ({ ...prev, ...readAllEffective("global", { ...prev, ...data }) }));
+            setSetupDone(true); setRerunSetup(false);
+            setMessage("Setup complete. You can fine-tune everything below."); setMessageType("success");
+          }}
+          onSkipped={() => { setSetupDone(true); setRerunSetup(false); }}
+        />
+      ) : (
+        <>
+          {/* Tab Navigation */}
+          <div className="tab-navigation">
+            <button className={`tab-button ${activeTab === "settings" ? "active" : ""}`} onClick={() => setActiveTab("settings")} data-testid="tab-settings">
+              Settings
+            </button>
+            <button className={`tab-button ${activeTab === "validations" ? "active" : ""}`} onClick={() => setActiveTab("validations")} data-testid="tab-validations">
+              Validations
+            </button>
+            <button className={`tab-button ${activeTab === "classification" ? "active" : ""}`} onClick={() => setActiveTab("classification")} data-testid="tab-classification">
+              Classification
+            </button>
           </div>
-        )}
 
-        {activeTab === "alerts" && (
-          <div className="settings-panel">
-            <SettingsRow
-              label="Enable Pop-up Notifications"
-              description="Show brief pop-up notifications on the page when attachments are sealed, unsealed, or when someone attempts unauthorized access."
-            >
-              <Toggle
-                checked={settings.enableFlashMessages}
-                onChange={(e) =>
-                  setSettings((prev) => ({
-                    ...prev,
-                    enableFlashMessages: e.target.checked,
-                  }))
-                }
-              />
-            </SettingsRow>
-
-            <SettingsRow
-              label="Enable Page Status Banners"
-              description="Display a status banner at the top of Confluence pages when attachments are sealed. The banner shows which attachments are sealed and when each seal expires."
-            >
-              <Toggle
-                checked={settings.enableDocRibbons}
-                onChange={(e) =>
-                  setSettings((prev) => ({
-                    ...prev,
-                    enableDocRibbons: e.target.checked,
-                  }))
-                }
-              />
-            </SettingsRow>
-
-            <SettingsRow
-              label="Enable Page Comments"
-              description="Post a Confluence comment on the page when attachments are sealed, unsealed, or when someone attempts unauthorized access. Comments appear in the page's comment section."
-            >
-              <Toggle
-                checked={settings.enableConfluenceDispatches}
-                onChange={(e) =>
-                  setSettings((prev) => ({
-                    ...prev,
-                    enableConfluenceDispatches: e.target.checked,
-                  }))
-                }
-              />
-            </SettingsRow>
-
-            <SettingsRow
-              label="Enable Native Notifications"
-              description="Notify users by posting a Confluence comment that @mentions them. Confluence's own notification engine then emails the user according to their personal notification settings. This is the master switch — it must be on for any of the options below to work."
-            >
-              <Toggle
-                checked={settings.enableEmailDispatches}
-                onChange={(e) =>
-                  setSettings((prev) => ({
-                    ...prev,
-                    enableEmailDispatches: e.target.checked,
-                  }))
-                }
-              />
-            </SettingsRow>
-
-            {settings.enableEmailDispatches && (
-              <div className="nested-control">
-                <SettingsRow
-                  label="Seal Confirmation & Halfway Reminder Notices"
-                  description="Post a comment that mentions the seal owner when a seal is created and when it reaches its midpoint."
-                >
-                  <Toggle
-                    checked={settings.enableSealExpiryReminderEmail}
-                    onChange={(e) =>
-                      setSettings((prev) => ({
-                        ...prev,
-                        enableSealExpiryReminderEmail: e.target.checked,
-                      }))
-                    }
-                  />
-                </SettingsRow>
-
-                <SettingsRow
-                  label="Seal Expiry Notices"
-                  description="Post a comment that mentions the seal owner when one of their seals has expired, prompting them to release it."
-                >
-                  <Toggle
-                    checked={settings.enableAutoUnsealDispatchEmail}
-                    onChange={(e) =>
-                      setSettings((prev) => ({
-                        ...prev,
-                        enableAutoUnsealDispatchEmail: e.target.checked,
-                      }))
-                    }
-                  />
-                </SettingsRow>
-
-                <SettingsRow
-                  label="Recurring Reminder Banners"
-                  description="Show a recurring banner on pages with long-held seals when automatic expiry is disabled. Frequency is controlled by the Reminder Frequency setting in the General tab. (No comment is posted to avoid page clutter.)"
-                >
-                  <Toggle
-                    checked={settings.enablePeriodicReminderEmail}
-                    onChange={(e) =>
-                      setSettings((prev) => ({
-                        ...prev,
-                        enablePeriodicReminderEmail: e.target.checked,
-                      }))
-                    }
-                  />
-                </SettingsRow>
+          {/* Tab Content */}
+          <div className="tab-content">
+            {activeTab === "settings" && (
+              <div className="settings-panel sv-groups">
+                {GROUPS.map((g) => (
+                  <GroupCard
+                    key={g.id}
+                    group={g}
+                    extra={g.id === "advanced" && (
+                      <>
+                        <div className="settings-row" data-testid="sv-row-validations-link">
+                          <div className="settings-row-info">
+                            <p className="settings-row-label">Content rules and AI review</p>
+                            <p className="settings-row-description">Required headings, tables, labels and length limits, plus the optional AI review with its model, prompts and monthly budget. Each has its own switch and saves on its own tab.</p>
+                          </div>
+                          <div className="settings-row-control">
+                            <button type="button" className="btn-secondary" onClick={() => setActiveTab("validations")}>Open Validations</button>
+                          </div>
+                        </div>
+                        <div className="settings-row" data-testid="sv-row-classification-link">
+                          <div className="settings-row-info">
+                            <p className="settings-row-label">Classification levels</p>
+                            <p className="settings-row-description">Which scheme is in use (the site's native levels or the app's own), the levels themselves, and a default level per space.</p>
+                          </div>
+                          <div className="settings-row-control">
+                            <button type="button" className="btn-secondary" onClick={() => setActiveTab("classification")}>Open Classification</button>
+                          </div>
+                        </div>
+                        <div className="settings-row" data-testid="sv-row-rerun-setup">
+                          <div className="settings-row-info">
+                            <p className="settings-row-label">First-run setup</p>
+                            <p className="settings-row-description">Answer the three setup questions again: seal duration, alert profile, classification source. Nothing changes until you press Finish.</p>
+                          </div>
+                          <div className="settings-row-control">
+                            <button type="button" className="sv-link" onClick={() => setRerunSetup(true)} data-testid="sv-rerun-setup">Run setup again</button>
+                          </div>
+                        </div>
+                      </>
+                    )}
+                  >
+                    {groupRows[g.id].map((desc) => (
+                      <ControlRow key={desc.key} desc={desc} values={values} onChange={onChange} />
+                    ))}
+                    {g.id === "alerts" && (
+                      <p className="sv-group-note" data-testid="sv-quiet-note">
+                        A space admin can put a single space in Quiet mode from its Access Control tab: that space then posts no comments and mentions nobody, whatever is set here. Pop-ups and the ribbon are never affected.
+                      </p>
+                    )}
+                  </GroupCard>
+                ))}
               </div>
             )}
+            {activeTab === "validations" && <ValidationsEditor scope="global" />}
+            {activeTab === "classification" && <ClassificationTab />}
           </div>
-        )}
 
-        {activeTab === "validations" && <ValidationsEditor scope="global" />}
-        {activeTab === "classification" && <ClassificationTab />}
-      </div>
-
-      {/* The Validations and Classification tabs save their own state; the policy Apply bar is
-          for the General/Alerts settings only. */}
-      {activeTab !== "validations" && activeTab !== "classification" && (
-        <div className="action-bar">
-          <button className="btn-primary" onClick={onSavePreferences} disabled={loading}>
-            {loading ? "Updating..." : "Apply Configuration"}
-          </button>
-        </div>
+          {/* The Validations and Classification tabs save their own state; the policy Apply bar is
+              for the Settings tab only. */}
+          {activeTab === "settings" && (
+            <div className="action-bar">
+              <button className="btn-primary" onClick={onSavePreferences} disabled={loading}>
+                {loading ? "Updating..." : "Apply Configuration"}
+              </button>
+            </div>
+          )}
+        </>
       )}
     </div>
   );
 };
 
-const RootFrame = () => {
-  return <GlobalPolicyEditor />;
-};
+const RootFrame = () => <GlobalPolicyEditor />;
 
 const container = document.getElementById("root");
 const root = createRoot(container);

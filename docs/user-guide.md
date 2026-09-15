@@ -31,7 +31,7 @@ If the **auto-insert macro** setting is enabled, sealing an attachment on a page
 
 ### Unsealing an Attachment
 
-Click **Unseal** (or **Relinquish** in the realm console) next to any attachment you have sealed. The file is immediately available for anyone to edit. All users who were watching the attachment receive a release notification.
+Click **Unseal** (or **Relinquish** in the space console) next to any attachment you have sealed. The file is immediately available for anyone to edit. All users who were watching the attachment receive a release notification.
 
 ### What Happens When Someone Edits a Sealed File
 
@@ -52,7 +52,7 @@ If another user moves your sealed attachment to the trash:
 2. The seal remains active and the file continues to be protected
 3. Notifications are sent to the seal owner
 
-If the attachment is permanently deleted (bypassing trash), Sentinel Vault cleans up all seal records, content properties, and realm indexes associated with the file.
+If the attachment is permanently deleted (bypassing trash), Sentinel Vault cleans up all seal records, content properties, and space indexes associated with the file.
 
 ### What Happens When Someone Removes a Sealed Image from the Page
 
@@ -69,8 +69,8 @@ This feature is called **content protection** and can be toggled on or off by a 
 
 When a file is sealed by another user and you need to edit it next:
 
-1. Click **Watch** on the sealed attachment (available in the inline panel, overlay, and realm console)
-2. When the seal is released -- whether manually, by expiry, or by steward override -- you receive an email notification
+1. Click **Watch** on the sealed attachment (available in the inline panel, overlay, and space console)
+2. When the seal is released -- whether manually, by expiry, or by space admin override -- you receive an email notification
 3. Click **Watching** to stop watching the attachment
 
 This eliminates the need to repeatedly check whether a file has become available.
@@ -115,59 +115,59 @@ The inline panel embedded in page content provides:
 
 ## For Space Administrators
 
-Space administrators have access to the **Realm Console** under space settings.
+Space administrators have access to the **Space console** under space settings.
 
-### Realm Console
+### Space console
 
-Navigate to **Space settings > Apps > Sentinel Vault** to access the realm console. The tabs you see depend on your role:
+Navigate to **Space settings > Apps > Sentinel Vault** to access the space console. The tabs you see depend on your role:
 
 #### My Sealed Files (all users)
 
 View all attachments you have sealed in this space. Each card shows the file name, page location, space name, seal date, and time remaining. Click **Relinquish** to release any of your seals.
 
-If you are not a steward, a banner offers the option to **Request Steward Access** to gain elevated permissions in this space.
+If you are not a space admin, a banner offers the option to **Request admin access** to gain elevated permissions in this space.
 
-#### Realm Sealed Files (stewards only)
+#### Sealed Files (space admins only)
 
 View all sealed attachments across the entire space. Features include:
 
 - **Column picker** -- Toggle visibility of: Name, Status, Sealed by, Location, File Size, Sealed on, Lapses, Actions
 - **Sort** -- By name, sealed by, location, sealed on, or lapses
-- **Force Unseal** -- Override any user's seal (requires the "Allow Steward Force-Unseal" global setting to be enabled)
+- **Force Unseal** -- Override any user's seal (requires the "Allow space admins to force-unseal" global setting to be enabled)
 - **Watch** -- Watch any sealed attachment to be notified when it is released
 - **Expandable cards** -- Click to reveal thumbnails, download links, and properties links
 - **Pagination** -- Load more sealed files with "Show more"
 
-#### Access Control (stewards only)
+#### Access Control (space admins only)
 
-Manage who has steward privileges in this space:
+Manage who has space admin privileges in this space:
 
-- **Realm Activation** -- Toggle the space between "Active" and "Disabled" states. When disabled, Sentinel Vault features are inactive for the space.
-- **Stewards** -- Search for and add individual users as stewards. Remove existing stewards.
-- **Guilds** -- Add Confluence groups as steward teams. All members of a guild automatically receive steward privileges.
-- **Pending Requests** -- Review steward access requests from regular users. Approve to grant steward status, or deny (the user can re-request after 48 hours). A badge on the tab shows the count of pending requests.
+- **Space Activation** -- Toggle the space between "Active" and "Disabled" states. When disabled, Sentinel Vault features are inactive for the space.
+- **Space admins** -- Search for and add individual users as space admins. Remove existing space admins.
+- **Groups** -- Add Confluence groups as space admin teams. All members of a group automatically receive space admin privileges.
+- **Pending Requests** -- Review space admin access requests from regular users. Approve to grant space admin status, or deny (the user can re-request after 48 hours). A badge on the tab shows the count of pending requests.
 
-#### Reservation Duration (stewards only)
+#### Seal Duration (space admins only)
 
 Configure how long seals last in this space:
 
-- **Use system default** -- Inherit the global seal duration set in the steward console
+- **Use system default** -- Inherit the global seal duration set in the site settings console
 - **Custom duration** -- Set a space-specific seal duration (in hours) that overrides the global default
 
-#### Macro (stewards only)
+#### Macro (space admins only)
 
 Configure macro auto-insertion behavior for this space:
 
 - **Auto-insert macro** -- When enabled and the global auto-insert setting is also enabled, the Sentinel Vault panel macro is automatically inserted into pages when an attachment is sealed
 - **Macro position** -- Choose whether the macro is inserted at the top or bottom of the page
 
-### Requesting Steward Access
+### Requesting admin access
 
 If you are a regular user and need elevated permissions:
 
-1. Open the Realm Console from space settings
-2. In the **My Sealed Files** tab, click **Request Steward Access**
-3. Your request is submitted to the space stewards for review
+1. Open the Space console from space settings
+2. In the **My Sealed Files** tab, click **Request admin access**
+3. Your request is submitted to the space admins for review
 4. You'll see a confirmation banner while your request is pending
 5. If denied, you may submit a new request after 48 hours
 
@@ -175,9 +175,9 @@ If you are a regular user and need elevated permissions:
 
 ## For Site Administrators
 
-Site administrators have access to the **Steward Console** under global Confluence settings.
+Site administrators have access to the **Site settings** under global Confluence settings.
 
-### Steward Console
+### Site settings
 
 Navigate to **Confluence administration > Apps > Sentinel Vault Admin** to configure global settings across two tabs:
 
@@ -186,14 +186,14 @@ Navigate to **Confluence administration > Apps > Sentinel Vault Admin** to confi
 | Setting | Description | Default |
 |---------|-------------|---------|
 | **Default Seal Duration** | How long attachments stay sealed (hours, minimum 1). Individual spaces can override this. | 24 hours |
-| **Allow Steward Force-Unseal** | Allow stewards to unseal attachments sealed by other users | Off |
+| **Allow space admins to force-unseal** | Allow space admins to unseal attachments sealed by other users | Off |
 | **Enable Seal Expiry Notifications** | When on, users receive notifications when seals expire and seals are released automatically. When off, seals persist past expiry (showing "Overdue") and periodic reminders are sent instead. | On |
 | **Allow Attachment Removal from Page** | Users can delete unsealed attachments from the panel. Deleted attachments go to trash. Sealed attachments cannot be deleted. | Off |
-| **Allow Attachment Restore from Page** | Users and stewards can restore trashed attachments that still have seal data. | Off |
-| **Allow Seal Cleanup from Page** | Users and stewards can purge leftover seal entries for permanently deleted attachments. | Off |
+| **Allow Attachment Restore from Page** | Users and space admins can restore trashed attachments that still have seal data. | Off |
+| **Allow Seal Cleanup from Page** | Users and space admins can purge leftover seal entries for permanently deleted attachments. | Off |
 | **Protect Sealed Attachments in Page Body** | Automatically undo page edits that remove sealed attachments embedded in page content (images, file previews). | On |
 | **Auto-Insert Macro on Seal** | Automatically insert the Sentinel Vault panel macro into the page when an attachment is sealed. Individual spaces can still disable this. | Off |
-| **Replace Attachments Macro** | When inserting the panel, replace the built-in Confluence Attachments macro instead of adding alongside it. If no Attachments macro exists, the panel is inserted at the realm-configured position. Only appears when auto-insert is enabled. | Off |
+| **Replace Attachments Macro** | When inserting the panel, replace the built-in Confluence Attachments macro instead of adding alongside it. If no Attachments macro exists, the panel is inserted at the space-configured position. Only appears when auto-insert is enabled. | Off |
 | **Reminder Frequency** | How often to send reminder emails about sealed attachments (days). Only appears when seal expiry notifications are disabled. | 7 days |
 
 #### Alerts Tab
@@ -216,7 +216,7 @@ Navigate to **Confluence administration > Apps > Sentinel Vault Admin** to confi
 Seals expire automatically after the configured duration (default 24 hours). Check with your administrator if a different duration is set. An administrator may also have force-released your seal.
 
 **I need to edit a file sealed by a colleague who is unavailable.**
-Ask a space steward to force-release the seal from the realm console (Realm Sealed Files tab). This requires the "Allow Steward Force-Unseal" setting to be enabled globally.
+Ask a space admin to force-release the seal from the space console (Sealed Files tab). This requires the "Allow space admins to force-unseal" setting to be enabled globally.
 
 **My edit was reverted unexpectedly.**
 You edited a file that was sealed by another user. Check the Confluence comments on the page for details about who sealed it and when. Your changes are preserved in the attachment version history.
@@ -225,25 +225,25 @@ You edited a file that was sealed by another user. Check the Confluence comments
 You removed a sealed attachment embed (such as an inline image) from the page body. Sentinel Vault's content protection feature detected the removal and re-inserted the embed at its original position. Your other page changes were preserved.
 
 **How do I know which files are sealed across the site?**
-Space stewards can view sealed files per space in the realm console (Realm Sealed Files tab). There is no single cross-site view; check each space individually.
+Space admins can view sealed files per space in the space console (Sealed Files tab). There is no single cross-site view; check each space individually.
 
 **Can I seal a file indefinitely?**
 Only if your administrator has disabled seal expiry notifications. In that case, seals persist until manually released, showing "Overdue" after the configured duration, and periodic reminder emails are sent to the seal owner.
 
 **How do I stop receiving email notifications?**
-Email notifications are controlled at the site level by administrators. Contact your Confluence administrator to adjust notification preferences in the steward console Alerts tab.
+Email notifications are controlled at the site level by administrators. Contact your Confluence administrator to adjust notification preferences in the site settings console Alerts tab.
 
 **How do I watch a sealed attachment?**
-Click **Watch** on any attachment sealed by another user (in the inline panel, overlay, or realm console). You'll receive an email when the seal is released. Click **Watching** to stop.
+Click **Watch** on any attachment sealed by another user (in the inline panel, overlay, or space console). You'll receive an email when the seal is released. Click **Watching** to stop.
 
 **Can I customize which columns appear in the panel?**
 Yes. In the inline panel, click the macro config icon (gear) to choose which columns are visible, how many items per page, and how many cards per row. In the overlay, use the column picker in the toolbar -- your overlay preferences are saved in your browser.
 
-**What are guilds?**
-Guilds are Confluence groups assigned as steward teams in a space's Access Control settings. All members of a guild automatically have steward privileges in that space.
+**What are groups?**
+Groups are Confluence groups assigned as space admin teams in a space's Access Control settings. All members of a group automatically have space admin privileges in that space.
 
-**How do I request steward access?**
-Open the Realm Console from space settings. In the My Sealed Files tab, click "Request Steward Access." A steward will review your request. If denied, you can re-request after 48 hours.
+**How do I request space admin access?**
+Open the Space console from space settings. In the My Sealed Files tab, click "Request admin access." A space admin will review your request. If denied, you can re-request after 48 hours.
 
 **The delete/restore/purge buttons are not visible.**
-These actions are disabled by default. A site administrator must enable them individually in the steward console General tab (Allow Attachment Removal, Allow Attachment Restore, Allow Seal Cleanup).
+These actions are disabled by default. A site administrator must enable them individually in the site settings console General tab (Allow Attachment Removal, Allow Attachment Restore, Allow Seal Cleanup).
