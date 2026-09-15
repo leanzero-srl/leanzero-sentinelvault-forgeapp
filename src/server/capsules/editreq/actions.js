@@ -548,6 +548,29 @@ export const revokeSectionEditGrant = async (req) => {
 };
 
 /**
+ * Owner/steward: active edit grants on a SECTION — the section twin of listEditGrants, so the
+ * panel can show "Editors with access" and revoke from the row (docx report 2026-09-15, item 6:
+ * a granted right could be seen on the editor's side but never taken back by the owner).
+ */
+export const listSectionEditGrants = async (req) => {
+  const { sectionId } = req.payload || {};
+  const accountId = req.context.accountId;
+  if (!sectionId) return { grants: [] };
+  const { seal, authorized } = await loadSectionForOwnerAction(sectionId, accountId);
+  if (!seal || !authorized) return { grants: [], reason: "Not authorized" };
+  const { results } = await kvs
+    .query()
+    .where("key", WhereConditions.beginsWith(`section-edit-grant-${sectionId}-`))
+    .limit(50)
+    .getMany();
+  const now = Date.now();
+  const grants = (results || [])
+    .map(({ value }) => value)
+    .filter((g) => g && (!g.expiresAt || new Date(g.expiresAt).getTime() > now));
+  return { grants };
+};
+
+/**
  * P1-3: owner inbox for SECTIONS — every pending edit request on a sealed section the caller
  * owns, across every space. Same K1 shape as listMyEditRequests: the caller's own index prefix,
  * each row confirmed by key, stale rows healed. Nothing in the payload is read.
@@ -598,4 +621,5 @@ export const actions = [
   ["approve-section-edit", approveSectionEdit],
   ["deny-section-edit", denySectionEdit],
   ["revoke-section-edit-grant", revokeSectionEditGrant],
+  ["list-section-edit-grants", listSectionEditGrants],
 ];
