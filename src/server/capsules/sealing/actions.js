@@ -1301,7 +1301,7 @@ const ribbonSummary = async (req) => {
   const payloadId = req.payload?.pageId != null && req.payload.pageId !== "" ? String(req.payload.pageId) : null;
   const out = {
     ok: false, pageId: null, contentIdSeen: contextId != null, contentType,
-    attachments: 0, sealedAttachments: 0, sealedByMe: false, sectionSeals: 0, reason: "none",
+    attachments: 0, sealedAttachments: 0, sealedByMe: false, sectionSeals: 0, trashedSeals: 0, reason: "none",
   };
   const empty = (reason, detail) => {
     console.warn(`[RIBBON] summary empty — ${reason}: page=${out.pageId} ctx=${contextId} type=${contentType} ${detail || ""}`.trim());
@@ -1356,11 +1356,24 @@ const ribbonSummary = async (req) => {
   for (let i = 0; i < ids.length; i += 25) {
     const records = await Promise.all(ids.slice(i, i + 25).map((id) => kvs.get(`protection-${id}`).catch(() => null)));
     for (const r of records) {
-      if (!r || r.trashedOnly) continue;
+      if (!r) continue;
+      if (r.trashedOnly) { out.trashedSeals += 1; continue; }
       out.sealedAttachments += 1;
       if (accountId && r.lockedBy === accountId) out.sealedByMe = true;
     }
   }
+  // A sealed file sitting in the trash is still something to show: the overlay's Trash card is
+  // where its owner restores it, and the ribbon is the only door to that overlay. The default
+  // listing excludes trashed attachments, so ask for them explicitly (best effort).
+  try {
+    const trashed = await asApp().requestConfluence(route`/wiki/api/v2/${collection}/${pageId}/attachments?status=trashed&limit=250`);
+    if (trashed.ok) {
+      const tdata = await trashed.json();
+      const tids = (tdata?.results || []).map((a) => String(a?.id || "")).filter((id) => id && !ids.includes(id));
+      const trecords = await Promise.all(tids.map((id) => kvs.get(`protection-${id}`).catch(() => null)));
+      for (const r of trecords) if (r) out.trashedSeals += 1;
+    }
+  } catch (e) { console.warn("[RIBBON] trashed-attachment probe failed:", e?.message || e); }
 
   try {
     out.sectionSeals = (await listSectionSealRecordsForPage(pageId)).length;
@@ -1369,7 +1382,7 @@ const ribbonSummary = async (req) => {
   }
 
   out.ok = true;
-  if (out.sealedAttachments === 0 && out.sectionSeals === 0) {
+  if (out.sealedAttachments === 0 && out.sectionSeals === 0 && out.trashedSeals === 0) {
     console.info(`[RIBBON] nothing sealed on ${pageId}: attachments=${out.attachments} (type=${contentType})`);
     return { ...out, reason: "none" };
   }
