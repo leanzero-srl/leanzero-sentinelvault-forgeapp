@@ -76,6 +76,8 @@ body {
 }
 
 /* ── View mode: sealed frame ─────────────────────── */
+/* The border follows the seal state the resolver answered (P1-6): brand = sealed,
+ * amber = expired, grey = not sealed yet / still checking. Solid strokes, no rail, no tint. */
 .sec-frame {
   border: 2px solid var(--sec-brand, #0891B2);
   border-radius: 12px;
@@ -83,6 +85,12 @@ body {
   box-shadow: var(--sec-shadow, 0 1px 3px rgba(15, 23, 42, 0.08));
   overflow: hidden;
 }
+.sec-frame[data-state="expired"] { border-color: #B45309; }
+.sec-frame[data-state="expired"] .sec-badge { background: #B45309; color: #FFFFFF; }
+.sec-frame[data-state="unsealed"],
+.sec-frame[data-state="pending"] { border-color: var(--sec-text-secondary, #475569); }
+.sec-frame[data-state="unsealed"] .sec-badge,
+.sec-frame[data-state="pending"] .sec-badge { background: var(--sec-text-secondary, #475569); color: #FFFFFF; }
 .sec-frame.sec-loading {
   padding: 16px;
   color: var(--sec-text-secondary, #475569);
@@ -195,6 +203,21 @@ body {
 .sec-btn:hover {
   background: var(--sec-brand-strong, #0E7490);
   border-color: var(--sec-brand-strong, #0E7490);
+}
+
+.sec-config-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.sec-btn.sec-btn-subtle {
+  background: transparent;
+  border-color: var(--sec-border, #E2E8F0);
+  color: var(--sec-text, #0F172A);
+}
+.sec-btn.sec-btn-subtle:hover {
+  background: var(--sec-bg-subtle, #F8FAFC);
+  border-color: var(--sec-text-secondary, #475569);
 }
 
 .sec-config-error {

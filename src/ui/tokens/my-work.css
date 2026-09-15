@@ -193,6 +193,16 @@ body { margin: 0; background: var(--sv-bg-primary); color: var(--sv-text-primary
 .mw-count { display: inline-flex; align-items: center; justify-content: center; min-width: 20px; height: 20px; padding: 0 6px; border-radius: 9999px; color: #fff; font-size: 11px; font-weight: 800; }
 .mw-count-requests { background: #7C3AED; }
 .mw-count-seals { background: #0891B2; }
+.mw-count-sections { background: #DB2777; }
+.mw-count-access { background: #EA580C; }
+/* the header total — one solid block, same number the ribbon badge will carry */
+.mw-total { margin-left: auto; flex-shrink: 0; padding: 8px 14px; border-radius: 10px; background: #7C3AED; color: #fff; font-size: 14px; font-weight: 800; white-space: nowrap; }
+.mw-total-zero { background: var(--sv-status-neutral, #64748B); }
+/* P1-3: a failed list is an ERROR, not an empty list — solid red, the truth, one Retry */
+.mw-fail { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 14px; border-radius: 10px; background: #DC2626; color: #fff; }
+.mw-fail-text { font-size: 13px; font-weight: 700; }
+.mw-btn-retry { background: #fff; color: #DC2626; flex-shrink: 0; }
+.mw-btn-retry:hover { filter: none; background: #FEE2E2; }
 .mw-count-zero { background: var(--sv-status-neutral, #64748B); }
 .mw-none { margin: 0; font-size: 13px; color: var(--sv-text-secondary); }
 .mw-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }

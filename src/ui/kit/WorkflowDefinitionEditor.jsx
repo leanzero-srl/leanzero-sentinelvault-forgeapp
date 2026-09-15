@@ -85,7 +85,7 @@ const DefinitionForm = ({ initial, isExtra, onSave, onDelete, saving, message })
 
       <div className="wf-def-table" role="table" aria-label="States">
         <div className="wf-def-row wf-def-row-head" role="row">
-          <span>State</span><span>Colour</span><span title="The state every new page starts in">First</span><span title="Pages in this state are protected: an edit by someone who is not an approver or a steward is undone or sends the page back">Protected</span><span>Re-review after (days)</span><span>Can move to</span><span></span>
+          <span>State</span><span>Colour</span><span title="The state every new page starts in">First</span><span title="Pages in this state are protected: an edit by someone who is not an approver or a space admin is undone or sends the page back">Protected</span><span>Re-review after (days)</span><span>Can move to</span><span></span>
         </div>
         {states.map((s) => (
           <div key={s.id} className="wf-def-row" role="row" data-testid="wf-def-state" data-state-id={s.id}>

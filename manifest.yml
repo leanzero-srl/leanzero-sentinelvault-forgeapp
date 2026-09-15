@@ -21,14 +21,14 @@ modules:
       model:
         - claude
 
-  # Macro module — inline reservation status panel on page content
+  # Macro module — inline seal status panel on page content
   macro:
     - key: sentinel-vault-panel
       resource: inline-panel-ui
       resolver:
         function: action-router
       title: Sentinel Vault
-      description: Shows reservation status for every file on this page
+      description: Shows seal status for every file on this page
       layout: block
       categories:
         - admin
@@ -53,7 +53,32 @@ modules:
         openOnInsert: true
         viewportSize: medium
 
-  # Page ribbon for reservation notifications
+  # 5.0 — the classification chip under every page title (always present). Confluence renders
+  # title / icon / tooltip from the content property `sentinel-byline` (written by the seal,
+  # section and classification resolvers — no resolver call on render); the click opens the
+  # page-details modal, the page-level hub that replaces "Manage Attachments".
+  confluence:contentBylineItem:
+    - key: sentinel-vault-byline
+      resource: page-details-ui
+      resolver:
+        function: action-router
+      title: Sentinel Vault
+      tooltip: Classification and seals on this page
+      contentPropertyKey: sentinel-byline
+      viewportContainer: modal
+      viewportSize: large
+
+  # 5.0 — "Seal attachments…" in the page ⋯ menu: the primary way to protect a file. The macro
+  # becomes an optional dashboard, not the gate.
+  confluence:contentAction:
+    - key: sentinel-vault-seal-action
+      resource: page-details-ui
+      resolver:
+        function: action-router
+      title: Seal attachments…
+      viewportSize: large
+
+  # Page ribbon for seal and classification notifications
   confluence:pageBanner:
     - key: sentinel-vault-ribbon
       resource: doc-ribbon
@@ -140,7 +165,7 @@ modules:
   # Sentinel Vault admin configuration module (Custom UI)
   confluence:globalSettings:
     - key: steward-console
-      title: "Sentinel Vault Admin"
+      title: "Sentinel Vault — Site settings"
       resource: steward-console
       resolver:
         function: action-router
@@ -186,6 +211,8 @@ resources:
     path: static/section-setup
   - key: my-work
     path: static/my-work
+  - key: page-details-ui
+    path: static/page-details
 
 permissions:
   scopes:
@@ -219,6 +246,10 @@ permissions:
     - read:content.metadata:confluence
     - read:content.permission:confluence
     - read:label:confluence
+    # 5.0 — data classification through Confluence's own API (Atlassian Guard levels):
+    # read:configuration reads the site's levels, write:space sets a space's default level.
+    - read:configuration:confluence
+    - write:space:confluence
     - storage:app
   content:
     styles:

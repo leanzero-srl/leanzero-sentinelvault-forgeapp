@@ -9,7 +9,13 @@ import {
   mailEditApproved,
   mailEditDenied,
 } from "../../infra/notice-composer.js";
-import { getActiveEditGrant, getActiveSectionEditGrant, writeOwnerIndex, dropOwnerIndex, listPendingRequestsForOwner } from "./logic.js";
+import {
+  getActiveEditGrant, getActiveSectionEditGrant,
+  writeOwnerIndex, dropOwnerIndex, listPendingRequestsForOwner,
+  writeSectionOwnerIndex, dropSectionOwnerIndex, listPendingSectionRequestsForOwner,
+} from "./logic.js";
+import { listMyStewardRequestsCore } from "../realms/actions.js";
+import { listMyApprovals } from "../workflow/approvals.js";
 import { canReadPage, resolvePageSpaceKey } from "../../shared/content-access.js";
 import { recordActivity } from "../../infra/activity-log.js";
 
@@ -391,6 +397,8 @@ export const requestSectionEdit = async (req) => {
     reason: typeof reason === "string" ? reason.trim().slice(0, 300) : "",
     status: "pending", requestedAt: new Date().toISOString(),
   });
+  // P1-3: the owner's index row goes with the record (read back by key: the set is strongly consistent).
+  await writeSectionOwnerIndex(await kvs.get(`section-edit-request-${sectionId}-${accountId}`)).catch((e) => console.warn("[SECTION-EDIT-REQ] owner index", e));
   // A1 (section scope)
   await recordActivity({
     type: "editreq.requested",
@@ -423,7 +431,7 @@ export const checkSectionEdit = async (req) => {
   if (existing.status === "pending") return { status: "pending" };
   if (existing.status === "denied") {
     const deniedAt = existing.deniedAt ? new Date(existing.deniedAt).getTime() : 0;
-    if (Date.now() - deniedAt >= COOLDOWN_MS) { await kvs.delete(`section-edit-request-${sectionId}-${accountId}`); return { status: "none" }; }
+    if (Date.now() - deniedAt >= COOLDOWN_MS) { await kvs.delete(`section-edit-request-${sectionId}-${accountId}`); await dropSectionOwnerIndex(existing); return { status: "none" }; }
     return { status: "denied" };
   }
   return { status: "none" };
@@ -465,6 +473,7 @@ export const approveSectionEdit = async (req) => {
   if (expiryMs > Date.now()) await setUntil(grantKey, grant, expiryMs);
   else await kvs.set(grantKey, grant);
   await kvs.delete(requestKey);
+  await dropSectionOwnerIndex(request);
   // A1 (section scope)
   await recordActivity({
     type: "editreq.approved",
@@ -493,6 +502,7 @@ export const denySectionEdit = async (req) => {
   const existing = await kvs.get(requestKey);
   if (!existing) return { success: false, reason: "Request not found" };
   await kvs.set(requestKey, { ...existing, status: "denied", deniedAt: new Date().toISOString() });
+  await dropSectionOwnerIndex(existing);
   // A1 (section scope)
   await recordActivity({
     type: "editreq.denied",
@@ -537,6 +547,40 @@ export const revokeSectionEditGrant = async (req) => {
   return { success: true };
 };
 
+/**
+ * P1-3: owner inbox for SECTIONS — every pending edit request on a sealed section the caller
+ * owns, across every space. Same K1 shape as listMyEditRequests: the caller's own index prefix,
+ * each row confirmed by key, stale rows healed. Nothing in the payload is read.
+ */
+const listMySectionEditRequests = async (req) => {
+  const accountId = req.context.accountId;
+  if (!accountId) return { requests: [] };
+  const requests = await listPendingSectionRequestsForOwner(accountId);
+  return { requests };
+};
+
+/**
+ * P1-3: what is waiting on the caller, as numbers — for the My work header and, later, the
+ * ribbon/chip badge. Index reads only: three per-caller prefixes confirmed by key, and the
+ * space-admin aggregate, which costs nothing when no space has anyone waiting (the common case)
+ * and one role check per such space otherwise. `approvals` is the raw index count (it does not
+ * drop approvals on trashed pages or AI-blocked transitions the way the inbox lister does, which
+ * needs a REST lookup per page); the inbox card stays the authority for what is listed.
+ * Every arm fails soft to 0 so one broken index cannot blank the whole badge.
+ */
+const countMyWork = async (req) => {
+  const accountId = req.context.accountId;
+  if (!accountId) return { approvals: 0, fileRequests: 0, sectionRequests: 0, accessRequests: 0, total: 0 };
+  const settle = async (p) => { try { return (await p).length; } catch (e) { console.warn("[MY-WORK] count", e); return 0; } };
+  const [approvals, fileRequests, sectionRequests, accessRequests] = await Promise.all([
+    settle(listMyApprovals(accountId)),
+    settle(listPendingRequestsForOwner(accountId)),
+    settle(listPendingSectionRequestsForOwner(accountId)),
+    settle(listMyStewardRequestsCore(accountId).then((r) => r.requests)),
+  ]);
+  return { approvals, fileRequests, sectionRequests, accessRequests, total: approvals + fileRequests + sectionRequests + accessRequests };
+};
+
 export const actions = [
   ["request-edit-access", requestEditAccess],
   ["check-edit-request", checkEditRequest],
@@ -549,6 +593,8 @@ export const actions = [
   ["request-section-edit", requestSectionEdit],
   ["check-section-edit", checkSectionEdit],
   ["list-section-edit-requests", listSectionEditRequests],
+  ["list-my-section-edit-requests", listMySectionEditRequests],
+  ["count-my-work", countMyWork],
   ["approve-section-edit", approveSectionEdit],
   ["deny-section-edit", denySectionEdit],
   ["revoke-section-edit-grant", revokeSectionEditGrant],

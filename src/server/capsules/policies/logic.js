@@ -139,9 +139,11 @@ export async function getAutoUnsealTimeoutHours(realmKey) {
   const globalPolicy = await kvs.get("admin-settings-global");
 
   // Calculate default timeout hours from defaultLockDuration (convert seconds to hours)
+  // The engine default is BASELINE_HOLD_SPAN (48 h) — the UI now shows the same number; the
+  // old literal 24 here was the "48h engine vs 24h UI" contradiction (UX review §3).
   const defaultTimeoutHours = globalPolicy?.defaultLockDuration
     ? Math.round(globalPolicy.defaultLockDuration / 3600)
-    : 24;
+    : Math.round(BASELINE_HOLD_SPAN / 3600);
 
   if (realmKey) {
     // Check realm-specific policy

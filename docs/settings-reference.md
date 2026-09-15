@@ -1,8 +1,8 @@
 # Settings Reference
 
-Complete reference for all configurable settings in Sentinel Vault. Settings are managed through two admin interfaces: the **Steward Console** (global) and the **Realm Console** (per-space).
+Complete reference for all configurable settings in Sentinel Vault. Settings are managed through two admin interfaces: the **Site settings** (global) and the **Space console** (per-space).
 
-## Steward Console (Global Settings)
+## Site settings (global)
 
 Accessible at **Confluence administration > Apps > Sentinel Vault Admin**. Changes here apply site-wide.
 
@@ -12,14 +12,14 @@ Stored in Forge KVS under key: `admin-settings-global`
 
 | Setting | Code Key | Type | Default | Description |
 |---------|----------|------|---------|-------------|
-| Default Seal Duration | `defaultSealDuration` | Integer (seconds, displayed as hours) | 24 hours | How long attachments stay sealed. Minimum 1 hour. Individual realms can override this. |
-| Allow Steward Force-Unseal | `allowStewardOverride` | Boolean | Off | Allow stewards to unseal attachments sealed by other users. |
+| Default Seal Duration | `defaultSealDuration` | Integer (seconds, displayed as hours) | 24 hours | How long attachments stay sealed. Minimum 1 hour. Individual spaces can override this. |
+| Allow space admins to force-unseal | `allowStewardOverride` | Boolean | Off | Allow space admins to unseal attachments sealed by other users. |
 | Enable Seal Expiry Notifications | `autoUnsealEnabled` | Boolean | On | When on: users get expiry notifications and seals are released automatically. When off: seals persist past expiry (show "Overdue"), periodic reminders sent instead. |
 | Allow Attachment Removal from Page | `allowArtifactDelete` | Boolean | Off | Users can delete unsealed attachments from the panel (moves to trash). Sealed attachments cannot be deleted. |
-| Allow Attachment Restore from Page | `allowSealRestore` | Boolean | Off | Users and stewards can restore trashed attachments that still have seal data. |
-| Allow Seal Cleanup from Page | `allowSealPurge` | Boolean | Off | Users and stewards can purge leftover seal entries for permanently deleted attachments. |
+| Allow Attachment Restore from Page | `allowSealRestore` | Boolean | Off | Users and space admins can restore trashed attachments that still have seal data. |
+| Allow Seal Cleanup from Page | `allowSealPurge` | Boolean | Off | Users and space admins can purge leftover seal entries for permanently deleted attachments. |
 | Protect Sealed Attachments in Page Body | `enableContentProtection` | Boolean | On | Automatically undo page edits that remove sealed media embeds (images, file previews) from page content. |
-| Auto-Insert Macro on Seal | `globalAutoInsertMacro` | Boolean | Off | Automatically insert the Sentinel Vault panel macro into the page when an attachment is sealed. Individual realms can disable this. |
+| Auto-Insert Macro on Seal | `globalAutoInsertMacro` | Boolean | Off | Automatically insert the Sentinel Vault panel macro into the page when an attachment is sealed. Individual spaces can disable this. |
 | Replace Attachments Macro | `replaceAttachmentsMacro` | Boolean | Off | When inserting the panel, replace the built-in Confluence Attachments macro. Only visible when auto-insert is enabled. |
 | Reminder Frequency | `reminderIntervalDays` | Integer (days) | 7 | How often to record a periodic reminder banner. Only visible when expiry notifications are disabled. |
 
@@ -35,29 +35,29 @@ Stored in Forge KVS under key: `admin-settings-global`
 | Seal Expiry Notices | `enableAutoUnsealDispatchEmail` | Boolean | On | Post a comment that mentions the seal owner when a seal has expired. KVS key preserved for backwards compatibility. Nested under master toggle. |
 | Recurring Reminder Banners | `enablePeriodicReminderEmail` | Boolean | On | Show recurring banners for long-held seals when auto-unseal is disabled. Banner-only — no comment is posted, to avoid page clutter. Frequency set by Reminder Frequency in General tab. KVS key preserved for backwards compatibility. Nested under master toggle. |
 
-## Realm Console (Space Settings)
+## Space console (space settings)
 
-Accessible at **Space settings > Apps > Sentinel Vault**. Changes apply to the specific space only. Steward-only tabs require steward role (space admin, delegated steward, or guild member).
+Accessible at **Space settings > Apps > Sentinel Vault**. Changes apply to the specific space only. Space admin-only tabs require space admin role (space admin, delegated space admin, or group member).
 
 Stored in Forge KVS under key: `admin-settings-space-{sanitizedRealmKey}`
 
-### Access Control Tab (stewards only)
+### Access Control Tab (space admins only)
 
 | Setting | Code Key | Type | Default | Description |
 |---------|----------|------|---------|-------------|
-| Realm Activation | `activation` | String | `"use-system-default"` | Toggle between "Active" and "Disabled". When disabled, Sentinel Vault features are inactive for the space. |
-| Steward Users | `adminUsers` | Array | `[]` | Individual user accounts granted steward privileges in this space. |
-| Steward Guilds | `adminGroups` | Array | `[]` | Confluence groups whose members receive steward privileges in this space. |
+| Space Activation | `activation` | String | `"use-system-default"` | Toggle between "Active" and "Disabled". When disabled, Sentinel Vault features are inactive for the space. |
+| Admin users | `adminUsers` | Array | `[]` | Individual user accounts granted space admin privileges in this space. |
+| Admin groups | `adminGroups` | Array | `[]` | Confluence groups whose members receive space admin privileges in this space. |
 
-Pending steward access requests are managed through the Access Control tab UI but are not stored as policy settings.
+Pending space admin access requests are managed through the Access Control tab UI but are not stored as policy settings.
 
-### Reservation Duration Tab (stewards only)
+### Seal Duration Tab (space admins only)
 
 | Setting | Code Key | Type | Default | Description |
 |---------|----------|------|---------|-------------|
-| Seal Duration Override | `autoUnlockTimeoutHours` | Integer (hours) or null | `null` (use system default) | Custom seal duration for this space. When null, inherits the global default from the steward console. |
+| Seal Duration Override | `autoUnlockTimeoutHours` | Integer (hours) or null | `null` (use system default) | Custom seal duration for this space. When null, inherits the global default from the site settings console. |
 
-### Macro Tab (stewards only)
+### Macro Tab (space admins only)
 
 | Setting | Code Key | Type | Default | Description |
 |---------|----------|------|---------|-------------|
@@ -70,29 +70,29 @@ Settings follow a cascade from global to space level:
 
 ```
 Baseline defaults (src/server/shared/baseline.js)
-  → Global settings (steward console)
-    → Realm settings (realm console, where applicable)
+  → Global settings (site settings console)
+    → Space settings (space console, where applicable)
 ```
 
-**What can be overridden at realm level:**
-- Seal duration (Reservation Duration tab)
+**What can be overridden at space level:**
+- Seal duration (Seal Duration tab)
 - Auto-insert macro behavior (Macro tab)
 - Macro insert position (Macro tab)
-- Realm activation state (Access Control tab)
-- Steward delegation (Access Control tab)
+- Space activation state (Access Control tab)
+- Admin delegation (Access Control tab)
 
-**What cannot be overridden at realm level (global only):**
+**What cannot be overridden at space level (global only):**
 - All notification toggles (toast, banner, comment, native notifications)
 - Content protection toggle
 - Delete/restore/purge permissions
-- Steward force-unseal permission
+- Space admin force-unseal permission
 - Replace Attachments Macro setting
 - Reminder frequency
 
 ### Seal Duration Resolution
 
 When determining effective seal duration, the system checks in order:
-1. Realm policy `autoUnlockTimeoutHours` (if set and not null)
+1. Space policy `autoUnlockTimeoutHours` (if set and not null)
 2. Global policy `defaultSealDuration`
 3. Baseline constant `BASELINE_HOLD_SPAN` (48 hours / 172800 seconds)
 
@@ -100,9 +100,9 @@ When determining effective seal duration, the system checks in order:
 
 Auto-insertion only occurs when **both** conditions are met:
 1. Global `globalAutoInsertMacro` is enabled
-2. Realm `autoInsertMacro` is not explicitly disabled
+2. Space `autoInsertMacro` is not explicitly disabled
 
-If the global toggle is off, no auto-insertion happens regardless of realm settings.
+If the global toggle is off, no auto-insertion happens regardless of space settings.
 
 ## Inline Panel Configuration
 

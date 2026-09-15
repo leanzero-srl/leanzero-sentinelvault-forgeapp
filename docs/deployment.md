@@ -5,7 +5,6 @@
 - **Node.js 20.x** or later
 - **Forge CLI** -- Install with `npm install -g @forge/cli` ([Getting started guide](https://developer.atlassian.com/platform/forge/getting-started/))
 - **Atlassian developer account** with access to a Confluence Cloud site
-- **Resend account** (optional, for email notifications)
 
 ## Initial Setup
 
@@ -40,8 +39,8 @@ The frontend consists of six independent React surfaces, each bundled by Webpack
 | Inline Panel | `src/ui/surfaces/inline-panel/index.jsx` | `static/inline-panel/` |
 | Overlay | `src/ui/surfaces/overlay/index.jsx` | `static/overlay/` |
 | Doc Ribbon | `src/ui/surfaces/doc-ribbon/index.jsx` | `static/doc-ribbon/` |
-| Steward Console | `src/ui/surfaces/steward-console/index.jsx` | `static/steward-console/` |
-| Realm Console | `src/ui/surfaces/realm-console/index.jsx` | `static/realm-console/` |
+| Site settings | `src/ui/surfaces/steward-console/index.jsx` | `static/steward-console/` |
+| Space console | `src/ui/surfaces/realm-console/index.jsx` | `static/realm-console/` |
 | Panel Setup | `src/ui/surfaces/panel-setup/index.jsx` | `static/panel-setup/` |
 
 ```bash
@@ -96,8 +95,8 @@ After installing, verify the app is working correctly:
 2. **Page banner**: Navigate to any page -- the doc ribbon should appear at the top.
 3. **Seal test**: Upload a test attachment, seal it from the panel, then verify the status updates to "Sealed" with a countdown timer.
 4. **Reversion test**: Log in as a different user and upload a new version of the sealed file. Confirm that Sentinel Vault reverts the change and posts a comment.
-5. **Steward console**: Navigate to Confluence administration > Apps > Sentinel Vault Admin. Verify settings load with defaults.
-6. **Realm console**: Navigate to a space's settings > Apps > Sentinel Vault. Verify the "My Sealed Files" tab loads.
+5. **Space admin console**: Navigate to Confluence administration > Apps > Sentinel Vault Admin. Verify settings load with defaults.
+6. **Space console**: Navigate to a space's settings > Apps > Sentinel Vault. Verify the "My Sealed Files" tab loads.
 
 ## Local Development
 
@@ -119,17 +118,11 @@ The tunnel routes resolver calls to your local code while the UI is served from 
 
 The app has no external dependencies and requires no environment variables. All notifications are posted as Confluence footer comments with `@mention` of the recipient; Confluence's own notification engine then emails the user according to their personal notification preferences. The app qualifies for the **"Runs on Atlassian"** badge — verify with `forge eligibility`.
 
-If you are upgrading from a Resend-based release, unset the obsolete environment variable on each environment:
-
-```bash
-forge variables unset RESEND_API_KEY --environment development
-forge variables unset RESEND_API_KEY --environment staging
-forge variables unset RESEND_API_KEY --environment production
-```
+The app has never shipped with an email integration in production; if a development environment still carries a stray `RESEND_API_KEY` variable from an early prototype, `forge variables unset RESEND_API_KEY --environment development` removes it. Nothing reads it.
 
 ### Feature Flags
 
-Notification channels are controlled by flags in the steward console (global settings UI). Defaults are defined in `src/server/shared/baseline.js`:
+Notification channels are controlled by flags in the site settings console (global settings UI). Defaults are defined in `src/server/shared/baseline.js`:
 
 | Flag | Default | Controls |
 |---|---|---|
@@ -145,7 +138,7 @@ See [Settings Reference](settings-reference.md) for the complete list of all con
 
 ### Seal Duration
 
-Default seal duration is 24 hours as configured in the steward console UI. The baseline constant in `src/server/shared/baseline.js` is 48 hours (`BASELINE_HOLD_SPAN = 2 * 24 * 60 * 60` seconds), which serves as a fallback when no admin configuration exists. Space administrators can override the global default with a custom duration in the realm console.
+Default seal duration is 24 hours as configured in the site settings console UI. The baseline constant in `src/server/shared/baseline.js` is 48 hours (`BASELINE_HOLD_SPAN = 2 * 24 * 60 * 60` seconds), which serves as a fallback when no admin configuration exists. Space administrators can override the global default with a custom duration in the space console.
 
 ## Upgrading
 
@@ -178,4 +171,4 @@ See [Troubleshooting](troubleshooting.md) for a comprehensive list of common iss
 - **Build failures:** Run `npm run lint` to check for syntax errors. Ensure Node.js version matches the `nodejs20.x` runtime in `manifest.yml`.
 - **Permission errors on deploy:** Verify your Forge CLI authentication with `forge whoami`. Re-authenticate with `forge login` if needed.
 - **Tunnel not connecting:** Ensure only one tunnel is running at a time. Kill any existing tunnel processes and retry.
-- **Email notifications not sending:** Verify the Resend API key is set (`forge variables list`). Check that the email master toggle and individual email toggles are enabled in the steward console Alerts tab.
+- **Comment notifications not appearing:** the app posts Confluence comments, never email. Check the comment master toggle (off by default) and the sub-type toggles in the site console Alerts tab, and that the space is not in Quiet mode.

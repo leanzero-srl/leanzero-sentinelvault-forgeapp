@@ -32,7 +32,7 @@ Backend logic is organized into capsules under `src/server/capsules/`. Each caps
 Keep resolver-facing code in `actions.js` and reusable logic in `logic.js`. Cross-capsule imports should reference `logic.js`, not `actions.js`.
 
 Some capsules have additional files:
-- `confluence-sync.js` (sealing) -- Realm index management and content property sync
+- `confluence-sync.js` (sealing) -- Space index management and content property sync
 - `scan-worker.js` (realms) -- Background audit queue consumer
 
 ### Surface Pattern
@@ -105,10 +105,10 @@ There is no automated test suite. Test changes manually using `forge tunnel`:
 
 **Administration scenarios:**
 
-- Test steward console settings changes across both General and Alerts tabs
-- Test realm console force-release as a space steward
-- Request steward access as a regular user, approve/deny as a steward
-- Set a custom seal duration in a realm and confirm it overrides the global default
+- Test site settings console settings changes across both General and Alerts tabs
+- Test space console force-release as a space admin
+- Request space admin access as a regular user, approve/deny as a space admin
+- Set a custom seal duration in a space and confirm it overrides the global default
 - Enable auto-insert macro, seal an attachment, and confirm the panel is inserted into the page
 - Enable Replace Attachments Macro and confirm the native Attachments macro is replaced
 
@@ -133,4 +133,4 @@ When reporting issues, include:
 - Steps to reproduce
 - Relevant output from `forge logs`
 - Which notification channels are enabled/disabled
-- Whether the issue involves steward/admin or regular user permissions
+- Whether the issue involves space admin/admin or regular user permissions

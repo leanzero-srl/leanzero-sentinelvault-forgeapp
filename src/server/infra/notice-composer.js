@@ -3,11 +3,15 @@
  *
  * `dispatchNotice(type, data)` resolves the recipient's display name, builds a
  * Confluence storage-format body via the appropriate blueprint, and posts a
- * footer comment on the page. The mention tag in the body causes Confluence to
- * email the recipient (subject to their personal notification preferences).
+ * footer comment on the page. The mention tag in the body causes Confluence itself
+ * to notify the recipient (and, per their personal preferences, email them). The app
+ * has no egress and sends no mail.
  *
- * The 8 legacy `mailXxx` wrappers are kept under the same names so the existing
- * callsites only need an import-path change.
+ * The legacy `mailXxx` wrappers are kept under the same names so the existing
+ * callsites only need an import-path change. Each takes an optional trailing
+ * `spaceKey` (P1-4): pass the seal's / page's space when you have it so the space's
+ * quiet mode is applied without a page lookup; omit it and the choke point
+ * (`postCommentWithMention`) derives the space from the page.
  */
 
 import { asApp, route } from "@forge/api";
@@ -61,8 +65,8 @@ export const ALERT_CATEGORIES = {
 
 /**
  * Resolve display name for an Atlassian account.
- * Email lookup is no longer needed — Confluence's notification engine
- * handles the mention email itself.
+ * No email lookup — the app never sends mail; Confluence's own notification engine
+ * handles the @mention (and any email the recipient has opted into).
  */
 export async function fetchOperatorProfile(accountId) {
   let displayName = "Unknown User";
@@ -149,11 +153,12 @@ function buildBlueprint(type, data) {
  * @param {string} data.recipientAccountId - Atlassian accountId of the primary mention recipient
  * @param {string} data.pageId - Confluence page where the comment is posted
  * @param {string} data.artifactName
+ * @param {string} [data.spaceKey] - the page's space (quiet-mode lookup); derived from pageId when absent
  * @param {Object} [data.extra] - Type-specific fields (expiryDate, editorAccountId, …)
- * @returns {Promise<{success: boolean, commentId?: string, reason?: string}>}
+ * @returns {Promise<{success: boolean, commentId?: string, reason?: string, suppressed?: boolean}>}
  */
 export async function dispatchNotice(type, data) {
-  const { recipientAccountId, pageId, artifactName, extra = {} } = data;
+  const { recipientAccountId, pageId, artifactName, spaceKey = null, extra = {} } = data;
 
   if (!recipientAccountId) {
     return { success: false, reason: "Missing recipientAccountId" };
@@ -188,12 +193,16 @@ export async function dispatchNotice(type, data) {
     const result = await postCommentWithMention({
       pageId,
       storageBody: blueprint.storageBody,
+      spaceKey,
+      noticeType: type,
     });
 
     if (result.success) {
       console.info(
         `[NOTICE] ${type} comment posted on page ${pageId} (commentId=${result.commentId || "n/a"})`,
       );
+    } else if (result.suppressed) {
+      // Deliberate (flag off / quiet space) — already logged at the choke point; not a failure.
     } else {
       console.warn(`[NOTICE] ${type} comment failed: ${result.reason}`);
     }
@@ -216,12 +225,14 @@ export async function mailViolationAlert(
   artifactName,
   pageId,
   actionVerb = "edit",
+  spaceKey = null,
 ) {
   return dispatchNotice(ALERT_CATEGORIES.SEAL_VIOLATION, {
     recipientAccountId: ownerAccountId,
     pageId,
     artifactName,
     extra: { editorAccountId, actionVerb },
+    spaceKey,
   });
 }
 
@@ -230,12 +241,14 @@ export async function mailSealConfirmation(
   artifactName,
   pageId,
   expiryDate,
+  spaceKey = null,
 ) {
   return dispatchNotice(ALERT_CATEGORIES.SEAL_CREATED, {
     recipientAccountId: ownerAccountId,
     pageId,
     artifactName,
     extra: { expiryDate },
+    spaceKey,
   });
 }
 
@@ -244,12 +257,14 @@ export async function mailHalfwayReminder(
   artifactName,
   pageId,
   expiryDate,
+  spaceKey = null,
 ) {
   return dispatchNotice(ALERT_CATEGORIES.FIFTY_PERCENT_REMINDER, {
     recipientAccountId: ownerAccountId,
     pageId,
     artifactName,
     extra: { expiryDate },
+    spaceKey,
   });
 }
 
@@ -262,12 +277,14 @@ export async function mailLapseNotice(
   artifactName,
   pageId,
   { expiryDate, noticeNumber, noticeLimit, releaseDate },
+  spaceKey = null,
 ) {
   return dispatchNotice(ALERT_CATEGORIES.LAPSE_NOTICE, {
     recipientAccountId: ownerAccountId,
     pageId,
     artifactName,
     extra: { expiryDate, noticeNumber, noticeLimit, releaseDate },
+    spaceKey,
   });
 }
 
@@ -279,12 +296,14 @@ export async function mailAutoReleaseNotice(
   artifactName,
   pageId,
   { noticeLimit },
+  spaceKey = null,
 ) {
   return dispatchNotice(ALERT_CATEGORIES.AUTO_RELEASE, {
     recipientAccountId: ownerAccountId,
     pageId,
     artifactName,
     extra: { noticeLimit },
+    spaceKey,
   });
 }
 
@@ -293,12 +312,14 @@ export async function mailExpiryNotice(
   artifactName,
   pageId,
   expiryDate,
+  spaceKey = null,
 ) {
   return dispatchNotice(ALERT_CATEGORIES.EXPIRY_NOTIFICATION, {
     recipientAccountId: ownerAccountId,
     pageId,
     artifactName,
     extra: { expiryDate },
+    spaceKey,
   });
 }
 
@@ -307,8 +328,9 @@ export async function dispatchAutoReleaseAlert(
   artifactName,
   pageId,
   unlockDate,
+  spaceKey = null,
 ) {
-  return mailExpiryNotice(ownerAccountId, artifactName, pageId, unlockDate);
+  return mailExpiryNotice(ownerAccountId, artifactName, pageId, unlockDate, spaceKey);
 }
 
 export async function mailPeriodicReminder(
@@ -317,12 +339,14 @@ export async function mailPeriodicReminder(
   pageId,
   sealDate,
   daysSealed,
+  spaceKey = null,
 ) {
   return dispatchNotice(ALERT_CATEGORIES.PERIODIC_REMINDER, {
     recipientAccountId: ownerAccountId,
     pageId,
     artifactName,
     extra: { sealDate, daysSealed },
+    spaceKey,
   });
 }
 
@@ -331,12 +355,14 @@ export async function mailReleaseNotice(
   artifactName,
   pageId,
   unlockDate,
+  spaceKey = null,
 ) {
   return dispatchNotice(ALERT_CATEGORIES.RELEASE_NOTIFICATION, {
     recipientAccountId: watcherAccountId,
     pageId,
     artifactName,
     extra: { unlockDate },
+    spaceKey,
   });
 }
 
@@ -347,12 +373,14 @@ export async function mailStewardOverrideNotice(
   artifactName,
   pageId,
   unlockDate,
+  spaceKey = null,
 ) {
   return dispatchNotice(ALERT_CATEGORIES.STEWARD_OVERRIDE_RELEASE, {
     recipientAccountId: sealOwnerAccountId,
     pageId,
     artifactName,
     extra: { stewardAccountId, stewardDisplayName, unlockDate },
+    spaceKey,
   });
 }
 
@@ -365,27 +393,31 @@ export async function mailEditRequest(
   artifactName,
   pageId,
   reason,
+  spaceKey = null,
 ) {
   return dispatchNotice(ALERT_CATEGORIES.EDIT_ACCESS_REQUEST, {
     recipientAccountId: ownerAccountId,
     pageId,
     artifactName,
     extra: { requesterAccountId, requesterName, reason },
+    spaceKey,
   });
 }
 
-export async function mailEditApproved(requesterAccountId, artifactName, pageId) {
+export async function mailEditApproved(requesterAccountId, artifactName, pageId, spaceKey = null) {
   return dispatchNotice(ALERT_CATEGORIES.EDIT_ACCESS_APPROVED, {
     recipientAccountId: requesterAccountId,
     pageId,
     artifactName,
+    spaceKey,
   });
 }
 
-export async function mailEditDenied(requesterAccountId, artifactName, pageId) {
+export async function mailEditDenied(requesterAccountId, artifactName, pageId, spaceKey = null) {
   return dispatchNotice(ALERT_CATEGORIES.EDIT_ACCESS_DENIED, {
     recipientAccountId: requesterAccountId,
     pageId,
     artifactName,
+    spaceKey,
   });
 }

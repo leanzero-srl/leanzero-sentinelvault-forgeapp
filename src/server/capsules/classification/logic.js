@@ -37,11 +37,13 @@ export const spaceKvsKey = (spaceId) => `classification-space-${spaceId}`;
 export const pageKvsKey = (pageId) => `classification-page-${pageId}`;
 
 // Solid, saturated hues — the owner's UI rule (no washed tints). Ranks 1..4, low → high.
+// The approved mockup values (docs/mockups/sv-status-surfaces.html, decision 1): white ink on each
+// is >= 4.5:1 (15803D 5.0, 1D4ED8 6.3, B45309 5.0, B91C1C 6.4); the previous #059669/#D97706 were 3.8/3.2.
 export const DEFAULT_LEVELS = Object.freeze([
-  { id: "public", name: "Public", color: "#059669", rank: 1, description: "Safe to share outside the organisation." },
-  { id: "internal", name: "Internal", color: "#0891B2", rank: 2, description: "For people inside the organisation only." },
-  { id: "confidential", name: "Confidential", color: "#D97706", rank: 3, description: "Limited to a named audience; handle with care." },
-  { id: "restricted", name: "Restricted", color: "#DC2626", rank: 4, description: "Highest sensitivity; strictly need-to-know." },
+  { id: "public", name: "Public", color: "#15803D", rank: 1, description: "Safe to share outside the organisation." },
+  { id: "internal", name: "Internal", color: "#1D4ED8", rank: 2, description: "For people inside the organisation only." },
+  { id: "confidential", name: "Confidential", color: "#B45309", rank: 3, description: "Limited to a named audience; handle with care." },
+  { id: "restricted", name: "Restricted", color: "#B91C1C", rank: 4, description: "Highest sensitivity; strictly need-to-know." },
 ]);
 
 export const MAX_LEVELS = 8;
@@ -89,8 +91,10 @@ export function validateLevels(input) {
     if (!name || name.length > 40) return { ok: false, error: `Level "${id}" needs a name of 1–40 characters` };
     if (!HEX.test(color)) return { ok: false, error: `Level "${name}" needs a hex colour like #DC2626` };
     if (!Number.isInteger(rank) || rank < 1 || rank > 99) return { ok: false, error: `Level "${name}" needs a whole-number rank from 1 to 99` };
-    if (ids.has(id)) return { ok: false, error: `Duplicate level id "${id}"` };
+    // Name first: the editor derives the id from the name, so "Duplicate level name" is the
+    // message that matches what the person actually typed (UAT defect 4).
     if (names.has(name.toLowerCase())) return { ok: false, error: `Duplicate level name "${name}"` };
+    if (ids.has(id)) return { ok: false, error: `Duplicate level id "${id}"` };
     if (ranks.has(rank)) return { ok: false, error: `Two levels share rank ${rank}` };
     ids.add(id); names.add(name.toLowerCase()); ranks.add(rank);
     out.push({ id, name, color, rank, description });

@@ -29,7 +29,7 @@ Sentinel Vault solves all three by adding a **seal (lock) layer** on top of Conf
 - **Attachment Sealing** -- Lock any attachment before editing. Other users see the seal status and who holds it. Seals are enforced at the platform level -- not just a visual indicator.
 - **Automatic Reversion** -- If someone modifies a sealed attachment, Sentinel Vault detects the change in real time, downloads the previous version, re-uploads it, and restores the file to its pre-violation state. The unauthorized edit is undone automatically.
 - **Content Protection** -- When a sealed attachment is embedded in a page body (e.g., an inline image or file preview), Sentinel Vault monitors page edits. If someone removes the sealed embed, the system detects the missing media reference, retrieves it from the previous page version, and surgically re-inserts it at its original position -- without reverting any other page changes. Up to 3 retries with exponential backoff handle version conflicts.
-- **Delete and Trash Protection** -- If someone trashes a sealed attachment, Sentinel Vault automatically restores it from the trash. If an attachment is permanently deleted, all associated seal records, content properties, and realm indexes are cleaned up, and the seal owner is notified.
+- **Delete and Trash Protection** -- If someone trashes a sealed attachment, Sentinel Vault automatically restores it from the trash. If an attachment is permanently deleted, all associated seal records, content properties, and space indexes are cleaned up, and the seal owner is notified.
 - **Infinite Loop Prevention** -- The system's own restoration uploads are filtered out (via a cached app account ID) so reversion doesn't trigger itself.
 
 ### Attachment Management
@@ -44,7 +44,7 @@ The inline panel and overlay provide full attachment management beyond just seal
 
 ### Watch / Notify Me
 
-Users can **watch** attachments sealed by other users. When the seal is released -- whether manually, by expiry, or by steward override -- all watchers receive a notification email. This eliminates the need to repeatedly check whether a file is available.
+Users can **watch** attachments sealed by other users. When the seal is released -- whether manually, by expiry, or by space-admin override -- all watchers are @mentioned in a page comment (Confluence's own notification engine then emails them according to their personal preferences). This eliminates the need to repeatedly check whether a file is available.
 
 ### Multi-Channel Notifications
 
@@ -55,22 +55,22 @@ When a seal violation occurs (or other notable events happen), Sentinel Vault no
 | **Toast Messages** | In-app popup notifications via Forge Bridge `showFlag` API |
 | **Page Banners** | Persistent ribbon alerts on the affected Confluence page |
 | **Confluence Comments** | Automated footer comments on the page with @mentions |
-| **Email Alerts** | Templated HTML emails via Resend API (8 email types) |
-| **Watch Notifications** | Release emails sent to users watching a sealed attachment |
+| **Comment Alerts** | Confluence footer comments with `@mention` of the recipient (seal, violation, expiry, release, request, approval); no external email service |
+| **Watch Notifications** | A release comment @mentioning every user watching a sealed attachment |
 
-Each channel can be independently enabled or disabled at the global level through the steward console.
+Each channel can be independently enabled or disabled at the global level through the site settings console.
 
 ### Edit Requests
 
-A user can request permission to edit an attachment sealed by someone else, without being granted full steward rights. The **seal owner** approves or denies the request from the Sentinel Vault space console (My Sealed Files → Edit Requests). Approved editors can replace the file until the seal expires; everyone else stays blocked. Grants are scoped to the artifact and are swept automatically when the seal is released, expires, or the attachment is deleted.
+A user can request permission to edit an attachment sealed by someone else, without being granted full space-admin rights. The **seal owner** approves or denies the request from the Sentinel Vault space console (My Sealed Files → Edit Requests). Approved editors can replace the file until the seal expires; everyone else stays blocked. Grants are scoped to the attachment and are swept automatically when the seal is released, expires, or the attachment is deleted.
 
 ### Content Sealing (Sections)
 
-Beyond attachments, you can lock a **section of a Confluence page** -- a heading and its content -- against unauthorized edits. Pick a section from the Sentinel Vault panel's *Sealed Sections* group; the app wraps it in a "Sealed Section" macro carrying a stable id. If anyone other than the owner edits the body or removes the macro, the page-update trigger restores the sealed content from a snapshot (the same detect-and-restore mechanism used for sealed attachment embeds). The owner or a steward can release the section at any time.
+Beyond attachments, you can lock a **section of a Confluence page** -- a heading and its content -- against unauthorized edits. Pick a section from the Sentinel Vault panel's *Sealed Sections* group; the app wraps it in a "Sealed Section" macro carrying a stable id. If anyone other than the owner edits the body or removes the macro, the page-update trigger restores the sealed content from a snapshot (the same detect-and-restore mechanism used for sealed attachment embeds). The owner or a space admin can release the section at any time.
 
 ### Conditions & Validations
 
-Define rules that Confluence pages are checked against on create and edit -- required headings/tables/labels, heading hierarchy, length limits, and more. Because Forge page events fire **after** a save, enforcement is applied post-save in one of three selectable modes: **advisory** (post a comment listing issues), **gate** (stamp a pass/fail status the panel and ribbon display), and **revert** (restore the last compliant version -- strict, opt-in, may discard work). Rules are authored in the steward console's *Validations* tab.
+Define rules that Confluence pages are checked against on create and edit -- required headings/tables/labels, heading hierarchy, length limits, and more. Because Forge page events fire **after** a save, enforcement is applied post-save in one of three selectable modes: **advisory** (post a comment listing issues), **gate** (stamp a pass/fail status the panel and ribbon display), and **revert** (restore the last compliant version -- strict, opt-in, may discard work). Rules are authored in the site settings console's *Validations* tab.
 
 ### Semantic AI Validations (Runs on Atlassian)
 
@@ -78,13 +78,13 @@ AI-powered content review using **Atlassian-hosted Claude via the Forge LLM API*
 
 ### Administration
 
-#### Steward Console (Global Settings)
+#### Site settings (global)
 
 Site-wide administration panel accessible under **Confluence administration > Apps > Sentinel Vault Admin**. Two tabs:
 
 **General tab:**
 - Default seal duration (hours, minimum 1)
-- Allow steward force-unseal
+- Allow space admin force-unseal
 - Enable seal expiry notifications (auto-unseal behavior)
 - Allow attachment removal from page (delete)
 - Allow attachment restore from page
@@ -98,31 +98,32 @@ Site-wide administration panel accessible under **Confluence administration > Ap
 - Enable pop-up notifications (toasts)
 - Enable page status banners
 - Enable page comments
-- Enable email notifications (master toggle)
-- Seal confirmation emails (nested under email master toggle)
-- Seal expiry reminder emails (nested)
-- Recurring reminder emails (nested)
+- Enable comment notifications (master toggle; off by default — in-app toast and ribbon are always on)
+- Seal confirmation comments (nested under the master toggle)
+- Seal expiry reminder comments (nested)
+- Recurring reminder comments (nested)
+- Per-space quiet mode (no comments or @mentions in that space)
 
-#### Realm Console (Space Settings)
+#### Space console (space settings)
 
 Space-level administration accessible under **Space settings > Apps > Sentinel Vault**. Tabs vary by role:
 
 **Regular users see:**
 - **My Sealed Files** -- All attachments sealed by the current user in this space, with unseal controls
 
-**Stewards additionally see:**
-- **Realm Sealed Files** -- All sealed attachments across the space with column picker, sort, force-unseal, and watch controls
-- **Access Control** -- Realm activation toggle (active/disabled), manage individual steward users, manage steward guilds (Confluence groups), and review pending steward access requests (approve/deny)
-- **Reservation Duration** -- Use system default or set a custom per-space seal duration
+**Space admins additionally see:**
+- **Sealed Files** -- All sealed attachments across the space with column picker, sort, force-unseal, and watch controls
+- **Access Control** -- Space activation toggle (active/disabled), manage individual space admin users, manage space-admin groups (Confluence groups), and review pending space admin access requests (approve/deny)
+- **Seal Duration** -- Use system default or set a custom per-space seal duration
 - **Macro** -- Auto-insert macro toggle and macro position (top/bottom of page)
 
-#### Steward Access Requests
+#### Admin access requests
 
-Non-steward users can request steward access from the **My Sealed Files** tab. Stewards review and approve or deny requests from the **Access Control** tab. Denied users may re-request after 48 hours.
+Users without admin access can request space admin access from the **My Sealed Files** tab. Space admins review and approve or deny requests from the **Access Control** tab. Denied users may re-request after 48 hours.
 
 #### Configurable Seal Duration
 
-Default is 24 hours (configurable in the steward console). Individual spaces can override the global default in the realm console. The baseline constant in code is 48 hours (`BASELINE_HOLD_SPAN`), but the steward console initializes the UI default to 24 hours. Seals expire automatically when expiry notifications are enabled.
+Default is 24 hours (configurable in the site settings console). Individual spaces can override the global default in the space console. The baseline constant in code is 48 hours (`BASELINE_HOLD_SPAN`), but the site settings console initializes the UI default to 24 hours. Seals expire automatically when expiry notifications are enabled.
 
 ### Automated Maintenance
 
@@ -130,10 +131,10 @@ Sentinel Vault runs several scheduled tasks and event triggers to keep the syste
 
 | Task | Frequency | Purpose |
 |------|-----------|---------|
-| **Expiry Sweep** | Hourly | Releases expired seals (when expiry notifications enabled), sends halfway reminder emails at 50% duration, sends expiry notification emails |
-| **Seal Index Cron** | Hourly | Rebuilds performance indexes for realm seal lookups using `protections-last-modified` timestamp optimization |
-| **Recurring Nudge** | Daily | Sends periodic reminder emails about active seals (only when expiry notifications are disabled) |
-| **Realm Scan Consumer** | On demand | Async queue processor (900s timeout) for space-level seal index auditing |
+| **Expiry Sweep** | Hourly | Releases expired seals (when expiry notifications enabled), posts halfway reminder comments at 50% duration, posts expiry notification comments |
+| **Seal Index Cron** | Hourly | Rebuilds performance indexes for space seal lookups using `protections-last-modified` timestamp optimization |
+| **Recurring Nudge** | Daily | Posts periodic reminder comments about active seals (only when expiry notifications are disabled) |
+| **Space Scan Consumer** | On demand | Async queue processor (900s timeout) for space-level seal index auditing |
 | **Attachment Event Trigger** | Real-time | Fires on attachment updated/trashed/deleted -- detects violations, restores files, cleans up seals |
 | **Page Content Trigger** | Real-time | Fires on page updated -- detects removed sealed media embeds and surgically re-inserts them |
 | **Lifecycle Trigger** | On install/uninstall | Cleans up all KVS records on app uninstall |
@@ -142,12 +143,12 @@ Sentinel Vault runs several scheduled tasks and event triggers to keep the syste
 
 | Role | Capabilities |
 |------|-------------|
-| **Operators** | Regular users who can seal and unseal their own attachments, watch others' seals, request steward access |
-| **Realm Stewards** | Space administrators and delegated users with force-unseal, access control, realm policy, and audit capabilities |
-| **Steward Guilds** | Confluence groups configured as steward teams -- all members receive steward privileges |
-| **Site Administrators** | Full access to global settings via the steward console, plus steward capabilities in all spaces |
+| **Users** | Regular users who can seal and unseal their own attachments, watch others' seals, request space admin access |
+| **Space admins** | Space administrators and delegated users with force-unseal, access control, space policy, and audit capabilities |
+| **Admin groups** | Confluence groups configured as space admin teams -- all members receive space admin privileges |
+| **Site Administrators** | Full access to global settings via the site settings console, plus space admin capabilities in all spaces |
 
-Steward status is determined by any of: Confluence space ADMINISTER permission, membership in configured steward guilds/users, or site/org admin status.
+Space admin status is determined by any of: Confluence space ADMINISTER permission, membership in configured space-admin groups/users, or site/org admin status.
 
 ---
 
@@ -155,11 +156,11 @@ Steward status is determined by any of: Confluence space ADMINISTER permission, 
 
 ```
 User seals an attachment via the Sentinel Vault panel or overlay
-  → Seal record written to Forge KVS (operator, timestamp, expiry, artifact ID, version)
+  → Seal record written to Forge KVS (user, timestamp, expiry, attachment ID, version)
   → Content property set on the page for CQL queryability
   → Realm-seal index written for space-level queries
   → If auto-insert enabled: panel macro embedded in page ADF
-  → Seal confirmation email sent (if enabled)
+  → Seal confirmation comment posted (if enabled)
   → Page banner and macro panel update to show sealed status
 
 Another user uploads a new version of the sealed attachment
@@ -170,7 +171,7 @@ Another user uploads a new version of the sealed attachment
     → Previous version downloaded via Confluence REST API
     → Previous version re-uploaded, restoring the original
     → Confluence comment posted with @mentions (seal owner + editor)
-    → Violation alert email sent to seal owner and editor
+    → Violation alert comment posted, @mentioning seal owner and editor (if enabled)
     → Page banner alert stored for next page view
     → Toast notification dispatched
 
@@ -193,7 +194,7 @@ Seal expires (or user manually releases)
   → Seal record removed from KVS
   → Content property cleared
   → Realm-seal index cleaned up
-  → Watcher notification emails sent
+  → Watcher notification comment posted
   → Panel removed from page if no other seals remain
   → UI updated to show unsealed status
 ```
@@ -208,9 +209,9 @@ sentinel-vault/
 ├── src/
 │   ├── boot.js                     # Entry point: exports all resolvers and triggers
 │   ├── server/
-│   │   ├── registry.js             # Action router (Forge Resolver, 57 action keys)
+│   │   ├── registry.js             # Action router (Forge Resolver, 115 action keys)
 │   │   ├── triggers.js             # Event and scheduled trigger handlers
-│   │   ├── capsules/               # 7 modular feature domains
+│   │   ├── capsules/               # 13 modular feature domains (sealing, section-seals, editreq, workflow, activity, classification, validations, bulletins, policies, realms, operators, panels, entitlements)
 │   │   │   ├── sealing/            # Core file locking logic (8 actions)
 │   │   │   ├── bulletins/          # Multi-channel notification dispatch (9 actions)
 │   │   │   ├── policies/           # Global and realm-level configuration (8 actions)
@@ -218,10 +219,10 @@ sentinel-vault/
 │   │   │   ├── operators/          # User management and profiles (5 actions)
 │   │   │   ├── panels/             # Frontend panel rendering logic (12 actions)
 │   │   │   └── entitlements/       # Permission and authorization checks (3 actions)
-│   │   ├── infra/                  # Email, artifact, document utilities
+│   │   ├── infra/                  # Comment notices, attachment, document utilities
 │   │   └── shared/                 # Authorization, configuration, defaults
 │   └── ui/
-│       ├── surfaces/               # 6 independent React applications
+│       ├── surfaces/               # 8 independent React applications
 │       │   ├── inline-panel/       # Macro: attachment grid with seal controls
 │       │   ├── overlay/            # Modal: full attachment management
 │       │   ├── doc-ribbon/         # Page banner: status bar and alerts
@@ -242,12 +243,12 @@ The backend is organized into **capsules** -- autonomous feature modules that en
 | Capsule | Actions | Responsibility |
 |---------|---------|---------------|
 | **Sealing** | 8 | Seal/unseal operations, seal state queries, expiry logic, version tracking, restore from trash, purge |
-| **Bulletins** | 9 | Toast, banner, comment, and email notification dispatch, watch/unwatch, dispatch acknowledgement |
-| **Policies** | 8 | Settings storage and retrieval at global and realm level, ruleset management |
-| **Realms** | 11 | Space-level administration, force-unseal, steward access requests, async scanning, audit queues |
-| **Operators** | 5 | User identity resolution, profile lookups, group membership, CQL-based search |
+| **Bulletins** | 9 | Toast, banner and comment notification dispatch, watch/unwatch, dispatch acknowledgement |
+| **Policies** | 8 | Settings storage and retrieval at global and space level, ruleset management |
+| **Realms** (`realms/`) | 11 | Space-level administration, force-unseal, space admin access requests, async scanning, audit queues |
+| **Operators** (`operators/`) | 5 | User identity resolution, profile lookups, group membership, CQL-based search |
 | **Panels** | 12 | Data aggregation for frontend rendering, upload, delete, label, panel inject/extract, thumbnail preview |
-| **Entitlements** | 3 | Permission checks, license verification, steward override status |
+| **Entitlements** | 3 | Permission checks, license verification, space-admin override status |
 
 All capsule actions are aggregated in `src/server/registry.js`, which creates a single Forge Resolver that routes incoming requests by action key. A `heartbeat` action provides health checking.
 
@@ -258,8 +259,8 @@ All capsule actions are aggregated in `src/server/registry.js`, which creates a 
 | **Inline Panel** | `macro` | Embedded panel on Confluence pages showing seal status, seal/unseal controls, upload, labels, delete/restore/purge |
 | **Overlay** | Modal (invoked from other surfaces) | Full-featured attachment management with column picker, sort, pagination, panel visibility toggle |
 | **Doc Ribbon** | `confluence:pageBanner` | Persistent notification bar showing seal counts, alerts, and a "Manage Attachments" button |
-| **Steward Console** | `confluence:globalSettings` | Site-wide admin dashboard for policies and notification config (2 tabs, 17 settings) |
-| **Realm Console** | `confluence:spacePage` | Per-space admin panel with 5 tabs: My Sealed Files, Realm Sealed Files, Access Control, Reservation Duration, Macro |
+| **Site Console** (site settings console) | `confluence:globalSettings` | Site-wide admin dashboard for policies and notification config (4 tabs: General, Alerts, Validations, Classification) |
+| **Space Console** (space console) | `confluence:spacePage` | Per-space admin panel with 8 tabs: My Sealed Files, Sealed Files, Access Control, Seal Duration, Macro, Validations, Workflow, Activity |
 | **Panel Setup** | Macro `config` | Configure inline-panel display: column visibility, rows per page, cards per row, upload zone toggle |
 
 ---
@@ -269,10 +270,9 @@ All capsule actions are aggregated in `src/server/registry.js`, which creates a 
 | Layer | Technology |
 |-------|------------|
 | **Platform** | Atlassian Forge |
-| **Runtime** | Node.js 20.x |
+| **Runtime** | Node.js 22.x |
 | **Frontend** | React 19, Webpack 5 |
 | **Storage** | Forge KVS (with query indexes) |
-| **Email** | Resend API |
 | **Build** | Babel 7, ESLint 8, Webpack 5 |
 | **Theming** | CSS custom properties (`--sv-` prefix), dark mode support |
 
@@ -280,10 +280,9 @@ All capsule actions are aggregated in `src/server/registry.js`, which creates a 
 
 ## Prerequisites
 
-- **Node.js 20+** (Forge runtime is `nodejs20.x`)
+- **Node.js 22+** (Forge runtime is `nodejs22.x`)
 - **Atlassian Forge CLI** (`npm install -g @forge/cli`)
 - **An Atlassian Cloud developer site** ([get one free](https://developer.atlassian.com/platform/forge/getting-started/))
-- **A Resend API key** (for email notifications -- optional but recommended)
 
 ---
 
@@ -361,14 +360,13 @@ The app requests the following Forge permissions:
 | `write:confluence-content` | Write comments, update attachments (for reversion) |
 | `write:confluence-file` | Upload attachment files (for reversion and user uploads) |
 | `readonly:content.attachment:confluence` | Read-only attachment access |
-| `read:confluence-space.summary` | Resolve space context for realm-level settings |
+| `read:confluence-space.summary` | Resolve space context for space-level settings |
 | `read:space:confluence` | Read space metadata |
-| `write:confluence-space` | Write space-level data |
 | `read:confluence-props` | Read content properties (seal status) |
 | `write:confluence-props` | Write content properties (seal markers) |
 | `read:confluence-content.permission` | Check content permissions |
 | `read:confluence-user` | Resolve user identity for seal ownership |
-| `read:confluence-groups` | Resolve group membership for steward guilds |
+| `read:confluence-groups` | Resolve group membership for space-admin groups |
 | `search:confluence` | CQL queries for sealed attachment discovery |
 | `read:content:confluence` | Read content via v2 API |
 | `read:content-details:confluence` | Read content details via v2 API |
@@ -386,12 +384,10 @@ The app requests the following Forge permissions:
 | `write:content.restriction:confluence` | Write content restrictions |
 | `read:content.metadata:confluence` | Read content metadata |
 | `read:content.permission:confluence` | Read content permissions |
+| `read:label:confluence` | Read page labels (label-scoped workflows, state mirroring) |
 | `storage:app` | Persist seal records, settings, and audit logs |
 
-External fetch permissions:
-- `api.atlassian.com` -- Confluence Cloud REST API
-
-The app has no other external dependencies and is eligible for the **"Runs on Atlassian"** Marketplace badge. All notifications are posted as Confluence footer comments with `@mention` of the recipient; Confluence's own notification engine emails the user according to their personal preferences.
+There are **no external fetch permissions** (`permissions.external` is absent from the manifest). The app has no external dependencies and is eligible for the **"Runs on Atlassian"** Marketplace badge. All notifications are posted as Confluence footer comments with `@mention` of the recipient; Confluence's own notification engine emails the user according to their personal preferences.
 
 ---
 
@@ -403,9 +399,9 @@ Start at the **[docs index](docs/README.md)**.
 
 | Feature | Guide | Demo |
 |---------|-------|------|
-| Edit Requests | [docs/features/edit-requests.md](docs/features/edit-requests.md) | [video](docs/media/videos/03-realm-edit-requests.mp4) |
+| Edit Requests | [docs/features/edit-requests.md](docs/features/edit-requests.md) | [video](docs/media/videos/03-space-edit-requests.mp4) |
 | Content Sealing (sections) | [docs/features/content-sealing.md](docs/features/content-sealing.md) | [video](docs/media/videos/01-inline-panel-features.mp4) |
-| Conditions & Validations | [docs/features/conditions-validations.md](docs/features/conditions-validations.md) | [video](docs/media/videos/02-steward-validations-ai.mp4) |
+| Conditions & Validations | [docs/features/conditions-validations.md](docs/features/conditions-validations.md) | [video](docs/media/videos/02-space admin-validations-ai.mp4) |
 | Semantic AI Validations | [docs/features/semantic-ai-validations.md](docs/features/semantic-ai-validations.md) | [video](docs/media/videos/01-inline-panel-features.mp4) |
 
 **Testing:** [docs/TESTING.md](docs/TESTING.md) — unit results (65/65), `forge lint`, build, deploy/install (v4.0.0, Runs on Atlassian), frontend render verification, and the per-feature proof matrix. Plus the black-box E2E harness in [test-harness/](test-harness/README.md).
@@ -417,9 +413,9 @@ Start at the **[docs index](docs/README.md)**.
 | [Architecture](docs/architecture.md) | Project structure, capsule system, data flow, storage model, and performance patterns |
 | [Deployment](docs/deployment.md) | Setup, building, deploying, and local development |
 | [User Guide](docs/user-guide.md) | End-user and administrator feature guide |
-| [Notifications](docs/notifications.md) | Notification channels, email types, feature flags, and scheduled tasks |
+| [Notifications](docs/notifications.md) | Notification channels, comment types, feature flags, quiet mode, and scheduled tasks |
 | [Contributing](docs/contributing.md) | Development workflow, conventions, and testing |
-| [Settings Reference](docs/settings-reference.md) | Complete reference for all steward console and realm console settings |
+| [Settings Reference](docs/settings-reference.md) | Complete reference for all site settings console and space console settings |
 | [Troubleshooting](docs/troubleshooting.md) | Common issues and solutions |
 
 The `docs/api/` directory contains Confluence Cloud event specifications and OpenAPI specifications (v1 and v2) for development reference.

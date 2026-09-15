@@ -1,15 +1,21 @@
 import { kvs, WhereConditions } from "@forge/kvs";
 
 // Import from shared
-import { BASELINE_HOLD_SPAN, MAX_HOLD_SECONDS, withinHoldBounds } from "../../shared/baseline.js";
+import { MAX_HOLD_SECONDS, POLICY_DEFAULTS, SPACE_POLICY_DEFAULTS, withinHoldBounds } from "../../shared/baseline.js";
+// P2 (UX review §3): the schema owns the extra write validation (lapse counters, reminder days,
+// setupCompletedAt, the space choices) and the two dead space keys the write path drops.
+import { validatePolicyWrite, stripDeadKeys } from "./settings-schema.js";
 import { isOperatorSteward, isOperatorSiteAdmin } from "../../shared/steward-checks.js";
+// 5.0 ribbon: the two steward settings behind the page ribbon's show rule (mockup §2/§3) —
+// validated here at the write boundary, read by ribbon-summary through normalizeRibbonSettings.
+import { validateRibbonSettings, DEFAULT_RIBBON_MODE, DEFAULT_RIBBON_THRESHOLD_RANK } from "../../../ui/kit/ribbon-rules.js";
 
 // SECURITY (audit A1): these resolvers write admin-settings-* — including the steward list
 // (adminUsers) and the force-override toggle — so an UNGATED write is a full privilege
 // escalation (any reader could make themselves a steward/admin). Gate every write, mirroring
 // realms/actions.js:approveStewardRequest. A site-admin may bootstrap a brand-new space's
 // first steward, so space writes accept steward-OF-that-space OR site-admin.
-const DENY = { success: false, reason: "Not authorized — steward or admin access required." };
+const DENY = { success: false, reason: "Not authorized — space admin access required." };
 const canWriteGlobal = async (accountId) => !!accountId && (await isOperatorSiteAdmin(accountId));
 const canWriteSpace = async (accountId, key) =>
   !!accountId && ((await isOperatorSteward(accountId, key)) || (await isOperatorSiteAdmin(accountId)));
@@ -34,44 +40,18 @@ const loadPolicy = async (req) => {
 
   if (scope === "global") {
     const ruleset = await kvs.get("admin-settings-global");
-    return (
-      ruleset || {
-        autoUnlockEnabled: true,
-        defaultLockDuration: BASELINE_HOLD_SPAN,
-        allowAdminOverride: false,
-        reminderIntervalDays: 7,
-        // Auto-unlock pause tracking
-        autoUnlockPausedAt: null,
-        // Notification settings
-        enableToastNotifications: true,
-        enablePageBanners: true,
-        enableConfluenceNotifications: true,
-        enableEmailNotifications: false,
-        enableLockExpiryReminderEmail: false,
-        enableAutoUnlockNotificationEmail: false,
-        enablePeriodicReminderEmail: false,
-        // Panel settings
-        allowArtifactDelete: false,
-        // Macro auto-insert settings
-        globalAutoInsertMacro: false,
-        replaceAttachmentsMacro: false,
-      }
-    );
+    // A never-saved site answers with the ENGINE defaults (baseline.js POLICY_DEFAULTS — one copy,
+    // the same values every reader applies to an absent key). The dead `enable*Notifications`
+    // keys of the old seed are gone: nothing read them. No `setupCompletedAt` here on purpose —
+    // its absence is what opens the first-run setup.
+    return ruleset || { ...POLICY_DEFAULTS, ribbonMode: DEFAULT_RIBBON_MODE, ribbonThresholdRank: DEFAULT_RIBBON_THRESHOLD_RANK, autoUnlockPausedAt: null };
   } else if (scope === "space" && key) {
     const sanitizedRealmKey = key.replace(/[^a-zA-Z0-9:._\s-#]/g, "_");
     const stored = await kvs.get(`admin-settings-space-${sanitizedRealmKey}`);
     const ruleset = await redactRosterUnlessSteward(stored, req.context?.accountId, key);
-    return (
-      ruleset || {
-        activation: "use-system-default",
-        autoUnlockTimeoutHours: null,
-        overrideGlobalSettings: false,
-        adminUsers: [],
-        adminGroups: [],
-        autoInsertMacro: true,
-        macroInsertPosition: "bottom",
-      }
-    );
+    // `activation` / `overrideGlobalSettings` are gone from the seed: no server reader ever
+    // resolved either (UX review §3.2), so the console no longer offers them.
+    return ruleset || { ...SPACE_POLICY_DEFAULTS, adminUsers: [], adminGroups: [] };
   }
 
   return {};
@@ -95,8 +75,14 @@ const storePolicy = async (req) => {
     return { success: false, reason: `Auto-unseal timeout must be a positive number of hours up to ${Math.floor(MAX_HOLD_SECONDS / 3600)}.` };
   }
 
+  const schemaCheck = validatePolicyWrite(scope, data);
+  if (!schemaCheck.ok) return { success: false, reason: schemaCheck.reason };
+
   if (scope === "global") {
     if (!(await canWriteGlobal(caller))) return DENY;
+    // 5.0 ribbon: only the keys present are checked; an omitted key keeps what is stored.
+    const ribbonCheck = validateRibbonSettings(data);
+    if (!ribbonCheck.ok) return { success: false, reason: ribbonCheck.reason };
     const currentRuleset = await kvs.get("admin-settings-global");
     const currentAutoUnsealActive =
       currentRuleset?.autoUnlockEnabled !== false;
@@ -151,7 +137,7 @@ const storePolicy = async (req) => {
     if (!(await canWriteSpace(caller, key))) return DENY;
     const sanitizedRealmKey = key.replace(/[^a-zA-Z0-9:._\s-#]/g, "_");
     const currentSpace = await kvs.get(`admin-settings-space-${sanitizedRealmKey}`);
-    await kvs.set(`admin-settings-space-${sanitizedRealmKey}`, { ...(currentSpace || {}), ...data });
+    await kvs.set(`admin-settings-space-${sanitizedRealmKey}`, { ...(currentSpace || {}), ...stripDeadKeys(scope, data) });
     return { success: true };
   }
 
