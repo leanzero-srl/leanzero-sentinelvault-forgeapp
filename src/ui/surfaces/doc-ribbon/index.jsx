@@ -647,7 +647,7 @@ const WorkflowControl = ({ workflow, approvals, operatorId, pageId, spaceKey, si
 const UNSUPPORTED_TYPES = new Set(["space", "database", "whiteboard", "folder", "embed", "attachment", "comment"]);
 const hashKey = (str) => { let h = 5381; for (let i = 0; i < str.length; i++) h = ((h << 5) + h + str.charCodeAt(i)) | 0; return (h >>> 0).toString(36); };
 const stateKeyOf = ({ summary, workflow, alerts, validationState }) => hashKey(JSON.stringify({
-  a: summary?.sealedAttachments || 0, s: summary?.sectionSeals || 0,
+  a: summary?.sealedAttachments || 0, s: summary?.sectionSeals || 0, t: summary?.trashedSeals || 0,
   w: workflow?.state?.id || workflow?.state?.name || null, al: (alerts || []).map((x) => x.id).sort(), v: validationState || null,
 }));
 const dismissKey = (pageId, stateKey) => `sv-ribbon-dismissed:${pageId}:${stateKey}`;
@@ -784,7 +784,7 @@ const DocumentRibbon = () => {
       setValidationState(vsVal);
       setAiCount(ai?.findings?.findings ? ai.findings.findings.length : null);
 
-      const sealed = (sum?.sealedAttachments || 0) > 0 || (sum?.sectionSeals || 0) > 0;
+      const sealed = (sum?.sealedAttachments || 0) > 0 || (sum?.sectionSeals || 0) > 0 || (sum?.trashedSeals || 0) > 0;
       const show = sealed || !!wfVal || al.length > 0 || !!vsVal;
       const key = dismissKey(ctxPageId, stateKeyOf({ summary: sum, workflow: wfVal, alerts: al, validationState: vsVal }));
       const dismissed = show && isDismissed(key);
