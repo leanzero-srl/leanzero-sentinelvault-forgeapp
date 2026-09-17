@@ -7,7 +7,7 @@
  * and grants — the deterministic state the harness asserts against.
  */
 import { kvs, WhereConditions } from "@forge/kvs";
-import { expirySweepTask, workflowSweep, collectWorkflowEnforcementForPage, sweepRevertToApproved, handleSealedArtifactDeleted, handleSealedArtifactTrash, lifecycleTrigger, recurringNudgeTask } from "./server/triggers";
+import { pageGuardSweep, guardPageNow, expirySweepTask, workflowSweep, collectWorkflowEnforcementForPage, sweepRevertToApproved, handleSealedArtifactDeleted, handleSealedArtifactTrash, lifecycleTrigger, recurringNudgeTask } from "./server/triggers";
 import {
   assignPageWorkflow,
   transitionPageWorkflow,
@@ -208,6 +208,10 @@ export async function testStateTrigger(req) {
         const { runJob } = await import("./server/capsules/config-api/consumer.js");
         return json(200, { invoked: fn, result: await runJob(q(req, "id")) });
       }
+      // Early guard (2026-09-17): the five-minute sweep has no resolver key, so it gets a seam;
+      // `guardPageNow` is here too so a spec can name the page without a Forge context.
+      if (fn === "pageGuardSweep") return json(200, { invoked: fn, result: await pageGuardSweep() });
+      if (fn === "guardPageNow") return json(200, { invoked: fn, result: await guardPageNow(q(req, "pageId"), "harness") });
       if (fn === "expirySweep") {
         const r = await expirySweepTask();
         let result = null;
