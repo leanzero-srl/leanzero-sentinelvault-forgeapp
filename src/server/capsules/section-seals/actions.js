@@ -419,6 +419,7 @@ const sectionSealStatus = async (req) => {
  * `mine` tells the viewer it was THEIR version that was undone, so the macro can say where
  * their text went.
  */
+const UNDONE_NOTICE_WINDOW_MS = 10 * 60 * 1000;
 const guardPageNowAction = async (req) => {
   const ctxPageId = req.context?.extension?.content?.id;
   const accountId = req.context?.accountId;
@@ -429,11 +430,25 @@ const guardPageNowAction = async (req) => {
     // Dynamic: triggers.js is the heaviest module in the bundle and imports half the capsules.
     const { guardPageNow } = await import("../../triggers.js");
     const r = await guardPageNow(pageId, "view");
+    // WHO put it back does not matter to the person who lost the text. When the page event was
+    // on time, the trigger restored the section before this view and the guard has nothing to
+    // report (live-proven 2026-09-17, attempt 1) — so the caller's own recent section reverts
+    // are read from the same dispatch records the ribbon shows, and answered either way.
+    let mineEvents = [];
+    try {
+      const cutoff = Date.now() - UNDONE_NOTICE_WINDOW_MS;
+      mineEvents = ((await kvs.get("recent-notifications"))?.events || []).filter((e) => String(e.pageId) === pageId
+        && e.sectionId && e.editorAccountId === accountId && e.ownerAccountId !== accountId
+        && new Date(e.timestamp).getTime() >= cutoff);
+    } catch (_) { /* the notice is a courtesy */ }
+    const guardMine = !!(r.restored && r.authorId && r.authorId === accountId);
     return {
-      checked: !!r.checked, restored: !!r.restored,
-      mine: !!(r.restored && r.authorId && r.authorId === accountId),
-      revertedVersion: r.restored ? r.version : null,
-      sectionIds: r.restored ? (r.sectionIds || []) : [],
+      checked: !!r.checked,
+      restored: !!r.restored || mineEvents.length > 0,
+      fresh: !!r.restored, // put back during THIS view: the body on screen is stale → offer Reload
+      mine: guardMine || mineEvents.length > 0,
+      revertedVersion: mineEvents[0]?.revertedVersion || (r.restored ? r.version : null),
+      sectionIds: [...new Set([...(r.restored ? (r.sectionIds || []) : []), ...mineEvents.map((e) => e.sectionId)])],
     };
   } catch (e) {
     console.error("[PAGE-GUARD] view check failed:", e);

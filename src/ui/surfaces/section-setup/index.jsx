@@ -121,7 +121,7 @@ const SectionMacro = () => {
         if (!isEditing && hasBody && sectionId) {
           invoke("guard-page-now", {}).then((g) => {
             if (g?.restored && Array.isArray(g.sectionIds) && g.sectionIds.includes(sectionId)) {
-              setUndone({ mine: g.mine === true, revertedVersion: g.revertedVersion || null, pageId: context?.extension?.content?.id || null });
+              setUndone({ mine: g.mine === true, fresh: g.fresh === true, revertedVersion: g.revertedVersion || null, pageId: context?.extension?.content?.id || null });
             }
           }).catch((e) => console.warn("[SECTION-UI] guard-page-now failed:", e?.message));
         }
@@ -265,7 +265,7 @@ const SectionMacro = () => {
                 Open my version
               </button>
             )}
-            <button type="button" className="sec-undone-btn" onClick={() => { try { router.reload(); } catch (_) { /* older bridge */ } }}>Reload the page</button>
+            {undone.fresh && <button type="button" className="sec-undone-btn" onClick={() => { try { router.reload(); } catch (_) { /* older bridge */ } }}>Reload the page</button>}
           </span>
           {undone.mine && <span className="sec-undone-hint">To edit it, use Request edit in the Sentinel Vault panel, or ask the owner to give you access.</span>}
         </div>
