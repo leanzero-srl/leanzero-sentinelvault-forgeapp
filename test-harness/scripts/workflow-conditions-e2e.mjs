@@ -81,8 +81,21 @@ try {
   // is actually under test) but is not a steward here: in a webtrigger asUser() has no context,
   // so isOperatorSteward can only answer from the explicit adminUsers list, and this space has
   // none. That is precisely the authority the enforce transition must still demand.
-  const authz = (await hook({ what: "invoke", fn: "reqTransition", pageId: pAuth.id, to: "approved", actor: me.accountId })).result;
-  check("AI-only enforce gate still requires a steward requester (no authority downgrade)", authz?.success === false && /steward/i.test(authz?.reason || ""));
+  // 2026-09-17: that stopped being true on 2026-09-15 — the steward check falls back to asApp and
+  // answers from the account's REAL permissions, and every real account here is a space admin. The
+  // non-steward is manufactured the way the browser specs do it: with the admin override OFF the
+  // same real person holds no steward authority (authorizeSteward gates on allowAdminOverride).
+  const globalBefore = (await hook({ what: "kvs", key: "admin-settings-global" })).value || null;
+  await hook({ what: "set", key: "admin-settings-global", value: JSON.stringify({ ...(globalBefore || {}), allowAdminOverride: false }) });
+  let authz;
+  try {
+    authz = (await hook({ what: "invoke", fn: "reqTransition", pageId: pAuth.id, to: "approved", actor: me.accountId })).result;
+  } finally {
+    if (globalBefore) await hook({ what: "set", key: "admin-settings-global", value: JSON.stringify(globalBefore) });
+    else await hook({ what: "delete", key: "admin-settings-global" });
+  }
+  console.log(`     authz refusal → ${JSON.stringify(authz)}`);
+  check("AI-only enforce gate still requires a steward requester (no authority downgrade)", authz?.success === false && /space admin|steward/i.test(authz?.reason || "")); // copy says "space admin" since the 2026-09-15 rename
   check("blocked non-steward request did NOT transition", (await rec(pAuth.id))?.stateId === "in_review");
 
   // === Part B — the AI gate wiring (simulated verdicts) ===
