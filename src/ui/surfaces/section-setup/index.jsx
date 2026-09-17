@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { createRoot } from "react-dom/client";
-import { view, invoke } from "@forge/bridge";
+import { view, invoke, router } from "@forge/bridge";
 import { enablePaletteSync } from "../../kit/palette-sync";
 
 // Sentinel Vault "Sealed Section" bodied macro.
@@ -86,6 +86,7 @@ const SectionMacro = () => {
   const [seal, setSeal] = useState(null); // section-seal-status result (editor only)
   const [existingConfig, setExistingConfig] = useState(null); // config already on the node (edit dialog)
   const [contextSectionId, setContextSectionId] = useState(null); // the id the macro context carries, if any
+  const [undone, setUndone] = useState(null); // { mine, revertedVersion, pageId } — THIS section was just put back
 
   useEffect(() => {
     (async () => {
@@ -113,6 +114,17 @@ const SectionMacro = () => {
         // "Sealed by …" is only claimed when the resolver says so (P1-6). One call per render;
         // without a section id the fetch short-circuits to { sealed: false }.
         fetchSealStatus(sectionId).then(setSeal);
+        // View mode only: have the server judge the page's live version NOW. The page event that
+        // drives the restore can arrive 20+ minutes late (tester report 2026-09-17); the person
+        // who just published lands on this view, so the restore happens while they are still
+        // here — and if it was THIS section, they are told where their text went.
+        if (!isEditing && hasBody && sectionId) {
+          invoke("guard-page-now", {}).then((g) => {
+            if (g?.restored && Array.isArray(g.sectionIds) && g.sectionIds.includes(sectionId)) {
+              setUndone({ mine: g.mine === true, revertedVersion: g.revertedVersion || null, pageId: context?.extension?.content?.id || null });
+            }
+          }).catch((e) => console.warn("[SECTION-UI] guard-page-now failed:", e?.message));
+        }
 
         // Best-effort: render the protected body inline in view mode (the dialog never shows it).
         if (hasBody && !isEditing && typeof view.createAdfRendererIframeProps === "function") {
@@ -239,6 +251,25 @@ const SectionMacro = () => {
         <span className="sec-badge" data-testid="sec-view-badge" data-state={viewState}><ShieldGlyph /> {badgeText}</span>
       </div>
       {editing && lockNotice}
+      {undone && (
+        <div className="sec-undone" role="alert" data-testid="sec-undone">
+          <span className="sec-undone-text">
+            {undone.mine
+              ? <>Your edit to this section was undone — it is sealed by {seal?.ownerName || "its owner"}. Your text is not lost: it is kept in the page history.</>
+              : <>An edit to this sealed section was just undone. Reload to see the sealed content.</>}
+          </span>
+          <span className="sec-undone-actions">
+            {undone.mine && undone.revertedVersion && undone.pageId && (
+              <button type="button" className="sec-undone-btn" data-testid="sec-undone-version"
+                onClick={() => router.open(`/wiki/pages/viewpage.action?pageId=${undone.pageId}&pageVersion=${undone.revertedVersion}`)}>
+                Open my version
+              </button>
+            )}
+            <button type="button" className="sec-undone-btn" onClick={() => { try { router.reload(); } catch (_) { /* older bridge */ } }}>Reload the page</button>
+          </span>
+          {undone.mine && <span className="sec-undone-hint">To edit it, use Request edit in the Sentinel Vault panel, or ask the owner to give you access.</span>}
+        </div>
+      )}
       <div className="sec-body">
         {showFallback && (
           <div className="sec-body-fallback">

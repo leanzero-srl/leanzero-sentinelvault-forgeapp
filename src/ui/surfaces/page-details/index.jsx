@@ -5,6 +5,7 @@ import { enablePaletteSync } from "../../kit/palette-sync";
 import ActivityFeed, { ActivityRow } from "../../kit/ActivityFeed";
 import { ACTIVITY_CATEGORIES, categoryOf } from "../../kit/activity-format";
 import { primaryActionFor, menuActionsFor } from "../../../server/capsules/page-details/row-state.js";
+import GiveAccessDialog from "../../kit/GiveAccessDialog";
 
 // 5.0 — the page-details modal (mockup §4), the page-level hub behind the byline chip. ONE
 // resource serves two modules: the byline item (`sentinel-vault-byline`, mode "details") and
@@ -119,7 +120,7 @@ const ClassificationBlock = ({ c, sealed, pageId, onChanged }) => {
 };
 
 // ── ⋯ menu (custom, keyboard-operable) ──────────────────────────────────────────────────────
-const MENU_LABEL = { extend: "Extend the seal", release: "Release", watch: "Watch for release", unwatch: "Stop watching", "copy-link": "Copy link", "force-release": "Force release…" };
+const MENU_LABEL = { extend: "Extend the seal", "give-access": "Give edit access…", release: "Release", watch: "Watch for release", unwatch: "Stop watching", "copy-link": "Copy link", "force-release": "Force release…" };
 const Kebab = ({ items, onPick, name }) => {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
@@ -174,6 +175,7 @@ const SealRow = ({ row, viewer, pageId, siteUrl, onChanged }) => {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
   const [bar, setBar] = useState(null); // "request" | "force" | null
+  const [giving, setGiving] = useState(false);
   const [copied, setCopied] = useState(false);
   const primary = primaryActionFor(row, viewer);
   const menu = menuActionsFor(row, viewer);
@@ -212,6 +214,7 @@ const SealRow = ({ row, viewer, pageId, siteUrl, onChanged }) => {
     else if (id === "unwatch") run("unwatch-artifact", { attachmentId: row.id });
     else if (id === "copy-link") copyLink();
     else if (id === "force-release") setBar("force");
+    else if (id === "give-access") setGiving(true);
   };
 
   // The sentence under the name (mockup §4).
@@ -285,6 +288,7 @@ const SealRow = ({ row, viewer, pageId, siteUrl, onChanged }) => {
           busy={busy} onCancel={() => setBar(null)}
           onConfirm={async (reason) => { if (await run(isAtt ? "unseal-artifact" : "unseal-section", isAtt ? { attachmentId: row.id, adminOverride: true, reason } : { sectionId: row.id, reason })) setBar(null); }} />
       )}
+      {giving && <GiveAccessDialog target={idPayload} name={isAtt ? row.name : `section ${row.name}`} onClose={() => setGiving(false)} onGranted={() => onChanged()} testId="pd-give-access" />}
       {error && <div className="pd-error" role="alert" data-testid="pd-row-error">{error}</div>}
     </li>
   );
@@ -420,6 +424,7 @@ const SealActionSeam = ({ summary, reload, siteUrl, loadError, onRetry }) => {
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState(null); // { sealed: n, failed: [{name, reason}] }
+  const [givingFor, setGivingFor] = useState(null); // { id, name } — "Give edit access…" from a row's ⋯
   const attachments = summary?.attachments || [];
   const sealRowById = useMemo(() => new Map((summary?.seals || []).filter((r) => r.kind === "attachment").map((r) => [r.id, r])), [summary]);
   const selectable = attachments.filter((a) => !a.sealed);
@@ -502,6 +507,7 @@ const SealActionSeam = ({ summary, reload, siteUrl, loadError, onRetry }) => {
                         else if (id === "watch") invoke("watch-artifact", { attachmentId: row.id }).then(reload);
                         else if (id === "unwatch") invoke("unwatch-artifact", { attachmentId: row.id }).then(reload);
                         else if (id === "copy-link") navigator.clipboard?.writeText(`${siteUrl || ""}/wiki${row.link || `/pages/viewpage.action?pageId=${summary.pageId}`}`).catch(() => {});
+                        else if (id === "give-access") setGivingFor({ id: row.id, name: a.name });
                       }} name={a.name} />}
                     </div>
                   </div>
@@ -509,6 +515,7 @@ const SealActionSeam = ({ summary, reload, siteUrl, loadError, onRetry }) => {
               );
             })}
           </ul>
+          {givingFor && <GiveAccessDialog target={{ attachmentId: givingFor.id }} name={givingFor.name} onClose={() => setGivingFor(null)} onGranted={() => reload()} testId="pd-give-access" />}
           <div className="pd-seal-form">
             <div className="pd-seal-field"><span className="pd-seal-label">Seal holds for</span><DurationPicker value={duration} defaultSeconds={summary.sealDefaults?.holdSeconds} onChange={setDuration} disabled={busy} /></div>
             <div className="pd-seal-field grow"><span className="pd-seal-label">Note (optional)</span><input className="pd-input" value={note} maxLength={300} placeholder="Why these are sealed — shown with the seal" onChange={(e) => setNote(e.target.value)} disabled={busy} data-testid="pd-note" /></div>

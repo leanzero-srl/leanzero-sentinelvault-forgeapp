@@ -1,5 +1,7 @@
 // lapse-policy.js has zero imports (it says so on purpose), so this edge cannot form a cycle.
 import { LAPSE_NOTICE_LIMIT_DEFAULT, LAPSE_NOTICE_INTERVAL_MS_DEFAULT } from "./lapse-policy.js";
+// edit-cooldown.js is zero-import too.
+import { EDIT_COOLDOWN_HOURS_DEFAULT } from "./edit-cooldown.js";
 
 /**
  * Default notification feature flags (UX review 2026-09-14 §4.2, P1-4).
@@ -37,6 +39,10 @@ export const DISPATCH_DEFAULTS = {
 
   // Daily ribbon for long-held seals (`enablePeriodicReminderEmail`; ribbon-only, no comment).
   ENABLE_PERIODIC_REMINDER_BANNER: true,
+
+  // Editor's own "your change was undone" comment (`notifyEditorOnRevert`). NOT under the master:
+  // the person who lost published work is told, with a link to the version that holds it.
+  NOTIFY_EDITOR_ON_REVERT: true,
 };
 
 /**
@@ -115,6 +121,9 @@ export const POLICY_DEFAULTS = Object.freeze({
   enableSealExpiryReminderEmail: DISPATCH_DEFAULTS.ENABLE_HALFWAY_REMINDER_NOTICE,
   enableAutoUnsealDispatchEmail: DISPATCH_DEFAULTS.ENABLE_EXPIRY_NOTICE,
   enablePeriodicReminderEmail: DISPATCH_DEFAULTS.ENABLE_PERIODIC_REMINDER_BANNER,
+  notifyEditorOnRevert: DISPATCH_DEFAULTS.NOTIFY_EDITOR_ON_REVERT,
+  // shared/edit-cooldown.js — hours a person waits after a declined edit request (0 = none).
+  editRequestCooldownHours: EDIT_COOLDOWN_HOURS_DEFAULT,
 });
 
 /** Space-scope defaults (doc-surgery.js:528,534; policies/logic.js:getSealDuration; notice-policy). */

@@ -233,3 +233,33 @@ body {
 /* the lock notice inside the config dialog sits between the head and the description */
 .sec-config .sec-lock, .sec-config .sec-editable { margin: 0 0 12px; border-radius: 8px; }
 .sec-config .sec-editable { border: 1px solid var(--sec-border, #E2E8F0); }
+
+/* "Your edit was undone" — shown in VIEW mode by the section that was just put back
+   (guard-page-now, 2026-09-17). Solid amber block, dark text: 8.6:1. */
+.sec-undone {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  padding: 10px 12px;
+  background: #F5A524;
+  color: #1B1300;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 18px;
+}
+.sec-undone-text { flex: 1 1 320px; }
+.sec-undone-actions { display: inline-flex; gap: 8px; flex-wrap: wrap; }
+.sec-undone-btn {
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 700;
+  padding: 5px 12px;
+  border-radius: 9999px;
+  border: 2px solid #1B1300;
+  background: #1B1300;
+  color: #FFFFFF;
+  cursor: pointer;
+}
+.sec-undone-btn:hover, .sec-undone-btn:focus-visible { background: #FFFFFF; color: #1B1300; outline: none; }
+.sec-undone-hint { flex: 1 1 100%; font-weight: 500; }

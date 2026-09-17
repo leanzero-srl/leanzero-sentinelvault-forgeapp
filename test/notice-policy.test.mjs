@@ -2,6 +2,7 @@ import {
   shouldPostComment,
   normalizeNotificationsMode,
   NOTIFICATIONS_MODES,
+  NOTICE_EDITOR_REVERT,
 } from "../src/server/shared/notice-policy.js";
 import { DISPATCH_DEFAULTS } from "../src/server/shared/baseline.js";
 import { eq, report } from "./_assert.mjs";
@@ -61,5 +62,23 @@ eq("1 does not post (no coercion)",
 eq("bulletins off + master on still posts (the violation gate lives at its own callers)",
   shouldPostComment({ mode: "normal", flags: { ENABLE_NATIVE_NOTIFICATIONS: true, ENABLE_CONFLUENCE_BULLETINS: false } }),
   { post: true, reason: null });
+
+
+// --- The ONE carve-out (2026-09-17): the editor whose published change was undone is told, even
+// on a site that never opted into comments. Its own switch; a quiet space still wins. ---
+const OFF = { ENABLE_NATIVE_NOTIFICATIONS: false, ENABLE_CONFLUENCE_BULLETINS: false };
+eq("editor-revert: default profile (master OFF, its switch ON) → posts",
+  shouldPostComment({ mode: "normal", flags: { ...DISPATCH_DEFAULTS }, noticeType: NOTICE_EDITOR_REVERT }), { post: true, reason: null });
+eq("editor-revert: its switch OFF → not posted, with its own reason",
+  shouldPostComment({ mode: "normal", flags: { ...OFF, NOTIFY_EDITOR_ON_REVERT: false }, noticeType: NOTICE_EDITOR_REVERT }), { post: false, reason: "editor-revert-off" });
+eq("editor-revert: the master being ON does not override its own switch OFF",
+  shouldPostComment({ mode: "normal", flags: { ENABLE_NATIVE_NOTIFICATIONS: true, NOTIFY_EDITOR_ON_REVERT: false }, noticeType: NOTICE_EDITOR_REVERT }), { post: false, reason: "editor-revert-off" });
+eq("editor-revert: a quiet space stays quiet",
+  shouldPostComment({ mode: "quiet", flags: { ...DISPATCH_DEFAULTS }, noticeType: NOTICE_EDITOR_REVERT }), { post: false, reason: "quiet-mode" });
+eq("editor-revert: absent flags → not posted (fail closed on a malformed flags object)",
+  shouldPostComment({ mode: "normal", flags: undefined, noticeType: NOTICE_EDITOR_REVERT }), { post: false, reason: "editor-revert-off" });
+eq("the carve-out is for THAT type only: a violation notice still needs the master",
+  shouldPostComment({ mode: "normal", flags: { ...DISPATCH_DEFAULTS }, noticeType: "seal_violation" }), { post: false, reason: "mentions-off" });
+eq("the default profile has the editor notice ON", DISPATCH_DEFAULTS.NOTIFY_EDITOR_ON_REVERT, true);
 
 report("notice-policy");

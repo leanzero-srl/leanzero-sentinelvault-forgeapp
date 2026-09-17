@@ -25,7 +25,7 @@ eq("…for that request", primaryActionFor({ ...base, isMine: true, pendingReque
 eq("owner: a request does not change the primary when it is someone else's seal", kind({ ...base, pendingRequests: [req] }), "request");
 eq("declined within the cooldown → Request edit, disabled", kind({ ...base, myEditStatus: "denied" }), "request");
 eq("…disabled with a hint", primaryActionFor({ ...base, myEditStatus: "denied" }).disabled, true);
-ok("…the hint says when to try again", /48 hours/.test(primaryActionFor({ ...base, myEditStatus: "denied" }).hint));
+ok("…the hint says when to try again (the server's retry time, never a typed-in 48 hours)", /ask again after/.test(primaryActionFor({ ...base, myEditStatus: "denied", myRetryAt: "2026-09-17T12:50:00.000Z" }).hint) && !/48/.test(primaryActionFor({ ...base, myEditStatus: "denied" }).hint));
 eq("expired, someone else's attachment → Expired (no primary)", kind({ ...base, isExpired: true }), "expired");
 eq("expired, someone else's attachment, even with a grant → Expired", kind({ ...base, isExpired: true, myEditStatus: "granted" }), "expired");
 eq("expired, mine → Release", kind({ ...base, isExpired: true, isMine: true }), "release");
@@ -38,15 +38,15 @@ eq("section rows map the same way (mine)", kind({ ...base, kind: "section", isMi
 eq("garbage in → none", kind(null), "none");
 
 // ── ⋯ menu ───────────────────────────────────────────────────────────────────────────────────
-eq("owner attachment: Extend + Copy link (Release is the primary)", menuActionsFor({ ...base, isMine: true }), ["extend", "copy-link"]);
-eq("owner attachment with a request: Extend + Release + Copy link", menuActionsFor({ ...base, isMine: true, pendingRequests: [req] }), ["extend", "release", "copy-link"]);
-eq("owner section: Copy link only (no extend for sections; Release is primary)", menuActionsFor({ ...base, kind: "section", isMine: true }), ["copy-link"]);
-eq("owner section with a request: Release + Copy link", menuActionsFor({ ...base, kind: "section", isMine: true, pendingRequests: [req] }), ["release", "copy-link"]);
+eq("owner attachment: Extend + Give access + Copy link (Release is the primary)", menuActionsFor({ ...base, isMine: true }), ["extend", "give-access", "copy-link"]);
+eq("owner attachment with a request: Extend + Release + Copy link", menuActionsFor({ ...base, isMine: true, pendingRequests: [req] }), ["extend", "give-access", "release", "copy-link"]);
+eq("owner section: Give access + Copy link (no extend for sections; Release is primary)", menuActionsFor({ ...base, kind: "section", isMine: true }), ["give-access", "copy-link"]);
+eq("owner section with a request: Release + Copy link", menuActionsFor({ ...base, kind: "section", isMine: true, pendingRequests: [req] }), ["give-access", "release", "copy-link"]);
 eq("requester on an attachment: Watch + Copy link", menuActionsFor(base), ["watch", "copy-link"]);
 eq("…already watching → Stop watching", menuActionsFor({ ...base, watching: true }), ["unwatch", "copy-link"]);
 eq("requester on a section: Copy link only (no watch for sections)", menuActionsFor({ ...base, kind: "section" }), ["copy-link"]);
-eq("space admin on someone else's seal: + Force release", menuActionsFor(base, { isSpaceAdmin: true }), ["watch", "copy-link", "force-release"]);
-eq("space admin on their OWN seal: no Force release (Release is theirs anyway)", menuActionsFor({ ...base, isMine: true }, { isSpaceAdmin: true }), ["extend", "copy-link"]);
+eq("space admin on someone else's seal: + Force release", menuActionsFor(base, { isSpaceAdmin: true }), ["watch", "copy-link", "give-access", "force-release"]);
+eq("space admin on their OWN seal: no Force release (Release is theirs anyway)", menuActionsFor({ ...base, isMine: true }, { isSpaceAdmin: true }), ["extend", "give-access", "copy-link"]);
 eq("space admin on an expired foreign seal: Force release is the only way", menuActionsFor({ ...base, isExpired: true }, { isSpaceAdmin: true }), ["watch", "copy-link", "force-release"]);
 eq("trashed: Copy link only", menuActionsFor({ ...base, isMine: true, isTrashed: true }, { isSpaceAdmin: true }), ["copy-link"]);
 eq("unsealed attachment: Copy link only", menuActionsFor({ ...base, sealed: false }), ["copy-link"]);

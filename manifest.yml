@@ -148,6 +148,9 @@ modules:
       handler: boot.sealIndexCron
     - key: workflow-sweep-fn
       handler: boot.workflowSweep
+    # Judges pages that carry a live seal ahead of their (often late) page event.
+    - key: page-guard-sweep-fn
+      handler: boot.pageGuardSweep
     - key: page-content-trigger
       handler: boot.pageContentTrigger
     - key: ai-validation-fn
@@ -207,6 +210,9 @@ modules:
     - key: workflow-sweep-scheduled
       function: workflow-sweep-fn
       interval: hour
+    - key: page-guard-sweep-scheduled
+      function: page-guard-sweep-fn
+      interval: fiveMinute
 
   # Sentinel Vault admin configuration module (Custom UI)
   confluence:globalSettings:
