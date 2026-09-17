@@ -263,3 +263,4 @@ body {
 }
 .sec-undone-btn:hover, .sec-undone-btn:focus-visible { background: #FFFFFF; color: #1B1300; outline: none; }
 .sec-undone-hint { flex: 1 1 100%; font-weight: 500; }
+.sec-body-reload { margin-left: 10px; }
