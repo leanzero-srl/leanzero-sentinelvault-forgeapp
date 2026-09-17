@@ -93,6 +93,10 @@ writes the receipt.
     { "op": "unseal-attachment", "attachmentId": "att…", "reason": "release done" },
     { "op": "seal-section", "pageId": "…", "headingText": "Pricing" },
     { "op": "unseal-section", "sectionId": "…", "reason": "…" },
+    { "op": "grant-attachment-edit", "attachmentId": "att…", "editorAccountId": "712020:…" },
+    { "op": "revoke-attachment-edit", "attachmentId": "att…", "editorAccountId": "712020:…" },
+    { "op": "grant-section-edit", "sectionId": "…", "editorAccountId": "712020:…" },
+    { "op": "revoke-section-edit", "sectionId": "…", "editorAccountId": "712020:…" },
     { "op": "classify-page", "pageId": "…", "levelId": "restricted" },
     { "op": "assign-workflow", "pageId": "…", "workflowId": "review" },
     { "op": "transition", "pageId": "…", "toStateId": "approved", "reason": "…" }

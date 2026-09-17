@@ -23,7 +23,7 @@ export const ACTIVITY_CATEGORIES = Object.freeze([
     "section.sealed", "section.released", "section.restored", "section.reverted", "section.rebaselined",
   ]) },
   { id: "editreq", label: "Edit access", types: Object.freeze([
-    "editreq.requested", "editreq.approved", "editreq.denied", "editreq.revoked",
+    "editreq.requested", "editreq.approved", "editreq.denied", "editreq.revoked", "editreq.granted",
   ]) },
   { id: "workflow", label: "Workflow", types: Object.freeze([
     "workflow.transition", "workflow.approval-requested", "workflow.approval-decided",
@@ -234,6 +234,9 @@ export function formatActivity(entry) {
       return { ...base, label: "Edit access denied", glyph: "cross", tone: "critical",
         sentence: `${who} denied edit access to ${scopeWord(entry)} ${entry?.target?.kind === "section" ? section() : file()}${d.requesterName ? ` for ${d.requesterName}` : ""}`,
         detail: d.reason ? String(d.reason) : "" };
+    case "editreq.granted":
+      return { ...base, label: "Edit access given", glyph: "key", tone: "positive",
+        sentence: `${who} gave ${d.editorName || "someone"} edit access to ${scopeWord(entry)} ${entry?.target?.kind === "section" ? section() : file()}` };
     case "editreq.revoked":
       return { ...base, label: "Edit access revoked", glyph: "cross", tone: "caution",
         sentence: `${who} revoked edit access to ${scopeWord(entry)} ${entry?.target?.kind === "section" ? section() : file()}${d.editorName ? ` from ${d.editorName}` : ""}` };

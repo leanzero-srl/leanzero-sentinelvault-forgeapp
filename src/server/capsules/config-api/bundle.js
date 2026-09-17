@@ -37,6 +37,11 @@ export const CONTENT_OPS = Object.freeze({
   "unseal-attachment": { allow: ["attachmentId", "reason"], required: ["attachmentId"], resolverKey: "unseal-artifact", role: "editor" },
   "seal-section": { allow: ["pageId", "headingText", "lockDuration"], required: ["pageId", "headingText"], resolverKey: "seal-section", role: "editor" },
   "unseal-section": { allow: ["sectionId", "reason"], required: ["sectionId"], resolverKey: "unseal-section", role: "editor" },
+  // Direct grants (2026-09-17): the seal owner (or a steward) names the editor — no request needed.
+  "grant-attachment-edit": { allow: ["attachmentId", "editorAccountId"], required: ["attachmentId", "editorAccountId"], resolverKey: "grant-edit-access", role: "editor" },
+  "revoke-attachment-edit": { allow: ["attachmentId", "editorAccountId"], required: ["attachmentId", "editorAccountId"], resolverKey: "revoke-edit-grant", role: "editor" },
+  "grant-section-edit": { allow: ["sectionId", "editorAccountId"], required: ["sectionId", "editorAccountId"], resolverKey: "grant-section-edit", role: "editor" },
+  "revoke-section-edit": { allow: ["sectionId", "editorAccountId"], required: ["sectionId", "editorAccountId"], resolverKey: "revoke-section-edit-grant", role: "editor" },
   "classify-page": { allow: ["pageId", "levelId"], required: ["pageId"], resolverKey: "classification-set-page", role: "editor" },
   "assign-workflow": { allow: ["pageId", "workflowId"], required: ["pageId"], resolverKey: "assign-workflow", role: "editor" },
   "transition": { allow: ["pageId", "toStateId", "reason"], required: ["pageId", "toStateId"], resolverKey: "request-transition", role: "editor" },
@@ -150,7 +155,7 @@ export function validateBundle(bundle, { rawBytes = null } = {}) {
         if (!spec) return err(`${p}.op`, `unknown op "${String(c.op).slice(0, 40)}"`);
         for (const k of unknownKeys(c, ["op", ...spec.allow])) err(`${p}.${k}`, `not a field of ${c.op}`);
         for (const k of spec.required) if (c[k] === undefined || c[k] === null || c[k] === "") err(`${p}.${k}`, "required");
-        for (const k of ["pageId", "attachmentId", "sectionId", "levelId", "workflowId", "toStateId"]) {
+        for (const k of ["pageId", "attachmentId", "sectionId", "levelId", "workflowId", "toStateId", "editorAccountId"]) {
           if (c[k] !== undefined && c[k] !== null && !ID_RE.test(String(c[k]))) err(`${p}.${k}`, "invalid id");
         }
         if (c.lockDuration !== undefined && !(Number.isFinite(Number(c.lockDuration)) && Number(c.lockDuration) > 0)) err(`${p}.lockDuration`, "must be a positive number of seconds");
@@ -219,6 +224,14 @@ export function planBundle(bundle) {
         break;
       case "unseal-section":
         step(p, spec.resolverKey, { sectionId: String(c.sectionId), reason: c.reason });
+        break;
+      case "grant-attachment-edit":
+      case "revoke-attachment-edit":
+        step(p, spec.resolverKey, { attachmentId: String(c.attachmentId), editorAccountId: String(c.editorAccountId) });
+        break;
+      case "grant-section-edit":
+      case "revoke-section-edit":
+        step(p, spec.resolverKey, { sectionId: String(c.sectionId), editorAccountId: String(c.editorAccountId) });
         break;
       case "classify-page":
         step(p, spec.resolverKey, { pageId: String(c.pageId), levelId: c.levelId ?? null });

@@ -1,4 +1,5 @@
 import { kvs, WhereConditions } from "@forge/kvs";
+import { cooldownMsFrom } from "../../shared/edit-cooldown.js";
 
 // Edit Requests — shared helpers.
 //
@@ -248,4 +249,14 @@ export async function sweepSectionEditAccess(sectionId) {
       console.warn(`[EDIT-ACCESS] section sweep failed for ${prefix}:`, e);
     }
   }
+}
+
+/**
+ * The site's edit-request cooldown in ms (`editRequestCooldownHours` on admin-settings-global).
+ * Every reader of "may this person ask again?" calls this — never a literal. A KVS blip falls
+ * back to the default rather than to "no cooldown" or to the old 48h.
+ */
+export async function resolveEditCooldownMs() {
+  try { return cooldownMsFrom(await kvs.get("admin-settings-global")); }
+  catch (e) { console.warn("[EDIT-ACCESS] cooldown read failed — default used:", e?.message || e); return cooldownMsFrom(null); }
 }

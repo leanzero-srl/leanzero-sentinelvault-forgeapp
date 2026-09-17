@@ -40,14 +40,14 @@ import { kvs, WhereConditions } from "@forge/kvs";
 import { canEditPage, canReadPage, mustVerify } from "../../shared/content-access.js";
 import { authorizeSteward } from "../../shared/steward-checks.js";
 import { getClassificationProvider } from "../classification/provider.js";
-import { getActiveEditGrant, getActiveSectionEditGrant } from "../editreq/logic.js";
+import { getActiveEditGrant, getActiveSectionEditGrant, resolveEditCooldownMs } from "../editreq/logic.js";
+import { retryAtFor } from "../../shared/edit-cooldown.js";
 import { getPageActivity } from "../activity/actions.js";
 import { resolveSealHoldPeriod } from "../sealing/logic.js";
 import { collectPageSeals, readPageMeta } from "./logic.js";
 import { writeBylineFor } from "./byline.js";
 
 const NOT_AUTHORIZED = "Not authorized";
-const COOLDOWN_MS = 48 * 60 * 60 * 1000; // mirrors editreq/actions.js
 const NUMERIC = /^\d{1,20}$/;
 
 const isExpired = (iso) => !!(iso && new Date(iso).getTime() <= Date.now());
@@ -68,10 +68,10 @@ async function myEditStatusFor({ grant, requestKey }) {
   if (!existing) return { status: "none", expiresAt: null };
   if (existing.status === "pending") return { status: "pending", expiresAt: null };
   if (existing.status === "denied") {
-    const deniedAt = existing.deniedAt ? new Date(existing.deniedAt).getTime() : 0;
     // Past the cooldown the request may be made again; the record itself is tidied by
     // check-edit-request on the next call that reads it, not by this read.
-    return Date.now() - deniedAt >= COOLDOWN_MS ? { status: "none", expiresAt: null } : { status: "denied", expiresAt: null };
+    const retryAt = retryAtFor(existing.deniedAt, await resolveEditCooldownMs());
+    return retryAt ? { status: "denied", expiresAt: null, retryAt } : { status: "none", expiresAt: null };
   }
   return { status: "none", expiresAt: null };
 }
@@ -149,7 +149,7 @@ export const pageDetailsSummary = async (req) => {
           ownerAccountId: record.lockedBy, ownerName: record.lockedByName || null,
           expiresAt: record.expiresAt || null, isExpired: isExpired(record.expiresAt), isMine, isTrashed: trashed,
           watching: !!watch, link: record.downloadLink || null, note: record.note || null,
-          myEditStatus: mine.status, myEditExpiresAt: mine.expiresAt, pendingRequests,
+          myEditStatus: mine.status, myEditExpiresAt: mine.expiresAt, myRetryAt: mine.retryAt || null, pendingRequests,
         };
       }),
       ...sections.map(async (record) => {
@@ -163,7 +163,7 @@ export const pageDetailsSummary = async (req) => {
           ownerAccountId: record.lockedBy, ownerName: record.lockedByName || null,
           expiresAt: record.expiresAt || null, isExpired: isExpired(record.expiresAt), isMine, isTrashed: false,
           watching: false, link: null,
-          myEditStatus: mine.status, myEditExpiresAt: mine.expiresAt, pendingRequests,
+          myEditStatus: mine.status, myEditExpiresAt: mine.expiresAt, myRetryAt: mine.retryAt || null, pendingRequests,
         };
       }),
     ]);

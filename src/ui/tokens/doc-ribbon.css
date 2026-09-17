@@ -739,3 +739,7 @@ html[data-color-mode="dark"] .wf-chip-outline-success:hover, html[data-color-mod
 .wf-dialog-host .wf-details-panel { max-width: 460px; }
 .wf-details-section + .wf-details-section { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--sv-border-primary, #E2E8F0); }
 .wf-details-section .wf-appr-list { margin-top: 8px; }
+
+/* A link inside the ribbon sentence (the editor's "See my version"). */
+.ribbon-inline-link { font: inherit; font-weight: 700; color: var(--sv-interactive-primary); background: none; border: none; padding: 0 2px; text-decoration: underline; cursor: pointer; }
+.ribbon-inline-link:focus-visible { outline: 2px solid var(--sv-border-focus); outline-offset: 2px; }

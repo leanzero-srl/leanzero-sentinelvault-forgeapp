@@ -14,7 +14,7 @@
  *
  * @param {object} row  { kind: "attachment"|"section", sealed?: boolean, isMine, isExpired,
  *                        isTrashed?, ownerName, expiresAt, myEditStatus: "none"|"pending"|
- *                        "granted"|"denied", myEditExpiresAt?, pendingRequests?: [] }
+ *                        "granted"|"denied", myEditExpiresAt?, myRetryAt?, pendingRequests?: [] }
  * @param {object} [viewer] { canEditPage?: boolean }
  * @returns {{ kind: string, label?: string, until?: string|null, owner?: string|null,
  *             request?: object|null, disabled?: boolean, hint?: string }}
@@ -40,7 +40,9 @@ export function primaryActionFor(row, viewer = {}) {
     case "pending":
       return { kind: "waiting", label: "Waiting", owner: row.ownerName || null };
     case "denied":
-      return { kind: "request", label: "Request edit", disabled: true, hint: "Your last request was declined; you can ask again after 48 hours." };
+      // The wait is the site's setting, so the hint names the actual time the server gave
+      // (myRetryAt) instead of a number typed here; the owner can also grant access directly.
+      return { kind: "request", label: "Request edit", disabled: true, retryAt: row.myRetryAt || null, hint: `Your last request was declined${row.myRetryAt ? `; you can ask again after ${new Date(row.myRetryAt).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}` : ""}. The owner can also give you access directly.` };
     default:
       return { kind: "request", label: "Request edit" };
   }
@@ -52,7 +54,7 @@ export function primaryActionFor(row, viewer = {}) {
  * the primary slot; Watch is for someone waiting on another person's attachment seal; Copy link
  * always; Force release only for a space admin who does not own the seal (typed reason, server-
  * side gate is unseal-artifact adminOverride / unseal-section reason).
- * @returns {string[]}  ids: "extend" | "release" | "watch" | "unwatch" | "copy-link" | "force-release"
+ * @returns {string[]}  ids: "extend" | "give-access" | "release" | "watch" | "unwatch" | "copy-link" | "force-release"
  */
 export function menuActionsFor(row, viewer = {}) {
   if (!row || typeof row !== "object") return [];
@@ -61,11 +63,15 @@ export function menuActionsFor(row, viewer = {}) {
   if (row.kind === "attachment" && row.sealed === false) return ["copy-link"];
   if (row.isMine) {
     if (row.kind === "attachment" && !row.isTrashed) out.push("extend");
+    // Give edit access to a named person without waiting for their request (tester report
+    // 2026-09-17). Not on an expired seal: the grant would be born dead (server rule it54).
+    if (!row.isTrashed && !row.isExpired) out.push("give-access");
     if (primary.kind !== "release" && !row.isTrashed) out.push("release");
   } else if (row.kind === "attachment" && !row.isTrashed) {
     out.push(row.watching ? "unwatch" : "watch");
   }
   out.push("copy-link");
+  if (!row.isMine && viewer.isSpaceAdmin === true && !row.isTrashed && !row.isExpired) out.push("give-access");
   if (!row.isMine && viewer.isSpaceAdmin === true && !row.isTrashed) out.push("force-release");
   return out;
 }

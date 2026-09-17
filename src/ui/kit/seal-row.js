@@ -15,6 +15,7 @@ import { primaryActionFor, menuActionsFor } from "../../server/capsules/page-det
 
 export const MENU_LABEL = {
   extend: "Extend the seal",
+  "give-access": "Give edit access…",
   release: "Release",
   watch: "Watch for release",
   unwatch: "Stop watching",
@@ -58,6 +59,7 @@ export function attachmentRow(att, live = {}) {
     expiresAt: att.expiresAt || null,
     myEditStatus: live.editStatus || "none",
     myEditExpiresAt: live.editExpiresAt || null,
+    myRetryAt: live.editRetryAt || null,
     pendingRequests: Array.isArray(live.pendingRequests) ? live.pendingRequests : [],
     watching: live.watching === true,
   };
@@ -76,6 +78,7 @@ export function sectionRow(s, live = {}) {
     expiresAt: s.expiresAt || null,
     myEditStatus: live.editStatus || "none",
     myEditExpiresAt: live.editExpiresAt || null,
+    myRetryAt: live.editRetryAt || null,
     pendingRequests: Array.isArray(live.pendingRequests) ? live.pendingRequests : [],
   };
 }

@@ -410,6 +410,37 @@ const sectionSealStatus = async (req) => {
   }
 };
 
+/**
+ * Judge this page's live version NOW (tester report 2026-09-17 — the page event that drives the
+ * restore was arriving 20+ minutes late). Called by the sealed-section macro in view mode and by
+ * the ribbon on a page that carries seals. The caller only has to be able to READ the page: the
+ * app is not acting on their behalf, it is running its own enforcement — every input is a
+ * server-owned seal record and the live page, nothing from the payload reaches a write.
+ * `mine` tells the viewer it was THEIR version that was undone, so the macro can say where
+ * their text went.
+ */
+const guardPageNowAction = async (req) => {
+  const ctxPageId = req.context?.extension?.content?.id;
+  const accountId = req.context?.accountId;
+  const pageId = String(req.payload?.pageId || ctxPageId || "");
+  if (!accountId || !/^\d{1,20}$/.test(pageId)) return { checked: false, restored: false };
+  if (mustVerify(req.payload?.pageId, ctxPageId) && !(await canReadPage(accountId, pageId))) return { checked: false, restored: false };
+  try {
+    // Dynamic: triggers.js is the heaviest module in the bundle and imports half the capsules.
+    const { guardPageNow } = await import("../../triggers.js");
+    const r = await guardPageNow(pageId, "view");
+    return {
+      checked: !!r.checked, restored: !!r.restored,
+      mine: !!(r.restored && r.authorId && r.authorId === accountId),
+      revertedVersion: r.restored ? r.version : null,
+      sectionIds: r.restored ? (r.sectionIds || []) : [],
+    };
+  } catch (e) {
+    console.error("[PAGE-GUARD] view check failed:", e);
+    return { checked: false, restored: false };
+  }
+};
+
 export const actions = [
   ["list-page-headings", listPageHeadings],
   ["enumerate-section-seals", enumerateSectionSeals],
@@ -417,4 +448,5 @@ export const actions = [
   ["unseal-section", unsealSection],
   ["refresh-section-snapshot", refreshSectionSnapshot],
   ["section-seal-status", sectionSealStatus],
+  ["guard-page-now", guardPageNowAction],
 ];

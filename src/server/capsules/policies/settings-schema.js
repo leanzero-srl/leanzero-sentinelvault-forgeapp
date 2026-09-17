@@ -16,6 +16,7 @@
 import { POLICY_DEFAULTS, SPACE_POLICY_DEFAULTS, withinHoldBounds } from "../../shared/baseline.js";
 import { DEFAULT_RIBBON_MODE, DEFAULT_RIBBON_THRESHOLD_RANK } from "../../../ui/kit/ribbon-rules.js";
 import { NOTIFICATIONS_MODES } from "../../shared/notice-policy.js";
+import { EDIT_COOLDOWN_HOURS_MAX } from "../../shared/edit-cooldown.js";
 
 export const GROUPS = Object.freeze([
   { id: "protection", name: "Protection", text: "What gets sealed and who may act on it." },
@@ -52,6 +53,10 @@ export const CONTROLS = Object.freeze([
     label: "Allow Seal Cleanup from Page",
     text: "Seal records left behind by permanently deleted attachments can be removed from the panel.",
     default: POLICY_DEFAULTS.allowSealPurge },
+  { key: "editRequestCooldownHours", scope: "global", group: "protection", kind: "hours", min: 0, max: EDIT_COOLDOWN_HOURS_MAX,
+    label: "Hours before a declined edit request can be repeated",
+    text: "After an owner declines an edit request, the same person waits this long before asking again. 0 lets them ask again at once. The owner can give edit access directly at any time.",
+    default: POLICY_DEFAULTS.editRequestCooldownHours },
 
   // ── Expiry ────────────────────────────────────────────────────────────────────────────────
   { key: "defaultLockDuration", scope: "global", group: "expiry", kind: "seconds-as-hours",
@@ -96,6 +101,10 @@ export const CONTROLS = Object.freeze([
     label: "Ribbon classification threshold",
     text: "In “Exceptions only”, a page classified at this rank or higher opens the ribbon on its own (default scheme: Public 1 · Internal 2 · Confidential 3 · Restricted 4).",
     default: DEFAULT_RIBBON_THRESHOLD_RANK, parent: "enableDocRibbons", parentValue: true },
+  { key: "notifyEditorOnRevert", scope: "global", group: "alerts", kind: "toggle",
+    label: "Tell editors when their change is undone",
+    text: "When Sentinel Vault reverts someone's edit to sealed content, that person gets a page comment saying so, with a link to the version that still holds their text. Works on its own — it does not need the comments switch below. Quiet spaces stay quiet.",
+    default: POLICY_DEFAULTS.notifyEditorOnRevert },
   { key: "enableEmailDispatches", scope: "global", group: "alerts", kind: "toggle", optIn: true,
     label: "Page comments that mention people",
     text: "Seal events, edit requests, approvals and violations post a comment on the page that @mentions the people involved; Confluence then notifies them. Master switch for every comment below. The app sends no email.",
@@ -342,6 +351,9 @@ export function validatePolicyWrite(scope, data) {
     }
     if (data.lapseNoticeIntervalHours != null && (!isInt(data.lapseNoticeIntervalHours) || data.lapseNoticeIntervalHours < 1)) {
       return { ok: false, reason: "Hours between overdue reminders must be a whole number of at least 1." };
+    }
+    if (data.editRequestCooldownHours != null && (!isInt(data.editRequestCooldownHours) || data.editRequestCooldownHours < 0 || data.editRequestCooldownHours > EDIT_COOLDOWN_HOURS_MAX)) {
+      return { ok: false, reason: `Hours before a declined edit request can be repeated must be a whole number from 0 to ${EDIT_COOLDOWN_HOURS_MAX}.` };
     }
     if (data.setupCompletedAt != null) {
       const t = typeof data.setupCompletedAt === "string" ? Date.parse(data.setupCompletedAt) : NaN;

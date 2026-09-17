@@ -717,6 +717,7 @@ const DocumentRibbon = () => {
   const pageIdRef = useRef(null); // the content id the current evaluation belongs to
   const openStateRef = useRef(null); // true after view.open(), false after view.close(), null = untouched
   const evalSeq = useRef(0);
+  const evaluateRef = useRef(null); // the current `evaluate`, for the guard's deferred re-run
 
   // Apply a decision to the bridge exactly when it changes.
   const applyVisibility = useCallback((show, why) => {
@@ -836,6 +837,16 @@ const DocumentRibbon = () => {
       setValidationState(vsVal);
       setAiCount(ai?.findings?.findings ? ai.findings.findings.length : null);
 
+      // Early guard (2026-09-17): on a page that carries seals, have the server judge the live
+      // version NOW instead of waiting for a page event that can be 20+ minutes late. If that run
+      // restored something, evaluate again so the "Restored" row appears for the person who just
+      // published. Never from the re-evaluation itself (no loop); fire-and-forget otherwise.
+      if (why !== "guard restored" && ((sum?.sealedAttachments || 0) + (sum?.sectionSeals || 0)) > 0) {
+        invoke("guard-page-now", {})
+          .then((g) => { if (g?.restored && pageIdRef.current === ctxPageId) evaluateRef.current?.("guard restored"); })
+          .catch((e) => console.info("[ribbon] guard-page-now failed", e?.message || e));
+      }
+
       if (sumRes?.error) {
         // Not a confirmed "nothing to show": say so in the row instead of vanishing (P1-7).
         setSummaryError(sumRes.error);
@@ -868,6 +879,7 @@ const DocumentRibbon = () => {
       if (!stale()) { setLoading(false); setBooting(false); }
     }
   }, [applyVisibility, fetchSummary, fetchAlerts]);
+  evaluateRef.current = evaluate;
 
   useEffect(() => {
     let disposed = false;
@@ -1032,6 +1044,11 @@ const DocumentRibbon = () => {
     case "restored":
       pill = { tone: "alert", text: "Restored", n: urgent.count > 1 ? urgent.count : null };
       sentence = alertSentence(urgent.alert, operatorId);
+      // The editor's lost text is one click away: the page version the app reverted.
+      if (urgent.alert?.revertedVersion && urgent.alert.editorAccountId === operatorId && urgent.alert.ownerAccountId !== operatorId && pageId) {
+        const v = urgent.alert.revertedVersion;
+        sentence = <>{sentence} <button type="button" className="ribbon-inline-link" data-testid="ribbon-my-version" onClick={() => router.navigate(`/wiki/pages/viewpage.action?pageId=${pageId}&pageVersion=${v}`)}>See my version (v{v})</button></>;
+      }
       break;
     case "waiting-for-you": {
       const r = urgent.requests, a = urgent.approvals;

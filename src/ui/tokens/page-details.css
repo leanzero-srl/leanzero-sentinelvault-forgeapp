@@ -253,3 +253,34 @@ html[data-color-mode="dark"] .sv-activity-chip-validation.is-active { background
   .pd-a { grid-column: 2; justify-content: flex-start; flex-wrap: wrap; }
   .pd-foot span { display: none; }
 }
+
+/* kit/Dialog.jsx + kit/GiveAccessDialog.jsx — the modal surface hosts the give-access dialog. */
+.sv-dialog-backdrop { position: fixed; inset: 0; background: rgba(15, 23, 42, 0.55); display: flex; align-items: center; justify-content: center; z-index: 2000; padding: 16px; }
+.sv-dialog {
+  width: min(440px, 100%); background: var(--sv-bg-elevated); color: var(--sv-text-primary);
+  border: 2px solid var(--sv-border-primary); border-radius: 12px; box-shadow: var(--sv-shadow-medium);
+  padding: 18px 20px; outline: none;
+}
+.sv-dialog.danger { border-color: var(--sv-interactive-danger); }
+.sv-dialog-title { margin: 0 0 8px; font-size: 15px; font-weight: 800; }
+.sv-dialog-body { font-size: 13px; line-height: 1.45; color: var(--sv-text-secondary); }
+.sv-dialog-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; }
+.sv-dialog .action-btn.confirm-yes, .sv-dialog .action-btn.confirm-no { font-size: 12.5px; padding: 7px 14px; border-radius: 9999px; }
+.sv-dialog .action-btn:focus-visible { outline: 2px solid var(--sv-border-focus); outline-offset: 2px; }
+/* Give edit access… (kit/GiveAccessDialog.jsx) */
+.sv-give-access .sv-give-input { width: 100%; box-sizing: border-box; margin-top: 12px; font-size: 13px; padding: 8px 10px; }
+.sv-give-results { display: flex; flex-direction: column; gap: 4px; margin-top: 6px; max-height: 190px; overflow-y: auto; }
+.sv-give-option { text-align: left; font: inherit; font-size: 13px; font-weight: 600; padding: 8px 10px; border-radius: 6px; border: 1px solid var(--sv-border-secondary); background: var(--sv-bg-primary); color: var(--sv-text-primary); cursor: pointer; }
+.sv-give-option:hover, .sv-give-option:focus-visible { background: var(--sv-interactive-primary); border-color: var(--sv-interactive-primary); color: var(--sv-text-on-primary); outline: none; }
+.sv-give-note { font-size: 12px; color: var(--sv-text-secondary); padding: 6px 2px; }
+.sv-give-picked { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 12px; padding: 8px 12px; border-radius: 8px; background: var(--sv-interactive-primary); color: var(--sv-text-on-primary); font-size: 13px; font-weight: 700; }
+.sv-give-clear { font: inherit; font-size: 12px; font-weight: 700; color: var(--sv-text-on-primary); background: transparent; border: 1px solid var(--sv-text-on-primary); border-radius: 9999px; padding: 3px 10px; cursor: pointer; }
+.sv-give-error { margin-top: 10px; font-size: 12.5px; font-weight: 600; color: var(--sv-interactive-danger); }
+.sv-give-access .action-btn.lock { font-size: 12.5px; padding: 7px 14px; border-radius: 9999px; }
+
+.sv-give-access .card-reason-input { font: inherit; color: var(--sv-text-primary); background: var(--sv-bg-primary); border: 1px solid var(--sv-border-secondary); border-radius: 6px; }
+.sv-give-access .card-reason-input:focus { outline: none; border-color: var(--sv-interactive-primary); }
+.sv-give-access .action-btn { font: inherit; font-weight: 700; cursor: pointer; border: 1px solid var(--sv-interactive-primary); }
+.sv-give-access .action-btn.lock { background: var(--sv-interactive-primary); color: var(--sv-text-on-primary); }
+.sv-give-access .action-btn.lock:disabled { opacity: 0.55; cursor: not-allowed; }
+.sv-give-access .action-btn.confirm-no { background: transparent; color: var(--sv-text-primary); border-color: var(--sv-border-secondary); font-size: 12.5px; padding: 7px 14px; border-radius: 9999px; }

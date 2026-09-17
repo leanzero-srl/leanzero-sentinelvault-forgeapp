@@ -1622,3 +1622,14 @@ html[data-color-mode="dark"] .sv-state.trashed { background: #94A3B8; color: #0F
 .card-copied { font-size: 11px; font-weight: 700; color: var(--sv-interactive-primary); margin-top: 4px; }
 .card-meta-watching { font-weight: 700; color: var(--sv-interactive-success); }
 .card-editreq-hint { color: var(--sv-text-subtle); font-style: italic; }
+
+/* Give edit access… (kit/GiveAccessDialog.jsx) */
+.sv-give-access .sv-give-input { width: 100%; box-sizing: border-box; margin-top: 12px; font-size: 13px; padding: 8px 10px; }
+.sv-give-results { display: flex; flex-direction: column; gap: 4px; margin-top: 6px; max-height: 190px; overflow-y: auto; }
+.sv-give-option { text-align: left; font: inherit; font-size: 13px; font-weight: 600; padding: 8px 10px; border-radius: 6px; border: 1px solid var(--sv-border-secondary); background: var(--sv-bg-primary); color: var(--sv-text-primary); cursor: pointer; }
+.sv-give-option:hover, .sv-give-option:focus-visible { background: var(--sv-interactive-primary); border-color: var(--sv-interactive-primary); color: var(--sv-text-on-primary); outline: none; }
+.sv-give-note { font-size: 12px; color: var(--sv-text-secondary); padding: 6px 2px; }
+.sv-give-picked { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 12px; padding: 8px 12px; border-radius: 8px; background: var(--sv-interactive-primary); color: var(--sv-text-on-primary); font-size: 13px; font-weight: 700; }
+.sv-give-clear { font: inherit; font-size: 12px; font-weight: 700; color: var(--sv-text-on-primary); background: transparent; border: 1px solid var(--sv-text-on-primary); border-radius: 9999px; padding: 3px 10px; cursor: pointer; }
+.sv-give-error { margin-top: 10px; font-size: 12.5px; font-weight: 600; color: var(--sv-interactive-danger); }
+.sv-give-access .action-btn.lock { font-size: 12.5px; padding: 7px 14px; border-radius: 9999px; }

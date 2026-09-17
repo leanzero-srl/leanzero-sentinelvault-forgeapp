@@ -208,6 +208,22 @@ const memStorage = () => { const m = new Map(); return { m, get: async (k) => (m
   eq("unseal-attachment carries adminOverride + reason", by["content[1]"].payload, { attachmentId: "att1", adminOverride: true, reason: "done" });
   eq("seal-section resolves the heading at run time", [by["content[2]"].needs, by["content[2]"].payload], ["headingIndex", { pageId: "9", headingText: "Pricing", lockDuration: undefined }]);
   eq("unseal-section", by["content[3]"].payload, { sectionId: "sec1", reason: "r" });
+  // Direct grants (2026-09-17): their own bundle so the plan-order assertion above stays as it was.
+  const grants = { version: 1, content: [
+    { op: "grant-attachment-edit", attachmentId: "att1", editorAccountId: "712020:abc-1" },
+    { op: "revoke-attachment-edit", attachmentId: "att1", editorAccountId: "712020:abc-1" },
+    { op: "grant-section-edit", sectionId: "sec1", editorAccountId: "712020:abc-1" },
+    { op: "revoke-section-edit", sectionId: "sec1", editorAccountId: "712020:abc-1" },
+  ] };
+  eq("grant bundle validates", validateBundle(grants).errors, []);
+  eq("grant ops map to the owner-gated resolvers", planBundle(grants).map((s) => [s.resolverKey, s.payload]), [
+    ["grant-edit-access", { attachmentId: "att1", editorAccountId: "712020:abc-1" }],
+    ["revoke-edit-grant", { attachmentId: "att1", editorAccountId: "712020:abc-1" }],
+    ["grant-section-edit", { sectionId: "sec1", editorAccountId: "712020:abc-1" }],
+    ["revoke-section-edit-grant", { sectionId: "sec1", editorAccountId: "712020:abc-1" }],
+  ]);
+  eq("a grant with no editor is refused", validateBundle({ version: 1, content: [{ op: "grant-section-edit", sectionId: "sec1" }] }).errors.length > 0, true);
+  eq("a grant with a malformed editor id is refused", validateBundle({ version: 1, content: [{ op: "grant-attachment-edit", attachmentId: "att1", editorAccountId: "a b<script>" }] }).errors.length > 0, true);
   eq("classify-page", by["content[4]"].payload, { pageId: "9", levelId: "restricted" });
   eq("assign-workflow", by["content[5]"].payload, { pageId: "9", workflowId: "review" });
   eq("transition", by["content[6]"].payload, { pageId: "9", toStateId: "approved", reason: "ship" });
