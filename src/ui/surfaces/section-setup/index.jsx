@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { createRoot } from "react-dom/client";
 import { view, invoke, router } from "@forge/bridge";
 import { enablePaletteSync } from "../../kit/palette-sync";
@@ -31,8 +31,12 @@ const CheckGlyph = () => (
 // bridge posts the body to it only after it sends this message (10 s blind fallback). We
 // watch for the same message so the iframe is only put in flow once it has actually answered.
 const RENDERER_READY = "forge-adf-renderer-ready";
-// After this long without the handshake the frame stays hidden and the explanation text stands.
-const RENDERER_WAIT_MS = 12_000;
+// How long one attempt may take to show real content before the frame is remounted (once), and
+// then given up on with a plain message + Reload.
+const RENDERER_WAIT_MS = 8_000;
+const RENDERER_ATTEMPTS = 2;
+// The body counts as rendered once the resizer has given the frame a real height.
+const RENDERED_MIN_PX = 20;
 
 const isRendererReady = (data) => {
   if (!data) return false;
@@ -79,8 +83,11 @@ const SectionMacro = () => {
   const [ready, setReady] = useState(false);
   const [mode, setMode] = useState("view"); // "view" | "config"
   const [bodyProps, setBodyProps] = useState(null);
-  const [rendererReady, setRendererReady] = useState(false);
+  const [rendererReady, setRendererReady] = useState(false); // the body has real height on screen
   const [rendererTimedOut, setRendererTimedOut] = useState(false);
+  const [attempt, setAttempt] = useState(1); // remount key for the renderer frame
+  const ctxRef = useRef(null); // the macro context, for the document message we send ourselves
+  const frameRef = useRef(null);
   const [status, setStatus] = useState(null);
   const [editing, setEditing] = useState(false);
   const [seal, setSeal] = useState(null); // section-seal-status result (editor only)
@@ -93,6 +100,7 @@ const SectionMacro = () => {
       try { await enablePaletteSync(); } catch (_) { /* non-critical */ }
       try {
         const context = await view.getContext();
+        ctxRef.current = context;
         const ext = context?.extension || {};
         const hasBody = !!ext.macro?.body;
 
@@ -142,24 +150,57 @@ const SectionMacro = () => {
     })();
   }, []);
 
-  // Handshake watch: reveal the renderer iframe only once it has said it is ready.
+  // The body handshake, done HERE (owner report 2026-09-17: "sometimes" the frame showed the badge
+  // over an EMPTY body). The bridge attaches its one-shot `forge-adf-renderer-ready` listener
+  // inside the iframe's onLoad; when the renderer says ready BEFORE the load event, the bridge
+  // never hears it and only posts the document after its 10 s blind fallback — while this surface,
+  // listening since mount, had already revealed the frame. So: (1) this listener exists before the
+  // frame does and answers EVERY ready from that frame with the document itself (a second copy
+  // from the bridge just re-renders the same body); (2) the frame is revealed on real HEIGHT, not
+  // on the ready message; (3) no height in time → remount once, then say so plainly with Reload.
   useEffect(() => {
     if (!bodyProps) return undefined;
-    let done = false;
+    const origin = (() => { try { return new URL(document.referrer).origin; } catch (_) { return "*"; } })();
+    const send = () => {
+      const c = ctxRef.current;
+      const win = frameRef.current?.contentWindow;
+      if (!c || !win) return;
+      win.postMessage({
+        type: "adf-document", document: c.extension?.macro?.body, timestamp: Date.now(), source: "forge-adf-renderer",
+        localId: c.localId, isEditing: c.extension?.isEditing ?? false, contentId: c.extension?.content?.id,
+      }, origin);
+    };
     const onMessage = (e) => {
-      if (done || !isRendererReady(e.data)) return;
-      done = true;
-      setRendererReady(true);
+      if (!isRendererReady(e.data)) return;
+      if (frameRef.current && e.source && e.source !== frameRef.current.contentWindow) return;
+      send();
     };
     window.addEventListener("message", onMessage);
+
+    // Height watch: iframe-resizer writes the measured height onto the frame's inline style.
+    let done = false;
+    const measure = () => {
+      const el = frameRef.current;
+      if (done || !el) return;
+      const h = Math.max(parseFloat(el.style.height) || 0, 0);
+      if (h >= RENDERED_MIN_PX) { done = true; setRendererReady(true); }
+    };
+    const poll = setInterval(measure, 250);
+    // A ready that was posted before this effect ran is gone; nudge the frame once it has loaded.
+    const nudge = setTimeout(send, 1500);
     const timer = setTimeout(() => {
       if (done) return;
       done = true;
-      console.warn("[SECTION-UI] ADF renderer never answered; showing the explanation text instead");
-      setRendererTimedOut(true);
+      if (attempt < RENDERER_ATTEMPTS) {
+        console.warn(`[SECTION-UI] body not rendered after ${RENDERER_WAIT_MS} ms — remounting the renderer (attempt ${attempt + 1})`);
+        setAttempt((a) => a + 1);
+      } else {
+        console.warn("[SECTION-UI] body renderer gave no content; showing the plain message instead");
+        setRendererTimedOut(true);
+      }
     }, RENDERER_WAIT_MS);
-    return () => { window.removeEventListener("message", onMessage); clearTimeout(timer); };
-  }, [bodyProps]);
+    return () => { window.removeEventListener("message", onMessage); clearInterval(poll); clearTimeout(nudge); clearTimeout(timer); };
+  }, [bodyProps, attempt]);
 
   const [error, setError] = useState(null);
   const onCancel = () => {
@@ -244,6 +285,9 @@ const SectionMacro = () => {
     : viewState === "expired" ? "The seal on this section has expired. Edits are no longer reverted; the owner can seal it again from the Sentinel Vault panel."
       : viewState === "unsealed" ? "This section is not sealed yet. Open the Sentinel Vault panel and use Sealed Sections → Seal a section."
         : "Checking the seal…";
+  const bodyText = rendererTimedOut
+    ? "The content of this section could not be displayed here. It is still on the page — reload to try again."
+    : framePending ? "Loading the section…" : fallbackText;
 
   return (
     <div className="sec-frame" data-editing={editing ? "true" : "false"} data-seal={sealState} data-state={viewState}>
@@ -272,13 +316,16 @@ const SectionMacro = () => {
       )}
       <div className="sec-body">
         {showFallback && (
-          <div className="sec-body-fallback">
-            {fallbackText}
+          <div className="sec-body-fallback" data-testid="sec-body-fallback" data-timedout={rendererTimedOut ? "true" : "false"}>
+            {bodyProps ? bodyText : fallbackText}
+            {rendererTimedOut && <button type="button" className="sec-undone-btn sec-body-reload" onClick={() => { try { router.reload(); } catch (_) { /* older bridge */ } }}>Reload the page</button>}
           </div>
         )}
         {bodyProps && !rendererTimedOut && (
           <iframe
+            key={attempt}
             {...bodyProps}
+            ref={frameRef}
             title="Sealed section content"
             className={`sec-body-frame${framePending ? " sec-body-frame--pending" : ""}`}
             data-ready={showFrame ? "true" : "false"}
