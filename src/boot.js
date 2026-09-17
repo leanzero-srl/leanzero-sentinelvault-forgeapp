@@ -1,5 +1,5 @@
 export { actionRouter } from "./server/registry.js";
-export { artifactEventTrigger, pageContentTrigger, lifecycleTrigger, expirySweepTask, recurringNudgeTask, workflowSweep } from "./server/triggers.js";
+export { artifactEventTrigger, pageContentTrigger, lifecycleTrigger, expirySweepTask, recurringNudgeTask, workflowSweep, pageGuardSweep } from "./server/triggers.js";
 export { realmScanConsumer, sealIndexCron } from "./server/capsules/realms/scan-worker.js";
 export { aiValidationConsumer } from "./server/capsules/validations/ai-worker.js";
 // Config REST API (docs/REST-CONFIG-API.md): the static web trigger and its queue consumer.

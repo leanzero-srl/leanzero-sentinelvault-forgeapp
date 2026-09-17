@@ -113,6 +113,39 @@ ${ctaLink(pageUrl, "Open the page")}
 }
 
 /**
+ * The EDITOR's own notice (tester report 2026-09-17): posted when the violation comment above
+ * is switched off (it is opt-in), so the person whose published work was undone still hears
+ * about it — addressed to them, saying where their text is and how to get edit access.
+ * `versionUrl` opens the exact page version that carries their change.
+ */
+export function composeEditorRevertLayout({
+  editorAccountId,
+  sealOwnerAccountId,
+  artifactName,
+  pageUrl,
+  historyUrl,
+  versionUrl,
+  targetKind = "attachment",
+  actionVerb = "edit",
+}) {
+  const what = targetKind === "section"
+    ? `the sealed section <strong>"${escapeXml(artifactName)}"</strong>`
+    : `the sealed file <strong>"${escapeXml(artifactName)}"</strong>`;
+  const did = actionVerb === "content-removal" ? "removing" : actionVerb === "delete" ? "deleting" : actionVerb === "layout-changed" ? "changing the layout of" : "changing";
+  const where = versionUrl
+    ? ` Nothing is lost: <a href="${escapeXml(versionUrl)}">the version with your change</a> is kept in the page history, so you can copy your text from there.`
+    : historyUrl ? ` Nothing is lost: your version is kept in the <a href="${escapeXml(historyUrl)}">page history</a>.` : "";
+  const owner = sealOwnerAccountId ? mention(sealOwnerAccountId) : "the seal owner";
+  const storageBody = `
+<p>${HEADER} — <strong>Your change was undone</strong></p>
+<p>${mention(editorAccountId)} — your edit ${escapeXml(did)} ${what} was reverted, because it is sealed by ${owner}.${where}</p>
+<p>To edit it, open the Sentinel Vault panel on this page and use <strong>Request edit</strong>, or ask ${owner} to give you edit access directly.</p>
+${ctaLink(pageUrl, "Open the page")}
+`.trim();
+  return { summary: `Your change to "${artifactName}" was undone`, storageBody };
+}
+
+/**
  * Seal created: confirmation that a seal is now active.
  */
 export function composeSealConfirmLayout({

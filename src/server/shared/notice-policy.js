@@ -19,6 +19,13 @@
  * and are NOT governed here — quiet mode never touches them.
  */
 
+// The ONE per-type carve-out (tester report 2026-09-17: "you save, 20 minutes later Sentinel
+// deletes it and you never knew it would"). A person whose own published work was undone is
+// told so even on a site that never opted into the comment channel — losing work silently is
+// the worst outcome this app can produce. It has its own switch (`notifyEditorOnRevert`,
+// ON by default) and still yields to a quiet space.
+export const NOTICE_EDITOR_REVERT = "editor_revert";
+
 export const NOTIFICATIONS_MODE_NORMAL = "normal";
 export const NOTIFICATIONS_MODE_QUIET = "quiet";
 export const NOTIFICATIONS_MODES = [NOTIFICATIONS_MODE_NORMAL, NOTIFICATIONS_MODE_QUIET];
@@ -41,12 +48,14 @@ export function normalizeNotificationsMode(raw) {
  * @param {string} [args.noticeType]  - informational; quiet blocks EVERY type, normal defers to the flags
  * @returns {{ post: boolean, reason: string|null }}
  *   `reason` is null when posting, otherwise a short machine-readable cause:
- *   "quiet-mode" | "mentions-off".
+ *   "quiet-mode" | "mentions-off" | "editor-revert-off".
  */
 export function shouldPostComment({ mode, flags, noticeType } = {}) {
-  void noticeType; // every notice type is subject to the same gates today; kept in the signature so a per-type carve-out lands here, not at a call site
   if (normalizeNotificationsMode(mode) === NOTIFICATIONS_MODE_QUIET) {
     return { post: false, reason: "quiet-mode" };
+  }
+  if (noticeType === NOTICE_EDITOR_REVERT) {
+    return flags?.NOTIFY_EDITOR_ON_REVERT === true ? { post: true, reason: null } : { post: false, reason: "editor-revert-off" };
   }
   // Opt-in: only an explicit `true` opens the comment channel. `flags` comes from
   // resolveBulletinToggles, which already turns the persisted `enable*` keys into booleans, so an

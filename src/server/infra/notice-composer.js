@@ -29,7 +29,9 @@ import {
   composeEditRequestLayout,
   composeEditApprovedLayout,
   composeEditDeniedLayout,
+  composeEditorRevertLayout,
 } from "./notice-blueprints.js";
+import { NOTICE_EDITOR_REVERT } from "../shared/notice-policy.js";
 
 export {
   composeViolationLayout,
@@ -61,6 +63,8 @@ export const ALERT_CATEGORIES = {
   EDIT_ACCESS_REQUEST: "edit_access_request",
   EDIT_ACCESS_APPROVED: "edit_access_approved",
   EDIT_ACCESS_DENIED: "edit_access_denied",
+  // The value IS the notice-policy carve-out type — the choke point recognises it by this string.
+  EDITOR_REVERT: NOTICE_EDITOR_REVERT,
 };
 
 /**
@@ -140,6 +144,8 @@ function buildBlueprint(type, data) {
       return composeEditApprovedLayout(data);
     case ALERT_CATEGORIES.EDIT_ACCESS_DENIED:
       return composeEditDeniedLayout(data);
+    case ALERT_CATEGORIES.EDITOR_REVERT:
+      return composeEditorRevertLayout(data);
     default:
       return null;
   }
@@ -183,6 +189,11 @@ export async function dispatchNotice(type, data) {
       historyUrl,
       ...extra,
     };
+    // A link to ONE version (the reverted one) — same URL shape the approval record uses.
+    if (extra.revertedVersion && pageUrl) {
+      const base = pageUrl.split("/spaces/")[0].split("/pages/")[0];
+      blueprintData.versionUrl = `${base}/pages/viewpage.action?pageId=${pageId}&pageVersion=${Number(extra.revertedVersion)}`;
+    }
 
     const blueprint = buildBlueprint(type, blueprintData);
     if (!blueprint) {
@@ -418,6 +429,20 @@ export async function mailEditDenied(requesterAccountId, artifactName, pageId, s
     recipientAccountId: requesterAccountId,
     pageId,
     artifactName,
+    spaceKey,
+  });
+}
+
+/**
+ * The editor's own "your change was undone" comment. `revertedVersion` is the page version that
+ * carries their change (the one the app reverted), so the link opens exactly their text.
+ */
+export async function mailEditorReverted(editorAccountId, sealOwnerAccountId, artifactName, pageId, { targetKind = "attachment", actionVerb = "edit", revertedVersion = null } = {}, spaceKey = null) {
+  return dispatchNotice(ALERT_CATEGORIES.EDITOR_REVERT, {
+    recipientAccountId: editorAccountId,
+    pageId,
+    artifactName,
+    extra: { editorAccountId, sealOwnerAccountId, targetKind, actionVerb, revertedVersion },
     spaceKey,
   });
 }

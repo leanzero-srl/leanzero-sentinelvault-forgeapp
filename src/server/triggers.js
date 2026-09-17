@@ -6,6 +6,7 @@ import {
   mailExpiryNotice,
   mailLapseNotice,
   mailAutoReleaseNotice,
+  mailEditorReverted,
 } from "./infra/notice-composer.js";
 
 import { recordDispatch, postDocFootnote } from "./capsules/bulletins/logic.js";
@@ -154,12 +155,24 @@ async function clearViolationNotices(pageId, targetId, classes = MEDIA_NOTICE_CL
 // otherwise, burning the marker with no comment), post, and release the marker when the post
 // throws or reports failure. Best-effort: an undetectable failure (no return value) keeps the
 // marker — the 24h TTL bounds the damage.
-async function postDedupedFootnote(bulletinToggles, pageId, markerTargetId, markerClass, ownerAccountId, editorAccountId, artifactName, actionVerb) {
-  if (!bulletinToggles?.ENABLE_CONFLUENCE_BULLETINS || !bulletinToggles?.ENABLE_NATIVE_NOTIFICATIONS) return;
+//
+// 2026-09-17 (tester: "you save, 20 min later Sentinel deletes it and you never knew"): when the
+// two-party violation comment is switched off (it is opt-in), the EDITOR still gets their own
+// comment — what was undone, a link to the version holding their work, how to get access. It
+// rides the SAME marker, so whichever of the two posts, there is one comment per outcome.
+async function postDedupedFootnote(bulletinToggles, pageId, markerTargetId, markerClass, ownerAccountId, editorAccountId, artifactName, actionVerb, editorNotice = null) {
+  const footnoteOn = !!(bulletinToggles?.ENABLE_CONFLUENCE_BULLETINS && bulletinToggles?.ENABLE_NATIVE_NOTIFICATIONS);
+  const editorOnly = !footnoteOn && bulletinToggles?.NOTIFY_EDITOR_ON_REVERT === true
+    && !!editorAccountId && editorAccountId !== ownerAccountId && actionVerb !== "permanently-deleted";
+  if (!footnoteOn && !editorOnly) return;
   if (!(await claimViolationNotice(pageId, markerTargetId, markerClass))) return;
   let posted = false;
   try {
-    const res = await postDocFootnote(pageId, ownerAccountId, editorAccountId, artifactName, actionVerb);
+    const res = footnoteOn
+      ? await postDocFootnote(pageId, ownerAccountId, editorAccountId, artifactName, actionVerb)
+      : await mailEditorReverted(editorAccountId, ownerAccountId, artifactName, pageId, {
+        targetKind: editorNotice?.targetKind || "attachment", actionVerb, revertedVersion: editorNotice?.revertedVersion || null,
+      });
     posted = !(res && res.success === false);
   } catch (e) {
     console.error(`[NOTICE-DEDUP] footer comment failed (${markerClass}) — releasing marker:`, e);
@@ -906,15 +919,15 @@ async function dispatchPipelineNotification(n, writtenVersion = null) {
   }
   if (n.type === "content-removal") {
     await sendViolationNotifications(
-      n.seal, n.seal.attachmentId, n.pageId, n.actor, n.artifactName, "content-removal",
+      n.seal, n.seal.attachmentId, n.pageId, n.actor, n.artifactName, "content-removal", writtenVersion ? writtenVersion - 1 : null,
     );
   } else if (n.type === "layout-changed") {
     // Fix 6: sealed presentation restored (deduped like content-removal).
     await sendViolationNotifications(
-      n.seal, n.seal.attachmentId, n.pageId, n.actor, n.artifactName, "layout-changed",
+      n.seal, n.seal.attachmentId, n.pageId, n.actor, n.artifactName, "layout-changed", writtenVersion ? writtenVersion - 1 : null,
     );
   } else if (n.type === "section-revert") {
-    await sendSectionViolationNotifications(n.seal, n.pageId, n.actor, n.kind);
+    await sendSectionViolationNotifications(n.seal, n.pageId, n.actor, n.kind, writtenVersion ? writtenVersion - 1 : null);
   }
 }
 
@@ -1701,7 +1714,7 @@ async function runValidationPhase(event, pageId, atlassianId) {
 }
 
 // --- Notify the section-seal owner of an unauthorized section change ---
-async function sendSectionViolationNotifications(seal, pageId, actor, kind) {
+async function sendSectionViolationNotifications(seal, pageId, actor, kind, revertedVersion = null) {
   const title = seal.sectionTitle || "a sealed section";
   const verb = kind === "removed" ? "content-removal" : "edit";
   await recordDispatch({
@@ -1713,6 +1726,8 @@ async function sendSectionViolationNotifications(seal, pageId, actor, kind) {
     editorAccountId: actor,
     timestamp: Date.now(),
     pageId,
+    // The page version that carries the editor's change — the ribbon links to it.
+    revertedVersion: revertedVersion || null,
   });
   // Hunt H1-F4: section comments get the same cross-run dedup the media path has (the
   // incident-2026-07-22 spam loop — a stale draft re-publishing every few minutes — was
@@ -1720,7 +1735,7 @@ async function sendSectionViolationNotifications(seal, pageId, actor, kind) {
   // record above still fires per occurrence.
   const bulletinToggles = await resolveBulletinToggles();
   const markerClass = kind === "removed" ? "section-removed" : "section-edited";
-  await postDedupedFootnote(bulletinToggles, pageId, seal.sectionId, markerClass, seal.lockedBy, actor, title, verb);
+  await postDedupedFootnote(bulletinToggles, pageId, seal.sectionId, markerClass, seal.lockedBy, actor, title, verb, { targetKind: "section", revertedVersion });
 }
 
 // --- Handle unauthorized edit of a sealed artifact ---
@@ -2103,7 +2118,7 @@ async function pageHasOtherLiveSeals(pageId, excludeArtifactId) {
 }
 
 // --- Shared violation notification logic ---
-async function sendViolationNotifications(sealRecord, artifactId, contentId, atlassianId, artifactName, actionVerb) {
+async function sendViolationNotifications(sealRecord, artifactId, contentId, atlassianId, artifactName, actionVerb, revertedVersion = null) {
   const bulletinToggles = await resolveBulletinToggles();
 
   const dispatchType = actionVerb === "delete" ? "trash-restored"
@@ -2120,6 +2135,7 @@ async function sendViolationNotifications(sealRecord, artifactId, contentId, atl
     editorAccountId: atlassianId,
     timestamp: Date.now(),
     pageId: contentId,
+    revertedVersion: revertedVersion || null, // page-body outcomes only (an attachment edit has no page version)
   };
 
   await recordDispatch(dispatchPayload);
@@ -2130,7 +2146,7 @@ async function sendViolationNotifications(sealRecord, artifactId, contentId, atl
   // the dispatch record above still fires per occurrence. Hunt H1-F5: the claim happens only
   // when the comment channel is ON and is released if the post fails (postDedupedFootnote) —
   // a toggled-off week or a transient 5xx must not consume the dedup window.
-  await postDedupedFootnote(bulletinToggles, contentId, artifactId, actionVerb, sealRecord.lockedBy, atlassianId, artifactName, actionVerb);
+  await postDedupedFootnote(bulletinToggles, contentId, artifactId, actionVerb, sealRecord.lockedBy, atlassianId, artifactName, actionVerb, { targetKind: "attachment", revertedVersion });
 
   if (bulletinToggles?.ENABLE_TOAST_DISPATCHES) {
     const violationKey = `violation-alert-${sealRecord.lockedBy}-${artifactId}-${Date.now()}`;
@@ -2216,6 +2232,133 @@ export async function runSectionRestoreForPage(pageId) {
     return { clean: false, reason: `write ${putRes.status}` };
   }
   return { clean: false, reason: "409 exhausted" };
+}
+
+// --- Early guard (2026-09-17): run the page pipeline NOW instead of waiting for the event ---
+// Tester report: text typed into a sealed section stayed on the page for 20–25 minutes. The
+// restore was never slow — the `updated:page` EVENT was (measured 9–10 min late on 2026-09-15).
+// Enforcement cannot be made to depend on event delivery alone, so two callers deliver the same
+// event early: the `guard-page-now` resolver (the sealed-section macro and the ribbon call it
+// when someone VIEWS the page — which the editor does the moment they publish) and the
+// five-minute `pageGuardSweep`. Both build a synthetic `updated:page` event from the LIVE
+// version and hand it to pageContentTrigger — the identical pipeline (enforce pass, sections,
+// media, dedup, notices), which is already safe under at-least-once delivery, so the real
+// event arriving later reads the app's own restore and exits.
+const PAGE_GUARD_PREFIX = "page-guard-";
+const PAGE_GUARD_TTL_MS = 30 * 24 * 3600 * 1000;
+const PAGE_GUARD_ECHO_MS = 3 * 60 * 1000;
+
+async function readLiveVersion(pageId) {
+  const res = await asApp().requestConfluence(route`/wiki/api/v2/pages/${pageId}`, { headers: { Accept: "application/json" } });
+  if (!res.ok) return null;
+  const data = await res.json();
+  return { number: data?.version?.number || null, authorId: data?.version?.authorId || null, status: data?.status || null };
+}
+
+/**
+ * @returns {{ checked: boolean, restored: boolean, reason?: string, version?: number, authorId?: string|null, restoredVersion?: number }}
+ */
+export async function guardPageNow(pageId, source = "view") {
+  const systemAccountId = await resolveAppAccountId();
+  if (!systemAccountId) return { checked: false, restored: false, reason: "app account unresolved" };
+  const live = await readLiveVersion(pageId);
+  if (!live?.number || live.status !== "current") return { checked: false, restored: false, reason: "page unreadable" };
+  const key = `${PAGE_GUARD_PREFIX}${pageId}`;
+  const seen = await kvs.get(key);
+  if (seen?.version >= live.number) {
+    // A page with several sealed sections mounts several macros; all but the first land here.
+    // For a short window they are told what the first caller's run restored, so the macro whose
+    // section it was can say so (and the others stay silent).
+    const r = seen.restored;
+    if (r && Date.now() - new Date(r.at).getTime() < PAGE_GUARD_ECHO_MS) {
+      return { checked: false, restored: true, version: r.from, authorId: r.authorId, restoredVersion: seen.version, sectionIds: r.sectionIds || [] };
+    }
+    return { checked: false, restored: false, reason: "version already judged", version: live.number };
+  }
+  const startedAt = Date.now();
+  // Claim BEFORE the work: a page with five sealed sections mounts five macros that all call
+  // this at once. (No CAS in KVS — a lost race runs the pipeline twice, which it tolerates.)
+  await setWithTtl(key, { version: live.number, at: new Date().toISOString(), source }, PAGE_GUARD_TTL_MS);
+  if (live.authorId === systemAccountId) return { checked: true, restored: false, reason: "app authored the live version", version: live.number };
+
+  console.info(`[PAGE-GUARD] ${source}: judging page=${pageId} v=${live.number} by=${live.authorId || "?"} ahead of its event`);
+  await pageContentTrigger({
+    eventType: "avi:confluence:updated:page",
+    atlassianId: live.authorId,
+    content: { id: String(pageId), version: { number: live.number } },
+  });
+  const after = await readLiveVersion(pageId);
+  const restored = !!(after?.number > live.number && after.authorId === systemAccountId);
+  let sectionIds = [];
+  if (restored) {
+    // Which sealed sections this run put back — read from the dispatch records the pipeline
+    // wrote (they exist only after a CONFIRMED write, SV-M2).
+    try {
+      const recent = (await kvs.get("recent-notifications"))?.events || [];
+      sectionIds = [...new Set(recent
+        .filter((e) => String(e.pageId) === String(pageId) && e.sectionId && new Date(e.timestamp).getTime() >= startedAt - 1000)
+        .map((e) => e.sectionId))];
+    } catch (_) { /* the notice is a courtesy; the restore already happened */ }
+    await setWithTtl(key, {
+      version: after.number, at: new Date().toISOString(), source,
+      restored: { from: live.number, authorId: live.authorId, sectionIds, at: new Date().toISOString() },
+    }, PAGE_GUARD_TTL_MS);
+  }
+  return { checked: true, restored, version: live.number, authorId: live.authorId, restoredVersion: restored ? after.number : undefined, sectionIds };
+}
+
+// Pages that carry a live seal whose PAGE BODY the app protects: sealed sections, and sealed
+// attachments embedded in the body. Bounded per run; the cursor rotates so a site with more
+// pages than one run can judge still reaches all of them within a few runs.
+const PAGE_GUARD_SWEEP_CAP = 40;
+const PAGE_GUARD_BUDGET_MS = 40_000;
+async function collectGuardedPageIds() {
+  const pages = new Set();
+  const now = Date.now();
+  const live = (v) => !(v?.expiresAt && new Date(v.expiresAt).getTime() <= now);
+  for (const [prefix, pick] of [
+    ["section-protection-", (v) => (v?.lockedBy && v?.sectionId ? v.pageId : null)],
+    ["protection-", (v) => (v?.lockedBy && !v?.trashedOnly && v?.embedded !== false ? v.contentId : null)],
+  ]) {
+    let q = kvs.query().where("key", WhereConditions.beginsWith(prefix)).limit(100);
+    let iters = 0;
+    do {
+      const { results, nextCursor } = await q.getMany();
+      for (const { value } of results || []) { const id = live(value) ? pick(value) : null; if (id) pages.add(String(id)); }
+      if (!nextCursor || ++iters >= 20) break;
+      q = kvs.query().where("key", WhereConditions.beginsWith(prefix)).limit(100).cursor(nextCursor);
+    } while (true);
+  }
+  return [...pages].sort();
+}
+
+export async function pageGuardSweep() {
+  const started = Date.now();
+  try {
+    const globalPolicy = await kvs.get("admin-settings-global");
+    if (globalPolicy?.enableContentProtection === false) return { pages: 0, judged: 0, restored: 0 };
+    const pages = await collectGuardedPageIds();
+    if (pages.length === 0) return { pages: 0, judged: 0, restored: 0 };
+    const state = (await kvs.get("page-guard-sweep-cursor")) || { after: null };
+    const startAt = state.after ? Math.max(0, pages.findIndex((p) => p > state.after)) : 0;
+    const order = [...pages.slice(startAt), ...pages.slice(0, startAt)].slice(0, PAGE_GUARD_SWEEP_CAP);
+    let judged = 0, restored = 0, last = null;
+    for (const pageId of order) {
+      if (Date.now() - started > PAGE_GUARD_BUDGET_MS) break;
+      try {
+        const r = await guardPageNow(pageId, "sweep");
+        if (r.checked) judged++;
+        if (r.restored) restored++;
+      } catch (e) { console.error(`[PAGE-GUARD] sweep: page ${pageId} failed:`, e); }
+      last = pageId;
+    }
+    await kvs.set("page-guard-sweep-cursor", { after: order.length < pages.length ? last : null, at: new Date().toISOString() });
+    if (judged || restored) console.info(`[PAGE-GUARD] sweep: ${pages.length} guarded pages, ${judged} judged ahead of their event, ${restored} restored`);
+    return { pages: pages.length, judged, restored };
+  } catch (e) {
+    console.error("[PAGE-GUARD] sweep failed:", e);
+    return { pages: 0, judged: 0, restored: 0, error: true };
+  }
 }
 
 // Walk the section-restore-pending-* markers (≤ SECTION_RETRY_SWEEP_CAP per run) and retry each.

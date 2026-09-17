@@ -13,13 +13,17 @@ import {
   getActiveEditGrant, getActiveSectionEditGrant,
   writeOwnerIndex, dropOwnerIndex, listPendingRequestsForOwner,
   writeSectionOwnerIndex, dropSectionOwnerIndex, listPendingSectionRequestsForOwner,
+  resolveEditCooldownMs,
 } from "./logic.js";
+import { retryAtFor } from "../../shared/edit-cooldown.js";
 import { listMyStewardRequestsCore } from "../realms/actions.js";
 import { listMyApprovals } from "../workflow/approvals.js";
 import { canReadPage, resolvePageSpaceKey } from "../../shared/content-access.js";
 import { recordActivity } from "../../infra/activity-log.js";
 
-const COOLDOWN_MS = 48 * 60 * 60 * 1000; // 48h after a denial before re-requesting
+// The wait after a declined request is the site setting `editRequestCooldownHours`
+// (shared/edit-cooldown.js is its one home). A refusal names WHEN the person may ask again.
+const declinedReason = (retryAt) => `A previous request was declined; you can ask again after ${new Date(retryAt).toISOString().slice(0, 16).replace("T", " ")} UTC, or ask the owner to give you access directly`;
 
 /**
  * Load the seal for an owner-gated action and decide if the caller may act.
@@ -76,10 +80,8 @@ const requestEditAccess = async (req) => {
   const existing = await kvs.get(`edit-request-${attachmentId}-${accountId}`);
   if (existing?.status === "pending") return { success: false, reason: "Request already pending" };
   if (existing?.status === "denied") {
-    const deniedAt = existing.deniedAt ? new Date(existing.deniedAt).getTime() : 0;
-    if (Date.now() - deniedAt < COOLDOWN_MS) {
-      return { success: false, reason: "A previous request was declined; try again later" };
-    }
+    const retryAt = retryAtFor(existing.deniedAt, await resolveEditCooldownMs());
+    if (retryAt) return { success: false, reason: declinedReason(retryAt), retryAt };
   }
 
   let requesterName = "Unknown User";
@@ -146,13 +148,13 @@ const checkEditRequest = async (req) => {
   if (!existing) return { status: "none" };
   if (existing.status === "pending") return { status: "pending" };
   if (existing.status === "denied") {
-    const deniedAt = existing.deniedAt ? new Date(existing.deniedAt).getTime() : 0;
-    if (Date.now() - deniedAt >= COOLDOWN_MS) {
+    const retryAt = retryAtFor(existing.deniedAt, await resolveEditCooldownMs());
+    if (!retryAt) {
       await kvs.delete(`edit-request-${attachmentId}-${accountId}`);
       await dropOwnerIndex(existing);
       return { status: "none" };
     }
-    return { status: "denied", deniedAt: existing.deniedAt };
+    return { status: "denied", deniedAt: existing.deniedAt, retryAt };
   }
   return { status: "none" };
 };
@@ -256,7 +258,7 @@ export const approveEditRequest = async (req) => {
 };
 
 /**
- * Deny a request → mark denied (48h cooldown before retry).
+ * Deny a request → mark denied (the site's edit-request cooldown applies before a retry).
  */
 export const denyEditRequest = async (req) => {
   const { attachmentId, requesterAccountId } = req.payload || {};
@@ -342,6 +344,118 @@ export const listEditGrants = async (req) => {
 };
 
 // ===========================================================================
+// Direct grants — the sealer names a person (tester report 2026-09-17)
+// ===========================================================================
+// "If the sealer declines my request and I then explain on Teams why I need it, either I can
+// ask again or the sealer can give me the permission." it51 refused a grant with no request
+// because it left NO audit trail; a direct grant keeps the trail (activity `editreq.granted`,
+// `direct: true` on the grant) and removes the dead end. Same gate as approve: the seal owner,
+// or a steward of the OBJECT's space. The named person must be able to open the page — the app
+// never hands authority over content to someone who cannot see it, and the notice @mentions
+// them on that page. A pending or declined request from that person is consumed by the grant.
+async function lookupDisplayName(accountId) {
+  try {
+    const res = await asApp().requestConfluence(route`/wiki/rest/api/user?accountId=${accountId}`, { headers: { Accept: "application/json" } });
+    if (res.ok) return (await res.json())?.displayName || null;
+  } catch (_) { /* best effort */ }
+  return null;
+}
+const ACCOUNT_ID = /^[A-Za-z0-9:_-]{1,128}$/;
+
+async function grantDirect({ scope, id, seal, pageId, name, accountId, editorAccountId }) {
+  if (!ACCOUNT_ID.test(String(editorAccountId))) return { success: false, reason: "Pick a person to give access to" };
+  if (editorAccountId === seal.lockedBy) return { success: false, reason: "The seal owner can already edit" };
+  if (seal.trashedOnly) return { success: false, reason: "This file is in the trash" };
+  if (seal.expiresAt && new Date(seal.expiresAt).getTime() <= Date.now()) {
+    return { success: false, reason: "This seal has lapsed — extend it first, then give edit access" };
+  }
+  if (!pageId || !(await canReadPage(editorAccountId, pageId))) {
+    return { success: false, reason: "That person cannot open this page, so they cannot be given edit access here" };
+  }
+  const section = scope === "section";
+  const grantKey = section ? `section-edit-grant-${id}-${editorAccountId}` : `edit-grant-${id}-${editorAccountId}`;
+  const requestKey = section ? `section-edit-request-${id}-${editorAccountId}` : `edit-request-${id}-${editorAccountId}`;
+  const request = await kvs.get(requestKey);
+  const editorName = request?.requesterName || (await lookupDisplayName(editorAccountId)) || "User";
+  const grant = {
+    ...(section ? { sectionId: id } : { artifactId: id }),
+    editorAccountId, editorName, grantedBy: accountId, grantedAt: new Date().toISOString(),
+    expiresAt: seal.expiresAt || null, direct: true,
+  };
+  const expiryMs = seal.expiresAt ? new Date(seal.expiresAt).getTime() : 0;
+  if (expiryMs > Date.now()) await setUntil(grantKey, grant, expiryMs);
+  else await kvs.set(grantKey, grant);
+  if (request) {
+    await kvs.delete(requestKey);
+    await (section ? dropSectionOwnerIndex(request) : dropOwnerIndex(request));
+  }
+  await recordActivity({
+    type: "editreq.granted",
+    pageId: pageId || null,
+    spaceKey: seal.spaceKey || null,
+    actor: { accountId, name: seal.lockedBy === accountId ? (seal.lockedByName || null) : null },
+    target: { kind: section ? "section" : "attachment", id, name },
+    details: { scope: section ? "section" : "attachment", editorAccountId, editorName, expiresAt: grant.expiresAt, hadRequest: request?.status || null },
+    version: null,
+  });
+  if (pageId && (await notifyEnabled())) {
+    try { await mailEditApproved(editorAccountId, name, pageId); }
+    catch (e) { console.error("[EDIT-REQ] notify direct grant failed:", e); }
+  }
+  return { success: true, grant: { editorAccountId, editorName, grantedAt: grant.grantedAt, expiresAt: grant.expiresAt } };
+}
+
+export const grantEditAccess = async (req) => {
+  const { attachmentId, editorAccountId } = req.payload || {};
+  const accountId = req.context.accountId;
+  if (!attachmentId || !editorAccountId || !accountId) return { success: false, reason: "Missing params" };
+  const { seal, authorized } = await loadSealForOwnerAction(attachmentId, accountId);
+  if (!seal) return { success: false, reason: "Seal not found" };
+  if (!authorized) return { success: false, reason: "Not the seal owner" };
+  return grantDirect({ scope: "attachment", id: attachmentId, seal, pageId: seal.contentId || null, name: seal.attachmentName || "Unknown Attachment", accountId, editorAccountId });
+};
+
+export const grantSectionEdit = async (req) => {
+  const { sectionId, editorAccountId } = req.payload || {};
+  const accountId = req.context.accountId;
+  if (!sectionId || !editorAccountId || !accountId) return { success: false, reason: "Missing params" };
+  const { seal, authorized } = await loadSectionForOwnerAction(sectionId, accountId);
+  if (!seal) return { success: false, reason: "Section not found" };
+  if (!authorized) return { success: false, reason: "Not the section owner" };
+  return grantDirect({ scope: "section", id: sectionId, seal, pageId: seal.pageId || null, name: seal.sectionTitle || "a sealed section", accountId, editorAccountId });
+};
+
+/**
+ * People the sealer can name — a Confluence user search, for a caller who owns (or stewards)
+ * at least the seal they are acting on. The result is names + account ids the caller could
+ * find in Confluence's own people search; whether the PICKED person may be granted is decided
+ * by grantDirect, never here.
+ */
+export const searchGrantees = async (req) => {
+  const { attachmentId, sectionId, query } = req.payload || {};
+  const accountId = req.context.accountId;
+  const q = typeof query === "string" ? query.trim().slice(0, 80) : "";
+  if (!accountId || q.length < 2) return { users: [] };
+  const gate = sectionId ? await loadSectionForOwnerAction(sectionId, accountId)
+    : attachmentId ? await loadSealForOwnerAction(attachmentId, accountId) : { seal: null, authorized: false };
+  if (!gate.seal || !gate.authorized) return { users: [], reason: "Not authorized" };
+  try {
+    const cql = `type=user AND user.fullname~"${q.replace(/["\\]/g, " ")}"`;
+    const res = await asApp().requestConfluence(route`/wiki/rest/api/search/user?cql=${cql}&limit=8`, { headers: { Accept: "application/json" } });
+    if (!res.ok) return { users: [], reason: `Search failed (${res.status})` };
+    const data = await res.json();
+    const users = (data.results || [])
+      .map((r) => r.user)
+      .filter((u) => u?.accountId && u.accountType === "atlassian" && u.accountId !== gate.seal.lockedBy)
+      .map((u) => ({ accountId: u.accountId, displayName: u.displayName || "Unknown user", avatar: u.profilePicture?.path || null }));
+    return { users };
+  } catch (e) {
+    console.error("[EDIT-REQ] grantee search failed:", e);
+    return { users: [], reason: "Search failed" };
+  }
+};
+
+// ===========================================================================
 // Section edit requests (Content Sealing) — parallel to the attachment flow
 // ===========================================================================
 
@@ -380,8 +494,8 @@ export const requestSectionEdit = async (req) => {
   const existing = await kvs.get(`section-edit-request-${sectionId}-${accountId}`);
   if (existing?.status === "pending") return { success: false, reason: "Request already pending" };
   if (existing?.status === "denied") {
-    const deniedAt = existing.deniedAt ? new Date(existing.deniedAt).getTime() : 0;
-    if (Date.now() - deniedAt < COOLDOWN_MS) return { success: false, reason: "A previous request was declined; try again later" };
+    const retryAt = retryAtFor(existing.deniedAt, await resolveEditCooldownMs());
+    if (retryAt) return { success: false, reason: declinedReason(retryAt), retryAt };
   }
 
   let requesterName = "Unknown User";
@@ -430,9 +544,9 @@ export const checkSectionEdit = async (req) => {
   if (!existing) return { status: "none" };
   if (existing.status === "pending") return { status: "pending" };
   if (existing.status === "denied") {
-    const deniedAt = existing.deniedAt ? new Date(existing.deniedAt).getTime() : 0;
-    if (Date.now() - deniedAt >= COOLDOWN_MS) { await kvs.delete(`section-edit-request-${sectionId}-${accountId}`); await dropSectionOwnerIndex(existing); return { status: "none" }; }
-    return { status: "denied" };
+    const retryAt = retryAtFor(existing.deniedAt, await resolveEditCooldownMs());
+    if (!retryAt) { await kvs.delete(`section-edit-request-${sectionId}-${accountId}`); await dropSectionOwnerIndex(existing); return { status: "none" }; }
+    return { status: "denied", deniedAt: existing.deniedAt, retryAt };
   }
   return { status: "none" };
 };
@@ -622,4 +736,7 @@ export const actions = [
   ["deny-section-edit", denySectionEdit],
   ["revoke-section-edit-grant", revokeSectionEditGrant],
   ["list-section-edit-grants", listSectionEditGrants],
+  ["grant-edit-access", grantEditAccess],
+  ["grant-section-edit", grantSectionEdit],
+  ["search-grantees", searchGrantees],
 ];

@@ -23,6 +23,7 @@ import { NOTIFICATIONS_MODE_NORMAL, normalizeNotificationsMode } from "./notice-
  *   - ENABLE_HALFWAY_REMINDER_NOTICE      (50% seal reminder comment)
  *   - ENABLE_EXPIRY_NOTICE                (auto-release / expiry comment)
  *   - ENABLE_PERIODIC_REMINDER_BANNER     (daily banner for long-held seals)
+ *   - NOTIFY_EDITOR_ON_REVERT             (tell the editor their change was undone — not under the master)
  */
 export async function resolveBulletinToggles(existingConfig = null) {
   try {
@@ -51,6 +52,9 @@ export async function resolveBulletinToggles(existingConfig = null) {
       // ON: overdue-reminder and auto-release comments to the owner.
       ENABLE_EXPIRY_NOTICE:
         stewardConfig?.enableAutoUnsealDispatchEmail !== false,
+      // ON (its own switch, independent of the master): the person whose published change was
+      // undone gets a comment addressed to THEM with a link to the version holding their work.
+      NOTIFY_EDITOR_ON_REVERT: stewardConfig?.notifyEditorOnRevert !== false,
       // ON: daily ribbon for long-held seals (ribbon only, never a comment).
       ENABLE_PERIODIC_REMINDER_BANNER:
         stewardConfig?.enablePeriodicReminderEmail !== false,

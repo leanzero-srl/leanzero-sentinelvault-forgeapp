@@ -8,9 +8,10 @@ import { formatRemaining } from "../../kit/format-duration";
 import ActivityFeed from "../../kit/ActivityFeed";
 import ActionMenu from "../../kit/ActionMenu";
 import { ConfirmDialog } from "../../kit/Dialog";
+import GiveAccessDialog from "../../kit/GiveAccessDialog";
 import RovingList from "../../kit/RovingList";
 import { attachmentRow, rowActions, statusChip, copyText } from "../../kit/seal-row.js";
-import { PrimarySlot, ReasonBar, RequestInbox, ErrorRow, CopiedNote } from "../../kit/SealRowParts";
+import { PrimarySlot, ReasonBar, RequestInbox, GrantInbox, ErrorRow, CopiedNote } from "../../kit/SealRowParts";
 
 // ── Column definitions ──────────────────────────────────
 const OVERLAY_COLUMNS = [
@@ -278,6 +279,12 @@ const OverlayArtifactCard = ({ artifact, visibleColumns, run, busyAction, errorM
   const [reasonText, setReasonText] = useState("");
   const [myRequests, setMyRequests] = useState(null); // owner: pending edit requests
   const [reqBusy, setReqBusy] = useState(null);
+  const [editRetryAt, setEditRetryAt] = useState(null);
+  // Editors with access: the panel had this, the overlay did not — an owner working in the
+  // overlay could neither see nor revoke a grant (one rule, every surface).
+  const [myGrants, setMyGrants] = useState(null);
+  const [grantBusy, setGrantBusy] = useState(null);
+  const [giving, setGiving] = useState(false);
   const [copied, setCopied] = useState(false);
 
   const isSealedByMe = artifact.lockStatus === "HELD_BY_ACTOR";
@@ -300,7 +307,7 @@ const OverlayArtifactCard = ({ artifact, visibleColumns, run, busyAction, errorM
     let cancelled = false;
     if (isSealedByOther && !isStale && editStatus === null) {
       invoke("check-edit-request", { attachmentId: artifact.id })
-        .then((r) => { if (!cancelled) { setEditStatus(r?.status || "none"); setEditExpiresAt(r?.expiresAt || null); } })
+        .then((r) => { if (!cancelled) { setEditStatus(r?.status || "none"); setEditExpiresAt(r?.expiresAt || null); setEditRetryAt(r?.retryAt || null); } })
         .catch(() => { if (!cancelled) setEditStatus("none"); });
     }
     return () => { cancelled = true; };
@@ -313,13 +320,27 @@ const OverlayArtifactCard = ({ artifact, visibleColumns, run, busyAction, errorM
         .then((r) => { if (!cancelled) setMyRequests(r?.requests || []); })
         .catch(() => { if (!cancelled) setMyRequests([]); });
     }
+    if (!isStale && (isSealedByMe || (isSealedByOther && viewer?.isSpaceAdmin === true))) {
+      invoke("list-edit-grants", { attachmentId: artifact.id })
+        .then((r) => { if (!cancelled) setMyGrants(r?.grants || []); })
+        .catch(() => { if (!cancelled) setMyGrants([]); });
+    }
     return () => { cancelled = true; };
-  }, [isSealedByMe, isStale, artifact.id]);
+  }, [isSealedByMe, isSealedByOther, viewer?.isSpaceAdmin, isStale, artifact.id]);
+
+  const reloadGrants = () => invoke("list-edit-grants", { attachmentId: artifact.id }).then((g) => setMyGrants(g?.grants || [])).catch(() => {});
+  const revokeGrant = async (editorAccountId) => {
+    setGrantBusy(editorAccountId);
+    const ok = await run("revoke", "revoke-edit-grant", { attachmentId: artifact.id, editorAccountId }, { refresh: false });
+    if (ok) setMyGrants((p) => (p || []).filter((g) => g.editorAccountId !== editorAccountId));
+    setGrantBusy(null);
+  };
 
   const resolveEditReq = async (requesterAccountId, action) => {
     setReqBusy(`${requesterAccountId}:${action}`);
     const ok = await run(action, action === "approve" ? "approve-edit-request" : "deny-edit-request", { attachmentId: artifact.id, requesterAccountId }, { refresh: false });
     if (ok) setMyRequests((p) => (p || []).filter((x) => x.requesterAccountId !== requesterAccountId));
+    if (ok && action === "approve") reloadGrants();
     setReqBusy(null);
   };
 
@@ -330,7 +351,7 @@ const OverlayArtifactCard = ({ artifact, visibleColumns, run, busyAction, errorM
     setTimeout(() => setCopied(false), 1800);
   };
 
-  const row = attachmentRow(artifact, { editStatus, editExpiresAt, pendingRequests: myRequests || [], watching: isWatching });
+  const row = attachmentRow(artifact, { editStatus, editExpiresAt, editRetryAt, pendingRequests: myRequests || [], watching: isWatching });
   const { primary, menu } = rowActions(row, viewer, { allowRestore: artifact.allowRestore, allowPurge: artifact.allowPurge, allowDelete: artifact.allowDelete, viewUrl, propertiesUrl });
   const chip = statusChip(artifact);
 
@@ -342,6 +363,7 @@ const OverlayArtifactCard = ({ artifact, visibleColumns, run, busyAction, errorM
       case "unwatch": run("watch", "unwatch-artifact", { attachmentId: artifact.id }, { refresh: false, watch: false }); break;
       case "copy-link": copyLink(); break;
       case "force-release": setReasonText(""); setBar("force"); break;
+      case "give-access": setGiving(true); break;
       case "view": if (viewUrl) router.open(viewUrl); break;
       case "properties": if (propertiesUrl) router.open(propertiesUrl); break;
       case "delete": setPendingConfirm("delete"); break;
@@ -502,6 +524,8 @@ const OverlayArtifactCard = ({ artifact, visibleColumns, run, busyAction, errorM
 
       {bar && <ReasonBar mode={bar} value={reasonText} onChange={setReasonText} onSubmit={submitBar} onCancel={() => { setBar(null); setReasonText(""); }} busy={busyAction === "unseal" || busyAction === "editreq"} />}
       {isSealedByMe && <RequestInbox requests={myRequests} name={artifact.title} reqBusy={reqBusy} onDecide={resolveEditReq} firstDecidedAbove={primary.kind === "decide"} />}
+      {giving && <GiveAccessDialog target={{ attachmentId: artifact.id }} name={artifact.title} onClose={() => setGiving(false)} onGranted={reloadGrants} />}
+      {(isSealedByMe || (myGrants || []).length > 0) && <GrantInbox grants={myGrants} name={artifact.title} grantBusy={grantBusy} onRevoke={revokeGrant} />}
 
       {/* Expand panel: thumbnail + view link */}
       {expanded && (

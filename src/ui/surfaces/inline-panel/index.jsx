@@ -6,6 +6,7 @@ import ThumbnailPreview from "../../kit/ThumbnailPreview";
 import ActivityFeed from "../../kit/ActivityFeed";
 import ActionMenu from "../../kit/ActionMenu";
 import { ConfirmDialog } from "../../kit/Dialog";
+import GiveAccessDialog from "../../kit/GiveAccessDialog";
 import RovingList from "../../kit/RovingList";
 import { attachmentRow, sectionRow, rowActions, statusChip, copyText } from "../../kit/seal-row.js";
 import { PrimarySlot, ReasonBar, RequestInbox, GrantInbox, ErrorRow, CopiedNote } from "../../kit/SealRowParts";
@@ -282,12 +283,14 @@ const ArtifactCard = ({ att, onRefresh, columns, siteUrl, spaceKey, pageId, page
   const [cachedPreview, setCachedPreview] = useState(null);
   const [editStatus, setEditStatus] = useState(att.editStatus || null); // none|pending|granted|denied
   const [editExpiresAt, setEditExpiresAt] = useState(null);
+  const [editRetryAt, setEditRetryAt] = useState(null); // declined: when the server lets them ask again
   const [bar, setBar] = useState(null); // "request" | "force" | null — the typed-reason bar
   const [reasonText, setReasonText] = useState("");
   const [myRequests, setMyRequests] = useState(null); // owner: pending edit requests on this file
   const [reqBusy, setReqBusy] = useState(null);
   const [myGrants, setMyGrants] = useState(null); // audit D5: owner — active granted editors
   const [grantBusy, setGrantBusy] = useState(null);
+  const [giving, setGiving] = useState(false); // "Give edit access…" dialog
   const [copied, setCopied] = useState(false);
 
   const isSealedByMe = att.lockStatus === "HELD_BY_ACTOR";
@@ -299,7 +302,7 @@ const ArtifactCard = ({ att, onRefresh, columns, siteUrl, spaceKey, pageId, page
     let cancelled = false;
     if (isSealedByOther && editStatus === null) {
       invoke("check-edit-request", { attachmentId: att.id })
-        .then((r) => { if (!cancelled) { setEditStatus(r?.status || "none"); setEditExpiresAt(r?.expiresAt || null); } })
+        .then((r) => { if (!cancelled) { setEditStatus(r?.status || "none"); setEditExpiresAt(r?.expiresAt || null); setEditRetryAt(r?.retryAt || null); } })
         .catch(() => { if (!cancelled) setEditStatus("none"); });
     }
     return () => { cancelled = true; };
@@ -309,7 +312,7 @@ const ArtifactCard = ({ att, onRefresh, columns, siteUrl, spaceKey, pageId, page
   // ACTIVE granted editors so the owner can REVOKE access (audit D5).
   useEffect(() => {
     let cancelled = false;
-    if (isSealedByMe) {
+    if (isSealedByMe || (isSealedByOther && viewer?.isSpaceAdmin === true)) {
       invoke("list-edit-requests", { attachmentId: att.id })
         .then((r) => { if (!cancelled) setMyRequests(r?.requests || []); })
         .catch(() => { if (!cancelled) setMyRequests([]); });
@@ -318,7 +321,7 @@ const ArtifactCard = ({ att, onRefresh, columns, siteUrl, spaceKey, pageId, page
         .catch(() => { if (!cancelled) setMyGrants([]); });
     }
     return () => { cancelled = true; };
-  }, [isSealedByMe, att.id]);
+  }, [isSealedByMe, isSealedByOther, viewer?.isSpaceAdmin, att.id]);
 
   // ONE call path for every resolver action: a refusal (`success:false`) shows the resolver's
   // reason in the card's error row and never reads as success (review: ~20 silent click failures).
@@ -398,7 +401,7 @@ const ArtifactCard = ({ att, onRefresh, columns, siteUrl, spaceKey, pageId, page
   };
 
   // ── the ONE row rule (mockup decision 5) ───────────────────────────────────────────────────
-  const row = attachmentRow(att, { editStatus, editExpiresAt, pendingRequests: myRequests || [], watching: att.notifyRequested });
+  const row = attachmentRow(att, { editStatus, editExpiresAt, editRetryAt, pendingRequests: myRequests || [], watching: att.notifyRequested });
   const { primary, menu } = rowActions(row, viewer, { allowRestore: att.allowRestore, allowPurge: att.allowPurge, allowDelete: att.allowDelete, viewUrl, propertiesUrl });
   const chip = statusChip(att);
 
@@ -410,6 +413,7 @@ const ArtifactCard = ({ att, onRefresh, columns, siteUrl, spaceKey, pageId, page
       case "unwatch": run("watch", "unwatch-artifact", { attachmentId: att.id }); break;
       case "copy-link": copyLink(); break;
       case "force-release": setReasonText(""); setBar("force"); break;
+      case "give-access": setGiving(true); break;
       case "view": if (viewUrl) router.open(viewUrl); break;
       case "properties": if (propertiesUrl) router.open(propertiesUrl); break;
       case "delete": setPendingConfirm("delete"); break;
@@ -558,7 +562,16 @@ const ArtifactCard = ({ att, onRefresh, columns, siteUrl, spaceKey, pageId, page
       {bar && <ReasonBar mode={bar} value={reasonText} onChange={setReasonText} onSubmit={submitBar} onCancel={() => { setBar(null); setReasonText(""); }} busy={actionBusy === "unseal" || actionBusy === "editreq"} />}
 
       {isSealedByMe && <RequestInbox requests={myRequests} name={att.title} reqBusy={reqBusy} onDecide={resolveEditReq} firstDecidedAbove={primary.kind === "decide"} />}
-      {isSealedByMe && <GrantInbox grants={myGrants} name={att.title} grantBusy={grantBusy} onRevoke={revokeGrant} />}
+      {giving && (
+        <GiveAccessDialog
+          target={{ attachmentId: att.id }}
+          name={att.title}
+          onClose={() => setGiving(false)}
+          onGranted={() => invoke("list-edit-grants", { attachmentId: att.id }).then((g) => setMyGrants(g?.grants || [])).catch(() => {})}
+        />
+      )}
+      {/* A space admin who gave access sees (and can revoke) the grants too — list-edit-grants admits them. */}
+      {(isSealedByMe || (myGrants || []).length > 0) && <GrantInbox grants={myGrants} name={att.title} grantBusy={grantBusy} onRevoke={revokeGrant} />}
 
       {/* Expand panel: thumbnail + view link */}
       {expanded && (
@@ -839,6 +852,8 @@ const SectionRow = ({ section: s, onUnseal, unsealing, viewer, siteUrl, pageId }
   const [reqBusy, setReqBusy] = useState(null);
   const [grants, setGrants] = useState(null); // owner: editors currently granted access
   const [grantBusy, setGrantBusy] = useState(null);
+  const [giving, setGiving] = useState(false); // "Give edit access…" dialog
+  const [editRetryAt, setEditRetryAt] = useState(null);
   const [error, setError] = useState(null);
   const [copied, setCopied] = useState(false);
 
@@ -853,11 +868,17 @@ const SectionRow = ({ section: s, onUnseal, unsealing, viewer, siteUrl, pageId }
         .catch(() => { if (!cancelled) setGrants([]); });
     } else if (!s.isExpired) {
       invoke("check-section-edit", { sectionId: s.sectionId })
-        .then((r) => { if (!cancelled) setEditStatus(r?.status || "none"); })
+        .then((r) => { if (!cancelled) { setEditStatus(r?.status || "none"); setEditRetryAt(r?.retryAt || null); } })
         .catch(() => { if (!cancelled) setEditStatus("none"); });
+      // A space admin can give (and so must see and revoke) access on someone else's section.
+      if (viewer?.isSpaceAdmin === true) {
+        invoke("list-section-edit-grants", { sectionId: s.sectionId })
+          .then((r) => { if (!cancelled) setGrants(r?.grants || []); })
+          .catch(() => { if (!cancelled) setGrants([]); });
+      }
     }
     return () => { cancelled = true; };
-  }, [s.sectionId, s.isMine, s.isExpired]);
+  }, [s.sectionId, s.isMine, s.isExpired, viewer?.isSpaceAdmin]);
 
   const submitReq = async () => {
     setBusy(true); setError(null);
@@ -899,7 +920,7 @@ const SectionRow = ({ section: s, onUnseal, unsealing, viewer, siteUrl, pageId }
     setTimeout(() => setCopied(false), 1800);
   };
 
-  const row = sectionRow(s, { editStatus, pendingRequests: requests || [] });
+  const row = sectionRow(s, { editStatus, editRetryAt, pendingRequests: requests || [] });
   const { primary, menu } = rowActions(row, viewer);
   // A non-owner's Release (expired seal) goes through the typed-reason bar (server: reason required).
   const forced = primary.kind === "release" && !s.isMine;
@@ -910,6 +931,7 @@ const SectionRow = ({ section: s, onUnseal, unsealing, viewer, siteUrl, pageId }
     if (id === "release") onUnseal(s.sectionId);
     else if (id === "copy-link") copyLink();
     else if (id === "force-release") { setReasonText(""); setBar("force"); }
+    else if (id === "give-access") setGiving(true);
   };
   const handlers = {
     release: () => (forced ? (setReasonText(""), setBar("force")) : onUnseal(s.sectionId)),
@@ -935,7 +957,16 @@ const SectionRow = ({ section: s, onUnseal, unsealing, viewer, siteUrl, pageId }
       <ErrorRow message={error} onDismiss={() => setError(null)} testId="sv-section-error" />
       {bar && <ReasonBar mode={bar} kind="section" value={reasonText} onChange={setReasonText} onSubmit={submitBar} onCancel={() => { setBar(null); setReasonText(""); }} busy={busy || unsealing} testId="sv-section-reason-bar" />}
       {s.isMine && <RequestInbox requests={requests} name={`section ${s.sectionTitle}`} reqBusy={reqBusy} onDecide={resolve} firstDecidedAbove={primary.kind === "decide"} testId="sv-section-inbox" />}
-      {s.isMine && <GrantInbox grants={grants} name={`section ${s.sectionTitle}`} grantBusy={grantBusy} onRevoke={revokeGrant} testId="sv-section-grants-inbox" />}
+      {giving && (
+        <GiveAccessDialog
+          target={{ sectionId: s.sectionId }}
+          name={`section ${s.sectionTitle}`}
+          onClose={() => setGiving(false)}
+          onGranted={() => invoke("list-section-edit-grants", { sectionId: s.sectionId }).then((g) => setGrants(g?.grants || [])).catch(() => {})}
+          testId="sv-section-give-access"
+        />
+      )}
+      {(s.isMine || (grants || []).length > 0) && <GrantInbox grants={grants} name={`section ${s.sectionTitle}`} grantBusy={grantBusy} onRevoke={revokeGrant} testId="sv-section-grants-inbox" />}
     </div>
   );
 };
