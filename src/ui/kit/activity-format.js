@@ -20,14 +20,14 @@ export const ACTIVITY_CATEGORIES = Object.freeze([
     "seal.deleted", "seal.revert-failed",
   ]) },
   { id: "sections", label: "Sections", types: Object.freeze([
-    "section.sealed", "section.released", "section.restored", "section.reverted", "section.rebaselined",
+    "section.sealed", "section.released", "section.extended", "section.restored", "section.reverted", "section.rebaselined",
   ]) },
   { id: "editreq", label: "Edit access", types: Object.freeze([
     "editreq.requested", "editreq.approved", "editreq.denied", "editreq.revoked", "editreq.granted",
   ]) },
   { id: "workflow", label: "Workflow", types: Object.freeze([
     "workflow.transition", "workflow.approval-requested", "workflow.approval-rerequested", "workflow.approval-decided",
-    "workflow.enforced", "workflow.expired", "workflow.review-due", "workflow.read-confirmed",
+    "workflow.enforced", "workflow.expired", "workflow.review-due", "workflow.read-confirmed", "workflow.seals-held", "workflow.seals-released",
   ]) },
   { id: "validation", label: "Validation", types: Object.freeze([
     "validation.reverted", "validation.gate",
@@ -192,6 +192,12 @@ export function formatActivity(entry) {
         detail: d.error ? String(d.error) : "" };
 
     // ── Sections (page content) ──
+    case "section.extended":
+      return { ...base, label: "Section seal extended", glyph: "clock", tone: "seal",
+        sentence: d.expiresAt
+          ? `Seal on section “${targetName(entry, "Sealed section")}” extended to ${formatAbsolute(d.expiresAt)} by ${who}`
+          : `Seal on section “${targetName(entry, "Sealed section")}” extended by ${who}`,
+        detail: d.expiresAt ? `until ${formatAbsolute(d.expiresAt)}` : "" };
     case "section.sealed":
       return { ...base, label: "Section sealed", glyph: "section", tone: "seal",
         sentence: `${who} sealed section ${section()}` };
@@ -285,6 +291,14 @@ export function formatActivity(entry) {
             sentence: `${byWho} the Approved page — it was moved back to ${d.demotedToName || "Draft"} for a new review`,
             detail: [d.approvedVersion != null ? `approved v${d.approvedVersion}` : "", d.driftedVersion != null ? `edited v${d.driftedVersion}` : ""].filter(Boolean).join(" · ") };
     }
+    case "workflow.seals-held":
+      return { ...base, label: "Seals held by the approval", glyph: "lock", tone: "seal",
+        sentence: `The page entered ${d.stateName || "Approved"} — its ${[d.sections ? `${d.sections} sealed section${d.sections === 1 ? "" : "s"}` : "", d.attachments ? `${d.attachments} sealed file${d.attachments === 1 ? "" : "s"}` : ""].filter(Boolean).join(" and ") || "seals"} now ${(Number(d.sections) || 0) + (Number(d.attachments) || 0) === 1 ? "belongs" : "belong"} to the approval (expiry paused, changes go through the workflow)`,
+        detail: Array.isArray(d.names) && d.names.length ? d.names.join(" · ") : "" };
+    case "workflow.seals-released":
+      return { ...base, label: "Seals handed back", glyph: "unlock", tone: "neutral",
+        sentence: `The page left the approved state${d.toStateName ? ` for ${d.toStateName}` : ""} — its ${[d.sections ? `${d.sections} sealed section${d.sections === 1 ? "" : "s"}` : "", d.attachments ? `${d.attachments} sealed file${d.attachments === 1 ? "" : "s"}` : ""].filter(Boolean).join(" and ") || "seals"} went back to ${(Number(d.sections) || 0) + (Number(d.attachments) || 0) === 1 ? "its owner" : "their owners"} with the time ${(Number(d.sections) || 0) + (Number(d.attachments) || 0) === 1 ? "it" : "they"} had left`,
+        detail: Array.isArray(d.names) && d.names.length ? d.names.join(" · ") : "" };
     case "workflow.expired":
       // A5: a page can be overdue without moving — its state has no transition to Expired.
       return d.noTransition

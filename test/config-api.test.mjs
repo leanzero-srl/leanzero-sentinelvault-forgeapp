@@ -377,4 +377,15 @@ const memStorage = () => { const m = new Map(); return { m, get: async (k) => (m
   ok("CLS-1: space mode must be inherit|off", !validateBundle({ version: 1, spaces: { WFH: { classification: "on" } } }).ok);
   eq("CLS-1: the space mirror carries the opt-out", redactConfigForMirror({ policy: {}, validation: null, workflows: [], classificationDefault: null, classification: "off" }, "space").classification, "off");
 }
+// ── SEC-7: extend ops ────────────────────────────────────────────────────────────────────────
+{
+  const b = { version: 1, content: [{ op: "extend-section", sectionId: "sec1", additionalSeconds: 86400 }, { op: "extend-attachment", attachmentId: "att1" }] };
+  eq("SEC-7 validates", validateBundle(b).errors, []);
+  eq("SEC-7 plan", planBundle(b).map((s) => [s.path, s.resolverKey, s.payload]), [
+    ["content[0]", "extend-section", { sectionId: "sec1", additionalSeconds: 86400 }],
+    ["content[1]", "extend-seal", { attachmentId: "att1", additionalSeconds: undefined }],
+  ]);
+  ok("SEC-7: a non-positive extension is refused", !validateBundle({ version: 1, content: [{ op: "extend-section", sectionId: "s", additionalSeconds: 0 }] }).ok);
+  ok("SEC-7: sectionId required", !validateBundle({ version: 1, content: [{ op: "extend-section" }] }).ok);
+}
 report("config-api");

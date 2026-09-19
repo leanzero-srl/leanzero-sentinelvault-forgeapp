@@ -210,7 +210,7 @@ const SealRow = ({ row, viewer, pageId, siteUrl, onChanged }) => {
   };
 
   const onMenu = (id) => {
-    if (id === "extend") run("extend-seal", { attachmentId: row.id });
+    if (id === "extend") run(isAtt ? "extend-seal" : "extend-section", idPayload); // SEC-7: sections extend too
     else if (id === "release") run(isAtt ? "unseal-artifact" : "unseal-section", idPayload);
     else if (id === "watch") run("watch-artifact", { attachmentId: row.id });
     else if (id === "unwatch") run("unwatch-artifact", { attachmentId: row.id });
@@ -222,6 +222,7 @@ const SealRow = ({ row, viewer, pageId, siteUrl, onChanged }) => {
   // The sentence under the name (mockup §4).
   const owner = row.isMine ? "you" : (row.ownerName || "another user");
   const clock = row.isTrashed ? "in the trash"
+    : row.workflowHeld ? "held by the approval of this page — expiry paused" // SEC-2
     : !row.expiresAt ? "no expiry"
     : row.isExpired ? `expired ${when(row.expiresAt)}`
     : `until ${when(row.expiresAt)}`;
@@ -233,6 +234,7 @@ const SealRow = ({ row, viewer, pageId, siteUrl, onChanged }) => {
     : primary.kind === "waiting" ? " · your request was sent"
     : "";
   const trashNote = row.isTrashed ? " — restore it from the Attachments view" : "";
+  const warning = expiryWarning(row); // SEC-7: the owner sees the lapse coming (amber, last three days)
 
   const primaryEl = (() => {
     switch (primary.kind) {
@@ -257,6 +259,8 @@ const SealRow = ({ row, viewer, pageId, siteUrl, onChanged }) => {
         return <span className="pd-state ok" data-testid="pd-primary" data-action="editnow">Edit now{primary.until ? ` until ${when(primary.until)}` : ""}</span>;
       case "expired":
         return <span className="pd-state expired" data-testid="pd-primary" data-action="expired">Expired</span>;
+      case "held": // SEC-2
+        return <span className="pd-state held" data-testid="pd-primary" data-action="held" title={primary.hint || ""}>{primary.label}</span>;
       case "trashed":
         return <span className="pd-state trashed" data-testid="pd-primary" data-action="trashed">In the trash</span>;
       case "seal":
@@ -272,7 +276,7 @@ const SealRow = ({ row, viewer, pageId, siteUrl, onChanged }) => {
         <span className={`pd-ic ${isAtt ? "file" : "sec"}`} aria-hidden="true">{isAtt ? "F" : "§"}</span>
         <div className="pd-t">
           <div className="pd-n" title={row.name}>{isAtt ? row.name : `Section “${row.name}”`}</div>
-          <div className="pd-m">Sealed by {owner} · {clock}{extra}{trashNote}</div>
+          <div className="pd-m">Sealed by {owner} · {clock}{warning ? <span className="pd-warn" data-testid="pd-expiry-warning"> · {warning.text}</span> : null}{row.note ? <span className="pd-seal-note" data-testid="pd-seal-note"> · “{row.note}”</span> : null}{extra}{trashNote}</div>
         </div>
         <div className="pd-a">
           {primaryEl}

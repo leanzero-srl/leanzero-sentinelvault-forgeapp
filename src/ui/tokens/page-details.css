@@ -93,6 +93,11 @@ button:focus-visible, input:focus-visible, [role="option"]:focus-visible { outli
 .pd-btn.danger:hover:not(:disabled) { background: var(--sv-interactive-danger-hover); }
 .pd-btn:disabled { opacity: .55; cursor: default; }
 
+/* SEC-7: the owner's lapse warning — solid amber ink, no tint. */
+.pd-warn { color: #B45309; font-weight: 700; }
+html[data-color-mode="dark"] .pd-warn { color: #FBBF24; }
+.pd-seal-note { color: var(--sv-text-secondary); font-style: italic; }
+
 /* ── workflow block (WF-6): solid tone pill, one sentence, meta chips, the decisions list ─── */
 .pd-wf-meta { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
 .pd-wf-meta-item { display: inline-flex; align-items: center; height: 22px; padding: 0 10px; border-radius: 11px; background: var(--sv-bg-tertiary); color: var(--sv-text-primary); font-size: 12px; font-weight: 600; }
@@ -138,6 +143,8 @@ html[data-color-mode="dark"] .pd-ok { color: #4ADE80; }
 .pd-state { height: 24px; padding: 0 10px; border-radius: 12px; font-size: 11.5px; font-weight: 700; display: inline-flex; align-items: center; white-space: nowrap; }
 .pd-state.wait { background: var(--pd-wait); color: var(--pd-wait-ink); }
 .pd-state.ok { background: var(--pd-ok); color: var(--pd-ok-ink); }
+.pd-state.held { background: #15803D; color: #FFFFFF; } /* SEC-2: the approval's green, solid */
+html[data-color-mode="dark"] .pd-state.held { background: #22C55E; color: #052E16; }
 .pd-state.expired { background: var(--pd-expired); color: var(--pd-expired-ink); }
 .pd-state.trashed { background: var(--pd-trashed); color: var(--pd-trashed-ink); }
 .pd-kebab-wrap { position: relative; }

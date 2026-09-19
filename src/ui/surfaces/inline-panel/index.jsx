@@ -10,6 +10,7 @@ import GiveAccessDialog from "../../kit/GiveAccessDialog";
 import { useSignedInvoke } from "../../kit/SignedInvoke";
 import RovingList from "../../kit/RovingList";
 import { describeRange } from "../../kit/section-range.js";
+import { expiryWarning } from "../../../server/capsules/page-details/row-state.js"; // SEC-7: the owner's lapse warning
 import { attachmentRow, sectionRow, rowActions, statusChip, copyText } from "../../kit/seal-row.js";
 import { PrimarySlot, ReasonBar, RequestInbox, GrantInbox, ErrorRow, CopiedNote } from "../../kit/SealRowParts";
 
@@ -848,7 +849,7 @@ const ValidationStatus = ({ pageId }) => {
 // owner (or anyone who can edit the page once the seal has expired, server rule F6), Request edit
 // / Waiting for {owner} / Edit now until {time} for everyone else, Approve/Decline for the owner
 // while someone waits. Copy link and Force release (space admin, typed reason) sit under ⋯.
-const SectionRow = ({ section: s, onUnseal, unsealing, viewer, siteUrl, pageId }) => {
+const SectionRow = ({ section: s, onUnseal, unsealing, viewer, siteUrl, pageId, onChanged }) => {
   const [editStatus, setEditStatus] = useState(null); // others' sections
   const [bar, setBar] = useState(null); // "request" | "force" | null — the typed-reason bar
   const [reasonText, setReasonText] = useState("");
@@ -919,6 +920,17 @@ const SectionRow = ({ section: s, onUnseal, unsealing, viewer, siteUrl, pageId }
     finally { setGrantBusy(null); }
   };
 
+  // SEC-7: extend the seal by the space default (mirrors the attachment card's Extend); grants ride along.
+  const extend = async () => {
+    setBusy(true); setError(null);
+    try {
+      const r = await signedInvoke("extend-section", { sectionId: s.sectionId });
+      if (r?.success) { if (onChanged) onChanged(); }
+      else setError(r?.reason || "Could not extend this seal.");
+    } catch (e) { console.error("Extend section failed:", e); setError("Could not reach Sentinel Vault. Try again."); }
+    finally { setBusy(false); }
+  };
+
   const copyLink = async () => {
     const href = siteUrl && pageId ? `${siteUrl}/wiki/pages/viewpage.action?pageId=${pageId}` : "";
     if (!href) { setError("No link is available yet."); return; }
@@ -928,6 +940,7 @@ const SectionRow = ({ section: s, onUnseal, unsealing, viewer, siteUrl, pageId }
 
   const row = sectionRow(s, { editStatus, editRetryAt, pendingRequests: requests || [] });
   const { primary, menu } = rowActions(row, viewer);
+  const warning = expiryWarning(row); // SEC-7
   // A non-owner's Release (expired seal) goes through the typed-reason bar (server: reason required).
   const forced = primary.kind === "release" && !s.isMine;
   const untilText = s.isExpired ? "expired" : (s.expiresAt ? `until ${renderLapseDate(s.expiresAt)}` : "no expiry");
@@ -935,6 +948,7 @@ const SectionRow = ({ section: s, onUnseal, unsealing, viewer, siteUrl, pageId }
 
   const onMenu = (id) => {
     if (id === "release") onUnseal(s.sectionId);
+    else if (id === "extend") extend(); // SEC-7
     else if (id === "copy-link") copyLink();
     else if (id === "force-release") { setReasonText(""); setBar("force"); }
     else if (id === "give-access") setGiving(true);
@@ -953,7 +967,7 @@ const SectionRow = ({ section: s, onUnseal, unsealing, viewer, siteUrl, pageId }
     <div className="sv-section-block" role="listitem" data-roving-card tabIndex={-1} aria-label={aria} data-testid="sv-section-row" data-primary={primary.kind}>
       <div className="sv-section-row">
         <span className="sv-section-row-title" title={s.sectionTitle}>{s.sectionTitle}</span>
-        <span className="sv-section-row-meta">{s.isExpired ? "Expired" : (s.expiresAt ? `until ${renderLapseDate(s.expiresAt)}` : "")}</span>
+        <span className="sv-section-row-meta">{s.isExpired ? "Expired" : (s.expiresAt ? `until ${renderLapseDate(s.expiresAt)}` : "")}{warning ? <span className="sv-section-row-warn" data-testid="sv-section-expiry-warning"> · {warning.text}</span> : null}{s.note ? <span className="sv-section-row-note" title={s.note}> · “{s.note}”</span> : null}</span>
         {primary.kind === "none" && editStatus === null && !s.isMine && !s.isExpired
           ? <span className="sv-section-row-lockedby"><OperatorChip accountId={s.lockedByAccountId} /></span>
           : <PrimarySlot primary={{ ...primary, forced }} name={`section ${s.sectionTitle}`} kind="section" busy={unsealing ? "unseal" : (busy ? "editreq" : null)} reqBusy={reqBusy} on={handlers} />}
@@ -1022,13 +1036,19 @@ const SealedSectionsGroup = ({ pageId, onChanged, viewer, siteUrl }) => {
     }
   };
 
+  // SEC-7: picking a heading no longer seals it on the spot — the row opens a "Holds for" step
+  // (the space default preselected, an optional note) and the seal goes with a real choice.
+  const [picked, setPicked] = useState(null);      // the heading awaiting its hold choice
+  const [hold, setHold] = useState(null);          // seconds, null = the space default
+  const [note, setNote] = useState("");
+  const HOLDS = [{ label: "Space default", seconds: null }, { label: "1 day", seconds: 86400 }, { label: "3 days", seconds: 3 * 86400 }, { label: "1 week", seconds: 7 * 86400 }, { label: "2 weeks", seconds: 14 * 86400 }, { label: "30 days", seconds: 30 * 86400 }];
   const sealHeading = async (h) => {
     setSealingIndex(h.index);
     setSealError(null);
     try {
-      const r = await invoke("seal-section", { pageId, headingIndex: h.index, headingText: h.text });
+      const r = await invoke("seal-section", { pageId, headingIndex: h.index, headingText: h.text, ...(hold ? { lockDuration: hold } : {}), ...(note.trim() ? { note: note.trim() } : {}) });
       if (r?.success) {
-        setPicking(false);
+        setPicking(false); setPicked(null); setHold(null); setNote("");
         await load();
         if (onChanged) onChanged();
       } else {
@@ -1101,19 +1121,34 @@ const SealedSectionsGroup = ({ pageId, onChanged, viewer, siteUrl }) => {
                 <div className="sv-panel-empty">No headings to seal. Add a heading, then try again.</div>
               )}
               {!headingsLoading && headings.map((h) => (
-                <button
-                  key={h.index}
-                  className="sv-section-pick-row"
-                  disabled={sealingIndex !== null}
-                  onClick={() => sealHeading(h)}
-                >
-                  <span className="sv-section-pick-level">H{h.level}</span>
-                  <span className="sv-section-pick-main">
-                    <span className="sv-section-pick-text">{h.text}</span>
-                    <span className="sv-section-pick-range" data-testid="sv-section-pick-range">{describeRange(h)}</span>
-                  </span>
-                  <span className="sv-section-pick-cta">{sealingIndex === h.index ? "Sealing…" : "Seal"}</span>
-                </button>
+                <div key={h.index} className={`sv-section-pick${picked?.index === h.index ? " is-picked" : ""}`}>
+                  <button
+                    className="sv-section-pick-row"
+                    disabled={sealingIndex !== null}
+                    aria-expanded={picked?.index === h.index}
+                    onClick={() => { setPicked(picked?.index === h.index ? null : h); setSealError(null); }}
+                    data-testid="sv-section-pick"
+                  >
+                    <span className="sv-section-pick-level">H{h.level}</span>
+                    <span className="sv-section-pick-main">
+                      <span className="sv-section-pick-text">{h.text}</span>
+                      <span className="sv-section-pick-range" data-testid="sv-section-pick-range">{describeRange(h)}</span>
+                    </span>
+                    <span className="sv-section-pick-cta">{picked?.index === h.index ? "Choose how long ▾" : "Seal…"}</span>
+                  </button>
+                  {picked?.index === h.index && (
+                    <div className="sv-section-hold" data-testid="sv-section-hold">
+                      <span className="sv-section-hold-label">Holds for</span>
+                      <span className="sv-section-hold-opts" role="radiogroup" aria-label="How long the seal holds">
+                        {HOLDS.map((o) => (
+                          <button key={String(o.seconds)} type="button" role="radio" aria-checked={hold === o.seconds} className={`sv-hold-opt${hold === o.seconds ? " is-on" : ""}`} onClick={() => setHold(o.seconds)} data-testid={`sv-hold-${o.seconds == null ? "default" : o.seconds}`}>{o.label}</button>
+                        ))}
+                      </span>
+                      <input className="sv-section-hold-note" value={note} maxLength={300} placeholder="Note (optional) — why this section is sealed" aria-label="Seal note" onChange={(e) => setNote(e.target.value)} data-testid="sv-section-note" />
+                      <button type="button" className="action-btn lock" disabled={sealingIndex !== null} onClick={() => sealHeading(h)} data-testid="sv-section-seal-confirm">{sealingIndex === h.index ? "Sealing…" : "Seal this section"}</button>
+                    </div>
+                  )}
+                </div>
               ))}
             </div>
           )}
@@ -1125,7 +1160,7 @@ const SealedSectionsGroup = ({ pageId, onChanged, viewer, siteUrl }) => {
           {sections.length > 0 && (
             <RovingList label="Sealed sections" className="sv-section-list">
               {sections.map((s) => (
-                <SectionRow key={s.sectionId} section={s} unsealing={busy === s.sectionId} onUnseal={unseal} viewer={viewer} siteUrl={siteUrl} pageId={pageId} />
+                <SectionRow key={s.sectionId} section={s} unsealing={busy === s.sectionId} onUnseal={unseal} viewer={viewer} siteUrl={siteUrl} pageId={pageId} onChanged={async () => { await load(); if (onChanged) onChanged(); }} />
               ))}
             </RovingList>
           )}

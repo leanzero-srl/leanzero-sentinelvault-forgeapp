@@ -4,6 +4,7 @@ import { kvs, WhereConditions } from "@forge/kvs";
 import { authorizeSteward } from "../../shared/steward-checks.js";
 import { resolveBulletinToggles } from "../../shared/bulletin-flags.js";
 import { setUntil } from "../../shared/kvs-ttl.js";
+import { heldRefusal } from "../../shared/seal-authority.js"; // SEC-2: a held seal takes no personal action
 import {
   mailEditRequest,
   mailEditApproved,
@@ -60,6 +61,7 @@ const requestEditAccess = async (req) => {
 
   const seal = await kvs.get(`protection-${attachmentId}`);
   if (!seal || !seal.lockedBy || seal.trashedOnly) return { success: false, reason: "This file is not sealed" };
+  { const held = heldRefusal(seal, "request"); if (held) return { success: false, reason: held }; } // SEC-2
   // The owner check runs FIRST deliberately: it is self-knowledge (you are this record's
   // lockedBy), so it discloses nothing, and the owner gets the accurate message rather than the
   // deliberately-vague one below.
@@ -202,6 +204,7 @@ export const approveEditRequest = async (req) => {
   const { seal, authorized } = await loadSealForOwnerAction(attachmentId, accountId);
   if (!seal) return { success: false, reason: "Seal not found" };
   if (!authorized) return { success: false, reason: "Not the seal owner" };
+  { const held = heldRefusal(seal, "grant"); if (held) return { success: false, reason: held }; } // SEC-2
   // it54: an EXPIRED seal is inert — approving it would only mint a dead, never-reaped grant. Reject.
   // F1 (owner feedback 2026-08-27): "the request remains available even if I choose approve; it
   // disappears if I choose deny instead". This branch was the cause — deny has no expiry check, so
@@ -209,7 +212,7 @@ export const approveEditRequest = async (req) => {
   // worked, and the panel swallowed the failure into a console.error. Still a refusal, because the
   // grant really would be born dead, but the message now names the fix the UI can actually offer.
   if (seal.expiresAt && new Date(seal.expiresAt).getTime() <= Date.now()) {
-    return { success: false, reason: "This seal has lapsed — extend it first, then grant edit access" };
+    return { success: false, reason: "This seal has lapsed — extend it first (⋯ → Extend the seal), then grant edit access" };
   }
 
   const requestKey = `edit-request-${attachmentId}-${requesterAccountId}`;
@@ -267,6 +270,7 @@ export const denyEditRequest = async (req) => {
   const { seal, authorized } = await loadSealForOwnerAction(attachmentId, accountId);
   if (!seal) return { success: false, reason: "Seal not found" };
   if (!authorized) return { success: false, reason: "Not the seal owner" };
+  { const held = heldRefusal(seal, "grant"); if (held) return { success: false, reason: held }; } // SEC-2
 
   const requestKey = `edit-request-${attachmentId}-${requesterAccountId}`;
   const existing = await kvs.get(requestKey);
@@ -303,6 +307,7 @@ export const revokeEditGrant = async (req) => {
   const { seal, authorized } = await loadSealForOwnerAction(attachmentId, accountId);
   if (!seal) return { success: false, reason: "Seal not found" };
   if (!authorized) return { success: false, reason: "Not the seal owner" };
+  { const held = heldRefusal(seal, "grant"); if (held) return { success: false, reason: held }; } // SEC-2
 
   const grantKey = `edit-grant-${attachmentId}-${editorAccountId}`;
   if (!(await kvs.get(grantKey))) return { success: false, reason: "No active grant for that editor" };
@@ -367,7 +372,7 @@ async function grantDirect({ scope, id, seal, pageId, name, accountId, editorAcc
   if (editorAccountId === seal.lockedBy) return { success: false, reason: "The seal owner can already edit" };
   if (seal.trashedOnly) return { success: false, reason: "This file is in the trash" };
   if (seal.expiresAt && new Date(seal.expiresAt).getTime() <= Date.now()) {
-    return { success: false, reason: "This seal has lapsed — extend it first, then give edit access" };
+    return { success: false, reason: "This seal has lapsed — extend it first (⋯ → Extend the seal), then give edit access" };
   }
   if (!pageId || !(await canReadPage(editorAccountId, pageId))) {
     return { success: false, reason: "That person cannot open this page, so they cannot be given edit access here" };
@@ -412,6 +417,7 @@ export const grantEditAccess = async (req) => {
   const { seal, authorized } = await loadSealForOwnerAction(attachmentId, accountId);
   if (!seal) return { success: false, reason: "Seal not found" };
   if (!authorized) return { success: false, reason: "Not the seal owner" };
+  { const held = heldRefusal(seal, "grant"); if (held) return { success: false, reason: held }; } // SEC-2
   return grantDirect({ scope: "attachment", id: attachmentId, seal, pageId: seal.contentId || null, name: seal.attachmentName || "Unknown Attachment", accountId, editorAccountId });
 };
 
@@ -422,6 +428,7 @@ export const grantSectionEdit = async (req) => {
   const { seal, authorized } = await loadSectionForOwnerAction(sectionId, accountId);
   if (!seal) return { success: false, reason: "Section not found" };
   if (!authorized) return { success: false, reason: "Not the section owner" };
+  { const held = heldRefusal(seal, "grant"); if (held) return { success: false, reason: held }; } // SEC-2
   return grantDirect({ scope: "section", id: sectionId, seal, pageId: seal.pageId || null, name: seal.sectionTitle || "a sealed section", accountId, editorAccountId });
 };
 
@@ -482,6 +489,7 @@ export const requestSectionEdit = async (req) => {
 
   const seal = await kvs.get(`section-protection-${sectionId}`);
   if (!seal || !seal.lockedBy) return { success: false, reason: "This section is not sealed" };
+  { const held = heldRefusal(seal, "request"); if (held) return { success: false, reason: held }; } // SEC-2
   // Owner first — self-knowledge, no disclosure, accurate message (see requestEditAccess).
   if (seal.lockedBy === accountId) return { success: false, reason: "You own this section" };
   // SV-SEC-1, mirror of requestEditAccess: same oracle, and the same app-authored @mention
@@ -568,12 +576,13 @@ export const approveSectionEdit = async (req) => {
   const { seal, authorized } = await loadSectionForOwnerAction(sectionId, accountId);
   if (!seal) return { success: false, reason: "Section not found" };
   if (!authorized) return { success: false, reason: "Not the section owner" };
+  { const held = heldRefusal(seal, "grant"); if (held) return { success: false, reason: held }; } // SEC-2
   // it54: an EXPIRED seal is inert (the section is no longer protected) — approving it would only
   // mint a dead, never-reaped grant (grant.expiresAt in the past → getActiveSectionEditGrant returns
   // null). Reject instead of leaking a zombie record.
   // F1: same asymmetry as the attachment path — see approveEditRequest.
   if (seal.expiresAt && new Date(seal.expiresAt).getTime() <= Date.now()) {
-    return { success: false, reason: "This section's seal has lapsed — extend it first, then grant edit access" };
+    return { success: false, reason: "This section's seal has lapsed — extend it first (⋯ → Extend the seal), then grant edit access" };
   }
 
   const requestKey = `section-edit-request-${sectionId}-${requesterAccountId}`;
@@ -612,6 +621,7 @@ export const denySectionEdit = async (req) => {
   const { seal, authorized } = await loadSectionForOwnerAction(sectionId, accountId);
   if (!seal) return { success: false, reason: "Section not found" };
   if (!authorized) return { success: false, reason: "Not the section owner" };
+  { const held = heldRefusal(seal, "grant"); if (held) return { success: false, reason: held }; } // SEC-2
   const requestKey = `section-edit-request-${sectionId}-${requesterAccountId}`;
   const existing = await kvs.get(requestKey);
   if (!existing) return { success: false, reason: "Request not found" };
@@ -644,6 +654,7 @@ export const revokeSectionEditGrant = async (req) => {
   const { seal, authorized } = await loadSectionForOwnerAction(sectionId, accountId);
   if (!seal) return { success: false, reason: "Section not found" };
   if (!authorized) return { success: false, reason: "Not the section owner" };
+  { const held = heldRefusal(seal, "grant"); if (held) return { success: false, reason: held }; } // SEC-2
 
   const grantKey = `section-edit-grant-${sectionId}-${editorAccountId}`;
   if (!(await kvs.get(grantKey))) return { success: false, reason: "No active grant for that editor" };

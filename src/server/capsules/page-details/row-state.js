@@ -19,11 +19,15 @@
  * @returns {{ kind: string, label?: string, until?: string|null, owner?: string|null,
  *             request?: object|null, disabled?: boolean, hint?: string }}
  */
+export const HELD_LABEL = "Locked by the approval of this page";
 export function primaryActionFor(row, viewer = {}) {
   if (!row || typeof row !== "object") return { kind: "none" };
   const pending = Array.isArray(row.pendingRequests) ? row.pendingRequests : [];
   if (row.kind === "attachment" && row.sealed === false) return { kind: "seal", label: "Seal" };
   if (row.isTrashed) return { kind: "trashed", label: "In the trash" };
+  // SEC-2: while the page is Approved the seal belongs to the workflow — no personal action on the
+  // row (release / request / approve); the state IS the primary, for owner and stranger alike.
+  if (row.workflowHeld) return { kind: "held", label: HELD_LABEL, hint: "Changes go through the workflow: move the page back for review first." };
   if (row.isMine) {
     if (pending.length > 0) return { kind: "decide", label: "Approve", request: pending[0] };
     return { kind: "release", label: "Release" };
@@ -49,8 +53,23 @@ export function primaryActionFor(row, viewer = {}) {
 }
 
 /**
+ * SEC-7 (UX critique 2026-09-19): the owner never chose the space default, and the seal used to
+ * stop silently. The owner's row says "expires in 2 days" in amber inside this window, so the
+ * lapse is seen before it happens. PURE: { text, hours } or null.
+ */
+export const EXPIRY_WARNING_MS = 3 * 24 * 3600 * 1000;
+export function expiryWarning(row, now = Date.now()) {
+  if (!row || !row.isMine || row.isTrashed || !row.expiresAt) return null;
+  const ms = new Date(row.expiresAt).getTime() - now;
+  if (!Number.isFinite(ms) || ms <= 0 || ms > EXPIRY_WARNING_MS) return null;
+  const hours = Math.ceil(ms / 3600000);
+  const text = hours >= 48 ? `expires in ${Math.round(hours / 24)} days` : hours >= 24 ? "expires tomorrow" : hours > 1 ? `expires in ${hours} hours` : "expires within the hour";
+  return { text, hours };
+}
+
+/**
  * Everything that is NOT the primary action, in menu order. Extend is the owner's (attachment
- * seals only — sections have no extend resolver); Release moves here when Approve/Decline holds
+ * and section seals — SEC-7); Release moves here when Approve/Decline holds
  * the primary slot; Watch is for someone waiting on another person's attachment seal; Copy link
  * always; Force release only for a space admin who does not own the seal (typed reason, server-
  * side gate is unseal-artifact adminOverride / unseal-section reason).
@@ -61,8 +80,12 @@ export function menuActionsFor(row, viewer = {}) {
   const out = [];
   const primary = primaryActionFor(row, viewer);
   if (row.kind === "attachment" && row.sealed === false) return ["copy-link"];
+  // SEC-2: a held seal offers no Extend / Give access / Release / Watch; a space admin keeps the
+  // break-glass Force release (typed reason) — the one door out.
+  if (row.workflowHeld) return viewer.isSpaceAdmin === true && !row.isTrashed ? ["copy-link", "force-release"] : ["copy-link"];
   if (row.isMine) {
-    if (row.kind === "attachment" && !row.isTrashed) out.push("extend");
+    // SEC-7: sections extend too (extend-section mirrors extend-seal, grants carried forward).
+    if (!row.isTrashed) out.push("extend");
     // Give edit access to a named person without waiting for their request (tester report
     // 2026-09-17). Not on an expired seal: the grant would be born dead (server rule it54).
     if (!row.isTrashed && !row.isExpired) out.push("give-access");
