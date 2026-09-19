@@ -175,19 +175,26 @@ const WorkflowDetails = ({ workflow, siteUrl, pageId, isSteward, host, onSaved, 
     return () => { alive = false; };
   }, [open, pageId, readers, readReportAllowed]);
 
+  // WF-3: the last denial / stale close on a page with no open request — the chip says so and the
+  // popover carries the reason; the server only answers it when it applies.
+  const lastDecision = !enforced && workflow.lastDecision ? workflow.lastDecision : null;
+
   // --- The chip ---
   const parts = [];
   if (enforced) parts.push(`Approved v${reviewedVersion}`);
+  // A decision is an instant (local date, like the popover); a review DUE date is a calendar day (UTC).
+  if (lastDecision) parts.push(`${lastDecision.kind === "denied" ? "Declined" : "Request closed"} ${new Date(lastDecision.at).toLocaleDateString(undefined, { month: "short", day: "numeric" })}`);
   if (hasDue) parts.push(overdue ? "review overdue" : `review due ${shortDate}`);
   if (readers && readReportAllowed) parts.push(`read ${readers.ackedCount}/${readers.audienceCount}${readers.unresolved ? "+" : ""}`);
   if (!parts.length) {
     if (!isSteward) return null;
     parts.push("Set review date"); // a steward can give any state a review date
   }
-  const tone = overdue ? "critical" : enforced ? "success" : "neutral";
+  const tone = overdue ? "critical" : enforced ? "success" : lastDecision?.kind === "denied" ? "critical" : "neutral";
   const title = overdue
     ? (expiresFromHere ? "The review period has elapsed — this page will move to Expired. Open for details." : "The review period has elapsed — review this page and move it on, or set a new date.")
-    : "Approval record, review date and readers — open for details.";
+    : lastDecision ? "The last approval request was not completed — open for the reason."
+      : "Approval record, review date and readers — open for details.";
 
   return (
     <span className="wf-details">
@@ -262,6 +269,20 @@ const WorkflowDetails = ({ workflow, siteUrl, pageId, isSteward, host, onSaved, 
             </section>
           )}
 
+          {lastDecision && (
+            <section className="wf-details-section" data-testid="wf-last-decision">
+              <div className="wf-appr-head">Last approval decision</div>
+              <div className="wf-appr-sub">
+                {lastDecision.kind === "denied"
+                  ? `Declined by ${lastDecision.byName || "an approver"} on ${fmtDate(new Date(lastDecision.at).toISOString())}${lastDecision.reviewedVersion != null ? ` · reviewed v${lastDecision.reviewedVersion}` : ""}.`
+                  : `The request was closed on ${fmtDate(new Date(lastDecision.at).toISOString())} because the page changed after it was made${lastDecision.reviewedVersion != null ? ` (reviewed v${lastDecision.reviewedVersion})` : ""}. Nobody declined it.`}
+              </div>
+              {lastDecision.reason
+                ? <div className="wf-last-reason" data-testid="wf-last-decision-reason">“{lastDecision.reason}”</div>
+                : lastDecision.kind === "denied" ? <div className="wf-appr-note">No reason was given.</div> : null}
+              <div className="wf-appr-note">Re-request approval from the state chip when the page is ready.</div>
+            </section>
+          )}
           <section className="wf-details-section" data-testid="wf-review-due-dialog">
             <div className="wf-appr-head">Review date</div>
             <div className="wf-appr-sub" data-testid="wf-review-due-current">

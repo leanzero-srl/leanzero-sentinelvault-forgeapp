@@ -476,7 +476,8 @@ export async function decideApproval({ pageId, approverAccountId, decision, reas
       details: { approvalRecord },
     });
     await clearPageApprovals(pageId, stateId, approvers);
-    await notifyApprovalResolved({ pageId, requestedBy: pending.requestedBy, outcome: "denied", targetName: pending.toStateName || stateId, deciderName: actorName }).catch(() => {});
+    // WF-3: the approver's reason travels with the denial — it is the point of Deny + reason.
+    await notifyApprovalResolved({ pageId, requestedBy: pending.requestedBy, outcome: "denied", targetName: pending.toStateName || stateId, deciderName: actorName, reason: record.reason || null }).catch(() => {});
     return decided({ success: true, outcome: "denied" });
   }
   return decided({ success: true, outcome: "pending" });
