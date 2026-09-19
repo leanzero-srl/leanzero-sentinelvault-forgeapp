@@ -122,6 +122,8 @@ export const POLICY_DEFAULTS = Object.freeze({
   enableAutoUnsealDispatchEmail: DISPATCH_DEFAULTS.ENABLE_EXPIRY_NOTICE,
   enablePeriodicReminderEmail: DISPATCH_DEFAULTS.ENABLE_PERIODIC_REMINDER_BANNER,
   notifyEditorOnRevert: DISPATCH_DEFAULTS.NOTIFY_EDITOR_ON_REVERT,
+  // shared/seal-signature.js — `=== true` → OFF: seal actions are unsigned unless a site opts in.
+  signSealActions: false,
   // shared/edit-cooldown.js — hours a person waits after a declined edit request (0 = none).
   editRequestCooldownHours: EDIT_COOLDOWN_HOURS_DEFAULT,
 });

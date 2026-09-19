@@ -6,6 +6,7 @@ import { sweepEditAccess } from "../editreq/logic.js";
 import { triggerPanelEmbed, removePanelNode } from "../../infra/doc-surgery.js";
 import { recordActivity } from "../../infra/activity-log.js";
 import { refreshByline } from "../page-details/byline.js"; // 5.0 byline chip
+import { listSectionSealRecordsForPage } from "../section-seals/logic.js";
 
 /**
  * Tear a seal down completely.
@@ -118,9 +119,16 @@ export async function releaseSeal(attachmentId, sealRecord, { fallbackSpaceKey =
           && value.attachmentId !== attachmentId,
       );
 
-      if (pageHasSeals && spaceKeyForPanel) {
+      // Tester report 2026-09-19: releasing the last ATTACHMENT seal removed the panel although a
+      // SECTION was still sealed — and the Sealed Sections group lives only inside that panel.
+      let pageHasSectionSeals = false;
+      if (!pageHasSeals) {
+        try { pageHasSectionSeals = (await listSectionSealRecordsForPage(sealRecord.contentId)).some((s) => s?.lockedBy); }
+        catch (e) { console.warn("[RELEASE] section seal read failed — keeping the panel:", e?.message || e); pageHasSectionSeals = true; }
+      }
+      if ((pageHasSeals || pageHasSectionSeals) && spaceKeyForPanel) {
         await triggerPanelEmbed(sealRecord.contentId, spaceKeyForPanel);
-      } else if (!pageHasSeals) {
+      } else if (!pageHasSeals && !pageHasSectionSeals) {
         await removePanelNode(sealRecord.contentId);
       }
     } catch (panelErr) {

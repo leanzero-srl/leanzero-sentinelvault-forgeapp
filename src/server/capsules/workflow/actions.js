@@ -417,7 +417,12 @@ const signatureStatusAction = async (req) => signatureStatus(req.context?.accoun
 const enrollSignatureAction = async (req) => {
   const accountId = req.context?.accountId;
   if (!accountId) return { success: false, reason: "No account" };
-  return startEnrollment(accountId, { accountLabel: (await actorName(req.context?.accountId)) || accountId, code: typeof req.payload?.code === "string" ? req.payload.code : null });
+  // The authenticator entry is "Sentinel Vault: <label>". Naming the SITE in the label keeps two
+  // sites (or dev and production) from showing as two identical entries (tester report 2026-09-19).
+  let site = "";
+  try { site = new URL(req.context?.siteUrl || "").hostname.replace(/\.atlassian\.net$/, ""); } catch (_) { site = ""; }
+  const who = (await actorName(req.context?.accountId)) || accountId;
+  return startEnrollment(accountId, { accountLabel: site ? `${who} @ ${site}` : who, code: typeof req.payload?.code === "string" ? req.payload.code : null });
 };
 const confirmSignatureAction = async (req) => confirmEnrollment(req.context?.accountId, typeof req.payload?.code === "string" ? req.payload.code : "");
 const revokeSignatureAction = async (req) => revokeSignature(req.context?.accountId, { code: typeof req.payload?.code === "string" ? req.payload.code : null });
