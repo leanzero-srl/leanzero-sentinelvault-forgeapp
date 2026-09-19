@@ -18,19 +18,8 @@ import { useSignedInvoke } from "../../kit/SignedInvoke";
 // operator / guild / artifact / reservation). No native select / alert / confirm anywhere here.
 
 import { myWorkPath } from "../../kit/my-work-path.js";
+import { when, whenDay, sealSentence, stateText } from "../../kit/status-language.js"; // SEC-3: one vocabulary, one clock
 const NEUTRAL = "#475569";
-
-// "until Mon 09:00" inside the coming week, "until Sep 20, 17:00" beyond it.
-const when = (iso) => {
-  const ms = iso ? new Date(iso).getTime() : NaN;
-  if (!Number.isFinite(ms)) return "";
-  const d = new Date(ms);
-  const time = d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
-  const within = Math.abs(ms - Date.now()) < 7 * 24 * 3600 * 1000;
-  return within
-    ? `${d.toLocaleDateString(undefined, { weekday: "short" })} ${time}`
-    : `${d.toLocaleDateString(undefined, { month: "short", day: "numeric" })}, ${time}`;
-};
 
 const Lock = () => (
   <svg viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2" /><path d="M8 11V7a4 4 0 0 1 8 0v4" /></svg>
@@ -175,7 +164,7 @@ const ReasonBar = ({ label, placeholder, confirm, danger, required, onConfirm, o
 const SealRow = ({ row, viewer, pageId, siteUrl, onChanged }) => {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
-  const [bar, setBar] = useState(null); // "request" | "force" | null
+  const [bar, setBar] = useState(null); // "request" | "force" | { kind: "decline", … } | null
   const [giving, setGiving] = useState(false);
   const [copied, setCopied] = useState(false);
   const { signedInvoke, signatureDialog } = useSignedInvoke();
@@ -219,13 +208,9 @@ const SealRow = ({ row, viewer, pageId, siteUrl, onChanged }) => {
     else if (id === "give-access") setGiving(true);
   };
 
-  // The sentence under the name (mockup §4).
-  const owner = row.isMine ? "you" : (row.ownerName || "another user");
-  const clock = row.isTrashed ? "in the trash"
-    : row.workflowHeld ? "held by the approval of this page — expiry paused" // SEC-2
-    : !row.expiresAt ? "no expiry"
-    : row.isExpired ? `expired ${when(row.expiresAt)}`
-    : `until ${when(row.expiresAt)}`;
+  // The sentence under the name (mockup §4) — SEC-3: the shared `sealSentence`, the same words the
+  // panel row, the macro badge and the ribbon use.
+  const sentence = sealSentence(row);
   const extra = row.isMine
     ? (row.pendingRequests.length > 0
       ? ` · ${row.pendingRequests[0].requesterName || "Someone"} is waiting${row.pendingRequests[0].reason ? `: “${row.pendingRequests[0].reason}”` : ""}${row.pendingRequests.length > 1 ? ` (+${row.pendingRequests.length - 1} more)` : ""}`
@@ -245,7 +230,7 @@ const SealRow = ({ row, viewer, pageId, siteUrl, onChanged }) => {
         return (
           <>
             <button type="button" className="pd-btn primary" disabled={busy} data-testid="pd-primary" data-action="approve" onClick={() => run(approve, { ...idPayload, requesterAccountId: rq.requesterAccountId })} aria-label={`Approve ${rq.requesterName || "the request"} editing ${row.name}`}>Approve</button>
-            <button type="button" className="pd-btn quiet" disabled={busy} data-testid="pd-decline" onClick={() => run(deny, { ...idPayload, requesterAccountId: rq.requesterAccountId })} aria-label={`Decline ${rq.requesterName || "the request"} editing ${row.name}`}>Decline</button>
+            <button type="button" className="pd-btn quiet" disabled={busy} data-testid="pd-decline" onClick={() => setBar({ kind: "decline", requesterAccountId: rq.requesterAccountId, deny })} aria-label={`Decline ${rq.requesterName || "the request"} editing ${row.name}`}>Decline</button>
           </>
         );
       }
@@ -254,11 +239,13 @@ const SealRow = ({ row, viewer, pageId, siteUrl, onChanged }) => {
       case "request":
         return <button type="button" className="pd-btn primary" disabled={busy || primary.disabled} title={primary.hint || undefined} data-testid="pd-primary" data-action="request" onClick={() => setBar("request")}>Request edit</button>;
       case "waiting":
-        return <span className="pd-state wait" data-testid="pd-primary" data-action="waiting">Waiting for {primary.owner || "the owner"}</span>;
+        return <span className="pd-state wait" data-testid="pd-primary" data-action="waiting">{stateText(primary)}</span>;
       case "editnow":
-        return <span className="pd-state ok" data-testid="pd-primary" data-action="editnow">Edit now{primary.until ? ` until ${when(primary.until)}` : ""}</span>;
+        return <span className="pd-state ok" data-testid="pd-primary" data-action="editnow">{stateText(primary)}</span>;
+      case "declined": // SEC-8: visible, with the time it can be asked again
+        return <span className="pd-state declined" data-testid="pd-primary" data-action="declined" title={[primary.reason ? `Reason: “${primary.reason}”` : null, primary.hint].filter(Boolean).join(" ")}>{stateText(primary)}</span>;
       case "expired":
-        return <span className="pd-state expired" data-testid="pd-primary" data-action="expired">Expired</span>;
+        return <span className="pd-state expired" data-testid="pd-primary" data-action="expired">{stateText(primary)}</span>;
       case "held": // SEC-2
         return <span className="pd-state held" data-testid="pd-primary" data-action="held" title={primary.hint || ""}>{primary.label}</span>;
       case "trashed":
@@ -276,7 +263,7 @@ const SealRow = ({ row, viewer, pageId, siteUrl, onChanged }) => {
         <span className={`pd-ic ${isAtt ? "file" : "sec"}`} aria-hidden="true">{isAtt ? "F" : "§"}</span>
         <div className="pd-t">
           <div className="pd-n" title={row.name}>{isAtt ? row.name : `Section “${row.name}”`}</div>
-          <div className="pd-m">Sealed by {owner} · {clock}{warning ? <span className="pd-warn" data-testid="pd-expiry-warning"> · {warning.text}</span> : null}{row.note ? <span className="pd-seal-note" data-testid="pd-seal-note"> · “{row.note}”</span> : null}{extra}{trashNote}</div>
+          <div className="pd-m">{sentence}{warning ? <span className="pd-warn" data-testid="pd-expiry-warning"> · {warning.text}</span> : null}{row.note ? <span className="pd-seal-note" data-testid="pd-seal-note"> · “{row.note}”</span> : null}{extra}{trashNote}</div>
         </div>
         <div className="pd-a">
           {primaryEl}
@@ -288,6 +275,11 @@ const SealRow = ({ row, viewer, pageId, siteUrl, onChanged }) => {
         <ReasonBar label="Why do you need to edit it?" placeholder="A short reason for the owner (optional)" confirm="Send request"
           busy={busy} onCancel={() => setBar(null)}
           onConfirm={async (reason) => { if (await run(isAtt ? "request-edit-access" : "request-section-edit", { ...idPayload, reason })) setBar(null); }} />
+      )}
+      {bar?.kind === "decline" && ( // SEC-8: the owner may say why; the word reaches the requester
+        <ReasonBar label="Decline — a short word for the requester (optional)" placeholder="Why not, or what to do instead" confirm="Decline"
+          busy={busy} onCancel={() => setBar(null)}
+          onConfirm={async (reason) => { if (await run(bar.deny, { ...idPayload, requesterAccountId: bar.requesterAccountId, reason })) setBar(null); }} />
       )}
       {bar === "force" && (
         <ReasonBar label="Force release — a reason is required and recorded" placeholder="Why this seal is being released over its owner" confirm="Force release" danger required
@@ -308,8 +300,9 @@ const SealRow = ({ row, viewer, pageId, siteUrl, onChanged }) => {
 // offers. Decisions on an open request and signed moves stay on the ribbon (one place for the
 // approve/deny/sign dialogs); this block says so and points there.
 const TONE_BG = { success: "#15803D", info: "#1D4ED8", warning: "#B45309", critical: "#B91C1C", neutral: "#475569", discovery: "#6D28D9" };
-const fmtDay = (iso) => { const ms = iso ? new Date(iso).getTime() : NaN; return Number.isFinite(ms) ? new Date(ms).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" }) : ""; };
-const fmtDueDay = (iso) => { const ms = iso ? new Date(iso).getTime() : NaN; return Number.isFinite(ms) ? new Date(ms).toLocaleDateString(undefined, { timeZone: "UTC", month: "short", day: "numeric", year: "numeric" }) : ""; };
+// SEC-3: one calendar format. A decision is an instant (local day); a review DUE date is a calendar day (UTC).
+const fmtDay = (iso) => whenDay(iso);
+const fmtDueDay = (iso) => whenDay(iso, undefined, { utc: true });
 
 const MoveMenu = ({ available, onPick, disabled }) => {
   const [open, setOpen] = useState(false);
@@ -745,11 +738,20 @@ export const PageDetails = ({ mode = "details", ctx }) => {
         {summary && tab === "activity" && <ActivityTab pageId={summary.pageId} />}
       </div>
       <div className="pd-foot">
-        <span>One primary action per row; everything else under ⋯ (Extend, Watch, Copy link, Force release — space admins, reason required).</span>
+        <span>{footerNote(summary)}</span>
         <button type="button" className="pd-btn quiet" onClick={(e) => { e.preventDefault(); router.navigate(myWorkPath(ctx)); }} data-testid="pd-open-my-work">Open My work</button>
       </div>
     </div>
   );
+};
+
+// SEC-13: the footer lists only the ⋯ actions that exist for the row kinds on this page (Watch is
+// attachments-only; sections have Extend since SEC-7).
+const footerNote = (summary) => {
+  const rows = summary?.seals || [];
+  const hasAtt = rows.some((r) => r.kind === "attachment");
+  const items = ["Extend", hasAtt ? "Watch" : null, "Copy link", "Force release — space admins, reason required"].filter(Boolean);
+  return `One primary action per row; everything else under ⋯ (${items.join(", ")}).`;
 };
 
 /**

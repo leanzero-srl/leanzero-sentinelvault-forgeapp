@@ -12,6 +12,7 @@
  * overlay computing Release from two different predicates.
  */
 import { primaryActionFor, menuActionsFor } from "../../server/capsules/page-details/row-state.js";
+import { when as whenShared, attachmentChip } from "./status-language.js";
 
 export const MENU_LABEL = {
   extend: "Extend the seal",
@@ -26,17 +27,14 @@ export const MENU_LABEL = {
   delete: "Delete (send to trash)",
   purge: "Delete permanently",
 };
-const DANGER = new Set(["force-release", "delete", "purge", "release"]);
+// SEC-10: releasing your OWN seal is routine, not destructive — only Force release (someone
+// else's seal, typed reason) and the two deletes are danger items.
+const DANGER = new Set(["force-release", "delete", "purge"]);
 
 export const isSealedStatus = (s) => s === "HELD" || s === "HELD_BY_ACTOR";
 
-/** Short, local "Mon 09:00"-style stamp for "until {time}". */
-export function when(iso) {
-  if (!iso) return "";
-  const d = new Date(iso);
-  if (!Number.isFinite(d.getTime())) return "";
-  return d.toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
-}
+/** SEC-3: the ONE date formatter (status-language.js) — "Tue 23:13" / "22 Sep 22:57". */
+export const when = whenShared;
 
 /**
  * The row-state row for an attachment card.
@@ -116,18 +114,10 @@ export function rowActions(row, viewer = {}, opts = {}) {
 
 /**
  * The state chip: class, visible text and the accessible sentence (review §7.2 — no chip may
- * be colour-only or unnamed).
+ * be colour-only or unnamed). SEC-3: the words come from status-language.js.
  */
 export function statusChip(att) {
-  const sealed = isSealedStatus(att.lockStatus);
-  const owner = att.lockedByName || "another user";
-  const until = att.expiresAt ? `, until ${when(att.expiresAt)}` : "";
-  if (att.isStale && att.staleReason === "trashed") return { cls: "trashed", text: "Trash", aria: `${att.title}: in the trash, still sealed` };
-  if (att.isStale) return { cls: "stale", text: "Missing", aria: `${att.title}: the file is gone; its seal record remains` };
-  if (att.isExpired && sealed) return { cls: "expired", text: "Overdue", aria: `${att.title}: seal overdue${att.expiresAt ? `, expired ${when(att.expiresAt)}` : ""}` };
-  if (att.lockStatus === "HELD_BY_ACTOR") return { cls: "locked-by-me", text: "My Seal", aria: `${att.title}: sealed by you${until}` };
-  if (sealed) return { cls: "locked", text: "Sealed", aria: `${att.title}: sealed by ${owner}${until}` };
-  return { cls: "unlocked", text: "Available", aria: `${att.title}: available, not sealed` };
+  return attachmentChip(att);
 }
 
 /** Copy a link, with the textarea fallback for iframes without clipboard permission. */

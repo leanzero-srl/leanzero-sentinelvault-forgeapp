@@ -17,6 +17,6 @@ eq("undefined → empty", formatDurationHours(undefined), "");
 
 // formatRemaining regression (the existing shared countdown helper)
 eq("no expiry → -", formatRemaining(null), "-");
-eq("past → Overdue", formatRemaining(new Date(Date.now() - 3600000).toISOString()), "Overdue");
+eq("past → Expired", formatRemaining(new Date(Date.now() - 3600000).toISOString()), "Expired");
 
 report("format-duration");

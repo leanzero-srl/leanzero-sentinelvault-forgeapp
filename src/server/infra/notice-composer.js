@@ -397,6 +397,9 @@ export async function mailStewardOverrideNotice(
 
 // --- Edit Requests notifications ---
 
+// SEC-9: the three request notices take `targetKind` ("attachment" | "section") so a section
+// owner never reads "your sealed file" about a heading; `reason` on a denial is the owner's
+// optional word to the requester (SEC-8).
 export async function mailEditRequest(
   ownerAccountId,
   requesterAccountId,
@@ -405,30 +408,33 @@ export async function mailEditRequest(
   pageId,
   reason,
   spaceKey = null,
+  { targetKind = "attachment" } = {},
 ) {
   return dispatchNotice(ALERT_CATEGORIES.EDIT_ACCESS_REQUEST, {
     recipientAccountId: ownerAccountId,
     pageId,
     artifactName,
-    extra: { requesterAccountId, requesterName, reason },
+    extra: { requesterAccountId, requesterName, reason, targetKind },
     spaceKey,
   });
 }
 
-export async function mailEditApproved(requesterAccountId, artifactName, pageId, spaceKey = null) {
+export async function mailEditApproved(requesterAccountId, artifactName, pageId, spaceKey = null, { targetKind = "attachment" } = {}) {
   return dispatchNotice(ALERT_CATEGORIES.EDIT_ACCESS_APPROVED, {
     recipientAccountId: requesterAccountId,
     pageId,
     artifactName,
+    extra: { targetKind },
     spaceKey,
   });
 }
 
-export async function mailEditDenied(requesterAccountId, artifactName, pageId, spaceKey = null) {
+export async function mailEditDenied(requesterAccountId, artifactName, pageId, spaceKey = null, { targetKind = "attachment", reason = null } = {}) {
   return dispatchNotice(ALERT_CATEGORIES.EDIT_ACCESS_DENIED, {
     recipientAccountId: requesterAccountId,
     pageId,
     artifactName,
+    extra: { targetKind, reason },
     spaceKey,
   });
 }

@@ -3,14 +3,14 @@
 // surface (overlay, realm-console) formats a seal countdown IDENTICALLY (it28 fixed the overlay
 // in isolation; this centralises it so the surfaces can't drift apart again).
 //   • no expiry        → "-"
-//   • already lapsed    → "Overdue"
+//   • already lapsed    → "Expired" (SEC-3: one word for a lapsed seal)
 //   • < 1 hour          → "45m"
 //   • < 25 hours        → "6h 12m"
 //   • otherwise         → "3d 0h" / "360d 3h"
 export function formatRemaining(expiresAt) {
   if (!expiresAt) return "-";
   const diffMs = new Date(expiresAt) - new Date();
-  if (diffMs <= 0) return "Overdue";
+  if (diffMs <= 0) return "Expired";
   const totalMinutes = Math.floor(diffMs / 60000);
   const hours = Math.floor(totalMinutes / 60);
   const minutes = totalMinutes % 60;

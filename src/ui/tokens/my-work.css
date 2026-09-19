@@ -226,6 +226,7 @@ body { margin: 0; background: var(--sv-bg-primary); color: var(--sv-text-primary
 .mw-pill-live { background: #0891B2; }
 .mw-pill-overdue { background: #DC2626; }
 .mw-pill-stale { background: #D97706; }
+.mw-pill-held { background: #15803D; } /* SEC-2: the approval's green */
 .mw-foot { margin-top: 10px; display: flex; justify-content: flex-end; }
 .mw-error { margin: 0 0 10px; padding: 10px 12px; border-radius: 8px; background: #DC2626; color: #fff; font-size: 13px; font-weight: 700; }
 .mw-loading { font-size: 13px; color: var(--sv-text-secondary); }

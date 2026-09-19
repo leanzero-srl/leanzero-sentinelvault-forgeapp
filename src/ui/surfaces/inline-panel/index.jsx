@@ -12,6 +12,7 @@ import RovingList from "../../kit/RovingList";
 import { describeRange } from "../../kit/section-range.js";
 import { expiryWarning } from "../../../server/capsules/page-details/row-state.js"; // SEC-7: the owner's lapse warning
 import { attachmentRow, sectionRow, rowActions, statusChip, copyText } from "../../kit/seal-row.js";
+import { when, sealSentence, refusalText } from "../../kit/status-language.js"; // SEC-3: one vocabulary, one clock
 import { PrimarySlot, ReasonBar, RequestInbox, GrantInbox, ErrorRow, CopiedNote } from "../../kit/SealRowParts";
 
 // ── Icon components ──────────────────────────────────
@@ -335,7 +336,7 @@ const ArtifactCard = ({ att, onRefresh, columns, siteUrl, spaceKey, pageId, page
     try {
       const r = await signedInvoke(action, payload);
       if (!r || r.success === false || r.ok === false) {
-        setActionError(r?.reason || "That did not work. Try again.");
+        setActionError(refusalText(r) || "That did not work. Try again.");
         return false;
       }
       if (onOk) onOk(r);
@@ -627,15 +628,8 @@ const renderByteSize = (bytes) => {
 
 // ── Helper: format expiry date ───────────────────────
 
-const renderLapseDate = (dateStr) => {
-  if (!dateStr) return "—";
-  try {
-    const d = new Date(dateStr);
-    return d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric", hour: "2-digit", minute: "2-digit" });
-  } catch {
-    return dateStr;
-  }
-};
+// SEC-3: the ONE clock (status-language `when`) — "Tue 23:13" / "22 Sep 22:57".
+const renderLapseDate = (dateStr) => (dateStr ? when(dateStr) || "—" : "—");
 
 // ── Skeleton card placeholder ────────────────────────
 
@@ -892,7 +886,7 @@ const SectionRow = ({ section: s, onUnseal, unsealing, viewer, siteUrl, pageId, 
     try {
       const r = await invoke("request-section-edit", { sectionId: s.sectionId, reason: reasonText.trim() });
       if (r?.success) { setEditStatus("pending"); setBar(null); setReasonText(""); }
-      else setError(r?.reason || "Could not send the request.");
+      else setError(refusalText(r) || "Could not send the request.");
     } catch (e) { console.error("Section edit request failed:", e); setError("Could not reach Sentinel Vault. Try again."); }
     finally { setBusy(false); }
   };
@@ -943,8 +937,9 @@ const SectionRow = ({ section: s, onUnseal, unsealing, viewer, siteUrl, pageId, 
   const warning = expiryWarning(row); // SEC-7
   // A non-owner's Release (expired seal) goes through the typed-reason bar (server: reason required).
   const forced = primary.kind === "release" && !s.isMine;
-  const untilText = s.isExpired ? "expired" : (s.expiresAt ? `until ${renderLapseDate(s.expiresAt)}` : "no expiry");
-  const aria = `Section ${s.sectionTitle}: sealed by ${s.isMine ? "you" : (s.lockedByName || "another user")}, ${untilText}`;
+  // SEC-3: the same sentence the details modal, the macro badge and the ribbon compose.
+  const sentence = sealSentence(row);
+  const aria = `Section ${s.sectionTitle}: ${sentence}`;
 
   const onMenu = (id) => {
     if (id === "release") onUnseal(s.sectionId);
@@ -967,7 +962,7 @@ const SectionRow = ({ section: s, onUnseal, unsealing, viewer, siteUrl, pageId, 
     <div className="sv-section-block" role="listitem" data-roving-card tabIndex={-1} aria-label={aria} data-testid="sv-section-row" data-primary={primary.kind}>
       <div className="sv-section-row">
         <span className="sv-section-row-title" title={s.sectionTitle}>{s.sectionTitle}</span>
-        <span className="sv-section-row-meta">{s.isExpired ? "Expired" : (s.expiresAt ? `until ${renderLapseDate(s.expiresAt)}` : "")}{warning ? <span className="sv-section-row-warn" data-testid="sv-section-expiry-warning"> · {warning.text}</span> : null}{s.note ? <span className="sv-section-row-note" title={s.note}> · “{s.note}”</span> : null}</span>
+        <span className="sv-section-row-meta">{sentence}{warning ? <span className="sv-section-row-warn" data-testid="sv-section-expiry-warning"> · {warning.text}</span> : null}{s.note ? <span className="sv-section-row-note" title={s.note}> · “{s.note}”</span> : null}</span>
         {primary.kind === "none" && editStatus === null && !s.isMine && !s.isExpired
           ? <span className="sv-section-row-lockedby"><OperatorChip accountId={s.lockedByAccountId} /></span>
           : <PrimarySlot primary={{ ...primary, forced }} name={`section ${s.sectionTitle}`} kind="section" busy={unsealing ? "unseal" : (busy ? "editreq" : null)} reqBusy={reqBusy} on={handlers} />}
@@ -1075,7 +1070,7 @@ const SealedSectionsGroup = ({ pageId, onChanged, viewer, siteUrl }) => {
         await load();
         if (onChanged) onChanged();
       } else {
-        setSealError(r?.reason || "Could not unseal this section.");
+        setSealError(r?.reason || "Could not release this section.");
       }
     } catch (e) {
       console.error("Unseal section failed:", e);
@@ -1096,7 +1091,7 @@ const SealedSectionsGroup = ({ pageId, onChanged, viewer, siteUrl }) => {
         </button>
         <span className="sv-card-section-title">Sealed Sections</span>
         {sections.length > 0 && <span className="sv-card-section-count">{sections.length}</span>}
-        <span className="sv-card-section-note">Locks a heading&rsquo;s content on the page — no files involved</span>
+        <span className="sv-card-section-note">Freeze a heading and everything under it; only you and the people you approve can change it</span>
         <button
           className="action-btn lock"
           style={{ marginLeft: "auto" }}

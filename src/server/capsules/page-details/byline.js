@@ -34,6 +34,7 @@ import { kvs } from "@forge/kvs";
 import { getClassificationProvider, classificationActiveForPage } from "../classification/provider.js";
 import { describeWorkflowForPage } from "../workflow/approvals.js"; // WF-6: the status the chip carries
 import { collectPageSeals, readPageMeta } from "./logic.js";
+import { sealCountLabel } from "../../../ui/kit/status-language.js"; // SEC-3: "Sealed (2)"
 
 export const BYLINE_PROPERTY_KEY = "sentinel-byline";
 export const NEUTRAL_COLOR = "#475569";
@@ -73,6 +74,10 @@ export function composeByline({ level, source, sealCount, classificationEnabled,
   const n = Number.isFinite(Number(sealCount)) && Number(sealCount) > 0 ? Math.floor(Number(sealCount)) : 0;
   const sealed = n > 0;
   const sealsText = n === 0 ? "No seals on this page" : n === 1 ? "1 seal on this page" : `${n} seals on this page`;
+  // SEC-3: the byline is the one surface every page shows without the ribbon, so the seal count
+  // is in the TITLE ("Sealed (2)"), never only in the tooltip. The classification source moves to
+  // the tooltip whenever the title carries a status or a count.
+  const sealsTitle = sealCountLabel(n);
   // WF-6: a page with a workflow carries its status (workflow/status.js — state + ONE qualifier)
   // as `Level · Status` when classification is on, the status alone when it is off; the disc takes
   // the status tone (a reader must tell approved from unapproved without the ribbon). The
@@ -83,28 +88,28 @@ export function composeByline({ level, source, sealCount, classificationEnabled,
     const src = !off && level?.name ? (source === "page" ? "set on this page" : "space default") : null;
     const levelTip = off ? null : level?.name ? `${level.name} (${src})` : "No classification level";
     return {
-      title: levelName ? `${levelName} · ${workflow.text}` : workflow.text,
+      title: [levelName, workflow.text, sealsTitle].filter(Boolean).join(" · "),
       icon: bylineIcon({ color: workflow.color || NEUTRAL_COLOR, sealed }),
       tooltip: [levelTip, `Workflow: ${workflow.stateName || workflow.text}${workflow.qualifier ? ` — ${workflow.qualifier}` : ""}`, sealsText, "Open Sentinel Vault"].filter(Boolean).join(" · "),
     };
   }
   if (classificationEnabled === false) {
     return {
-      title: sealed ? sealsText : "Sentinel Vault",
+      title: sealed ? sealsTitle : "Sentinel Vault",
       icon: bylineIcon({ color: NEUTRAL_COLOR, sealed }),
       tooltip: `${sealsText} · Open Sentinel Vault`,
     };
   }
   if (!level || !level.name) {
     return {
-      title: "Unclassified",
+      title: sealed ? `Unclassified · ${sealsTitle}` : "Unclassified",
       icon: bylineIcon({ color: NEUTRAL_COLOR, sealed }),
       tooltip: `No classification level · ${sealsText} · Open Sentinel Vault`,
     };
   }
   const src = source === "page" ? "set on this page" : "space default";
   return {
-    title: `${level.name} · ${src}`,
+    title: sealed ? `${level.name} · ${sealsTitle}` : `${level.name} · ${src}`,
     icon: bylineIcon({ color: level.color, sealed }),
     tooltip: `${level.name} (${src}) · ${sealsText} · Open Sentinel Vault`,
   };

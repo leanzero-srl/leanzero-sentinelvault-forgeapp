@@ -20,7 +20,7 @@ const OVERLAY_COLUMNS = [
   { key: "status",    label: "Status",               defaultOn: true, alwaysOn: true },
   { key: "heldBy",    label: "Held by",              defaultOn: true },
   { key: "lapses",    label: "Expires",               defaultOn: true },
-  { key: "watch",     label: "Watch for Unseal", defaultOn: true },
+  { key: "watch",     label: "Watch for release", defaultOn: true },
   { key: "actions",   label: "Actions",              defaultOn: true,  alwaysOn: true },
   { key: "fileSize",  label: "File Size",            defaultOn: false },
   { key: "fileType",  label: "File Type",            defaultOn: false },
@@ -850,7 +850,7 @@ const ArtifactControlPanel = () => {
             showFlag({
               id: "expiry-notice-" + artifact.id,
               title: "Seal expired",
-              description: `Your seal on "${artifact.title}" has expired. Unseal it when you are finished.`,
+              description: `Your seal on "${artifact.title}" has expired. Release it when you are finished.`,
               type: "warning",
               appearance: "warning",
               isAutoDismiss: false,

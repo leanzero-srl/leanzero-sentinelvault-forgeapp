@@ -224,7 +224,7 @@ const RealmClaimedCard = ({ artifact, onForceRelease, onWatch, isWatching, force
   const isStale = artifact.isStale === true;
   const isRecoverable = artifact.staleReason === "trashed";
   let statusClass = artifact.isExpired ? "expired" : "locked";
-  let statusText = artifact.isExpired ? "Overdue" : "Sealed";
+  let statusText = artifact.isExpired ? "Expired" : "Sealed"; // SEC-3: one word for a lapsed seal
   if (isStale && isRecoverable) { statusClass = "trashed"; statusText = "Trash"; }
   else if (isStale) { statusClass = "stale"; statusText = "Missing"; }
   const isImage = artifact.mediaType?.startsWith("image/");
@@ -259,7 +259,7 @@ const RealmClaimedCard = ({ artifact, onForceRelease, onWatch, isWatching, force
   if (vc.lapses !== false && artifact.expiresAt) {
     const label = formatRemaining(artifact.expiresAt);
     metaItems.push(
-      <span key="lapses" className="card-meta-item" style={label === "Overdue" ? { color: "var(--sv-status-warning)" } : undefined}>{label}</span>,
+      <span key="lapses" className="card-meta-item" style={label === "Expired" ? { color: "var(--sv-status-warning)" } : undefined}>{label}</span>,
     );
   }
 
@@ -369,7 +369,7 @@ const MyClaimedCard = ({ artifact, onRelease, onExtend, busyAction, siteUrl }) =
   const [cachedPreview, setCachedPreview] = useState(null);
   const isExpired = artifact.isExpired || (artifact.expiresAt && new Date(artifact.expiresAt) < new Date());
   const statusClass = isExpired ? "expired" : "locked-by-me";
-  const statusText = isExpired ? "Overdue" : "My Seal";
+  const statusText = isExpired ? "Expired" : "Sealed by you"; // SEC-3
   const isImage = artifact.mediaType?.startsWith("image/");
   const numericAttId = artifact.id ? artifact.id.replace(/^att/, "") : null;
   const downloadHref = siteUrl && artifact.pageId && artifact.title
@@ -439,8 +439,8 @@ const MyClaimedCard = ({ artifact, onRelease, onExtend, busyAction, siteUrl }) =
             </button>
           )}
           {onRelease && (
-            <button className={`action-btn unlock ${busyAction === "unseal" ? "is-busy" : ""}`} onClick={() => onRelease(artifact.id)} disabled={busyAction && busyAction !== "unseal"} title="Release your seal and allow others to modify this file">
-              {busyAction === "unseal" ? <>Unsealing<span className="btn-busy-bar" /></> : "Unseal"}
+            <button className={`action-btn release ${busyAction === "unseal" ? "is-busy" : ""}`} onClick={() => onRelease(artifact.id)} disabled={busyAction && busyAction !== "unseal"} title="Release your seal and allow others to modify this file">
+              {busyAction === "unseal" ? <>Releasing<span className="btn-busy-bar" /></> : "Release"}
             </button>
           )}
         </span>
@@ -1509,11 +1509,11 @@ const RealmPolicyDashboard = () => {
           await fetchReservedFiles(realmKey, realmId);
         }
       } else {
-        setMessage(`Failed to unseal attachment: ${result.reason}`);
+        setMessage(`Could not release this file: ${result.reason}`);
         setMessageType("error");
       }
     } catch (err) {
-      setMessage(`Admin unseal failed: ${err.message}`);
+      setMessage(`Could not release this file: ${err.message}`);
       setMessageType("error");
     } finally {
       setBusyAction(null);
@@ -1738,7 +1738,7 @@ const RealmPolicyDashboard = () => {
                     setBusyAction({ id, action: "unseal" });
                     try {
                       const r = await invoke("unseal-artifact", { attachmentId: id });
-                      if (r && r.success === false) { setMessage(r.reason || "Could not unseal this file."); setMessageType("error"); }
+                      if (r && r.success === false) { setMessage(r.reason || "Could not release this file."); setMessageType("error"); }
                       else fetchMyClaimedFiles();
                     } catch (e) { console.error("Release failed:", e); }
                     finally { setBusyAction(null); }

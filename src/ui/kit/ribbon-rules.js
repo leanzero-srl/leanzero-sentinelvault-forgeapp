@@ -19,10 +19,12 @@
 //   input.validation      "passed" | "failed" | "awaiting-approval" | null
 //
 // The urgent state is exactly ONE pill (decision 3 of the mockup), chosen in this order: an active
-// violation alert ("Restored"), work waiting on the viewer ("Waiting for you N"), an active grant
-// ("Edit now"), the viewer's own pending request ("Waiting for {owner}"), a seal the viewer does not
-// own ("Locked"). Workflow and validation states are urgent too — they keep the row open as before —
+// violation alert ("Undone" / "Moved back"), work waiting on the viewer ("Waiting for you N"), an
+// active grant ("Edit now"), the viewer's own pending request ("Waiting for {owner}"), the viewer's
+// declined request ("Declined · ask again W", SEC-8), a seal the viewer does not own ("Locked"). Workflow and validation states are urgent too — they keep the row open as before —
 // but they render their own existing controls, not a pill from this list.
+
+import { when } from "./status-language.js";
 
 export const RIBBON_MODES = Object.freeze(["exceptions", "always"]);
 export const DEFAULT_RIBBON_MODE = "exceptions";
@@ -63,6 +65,8 @@ export function pickUrgent({ waitingOnMe, lockedFor, alerts } = {}) {
   const grants = Array.isArray(waitingOnMe?.grantsActive) ? waitingOnMe.grantsActive.filter(Boolean) : [];
   if (grants.length > 0) return { kind: "edit-now", grant: grants[0], count: grants.length };
   if (lockedFor && lockedFor.myRequest === "pending") return { kind: "waiting-for-owner", seal: lockedFor };
+  // SEC-8: a declined request is a visible state until its cooldown passes, not a disabled button.
+  if (lockedFor && lockedFor.myRequest === "denied" && lockedFor.retryAt) return { kind: "declined", seal: lockedFor, retryAt: lockedFor.retryAt };
   if (lockedFor) return { kind: "locked", seal: lockedFor };
   return null;
 }
@@ -106,13 +110,5 @@ export function decideRibbon(input = {}) {
   return { show: reasons.length > 0, mode, urgent, classification, reasons, overThreshold };
 }
 
-/** PURE. A viewer's "until" moment: "Mon 09:00" inside the week, "12 Sep 09:00" beyond it, "" for none. */
-export function untilLabel(iso, now = Date.now(), locale = undefined) {
-  const ms = iso ? new Date(iso).getTime() : NaN;
-  if (!Number.isFinite(ms)) return "";
-  const d = new Date(ms);
-  const time = d.toLocaleTimeString(locale, { hour: "2-digit", minute: "2-digit", hour12: false });
-  const withinWeek = Math.abs(ms - now) < 7 * 24 * 3600 * 1000;
-  const day = withinWeek ? d.toLocaleDateString(locale, { weekday: "short" }) : d.toLocaleDateString(locale, { day: "numeric", month: "short" });
-  return `${day} ${time}`;
-}
+/** SEC-3: the ONE date formatter lives in status-language.js; this name stays for its callers. */
+export const untilLabel = when;

@@ -146,6 +146,8 @@ html[data-color-mode="dark"] .pd-ok { color: #4ADE80; }
 .pd-state.held { background: #15803D; color: #FFFFFF; } /* SEC-2: the approval's green, solid */
 html[data-color-mode="dark"] .pd-state.held { background: #22C55E; color: #052E16; }
 .pd-state.expired { background: var(--pd-expired); color: var(--pd-expired-ink); }
+.pd-state.declined { background: #B91C1C; color: #FFFFFF; } /* SEC-8: the declined request is a visible state */
+html[data-color-mode="dark"] .pd-state.declined { background: #F87171; color: #0F172A; }
 .pd-state.trashed { background: var(--pd-trashed); color: var(--pd-trashed-ink); }
 .pd-kebab-wrap { position: relative; }
 .pd-kebab { width: 28px; height: 28px; border-radius: 6px; border: 1px solid var(--sv-border-primary); background: transparent; color: var(--sv-text-secondary); font-weight: 700; cursor: pointer; }

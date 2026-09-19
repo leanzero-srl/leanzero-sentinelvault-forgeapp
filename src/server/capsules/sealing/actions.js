@@ -38,7 +38,8 @@ import { refreshByline } from "../page-details/byline.js"; // 5.0 byline chip â€
 // the viewer's waiting-on-me numbers for THIS page and the first seal the viewer does not own.
 import { getClassificationProvider, classificationActiveForPage } from "../classification/provider.js";
 import { heldRefusal, isWorkflowHeld } from "../../shared/seal-authority.js"; // SEC-2
-import { getActiveEditGrant, getActiveSectionEditGrant, listPendingRequestsForOwner, listPendingSectionRequestsForOwner } from "../editreq/logic.js";
+import { getActiveEditGrant, getActiveSectionEditGrant, listPendingRequestsForOwner, listPendingSectionRequestsForOwner, resolveEditCooldownMs } from "../editreq/logic.js";
+import { retryAtFor } from "../../shared/edit-cooldown.js"; // SEC-8: the ribbon's declined state
 import { listMyApprovals } from "../workflow/approvals.js";
 import { normalizeRibbonSettings } from "../../../ui/kit/ribbon-rules.js";
 
@@ -1499,14 +1500,20 @@ async function ribbonViewerHalf({ pageId, accountId, liveSeals, sectionRecords }
     const grant = await settle(`grant ${seal.id}`, seal.kind === "attachment" ? getActiveEditGrant(seal.id, accountId) : getActiveSectionEditGrant(seal.id, accountId), null);
     if (grant) return { seal, grant };
     const req = await settle(`request ${seal.id}`, kvs.get(seal.kind === "attachment" ? `edit-request-${seal.id}-${accountId}` : `section-edit-request-${seal.id}-${accountId}`), null);
+    // SEC-8: a declined request inside its cooldown is a state the ribbon shows ("Declined Â· ask
+    // again W"), with the owner's reason when one was given.
+    if (req?.status === "denied") {
+      const retryAt = retryAtFor(req.deniedAt, await resolveEditCooldownMs().catch(() => 0));
+      if (retryAt) return { seal, grant: null, myRequest: "denied", retryAt, deniedReason: req.deniedReason || null };
+    }
     return { seal, grant: null, myRequest: req?.status === "pending" ? "pending" : "none" };
   }));
   half.waitingOnMe.grantsActive = probes.filter((p) => p.grant).map(({ seal, grant }) => ({ name: seal.name, kind: seal.kind, id: seal.id, until: grant.expiresAt || seal.until || null }));
   // "Locked" is the state of a seal the viewer can neither edit nor has been granted; a seal with
   // a pending request from the viewer comes first ("Waiting for {owner}" is the more specific state).
   const locked = probes.filter((p) => !p.grant);
-  const pick = locked.find((p) => p.myRequest === "pending") || locked[0] || null;
-  if (pick) half.lockedFor = { ...pick.seal, myRequest: pick.myRequest };
+  const pick = locked.find((p) => p.myRequest === "pending") || locked.find((p) => p.myRequest === "denied") || locked[0] || null;
+  if (pick) half.lockedFor = { ...pick.seal, myRequest: pick.myRequest, retryAt: pick.retryAt || null, deniedReason: pick.deniedReason || null };
   return half;
 }
 
