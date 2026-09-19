@@ -171,6 +171,18 @@ Approved before editing, or request approval for your version."*
 **Confidence** high on (a)/(b) (mirrors the shipped seal path); medium on the exact pill copy.
 **Blast radius** `triggers.js` (two enforcement sites + sweep), `approval-blueprints.js`, `notice-policy.js`,
 `doc-ribbon/index.jsx` `alertSentence`, `ribbon-rules` (dispatch types).
+**Status (2026-09-20):** fixed in the WF-2 commit (dev 8.11.0), evidence
+`~/Projects/forge-live-harness/scenarios/sentinel-vault/wf2-enforcement-notice.spec.ts` (server + browser,
+`evidence/wf2-enforcement-notice/*.png`). Shipped: ONE announcer in `triggers.js` (`announceWorkflowEnforcement`)
+behind all four sites (event demote, event revert, sweep demote, sweep revert): a dispatch `workflow-demoted` /
+`workflow-reverted` (editor + approver as parties, `approvedVersion`, `revertedVersion` = the version holding the
+editor's text) and the editor's comment routed through the `editor_revert` carve-out (posted with the master OFF —
+proven live); copy rewritten in the editor's words (`enforceCommentBody`, pure: "Reverted to the approved version …
+open your version (v2) … ask an approver or space admin …" / "Moved back to Draft … Nothing was lost"); ribbon pill
+"Restored" / "Moved back" with editor and approver sentences and "See my version (vN)". Unit:
+`test/approval-notice.test.mjs` (WF-2 block). HONEST LIMIT: the live server test exercises the EVENT DEMOTE path
+end to end (synthetic editor — every real wolfaenpak account is a steward, hence privileged); the revert dispatch
+sites (event + sweep) are exercised only by the unit tests and the browser render from a seeded dispatch.
 
 ### WF-3 A rejected author never sees the rejection reason
 **Who** page author / requester.
