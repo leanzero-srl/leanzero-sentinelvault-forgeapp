@@ -264,8 +264,10 @@ function AssetsLink({ onImported }) {
   );
 }
 
-export default function ClassificationTab() {
-  const [state, setState] = useState({ loading: true, error: null, provider: null, levels: [], canManageLevels: false, spaces: [], siteAdmin: false });
+// `onOpenSettings`: CLS-1 — the site switch lives on the Settings tab (one write path, the Apply
+// bar); this tab only says whether it is off and offers the way there.
+export default function ClassificationTab({ onOpenSettings } = {}) {
+  const [state, setState] = useState({ loading: true, error: null, provider: null, levels: [], canManageLevels: false, spaces: [], siteAdmin: false, enabled: false });
   const [selected, setSelected] = useState(() => new Set());
   const [bulkLevel, setBulkLevel] = useState(null);
   const [confirmBulk, setConfirmBulk] = useState(false);
@@ -284,7 +286,7 @@ export default function ClassificationTab() {
       if (list?.error) throw new Error(list.error);
       setState({
         loading: false, error: null,
-        provider: prov?.name || "app", levels: prov?.levels || [], canManageLevels: !!prov?.canManageLevels,
+        provider: prov?.name || "app", levels: prov?.levels || [], canManageLevels: !!prov?.canManageLevels, enabled: prov?.enabled === true,
         spaces: list?.spaces || [], siteAdmin: !!list?.siteAdmin, reason: list?.reason || null,
       });
     } catch (e) {
@@ -350,9 +352,21 @@ export default function ClassificationTab() {
   const bulkChip = bulkLevel && bulkLevel !== NONE ? levelById.get(bulkLevel) : null;
 
   return (
-    <div className="settings-panel cls-tab" data-testid="cls-tab">
+    <div className={`settings-panel cls-tab${state.enabled ? "" : " cls-tab--off"}`} data-testid="cls-tab" data-enabled={state.enabled ? "true" : "false"}>
       {notice && (
         <div className={`cls-notice-sticky ${notice.type === "success" ? "alert-success" : "alert-error"}`} role="status" data-testid="cls-notice" onClick={() => setNotice(null)}>{notice.text}</div>
+      )}
+
+      {/* CLS-1: the switch is on the Settings tab; while it is off this tab says so first and
+          everything below is dimmed but kept — the levels and defaults come back exactly as
+          they were when it is turned on. */}
+      {!state.enabled && (
+        <div className="cls-off-banner" role="status" data-testid="cls-off-banner">
+          <div className="cls-off-banner-text">
+            <strong>Classification is off on this site.</strong> Pages show no level in the byline chip, the ribbon or the page details, and no level can be set. The levels and space defaults below are kept and apply again the moment it is turned on.
+          </div>
+          {onOpenSettings && <button type="button" className="btn-primary" onClick={onOpenSettings} data-testid="cls-off-open-settings">Turn it on in Settings</button>}
+        </div>
       )}
 
       <section className="cls-section">

@@ -33,6 +33,12 @@ Stored in Forge KVS under key: `admin-settings-global`
 | Tell editors when their change is undone | `notifyEditorOnRevert` | Boolean | On | When Sentinel Vault reverts someone's edit to sealed content, that person gets a page comment addressed to them, with a link to the page version that still holds their text. Independent of the comments master switch; a space in quiet mode stays quiet. |
 | Sign seal actions with an authenticator code | `signSealActions` | Boolean | Off | With this on, releasing or extending a seal and approving, declining, giving or revoking edit access all ask for the current code from the authenticator device set up on My work. A person without a device is refused until they set one up. The same registry gate covers every one of those actions. |
 | Hours before a declined edit request can be repeated | `editRequestCooldownHours` | Integer 0–168 | 1 | After an owner declines an edit request, the same person waits this long before asking again (0 = no wait). The seal owner or a space admin can give edit access directly at any time ("Give edit access…" under the row's ⋯ menu). |
+
+### Classification group (CLS-1, 2026-09-20)
+
+| Setting | Code Key | Type | Default | Description |
+|---------|----------|------|---------|-------------|
+| Classification levels | `classificationEnabled` | Boolean (opt-in: only `true` is on) | **Off** | The master switch for classification. On: pages carry a level in the byline chip, the ribbon's left block and the page-details modal; a space can set a default level; `classify-page` works. Off (the never-saved default): no surface mentions classification — the chip reads the seal count or "Sentinel Vault", the ribbon's left block is the app's name, the modal has no Classification section, `classification-set-page` / `classification-set-space-default` answer `Classification is off on this site`, the Ribbon / Ribbon threshold controls are hidden, and the Classification tab dims its sections behind an "off" banner. Stored levels, space defaults and page overrides are **kept** and show again unchanged when turned on. Existing installs that never saved the key are OFF after the upgrade (owner decision 2026-09-19). Confluence's own classification, where the site has it, is untouched either way. Setup question 3 writes this key. |
 | Enable Native Notifications | `enableEmailDispatches` | Boolean | On | Master toggle for all comment-with-mention notices. Confluence's notification engine emails the mentioned user according to their personal preferences. The KVS key is preserved from the previous email-based release for backwards compatibility. Must be on for any sub-option below to work. |
 | Seal Confirmation & Halfway Reminder Notices | `enableSealExpiryReminderEmail` | Boolean | On | Post a comment that mentions the seal owner when a seal is created and at the seal's midpoint. KVS key preserved for backwards compatibility. Nested under master toggle. |
 | Seal Expiry Notices | `enableAutoUnsealDispatchEmail` | Boolean | On | Post a comment that mentions the seal owner when a seal has expired. KVS key preserved for backwards compatibility. Nested under master toggle. |
@@ -51,6 +57,8 @@ Stored in Forge KVS under key: `admin-settings-space-{sanitizedRealmKey}`
 | Space Activation | `activation` | String | `"use-system-default"` | Toggle between "Active" and "Disabled". When disabled, Sentinel Vault features are inactive for the space. |
 | Admin users | `adminUsers` | Array | `[]` | Individual user accounts granted space admin privileges in this space. |
 | Admin groups | `adminGroups` | Array | `[]` | Confluence groups whose members receive space admin privileges in this space. |
+
+| Classification in this space | `classification` | `"inherit"` \| `"off"` | `"inherit"` | `off` hides every classification level on this space's pages (chip, ribbon, modal) and refuses `classify-page` with `Classification is off in this space`; stored levels are kept. A space cannot turn classification ON while the site has `classificationEnabled` off — the card is locked with "Off site-wide by a site admin (Classification levels)." (the same AND rule as the auto-insert macro). |
 
 Pending space admin access requests are managed through the Access Control tab UI but are not stored as policy settings.
 
@@ -78,6 +86,7 @@ Baseline defaults (src/server/shared/baseline.js)
 ```
 
 **What can be overridden at space level:**
+- Classification: a space can opt OUT (`classification: "off"`), never opt in while the site is off (Access Control tab)
 - Seal duration (Seal Duration tab)
 - Auto-insert macro behavior (Macro tab)
 - Macro insert position (Macro tab)

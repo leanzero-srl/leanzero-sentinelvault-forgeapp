@@ -218,6 +218,8 @@ button:focus-visible {
   background: #475569; color: #ffffff; font-weight: 600; flex: none; max-width: 46%;
 }
 .rb-class--none { background: #475569; }
+/* CLS-1: classification off → the left block names the app in the solid brand teal, white ink. */
+.rb-class--brand { background: #0E7490; }
 .rb-glyph { width: 18px; height: 18px; border-radius: 50%; background: rgba(255, 255, 255, 0.22); display: inline-flex; align-items: center; justify-content: center; flex: none; }
 .rb-glyph svg { width: 11px; height: 11px; }
 .rb-lvname { letter-spacing: 0.01em; overflow: hidden; text-overflow: ellipsis; }

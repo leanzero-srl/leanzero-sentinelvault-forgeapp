@@ -36,7 +36,7 @@ import { triggerPanelEmbed, removePanelNode } from "../../infra/doc-surgery.js";
 import { refreshByline } from "../page-details/byline.js"; // 5.0 byline chip — one line per seal write, never awaited into the result
 // 5.0 ribbon (mockup §2/§3): the summary carries the classification, the steward's ribbon setting,
 // the viewer's waiting-on-me numbers for THIS page and the first seal the viewer does not own.
-import { getClassificationProvider } from "../classification/provider.js";
+import { getClassificationProvider, classificationActiveForPage } from "../classification/provider.js";
 import { getActiveEditGrant, getActiveSectionEditGrant, listPendingRequestsForOwner, listPendingSectionRequestsForOwner } from "../editreq/logic.js";
 import { listMyApprovals } from "../workflow/approvals.js";
 import { normalizeRibbonSettings } from "../../../ui/kit/ribbon-rules.js";
@@ -1448,17 +1448,24 @@ async function ribbonViewerHalf({ pageId, accountId, liveSeals, sectionRecords }
   };
   const settle = (label, p, fallback) => p.catch((e) => { console.warn(`[RIBBON] ${label} failed:`, e?.message || e); return fallback; });
 
-  const [settings, cls] = await Promise.all([
+  // CLS-1: the switch is read FIRST; off = the level is never read and the ribbon is told so
+  // (`classification.enabled:false` → decideRibbon treats "always" as "exceptions" and the surface
+  // draws the brand block instead of a level).
+  const [settings, sw] = await Promise.all([
     settle("settings", kvs.get("admin-settings-global"), null),
-    settle("classification", (async () => { const { provider } = await getClassificationProvider(); return provider.effectiveLevel(pageId); })(), null),
+    settle("classification switch", classificationActiveForPage(pageId), { active: false, reason: "site" }),
   ]);
+  const cls = sw.active
+    ? await settle("classification", (async () => { const { provider } = await getClassificationProvider(); return provider.effectiveLevel(pageId); })(), null)
+    : null;
+  half.classification = { level: null, source: "none", enabled: sw.active };
   const norm = normalizeRibbonSettings(settings);
   half.ribbonMode = norm.ribbonMode;
   half.ribbonThresholdRank = norm.ribbonThresholdRank;
   half.threshold = { rank: norm.ribbonThresholdRank };
   if (cls?.level) {
     const l = cls.level;
-    half.classification = { level: { id: String(l.id), name: l.name, color: l.color || null, rank: Number(l.rank) || 0, description: typeof l.description === "string" ? l.description.slice(0, 160) : "" }, source: cls.source || "page" };
+    half.classification = { level: { id: String(l.id), name: l.name, color: l.color || null, rank: Number(l.rank) || 0, description: typeof l.description === "string" ? l.description.slice(0, 160) : "" }, source: cls.source || "page", enabled: true };
   }
   if (!accountId) return half;
 

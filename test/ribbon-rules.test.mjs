@@ -111,4 +111,20 @@ eq("garbage → empty", untilLabel("nope", now), "");
 ok("inside the week → weekday + time", /^[A-Za-z]{3} \d{2}:\d{2}$/.test(untilLabel("2026-09-18T17:00:00.000Z", now, "en-GB")));
 ok("beyond the week → day month + time", /^\d{1,2} [A-Za-z]{3} \d{2}:\d{2}$/.test(untilLabel("2026-10-05T09:00:00.000Z", now, "en-GB")));
 
+// ── CLS-1: classification off ───────────────────────────────────────────────────────────────
+{
+  const OFF = { level: null, source: "none", enabled: false };
+  const off = (over) => decideRibbon({ mode: "always", classification: OFF, threshold: T4, waitingOnMe: quiet, lockedFor: null, alerts: [], workflow: null, validation: null, ...over });
+  eq("off: 'always' no longer opens the row on its own", off({}).show, false);
+  eq("off: the mode collapses to exceptions", off({}).mode, "exceptions");
+  eq("off: no always-unclassified reason", off({}).reasons, []);
+  eq("off: the decision carries enabled:false for the surface", off({}).classification, OFF);
+  eq("off: a level sent anyway is ignored (never over threshold)", decideRibbon({ mode: "exceptions", classification: { ...RESTRICTED, enabled: false }, threshold: T4 }).show, false);
+  eq("off: …and not echoed", decideRibbon({ mode: "exceptions", classification: { ...RESTRICTED, enabled: false }, threshold: T4 }).classification.level, null);
+  eq("off: urgent still opens the row", off({ lockedFor: locked }).show, true);
+  eq("off: workflow still opens the row", off({ workflow: { state: { id: "approved" } } }).reasons, ["workflow"]);
+  eq("on (enabled:true) behaves as before", decideRibbon({ mode: "always", classification: { ...INTERNAL, enabled: true }, threshold: T4 }).reasons, ["always"]);
+  eq("enabled undefined behaves as before", decideRibbon({ mode: "always", classification: NONE, threshold: T4 }).reasons, ["always-unclassified"]);
+}
+
 report("ribbon-rules");

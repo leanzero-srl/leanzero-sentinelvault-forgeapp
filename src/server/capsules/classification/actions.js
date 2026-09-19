@@ -18,8 +18,8 @@
 import { asApp, asUser, assumeTrustedRoute, route } from "@forge/api";
 import { canEditPage, canReadPage, mustVerify } from "../../shared/content-access.js";
 import { authorizeSteward, isAccountStewardAsApp, isOperatorSiteAdmin } from "../../shared/steward-checks.js";
-import { getAppProvider, getClassificationProvider, resetProviderCache } from "./provider.js";
-import { isContentId, validateLevels, levelsFromAssetsObjects, guessAssetsMapping, ASSETS_LINK_KVS_KEY } from "./logic.js";
+import { getAppProvider, getClassificationProvider, resetProviderCache, resolveClassificationActive, classificationActiveForPage } from "./provider.js";
+import { isContentId, validateLevels, levelsFromAssetsObjects, guessAssetsMapping, ASSETS_LINK_KVS_KEY, classificationOffReason } from "./logic.js";
 import { kvs } from "@forge/kvs";
 import { refreshByline } from "../page-details/byline.js"; // 5.0 byline chip (page writes only; a space default refreshes lazily on open)
 
@@ -70,11 +70,13 @@ export const getProvider = async (req) => {
   const accountId = req.context?.accountId;
   if (!accountId) return { name: "app", levels: [], canManageLevels: false, error: NOT_AUTHORIZED };
   try {
-    const { provider, levels } = await getClassificationProvider();
+    const [{ provider, levels }, sw] = await Promise.all([getClassificationProvider(), resolveClassificationActive(null)]);
     // Levels are editable only on the App scheme and only by a site admin; native levels belong
-    // to Confluence's own admin UI.
+    // to Confluence's own admin UI. `enabled` is the SITE switch (CLS-1) — what the console's
+    // Classification tab dims its sections on; the levels are still answered so the tab can
+    // show what is kept.
     const canManageLevels = provider.name === "app" && (await isOperatorSiteAdmin(accountId));
-    return { name: provider.name, levels, canManageLevels };
+    return { name: provider.name, levels, canManageLevels, enabled: sw.active };
   } catch (e) {
     console.error("[CLASSIFICATION] provider failed:", e);
     return { name: "app", levels: [], canManageLevels: false, error: "Could not load the classification scheme" };
@@ -118,12 +120,16 @@ export const setSpaceDefault = async (req) => {
     return { results: unique.map((spaceId) => ({ spaceId, ok: false, reason: "Could not load the classification scheme" })) };
   }
   const siteAdmin = await isOperatorSiteAdmin(accountId);
+  // CLS-1: the SITE switch gates every default write (a space that opted out may still be given
+  // a default — it is kept for when the space opts back in). Authorization runs first, as always.
+  const siteSwitch = await resolveClassificationActive(null);
   const results = await mapLimited(unique, 4, async (spaceId) => {
     // Authorise against the key the SPACE ID resolves to — never against anything the payload
     // says about the space. A space that does not resolve is a refusal, not a skip.
     const space = await readSpace(spaceId);
     if (!space) return { spaceId, ok: false, reason: NOT_AUTHORIZED };
     if (!siteAdmin && !(await authorizeSteward(accountId, space.key))) return { spaceId, ok: false, reason: NOT_AUTHORIZED };
+    if (!siteSwitch.active) return { spaceId, ok: false, reason: classificationOffReason(siteSwitch) };
     try {
       await provider.setSpaceDefault(space.id, levelId);
       return { spaceId, ok: true, key: space.key, defaultLevelId: levelId };
@@ -144,9 +150,12 @@ export const getPage = async (req) => {
     return { effective: { level: null, source: "none" }, pageLevelId: null, reason: NOT_AUTHORIZED };
   }
   try {
+    // CLS-1: off → nothing is answered about the page (the stored override stays where it is).
+    const sw = await classificationActiveForPage(pageId);
+    if (!sw.active) return { enabled: false, reason: sw.reason, effective: { level: null, source: "none" }, pageLevelId: null };
     const { provider } = await getClassificationProvider();
     const [effective, pageLevelId] = await Promise.all([provider.effectiveLevel(pageId), provider.getPageLevel(pageId)]);
-    return { effective, pageLevelId: pageLevelId ?? null, provider: provider.name };
+    return { enabled: true, effective, pageLevelId: pageLevelId ?? null, provider: provider.name };
   } catch (e) {
     console.error("[CLASSIFICATION] get-page failed:", e);
     return { effective: { level: null, source: "none" }, pageLevelId: null, error: "Could not load the classification" };
@@ -163,6 +172,10 @@ export const setPage = async (req) => {
   // The owner's bar is "stewards and page editors"; a steward of the space can edit its pages,
   // so the edit check covers both without a second round-trip.
   if (!(await canEditPage(accountId, pageId))) return { ok: false, reason: NOT_AUTHORIZED };
+  // CLS-1: off → refused AFTER the authorization check (an unauthorized caller learns nothing about
+  // the site's switches); the config API's classify-page rides this same refusal.
+  const sw = await classificationActiveForPage(pageId);
+  if (!sw.active) return { ok: false, reason: classificationOffReason(sw) };
   try {
     const { provider } = await getClassificationProvider();
     if (levelId == null) await provider.resetPage(pageId);
