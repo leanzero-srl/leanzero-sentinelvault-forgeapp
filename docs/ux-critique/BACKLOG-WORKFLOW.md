@@ -191,6 +191,14 @@ exists). (c) My work: the requester's own open requests as a card ("Approval req
 **Confidence** high (a), medium (b: needs a small resolver or a `lastDecision` field on `get-page-workflow`).
 **Blast radius** `approvals.js`, `approval-blueprints.js`, `workflow/actions.js` `getWorkflow`, `doc-ribbon`
 `WorkflowDetails`, `my-work`.
+**Status (2026-09-20):** fixed in the WF-3 commit (dev 8.9.0) for (a) and (b), evidence
+`~/Projects/forge-live-harness/scenarios/sentinel-vault/wf3-rejection-reason.spec.ts` (server + browser,
+`evidence/wf3-rejection-reason/*.png`). Shipped: the denial comment prints the reason (`approvalResolvedBody`);
+`get-page-workflow` answers `lastDecision` (pure `lastDecisionFrom(log)`: newest approval-denied / approval-stale
+entry, null once anything moved the page since) only on a non-enforced page with no open request; the details chip
+reads "Declined Sep 20" (critical tone) / "Request closed …" and its popover has a "Last approval decision" section
+with who, when, reviewed vN and the reason in a solid block. Unit: `test/workflow-engine.test.mjs` (lastDecisionFrom).
+NOT done: (c) the requester's "Approval requests you made" card on My work — a new index, left for the WF-9/My-work pass.
 
 ### WF-4 The ribbon's "Waiting for you" pill and count are stale after every decision
 **Who** approver.

@@ -550,6 +550,29 @@ export async function appendWorkflowLog(pageId, entry) {
   return ts;
 }
 
+// WF-3 (UX critique 2026-09-19): the LAST approval decision that still matters — the newest
+// approval-denied / approval-stale entry, and only if nothing moved the page since (a later
+// transition or re-request makes that decision history, not status). Pure; unit-tested.
+// Answers { kind: "denied" | "stale", at, byName, reason, reviewedVersion, to } or null.
+export function lastDecisionFrom(log) {
+  const entries = Array.isArray(log) ? [...log].sort((a, b) => (a?.ts || 0) - (b?.ts || 0)) : [];
+  const last = entries[entries.length - 1];
+  if (!last) return null;
+  if (last.kind !== "approval-denied" && last.kind !== "approval-stale") return null;
+  const ar = last.details?.approvalRecord || null;
+  if (last.kind === "approval-stale") {
+    return { kind: "stale", at: last.ts, byName: last.byName || null, reason: null, reviewedVersion: ar?.pinnedVersion ?? null, to: last.to || null };
+  }
+  const denial = (ar?.decisions || []).find((d) => d?.decision === "denied");
+  return {
+    kind: "denied", at: last.ts,
+    byName: denial?.name || last.byName || ar?.completedByName || null,
+    reason: denial?.reason || null,
+    reviewedVersion: denial?.versionAtDecision ?? ar?.pinnedVersion ?? null,
+    to: last.to || null,
+  };
+}
+
 export async function getWorkflowLog(pageId) {
   if (!pageId) return [];
   const out = [];
