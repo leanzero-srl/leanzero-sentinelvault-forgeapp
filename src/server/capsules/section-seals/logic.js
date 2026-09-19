@@ -13,23 +13,68 @@ import { asApp, route } from "@forge/api";
 const SECTION_PROP_KEY = "section-protection-";
 
 /**
- * Compute the top-level block range [start, end) that makes up a "section": the
- * heading at startIndex plus every following block until the next heading of the
- * same or higher level. Non-heading blocks seal just themselves.
+ * A top-level block that is one of Sentinel Vault's OWN macros (the inline panel, a sealed
+ * section, anything under `/static/sentinel-vault-…`). Matched by the key's module segment so it
+ * holds for every environment (dev/staging/prod keys differ only in app/env ids).
+ */
+export function isSentinelVaultExtension(node) {
+  if (!node || !/extension$/i.test(String(node.type || ""))) return false;
+  return /\/static\/sentinel-vault-/.test(String(node.attrs?.extensionKey || ""));
+}
+
+/**
+ * Compute the top-level block range [start, end) that makes up a "section": the heading at
+ * startIndex plus every following block until the next heading of the same or higher level —
+ * OR the first Sentinel Vault macro, whichever comes first. Non-heading blocks seal just themselves.
+ *
+ * SEC-1 (UX critique 2026-09-19): for the LAST heading "the next heading" is the end of the page,
+ * so the range swallowed everything below — including the app's own inline panel, which then
+ * vanished from the page and could not render inside the sealed body. The app's surfaces are
+ * never content to seal, so the range stops in front of them. Other apps' macros (a status, an
+ * expand, a table of contents) stay inside the range: to the author they ARE the section's content.
  */
 export function computeSectionRange(content, startIndex) {
+  return describeSectionRange(content, startIndex).range;
+}
+
+/**
+ * The range plus what ended it, for the picker: `{ range: { start, end }, blocks, stopsAt }` where
+ * `blocks` is the number of blocks after the heading and `stopsAt` is
+ * `{ kind: "heading", text }` | `{ kind: "sentinel-vault", what }` | `{ kind: "end" }` — `what` is
+ * "panel" | "sealed-section" | "macro" (any other Sentinel Vault macro).
+ */
+export function describeSectionRange(content, startIndex) {
   const start = content[startIndex];
   if (!start || start.type !== "heading") {
-    return { start: startIndex, end: startIndex + 1 };
+    return { range: { start: startIndex, end: startIndex + 1 }, blocks: 0, stopsAt: { kind: "end" } };
   }
   const level = start.attrs?.level || 1;
   let end = startIndex + 1;
+  let stopsAt = { kind: "end" };
   while (end < content.length) {
     const node = content[end];
-    if (node.type === "heading" && (node.attrs?.level || 1) <= level) break;
+    if (node.type === "heading" && (node.attrs?.level || 1) <= level) {
+      stopsAt = { kind: "heading", text: headingText(node) };
+      break;
+    }
+    if (isSentinelVaultExtension(node)) { stopsAt = { kind: "sentinel-vault", what: sentinelVaultMacroName(node) }; break; }
     end++;
   }
-  return { start: startIndex, end };
+  return { range: { start: startIndex, end }, blocks: end - startIndex - 1, stopsAt };
+}
+
+function sentinelVaultMacroName(node) {
+  const key = String(node?.attrs?.extensionKey || "");
+  if (/\/static\/sentinel-vault-panel$/.test(key)) return "panel";
+  if (/\/static\/sentinel-vault-sealed-section$/.test(key)) return "sealed-section";
+  return "macro";
+}
+
+function headingText(node) {
+  let t = "";
+  const walk = (n) => { if (!n) return; if (n.type === "text") t += n.text || ""; (n.content || []).forEach(walk); };
+  (node.content || []).forEach(walk);
+  return t.trim();
 }
 
 /**

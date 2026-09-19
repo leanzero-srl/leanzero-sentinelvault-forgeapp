@@ -286,7 +286,7 @@ const SectionMacro = () => {
       : viewState === "unsealed" ? "This section is not sealed yet. Open the Sentinel Vault panel and use Sealed Sections → Seal a section."
         : "Checking the seal…";
   const bodyText = rendererTimedOut
-    ? "The content of this section could not be displayed here. It is still on the page — reload to try again."
+    ? "Sentinel Vault could not display this section's text here — a display problem, not the seal. The text is still on the page; reload to try again."
     : framePending ? "Loading the section…" : fallbackText;
 
   return (

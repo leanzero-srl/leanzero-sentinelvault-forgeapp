@@ -9,6 +9,7 @@ import { ConfirmDialog } from "../../kit/Dialog";
 import GiveAccessDialog from "../../kit/GiveAccessDialog";
 import { useSignedInvoke } from "../../kit/SignedInvoke";
 import RovingList from "../../kit/RovingList";
+import { describeRange } from "../../kit/section-range.js";
 import { attachmentRow, sectionRow, rowActions, statusChip, copyText } from "../../kit/seal-row.js";
 import { PrimarySlot, ReasonBar, RequestInbox, GrantInbox, ErrorRow, CopiedNote } from "../../kit/SealRowParts";
 
@@ -1107,7 +1108,10 @@ const SealedSectionsGroup = ({ pageId, onChanged, viewer, siteUrl }) => {
                   onClick={() => sealHeading(h)}
                 >
                   <span className="sv-section-pick-level">H{h.level}</span>
-                  <span className="sv-section-pick-text">{h.text}</span>
+                  <span className="sv-section-pick-main">
+                    <span className="sv-section-pick-text">{h.text}</span>
+                    <span className="sv-section-pick-range" data-testid="sv-section-pick-range">{describeRange(h)}</span>
+                  </span>
                   <span className="sv-section-pick-cta">{sealingIndex === h.index ? "Sealing…" : "Seal"}</span>
                 </button>
               ))}
