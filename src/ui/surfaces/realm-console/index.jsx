@@ -492,6 +492,8 @@ const RealmPolicyDashboard = () => {
     adminGroups: [],
     // P1-4: "normal" | "quiet" — quiet posts no comments / @mentions in this space.
     notificationsMode: "normal",
+    // CLS-1: "inherit" | "off" — off hides classification on this space's pages (levels kept).
+    classification: "inherit",
   });
 
   const [reservedFiles, setReservedFiles] = useState([]);
@@ -657,6 +659,7 @@ const RealmPolicyDashboard = () => {
             macroInsertPosition: settings?.macroInsertPosition || "bottom",
             // P1-4: anything but "quiet" reads as "normal" (same coercion the server applies).
             notificationsMode: settings?.notificationsMode === "quiet" ? "quiet" : "normal",
+            classification: settings?.classification === "off" ? "off" : "inherit",
           });
           // it26 (LIVE-BROWSER FIX): the essential data (space key, role, policy) is loaded —
           // RENDER the console NOW. The seals list + the group/user dropdown pre-fills are
@@ -1911,6 +1914,52 @@ const RealmPolicyDashboard = () => {
             </div>
           </div>
 
+          {/* CLS-1: per-space classification override — two solid options, no native select. A space
+              can opt OUT; it cannot turn classification on while the site has it off (the same AND
+              rule as the auto-insert macro), so the card is locked with the site-admin reason then. */}
+          <div className="settings-card" data-testid="sv-classification-card">
+            <div className="settings-card-header">
+              <h3>Classification</h3>
+              <p className="settings-card-desc">
+                {siteValues.classificationEnabled
+                  ? "Pages in this space show a classification level in the byline chip, the ribbon and the page details, following the site. Off hides every level on this space's pages and refuses new ones; the stored levels are kept."
+                  : "Off site-wide by a site admin (Classification levels). Nothing about classification is shown on this space's pages until the site turns it on; the choice below applies then."}
+              </p>
+            </div>
+            <div className="settings-card-body">
+              <p className="settings-row-default" data-testid="sv-default-classification" style={{ margin: "0 0 12px" }}>
+                <span>Effective default:</span> {formatDefault("classification")}
+                <span className="settings-row-default-sep">·</span>
+                <span>Site:</span> <span data-testid="sv-site-default-classification" style={{ fontWeight: 400 }}>{siteValues.classificationEnabled ? "Classification levels are On site-wide" : "Classification levels are Off site-wide"}</span>
+              </p>
+              <div role="radiogroup" aria-label="Classification in this space" style={{ display: "flex", gap: "12px", flexWrap: "wrap" }}>
+                {[
+                  { value: "inherit", label: "As the site", description: "Pages here carry a level when the site has classification on." },
+                  { value: "off", label: "Off in this space", description: "No level is shown or set on this space's pages, whatever the site says. Stored levels are kept." },
+                ].map((option) => {
+                  const selected = (realmPrefs.classification || "inherit") === option.value;
+                  const locked = !siteValues.classificationEnabled;
+                  const accent = option.value === "off" ? "var(--sv-interactive-danger)" : "var(--sv-interactive-primary)";
+                  return (
+                    <button key={option.value} type="button" role="radio" aria-checked={selected} disabled={locked}
+                      data-testid={`sv-classification-${option.value}`}
+                      onClick={() => setRealmPrefs((prev) => ({ ...prev, classification: option.value === "off" ? "off" : "inherit" }))}
+                      style={{
+                        flex: "1 1 220px", textAlign: "left", cursor: locked ? "not-allowed" : "pointer", padding: "12px 14px", borderRadius: "8px",
+                        border: `2px solid ${selected ? accent : "var(--sv-border-primary)"}`,
+                        background: selected ? accent : "var(--sv-surface-raised)",
+                        color: selected ? "var(--sv-text-inverse)" : "var(--sv-text-primary)",
+                        fontFamily: "inherit", opacity: locked ? 0.5 : 1,
+                      }}>
+                      <div style={{ fontWeight: 700, fontSize: "14px", marginBottom: "4px" }}>{option.label}</div>
+                      <div style={{ fontSize: "12px", lineHeight: 1.4, opacity: selected ? 0.95 : 1 }}>{option.description}</div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+
           {/* Stewards */}
           <div className="settings-card">
             <div className="settings-card-header">
@@ -2361,6 +2410,7 @@ const RealmPolicyDashboard = () => {
             className="btn-primary"
             onClick={onSaveRealmPrefs}
             disabled={loading}
+            data-testid="sv-save-realm-prefs"
           >
             {loading ? "Updating..." : "Apply Configuration"}
           </button>

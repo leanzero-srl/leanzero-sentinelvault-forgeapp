@@ -22,6 +22,7 @@ export const GROUPS = Object.freeze([
   { id: "protection", name: "Protection", text: "What gets sealed and who may act on it." },
   { id: "expiry", name: "Expiry", text: "How long a seal lasts and what happens when it runs out." },
   { id: "alerts", name: "Alerts", text: "Who hears about it, and how." },
+  { id: "classification", name: "Classification", text: "Whether pages carry a classification level at all, and how the ribbon treats it." },
   { id: "advanced", name: "Advanced", text: "Panel insertion, content rules, AI review and the rarely-used switches." },
 ]);
 
@@ -97,14 +98,18 @@ export const CONTROLS = Object.freeze([
     label: "Page ribbon",
     text: "The Sentinel Vault ribbon at the top of pages with sealed content, showing what is sealed and until when.",
     default: POLICY_DEFAULTS.enableDocRibbons },
+  // CLS-1: the two ribbon controls are about the classification block, so they are HIDDEN (not
+  // merely locked) while classification is off — a surface that mentions a feature the site did
+  // not turn on is the exact defect the critique filed. `hiddenUnless` names the key that must
+  // read true for the row to exist.
   { key: "ribbonMode", scope: "global", group: "alerts", kind: "choice",
     label: "Ribbon",
     text: "What opens the ribbon: only exceptions, or the classification block on every page.",
-    default: DEFAULT_RIBBON_MODE, parent: "enableDocRibbons", parentValue: true },
+    default: DEFAULT_RIBBON_MODE, parent: "enableDocRibbons", parentValue: true, hiddenUnless: "classificationEnabled" },
   { key: "ribbonThresholdRank", scope: "global", group: "alerts", kind: "count", min: 1, max: 99,
     label: "Ribbon classification threshold",
     text: "In “Exceptions only”, a page classified at this rank or higher opens the ribbon on its own (default scheme: Public 1 · Internal 2 · Confidential 3 · Restricted 4).",
-    default: DEFAULT_RIBBON_THRESHOLD_RANK, parent: "enableDocRibbons", parentValue: true },
+    default: DEFAULT_RIBBON_THRESHOLD_RANK, parent: "enableDocRibbons", parentValue: true, hiddenUnless: "classificationEnabled" },
   { key: "notifyEditorOnRevert", scope: "global", group: "alerts", kind: "toggle",
     label: "Tell editors when their change is undone",
     text: "When Sentinel Vault reverts someone's edit to sealed content, that person gets a page comment saying so, with a link to the version that still holds their text. Works on its own — it does not need the comments switch below. Quiet spaces stay quiet.",
@@ -125,6 +130,12 @@ export const CONTROLS = Object.freeze([
     label: "Expiry and release notices",
     text: "The owner is mentioned when a seal expires, at each overdue reminder, and when the attachment is released.",
     default: POLICY_DEFAULTS.enableAutoUnsealDispatchEmail, parent: "enableEmailDispatches", parentValue: true },
+
+  // ── Classification (CLS-1, owner decision 2026-09-19: OFF by default) ───────────────────
+  { key: "classificationEnabled", scope: "global", group: "classification", kind: "toggle", optIn: true,
+    label: "Classification levels",
+    text: "Pages carry a classification level (Public, Internal, Confidential, Restricted…) shown in the byline chip, the ribbon and the page details. Off: nothing is shown and nothing is enforced; stored levels and defaults are kept for when it is turned on again. Confluence's own classification, where the site has it, stays as Confluence shows it.",
+    default: POLICY_DEFAULTS.classificationEnabled },
 
   // ── Advanced ──────────────────────────────────────────────────────────────────────────────
   { key: "globalAutoInsertMacro", scope: "global", group: "advanced", kind: "toggle", optIn: true,
@@ -153,7 +164,18 @@ export const CONTROLS = Object.freeze([
     label: "Notifications",
     text: "Quiet posts no comments and mentions nobody in this space; pop-ups, the ribbon and the activity trail still work.",
     default: SPACE_POLICY_DEFAULTS.notificationsMode, siteKey: "enableEmailDispatches" },
+  { key: "classification", scope: "space", group: "classification", kind: "choice",
+    label: "Classification in this space",
+    text: "Off hides every classification level on this space's pages and refuses new ones; the stored levels are kept. A space cannot turn classification on while the site has it off.",
+    default: SPACE_POLICY_DEFAULTS.classification, parent: "classificationEnabled", parentValue: true, siteKey: "classificationEnabled" },
 ]);
+
+/** CLS-1: does the row exist at all, given the effective values? (`hiddenUnless` names a key that must read true.) */
+export function controlVisible(key, values) {
+  const c = control(key);
+  if (!c || !c.hiddenUnless) return true;
+  return values?.[c.hiddenUnless] === true;
+}
 
 const BY_KEY = new Map(CONTROLS.map((c) => [c.key, c]));
 export const control = (key) => BY_KEY.get(key) || null;
@@ -187,6 +209,7 @@ export function readEffective(key, stored) {
       if (key === "ribbonMode") return stored === "always" ? "always" : "exceptions";
       if (key === "macroInsertPosition") return stored === "top" ? "top" : "bottom";
       if (key === "notificationsMode") return stored === "quiet" ? "quiet" : "normal";
+      if (key === "classification") return stored === "off" ? "off" : "inherit";
       return stored ?? c.default;
     default:
       return stored ?? c.default;
@@ -223,6 +246,7 @@ export function formatValue(key, value) {
       if (key === "ribbonMode") return value === "always" ? "Always show classification" : "Exceptions only";
       if (key === "macroInsertPosition") return value === "top" ? "Top of the page" : "Bottom of the page";
       if (key === "notificationsMode") return value === "quiet" ? "Quiet" : "Normal";
+      if (key === "classification") return value === "off" ? "Off in this space" : "As the site";
       return String(value);
     default: return String(value);
   }
@@ -317,7 +341,7 @@ export function flagsToAlertProfile(values) {
  * is the chosen seal duration in hours (a preset or a custom number); anything not a positive
  * finite number is refused with a reason rather than silently defaulted.
  */
-export function buildSetupPayload({ hours, profile, completedAt }) {
+export function buildSetupPayload({ hours, profile, classification, completedAt }) {
   const h = Number(hours);
   if (!Number.isFinite(h) || h < 1 || !withinHoldBounds(h * 3600)) {
     return { ok: false, reason: "Seal duration must be at least 1 hour." };
@@ -327,6 +351,8 @@ export function buildSetupPayload({ hours, profile, completedAt }) {
     data: {
       defaultLockDuration: Math.floor(h) * 3600,
       ...alertProfileToFlags(profile),
+      // CLS-1: setup question 3 is the switch itself; anything but an explicit yes stays OFF.
+      classificationEnabled: classification === true,
       setupCompletedAt: completedAt || new Date().toISOString(),
     },
   };
@@ -377,6 +403,9 @@ export function validatePolicyWrite(scope, data) {
     }
     if ("autoInsertMacro" in data && data.autoInsertMacro != null && typeof data.autoInsertMacro !== "boolean") {
       return { ok: false, reason: "Auto-Insert Macro must be true or false." };
+    }
+    if ("classification" in data && data.classification != null && !["inherit", "off"].includes(data.classification)) {
+      return { ok: false, reason: "Classification in this space must be inherit or off." };
     }
   }
   return { ok: true };

@@ -51,4 +51,29 @@ eq("stamp of nothing is empty", bylineStamp(null), "");
 eq("static: seeded colour maps to its png", bylineIcon({ color: "#DC2626", sealed: true }, "static"), "icons/restricted-lock.png");
 eq("static: custom colour maps to neutral", bylineIcon({ color: "#7C3AED", sealed: false }, "static"), "icons/neutral-dot.png");
 
+// ── CLS-1: classification off → the chip never mentions a level, even a stored one ──────────
+eq("off, no seals → the app's name", composeByline({ level: restricted, source: "page", sealCount: 0, classificationEnabled: false }).title, "Sentinel Vault");
+eq("off, one seal → the seal count is the title", composeByline({ level: restricted, source: "page", sealCount: 1, classificationEnabled: false }).title, "1 seal on this page");
+eq("off, seals → plural", composeByline({ level: null, source: "none", sealCount: 3, classificationEnabled: false }).title, "3 seals on this page");
+eq("off tooltip has no classification words", composeByline({ level: restricted, source: "page", sealCount: 2, classificationEnabled: false }).tooltip, "2 seals on this page · Open Sentinel Vault");
+ok("off icon is neutral even with a level stored", decode(composeByline({ level: restricted, source: "page", sealCount: 0, classificationEnabled: false }).icon).includes(`fill="${NEUTRAL_COLOR}"`));
+ok("off + sealed → the lock", decode(composeByline({ level: null, source: "none", sealCount: 1, classificationEnabled: false }).icon).includes("<rect"));
+eq("undefined switch keeps the pre-CLS-1 composition (callers that pass nothing)", composeByline({ level: restricted, source: "page", sealCount: 0 }).title, "Restricted · set on this page");
+eq("explicit true is the same as undefined", composeByline({ level: null, source: "none", sealCount: 0, classificationEnabled: true }).title, "Unclassified");
+ok("off and on differ in stamp (the lazy refresh rewrites)", bylineStamp(composeByline({ level: null, source: "none", sealCount: 0, classificationEnabled: false })) !== bylineStamp(composeByline({ level: null, source: "none", sealCount: 0 })));
+
+// ── WF-6: a page with a workflow carries its status (state + one qualifier) ─────────────────
+const wfApproved = { kind: "enforced", text: "Approved v3", qualifier: "v3", stateName: "Approved", tone: "success", color: "#15803D" };
+const wfDraft = { kind: "state", text: "Draft", qualifier: null, stateName: "Draft", tone: "neutral", color: "#475569" };
+eq("workflow + classification on + level → Level · Status", composeByline({ level: restricted, source: "page", sealCount: 0, classificationEnabled: true, workflow: wfApproved }).title, "Restricted · Approved v3");
+eq("workflow + classification on + no level → Unclassified · Status", composeByline({ level: null, source: "none", sealCount: 0, classificationEnabled: true, workflow: wfDraft }).title, "Unclassified · Draft");
+eq("workflow + classification OFF → the status alone, even with a stored level", composeByline({ level: restricted, source: "page", sealCount: 2, classificationEnabled: false, workflow: wfApproved }).title, "Approved v3");
+eq("workflow + switch undefined behaves as on", composeByline({ level: restricted, source: "space", sealCount: 0, workflow: wfDraft }).title, "Restricted · Draft");
+ok("the disc takes the status tone, not the level colour", decode(composeByline({ level: restricted, source: "page", sealCount: 0, workflow: wfApproved }).icon).includes('fill="#15803D"'));
+ok("…and keeps the lock when sealed", decode(composeByline({ level: null, source: "none", sealCount: 1, workflow: wfDraft }).icon).includes("<rect"));
+eq("the classification source moves to the tooltip", composeByline({ level: restricted, source: "page", sealCount: 1, classificationEnabled: true, workflow: wfApproved }).tooltip, "Restricted (set on this page) · Workflow: Approved — v3 · 1 seal on this page · Open Sentinel Vault");
+eq("off tooltip has no level", composeByline({ level: restricted, source: "page", sealCount: 0, classificationEnabled: false, workflow: wfDraft }).tooltip, "Workflow: Draft · No seals on this page · Open Sentinel Vault");
+eq("a workflow without text is ignored", composeByline({ level: null, source: "none", sealCount: 0, workflow: { text: "" } }).title, "Unclassified");
+eq("null workflow is the pre-WF-6 chip", composeByline({ level: null, source: "none", sealCount: 0, classificationEnabled: false, workflow: null }).title, "Sentinel Vault");
+
 report("byline");

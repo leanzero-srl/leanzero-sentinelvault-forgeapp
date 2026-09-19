@@ -32,11 +32,13 @@ export async function exportSpaceConfig(spaceKey, accountId) {
     version: BUNDLE_VERSION,
     spaceKey,
     exportedAt: new Date().toISOString(),
-    policy: strip(policy, ["adminUsers", "adminGroups"]),
+    policy: strip(policy, ["adminUsers", "adminGroups", "classification"]),
     validation: validation || null,
     workflows,
     workflowSettings: ws?.settings ?? null,
     classificationDefault,
+    // CLS-1: the space opt-out rides its own bundle key (the same store-policy write, planned separately).
+    classification: policy?.classification === "off" ? "off" : "inherit",
     spaceAdmins: { users, groups: policy?.adminGroups || [] },
   };
 }
@@ -48,8 +50,9 @@ export async function exportSiteConfig(accountId) {
   return {
     version: BUNDLE_VERSION,
     exportedAt: new Date().toISOString(),
-    policy: strip(policy, ["adminUsers", "adminGroups"]),
+    policy: strip(policy, ["adminUsers", "adminGroups", "classificationEnabled"]),
     validation: validation || null,
-    classification: { provider: provider?.name || null, levels: provider?.levels || [] },
+    // CLS-1: `enabled` is the site switch (a policy key, exported here so the bundle round-trips).
+    classification: { enabled: provider?.enabled === true, provider: provider?.name || null, levels: provider?.levels || [] },
   };
 }

@@ -28,7 +28,7 @@ const ID_RE = /^[A-Za-z0-9:._-]{1,120}$/;
 
 const TOP_KEYS = ["version", "site", "spaces", "content"];
 const SITE_KEYS = ["policy", "validation", "classification", "notifications", "receiptPageId"];
-const SPACE_KEYS = ["policy", "validation", "workflows", "workflowSettings", "classificationDefault", "spaceAdmins"];
+const SPACE_KEYS = ["policy", "validation", "workflows", "workflowSettings", "classificationDefault", "classification", "spaceAdmins"];
 const SPACE_ADMIN_KEYS = ["users", "groups"];
 
 /** Content op → allowed fields (besides `op`) and the ones that are required. */
@@ -94,7 +94,8 @@ export function validateBundle(bundle, { rawBytes = null } = {}) {
       if (s.classification !== undefined) {
         if (!isObj(s.classification)) err("site.classification", "must be an object");
         else {
-          for (const k of unknownKeys(s.classification, ["levels", "assetsLink"])) err(`site.classification.${k}`, "unknown key");
+          for (const k of unknownKeys(s.classification, ["enabled", "levels", "assetsLink"])) err(`site.classification.${k}`, "unknown key");
+          if (s.classification.enabled !== undefined && typeof s.classification.enabled !== "boolean") err("site.classification.enabled", "must be true or false");
           if (s.classification.assetsLink !== undefined && s.classification.assetsLink !== null) {
             const al = s.classification.assetsLink;
             if (!isObj(al)) err("site.classification.assetsLink", "must be an object or null");
@@ -139,6 +140,7 @@ export function validateBundle(bundle, { rawBytes = null } = {}) {
         }
         if (sp.workflowSettings !== undefined && !isObj(sp.workflowSettings)) err(`${p}.workflowSettings`, "must be an object");
         if (sp.classificationDefault !== undefined && sp.classificationDefault !== null && !ID_RE.test(String(sp.classificationDefault))) err(`${p}.classificationDefault`, "must be a level id or null");
+        if (sp.classification !== undefined && !["inherit", "off"].includes(sp.classification)) err(`${p}.classification`, 'must be "inherit" or "off"');
         if (sp.spaceAdmins !== undefined) {
           if (!isObj(sp.spaceAdmins)) err(`${p}.spaceAdmins`, "must be an object");
           else {
@@ -186,6 +188,9 @@ export function planBundle(bundle) {
   const site = isObj(bundle?.site) ? bundle.site : {};
   if (isObj(site.policy)) step("site.policy", "store-policy", { scope: "global", data: site.policy });
   if (isObj(site.validation)) step("site.validation", "store-validation-config", { scope: "global", data: site.validation }, { needs: "validationMerge" });
+  // CLS-1: the site switch is a policy key; it is written BEFORE the levels so a bundle that turns
+  // classification on and sets levels in one go leaves the tenant exactly as the bundle reads.
+  if (isObj(site.classification) && typeof site.classification.enabled === "boolean") step("site.classification.enabled", "store-policy", { scope: "global", data: { classificationEnabled: site.classification.enabled } });
   if (isObj(site.classification) && Array.isArray(site.classification.levels)) step("site.classification.levels", "classification-manage-levels", { levels: site.classification.levels });
   // The Assets LINK (schema/type/mapping) can be set over the API; the import itself needs a user
   // session (Assets refuses the app's identity) and is done from the steward console.
@@ -209,6 +214,8 @@ export function planBundle(bundle) {
     }
     if (isObj(sp.workflowSettings)) step(`${p}.workflowSettings`, "set-space-workflow-settings", { spaceKey: key, settings: sp.workflowSettings });
     if (sp.classificationDefault !== undefined) step(`${p}.classificationDefault`, "classification-set-space-default", { spaceKey: key, levelId: sp.classificationDefault }, { needs: "spaceId" });
+    // CLS-1: the per-space opt-out is a space policy key ("inherit" | "off").
+    if (sp.classification !== undefined) step(`${p}.classification`, "store-policy", { scope: "space", key, data: { classification: sp.classification } });
     if (isObj(sp.spaceAdmins)) {
       // The steward roster lives in the space policy row (adminUsers / adminGroups) and the UI
       // writes it through store-policy — the same resolver, the same A1 gate.

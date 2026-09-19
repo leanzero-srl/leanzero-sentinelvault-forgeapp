@@ -1120,6 +1120,8 @@ const DocumentRibbon = () => {
   const decision = decideRibbon(ribbonInput({ summary, workflow, alerts, validationState }));
   const level = decision.classification?.level || null;
   const source = decision.classification?.source || "none";
+  // CLS-1: classification off → the left block is the app's name, never a level or "Unclassified".
+  const classificationOff = decision.classification?.enabled === false;
   const hasSeal = (summary?.sealedAttachments || 0) > 0 || (summary?.sectionSeals || 0) > 0 || (summary?.trashedSeals || 0) > 0;
   const urgent = decision.urgent;
   const lockedSeal = summary?.lockedFor || null;
@@ -1175,12 +1177,19 @@ const DocumentRibbon = () => {
   return (
     <div>
       {/* Main ribbon bar — ONE row, 44px inside the 48px cap (mockup decision 2) */}
-      <div className="ribbon-bar" data-testid="ribbon-bar" data-state={urgent?.kind || "none"} data-mode={decision.mode} data-level={level?.id || "none"} data-source={source}>
-        <div className={`rb-class${level ? "" : " rb-class--none"}`} style={levelColor ? { background: levelColor } : undefined} data-testid="ribbon-class" title={level ? `${level.name}${sourceText ? ` · ${sourceText}` : ""}` : "This page has no classification"}>
-          <span className="rb-glyph" data-glyph={hasSeal ? "lock" : "dot"}>{glyph}</span>
-          <span className="rb-lvname" data-testid="ribbon-level">{level ? level.name : "Unclassified"}</span>
-          {level && sourceText && <span className="rb-lvsrc" data-testid="ribbon-source">· {sourceText}</span>}
-        </div>
+      <div className="ribbon-bar" data-testid="ribbon-bar" data-state={urgent?.kind || "none"} data-mode={decision.mode} data-level={classificationOff ? "off" : level?.id || "none"} data-source={source}>
+        {classificationOff ? (
+          <div className="rb-class rb-class--brand" data-testid="ribbon-brand" title="Sentinel Vault">
+            <span className="rb-glyph" data-glyph={hasSeal ? "lock" : "dot"}>{glyph}</span>
+            <span className="rb-lvname">Sentinel Vault</span>
+          </div>
+        ) : (
+          <div className={`rb-class${level ? "" : " rb-class--none"}`} style={levelColor ? { background: levelColor } : undefined} data-testid="ribbon-class" title={level ? `${level.name}${sourceText ? ` · ${sourceText}` : ""}` : "This page has no classification"}>
+            <span className="rb-glyph" data-glyph={hasSeal ? "lock" : "dot"}>{glyph}</span>
+            <span className="rb-lvname" data-testid="ribbon-level">{level ? level.name : "Unclassified"}</span>
+            {level && sourceText && <span className="rb-lvsrc" data-testid="ribbon-source">· {sourceText}</span>}
+          </div>
+        )}
 
         <div className={`rb-body${pill || sentence || workflow || validationState ? "" : " rb-body--empty"}`} data-testid="ribbon-body">
           {loading && <span className="ribbon-loading-bar" />}

@@ -1,7 +1,7 @@
 import {
   DEFAULT_LEVELS, PROPERTY_KEY, decideEffective, validateLevels, nativeUnavailable,
   createNativeProvider, createAppProvider, selectProvider, mirrorProperty, isContentId,
-  spaceKvsKey, pageKvsKey, LEVELS_KVS_KEY,
+  spaceKvsKey, pageKvsKey, LEVELS_KVS_KEY, classificationActive, classificationOffReason, CLASSIFICATION_OFF_REASON,
 } from "../src/server/capsules/classification/logic.js";
 import { eq, ok, report } from "./_assert.mjs";
 
@@ -266,6 +266,19 @@ eq("400 is NOT unavailable (a real error, not a missing feature)", nativeUnavail
   const sel = await selectProvider({ native: live, app });
   eq("native with levels → native", sel.provider.name, "native");
   eq("...carrying the native levels", sel.levels.map((l) => l.id), ["n0"]);
+}
+
+// ── CLS-1: the switch (owner 2026-09-19: OFF by default) ────────────────────────────────────
+{
+  eq("never-saved site → off (site)", classificationActive({ site: null, space: null }), { active: false, reason: "site" });
+  eq("site record without the key → off", classificationActive({ site: { ribbonMode: "always" } }), { active: false, reason: "site" });
+  eq("only an explicit true turns it on", [classificationActive({ site: { classificationEnabled: "true" } }).active, classificationActive({ site: { classificationEnabled: 1 } }).active, classificationActive({ site: { classificationEnabled: true } }).active], [false, false, true]);
+  eq("site on, space absent → on", classificationActive({ site: { classificationEnabled: true }, space: null }), { active: true, reason: null });
+  eq("site on, space inherit → on", classificationActive({ site: { classificationEnabled: true }, space: { classification: "inherit" } }).active, true);
+  eq("site on, space off → off (space)", classificationActive({ site: { classificationEnabled: true }, space: { classification: "off" } }), { active: false, reason: "space" });
+  eq("site off, space anything → off (site): a space cannot opt IN", classificationActive({ site: { classificationEnabled: false }, space: { classification: "inherit" } }), { active: false, reason: "site" });
+  eq("the refusal sentence names the switch", [classificationOffReason({ active: false, reason: "site" }), classificationOffReason({ active: false, reason: "space" }), classificationOffReason(null)], [CLASSIFICATION_OFF_REASON.site, CLASSIFICATION_OFF_REASON.space, CLASSIFICATION_OFF_REASON.site]);
+  eq("the sentences", CLASSIFICATION_OFF_REASON, { site: "Classification is off on this site", space: "Classification is off in this space" });
 }
 
 report("classification");

@@ -98,6 +98,8 @@ export function redactConfigForMirror(config, scope = "space") {
       priority: w?.priority ?? null,
     }));
     out.classificationDefault = config.classificationDefault ?? null;
+    // CLS-1: the space's opt-out ("inherit" | "off") is public — every viewer sees its effect.
+    out.classification = config.classification ?? null;
   }
   return out;
 }

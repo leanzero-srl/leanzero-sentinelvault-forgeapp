@@ -31,6 +31,31 @@
  *   `classification-page-{pageId}` mirrored to a content property of the same key.
  */
 
+// ── CLS-1 (owner decision 2026-09-19): classification is OFF until a site admin turns it on ───
+// ONE rule for every surface — the byline chip, the ribbon's left block, the details modal, the
+// classification-* resolvers and the config API all ask this and nothing else. The site switch is
+// `classificationEnabled` on admin-settings-global (opt-in: only `=== true` is on, so a tenant
+// that never saved the key is OFF); a space may opt OUT with `classification: "off"` on its own
+// record but can never turn the feature on while the site has it off (the auto-insert AND rule).
+// Stored levels, space defaults and page overrides are never touched by the switch: turning it
+// back on shows exactly what was there.
+export const CLASSIFICATION_SPACE_MODES = Object.freeze(["inherit", "off"]);
+export const CLASSIFICATION_OFF_REASON = Object.freeze({
+  site: "Classification is off on this site",
+  space: "Classification is off in this space",
+});
+/**
+ * PURE. @param {{ site?: object|null, space?: object|null }} records  the two stored policy records
+ * @returns {{ active: boolean, reason: null | "site" | "space" }}
+ */
+export function classificationActive({ site, space } = {}) {
+  if (site?.classificationEnabled !== true) return { active: false, reason: "site" };
+  if (space?.classification === "off") return { active: false, reason: "space" };
+  return { active: true, reason: null };
+}
+/** PURE. The sentence a refused write carries for an inactive state. */
+export const classificationOffReason = (state) => CLASSIFICATION_OFF_REASON[state?.reason] || CLASSIFICATION_OFF_REASON.site;
+
 export const LEVELS_KVS_KEY = "classification-levels";
 export const PROPERTY_KEY = "sentinel-classification";
 export const spaceKvsKey = (spaceId) => `classification-space-${spaceId}`;

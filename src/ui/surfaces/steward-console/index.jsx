@@ -13,7 +13,7 @@ import { BUILD_INFO } from "../../../build-info.js";
 // descriptions, engine defaults and the dependency table all live in settings-schema.js, which
 // reads its defaults from the same baseline.js the engine reads. No second copy here.
 import {
-  GROUPS, controlsFor, control, readAllEffective, formatDefault, dependencyState,
+  GROUPS, controlsFor, control, readAllEffective, formatDefault, dependencyState, controlVisible,
   SEAL_DURATION_PRESETS, ALERT_PROFILES, buildSetupPayload, needsSetup,
 } from "../../../server/capsules/policies/settings-schema.js";
 
@@ -75,6 +75,8 @@ export const ControlRow = ({ desc, values, siteValues, onChange, children, siteD
   const dep = dependencyState(desc.key, values, siteValues);
   const depth = depthOf(desc.key);
   const val = values[desc.key];
+  // CLS-1: a control about a feature the site has off does not exist on screen (`hiddenUnless`).
+  if (!controlVisible(desc.key, desc.scope === "space" ? siteValues || values : values)) return null;
   const set = (v) => onChange(desc.key, v);
   const disabled = !dep.enabled;
   let input = children;
@@ -166,6 +168,7 @@ const SetupWizard = ({ onFinished, onSkipped, initialHours }) => {
   const [preset, setPreset] = useState("1w");
   const [customHours, setCustomHours] = useState(initialHours || 48);
   const [profile, setProfile] = useState("standard");
+  const [classification, setClassification] = useState(false); // CLS-1: off unless the admin says yes
   const [provider, setProvider] = useState(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
@@ -191,7 +194,7 @@ const SetupWizard = ({ onFinished, onSkipped, initialHours }) => {
   };
 
   const finish = async () => {
-    const payload = buildSetupPayload({ hours, profile });
+    const payload = buildSetupPayload({ hours, profile, classification });
     if (!payload.ok) { setError(payload.reason); return; }
     if (await write(payload.data)) onFinished(payload.data);
   };
@@ -247,16 +250,25 @@ const SetupWizard = ({ onFinished, onSkipped, initialHours }) => {
 
       {step === 3 && (
         <div className="sv-setup-panel" data-testid="sv-setup-panel-3">
-          <h2 className="sv-setup-title">Where do classification levels come from?</h2>
-          <p className="sv-setup-text">Sentinel Vault labels pages with a classification level and can open the ribbon for the sensitive ones. It detects the source on its own.</p>
-          <div className="sv-provider" data-testid="sv-setup-provider" data-provider={provider || "detecting"}>
-            <span className={`sv-provider-badge ${provider || "detecting"}`}>{provider === "native" ? "Native" : provider === "app" ? "App" : "Detecting…"}</span>
-            <p className="sv-provider-text">{provider ? PROVIDER_TEXT[provider] : "Checking whether this site has Confluence classification levels…"}</p>
-          </div>
-          <dl className="sv-provider-legend">
-            <dt>Native</dt><dd>The site has defined Confluence classification levels. They apply everywhere and Sentinel Vault follows them.</dd>
-            <dt>App</dt><dd>The site has none, so the app's own four levels are used and stored on each page as a content property.</dd>
-          </dl>
+          <h2 className="sv-setup-title">Should pages carry a classification level?</h2>
+          <p className="sv-setup-text">Off by default. On: every page shows a level (Public, Internal, Confidential, Restricted…) in its byline chip, the ribbon and the page details, and a space can set a default level. Off: nothing about classification is shown anywhere; it can be turned on later in Settings → Classification.</p>
+          <ChoiceBlocks value={classification ? "on" : "off"} onChange={(v) => setClassification(v === "on")} ariaLabel="Classification levels" testPrefix="sv-setup-classification" minWidth={0}
+            options={[
+              { id: "off", name: "Off", text: "Sentinel Vault seals attachments and sections and runs the document workflow; pages carry no classification level." },
+              { id: "on", name: "On", text: "Pages carry a classification level, shown on the page and used by the ribbon threshold." },
+            ]} />
+          {classification && (
+            <>
+              <div className="sv-provider" data-testid="sv-setup-provider" data-provider={provider || "detecting"}>
+                <span className={`sv-provider-badge ${provider || "detecting"}`}>{provider === "native" ? "Native" : provider === "app" ? "App" : "Detecting…"}</span>
+                <p className="sv-provider-text">{provider ? PROVIDER_TEXT[provider] : "Checking whether this site has Confluence classification levels…"}</p>
+              </div>
+              <dl className="sv-provider-legend">
+                <dt>Native</dt><dd>The site has defined Confluence classification levels. They apply everywhere and Sentinel Vault follows them.</dd>
+                <dt>App</dt><dd>The site has none, so the app's own four levels are used and stored on each page as a content property.</dd>
+              </dl>
+            </>
+          )}
         </div>
       )}
 
@@ -848,7 +860,7 @@ const GlobalPolicyEditor = () => {
                         <div className="settings-row" data-testid="sv-row-rerun-setup">
                           <div className="settings-row-info">
                             <p className="settings-row-label">First-run setup</p>
-                            <p className="settings-row-description">Answer the three setup questions again: seal duration, alert profile, classification source. Nothing changes until you press Finish.</p>
+                            <p className="settings-row-description">Answer the three setup questions again: seal duration, alert profile, classification on or off. Nothing changes until you press Finish.</p>
                           </div>
                           <div className="settings-row-control">
                             <button type="button" className="sv-link" onClick={() => setRerunSetup(true)} data-testid="sv-rerun-setup">Run setup again</button>
@@ -870,7 +882,7 @@ const GlobalPolicyEditor = () => {
               </div>
             )}
             {activeTab === "validations" && <ValidationsEditor scope="global" />}
-            {activeTab === "classification" && <ClassificationTab />}
+            {activeTab === "classification" && <ClassificationTab onOpenSettings={() => setActiveTab("settings")} />}
             {activeTab === "api" && <ApiAccessTab />}
           </div>
 
