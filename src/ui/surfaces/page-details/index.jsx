@@ -217,6 +217,7 @@ const SealRow = ({ row, viewer, pageId, siteUrl, onChanged }) => {
       : "")
     : primary.kind === "editnow" ? " · you can edit until then"
     : primary.kind === "waiting" ? " · your request was sent"
+    : primary.kind === "declined" && primary.reason ? ` · ${row.ownerName || "the owner"} said: “${primary.reason}”` // SEC-8: the word is on the row, not only in a tooltip
     : "";
   const trashNote = row.isTrashed ? " — restore it from the Attachments view" : "";
   const warning = expiryWarning(row); // SEC-7: the owner sees the lapse coming (amber, last three days)

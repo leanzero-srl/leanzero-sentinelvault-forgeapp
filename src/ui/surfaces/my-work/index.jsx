@@ -233,6 +233,52 @@ const AccessRequests = ({ onChange }) => {
   );
 };
 
+// SEC-8 (UX critique 2026-09-19): the requester's own requests — pending, declined (with the
+// owner's word and the time they may ask again), granted (with the grant's expiry). The requester
+// used to be the one person with nowhere to look. Same vocabulary as the rows (status-language).
+const pickMine = (r) => r?.requests;
+const MyRequests = () => {
+  const { items, error: loadError, reload } = useList("list-my-requests", pickMine);
+  const n = items ? items.length : 0;
+  const pill = (r) => {
+    if (r.status === "granted") return <span className="mw-pill mw-pill-held" data-testid="mw-my-request-state">{WORDS.editNow}</span>;
+    if (r.status === "denied") return <span className="mw-pill mw-pill-overdue" data-testid="mw-my-request-state">{WORDS.declined}</span>;
+    return <span className="mw-pill mw-pill-stale" data-testid="mw-my-request-state">Waiting</span>;
+  };
+  const line = (r) => {
+    if (r.status === "granted") return r.expiresAt ? `You can edit until ${when(r.expiresAt)}` : "You can edit it now";
+    if (r.status === "denied") return `Declined${r.deniedReason ? `: “${r.deniedReason}”` : ""}${r.retryAt ? ` · ask again ${when(r.retryAt)}` : ""}`;
+    return `Waiting for the owner${r.requestedAt ? ` · asked ${when(r.requestedAt)}` : ""}`;
+  };
+  return (
+    <section className="mw-card" data-testid="mw-my-requests">
+      <div className="mw-card-head">
+        <span className="mw-card-title">Your edit requests</span>
+        <span className={`mw-count ${n ? "mw-count-requests" : "mw-count-zero"}`}>{n}</span>
+      </div>
+      {loadError && <LoadError what="your edit requests" onRetry={reload} testId="mw-my-requests-error" />}
+      {!loadError && items === null && <p className="mw-loading">Checking your requests…</p>}
+      {!loadError && items && items.length === 0 && <p className="mw-none" data-testid="mw-my-requests-empty">You have no open edit requests on anyone’s sealed content.</p>}
+      {items && items.length > 0 && (
+        <ul className="mw-list">
+          {items.map((r) => (
+            <li key={`${r.kind}-${r.id}`} className="mw-row" data-testid="mw-my-request-row" data-status={r.status}>
+              <div className="mw-row-info">
+                <span className="mw-row-main">
+                  {r.kind === "section" ? "Section " : ""}<strong>{r.name || (r.kind === "section" ? "a sealed section" : "a sealed file")}</strong>
+                  {r.pageId ? <> on <a href={viewPage(r.pageId)} onClick={go(viewPage(r.pageId))}>this page</a></> : null}
+                </span>
+                <span className="mw-row-meta" data-testid="mw-my-request-line">{line(r)}{r.spaceKey ? ` · ${r.spaceKey}` : ""}</span>
+              </div>
+              <div className="mw-row-actions">{pill(r)}</div>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+};
+
 // The files the current user holds sealed, across every space, newest first, paged by the
 // resolver's keyset cursor.
 const MySeals = () => {
@@ -420,6 +466,7 @@ const MyWork = () => {
         <EditRequests onChange={recount} />
         <SectionRequests onChange={recount} />
         <AccessRequests onChange={recount} />
+        <MyRequests />
         <MySeals />
         <SignatureCard />
       </div>
