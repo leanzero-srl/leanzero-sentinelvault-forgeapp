@@ -39,8 +39,12 @@ import { asApp, route } from "@forge/api";
 import { kvs, WhereConditions } from "@forge/kvs";
 import { canEditPage, canReadPage, mustVerify } from "../../shared/content-access.js";
 import { authorizeSteward } from "../../shared/steward-checks.js";
-import { getClassificationProvider } from "../classification/provider.js";
+import { getClassificationProvider, resolveClassificationActive } from "../classification/provider.js";
 import { getActiveEditGrant, getActiveSectionEditGrant, resolveEditCooldownMs } from "../editreq/logic.js";
+// WF-6: the Workflow block reads through the same helper the byline uses.
+import { describeWorkflowForPage, extractApprovalConfig } from "../workflow/approvals.js";
+import { getSpaceWorkflowSettings } from "../workflow/logic.js";
+import { readStatus, readConfirmationRequired } from "../workflow/read-acks.js";
 import { retryAtFor } from "../../shared/edit-cooldown.js";
 import { getPageActivity } from "../activity/actions.js";
 import { resolveSealHoldPeriod } from "../sealing/logic.js";
@@ -113,19 +117,24 @@ export const pageDetailsSummary = async (req) => {
   ]);
 
   // ── classification ──────────────────────────────────────────────────────────────────────────
-  let classification = { effective: { level: null, source: "none" }, pageLevelId: null, spaceDefault: null, levels: [], canChange: canEdit };
-  try {
-    const { provider, levels } = await getClassificationProvider();
-    const [effective, pageLevelId, spaceDefaultId] = await Promise.all([
-      provider.effectiveLevel(pageId),
-      provider.getPageLevel(pageId),
-      meta.spaceId ? provider.getSpaceDefault(meta.spaceId).catch(() => null) : Promise.resolve(null),
-    ]);
-    const spaceDefault = spaceDefaultId != null ? (levels.find((l) => String(l.id) === String(spaceDefaultId)) || null) : null;
-    classification = { effective, pageLevelId: pageLevelId ?? null, spaceDefault, levels, canChange: canEdit, provider: provider.name };
-  } catch (e) {
-    console.error("[PAGE-DETAILS] classification failed:", e);
-    classification.error = "Could not load the classification";
+  // CLS-1: `enabled:false` (+ which switch: "site" | "space") makes the modal omit the section;
+  // nothing about levels is read or answered while off, and the stored override is untouched.
+  const sw = await resolveClassificationActive(spaceKey);
+  let classification = { enabled: sw.active, reason: sw.reason, effective: { level: null, source: "none" }, pageLevelId: null, spaceDefault: null, levels: [], canChange: canEdit };
+  if (sw.active) {
+    try {
+      const { provider, levels } = await getClassificationProvider();
+      const [effective, pageLevelId, spaceDefaultId] = await Promise.all([
+        provider.effectiveLevel(pageId),
+        provider.getPageLevel(pageId),
+        meta.spaceId ? provider.getSpaceDefault(meta.spaceId).catch(() => null) : Promise.resolve(null),
+      ]);
+      const spaceDefault = spaceDefaultId != null ? (levels.find((l) => String(l.id) === String(spaceDefaultId)) || null) : null;
+      classification = { enabled: true, reason: null, effective, pageLevelId: pageLevelId ?? null, spaceDefault, levels, canChange: canEdit, provider: provider.name };
+    } catch (e) {
+      console.error("[PAGE-DETAILS] classification failed:", e);
+      classification.error = "Could not load the classification";
+    }
   }
 
   // ── seals ───────────────────────────────────────────────────────────────────────────────────
@@ -178,6 +187,54 @@ export const pageDetailsSummary = async (req) => {
   try { sealDefaults = { holdSeconds: await resolveSealHoldPeriod(spaceKey, undefined) }; } catch (e) { console.warn("[PAGE-DETAILS] hold period:", e?.message || e); }
   const waitingOnMe = seals.reduce((n, r) => n + (r.isMine ? r.pendingRequests.length : 0), 0);
 
+  // ── workflow (WF-6: the modal's Workflow block, above Seals) ────────────────────────────────
+  // The same read the byline uses (describeWorkflowForPage), plus what the block offers the
+  // viewer: the Move-to targets (with which need an approval request), whether the viewer may set
+  // the review date, whether the viewer is an approver on the open request, and the readers count.
+  let workflow = { assigned: false };
+  try {
+    const wf = await describeWorkflowForPage(pageId, { spaceKey });
+    if (wf?.assigned) {
+      const settings = await getSpaceWorkflowSettings(wf.record?.spaceKey || spaceKey);
+      const hasApprovers = !!extractApprovalConfig(settings?.approval);
+      const record = wf.record || {};
+      const ar = record.approvalRecord || null;
+      const reviewedVersion = (typeof ar?.pinnedVersion === "number" ? ar.pinnedVersion : null) ?? record.approvedVersion ?? null;
+      const dueMs = record.reviewDueAt ? new Date(record.reviewDueAt).getTime() : NaN;
+      const readers = readConfirmationRequired(settings, record)
+        ? await readStatus({ pageId, accountId, record, settings }).catch(() => null)
+        : null;
+      workflow = {
+        assigned: true,
+        workflowName: wf.def?.name || null,
+        state: wf.state ? { id: wf.state.id, name: wf.state.name, color: wf.state.color || "neutral" } : { id: record.stateId, name: record.stateId, color: "neutral" },
+        status: wf.status,
+        enforced: !!record.enforce && record.approvedVersion != null,
+        enforceMode: settings?.enforceMode === "revert" ? "revert" : "demote",
+        reviewedVersion,
+        baselineVersion: record.approvedVersion ?? null,
+        approvalSummary: wf.approvalSummary,
+        // The modal composes the approval sentence ITSELF from these (workflow/status.js
+        // approvalSummary in the browser) so its dates are in the viewer's zone like every other
+        // date on the modal — the server-composed sentence above is UTC and stays for API readers.
+        recordForSummary: { enforce: !!record.enforce, approvedVersion: record.approvedVersion ?? null, approvedAt: record.approvedAt || null, approvalRecord: ar ? { outcome: ar.outcome, completedByName: ar.completedByName || null, completedAt: ar.completedAt || null, pinnedVersion: ar.pinnedVersion ?? null, mode: ar.mode ?? null, min: ar.min ?? null, approverCount: ar.approverCount ?? null, decisions: (ar.decisions || []).map((d) => ({ decision: d.decision })) } : null },
+        approvalRecord: ar ? { outcome: ar.outcome, completedByName: ar.completedByName || null, completedAt: ar.completedAt || null, requestedByName: ar.requestedByName || null, decisions: (ar.decisions || []).map((d) => ({ name: d.name, decision: d.decision, decidedAt: d.decidedAt, reason: d.reason || null, signed: !!d.signed })) } : null,
+        reviewDueAt: record.reviewDueAt || null,
+        reviewOverdue: Number.isFinite(dueMs) && dueMs < Date.now(),
+        lastDecision: wf.lastDecision || null,
+        pending: wf.pending ? {
+          toStateId: wf.pending.toStateId, toStateName: wf.pending.toStateName || wf.pending.toStateId, requestedByName: wf.pending.requestedByName || null, requestedAt: wf.pending.requestedAt || null,
+          decided: wf.pendingDecided, required: wf.pending.mode === "any" ? 1 : (wf.pending.min || (wf.pending.approvers || []).length), mode: wf.pending.mode || null,
+          iCanDecide: Array.isArray(wf.pending.approvers) && wf.pending.approvers.includes(accountId) && wf.pending.requestedBy !== accountId,
+        } : null,
+        available: (wf.available || []).filter(Boolean).map((s) => ({ id: s.id, name: s.name, color: s.color || "neutral", requiresApproval: !!(s.enforce && hasApprovers) })),
+        canMove: canEdit && (wf.available || []).length > 0 && !wf.pending,
+        canSetReviewDue: isSpaceAdmin,
+        readers: readers?.required ? { acked: readers.ackedCount ?? 0, audience: readers.audienceCount ?? 0, mine: !!readers.acked } : null,
+      };
+    }
+  } catch (e) { console.warn("[PAGE-DETAILS] workflow failed:", e?.message || e); workflow = { assigned: false, error: "Could not load the workflow" }; }
+
   // ── activity (its own read gate; one permission call) ────────────────────────────────────────
   let activity = { entries: [], nextCursor: null };
   try {
@@ -188,14 +245,14 @@ export const pageDetailsSummary = async (req) => {
   // ── lazy byline refresh (space-default changes reach the chip on open, not by fan-out) ─────
   if (!sealError) {
     const liveSeals = seals.filter((r) => !r.isTrashed).length;
-    await writeBylineFor(pageId, { level: classification.effective?.level || null, source: classification.effective?.source || "none", sealCount: liveSeals })
+    await writeBylineFor(pageId, { level: classification.effective?.level || null, source: classification.effective?.source || "none", sealCount: liveSeals, classificationEnabled: sw.active, workflow: workflow.assigned ? workflow.status : null })
       .catch((e) => console.warn("[PAGE-DETAILS] byline refresh failed:", e?.message || e));
   }
 
   return {
     ok: true, pageId, title: meta.title, contentType: meta.type, spaceKey,
     viewer: { accountId, canEditPage: canEdit, isSpaceAdmin },
-    classification, seals, sealError, waitingOnMe, activity, attachments, sealDefaults,
+    classification, workflow, seals, sealError, waitingOnMe, activity, attachments, sealDefaults,
   };
 };
 

@@ -31,7 +31,8 @@
  */
 import { asApp, route } from "@forge/api";
 import { kvs } from "@forge/kvs";
-import { getClassificationProvider } from "../classification/provider.js";
+import { getClassificationProvider, classificationActiveForPage } from "../classification/provider.js";
+import { describeWorkflowForPage } from "../workflow/approvals.js"; // WF-6: the status the chip carries
 import { collectPageSeals, readPageMeta } from "./logic.js";
 
 export const BYLINE_PROPERTY_KEY = "sentinel-byline";
@@ -61,12 +62,39 @@ export function bylineIcon({ color, sealed }, mode = ICON_MODE) {
 
 /**
  * PURE. { title, icon, tooltip } for a page.
- * @param {{ level: {name:string,color:string}|null, source: "page"|"space"|"none", sealCount: number }} s
+ * @param {{ level: {name:string,color:string}|null, source: "page"|"space"|"none", sealCount: number,
+ *           classificationEnabled?: boolean }} s
+ * CLS-1: with classification OFF (`classificationEnabled === false`) the chip never mentions a
+ * level — the title is the seal count ("2 seals on this page") or the app's name, and the icon is
+ * the neutral disc (lock when sealed). The level passed in is ignored on purpose: a stored level is
+ * kept in KVS but must not show.
  */
-export function composeByline({ level, source, sealCount } = {}) {
+export function composeByline({ level, source, sealCount, classificationEnabled, workflow } = {}) {
   const n = Number.isFinite(Number(sealCount)) && Number(sealCount) > 0 ? Math.floor(Number(sealCount)) : 0;
   const sealed = n > 0;
   const sealsText = n === 0 ? "No seals on this page" : n === 1 ? "1 seal on this page" : `${n} seals on this page`;
+  // WF-6: a page with a workflow carries its status (workflow/status.js — state + ONE qualifier)
+  // as `Level · Status` when classification is on, the status alone when it is off; the disc takes
+  // the status tone (a reader must tell approved from unapproved without the ribbon). The
+  // classification source moves to the tooltip.
+  if (workflow && workflow.text) {
+    const off = classificationEnabled === false;
+    const levelName = off ? null : level?.name ? level.name : "Unclassified";
+    const src = !off && level?.name ? (source === "page" ? "set on this page" : "space default") : null;
+    const levelTip = off ? null : level?.name ? `${level.name} (${src})` : "No classification level";
+    return {
+      title: levelName ? `${levelName} · ${workflow.text}` : workflow.text,
+      icon: bylineIcon({ color: workflow.color || NEUTRAL_COLOR, sealed }),
+      tooltip: [levelTip, `Workflow: ${workflow.stateName || workflow.text}${workflow.qualifier ? ` — ${workflow.qualifier}` : ""}`, sealsText, "Open Sentinel Vault"].filter(Boolean).join(" · "),
+    };
+  }
+  if (classificationEnabled === false) {
+    return {
+      title: sealed ? sealsText : "Sentinel Vault",
+      icon: bylineIcon({ color: NEUTRAL_COLOR, sealed }),
+      tooltip: `${sealsText} · Open Sentinel Vault`,
+    };
+  }
   if (!level || !level.name) {
     return {
       title: "Unclassified",
@@ -113,8 +141,8 @@ async function writeProperty(pageId, value) {
  * the stored stamp already matches, unless `force`. Never throws.
  * @returns {Promise<{ byline: object, wrote: boolean }>}
  */
-export async function writeBylineFor(pageId, { level, source, sealCount }, { force = false } = {}) {
-  const byline = composeByline({ level, source, sealCount });
+export async function writeBylineFor(pageId, { level, source, sealCount, classificationEnabled, workflow }, { force = false } = {}) {
+  const byline = composeByline({ level, source, sealCount, classificationEnabled, workflow });
   const stamp = bylineStamp(byline);
   try {
     if (!force) {
@@ -140,10 +168,17 @@ export async function refreshByline(pageId, opts = {}) {
   const id = String(pageId);
   const meta = await readPageMeta(id);
   if (!meta) return { byline: null, wrote: false, reason: "page unreadable" };
-  const [seals, classification] = await Promise.all([
+  // CLS-1: the switch decides whether the level is even read (off = no provider call, no level).
+  // WF-6: the workflow status rides the same property (one read of the page's workflow — the
+  // record, the open request and, where it matters, the last decision).
+  const [seals, sw, wf] = await Promise.all([
     collectPageSeals(id, meta.type).catch((e) => { console.warn("[BYLINE] seals:", e?.message || e); return { attachments: [], sections: [] }; }),
-    getClassificationProvider().then(({ provider }) => provider.effectiveLevel(id)).catch((e) => { console.warn("[BYLINE] classification:", e?.message || e); return { level: null, source: "none" }; }),
+    classificationActiveForPage(id).catch(() => ({ active: false, reason: "site" })),
+    describeWorkflowForPage(id).catch((e) => { console.warn("[BYLINE] workflow:", e?.message || e); return null; }),
   ]);
+  const classification = sw.active
+    ? await getClassificationProvider().then(({ provider }) => provider.effectiveLevel(id)).catch((e) => { console.warn("[BYLINE] classification:", e?.message || e); return { level: null, source: "none" }; })
+    : { level: null, source: "none" };
   const sealCount = seals.attachments.filter((a) => !a.trashed).length + seals.sections.length;
-  return writeBylineFor(id, { level: classification.level, source: classification.source, sealCount }, opts);
+  return writeBylineFor(id, { level: classification.level, source: classification.source, sealCount, classificationEnabled: sw.active, workflow: wf?.status || null }, opts);
 }

@@ -16,6 +16,7 @@ import { recordActivity } from "../../infra/activity-log.js";
 import { syncStateLabel } from "./label-sync.js";
 import { sanitizeReadConfirmation } from "./read-acks.js";
 import { fetchPageLabels } from "../../infra/labels.js";
+import { touchByline } from "../page-details/byline-touch.js"; // WF-6 (dynamic inside: no cycle)
 
 export const WORKFLOW_STATE_PROP = "sentinel-vault-workflow";
 
@@ -509,6 +510,8 @@ async function persistState(pageId, record, prevStateId) {
     reviewDueAt: record.reviewDueAt || null,
   });
   await writeStateContentProp(pageId, record);
+  // WF-6: the byline chip carries the state — refreshed on every persisted record.
+  await touchByline(pageId);
   // audit C6: the #47 native content-status pill projection was REMOVED. Live-verified it was a SILENT
   // NO-OP: mirrorNativeState set nothing (a read-back always returned null) while swallowing every
   // error, and the underlying PUT that creates a per-space custom content state ("Draft/In Review/…")
