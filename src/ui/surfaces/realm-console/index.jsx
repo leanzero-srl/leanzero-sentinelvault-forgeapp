@@ -477,6 +477,7 @@ const MyClaimedCard = ({ artifact, onRelease, onExtend, busyAction, siteUrl }) =
 
 const RealmPolicyDashboard = () => {
   const [defRev, setDefRev] = useState(0); // B1: bumps when a workflow definition is saved
+  const [wfView, setWfView] = useState("settings"); // WF-11: "settings" (one Save) | "states" (the definitions, their own Save each)
   const [activeTab, setActiveTab] = useState("my-claims");
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState(null);
@@ -2391,9 +2392,14 @@ const RealmPolicyDashboard = () => {
 
       {activeTab === "workflow" && userRole === "steward" && (
         <div className="tab-content">
-          <WorkflowDashboard spaceKey={realmKey} />
-          <WorkflowSettingsEditor spaceKey={realmKey} defRev={defRev} />
-          <WorkflowDefinitionEditor spaceKey={realmKey} onSaved={() => setDefRev((r) => r + 1)} />
+          {wfView === "settings" ? (
+            <>
+              <WorkflowDashboard spaceKey={realmKey} />
+              <WorkflowSettingsEditor spaceKey={realmKey} defRev={defRev} onEditStates={() => setWfView("states")} />
+            </>
+          ) : (
+            <WorkflowDefinitionEditor spaceKey={realmKey} standalone onBack={() => setWfView("settings")} onSaved={() => setDefRev((r) => r + 1)} />
+          )}
         </div>
       )}
 

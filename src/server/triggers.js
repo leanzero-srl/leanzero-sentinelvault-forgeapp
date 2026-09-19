@@ -1468,7 +1468,7 @@ export async function workflowSweep() {
                 version: record.approvedVersion ?? null,
               });
               await kvs.delete(`workflow-review-notified-${idx.pageId}`).catch(() => {});
-              await postEnforceComment(idx.pageId, record.enteredBy, "expired").catch(() => {});
+              await postEnforceComment(idx.pageId, record.enteredBy, "expired", { toName: findState(def, "expired")?.name || null }).catch(() => {});
             }
             continue;
           }

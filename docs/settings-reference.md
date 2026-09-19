@@ -62,6 +62,10 @@ Stored in Forge KVS under key: `admin-settings-space-{sanitizedRealmKey}`
 
 Pending space admin access requests are managed through the Access Control tab UI but are not stored as policy settings.
 
+### Workflow tab (space admins only)
+
+The tab opens with the effective rule as one sentence (e.g. "Pages start in Draft. Mihai Perdum approves before a page is Approved. Approved pages are protected: an edit by anyone who is not an approver or a space admin moves the page back to Draft. Re-review after 150 days.") and ONE `Save workflow settings`. The states, their colours and the moves between them live on their own view (`Edit the states…` beside the state chips, `← Back to workflow settings` to return); each workflow there saves with its own `Save workflow`. The built-in lapsed state is named "Needs re-review" (id `expired`); a space with a saved copy keeps the name its copy carries.
+
 ### Seal Duration Tab (space admins only)
 
 | Setting | Code Key | Type | Default | Description |

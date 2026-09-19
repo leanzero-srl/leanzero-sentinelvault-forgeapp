@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { invoke } from "@forge/bridge";
+import { workflowRuleSentence } from "./workflow-rule.js"; // WF-11: the effective rule, one sentence
 
 // Per-space document-workflow settings (#42). Mirrors ValidationsEditor's shape and
 // reuses the same host classes (settings-panel / settings-row / form-checkbox /
@@ -188,7 +189,7 @@ const isEnforceState = (s) => !!s?.enforce || s?.id === "approved";
 
 // `defRev` (B1): bumped by the definition editor after a save, so the state chips, the per-state
 // review clocks and the demote-target options here follow the definition without a reload.
-export default function WorkflowSettingsEditor({ spaceKey = null, defRev = 0 }) {
+export default function WorkflowSettingsEditor({ spaceKey = null, defRev = 0, onEditStates = null }) {
   const [settings, setSettings] = useState({ enabled: false, autoAssignNew: false, workflowId: "default", approval: null, enforceMode: "demote", demoteTo: "initial", reviewAfterDays: null, reviewAfterDaysByState: {}, entryConditions: {}, syncLabels: false, readConfirmation: null, requireSignature: false });
   const [def, setDef] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -262,20 +263,25 @@ export default function WorkflowSettingsEditor({ spaceKey = null, defRev = 0 }) 
   // A5: every state except the enforce one gets a clock row here; Approved keeps its own row.
   const clockStates = states.filter((s) => !isEnforceState(s));
   const enforceName = enforceState?.name || "Approved";
+  // WF-10: the state an overdue page moves to has a name of its own (the built-in one is
+  // "Needs re-review"); the copy names it instead of a hard-coded "Expired".
+  const expiredName = states.find((s) => s.id === "expired")?.name || "Needs re-review";
 
   return (
     <div className="settings-panel">
+      {/* WF-11: what the settings below add up to, as one sentence — read it, then change it. */}
+      <p className="wf-rule" data-testid="wf-rule">{workflowRuleSentence(settings, def)}</p>
       <SettingsRow
         label="Enable document workflow"
-        description="Track a review/approval state on pages in this space. When on, pages carry a workflow state shown on the Sentinel Vault ribbon, and rights-holders move it along the workflow."
+        description="Track a review/approval state on pages in this space. When on, pages carry a workflow state shown on the Sentinel Vault ribbon, and approvers and space admins move it along the workflow."
       >
         <Toggle label="Enable document workflow" checked={settings.enabled} onChange={(e) => setSettings((p) => ({ ...p, enabled: e.target.checked }))} />
       </SettingsRow>
 
       {settings.enabled && (
         <div className="settings-sections">
-        <Section title="Workflow" description="Which pages run it, and the states they move through. States and transitions are edited in Workflow definitions, further down." testId="wf-section-workflow">
-          <SettingsRow label="Workflow states" description="The states every page moves through.">
+        <Section title="Workflow" description="Which pages run it, and the states they move through." testId="wf-section-workflow">
+          <SettingsRow label="Workflow states" description="The states every page moves through. Edit the states, their colours and the moves between them on their own page — it saves separately from these settings.">
             <div className="wf-state-preview">
               {states.map((s, i) => (
                 <React.Fragment key={s.id}>
@@ -283,6 +289,7 @@ export default function WorkflowSettingsEditor({ spaceKey = null, defRev = 0 }) 
                   {i < states.length - 1 && <span className="wf-state-arrow" aria-hidden="true">→</span>}
                 </React.Fragment>
               ))}
+              {onEditStates && <button type="button" className="btn-secondary wf-edit-states" onClick={onEditStates} data-testid="wf-defs-toggle">Edit the states…</button>}
             </div>
           </SettingsRow>
           <SettingsRow
@@ -463,7 +470,7 @@ export default function WorkflowSettingsEditor({ spaceKey = null, defRev = 0 }) 
 
           <SettingsRow
             label={`${enforceName} pages: re-review after (days)`}
-            description={`${enforceName} pages show a review-due date on their ribbon and are moved to Expired once it passes, so approvals don’t silently go stale. Leave blank to use the workflow default (${enforceState?.reviewAfterDays || 150} days).`}
+            description={`${enforceName} pages show a review-due date on their ribbon and are moved to ${expiredName} once it passes, so approvals don’t silently go stale. Leave blank to use the workflow default (${enforceState?.reviewAfterDays || 150} days).`}
           >
             <div className="days-input">
               <input

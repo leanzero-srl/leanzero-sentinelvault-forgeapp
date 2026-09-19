@@ -65,7 +65,7 @@ ok("closed sentence never says declined by", !/declined by/.test(describeStaleCl
   ok("demote: no engineering words", !/structural compare|transition/i.test(dem));
   ok("expired keeps its copy", enforceCommentBody("1", null, "expired", {}).includes("Approval expired"));
   ok("overdue keeps its copy", enforceCommentBody("1", null, "expired", { noTransition: true, stateName: "Approved" }).includes("still Approved"));
-  ok("revert-failed keeps its copy", enforceCommentBody("1", null, "revert-failed", {}).includes("Enforcement pending"));
+  ok("revert-failed says it could not restore yet and will retry (WF-10: no \"Enforcement pending\")", enforceCommentBody("1", null, "revert-failed", {}).includes("could not restore the approved version of this page yet") && !enforceCommentBody("1", null, "revert-failed", {}).includes("Enforcement pending"));
 
   const d1 = buildWorkflowEnforcementDispatch({ pageId: "9", mode: "revert", editorAccountId: ED, approverAccountId: "712020:ap", approvedVersion: 3, revertedVersion: 4, via: "event" });
   eq("dispatch revert type", d1.type, "workflow-reverted");
