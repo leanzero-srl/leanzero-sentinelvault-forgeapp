@@ -32,7 +32,9 @@ export const DEFAULT_WORKFLOW = {
     { id: "draft", name: "Draft", color: "neutral", initial: true },
     { id: "in_review", name: "In Review", color: "info" },
     { id: "approved", name: "Approved", color: "success", enforce: true, reviewAfterDays: 150 },
-    { id: "expired", name: "Expired", color: "critical" },
+    // WF-10: the id stays "expired" (the sweep, the transitions and stored records name it); the
+    // WORD a Confluence admin reads is what the state means — a page whose approval lapsed.
+    { id: "expired", name: "Needs re-review", color: "critical" },
   ],
   transitions: [
     { from: "draft", to: "in_review" },

@@ -85,13 +85,13 @@ const DefinitionForm = ({ initial, isExtra, onSave, onDelete, saving, message })
 
       <div className="wf-def-table" role="table" aria-label="States">
         <div className="wf-def-row wf-def-row-head" role="row">
-          <span>State</span><span>Colour</span><span title="The state every new page starts in">First</span><span title="Pages in this state are protected: an edit by someone who is not an approver or a space admin is undone or sends the page back">Protected</span><span>Re-review after (days)</span><span>Can move to</span><span></span>
+          <span>State</span><span>Colour</span><span title="The state every new page starts in">Starts here</span><span title="An enforced state: an edit by someone who is not an approver or a space admin is undone or moves the page back">Approved (enforced)</span><span>Re-review after (days)</span><span>Can move to</span><span></span>
         </div>
         {states.map((s) => (
           <div key={s.id} className="wf-def-row" role="row" data-testid="wf-def-state" data-state-id={s.id}>
             <span className="wf-def-cell-name">
-              <input className="form-input" value={s.name} onChange={(e) => renameState(s, e.target.value)} aria-label={`Name of state ${s.name}`} data-testid="wf-def-state-name" />
-              <code className="wf-def-id">{s.id}</code>
+              {/* WF-10: the raw id is a developer's word — it lives in the tooltip, not on the row. */}
+              <input className="form-input" value={s.name} onChange={(e) => renameState(s, e.target.value)} aria-label={`Name of state ${s.name}`} title={`Stored as "${s.id}" — the id never changes once saved`} data-testid="wf-def-state-name" />
             </span>
             <span><MiniSelect ariaLabel={`Colour of ${s.name}`} value={s.color || "neutral"} options={COLOR_OPTS} onChange={(color) => patchState(s.id, { color })} testId={`wf-def-color-${s.id}`} /></span>
             <span><input type="radio" name={`initial-${def.id}`} checked={!!s.initial} onChange={() => setInitial(s.id)} aria-label={`${s.name} is the first state`} data-testid="wf-def-initial" /></span>
@@ -113,6 +113,7 @@ const DefinitionForm = ({ initial, isExtra, onSave, onDelete, saving, message })
           </div>
         ))}
       </div>
+      <p className="wf-def-note">An enforced state is protected: while a page is in it, an edit by someone who is not an approver or a space admin is undone or moves the page back (the Workflow tab chooses which).</p>
       <div className="wf-def-actions">
         <button type="button" className="btn-secondary" onClick={addState} data-testid="wf-def-add-state">Add a state</button>
         <span className="wf-def-spacer" />
@@ -124,12 +125,15 @@ const DefinitionForm = ({ initial, isExtra, onSave, onDelete, saving, message })
   );
 };
 
-export default function WorkflowDefinitionEditor({ spaceKey, onSaved = null }) {
+// WF-11: the definitions are their OWN view of the Workflow tab (`standalone`: opened from
+// "Edit the states…" beside the state chips, closed with "Back to workflow settings"), so two
+// Save buttons never sit on one screen — each workflow saves with its own, the settings with theirs.
+export default function WorkflowDefinitionEditor({ spaceKey, onSaved = null, standalone = false, onBack = null }) {
   const [data, setData] = useState(null);
   const [saving, setSaving] = useState(false);
   const [messages, setMessages] = useState({});
   const [draftExtra, setDraftExtra] = useState(null); // a new label workflow being created
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(standalone);
 
   const load = useCallback(async () => {
     try { setData(await invoke("list-space-workflows", { spaceKey })); } catch (_) { setData({ error: true }); }
@@ -166,15 +170,17 @@ export default function WorkflowDefinitionEditor({ spaceKey, onSaved = null }) {
   if (data.error) return <div className="wf-dash-error" role="status">Couldn’t load the workflow definitions. Reload the page to try again.</div>;
 
   return (
-    <div className="wf-defs" data-testid="wf-defs">
+    <div className={`wf-defs${standalone ? " wf-defs--standalone" : ""}`} data-testid="wf-defs">
       <div className="wf-defs-head">
         <div>
-          <h3 className="wf-dash-title">Workflow definitions</h3>
+          <h3 className="wf-dash-title">{standalone ? "Workflow states" : "Workflow definitions"}</h3>
           <p className="wf-dash-sub">
-            The states pages move through and the moves allowed between them. {data.source === "builtin" ? "This space uses the built-in workflow; saving makes a copy for this space." : data.source === "global" ? "This space uses the site-wide workflow; saving makes a copy for this space." : "This space has its own workflow."}{open ? " Each workflow saves with its own button; the bar at the bottom saves the settings above, not the workflows." : ""}
+            The states pages move through and the moves allowed between them. {data.source === "builtin" ? "This space uses the built-in workflow; saving makes a copy for this space." : data.source === "global" ? "This space uses the site-wide workflow; saving makes a copy for this space." : "This space has its own workflow."}{standalone ? " Each workflow saves with its own Save workflow button." : ""}
           </p>
         </div>
-        <button type="button" className="wf-dash-export" onClick={() => setOpen((o) => !o)} aria-expanded={open} data-testid="wf-defs-toggle">{open ? "Hide editor" : "Edit workflows"}</button>
+        {standalone
+          ? <button type="button" className="wf-dash-export" onClick={() => onBack?.()} data-testid="wf-defs-back">← Back to workflow settings</button>
+          : <button type="button" className="wf-dash-export" onClick={() => setOpen((o) => !o)} aria-expanded={open} data-testid="wf-defs-toggle">{open ? "Hide editor" : "Edit workflows"}</button>}
       </div>
       {open && (
         <>

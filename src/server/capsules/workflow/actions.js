@@ -214,7 +214,7 @@ export const requestTransition = async (req) => {
   const from = findState(def, current.stateId);
   if (from?.enforce && !target?.enforce
     && !(await authorizeSteward(actorAccountId, spaceKey))) {
-    return { success: false, reason: `Leaving "${from.name}" requires space admin approval` };
+    return { success: false, reason: `Only a space admin can move a page out of ${from.name}` }; // WF-10
   }
 
   // #46: transition conditions run BEFORE the enforce/approval branch. Content conditions
@@ -239,7 +239,7 @@ export const requestTransition = async (req) => {
     // enforce target with no human approvers still requires the requester to be a steward —
     // otherwise turning on "require AI review" would DOWNGRADE the gate to "anyone + AI".
     if (target?.enforce && !(spec?.approvers?.length) && !(await authorizeSteward(actorAccountId, spaceKey))) {
-      return { success: false, reason: `Entering "${target?.name || toStateId}" requires space admin approval` };
+      return { success: false, reason: `Only a space admin can move a page into ${target?.name || toStateId} when no approvers are set` }; // WF-10
     }
     // Review #2: an approver GROUP that could not be expanded must not open a request that
     // nobody can complete (0 of 0, pending forever) or silently shrink an "all approvers" rule
@@ -290,7 +290,7 @@ export const requestTransition = async (req) => {
     // enforce, no approvers, no AI → #42/#44 direct steward gate. The steward IS the reviewing
     // authority acting on what they see now: capture approvedVersion, fail CLOSED on null.
     if (!(await authorizeSteward(actorAccountId, spaceKey))) {
-      return { success: false, reason: `Entering "${target.name}" requires space admin approval` };
+      return { success: false, reason: `Only a space admin can move a page into ${target.name} when no approvers are set` }; // WF-10
     }
     const approvedVersion = await fetchLivePageVersion(pageId);
     if (approvedVersion == null) {

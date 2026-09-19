@@ -150,7 +150,9 @@ const WorkflowDetails = ({ workflow, siteUrl, pageId, isSteward, host, onSaved, 
   const overdue = hasDue && dueMs < Date.now();
   const shortDate = hasDue ? new Date(dueMs).toLocaleDateString(undefined, UTC_SHORT) : null;
   const longDate = hasDue ? new Date(dueMs).toLocaleDateString(undefined, UTC_LONG) : null;
-  const expiresFromHere = Array.isArray(workflow?.available) && workflow.available.some((s) => s?.id === "expired");
+  const expiredState = Array.isArray(workflow?.available) ? workflow.available.find((s) => s?.id === "expired") : null;
+  const expiresFromHere = !!expiredState;
+  const expiredName = expiredState?.name || "Needs re-review"; // WF-10: the state's own name
   const tomorrow = toYmd(new Date(Date.now() + 24 * 3600 * 1000));
   const currentYmd = ymdOfIso(dueAt);
   const selectedYmd = picked || currentYmd;
@@ -198,7 +200,7 @@ const WorkflowDetails = ({ workflow, siteUrl, pageId, isSteward, host, onSaved, 
   }
   const tone = overdue ? "critical" : enforced ? "success" : lastDecision?.kind === "denied" ? "critical" : "neutral";
   const title = overdue
-    ? (expiresFromHere ? "The review period has elapsed — this page will move to Expired. Open for details." : "The review period has elapsed — review this page and move it on, or set a new date.")
+    ? (expiresFromHere ? `The review period has elapsed — this page will move to ${expiredName}. Open for details.` : "The review period has elapsed — review this page and move it on, or set a new date.")
     : lastDecision ? "The last approval request was not completed — open for the reason."
       : "Approval record, review date and readers — open for details.";
 
@@ -293,7 +295,7 @@ const WorkflowDetails = ({ workflow, siteUrl, pageId, isSteward, host, onSaved, 
             <div className="wf-appr-head">Review date</div>
             <div className="wf-appr-sub" data-testid="wf-review-due-current">
               {hasDue
-                ? (overdue ? `Was due ${longDate} — overdue.${expiresFromHere ? " This page will move to Expired." : ""}` : `Due for re-review on ${longDate}.`)
+                ? (overdue ? `Was due ${longDate} — overdue.${expiresFromHere ? ` This page will move to ${expiredName}.` : ""}` : `Due for re-review on ${longDate}.`)
                 : "No review date is set on this page."}
             </div>
             {isSteward && !editing && (
