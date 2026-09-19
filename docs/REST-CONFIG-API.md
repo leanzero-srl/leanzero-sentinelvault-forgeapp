@@ -140,7 +140,13 @@ app's own resolvers withhold from non-stewards lands there. The mirror holds:
 - `policy` — durations and toggles, **without** `adminUsers` / `adminGroups`;
 - `validation` — `{ enabled, modes }` only (rule text and `ai` prompts stay private);
 - `workflows` — `[ { workflowId, name, labels, priority } ]`, no definitions; `classificationDefault`;
-- site: `classification.levels` (the public level list).
+- site: `classification.levels` (the public level list);
+- site: `classification.assetsLink` — the JSM Assets source of the levels, when linked:
+  `{ schemaId, objectTypeId, schemaName, objectTypeName, mapping: { rank, color, description }, importedAt }`.
+  A bundle may SET this key (it stores the mapping; `null` unlinks) but it cannot run the import:
+  the Assets API only answers a user's own session, so the read happens from the steward console
+  ("Levels from JSM Assets" → Import / Re-import now) — the receipt names the step
+  `classification-assets-set-link` and says so.
 
 `spaceAdmins`, `workflowSettings` (approver rosters, entry conditions) and `validation.ai` are never
 mirrored. The **full** export — the shape that can be edited and POSTed back as a bundle — is the

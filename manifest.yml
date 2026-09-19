@@ -268,6 +268,14 @@ resources:
 
 permissions:
   scopes:
+    # JSM Assets (2026-09-19, owner go): classification levels imported from an Assets object
+    # type. Read-only; called asUser from the steward console only (asApp answers 401 on the
+    # Assets API — see docs/CLASSIFICATION-ASSETS-DESIGN.md). Workspace id comes from JSM.
+    - read:servicedesk-request
+    - read:cmdb-schema:jira
+    - read:cmdb-type:jira
+    - read:cmdb-object:jira
+    - read:cmdb-attribute:jira
     - read:confluence-content.all
     - read:confluence-content.summary
     - write:confluence-content

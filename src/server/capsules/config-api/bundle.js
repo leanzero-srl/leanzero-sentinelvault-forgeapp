@@ -94,7 +94,15 @@ export function validateBundle(bundle, { rawBytes = null } = {}) {
       if (s.classification !== undefined) {
         if (!isObj(s.classification)) err("site.classification", "must be an object");
         else {
-          for (const k of unknownKeys(s.classification, ["levels"])) err(`site.classification.${k}`, "unknown key");
+          for (const k of unknownKeys(s.classification, ["levels", "assetsLink"])) err(`site.classification.${k}`, "unknown key");
+          if (s.classification.assetsLink !== undefined && s.classification.assetsLink !== null) {
+            const al = s.classification.assetsLink;
+            if (!isObj(al)) err("site.classification.assetsLink", "must be an object or null");
+            else {
+              for (const k of unknownKeys(al, ["schemaId", "objectTypeId", "mapping", "schemaName", "objectTypeName"])) err(`site.classification.assetsLink.${k}`, "unknown key");
+              for (const k of ["schemaId", "objectTypeId"]) if (al[k] === undefined || !/^[0-9]{1,12}$/.test(String(al[k]))) err(`site.classification.assetsLink.${k}`, "required numeric id");
+            }
+          }
           if (s.classification.levels !== undefined && !Array.isArray(s.classification.levels)) err("site.classification.levels", "must be an array");
         }
       }
@@ -179,6 +187,12 @@ export function planBundle(bundle) {
   if (isObj(site.policy)) step("site.policy", "store-policy", { scope: "global", data: site.policy });
   if (isObj(site.validation)) step("site.validation", "store-validation-config", { scope: "global", data: site.validation }, { needs: "validationMerge" });
   if (isObj(site.classification) && Array.isArray(site.classification.levels)) step("site.classification.levels", "classification-manage-levels", { levels: site.classification.levels });
+  // The Assets LINK (schema/type/mapping) can be set over the API; the import itself needs a user
+  // session (Assets refuses the app's identity) and is done from the steward console.
+  if (isObj(site.classification) && site.classification.assetsLink !== undefined) {
+    const al = site.classification.assetsLink;
+    step("site.classification.assetsLink", "classification-assets-set-link", al === null ? { link: null } : { schemaId: String(al.schemaId), objectTypeId: String(al.objectTypeId), mapping: al.mapping || {}, schemaName: al.schemaName, objectTypeName: al.objectTypeName });
+  }
   if (isObj(site.notifications)) step("site.notifications", "store-policy", { scope: "global", data: site.notifications });
 
   const spaces = isObj(bundle?.spaces) ? bundle.spaces : {};

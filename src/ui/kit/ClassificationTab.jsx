@@ -152,6 +152,118 @@ const LevelsEditor = ({ levels, onSaved, onError }) => {
   );
 };
 
+/**
+ * Levels from JSM Assets (docs/CLASSIFICATION-ASSETS-DESIGN.md). Every read runs in THIS admin's
+ * session (the Assets API refuses the app's identity), so the picker only ever lives here:
+ * schema → object type → attribute mapping (guessed from the attribute names, editable) →
+ * preview → Import. Linked state shows what was imported, from where and when, with Re-import.
+ */
+// onImported(levels): the import resolver answers with the levels it wrote, and the tab takes
+// them as-is — a full reload here would unmount this section (losing the receipt) and read KVS
+// before the write is visible (observed live 2026-09-19: the list still showed the old levels).
+function AssetsLink({ onImported }) {
+  const [link, setLink] = useState(undefined); // undefined = not read yet, null = none
+  const [schemas, setSchemas] = useState(null);
+  const [schema, setSchema] = useState(null);
+  const [types, setTypes] = useState(null);
+  const [type, setType] = useState(null);
+  const [attrs, setAttrs] = useState(null);
+  const [mapping, setMapping] = useState({ rank: null, color: null, description: null });
+  const [preview, setPreview] = useState(null);
+  const [busy, setBusy] = useState(null); // "schemas" | "types" | "attrs" | "preview" | "import"
+  const [error, setError] = useState(null);
+  const [done, setDone] = useState(null);
+
+  useEffect(() => { invoke("classification-assets-link", {}).then((r) => setLink(r?.link || null)).catch(() => setLink(null)); }, []);
+
+  const run = async (key, action, payload, apply) => {
+    setBusy(key); setError(null);
+    try { const r = await invoke(action, payload); if (r?.error) setError(r.error); else apply(r); }
+    catch (e) { setError(e?.message || "Could not reach Sentinel Vault"); }
+    finally { setBusy(null); }
+  };
+  const loadSchemas = () => { setTypes(null); setType(null); setAttrs(null); setPreview(null); setDone(null); run("schemas", "classification-assets-schemas", {}, (r) => setSchemas(r.schemas || [])); };
+  const pickSchema = (sc) => { setSchema(sc); setType(null); setAttrs(null); setPreview(null); run("types", "classification-assets-object-types", { schemaId: sc.id }, (r) => setTypes(r.objectTypes || [])); };
+  const pickType = (t) => { setType(t); setPreview(null); run("attrs", "classification-assets-attributes", { objectTypeId: t.id }, (r) => { setAttrs(r.attributes || []); setMapping({ rank: r.suggested?.rank || null, color: r.suggested?.color || null, description: r.suggested?.description || null }); }); };
+  const doPreview = () => run("preview", "classification-assets-preview", { objectTypeId: type.id, mapping }, (r) => setPreview(r));
+  const doImport = () => run("import", "classification-assets-import", { schemaId: schema.id, objectTypeId: type.id, mapping, schemaName: schema.name, objectTypeName: type.name }, (r) => { setLink(r.link); setDone(r); setSchemas(null); setTypes(null); setType(null); setAttrs(null); setPreview(null); if (onImported) onImported(r.levels); });
+  const reimport = () => { if (!link) return; run("import", "classification-assets-import", { schemaId: link.schemaId, objectTypeId: link.objectTypeId, mapping: link.mapping || {}, schemaName: link.schemaName, objectTypeName: link.objectTypeName }, (r) => { setLink(r.link); setDone(r); if (onImported) onImported(r.levels); }); };
+  const unlink = () => run("unlink", "classification-assets-set-link", { link: null }, () => { setLink(null); setDone(null); });
+
+  const AttrPick = ({ field, label }) => (
+    <label className="cls-assets-map">
+      <span className="cls-assets-map-label">{label}</span>
+      <span className="cls-assets-map-opts" role="radiogroup" aria-label={label}>
+        <button type="button" className={`cls-assets-opt${!mapping[field] ? " is-active" : ""}`} onClick={() => setMapping({ ...mapping, [field]: null })} role="radio" aria-checked={!mapping[field]}>none</button>
+        {attrs.map((a) => <button type="button" key={a.id} className={`cls-assets-opt${mapping[field] === a.id ? " is-active" : ""}`} onClick={() => setMapping({ ...mapping, [field]: a.id })} role="radio" aria-checked={mapping[field] === a.id} data-testid={`cls-assets-map-${field}`}>{a.name}</button>)}
+      </span>
+    </label>
+  );
+
+  return (
+    <section className="cls-section" data-testid="cls-assets">
+      <div className="cls-section-head">
+        <h4 className="cls-section-title">Levels from JSM Assets</h4>
+        {link && <span className="cls-provider-badge app" data-testid="cls-assets-badge">Linked</span>}
+      </div>
+      {link ? (
+        <p className="settings-row-description" data-testid="cls-assets-linked">
+          Imported from <strong>{link.objectTypeName || `object type ${link.objectTypeId}`}</strong>{link.schemaName ? <> in <strong>{link.schemaName}</strong></> : null}{link.importedAt ? ` on ${new Date(link.importedAt).toLocaleString()}` : " (mapping set, not imported yet)"}. Re-import after the objects change in Assets.
+        </p>
+      ) : (
+        <p className="settings-row-description">Use an object type in a Jira Service Management Assets schema as the source of the classification levels. The read runs as you, from this console; nothing runs in the background and nothing is written to Assets.</p>
+      )}
+      <div className="cls-assets-actions">
+        {link && <button type="button" className="btn-primary" onClick={reimport} disabled={!!busy} data-testid="cls-assets-reimport">{busy === "import" ? "Importing…" : "Re-import now"}</button>}
+        {!schemas && <button type="button" className="btn-secondary" onClick={loadSchemas} disabled={!!busy} data-testid="cls-assets-load">{busy === "schemas" ? "Loading…" : link ? "Change the source…" : "Choose an Assets object type…"}</button>}
+        {link && <button type="button" className="btn-secondary" onClick={unlink} disabled={!!busy} data-testid="cls-assets-unlink">Unlink (keep the levels)</button>}
+      </div>
+      {error && <div className="alert-error" role="alert" data-testid="cls-assets-error">{error}</div>}
+      {done && <div className="alert-success" role="status" data-testid="cls-assets-done">Imported {done.levels?.length || 0} level{done.levels?.length === 1 ? "" : "s"}.{done.problems?.length ? ` ${done.problems.length} note${done.problems.length === 1 ? "" : "s"}: ${done.problems.join(" · ")}` : ""}</div>}
+      {schemas && (
+        <div className="cls-assets-step">
+          <div className="cls-assets-step-title">1 · Schema</div>
+          <div className="cls-assets-list" data-testid="cls-assets-schemas">
+            {schemas.length === 0 && <p className="settings-row-description">No object schemas in this site's Assets workspace.</p>}
+            {schemas.map((sc) => <button type="button" key={sc.id} className={`cls-assets-opt${schema?.id === sc.id ? " is-active" : ""}`} onClick={() => pickSchema(sc)} disabled={!!busy} data-testid="cls-assets-schema">{sc.name} <span className="cls-picker-opt-hint">{sc.key}</span></button>)}
+          </div>
+        </div>
+      )}
+      {types && (
+        <div className="cls-assets-step">
+          <div className="cls-assets-step-title">2 · Object type</div>
+          <div className="cls-assets-list" data-testid="cls-assets-types">
+            {types.length === 0 && <p className="settings-row-description">This schema has no object types.</p>}
+            {types.map((t) => <button type="button" key={t.id} className={`cls-assets-opt${type?.id === t.id ? " is-active" : ""}`} onClick={() => pickType(t)} disabled={!!busy} data-testid="cls-assets-type">{t.name}{t.objectCount != null ? <span className="cls-picker-opt-hint"> · {t.objectCount}</span> : null}</button>)}
+          </div>
+        </div>
+      )}
+      {attrs && type && (
+        <div className="cls-assets-step" data-testid="cls-assets-mapping">
+          <div className="cls-assets-step-title">3 · Which attribute holds what (the object's name is the level's name)</div>
+          <AttrPick field="rank" label="Rank" />
+          <AttrPick field="color" label="Colour" />
+          <AttrPick field="description" label="Description" />
+          <button type="button" className="btn-secondary" onClick={doPreview} disabled={!!busy} data-testid="cls-assets-preview-btn">{busy === "preview" ? "Reading…" : "Preview the levels"}</button>
+        </div>
+      )}
+      {preview && (
+        <div className="cls-assets-step" data-testid="cls-assets-preview">
+          <div className="cls-assets-step-title">4 · Preview{preview.objectCount != null ? ` · ${preview.objectCount} object${preview.objectCount === 1 ? "" : "s"}` : ""}{preview.truncated ? " (only the first 50 are read)" : ""}</div>
+          {preview.error && <div className="alert-error" role="alert">{preview.error}</div>}
+          {preview.levels?.length > 0 && (
+            <div className="cls-assets-list">
+              {preview.levels.map((l) => <span key={l.id} className="cls-chip" style={{ background: l.color, color: chipTextColor(l.color) }} data-testid="cls-assets-preview-level" title={l.description || ""}>{l.rank} · {l.name}</span>)}
+            </div>
+          )}
+          {preview.problems?.length > 0 && <ul className="cls-assets-problems">{preview.problems.map((p, i) => <li key={i}>{p}</li>)}</ul>}
+          {preview.ok && <button type="button" className="btn-primary" onClick={doImport} disabled={!!busy} data-testid="cls-assets-import">{busy === "import" ? "Importing…" : `Import ${preview.levels.length} level${preview.levels.length === 1 ? "" : "s"} — replaces the current list`}</button>}
+        </div>
+      )}
+    </section>
+  );
+}
+
 export default function ClassificationTab() {
   const [state, setState] = useState({ loading: true, error: null, provider: null, levels: [], canManageLevels: false, spaces: [], siteAdmin: false });
   const [selected, setSelected] = useState(() => new Set());
@@ -256,6 +368,8 @@ export default function ClassificationTab() {
             : "This site has no native classification levels, so Sentinel Vault's own scheme is in use. Levels are stored by the app and applied as a content property on each page."}
         </p>
       </section>
+
+      {state.provider !== "native" && state.siteAdmin && <AssetsLink onImported={(levels) => { setState((s) => ({ ...s, levels })); setNotice({ type: "success", text: "Levels imported from Assets." }); }} />}
 
       <section className="cls-section">
         <div className="cls-section-head"><h4 className="cls-section-title">Levels</h4></div>
