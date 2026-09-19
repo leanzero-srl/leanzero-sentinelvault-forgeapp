@@ -37,6 +37,7 @@ import { refreshByline } from "../page-details/byline.js"; // 5.0 byline chip �
 // 5.0 ribbon (mockup §2/§3): the summary carries the classification, the steward's ribbon setting,
 // the viewer's waiting-on-me numbers for THIS page and the first seal the viewer does not own.
 import { getClassificationProvider, classificationActiveForPage } from "../classification/provider.js";
+import { heldRefusal, isWorkflowHeld } from "../../shared/seal-authority.js"; // SEC-2
 import { getActiveEditGrant, getActiveSectionEditGrant, listPendingRequestsForOwner, listPendingSectionRequestsForOwner } from "../editreq/logic.js";
 import { listMyApprovals } from "../workflow/approvals.js";
 import { normalizeRibbonSettings } from "../../../ui/kit/ribbon-rules.js";
@@ -143,6 +144,7 @@ const enumerateDocArtifacts = async (req) => {
           lockedByAccountId: heldByAccountId,
           expiresAt,
           isExpired: hasLapsed,
+          workflowHeld: isWorkflowHeld(sealRecord), // SEC-2
           autoUnlockEnabled: autoUnsealActive,
           allowRestore: allowSealRestore,
           allowPurge: allowSealPurge,
@@ -509,7 +511,9 @@ const unsealArtifact = async (req) => {
   let releaseReason = "";
   let forcedReason = null; // Part 3.5: the typed break-glass reason (steward path only)
 
-  if (sealRecord.lockedBy === operatorAccountId) {
+  if (sealRecord.lockedBy === operatorAccountId && !adminOverride) {
+    // SEC-2: while the page is Approved the seal is the workflow's — the owner cannot release it.
+    { const held = heldRefusal(sealRecord, "release"); if (held) return { success: false, reason: held }; }
     canRelease = true;
     releaseReason = "owner unlock";
   } else if (adminOverride && (sealRecord.spaceKey || realmKey)) {
@@ -641,6 +645,7 @@ export const extendSeal = async (req) => {
   if (!authorized) {
     return { success: false, reason: "Only the seal owner or a space admin can extend this seal" };
   }
+  { const held = heldRefusal(sealRecord, "extend"); if (held) return { success: false, reason: held }; } // SEC-2
 
   // How long to add: an explicit request wins, otherwise the same policy chain a fresh
   // seal would resolve. sanitizeHoldDuration is the it55 clamp — a negative or NaN value
@@ -935,6 +940,7 @@ const enumerateOperatorSeals = async (req) => {
           lockedOn: value.timestamp,
           expiresAt: value.expiresAt,
           isExpired: sealLapsed,
+          workflowHeld: isWorkflowHeld(value), // SEC-2: My work says "held by the approval of the page"
           isStale,
           staleReason,
           autoUnlockEnabled: autoUnsealActive,
@@ -1058,6 +1064,7 @@ const enumeratePageSeals = async (req) => {
           lockedByName: value.lockedByName,
           expiresAt: value.expiresAt || null,
           isExpired: !!isExpired,
+          workflowHeld: isWorkflowHeld(value), // SEC-2
           lockedOn: value.timestamp || null,
           isStale,
           staleReason,
@@ -1483,9 +1490,9 @@ async function ribbonViewerHalf({ pageId, accountId, liveSeals, sectionRecords }
   // The seals the viewer does NOT own on this page: grants (Edit now) and the first locked one.
   const foreign = [
     ...liveSeals.filter(({ record }) => record.lockedBy && record.lockedBy !== accountId && !isLapsed(record.expiresAt))
-      .map(({ id, record }) => ({ kind: "attachment", id, name: record.attachmentName || "an attachment", owner: record.lockedByName || "its owner", until: record.expiresAt || null })),
+      .map(({ id, record }) => ({ kind: "attachment", id, name: record.attachmentName || "an attachment", owner: record.lockedByName || "its owner", until: record.expiresAt || null, held: isWorkflowHeld(record) })),
     ...sectionRecords.filter((s) => s.lockedBy !== accountId && !isLapsed(s.expiresAt))
-      .map((s) => ({ kind: "section", id: s.sectionId, name: s.sectionTitle || "Sealed section", owner: s.lockedByName || "its owner", until: s.expiresAt || null })),
+      .map((s) => ({ kind: "section", id: s.sectionId, name: s.sectionTitle || "Sealed section", owner: s.lockedByName || "its owner", until: s.expiresAt || null, held: isWorkflowHeld(s) })),
   ];
   if (!foreign.length) return half;
   const probes = await Promise.all(foreign.map(async (seal) => {

@@ -57,6 +57,7 @@ export function attachmentRow(att, live = {}) {
     isMissing: att.isStale === true && !trashed,
     ownerName: att.lockedByName || null,
     expiresAt: att.expiresAt || null,
+    workflowHeld: att.workflowHeld === true, // SEC-2
     myEditStatus: live.editStatus || "none",
     myEditExpiresAt: live.editExpiresAt || null,
     myRetryAt: live.editRetryAt || null,
@@ -76,6 +77,7 @@ export function sectionRow(s, live = {}) {
     isTrashed: false,
     ownerName: s.lockedByName || null,
     expiresAt: s.expiresAt || null,
+    workflowHeld: s.workflowHeld === true, // SEC-2
     myEditStatus: live.editStatus || "none",
     myEditExpiresAt: live.editExpiresAt || null,
     myRetryAt: live.editRetryAt || null,

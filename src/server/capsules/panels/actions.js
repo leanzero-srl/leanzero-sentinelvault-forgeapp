@@ -1,3 +1,4 @@
+import { isWorkflowHeld } from "../../shared/seal-authority.js"; // SEC-2 (zero-import module: no cycle)
 import { asUser, asApp, route } from "@forge/api";
 import { kvs } from "@forge/kvs";
 import { withinUploadSizeLimit, MAX_UPLOAD_LABEL } from "../../shared/upload-limits.js";
@@ -127,6 +128,7 @@ const enumeratePanelArtifacts = async (req) => {
           lockedByAccountId: sealedByAccountId,
           expiresAt,
           isExpired,
+          workflowHeld: isWorkflowHeld(sealData), // SEC-2
           autoUnlockEnabled: autoUnsealActive,
           allowDelete: allowArtifactDelete,
           allowRestore: allowSealRestore,

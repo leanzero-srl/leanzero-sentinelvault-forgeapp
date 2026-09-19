@@ -237,8 +237,9 @@ const SectionMacro = () => {
     <div className="sec-lock" role="alert">
       <LockGlyph />
       <span>
-        Locked by {seal.ownerName || "the seal owner"}{fmtUntil(seal.expiresAt)} — edits you publish here are reverted automatically.
-        <span className="sec-lock-hint">Ask to edit from the Sentinel Vault panel.</span>
+        {seal.workflowHeld
+          ? <>Locked by the approval of this page — edits you publish here are reverted automatically.<span className="sec-lock-hint">Changes go through the workflow: move the page back for review first.</span></>
+          : <>Locked by {seal.ownerName || "the seal owner"}{fmtUntil(seal.expiresAt)} — edits you publish here are reverted automatically.<span className="sec-lock-hint">Ask to edit from the Sentinel Vault panel.</span></>}
       </span>
     </div>
   ) : canEdit ? (
@@ -278,7 +279,7 @@ const SectionMacro = () => {
   // sealed / expired / unsealed. The frame border follows the same state (brand / amber / grey).
   const viewState = seal === null ? "pending" : seal.sealed && seal.isExpired ? "expired" : seal.sealed ? "sealed" : "unsealed";
   const badgeText = viewState === "pending" ? "Sentinel Vault"
-    : viewState === "sealed" ? `Sealed by ${seal.ownerName || "the seal owner"}`
+    : viewState === "sealed" ? `Sealed by ${seal.ownerName || "the seal owner"}${seal.workflowHeld ? " · held by the approval of this page" : ""}` // SEC-2
       : viewState === "expired" ? "Expired seal"
         : "Not sealed yet — seal it from the Sentinel Vault panel";
   const fallbackText = viewState === "sealed" ? "This section is sealed. Unauthorized edits are automatically reverted."

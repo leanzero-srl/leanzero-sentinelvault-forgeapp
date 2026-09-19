@@ -387,6 +387,22 @@ const WorkflowControl = ({ workflow, approvals, operatorId, pageId, spaceKey, si
   const pendingApproval = approvals?.pending ? approvals : null;
   const [decideBusy, setDecideBusy] = useState(false);
   const [decideMsg, setDecideMsg] = useState(null);
+  // SEC-2 (d): the approval dialog says what it will freeze — read once when the panel opens.
+  const [freeze, setFreeze] = useState(null);
+  useEffect(() => {
+    if (!panelOpen || !pendingApproval) { setFreeze(null); return undefined; }
+    let alive = true;
+    invoke("workflow-seals-to-freeze", { pageId }).then((r) => { if (alive) setFreeze(r || null); }).catch(() => { if (alive) setFreeze(null); });
+    return () => { alive = false; };
+  }, [panelOpen, pendingApproval, pageId]);
+  const freezeLine = (() => {
+    if (!freeze) return null;
+    const secs = Array.isArray(freeze.sections) ? freeze.sections : [];
+    const atts = Array.isArray(freeze.attachments) ? freeze.attachments : [];
+    if (!secs.length && !atts.length) return null;
+    const part = (n, word, list) => `${n} sealed ${word}${n === 1 ? "" : "s"}${list.length ? ` (${list.slice(0, 3).map((x) => `${x.name || "untitled"}${x.owner ? ` — ${x.owner}` : ""}`).join("; ")}${list.length > 3 ? "; …" : ""})` : ""}`;
+    return `Approving freezes this page, including ${[secs.length ? part(secs.length, "section", secs) : "", atts.length ? part(atts.length, "file", atts) : ""].filter(Boolean).join(" and ")} — their owners cannot release or extend them and nobody outside the approvers can edit inside them until the page leaves Approved.`;
+  })();
   // WF-1/WF-4: a one-line notice next to the chip that OUTLIVES the popover — a decision that
   // closed the request (approved, denied, stale) unmounts the approval panel, so the outcome is
   // said here. Success notices clear themselves; a stale/blocked one stays until the next change.
@@ -534,6 +550,7 @@ const WorkflowControl = ({ workflow, approvals, operatorId, pageId, spaceKey, si
               {pendingApproval.mode === "min" ? ` (at least ${pendingApproval.min})` : ""}
             </div>
             <div className="wf-appr-progress">{approvedCount} of {approverList.length} approved</div>
+            {freezeLine && <div className="wf-appr-sub wf-appr-freeze" data-testid="wf-appr-freeze">{freezeLine}</div>}
             {pendingApproval.pinnedVersion != null && (
               <VersionLink siteUrl={siteUrl} pageId={pageId} version={pendingApproval.pinnedVersion} testId="wf-pinned-version-link">
                 View the version you are approving (v{pendingApproval.pinnedVersion})
@@ -1163,12 +1180,15 @@ const DocumentRibbon = () => {
       break;
     case "locked":
       pill = { tone: "lock", text: "Locked" };
-      sentence = <><b>{urgent.seal.name}</b> is sealed by <b>{urgent.seal.owner}</b>{urgent.seal.until ? <> until <b>{untilOf(urgent.seal.until)}</b></> : <> with no expiry</>}</>;
+      // SEC-2: on an Approved page the seal is the workflow's, whoever sealed it.
+      sentence = urgent.seal.held
+        ? <><b>{urgent.seal.name}</b> — locked by this page's approval; changes go through the workflow</>
+        : <><b>{urgent.seal.name}</b> is sealed by <b>{urgent.seal.owner}</b>{urgent.seal.until ? <> until <b>{untilOf(urgent.seal.until)}</b></> : <> with no expiry</>}</>;
       break;
     default:
       sentence = decision.mode === "exceptions" && decision.overThreshold && level?.description ? <>{level.description}</> : null;
   }
-  const canRequest = urgent?.kind === "locked" && !!lockedSeal;
+  const canRequest = urgent?.kind === "locked" && !!lockedSeal && !lockedSeal.held; // SEC-2: no personal request on a held seal
   const levelColor = level?.color || null;
   const glyph = hasSeal
     ? <svg viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2" /><path d="M8 11V7a4 4 0 0 1 8 0v4" /></svg>

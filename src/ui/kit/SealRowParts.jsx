@@ -52,6 +52,8 @@ export const PrimarySlot = ({ primary, name, busy, reqBusy, on, kind = "attachme
       return <span className="sv-state ok" role="status" data-primary="editnow" aria-label={`You can edit ${name} now${primary.until ? `, until ${when(primary.until)}` : ""}`}>Edit now{primary.until ? ` until ${when(primary.until)}` : ""}</span>;
     case "expired":
       return <span className="sv-state expired" role="status" data-primary="expired" aria-label={`The seal on ${name} has expired`}>Expired</span>;
+    case "held": // SEC-2: the workflow owns the seal while the page is Approved
+      return <span className="sv-state held" role="status" data-primary="held" title={primary.hint || ""} aria-label={`${name}: ${primary.label}`}>{primary.label}</span>;
     case "restore":
       return <button type="button" className={`action-btn restore ${b("restore") ? "is-busy" : ""}`} onClick={on.restore} disabled={other("restore")} title="Restore this trashed attachment back to the page" data-primary="restore"><Busy busy={b("restore")} idle="Restore" doing="Restoring" /></button>;
     case "purge":
