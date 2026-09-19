@@ -413,7 +413,7 @@ async function grantDirect({ scope, id, seal, pageId, name, accountId, editorAcc
     version: null,
   });
   if (pageId && (await notifyEnabled())) {
-    try { await mailEditApproved(editorAccountId, name, pageId); }
+    try { await mailEditApproved(editorAccountId, name, pageId, null, { targetKind: section ? "section" : "attachment" }); } // SEC-9
     catch (e) { console.error("[EDIT-REQ] notify direct grant failed:", e); }
   }
   return { success: true, grant: { editorAccountId, editorName, grantedAt: grant.grantedAt, expiresAt: grant.expiresAt } };

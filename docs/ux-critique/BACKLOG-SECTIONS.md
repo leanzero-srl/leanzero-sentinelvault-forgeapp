@@ -444,6 +444,8 @@ CTA to the page-details modal.
 **Blast radius** `notice-blueprints.js`, `notice-composer.js` signatures, `editreq/actions.js`
 callers, unit tests.
 
+**Status (2026-09-20):** done in the SEC-9 commit (dev 8.26.0), evidence `scenarios/sentinel-vault/sec9-notice-kinds.spec.ts` (live comments on wolfaenpak with the comment master on for the run: the owner's request comment says `your sealed section "Decisions"` and `Approve or decline from the Sentinel Vault panel on the page, from the page's Sentinel Vault byline, or from My work` — no "file", no "space console"; the requester's decline comment says `the sealed section "Decisions"` + `The owner said: "not during the freeze"`; the granted comment says `edit this section until the seal expires`). Unit: `test/notice-kinds.test.mjs`. Shipped: `targetKind` on `composeEditRequestLayout` / `composeEditApprovedLayout` / `composeEditDeniedLayout` and on `mailEditRequest` / `mailEditApproved` / `mailEditDenied` (options object); every section caller in `editreq/actions.js` (request, approve, deny, direct grant) passes `section`. NOT done: routing the CTA to the page-details modal — there is no deep link that opens a byline item's modal; the CTA opens the page and the sentence names the byline as the door.
+
 ### SEC-10 "Release" is a red danger button on your own seal
 **Who** owner.
 **Observed** `13-panel-sealed-row-mine.png`: the only primary on "Risks" is **Release** in the red
