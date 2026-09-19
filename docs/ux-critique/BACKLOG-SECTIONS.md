@@ -199,6 +199,14 @@ an expand would then be un-sealable, so the rule may need to be "stop at *Sentin
 extensions; warn on others".
 **Blast radius** `section-seals/logic.js` (range), `section-seals/actions.js` (refusal), the panel
 picker in `inline-panel/index.jsx`, `section-setup/index.jsx` fallback copy, `test/doc-surgery.test.mjs`.
+**Status (2026-09-19):** fixed in the SEC-1 commit (dev 8.5.0), evidence
+`~/Projects/forge-live-harness/scenarios/sentinel-vault/sec1-last-heading-range.spec.ts` (+ `evidence/sec1-last-heading/*.png`).
+Shipped: the range stops at the first top-level Sentinel Vault macro (`describeSectionRange`, one home for the
+rule; other apps' macros stay inside the range on purpose); the picker row says "Seals heading + N blocks · ends
+before “X” / the Sentinel Vault panel / a sealed section"; the macro's cannot-render copy now says it is a
+display problem, not the seal. Unit: `test/section-range.test.mjs` (20). Pre-fix run: top-level after sealing =
+`paragraph | heading | paragraph | bodiedExtension:sealed-section` (panel swallowed); post-fix the panel stays
+after the wrapper and the body is heading + 1 paragraph.
 
 ### SEC-2 THE unification to ship first: the workflow owns the seals on an Approved page
 **Who** approver, page owner, collaborator, compliance officer.
