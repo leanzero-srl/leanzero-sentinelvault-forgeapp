@@ -306,3 +306,23 @@ html[data-color-mode="dark"] .sv-activity-chip-validation.is-active { background
 /* Sign this action (kit/SignedInvoke.jsx) */
 .sv-sign .sv-sign-input { width: 100%; box-sizing: border-box; margin-top: 12px; font-size: 22px; letter-spacing: 6px; text-align: center; padding: 10px; font-variant-numeric: tabular-nums; }
 .sv-sign .action-btn.lock { font-size: 12.5px; padding: 7px 14px; border-radius: 9999px; }
+
+/* SEC-4: "Seal a section…" in the modal — the same picker shape as the panel's */
+.pd-sec-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.pd-sec-head h4 { margin: 0; }
+.pd-picker { margin: 10px 0 12px; padding: 12px; border-radius: 10px; border: 1.5px solid var(--sv-interactive-primary); background: var(--sv-bg-primary); display: flex; flex-direction: column; gap: 8px; }
+.pd-picker-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: 12.5px; color: var(--sv-text-secondary); }
+.pd-pick { display: flex; flex-direction: column; gap: 6px; }
+.pd-pick-row { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--sv-border-primary); background: var(--sv-bg-secondary); color: var(--sv-text-primary); cursor: pointer; font-family: inherit; }
+.pd-pick-row:hover:not(:disabled) { border-color: var(--sv-interactive-primary); }
+.pd-pick.is-picked .pd-pick-row { border-color: var(--sv-interactive-primary); }
+.pd-pick-level { flex: none; min-width: 28px; height: 22px; padding: 0 6px; border-radius: 6px; background: var(--sv-interactive-primary); color: #FFFFFF; font-size: 11px; font-weight: 800; display: inline-flex; align-items: center; justify-content: center; }
+.pd-pick-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
+.pd-pick-text { font-size: 13px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pd-pick-range { font-size: 11.5px; color: var(--sv-text-secondary); }
+.pd-pick-cta { flex: none; font-size: 12px; font-weight: 700; color: var(--sv-interactive-primary); }
+.pd-hold { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 6px 10px 8px 48px; }
+.pd-hold-label { font-size: 12px; font-weight: 700; }
+.pd-hold-opts { display: inline-flex; gap: 6px; flex-wrap: wrap; }
+.pd-hold-opt { height: 26px; padding: 0 10px; border-radius: 13px; border: 1.5px solid var(--sv-border-primary); background: var(--sv-bg-secondary); color: var(--sv-text-primary); font-size: 12px; font-weight: 600; cursor: pointer; font-family: inherit; }
+.pd-hold-opt.is-on { background: var(--sv-interactive-primary); border-color: var(--sv-interactive-primary); color: #FFFFFF; }

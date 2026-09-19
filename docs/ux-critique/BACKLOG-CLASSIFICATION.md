@@ -314,6 +314,8 @@ config API; move both controls under the classification toggle (CLS-1) — they 
 **Confidence** high.
 **Blast radius** `settings-schema.js`, `ribbon-rules.js` + test, `steward-console/index.jsx`, `sealing/actions.js`.
 
+**Status (2026-09-20):** done in the CLS-10 commit (dev 8.28.0), evidence `scenarios/sentinel-vault/cls10-threshold-level.spec.ts` (server: with `ribbonThresholdLevel: "confidential"` `ribbon-summary.threshold` answers `{ rank: 3, from: "level" }`, an unknown level id answers the stored rank `{ rank: 4, from: "rank" }`, `store-policy` stores a level id and refuses a number with `Ribbon threshold level must be a level id…`; browser: the Alerts group row reads "Show the banner from" with the level picker showing the chosen chip, no `ribbonThresholdRank` row and no rank number input; picking Internal and Save stores `internal`; PNGs light + dark). Shipped: control `ribbonThresholdLevel` (kind `level`) + `LevelPicker` in `ControlRow`; `ribbonThresholdRank` kept as an `internal` control (stored fallback, no row); `normalizeRibbonSettings(stored, levels)` resolves the rank at read time; `ribbon-summary` hands the provider's levels in; `validateRibbonSettings` accepts the level id. Both controls sit under the classification switch (CLS-1's `hiddenUnless`).
+
 ### CLS-11 The byline row on a dev/staging site shows three "Sentinel Vault" chips
 **Who** everyone on wolfaenpak (evidence hygiene, but also a real production shape when a customer has two installs of any
 byline app).
