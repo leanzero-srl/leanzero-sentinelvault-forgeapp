@@ -31,7 +31,7 @@ import {
 } from "./capsules/workflow/logic.js";
 import { resolveApproverIds, applyAiVerdict, sweepApprovalIndex, clearPageApprovals } from "./capsules/workflow/approvals.js";
 import { fetchPageStatuses } from "./shared/page-status.js";
-import { postEnforceComment } from "./infra/approval-blueprints.js";
+import { postEnforceComment, buildWorkflowEnforcementDispatch } from "./infra/approval-blueprints.js";
 import { isAccountStewardAsApp } from "./shared/steward-checks.js";
 import { postValidationComment } from "./infra/validation-blueprints.js";
 import { readDocBody, readDocBodyAtVersion, writeDocBody, collectMediaFileIds, extractMediaSingleNodes, spliceMediaNodes, locateBodiedSectionNodes, spliceSectionWrapper, hashAdf, canonicalizeAdf, nonEmptySectionBody, adoptOrphanWrappers, summarizeAdfDiff } from "./infra/doc-surgery.js";
@@ -467,8 +467,12 @@ export async function pageContentTrigger(event) {
         details: { mode: "revert", editor: atlassianId || null, approvedVersion: enforceRevertVersion ?? null, restoredTo: enforceRevertVersion ?? null },
         version: writtenVersion,
       });
-      try { await postEnforceComment(pageId, atlassianId, "revert", { approvedVersion: enforceRevertVersion }); }
-      catch (e) { console.error("[WORKFLOW-ENFORCE] notice error:", e); }
+      // The version holding the editor's text is the one the app's write replaced (as the seal path
+      // computes it: writtenVersion − 1).
+      await announceWorkflowEnforcement({
+        pageId, mode: "revert", editorAccountId: atlassianId, record: enforcement?.record || null,
+        approvedVersion: enforceRevertVersion ?? null, revertedVersion: writtenVersion ? writtenVersion - 1 : null, via: "event",
+      });
     }
 
     // --- #44 reconciliation (§2.5): keep approvedVersion == the last version the app or
@@ -1243,13 +1247,27 @@ export async function collectWorkflowEnforcementForPage(pageId, atlassianId, eve
         },
         version: typeof eventVersion === "number" ? eventVersion : null,
       });
-      await postEnforceComment(pageId, atlassianId, "demote", { demotedToName: target.name || target.id }).catch(() => {});
+      await announceWorkflowEnforcement({ pageId, mode: "demote", editorAccountId: atlassianId, record, approvedVersion: record.approvedVersion ?? null, demotedToName: target.name || target.id, via: "event" });
     }
     // #7: the default workflow has an Approved->Draft edge; a custom workflow that lacks one
     // would leave the page enforced-but-not-demoted — surface it rather than fail silently.
     else console.error(`[WORKFLOW-ENFORCE] demote of ${pageId} did not apply: ${res.reason}`);
   } catch (e) { console.error("[WORKFLOW-ENFORCE] demote error:", e); }
   return { action: "demote" };
+}
+
+// WF-2 (UX critique 2026-09-19): the ONE place a workflow enforcement is announced to the person it
+// happened to — a dispatch (the ribbon's pill, editor + approver as parties) AND the editor's comment
+// (editor_revert carve-out). Every enforcement site (event demote, event revert, sweep demote, sweep
+// revert) goes through here; the activity row stays at the site because its facts differ per path.
+async function announceWorkflowEnforcement({ pageId, mode, editorAccountId, record, approvedVersion, revertedVersion, demotedToName, via, comment = true }) {
+  const approverAccountId = record?.approvalRecord?.completedBy || record?.enteredBy || null;
+  try {
+    await recordDispatch(buildWorkflowEnforcementDispatch({ pageId, mode, editorAccountId, approverAccountId, approvedVersion, revertedVersion, demotedToName, via }));
+  } catch (e) { console.error("[WORKFLOW-ENFORCE] dispatch failed:", e); }
+  if (comment && editorAccountId) {
+    await postEnforceComment(pageId, editorAccountId, mode === "revert" ? "revert" : "demote", { approvedVersion, revertedVersion, demotedToName }).catch(() => {});
+  }
 }
 
 // Pass 0 (§2.3): whole-page revert to the approved baseline. Mutates ctx.adfDoc; the
@@ -1518,6 +1536,12 @@ export async function workflowSweep() {
               version: ok.version ?? null,
             });
             await kvs.delete(`workflow-integrity-notified-${idx.pageId}`).catch(() => {});
+            if (ok.wrote) {
+              await announceWorkflowEnforcement({
+                pageId: idx.pageId, mode: "revert", editorAccountId: author || null, record,
+                approvedVersion: record.approvedVersion ?? null, revertedVersion: live, via: "sweep",
+              });
+            }
           }
           else if (!alreadyNotified) {
             await postEnforceComment(idx.pageId, record.enteredBy, "revert-failed").catch(() => {});
@@ -1545,7 +1569,10 @@ export async function workflowSweep() {
           }
           if (res.success && !alreadyNotified) {
             demoted++;
-            await postEnforceComment(idx.pageId, record.enteredBy, "demote", { demotedToName: target.name || target.id }).catch(() => {});
+            await announceWorkflowEnforcement({
+              pageId: idx.pageId, mode: "demote", editorAccountId: author || record.enteredBy || null, record,
+              approvedVersion: record.approvedVersion ?? null, demotedToName: target.name || target.id, via: "sweep",
+            });
             await kvs.set(`workflow-integrity-notified-${idx.pageId}`, { at: new Date().toISOString() });
           }
         }

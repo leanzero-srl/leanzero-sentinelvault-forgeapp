@@ -746,6 +746,14 @@ const alertSentence = (a, operatorId) => {
       return asEditor ? <>Your edit to the sealed section <strong>{name}</strong> was reverted.</> : <>An edit to your sealed section <strong>{name}</strong> was reverted automatically.</>;
     case "section-restored":
       return asEditor ? <>You removed the sealed section <strong>{name}</strong>; it was put back.</> : <>Your sealed section <strong>{name}</strong> was removed and put back.</>;
+    case "workflow-reverted":
+      return asEditor
+        ? <>Your edit to this Approved page was reverted to the approved version{a.approvedVersion != null ? ` (v${a.approvedVersion})` : ""}. Your text is kept in the page history.</>
+        : <>An edit to this Approved page by {a.editorDisplayName || "someone outside the approvers"} was reverted to the approved version{a.approvedVersion != null ? ` (v${a.approvedVersion})` : ""}.</>;
+    case "workflow-demoted":
+      return asEditor
+        ? <>Your edit to this Approved page moved it back to <strong>{a.demotedToName || "Draft"}</strong> for a new review. Nothing was lost — request approval when it is ready.</>
+        : <>An edit to this Approved page by {a.editorDisplayName || "someone outside the approvers"} moved it back to <strong>{a.demotedToName || "Draft"}</strong> for a new review.</>;
     case "revert-failed":
       return <>Sentinel Vault could not restore <strong>{name}</strong> after a change — check its version history.</>;
     case "seal-auto-released":
@@ -1125,7 +1133,8 @@ const DocumentRibbon = () => {
   let sentence = null;
   switch (urgent?.kind) {
     case "restored":
-      pill = { tone: "alert", text: "Restored", n: urgent.count > 1 ? urgent.count : null };
+      // WF-2: a demote destroys nothing — "Restored" would claim it did.
+      pill = { tone: "alert", text: urgent.alert?.type === "workflow-demoted" ? "Moved back" : "Restored", n: urgent.count > 1 ? urgent.count : null };
       sentence = alertSentence(urgent.alert, operatorId);
       // The editor's lost text is one click away: the page version the app reverted.
       if (urgent.alert?.revertedVersion && urgent.alert.editorAccountId === operatorId && urgent.alert.ownerAccountId !== operatorId && pageId) {
