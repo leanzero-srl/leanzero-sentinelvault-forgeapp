@@ -748,11 +748,11 @@ const alertSentence = (a, operatorId) => {
       return asEditor ? <>You removed the sealed section <strong>{name}</strong>; it was put back.</> : <>Your sealed section <strong>{name}</strong> was removed and put back.</>;
     case "workflow-reverted":
       return asEditor
-        ? <>Your edit to this Approved page was reverted to the approved version{a.approvedVersion != null ? ` (v${a.approvedVersion})` : ""}. Your text is kept in the page history.</>
+        ? <>Your edit was reverted to {a.approvedVersion != null ? `approved v${a.approvedVersion}` : "the approved version"}.</>
         : <>An edit to this Approved page by {a.editorDisplayName || "someone outside the approvers"} was reverted to the approved version{a.approvedVersion != null ? ` (v${a.approvedVersion})` : ""}.</>;
     case "workflow-demoted":
       return asEditor
-        ? <>Your edit to this Approved page moved it back to <strong>{a.demotedToName || "Draft"}</strong> for a new review. Nothing was lost — request approval when it is ready.</>
+        ? <>Your edit moved this page back to <strong>{a.demotedToName || "Draft"}</strong>. Nothing was lost.</>
         : <>An edit to this Approved page by {a.editorDisplayName || "someone outside the approvers"} moved it back to <strong>{a.demotedToName || "Draft"}</strong> for a new review.</>;
     case "revert-failed":
       return <>Sentinel Vault could not restore <strong>{name}</strong> after a change — check its version history.</>;
