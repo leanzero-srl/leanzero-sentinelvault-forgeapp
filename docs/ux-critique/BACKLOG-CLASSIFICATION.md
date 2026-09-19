@@ -124,6 +124,8 @@ it hides the feature from evaluators, which the owner may not want; the alternat
 `page-details/index.jsx`, `doc-ribbon/index.jsx` (2-column layout when no block), `realm-console/index.jsx`,
 `ClassificationTab.jsx`, `config-api/bundle.js`, docs/settings-reference.md, docs/REST-CONFIG-API.md.
 
+**Status (2026-09-20):** done in the CLS-1 commit (dev 8.14.0; 8.15.0 carries WF-6 on the same chip), evidence `scenarios/sentinel-vault/cls1-classification-off.spec.ts` (server: byline / page-details-summary / ribbon-summary / classification-get-page / set-page / set-space-default all read the ONE rule `classificationActive`; on → off → space-off → inherit round-trip keeps the stored level; browser: ribbon brand block, chip without a level, modal without the section, the site switch + hidden ribbon rows, the tab's off banner, the space console's override, light + dark PNGs). Default OFF for never-saved tenants: Gabriela's leanzero-demo loses the chip's level until Settings → Classification is switched on — the owner's decision. Setup question 3 is now the switch. REST: `site.classification.enabled`, `spaces.<KEY>.classification`.
+
 ### CLS-2 A level does nothing — it is a coloured word (the "reason to be there")
 **Who** page owner, space admin, compliance officer.
 **Observed** Grep of every consumer of a level: `triggers.js` 0, `workflow/` 0, `validations/` 0 (rule types are

@@ -75,7 +75,7 @@ writes the receipt.
   "site": {
     "policy": { "defaultLockDuration": 172800, "allowAdminOverride": true, "ribbonMode": "exceptions" },
     "validation": { "enabled": true, "modes": { "advisory": true, "gate": true, "revert": false }, "rules": [] },
-    "classification": { "levels": [ { "id": "public", "name": "Public", "color": "#15803D", "rank": 1 } ] },
+    "classification": { "enabled": true, "levels": [ { "id": "public", "name": "Public", "color": "#15803D", "rank": 1 } ] },
     "notifications": { "enableEmailDispatches": false }
   },
   "spaces": {
@@ -85,6 +85,7 @@ writes the receipt.
       "workflows": [ { "workflowId": "review", "def": { ... }, "labels": ["policy"], "priority": 1 } ],
       "workflowSettings": { "approval": { ... } },
       "classificationDefault": "confidential",
+      "classification": "inherit",
       "spaceAdmins": { "users": ["712020:…"], "groups": ["confluence-admins"] }
     }
   },
@@ -140,6 +141,13 @@ app's own resolvers withhold from non-stewards lands there. The mirror holds:
 - `policy` — durations and toggles, **without** `adminUsers` / `adminGroups`;
 - `validation` — `{ enabled, modes }` only (rule text and `ai` prompts stay private);
 - `workflows` — `[ { workflowId, name, labels, priority } ]`, no definitions; `classificationDefault`;
+- site: `classification.enabled` — the CLS-1 master switch (default **false**; `site.classification.enabled`
+  in a bundle writes `classificationEnabled` through `store-policy`, planned BEFORE `levels` so one bundle
+  can turn it on and set levels). While it is off every `classify-page` op and `classificationDefault`
+  write is refused with `Classification is off on this site`; `levels` and `assetsLink` still apply (kept
+  for when it is turned on). Per space, `classification: "inherit" | "off"` is the opt-out (a space cannot
+  opt IN while the site is off); a `classify-page` on an opted-out space is refused with
+  `Classification is off in this space`;
 - site: `classification.levels` (the public level list);
 - site: `classification.assetsLink` — the JSM Assets source of the levels, when linked:
   `{ schemaId, objectTypeId, schemaName, objectTypeName, mapping: { rank, color, description }, importedAt }`.
@@ -149,7 +157,16 @@ app's own resolvers withhold from non-stewards lands there. The mirror holds:
   `classification-assets-set-link` and says so.
 
 `spaceAdmins`, `workflowSettings` (approver rosters, entry conditions) and `validation.ai` are never
-mirrored. The **full** export — the shape that can be edited and POSTed back as a bundle — is the
+mirrored.
+
+**Per-page status over REST (WF-6, 2026-09-20).** The `sentinel-byline` content property on every page
+the app touched carries the same ONE status the chip shows — `title` is `<Level> · <Status>` with
+classification on, `<Status>` alone with it off, where `<Status>` is the state name plus one
+qualifier (`Approved v3`, `Awaiting approval 1 of 2`, `Declined Sep 19`, `Review overdue`, or the
+plain state). `tooltip` spells the parts out (`Workflow: Approved — v3`). It is rewritten on every
+transition, approval request / decision and enforcement, so a script can read where a page is with
+`GET /wiki/api/v2/pages/{id}/properties?key=sentinel-byline` and no app call. The workflow's own
+record stays on the `sentinel-vault-workflow` property as before. The **full** export — the shape that can be edited and POSTed back as a bundle — is the
 gated `export-space-config` (steward of that space) / `export-site-config` (site admin) resolver,
 i.e. the Export button in the console.
 

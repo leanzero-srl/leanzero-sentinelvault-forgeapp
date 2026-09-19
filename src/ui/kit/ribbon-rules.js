@@ -85,15 +85,19 @@ export function meetsThreshold(classification, threshold) {
  *               page with nothing urgent ALSO shows, as "Unclassified" in the neutral grey block.
  */
 export function decideRibbon(input = {}) {
-  const mode = RIBBON_MODES.includes(input.mode) ? input.mode : DEFAULT_RIBBON_MODE;
+  // CLS-1: classification OFF (`classification.enabled === false`) means the level cannot open
+  // the row and "always" (= "always show the classification block") collapses to "exceptions":
+  // the row is seal / workflow / validation only, and the surface draws no level block.
+  const off = input.classification?.enabled === false;
+  const mode = off ? "exceptions" : RIBBON_MODES.includes(input.mode) ? input.mode : DEFAULT_RIBBON_MODE;
   const threshold = input.threshold != null ? input.threshold : { rank: input.thresholdRank ?? DEFAULT_RIBBON_THRESHOLD_RANK };
-  const classification = input.classification || { level: null, source: "none" };
+  const classification = off ? { level: null, source: "none", enabled: false } : (input.classification || { level: null, source: "none" });
   const urgent = pickUrgent(input);
   const reasons = [];
   if (urgent) reasons.push(urgent.kind);
   if (input.workflow) reasons.push("workflow");
   if (input.validation) reasons.push("validation");
-  const overThreshold = meetsThreshold(classification, threshold);
+  const overThreshold = !off && meetsThreshold(classification, threshold);
   if (mode === "always") {
     reasons.unshift(classification.level ? "always" : "always-unclassified");
     return { show: true, mode, urgent, classification, reasons, overThreshold };

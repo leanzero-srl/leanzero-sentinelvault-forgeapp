@@ -1,7 +1,7 @@
 import {
   CONTROLS, GROUPS, control, readEffective, readAllEffective, formatValue, formatDefault,
   dependencyTable, dependencyState, alertProfileToFlags, flagsToAlertProfile, buildSetupPayload,
-  needsSetup, validatePolicyWrite, stripDeadKeys, SEAL_DURATION_PRESETS,
+  needsSetup, validatePolicyWrite, stripDeadKeys, SEAL_DURATION_PRESETS, controlVisible,
 } from "../src/server/capsules/policies/settings-schema.js";
 import { POLICY_DEFAULTS, BASELINE_HOLD_SPAN } from "../src/server/shared/baseline.js";
 import { resolveLapsePolicy } from "../src/server/shared/lapse-policy.js";
@@ -12,7 +12,7 @@ import { eq, ok, report } from "./_assert.mjs";
 // names exactly the pairs the engine enforces, and the alert profiles map to the flags.
 
 // --- the table itself ---
-eq("four groups, in outcome order", GROUPS.map((g) => g.id), ["protection", "expiry", "alerts", "advanced"]);
+eq("five groups, in outcome order (CLS-1 added Classification)", GROUPS.map((g) => g.id), ["protection", "expiry", "alerts", "classification", "advanced"]);
 for (const c of CONTROLS) {
   ok(`${c.key} has a label`, typeof c.label === "string" && c.label.length > 0);
   ok(`${c.key} has a one-line description`, typeof c.text === "string" && c.text.length > 0 && !c.text.includes("\n"));
@@ -90,6 +90,7 @@ eq("global dependency table", dependencyTable("global").sort((a, b) => a.child.l
 ]);
 eq("space dependency table", dependencyTable("space").sort((a, b) => a.child.localeCompare(b.child)), [
   { child: "autoInsertMacro", parent: "globalAutoInsertMacro", parentValue: true },
+  { child: "classification", parent: "classificationEnabled", parentValue: true },
   { child: "macroInsertPosition", parent: "autoInsertMacro", parentValue: true },
 ]);
 eq("a child under an OFF parent is disabled with the reason",
@@ -115,7 +116,9 @@ eq("a hand-mixed record reads as custom", flagsToAlertProfile({ enableEmailDispa
 // --- first-run payload ---
 eq("presets carry the six choices", SEAL_DURATION_PRESETS.map((p) => p.id), ["1d", "3d", "1w", "2w", "30d", "custom"]);
 const wk = buildSetupPayload({ hours: 168, profile: "standard", completedAt: "2026-09-15T10:00:00.000Z" });
-eq("1 week + standard → the mapped keys + setupCompletedAt", wk, { ok: true, data: { defaultLockDuration: 604800, ...alertProfileToFlags("standard"), setupCompletedAt: "2026-09-15T10:00:00.000Z" } });
+eq("1 week + standard → the mapped keys + classification OFF + setupCompletedAt", wk, { ok: true, data: { defaultLockDuration: 604800, ...alertProfileToFlags("standard"), classificationEnabled: false, setupCompletedAt: "2026-09-15T10:00:00.000Z" } });
+eq("setup question 3 answered yes → classification ON", buildSetupPayload({ hours: 24, profile: "quiet", classification: true }).data.classificationEnabled, true);
+eq("…anything but an explicit true stays OFF", buildSetupPayload({ hours: 24, profile: "quiet", classification: "on" }).data.classificationEnabled, false);
 eq("a bad duration is refused, not defaulted", buildSetupPayload({ hours: 0, profile: "quiet" }), { ok: false, reason: "Seal duration must be at least 1 hour." });
 eq("a non-numeric duration is refused", buildSetupPayload({ hours: "week", profile: "quiet" }).ok, false);
 ok("completedAt defaults to now (ISO)", Number.isFinite(Date.parse(buildSetupPayload({ hours: 24, profile: "quiet" }).data.setupCompletedAt)));
@@ -137,5 +140,20 @@ eq("space: notificationsMode is checked", validatePolicyWrite("space", { notific
 eq("space: macro position is checked", validatePolicyWrite("space", { macroInsertPosition: "middle" }).ok, false);
 eq("space: valid", validatePolicyWrite("space", { notificationsMode: "quiet", macroInsertPosition: "top", autoInsertMacro: false }), { ok: true });
 eq("no data is fine", validatePolicyWrite("global", undefined), { ok: true });
+
+// --- CLS-1: the classification switch and the per-space opt-out ---
+eq("CLS-1: classificationEnabled is an opt-in global toggle, default OFF", [control("classificationEnabled").optIn, control("classificationEnabled").default, control("classificationEnabled").group], [true, false, "classification"]);
+eq("CLS-1: an absent key reads OFF", readEffective("classificationEnabled", undefined), false);
+eq("CLS-1: only an explicit true reads ON", [readEffective("classificationEnabled", true), readEffective("classificationEnabled", "true"), readEffective("classificationEnabled", 1)], [true, false, false]);
+eq("CLS-1: the space choice reads inherit unless exactly off", [readEffective("classification", undefined), readEffective("classification", "off"), readEffective("classification", "on"), readEffective("classification", "OFF")], ["inherit", "off", "inherit", "inherit"]);
+eq("CLS-1: the space choice is locked with the site-admin reason while the site is off",
+  dependencyState("classification", { classification: "inherit" }, { classificationEnabled: false }), { enabled: false, reason: "Off site-wide by a site admin (Classification levels)." });
+eq("CLS-1: …and free when the site is on", dependencyState("classification", { classification: "inherit" }, { classificationEnabled: true }).enabled, true);
+eq("CLS-1: the two ribbon controls are HIDDEN while classification is off", [controlVisible("ribbonMode", { classificationEnabled: false }), controlVisible("ribbonThresholdRank", {}), controlVisible("ribbonMode", { classificationEnabled: true })], [false, false, true]);
+eq("CLS-1: a control without hiddenUnless is always visible", controlVisible("enableDocRibbons", { classificationEnabled: false }), true);
+eq("CLS-1: space write refuses a bad mode", validatePolicyWrite("space", { classification: "on" }).ok, false);
+eq("CLS-1: space write accepts off / inherit / null", [validatePolicyWrite("space", { classification: "off" }).ok, validatePolicyWrite("space", { classification: "inherit" }).ok, validatePolicyWrite("space", { classification: null }).ok], [true, true, true]);
+eq("CLS-1: global write refuses a non-boolean switch", validatePolicyWrite("global", { classificationEnabled: "yes" }).ok, false);
+eq("CLS-1: formatted", [formatValue("classification", "off"), formatValue("classification", "inherit"), formatDefault("classificationEnabled")], ["Off in this space", "As the site", "Off"]);
 
 report("settings-schema");

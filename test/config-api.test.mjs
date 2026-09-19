@@ -308,7 +308,7 @@ const memStorage = () => { const m = new Map(); return { m, get: async (k) => (m
   eq("site mirror validation reduced", site.validation, { enabled: false, modes: null });
   ok("site mirror policy has no roster", !("adminUsers" in site.policy));
   eq("site mirror keeps the public levels", site.classification.levels, [{ id: "public" }]);
-  eq("redact tolerates null validation/workflows", redactConfigForMirror({ policy: null }, "space"), { policy: null, validation: null, workflows: [], classificationDefault: null });
+  eq("redact tolerates null validation/workflows", redactConfigForMirror({ policy: null }, "space"), { policy: null, validation: null, workflows: [], classificationDefault: null, classification: null });
   eq("redact passes a non-object through", redactConfigForMirror(null), null);
 }
 
@@ -358,5 +358,23 @@ const memStorage = () => { const m = new Map(); return { m, get: async (k) => (m
   eq("space default → by id", JSON.stringify(scopeOfConfigWrite("classification-set-space-default", { spaceIds: [1, 2] }).spaceIds), '["1","2"]');
   eq("unknown key → null", scopeOfConfigWrite("seal-artifact", {}), null);
   ok("every writer key is a string", CONFIG_WRITER_KEYS.every((k) => typeof k === "string"));
+}
+// ── CLS-1: the switch and the per-space opt-out ride the bundle ───────────────────────────
+{
+  const b = { version: 1, site: { classification: { enabled: true, levels: [{ id: "public", name: "Public", color: "#15803D", rank: 1 }] } }, spaces: { WFH: { classification: "off", classificationDefault: "public" } } };
+  const v = validateBundle(b);
+  eq("CLS-1 bundle validates", v.errors, []);
+  eq("CLS-1 plan: the switch is written BEFORE the levels; the space opt-out after its default", planBundle(b).map((s) => [s.path, s.resolverKey]), [
+    ["site.classification.enabled", "store-policy"],
+    ["site.classification.levels", "classification-manage-levels"],
+    ["spaces.WFH.classificationDefault", "classification-set-space-default"],
+    ["spaces.WFH.classification", "store-policy"],
+  ]);
+  const by = Object.fromEntries(planBundle(b).map((s) => [s.path, s]));
+  eq("CLS-1 switch payload", by["site.classification.enabled"].payload, { scope: "global", data: { classificationEnabled: true } });
+  eq("CLS-1 space payload", by["spaces.WFH.classification"].payload, { scope: "space", key: "WFH", data: { classification: "off" } });
+  ok("CLS-1: enabled must be boolean", !validateBundle({ version: 1, site: { classification: { enabled: "yes" } } }).ok);
+  ok("CLS-1: space mode must be inherit|off", !validateBundle({ version: 1, spaces: { WFH: { classification: "on" } } }).ok);
+  eq("CLS-1: the space mirror carries the opt-out", redactConfigForMirror({ policy: {}, validation: null, workflows: [], classificationDefault: null, classification: "off" }, "space").classification, "off");
 }
 report("config-api");

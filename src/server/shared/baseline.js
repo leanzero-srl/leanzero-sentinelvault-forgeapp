@@ -126,6 +126,9 @@ export const POLICY_DEFAULTS = Object.freeze({
   signSealActions: false,
   // shared/edit-cooldown.js — hours a person waits after a declined edit request (0 = none).
   editRequestCooldownHours: EDIT_COOLDOWN_HOURS_DEFAULT,
+  // classification/logic.js classificationActive — `=== true` → OFF (CLS-1, owner 2026-09-19):
+  // no chip, no ribbon block, no modal section until a site admin turns it on.
+  classificationEnabled: false,
 });
 
 /** Space-scope defaults (doc-surgery.js:528,534; policies/logic.js:getSealDuration; notice-policy). */
@@ -134,4 +137,5 @@ export const SPACE_POLICY_DEFAULTS = Object.freeze({
   autoInsertMacro: true, // `=== false` opts out → ON
   macroInsertPosition: "bottom", // anything but "top" → bottom
   notificationsMode: "normal",
+  classification: "inherit", // "off" opts the space out of classification; it cannot opt IN while the site is off
 });

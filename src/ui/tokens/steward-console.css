@@ -663,6 +663,17 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
    badge is a solid pill; the picker reuses .mini-select; the dialog replaces window.confirm. */
 .cls-tab { padding-bottom: 24px; }
 .cls-state { color: var(--sv-text-secondary); font-size: 13px; }
+/* CLS-1: the off banner is a SOLID amber block (white ink, no tint, no left rail); the kept
+   sections below sit at reduced opacity and take no input until the site switch is on. */
+.cls-off-banner {
+  display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap;
+  padding: 14px 18px; margin: 4px 0 12px; border-radius: 10px;
+  background: #B45309; color: #FFFFFF; font-size: 14px; line-height: 1.5;
+}
+.cls-off-banner-text { flex: 1 1 360px; }
+.cls-off-banner .btn-primary { background: #FFFFFF; color: #7C2D12; border-color: #FFFFFF; flex: none; }
+.cls-off-banner .btn-primary:hover { background: #FEF3C7; }
+.cls-tab--off .cls-section { opacity: 0.5; pointer-events: none; user-select: none; }
 .cls-section { padding: 16px 0; border-bottom: 1px solid var(--sv-border-secondary); }
 .cls-section:last-of-type { border-bottom: none; }
 .cls-section-head { display: flex; align-items: center; gap: 12px; margin-bottom: 6px; flex-wrap: wrap; }
