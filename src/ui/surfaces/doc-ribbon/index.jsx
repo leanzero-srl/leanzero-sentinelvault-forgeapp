@@ -361,16 +361,28 @@ const WorkflowControl = ({ workflow, approvals, operatorId, pageId, spaceKey, si
   const signRef = useRef(null);
   const signBtnRef = useRef(null);
   useDismissableDialog(!!signMove, (o) => { if (!o) setSignMove(null); }, signRef, signBtnRef);
+  const available = workflow?.available || [];
+  const canMove = available.length > 0;
+  const pendingApproval = approvals?.pending ? approvals : null;
   const [decideBusy, setDecideBusy] = useState(false);
   const [decideMsg, setDecideMsg] = useState(null);
+  // WF-1/WF-4: a one-line notice next to the chip that OUTLIVES the popover — a decision that
+  // closed the request (approved, denied, stale) unmounts the approval panel, so the outcome is
+  // said here. Success notices clear themselves; a stale/blocked one stays until the next change.
+  const [notice, setNotice] = useState(null); // { text, tone: "success" | "caution" }
+  const noticeTimer = useRef(null);
+  const say = useCallback((text, tone = "success") => {
+    if (noticeTimer.current) clearTimeout(noticeTimer.current);
+    setNotice(text ? { text, tone } : null);
+    if (text && tone === "success") noticeTimer.current = setTimeout(() => setNotice(null), 6000);
+  }, []);
+  useEffect(() => () => { if (noticeTimer.current) clearTimeout(noticeTimer.current); }, []);
+  const [rerequestBusy, setRerequestBusy] = useState(false);
   const btnRef = useRef(null);
   const menuRef = useRef(null);
   const panelRef = useRef(null);
   const apprBtnRef = useRef(null);
 
-  const available = workflow?.available || [];
-  const canMove = available.length > 0;
-  const pendingApproval = approvals?.pending ? approvals : null;
 
   // Close the approval panel on outside click / Escape; focus in on open, back to the chip on Escape.
   useDismissableDialog(panelOpen, setPanelOpen, panelRef, apprBtnRef);
@@ -380,18 +392,43 @@ const WorkflowControl = ({ workflow, approvals, operatorId, pageId, spaceKey, si
     try {
       const r = await invoke("decide-approval", { pageId, decision, reason, code: sigCode || null });
       if (r?.success) {
-        setReason(""); setSigCode("");
-        setPanelOpen(false);
+        // WF-1: `success` means "recorded", not "done" — the outcome says what happened. A stale
+        // close, an AI hold or an AI block keep the popover open with the reason; a completed
+        // outcome closes it and says so next to the chip (WF-4).
+        const outcome = r.outcome || decision;
+        if (outcome === "approved" || outcome === "denied" || outcome === "pending") {
+          setReason(""); setSigCode("");
+          setPanelOpen(false);
+          say(outcome === "denied" ? `Denied — ${pendingApproval?.requestedByName || "the requester"} has been told.`
+            : outcome === "approved" && r.transitioned ? "Approved — the page is now Approved."
+              : outcome === "approved" ? "Approved — your sign-off is recorded; the page moves once the rule is met."
+                : "Your decision is recorded.");
+        } else {
+          say(r.reason || "The request could not be completed.", "caution");
+          setDecideMsg(r.reason || "The request could not be completed.");
+        }
         await onTransitioned();
       } else {
         setDecideMsg(r?.reason || "Could not record your decision.");
+        if (r?.stale) await onTransitioned(); // the panel then shows the stale block
       }
     } catch (_) {
       setDecideMsg("Could not record your decision.");
     } finally {
       setDecideBusy(false);
     }
-  }, [pageId, reason, sigCode, onTransitioned]); // B3: the code is read at click time, not from the first render
+  }, [pageId, reason, sigCode, onTransitioned, say, pendingApproval?.requestedByName]); // B3: the code is read at click time, not from the first render
+
+  // WF-1: bring the open request up to the live version (the requester stays who they were).
+  const doRerequest = useCallback(async () => {
+    setRerequestBusy(true); setDecideMsg(null);
+    try {
+      const r = await invoke("rerequest-approval", { pageId });
+      if (r?.success) { say(`Re-requested for v${r.pinnedVersion} — approvers decide on the current version now.`); await onTransitioned(); }
+      else setDecideMsg(r?.reason || "Could not re-request this approval.");
+    } catch (_) { setDecideMsg("Could not re-request this approval."); }
+    finally { setRerequestBusy(false); }
+  }, [pageId, onTransitioned, say]);
 
   // The menu behaviour (outside click / focus-out close, roving items, Arrow/Home/End, Escape
   // back to the chip) is the kit's: this was the original and now lives in kit/ActionMenu.jsx.
@@ -499,6 +536,14 @@ const WorkflowControl = ({ workflow, approvals, operatorId, pageId, spaceKey, si
                 </li>
               )}
             </ul>
+            {pendingApproval.stale && (
+              <div className="wf-appr-stale" role="alert" data-testid="wf-appr-stale">
+                This page changed after the request (reviewed v{pendingApproval.pinnedVersion}, now v{pendingApproval.liveVersion ?? "?"}). Approving will not move it.
+                <button type="button" className="wf-appr-rerequest" onClick={doRerequest} disabled={rerequestBusy} data-testid="wf-appr-rerequest">
+                  {rerequestBusy ? "Re-requesting…" : `Re-request for v${pendingApproval.liveVersion ?? "current"}`}
+                </button>
+              </div>
+            )}
             {iCanDecide ? (
               <div className="wf-appr-decide">
                 <p className="wf-appr-outcome">
@@ -540,7 +585,7 @@ const WorkflowControl = ({ workflow, approvals, operatorId, pageId, spaceKey, si
                   </div>
                 )}
                 <div className="wf-appr-actions">
-                  <button type="button" className="wf-appr-approve" onClick={() => doDecide("approved")} disabled={decideBusy || (pendingApproval.requireSignature && (!pendingApproval.signatureEnrolled || !sigCode.trim()))}>{pendingApproval.requireSignature ? "Sign & approve" : "Approve"}</button>
+                  <button type="button" className="wf-appr-approve" onClick={() => doDecide("approved")} disabled={decideBusy || pendingApproval.stale || (pendingApproval.requireSignature && (!pendingApproval.signatureEnrolled || !sigCode.trim()))} title={pendingApproval.stale ? "The page changed after the request — re-request for the current version first." : undefined}>{pendingApproval.requireSignature ? "Sign & approve" : "Approve"}</button>
                   <button type="button" className="wf-appr-deny" onClick={() => doDecide("denied")} disabled={decideBusy || (pendingApproval.requireSignature && (!pendingApproval.signatureEnrolled || !sigCode.trim()))}>{pendingApproval.requireSignature ? "Sign & deny" : "Deny"}</button>
                 </div>
               </div>
@@ -550,6 +595,7 @@ const WorkflowControl = ({ workflow, approvals, operatorId, pageId, spaceKey, si
             {decideMsg && <div className="wf-error" role="alert">{decideMsg}</div>}
           </div>
         ))}
+        {notice && <span className={`wf-notice wf-notice-${notice.tone}`} role="status" data-testid="wf-notice">{notice.text}</span>}
       </span>
     );
   }
@@ -575,6 +621,7 @@ const WorkflowControl = ({ workflow, approvals, operatorId, pageId, spaceKey, si
       </button>
       <WorkflowDetails workflow={workflow} siteUrl={siteUrl} pageId={pageId} isSteward={isSteward} host={host} onSaved={onTransitioned} readStatus={readStatus} readReportAllowed={!!workflow.readConfirmation?.canReport} />
       <ReadConfirmButton pageId={pageId} status={readStatus} onConfirmed={loadReadStatus} />
+      {notice && <span className={`wf-notice wf-notice-${notice.tone}`} role="status" data-testid="wf-notice">{notice.text}</span>}
       {signMove && inHost(host, (
         <div className="wf-appr-panel wf-sign-panel" role="dialog" aria-label="Sign this move" ref={signRef} tabIndex={-1} data-testid="wf-sign-move">
           <div className="wf-appr-head">Sign this move</div>

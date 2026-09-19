@@ -38,6 +38,7 @@ import {
   decideApproval,
   getPageApprovalStatus,
   listMyApprovals,
+  rerequestApproval,
   applyAiVerdict,
   buildApprovalRecord,
 } from "./approvals.js";
@@ -395,6 +396,26 @@ const decideApprovalAction = async (req) => {
   return decideApproval({ pageId, approverAccountId: req.context?.accountId, decision, reason, actorName: await actorName(req.context?.accountId), signatureCode: typeof req.payload?.code === "string" ? req.payload.code : null });
 };
 
+// WF-1: re-pin the open request to the live version (original requester kept). The steward check is
+// the action's; the approver/requester checks are the capsule's. An AI gate is re-queued for the new
+// version, exactly as request-transition does.
+const rerequestApprovalAction = async (req) => {
+  const pageId = pageIdOf(req);
+  const actorAccountId = req.context?.accountId;
+  if (!pageId) return { success: false, reason: "No page context" };
+  if (!(await callerMayReadPage(req, pageId))) return { success: false, reason: "You do not have access to this page" };
+  const spaceKey = (await readPageWorkflow(pageId))?.spaceKey || null;
+  const isSteward = spaceKey ? await authorizeSteward(actorAccountId, spaceKey) : false;
+  const r = await rerequestApproval({ pageId, actorAccountId, actorName: await actorName(actorAccountId), isSteward });
+  if (r.success && r.changed && r.aiGate) {
+    const wfSettings = await getSpaceWorkflowSettings(spaceKey);
+    const entryCond = wfSettings.entryConditions?.[(await kvs.get(`workflow-pending-${pageId}`))?.toStateId] || {};
+    const enq = await enqueueAiGate({ pageId, spaceKey, pinnedVersion: r.pinnedVersion, threshold: entryCond.aiThreshold, onBudgetExhausted: entryCond.onBudgetExhausted });
+    if (!enq.enqueued && enq.verdict) await applyAiVerdict(pageId, r.pinnedVersion, enq.verdict, enq.reason);
+  }
+  return r;
+};
+
 const getPageApprovals = async (req) => {
   const pageId = pageIdOf(req);
   if (!pageId) return { pending: false };
@@ -441,9 +462,15 @@ const listMyApprovalsAction = async (req) => {
     if (!pending) continue; // resolved since; skip stale record
     if (pending.aiGate?.status === "failed") continue; // #46: AI review blocked it — the
     // requester must revise + re-request; don't nag approvers with a currently-blocked item
+    // WF-1: the inbox says when the page moved on since the request, so a blind Approve there
+    // meets the same refusal the ribbon shows — and the row explains it first.
+    const liveVersion = pending.pinnedVersion != null ? await fetchLivePageVersion(r.pageId) : null;
     out.push({
       pageId: r.pageId,
       pageTitle: place?.title || `Page ${r.pageId}`,
+      pinnedVersion: pending.pinnedVersion ?? null,
+      liveVersion,
+      stale: pending.pinnedVersion != null && liveVersion != null && liveVersion !== pending.pinnedVersion,
       spaceKey: null,
       toStateName: pending.toStateName || r.stateId,
       requestedByName: pending.requestedByName || null,
@@ -678,6 +705,7 @@ export const actions = [
   ["get-read-report", getReadReportAction],
   ["bulk-assign-workflow", bulkAssign],
   ["decide-approval", decideApprovalAction],
+  ["rerequest-approval", rerequestApprovalAction],
   ["get-page-approvals", getPageApprovals],
   ["list-my-approvals", listMyApprovalsAction],
   ["search-workflow-users", searchUsers],

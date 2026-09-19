@@ -1895,6 +1895,8 @@ html[data-color-mode="dark"] .wf-inbox { border-color: #f59e0b; }
 .wf-inbox-page { font-size: 13px; font-weight: 700; color: var(--sv-interactive-primary, #0E7490); text-decoration: none; }
 .wf-inbox-page:hover { text-decoration: underline; }
 .wf-inbox-meta { font-size: 11px; color: var(--sv-text-secondary, #475569); }
+/* WF-1: the page moved on since the request — solid amber, so a blind Approve is never the first read. */
+.wf-inbox-stale { margin-top: 4px; padding: 3px 8px; border-radius: 6px; background: #d97706; color: #1F2937; font-size: 11px; font-weight: 700; line-height: 1.4; }
 .wf-inbox-actions { display: flex; gap: 8px; flex: none; }
 .wf-inbox-approve, .wf-inbox-deny { padding: 7px 14px; border: none; border-radius: 8px; font-family: inherit; font-size: 12px; font-weight: 700; color: #fff; cursor: pointer; }
 .wf-inbox-approve { background: #15803d; }
