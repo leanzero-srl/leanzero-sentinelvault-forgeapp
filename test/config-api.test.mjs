@@ -208,6 +208,12 @@ const memStorage = () => { const m = new Map(); return { m, get: async (k) => (m
   eq("unseal-attachment carries adminOverride + reason", by["content[1]"].payload, { attachmentId: "att1", adminOverride: true, reason: "done" });
   eq("seal-section resolves the heading at run time", [by["content[2]"].needs, by["content[2]"].payload], ["headingIndex", { pageId: "9", headingText: "Pricing", lockDuration: undefined }]);
   eq("unseal-section", by["content[3]"].payload, { sectionId: "sec1", reason: "r" });
+  // Assets link (2026-09-19): the mapping can be set over the API; the import needs a user session.
+  const al = { version: 1, site: { classification: { assetsLink: { schemaId: "68", objectTypeId: "76", mapping: { rank: "197", color: "354" }, schemaName: "Information Governance", objectTypeName: "Classification Level" } } } };
+  eq("assets link validates", validateBundle(al).errors, []);
+  eq("assets link plans onto the link resolver", planBundle(al).map((s) => [s.path, s.resolverKey, s.payload.objectTypeId]), [["site.classification.assetsLink", "classification-assets-set-link", "76"]]);
+  eq("assets link null → unlink", planBundle({ version: 1, site: { classification: { assetsLink: null } } }).map((s) => s.payload), [{ link: null }]);
+  eq("assets link without ids is refused", validateBundle({ version: 1, site: { classification: { assetsLink: { schemaId: "x" } } } }).errors.length > 0, true);
   // Direct grants (2026-09-17): their own bundle so the plan-order assertion above stays as it was.
   const grants = { version: 1, content: [
     { op: "grant-attachment-edit", attachmentId: "att1", editorAccountId: "712020:abc-1" },

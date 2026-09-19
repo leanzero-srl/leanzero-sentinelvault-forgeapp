@@ -1,7 +1,8 @@
 # Sentinel Vault 7.0 — what changes for Confluence admins (re-consent note)
 
-Status: DRAFT, written 2026-09-14 ahead of the batched major release. Nothing in this note is
-deployed to production yet; the manifest changes below are staged together so admins consent once.
+Status: 7.0 (production 5.0) shipped 2026-09-15. **Production 6.0 (dev 8.x, 2026-09-19) is the next
+major — see "6.0 addendum" at the end**: it adds the JSM Assets scopes and needs a re-consent
+AND a Jira install on every site that wants the Assets link.
 
 ## Why a new major version
 
@@ -53,3 +54,19 @@ one extra chip under page titles and one extra ⋯ menu entry.
 3. Click **Update**, review the two scopes listed above, click **Accept**.
 
 The chip and classification tab appear within a minute of acceptance.
+
+## 6.0 addendum — classification levels from JSM Assets (2026-09-19)
+
+| Scope | Used for |
+|---|---|
+| `read:servicedesk-request` | Finding the site's Assets workspace id (`GET /rest/servicedeskapi/assets/workspace`). |
+| `read:cmdb-schema:jira`, `read:cmdb-type:jira`, `read:cmdb-attribute:jira`, `read:cmdb-object:jira` | Listing object schemas, object types and attributes, and reading the objects of the ONE type a site admin picks as the source of the classification levels. Read-only; nothing is written to Assets. |
+
+Every call runs as the site admin who is using the steward console, from that console; the app
+never reads Assets in the background. No new module; no egress; "Runs on Atlassian" unchanged.
+
+Where to click, per site: **Confluence admin → Manage apps → Sentinel Vault → Update** (accept
+6.0), then install the app on the site's **Jira** as well (Marketplace → Sentinel Vault → Get it
+now → Jira, or the same Manage apps page in Jira). Without the Jira install the console's "Levels
+from JSM Assets" section says the app is not installed on Jira and nothing else changes. Assets
+itself needs JSM Premium/Enterprise.

@@ -19,7 +19,8 @@ import { asApp, asUser, assumeTrustedRoute, route } from "@forge/api";
 import { canEditPage, canReadPage, mustVerify } from "../../shared/content-access.js";
 import { authorizeSteward, isAccountStewardAsApp, isOperatorSiteAdmin } from "../../shared/steward-checks.js";
 import { getAppProvider, getClassificationProvider, resetProviderCache } from "./provider.js";
-import { isContentId, validateLevels } from "./logic.js";
+import { isContentId, validateLevels, levelsFromAssetsObjects, guessAssetsMapping, ASSETS_LINK_KVS_KEY } from "./logic.js";
+import { kvs } from "@forge/kvs";
 import { refreshByline } from "../page-details/byline.js"; // 5.0 byline chip (page writes only; a space default refreshes lazily on open)
 
 const NOT_AUTHORIZED = "Not authorized";
@@ -191,7 +192,133 @@ export const manageLevels = async (req) => {
   }
 };
 
+// ── JSM Assets (docs/CLASSIFICATION-ASSETS-DESIGN.md) ──────────────────────────────────────
+// Every call runs asUser: the Assets API refuses the app's own identity (401 in background
+// contexts, per Atlassian staff on the developer community), so the steward's session is the
+// only door. Site admins only — this is site configuration, and the steward console is the
+// only surface that calls it. Nothing here writes to Assets.
+const ASSETS_ID = /^[0-9]{1,12}$/;
+async function assetsWorkspaceId() {
+  const res = await asUser().requestJira(route`/rest/servicedeskapi/assets/workspace`, { headers: { Accept: "application/json" } });
+  if (!res.ok) return { error: `Assets workspace lookup answered ${res.status}` };
+  const data = await res.json().catch(() => ({}));
+  const id = data?.values?.[0]?.workspaceId;
+  return id ? { id } : { error: "This site has no Assets workspace (JSM Premium/Enterprise)" };
+}
+async function assetsGet(path) {
+  const res = await asUser().requestJira(assumeTrustedRoute(path), { headers: { Accept: "application/json" } });
+  const body = await res.json().catch(() => null);
+  return { ok: res.ok, status: res.status, body };
+}
+const listAssetsSchemas = async (req) => {
+  const accountId = req.context?.accountId;
+  if (!accountId || !(await isOperatorSiteAdmin(accountId))) return { error: "Only a site admin can link classification to Assets" };
+  const ws = await assetsWorkspaceId();
+  if (ws.error) return { error: ws.error };
+  const r = await assetsGet(`/jsm/assets/workspace/${ws.id}/v1/objectschema/list`);
+  if (!r.ok) return { error: `Assets answered ${r.status}${r.body?.errorMessages ? `: ${r.body.errorMessages.join("; ")}` : ""}`, status: r.status };
+  return { workspaceId: ws.id, schemas: (r.body?.values || []).map((s) => ({ id: String(s.id), key: s.objectSchemaKey, name: s.name, objectTypeCount: s.objectTypeCount, objectCount: s.objectCount })) };
+};
+const listAssetsObjectTypes = async (req) => {
+  const accountId = req.context?.accountId;
+  if (!accountId || !(await isOperatorSiteAdmin(accountId))) return { error: "Only a site admin can link classification to Assets" };
+  const schemaId = String(req.payload?.schemaId || "");
+  if (!ASSETS_ID.test(schemaId)) return { error: "Pick a schema" };
+  const ws = await assetsWorkspaceId();
+  if (ws.error) return { error: ws.error };
+  const r = await assetsGet(`/jsm/assets/workspace/${ws.id}/v1/objectschema/${schemaId}/objecttypes`);
+  if (!r.ok) return { error: `Assets answered ${r.status}`, status: r.status };
+  const types = Array.isArray(r.body) ? r.body : (r.body?.values || []);
+  return { objectTypes: types.map((t) => ({ id: String(t.id), name: t.name, objectCount: t.objectCount ?? null })) };
+};
+
+const assetsGuard = async (req) => {
+  const accountId = req.context?.accountId;
+  if (!accountId || !(await isOperatorSiteAdmin(accountId))) return { error: "Only a site admin can link classification to Assets" };
+  return null;
+};
+const listAssetsAttributes = async (req) => {
+  const g = await assetsGuard(req); if (g) return g;
+  const objectTypeId = String(req.payload?.objectTypeId || "");
+  if (!ASSETS_ID.test(objectTypeId)) return { error: "Pick an object type" };
+  const ws = await assetsWorkspaceId(); if (ws.error) return { error: ws.error };
+  const r = await assetsGet(`/jsm/assets/workspace/${ws.id}/v1/objecttype/${objectTypeId}/attributes`);
+  if (!r.ok) return { error: `Assets answered ${r.status}`, status: r.status };
+  const attributes = (Array.isArray(r.body) ? r.body : []).map((a) => ({ id: String(a.id), name: a.name, type: a?.defaultType?.name || null }));
+  return { attributes, suggested: guessAssetsMapping(attributes) };
+};
+async function readAssetsLevels(objectTypeId, mapping) {
+  const ws = await assetsWorkspaceId(); if (ws.error) return { error: ws.error };
+  const res = await asUser().requestJira(assumeTrustedRoute(`/jsm/assets/workspace/${ws.id}/v1/object/aql`), {
+    method: "POST", headers: { Accept: "application/json", "Content-Type": "application/json" },
+    body: JSON.stringify({ qlQuery: `objectTypeId = ${objectTypeId}`, resultPerPage: 50, includeAttributes: true }),
+  });
+  const body = await res.json().catch(() => null);
+  if (!res.ok) return { error: `Assets answered ${res.status}${body?.errorMessages ? `: ${body.errorMessages.join("; ")}` : ""}`, status: res.status };
+  const objects = body?.values || body?.objectEntries || [];
+  const mapped = levelsFromAssetsObjects(objects, mapping);
+  return { ...mapped, workspaceId: ws.id, objectCount: objects.length, truncated: !!body?.hasMoreResults };
+}
+const cleanMapping = (m) => ({ rank: ASSETS_ID.test(String(m?.rank || "")) ? String(m.rank) : null, color: ASSETS_ID.test(String(m?.color || "")) ? String(m.color) : null, description: ASSETS_ID.test(String(m?.description || "")) ? String(m.description) : null });
+const previewAssetsLevels = async (req) => {
+  const g = await assetsGuard(req); if (g) return g;
+  const objectTypeId = String(req.payload?.objectTypeId || "");
+  if (!ASSETS_ID.test(objectTypeId)) return { error: "Pick an object type" };
+  const r = await readAssetsLevels(objectTypeId, cleanMapping(req.payload?.mapping));
+  return r.error ? { error: r.error } : { ok: r.ok, levels: r.levels || [], problems: r.problems, error: r.ok ? null : r.error, objectCount: r.objectCount, truncated: r.truncated };
+};
+// Import = the same read, then the SAME setLevels the levels editor uses (so validateLevels and
+// the config mirror apply), plus the link record the console shows and re-imports from.
+const importAssetsLevels = async (req) => {
+  const g = await assetsGuard(req); if (g) return g;
+  const { provider } = await getClassificationProvider();
+  if (provider.name !== "app") return { error: "Levels are managed in Confluence's own classification settings on this site" };
+  const objectTypeId = String(req.payload?.objectTypeId || "");
+  const schemaId = String(req.payload?.schemaId || "");
+  if (!ASSETS_ID.test(objectTypeId) || !ASSETS_ID.test(schemaId)) return { error: "Pick a schema and an object type" };
+  const mapping = cleanMapping(req.payload?.mapping);
+  const r = await readAssetsLevels(objectTypeId, mapping);
+  if (r.error || !r.ok) return { error: r.error || "Nothing to import" };
+  try {
+    const levels = await getAppProvider().setLevels(r.levels.map(({ assetsObjectKey, ...l }) => l));
+    resetProviderCache();
+    const link = {
+      workspaceId: r.workspaceId, schemaId, objectTypeId, objectTypeName: String(req.payload?.objectTypeName || "").slice(0, 120), schemaName: String(req.payload?.schemaName || "").slice(0, 120),
+      mapping, importedAt: new Date().toISOString(), importedBy: req.context.accountId, objectKeys: r.levels.map((l) => l.assetsObjectKey), problems: r.problems,
+    };
+    await kvs.set(ASSETS_LINK_KVS_KEY, link);
+    return { ok: true, levels, link, problems: r.problems };
+  } catch (e) {
+    console.error("[CLASSIFICATION] assets import failed:", e);
+    return { error: "Could not save the imported levels" };
+  }
+};
+// The link record: what the console shows ("Imported from Assets · type · date") and what the
+// config API may set WITHOUT a user session (mapping only — the import itself needs one).
+const getAssetsLink = async (req) => {
+  const g = await assetsGuard(req); if (g) return g;
+  return { link: (await kvs.get(ASSETS_LINK_KVS_KEY)) || null };
+};
+const setAssetsLink = async (req) => {
+  const g = await assetsGuard(req); if (g) return { success: false, reason: g.error };
+  const p = req.payload || {};
+  if (p.link === null) { await kvs.delete(ASSETS_LINK_KVS_KEY).catch(() => {}); return { success: true, link: null }; }
+  const schemaId = String(p.schemaId || ""), objectTypeId = String(p.objectTypeId || "");
+  if (!ASSETS_ID.test(schemaId) || !ASSETS_ID.test(objectTypeId)) return { success: false, reason: "schemaId and objectTypeId are required" };
+  const prev = (await kvs.get(ASSETS_LINK_KVS_KEY)) || {};
+  const link = { ...prev, schemaId, objectTypeId, mapping: cleanMapping(p.mapping), objectTypeName: String(p.objectTypeName || prev.objectTypeName || "").slice(0, 120), schemaName: String(p.schemaName || prev.schemaName || "").slice(0, 120), linkedAt: new Date().toISOString() };
+  await kvs.set(ASSETS_LINK_KVS_KEY, link);
+  return { success: true, link };
+};
+
 export const actions = [
+  ["classification-assets-schemas", listAssetsSchemas],
+  ["classification-assets-object-types", listAssetsObjectTypes],
+  ["classification-assets-attributes", listAssetsAttributes],
+  ["classification-assets-preview", previewAssetsLevels],
+  ["classification-assets-import", importAssetsLevels],
+  ["classification-assets-link", getAssetsLink],
+  ["classification-assets-set-link", setAssetsLink],
   ["classification-provider", getProvider],
   ["classification-list-spaces", listSpaces],
   ["classification-set-space-default", setSpaceDefault],

@@ -311,3 +311,74 @@ export async function selectProvider({ native, app }) {
   if (Array.isArray(levels) && levels.length > 0) return { provider: native, levels };
   return { provider: app, levels: await app.listLevels() };
 }
+
+// ── JSM Assets → levels (pure; docs/CLASSIFICATION-ASSETS-DESIGN.md) ─────────────────────────
+// An object type's objects become the level list. `mapping` names the attribute ids that carry
+// rank / colour / description (the name is the object's label). Colours may be hex or a colour
+// WORD (the wolfaenpak "Classification Level" type stores "green", "orange"…); words map onto
+// the same solid palette the defaults use; anything unreadable falls back to the palette by
+// rank and is reported as a problem, never silently. Output goes through validateLevels, so
+// the imported list obeys every rule a hand-typed one does.
+export const ASSETS_LINK_KVS_KEY = "classification-assets-link";
+const COLOUR_WORDS = Object.freeze({
+  green: "#15803D", blue: "#1D4ED8", orange: "#B45309", amber: "#B45309", yellow: "#A16207", red: "#B91C1C",
+  purple: "#6D28D9", violet: "#6D28D9", teal: "#0F766E", cyan: "#0E7490", grey: "#475569", gray: "#475569",
+  black: "#0F172A", pink: "#BE185D", brown: "#78350F", navy: "#1E3A8A",
+});
+const PALETTE = Object.freeze(["#15803D", "#1D4ED8", "#B45309", "#B91C1C", "#6D28D9", "#0F766E", "#A16207", "#475569", "#BE185D", "#78350F"]);
+export const slugifyLevelId = (name) => String(name || "").toLowerCase().normalize("NFKD").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40) || "level";
+
+function attrValue(obj, attrId) {
+  if (!attrId) return null;
+  const a = (obj?.attributes || []).find((x) => String(x?.objectTypeAttributeId) === String(attrId));
+  const v = a?.objectAttributeValues?.[0];
+  if (!v) return null;
+  const raw = v.displayValue ?? v.value ?? (v.referencedObject?.label ?? null);
+  return raw == null ? null : String(raw).trim();
+}
+export function colourFromAssets(raw) {
+  if (!raw) return null;
+  const t = String(raw).trim().toLowerCase();
+  if (/^#[0-9a-f]{6}$/.test(t)) return t.toUpperCase();
+  if (/^[0-9a-f]{6}$/.test(t)) return `#${t.toUpperCase()}`;
+  return COLOUR_WORDS[t] || null;
+}
+/**
+ * @param {object[]} objects  Assets objects (`values` of the AQL answer)
+ * @param {{rank?:string, color?:string, description?:string}} mapping  attribute ids
+ * @returns {{ ok:boolean, levels?:object[], problems:string[], error?:string }}
+ */
+export function levelsFromAssetsObjects(objects, mapping = {}) {
+  const problems = [];
+  const list = Array.isArray(objects) ? objects : [];
+  if (list.length === 0) return { ok: false, problems, error: "That object type has no objects to import" };
+  const rows = list.map((o, i) => {
+    const name = String(o?.label || o?.name || "").trim();
+    const rankRaw = attrValue(o, mapping.rank);
+    const rankNum = rankRaw == null ? NaN : Number(rankRaw);
+    const colourRaw = attrValue(o, mapping.color);
+    const colour = colourFromAssets(colourRaw);
+    if (mapping.color && colourRaw && !colour) problems.push(`${name || o?.objectKey || "object"}: colour "${colourRaw}" is not a hex value or a known colour word — a palette colour was used`);
+    if (mapping.rank && (rankRaw == null || !Number.isInteger(rankNum))) problems.push(`${name || o?.objectKey || "object"}: rank "${rankRaw ?? ""}" is not a whole number — the object's position was used`);
+    return { name, objectKey: o?.objectKey || null, rankNum: Number.isInteger(rankNum) ? rankNum : null, colour, description: attrValue(o, mapping.description) || "", order: i };
+  });
+  // ranks: the attribute where it is a whole number, else positions after the highest given rank
+  let next = Math.max(0, ...rows.map((r) => r.rankNum || 0)) + 1;
+  const levels = rows
+    .sort((a, b) => (a.rankNum ?? Infinity) - (b.rankNum ?? Infinity) || a.order - b.order)
+    .map((r, i) => ({
+      id: slugifyLevelId(r.name), name: r.name, rank: r.rankNum ?? next++,
+      color: r.colour || PALETTE[i % PALETTE.length], description: r.description.slice(0, 200),
+      assetsObjectKey: r.objectKey,
+    }));
+  const v = validateLevels(levels.map(({ assetsObjectKey, ...l }) => l));
+  if (!v.ok) return { ok: false, problems, error: v.error };
+  // keep the object keys next to the validated rows (validateLevels re-sorts by rank; ids are unique)
+  const keyOf = new Map(levels.map((l) => [l.id, l.assetsObjectKey]));
+  return { ok: true, levels: v.levels.map((l) => ({ ...l, assetsObjectKey: keyOf.get(l.id) || null })), problems };
+}
+/** Guess the mapping from attribute names (Rank / Colour|Color / Description|Guidance|Handling). */
+export function guessAssetsMapping(attributes) {
+  const find = (re) => (attributes || []).find((a) => re.test(String(a?.name || "")))?.id;
+  return { rank: find(/^rank$|\brank\b|\border\b|\blevel\b/i) || null, color: find(/colou?r/i) || null, description: find(/description|guidance|handling|summary/i) || null };
+}

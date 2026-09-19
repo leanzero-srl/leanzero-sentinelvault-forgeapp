@@ -78,3 +78,31 @@ The manifest scope change is the owner's call (it re-consents every install and 
 install step). With a go, the order is: spike (asUser schema list on wolfaenpak) → if 200, build
 the import as above and ship as the next major together with anything else waiting on a major
 (the comment reaper needs `delete:comment:confluence` — same major).
+
+## Result (2026-09-19, same day)
+
+The spike answered 200: the steward console listed six real object schemas on wolfaenpak from
+Mihai's session (`asUser().requestJira`), so the import was built as designed and shipped as dev
+**8.x** (production **6.0**).
+
+- No Jira module was needed after all: with the five scopes declared, `forge install -p Jira`
+  installs the app on the site's Jira and `asUser().requestJira("/jsm/assets/workspace/…")`
+  answers. Each site still needs that second install (Confluence + Jira) — the console says so
+  when the workspace call is refused.
+- Scopes: `read:servicedesk-request` (the workspace id, `GET /rest/servicedeskapi/assets/workspace`)
+  plus the four `read:cmdb-*:jira`.
+- Resolvers (site-admin gated, all asUser): `classification-assets-schemas`, `-object-types`,
+  `-attributes` (answers a guessed mapping from the attribute names: Rank / Colour|Color /
+  Description|Guidance), `-preview`, `-import` (the same `setLevels` the editor uses, then the link
+  record `classification-assets-link` in KVS), `-link`, `-set-link`.
+- Pure mapper `levelsFromAssetsObjects` in classification/logic.js (unit: test/classification-assets.test.mjs):
+  colour words map onto the solid palette, an unknown colour or a non-numeric rank gets a
+  position and a note rather than a refusal, the hand-typed rules (≤ 8, unique names/ranks) still apply.
+- Live proof: `forge-live-harness/scenarios/sentinel-vault/classification-assets.spec.ts` —
+  schema "Information Governance" → type "Classification Level" → guessed mapping → preview
+  PUBLIC/INTERNAL/CONFIDENTIAL/RESTRICTED → Import → the Levels editor shows the four without a
+  reload → Re-import → Unlink; the site's levels restored afterwards.
+- Trap found live: after the import the tab used to reload itself; the reload unmounted the
+  Assets section (losing the receipt) and read KVS before the write was visible, so the list still
+  showed the old levels. The import resolver answers with the levels it wrote and the tab takes
+  those directly.

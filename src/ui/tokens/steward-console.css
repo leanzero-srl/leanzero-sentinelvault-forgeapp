@@ -1029,3 +1029,18 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   .api-role-picker { min-width: 0; }
   .api-input { width: 100%; }
 }
+
+/* Levels from JSM Assets (kit/ClassificationTab.jsx) */
+.cls-assets-list { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.cls-assets-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+.cls-assets-step { margin-top: 14px; padding: 12px; border: 1px solid var(--sv-border-secondary); border-radius: 10px; }
+.cls-assets-step-title { font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.04em; color: var(--sv-text-secondary); margin-bottom: 8px; }
+.cls-assets-opt { font: inherit; font-size: 13px; font-weight: 600; padding: 6px 12px; border-radius: 9999px; border: 2px solid var(--sv-border-secondary); background: var(--sv-bg-primary); color: var(--sv-text-primary); cursor: pointer; }
+.cls-assets-opt.is-active { background: var(--sv-interactive-primary); color: var(--sv-text-on-primary); border-color: var(--sv-interactive-primary); }
+.cls-assets-opt.is-active .cls-picker-opt-hint { color: inherit; opacity: .85; } /* the schema key was invisible on the solid chip (screenshot 2026-09-19) */
+.cls-assets-opt:disabled { opacity: 0.6; cursor: default; }
+.cls-assets-map { display: flex; align-items: flex-start; gap: 12px; margin-bottom: 8px; }
+.cls-assets-map-label { min-width: 90px; font-weight: 700; font-size: 13px; padding-top: 6px; }
+.cls-assets-map-opts { display: flex; flex-wrap: wrap; gap: 6px; }
+.cls-assets-problems { margin: 8px 0 0; padding-left: 18px; font-size: 12.5px; color: var(--sv-text-secondary); }
+.cls-assets-list .cls-chip { font-size: 13px; padding: 6px 12px; }
