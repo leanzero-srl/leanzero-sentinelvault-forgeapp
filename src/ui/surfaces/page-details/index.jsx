@@ -19,6 +19,7 @@ import { useSignedInvoke } from "../../kit/SignedInvoke";
 
 import { myWorkPath } from "../../kit/my-work-path.js";
 import { when, whenDay, sealSentence, stateText } from "../../kit/status-language.js"; // SEC-3: one vocabulary, one clock
+import { describeRange } from "../../kit/section-range.js"; // SEC-4: the picker says what a seal will freeze
 const NEUTRAL = "#475569";
 
 const Lock = () => (
@@ -384,13 +385,81 @@ const WorkflowBlock = ({ wf, pageId, onChanged }) => {
   );
 };
 
+// SEC-4 (UX critique 2026-09-19): sealing a section used to start ONLY inside the panel macro
+// (six steps, two of them page edits). The details modal — the byline's door, on every page — is
+// the second entry point: the same heading picker, the same "Holds for" step, the same
+// `seal-section` resolver the panel calls (one rule, two doors).
+const HOLDS = [{ label: "Space default", seconds: null }, { label: "1 day", seconds: 86400 }, { label: "3 days", seconds: 3 * 86400 }, { label: "1 week", seconds: 7 * 86400 }, { label: "2 weeks", seconds: 14 * 86400 }, { label: "30 days", seconds: 30 * 86400 }];
+const SectionPicker = ({ pageId, onSealed, onClose }) => {
+  const [headings, setHeadings] = useState(null);
+  const [error, setError] = useState(null);
+  const [picked, setPicked] = useState(null);
+  const [hold, setHold] = useState(null);
+  const [note, setNote] = useState("");
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const r = await invoke("list-page-headings", { pageId });
+        if (!alive) return;
+        setHeadings(r?.headings || []);
+        if (r && r.success === false) setError(r.reason || "Could not read the page headings.");
+      } catch (_) { if (alive) { setHeadings([]); setError("Could not reach Sentinel Vault. Try again."); } }
+    })();
+    return () => { alive = false; };
+  }, [pageId]);
+  const seal = async (h) => {
+    setBusy(true); setError(null);
+    try {
+      const r = await invoke("seal-section", { pageId, headingIndex: h.index, headingText: h.text, ...(hold ? { lockDuration: hold } : {}), ...(note.trim() ? { note: note.trim() } : {}) });
+      if (r?.success) { await onSealed(); onClose(); }
+      else setError(r?.reason || "Could not seal this section.");
+    } catch (_) { setError("Could not reach Sentinel Vault. Try again."); }
+    finally { setBusy(false); }
+  };
+  return (
+    <div className="pd-picker" data-testid="pd-section-picker">
+      <div className="pd-picker-head"><span>Pick the heading to seal — the seal freezes it and everything under it, until the next heading of the same level.</span><button type="button" className="pd-btn quiet" onClick={onClose} disabled={busy}>Cancel</button></div>
+      {error && <p className="pd-error" role="alert" data-testid="pd-section-picker-error">{error}</p>}
+      {headings === null && <p className="pd-empty">Reading page…</p>}
+      {headings && headings.length === 0 && <p className="pd-empty">No headings to seal. Add a heading to the page, then try again.</p>}
+      {headings && headings.map((h) => (
+        <div key={h.index} className={`pd-pick${picked?.index === h.index ? " is-picked" : ""}`}>
+          <button type="button" className="pd-pick-row" disabled={busy} aria-expanded={picked?.index === h.index} onClick={() => { setPicked(picked?.index === h.index ? null : h); setError(null); }} data-testid="pd-section-pick">
+            <span className="pd-pick-level">H{h.level}</span>
+            <span className="pd-pick-main"><span className="pd-pick-text">{h.text}</span><span className="pd-pick-range">{describeRange(h)}</span></span>
+            <span className="pd-pick-cta">{picked?.index === h.index ? "Choose how long ▾" : "Seal…"}</span>
+          </button>
+          {picked?.index === h.index && (
+            <div className="pd-hold" data-testid="pd-section-hold">
+              <span className="pd-hold-label">Holds for</span>
+              <span className="pd-hold-opts" role="radiogroup" aria-label="How long the seal holds">
+                {HOLDS.map((o) => <button key={String(o.seconds)} type="button" role="radio" aria-checked={hold === o.seconds} className={`pd-hold-opt${hold === o.seconds ? " is-on" : ""}`} onClick={() => setHold(o.seconds)} data-testid={`pd-hold-${o.seconds == null ? "default" : o.seconds}`}>{o.label}</button>)}
+              </span>
+              <input className="pd-input" value={note} maxLength={300} placeholder="Note (optional) — why this section is sealed" aria-label="Seal note" onChange={(e) => setNote(e.target.value)} data-testid="pd-section-note" />
+              <button type="button" className="pd-btn primary" disabled={busy} onClick={() => seal(h)} data-testid="pd-section-seal-confirm">{busy ? "Sealing…" : "Seal this section"}</button>
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+};
+
 const SealsBlock = ({ summary, onChanged, siteUrl }) => {
   const rows = summary.seals || [];
+  const [picking, setPicking] = useState(false);
+  const canSeal = summary.viewer?.canEditPage === true; // the server refuses anyone else; no dead button
   return (
     <section className="pd-sec" data-testid="pd-seals">
-      <h4>Seals on this page · {rows.length}</h4>
+      <div className="pd-sec-head">
+        <h4>Seals on this page · {rows.length}</h4>
+        {canSeal && !picking && <button type="button" className="pd-btn primary" onClick={() => setPicking(true)} data-testid="pd-seal-section">Seal a section…</button>}
+      </div>
+      {picking && <SectionPicker pageId={summary.pageId} onSealed={onChanged} onClose={() => setPicking(false)} />}
       {summary.sealError && <p className="pd-error" role="alert">{summary.sealError}</p>}
-      {!summary.sealError && rows.length === 0 && <p className="pd-empty" data-testid="pd-seals-empty">Nothing on this page is sealed.</p>}
+      {!summary.sealError && rows.length === 0 && !picking && <p className="pd-empty" data-testid="pd-seals-empty">Nothing on this page is sealed.{canSeal ? " Seal a section here, or seal attachments from the Attachments tab." : ""}</p>}
       {rows.length > 0 && (
         <ul className="pd-list">
           {rows.map((r) => <SealRow key={`${r.kind}-${r.id}`} row={r} viewer={summary.viewer} pageId={summary.pageId} siteUrl={siteUrl} onChanged={onChanged} />)}

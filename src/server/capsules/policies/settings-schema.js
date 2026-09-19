@@ -106,9 +106,17 @@ export const CONTROLS = Object.freeze([
     label: "Ribbon",
     text: "What opens the ribbon: only exceptions, or the classification block on every page.",
     default: DEFAULT_RIBBON_MODE, parent: "enableDocRibbons", parentValue: true, hiddenUnless: "classificationEnabled" },
-  { key: "ribbonThresholdRank", scope: "global", group: "alerts", kind: "count", min: 1, max: 99,
-    label: "Ribbon classification threshold",
-    text: "In “Exceptions only”, a page classified at this rank or higher opens the ribbon on its own (default scheme: Public 1 · Internal 2 · Confidential 3 · Restricted 4).",
+  // CLS-10: the admin thinks in LEVELS, not ranks — the control is a level picker that stores the
+  // level id; the rank is resolved at read time (ribbon-rules `normalizeRibbonSettings(stored,
+  // levels)`), so renaming or re-ranking a level never silently changes what the threshold means.
+  { key: "ribbonThresholdLevel", scope: "global", group: "alerts", kind: "level",
+    label: "Show the banner from",
+    text: "In “Exceptions only”, a page classified at this level or higher opens the ribbon on its own. Unset = the highest level of the scheme (Restricted in the default one).",
+    default: null, parent: "enableDocRibbons", parentValue: true, hiddenUnless: "classificationEnabled" },
+  // The stored rank stays as the fallback the config API and older records use; never drawn.
+  { key: "ribbonThresholdRank", scope: "global", group: "alerts", kind: "count", min: 1, max: 99, internal: true,
+    label: "Ribbon classification threshold (rank)",
+    text: "The rank fallback behind “Show the banner from” — set by the API or by installs older than CLS-10.",
     default: DEFAULT_RIBBON_THRESHOLD_RANK, parent: "enableDocRibbons", parentValue: true, hiddenUnless: "classificationEnabled" },
   { key: "notifyEditorOnRevert", scope: "global", group: "alerts", kind: "toggle",
     label: "Tell editors when their change is undone",
@@ -173,7 +181,9 @@ export const CONTROLS = Object.freeze([
 /** CLS-1: does the row exist at all, given the effective values? (`hiddenUnless` names a key that must read true.) */
 export function controlVisible(key, values) {
   const c = control(key);
-  if (!c || !c.hiddenUnless) return true;
+  if (!c) return true;
+  if (c.internal) return false; // a stored fallback with no row of its own (CLS-10)
+  if (!c.hiddenUnless) return true;
   return values?.[c.hiddenUnless] === true;
 }
 
@@ -205,6 +215,8 @@ export function readEffective(key, stored) {
       if (c.max !== undefined && n > c.max) return c.default;
       return Math.floor(n);
     }
+    case "level":
+      return typeof stored === "string" && stored.trim() ? stored.trim().slice(0, 64) : null;
     case "choice":
       if (key === "ribbonMode") return stored === "always" ? "always" : "exceptions";
       if (key === "macroInsertPosition") return stored === "top" ? "top" : "bottom";
@@ -242,6 +254,7 @@ export function formatValue(key, value) {
     }
     case "days": return plural(Number(value), "day");
     case "count": return String(value);
+    case "level": return value ? String(value) : "The highest level (Restricted in the default scheme)";
     case "choice":
       if (key === "ribbonMode") return value === "always" ? "Always show classification" : "Exceptions only";
       if (key === "macroInsertPosition") return value === "top" ? "Top of the page" : "Bottom of the page";

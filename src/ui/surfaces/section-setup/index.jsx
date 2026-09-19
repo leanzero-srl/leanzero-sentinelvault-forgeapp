@@ -236,7 +236,7 @@ const SectionMacro = () => {
       <span>
         {seal.workflowHeld
           ? <>Locked by the approval of this page — edits you publish here are reverted automatically.<span className="sec-lock-hint">Changes go through the workflow: move the page back for review first.</span></>
-          : <>Locked by {seal.ownerName || "the seal owner"}{fmtUntil(seal.expiresAt)} — edits you publish here are undone automatically.<span className="sec-lock-hint">Ask to edit from the Sentinel Vault panel.</span></>}
+          : <>Locked by {seal.ownerName || "the seal owner"}{fmtUntil(seal.expiresAt)} — edits you publish here are undone automatically.<span className="sec-lock-hint">Ask to edit from Sentinel Vault under the page title (Request edit), or from the panel.</span></>}
       </span>
     </div>
   ) : canEdit ? (
@@ -254,9 +254,9 @@ const SectionMacro = () => {
         </div>
         {lockNotice}
         <p className="sec-config-desc">
-          Place the content you want to protect inside this section. To seal it against
-          unauthorized edits, open the <strong>Sentinel Vault</strong> panel on this page
-          and use <strong>Sealed Sections → Seal a section</strong>. The seal owner (or a
+          Place the content you want to protect inside this section. To seal it, open
+          <strong>Sentinel Vault</strong> under the page title and use <strong>Seal a section…</strong>
+          (or the panel's <strong>Sealed Sections → Seal a section</strong>). The seal owner (or a
           space admin) can release the seal at any time.
         </p>
         <div className="sec-config-actions">
@@ -280,10 +280,10 @@ const SectionMacro = () => {
   const badgeText = viewState === "pending" ? "Checking the seal…"
     : viewState === "sealed" || viewState === "expired"
       ? sealSentence({ isMine: seal.isMine === true, ownerName: seal.ownerName || "the seal owner", workflowHeld: seal.workflowHeld === true, isExpired: viewState === "expired", expiresAt: seal.expiresAt || null })
-      : "Not sealed yet — seal it from the Sentinel Vault panel";
+      : "Not sealed yet — seal it from Sentinel Vault under the page title (Seal a section…) or from the panel";
   const fallbackText = viewState === "sealed" ? "This section is sealed. Edits by anyone else are undone automatically."
     : viewState === "expired" ? "The seal on this section has expired. Edits are no longer reverted; the owner can seal it again from the Sentinel Vault panel."
-      : viewState === "unsealed" ? "This section is not sealed yet. Open the Sentinel Vault panel and use Sealed Sections → Seal a section."
+      : viewState === "unsealed" ? "This section is not sealed yet. Open Sentinel Vault under the page title and use Seal a section…, or the panel's Sealed Sections → Seal a section."
         : "Checking the seal…";
   const bodyText = rendererTimedOut
     ? "Sentinel Vault could not display this section's text here — a display problem, not the seal. The text is still on the page; reload to try again."
@@ -311,7 +311,7 @@ const SectionMacro = () => {
             )}
             {undone.fresh && <button type="button" className="sec-undone-btn" onClick={() => { try { router.reload(); } catch (_) { /* older bridge */ } }}>Reload the page</button>}
           </span>
-          {undone.mine && <span className="sec-undone-hint">To edit it, use Request edit in the Sentinel Vault panel, or ask the owner to give you access.</span>}
+          {undone.mine && <span className="sec-undone-hint">To edit it, use Request edit — under the page title (Sentinel Vault) or in the panel — or ask the owner to give you access.</span>}
         </div>
       )}
       <div className="sec-body">

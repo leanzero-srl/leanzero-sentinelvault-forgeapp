@@ -1463,14 +1463,17 @@ async function ribbonViewerHalf({ pageId, accountId, liveSeals, sectionRecords }
     settle("settings", kvs.get("admin-settings-global"), null),
     settle("classification switch", classificationActiveForPage(pageId), { active: false, reason: "site" }),
   ]);
-  const cls = sw.active
-    ? await settle("classification", (async () => { const { provider } = await getClassificationProvider(); return provider.effectiveLevel(pageId); })(), null)
+  const clsRead = sw.active
+    ? await settle("classification", (async () => { const { provider, levels } = await getClassificationProvider(); return { eff: await provider.effectiveLevel(pageId), levels: Array.isArray(levels) ? levels : [] }; })(), null)
     : null;
+  const cls = clsRead?.eff || null;
   half.classification = { level: null, source: "none", enabled: sw.active };
-  const norm = normalizeRibbonSettings(settings);
+  // CLS-10: the threshold is a LEVEL; its rank is resolved against the scheme in use, here.
+  const norm = normalizeRibbonSettings(settings, clsRead?.levels || null);
   half.ribbonMode = norm.ribbonMode;
   half.ribbonThresholdRank = norm.ribbonThresholdRank;
-  half.threshold = { rank: norm.ribbonThresholdRank };
+  half.ribbonThresholdLevel = norm.ribbonThresholdLevel;
+  half.threshold = { rank: norm.ribbonThresholdRank, levelId: norm.ribbonThresholdLevel, from: norm.thresholdFrom };
   if (cls?.level) {
     const l = cls.level;
     half.classification = { level: { id: String(l.id), name: l.name, color: l.color || null, rank: Number(l.rank) || 0, description: typeof l.description === "string" ? l.description.slice(0, 160) : "" }, source: cls.source || "page", enabled: true };
