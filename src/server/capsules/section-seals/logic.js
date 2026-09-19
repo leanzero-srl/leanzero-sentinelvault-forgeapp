@@ -148,7 +148,7 @@ export async function removeSectionContentProp(pageId) {
 export async function refreshSectionContentProp(pageId) {
   if (!pageId) return;
   const sections = (await listSectionSealRecordsForPage(pageId))
-    .map((v) => ({ sectionId: v.sectionId, lockedBy: v.lockedBy, expiresAt: v.expiresAt }));
+    .map((v) => ({ sectionId: v.sectionId, lockedBy: v.lockedBy, expiresAt: v.expiresAt, workflowHeld: !!(v.workflowHeld && typeof v.workflowHeld === "object") })); // SEC-2: readable over REST
   await writeSectionContentProp(pageId, sections);
 }
 

@@ -287,7 +287,7 @@ const MySeals = () => {
                 <span className="mw-row-meta">
                   {s.pageId ? <a className="mw-link" href={viewPage(s.pageId)} onClick={go(viewPage(s.pageId))}>{s.pageTitle || "Open page"}</a> : (s.pageTitle || "")}
                   {s.spaceName || s.spaceKey ? ` · ${s.spaceName || s.spaceKey}` : ""}
-                  {s.expiresAt ? ` · ${s.isExpired ? "was due" : "until"} ${when(s.expiresAt)}` : " · no end date"}
+                  {s.workflowHeld ? " · held by the approval of the page (expiry paused)" : s.expiresAt ? ` · ${s.isExpired ? "was due" : "until"} ${when(s.expiresAt)}` : " · no end date"}
                 </span>
               </div>
               <div className="mw-row-actions">{pill(s)}</div>

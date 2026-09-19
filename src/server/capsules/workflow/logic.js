@@ -801,6 +801,19 @@ export async function transitionPageWorkflow({ pageId, spaceKey, toStateId, acto
     ...enforceFields,
   };
   await persistState(pageId, record, current.stateId);
+  // SEC-2 (owner decision 2026-09-19): the workflow is the senior lock. Entering an enforced state
+  // takes custody of every seal on the page (expiry paused, personal actions refused, the page's
+  // privileged set is the only one that edits inside); leaving hands them back with their remaining
+  // time. Best effort, after the state is persisted — the record is the truth the trigger reads.
+  const enteringEnforce = !!target.enforce && !current.enforce;
+  const leavingEnforce = !!current.enforce && !target.enforce;
+  if (enteringEnforce || leavingEnforce) {
+    try {
+      const custody = await import("./seal-custody.js");
+      if (enteringEnforce) await custody.holdPageSeals({ pageId, record, stateName: target.name || toStateId, actorAccountId, actorName });
+      else await custody.handBackPageSeals({ pageId, record, actorAccountId, actorName, toStateName: target.name || toStateId });
+    } catch (e) { console.warn("[SEAL-CUSTODY] transition hook failed:", e?.message || e); }
+  }
   // Review #1: a transition that is NOT the completion of the page's pending approval (no
   // approvalRecord rides it: a plain request-transition to an open state, the review-clock
   // expiry, a re-assign) leaves that approval pointing at a page that is no longer where the
