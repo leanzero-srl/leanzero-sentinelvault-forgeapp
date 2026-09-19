@@ -2,7 +2,7 @@
 
 ## What is Sentinel Vault?
 
-Sentinel Vault is a Confluence app that protects attachments from accidental overwrites. When you seal (lock) a file, no one else can modify it until you unseal it or the seal expires. If someone does edit a sealed file, the change is automatically reverted and notifications are sent.
+Sentinel Vault is a Confluence app that protects attachments from accidental overwrites. When you seal (lock) a file, no one else can modify it until you release it or the seal expires. If someone does edit a sealed file, the change is undone automatically and notifications are sent.
 
 Beyond locking, Sentinel Vault provides full attachment management -- upload, label, delete, restore -- and multi-channel notifications that keep everyone informed about file status changes.
 
@@ -228,7 +228,7 @@ You removed a sealed attachment embed (such as an inline image) from the page bo
 Space admins can view sealed files per space in the space console (Sealed Files tab). There is no single cross-site view; check each space individually.
 
 **Can I seal a file indefinitely?**
-Only if your administrator has disabled seal expiry notifications. In that case, seals persist until manually released, showing "Overdue" after the configured duration, and periodic reminder emails are sent to the seal owner.
+Only if your administrator has disabled seal expiry notifications. In that case, seals persist until manually released, showing "Expired" after the configured duration, and periodic reminder emails are sent to the seal owner.
 
 **How do I stop receiving email notifications?**
 Email notifications are controlled at the site level by administrators. Contact your Confluence administrator to adjust notification preferences in the site settings console Alerts tab.

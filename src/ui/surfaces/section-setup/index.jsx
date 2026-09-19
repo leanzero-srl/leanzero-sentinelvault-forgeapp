@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from "react";
 import { createRoot } from "react-dom/client";
 import { view, invoke, router } from "@forge/bridge";
 import { enablePaletteSync } from "../../kit/palette-sync";
+import { when, sealSentence } from "../../kit/status-language.js"; // SEC-3: one vocabulary, one clock
 
 // Sentinel Vault "Sealed Section" bodied macro.
 // One resource serves both the macro VIEW (renders the protected body with a
@@ -53,12 +54,8 @@ const readSectionId = (ext) =>
   ext?.macro?.params?.guestParams?.sectionId ||
   null;
 
-const fmtUntil = (iso) => {
-  if (!iso) return "";
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "";
-  return ` until ${d.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" })}`;
-};
+// SEC-3: the ONE clock; " until Tue 23:13" / " until 22 Sep 22:57".
+const fmtUntil = (iso) => { const w = when(iso); return w ? ` until ${w}` : ""; };
 
 // Test seam: a harness can stub the status the surface would have fetched (only one real
 // browser identity exists, so the non-owner branch cannot be reached live).
@@ -239,7 +236,7 @@ const SectionMacro = () => {
       <span>
         {seal.workflowHeld
           ? <>Locked by the approval of this page — edits you publish here are reverted automatically.<span className="sec-lock-hint">Changes go through the workflow: move the page back for review first.</span></>
-          : <>Locked by {seal.ownerName || "the seal owner"}{fmtUntil(seal.expiresAt)} — edits you publish here are reverted automatically.<span className="sec-lock-hint">Ask to edit from the Sentinel Vault panel.</span></>}
+          : <>Locked by {seal.ownerName || "the seal owner"}{fmtUntil(seal.expiresAt)} — edits you publish here are undone automatically.<span className="sec-lock-hint">Ask to edit from the Sentinel Vault panel.</span></>}
       </span>
     </div>
   ) : canEdit ? (
@@ -278,11 +275,13 @@ const SectionMacro = () => {
   // The badge claims exactly what the resolver answered (P1-6): pending until it has, then
   // sealed / expired / unsealed. The frame border follows the same state (brand / amber / grey).
   const viewState = seal === null ? "pending" : seal.sealed && seal.isExpired ? "expired" : seal.sealed ? "sealed" : "unsealed";
-  const badgeText = viewState === "pending" ? "Sentinel Vault"
-    : viewState === "sealed" ? `Sealed by ${seal.ownerName || "the seal owner"}${seal.workflowHeld ? " · held by the approval of this page" : ""}` // SEC-2
-      : viewState === "expired" ? "Expired seal"
-        : "Not sealed yet — seal it from the Sentinel Vault panel";
-  const fallbackText = viewState === "sealed" ? "This section is sealed. Unauthorized edits are automatically reverted."
+  // SEC-3: the badge says what the rows say — "Sealed by you · until W" / "Locked by {name} ·
+  // until W" / "Locked by the approval of this page · expiry paused" / "Expired".
+  const badgeText = viewState === "pending" ? "Checking the seal…"
+    : viewState === "sealed" || viewState === "expired"
+      ? sealSentence({ isMine: seal.isMine === true, ownerName: seal.ownerName || "the seal owner", workflowHeld: seal.workflowHeld === true, isExpired: viewState === "expired", expiresAt: seal.expiresAt || null })
+      : "Not sealed yet — seal it from the Sentinel Vault panel";
+  const fallbackText = viewState === "sealed" ? "This section is sealed. Edits by anyone else are undone automatically."
     : viewState === "expired" ? "The seal on this section has expired. Edits are no longer reverted; the owner can seal it again from the Sentinel Vault panel."
       : viewState === "unsealed" ? "This section is not sealed yet. Open the Sentinel Vault panel and use Sealed Sections → Seal a section."
         : "Checking the seal…";

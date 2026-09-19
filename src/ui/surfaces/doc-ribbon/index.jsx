@@ -19,6 +19,7 @@ import { myWorkPath } from "../../kit/my-work-path.js";
 import { useActionMenu } from "../../kit/ActionMenu";
 import DatePicker, { toYmd, fromYmd } from "../../kit/DatePicker";
 import { decideRibbon, untilLabel } from "../../kit/ribbon-rules";
+import { alertWord, refusalText, when } from "../../kit/status-language.js"; // SEC-3: one vocabulary, one clock
 
 /**
  * Workflow state chip + transition control (#42). Shows the page's current
@@ -104,7 +105,7 @@ const UTC_NUMERIC = { timeZone: "UTC" };
 // the app's own month grid), and the readers' confirmations (B2; names for a steward). Everything
 // renders into the in-flow host row, never absolutely over the bar (the banner iframe only grows
 // with in-flow content).
-const WorkflowDetails = ({ workflow, siteUrl, pageId, isSteward, host, onSaved, readStatus, readReportAllowed }) => {
+const WorkflowDetails = ({ workflow, siteUrl, pageId, isSteward, host, onSaved, readStatus, readReportAllowed, stateOnChip = false }) => {
   const record = workflow.record || {};
   const [open, setOpen] = useState(false);
   const panelRef = useRef(null);
@@ -180,15 +181,20 @@ const WorkflowDetails = ({ workflow, siteUrl, pageId, isSteward, host, onSaved, 
   const lastDecision = !enforced && workflow.lastDecision ? workflow.lastDecision : null;
 
   // --- The chip ---
+  // SEC-3: the state chip beside this one already says "Approved v6" (`stateOnChip`), so the word
+  // never appears twice in one bar; this chip carries what is NOT the state.
   const parts = [];
-  if (enforced) parts.push(`Approved v${reviewedVersion}`);
+  if (enforced && !stateOnChip) parts.push(`Approved v${reviewedVersion}`);
   // A decision is an instant (local date, like the popover); a review DUE date is a calendar day (UTC).
   if (lastDecision) parts.push(`${lastDecision.kind === "denied" ? "Declined" : "Request closed"} ${new Date(lastDecision.at).toLocaleDateString(undefined, { month: "short", day: "numeric" })}`);
   if (hasDue) parts.push(overdue ? "review overdue" : `review due ${shortDate}`);
   if (readers && readReportAllowed) parts.push(`read ${readers.ackedCount}/${readers.audienceCount}${readers.unresolved ? "+" : ""}`);
   if (!parts.length) {
-    if (!isSteward) return null;
-    parts.push("Set review date"); // a steward can give any state a review date
+    // WF-10: "Set review date" only where a review date means something — an enforced state, or a
+    // state whose definition carries a review clock; other states get the date from the popover.
+    const stateHasClock = Number(workflow.state?.reviewAfterDays) > 0;
+    if (!isSteward || !(enforced || stateHasClock)) return null;
+    parts.push("Set review date");
   }
   const tone = overdue ? "critical" : enforced ? "success" : lastDecision?.kind === "denied" ? "critical" : "neutral";
   const title = overdue
@@ -258,12 +264,12 @@ const WorkflowDetails = ({ workflow, siteUrl, pageId, isSteward, host, onSaved, 
               </VersionLink>
               {baselineMoved && (
                 <p className="wf-evidence-baseline" data-testid="wf-evidence-baseline">
-                  Sanctioned baseline is now v{baselineVersion} (edited by an approver or space admin since the review).
+                  Approved content was last updated by an approver or space admin in v{baselineVersion}.
                 </p>
               )}
               {changedSince && (
                 <div className="wf-evidence-stale" data-testid="wf-evidence-stale">
-                  This page has changed since approval (now v{live}). Unsanctioned edits are {consequence} automatically.
+                  This page changed after approval (now v{live}). An edit by anyone who is not an approver or space admin is {consequence} automatically.
                 </div>
               )}
             </section>
@@ -508,6 +514,12 @@ const WorkflowControl = ({ workflow, approvals, operatorId, pageId, spaceKey, si
 
   if (!workflow?.assigned || !workflow.state) return null;
   const state = workflow.state;
+  // SEC-3: ONE "Approved" per bar — the state chip names the reviewed version ("Approved v6") and
+  // the details chip beside it drops the state word.
+  const rec = workflow.record || {};
+  const chipEnforced = !!rec.enforce && rec.approvedVersion != null;
+  const chipVersion = (typeof rec.approvalRecord?.pinnedVersion === "number" ? rec.approvalRecord.pinnedVersion : null) ?? rec.approvedVersion;
+  const stateLabel = chipEnforced ? `${state.name} v${chipVersion}` : state.name;
 
   // APPROVAL MODE — the page is awaiting sign-off before it can move to the enforce state.
   if (pendingApproval) {
@@ -654,10 +666,10 @@ const WorkflowControl = ({ workflow, approvals, operatorId, pageId, spaceKey, si
         <svg className="wf-chip-icon" width="10" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
           <path d="M4 22V4a1 1 0 0 1 1-1h13l-3 4 3 4H5" />
         </svg>
-        <span className="wf-chip-label">{state.name}</span>
+        <span className="wf-chip-label" data-testid="wf-state-chip-label">{stateLabel}</span>
         {canMove && <span className="wf-chip-caret" aria-hidden="true">▾</span>}
       </button>
-      <WorkflowDetails workflow={workflow} siteUrl={siteUrl} pageId={pageId} isSteward={isSteward} host={host} onSaved={onTransitioned} readStatus={readStatus} readReportAllowed={!!workflow.readConfirmation?.canReport} />
+      <WorkflowDetails workflow={workflow} siteUrl={siteUrl} pageId={pageId} isSteward={isSteward} host={host} onSaved={onTransitioned} readStatus={readStatus} readReportAllowed={!!workflow.readConfirmation?.canReport} stateOnChip={chipEnforced} />
       <ReadConfirmButton pageId={pageId} status={readStatus} onConfirmed={loadReadStatus} />
       {notice && <span className={`wf-notice wf-notice-${notice.tone}`} role="status" data-testid="wf-notice">{notice.text}</span>}
       {signMove && inHost(host, (
@@ -776,7 +788,7 @@ const alertSentence = (a, operatorId) => {
     case "seal-auto-released":
       return <>The seal on <strong>{name}</strong> lapsed and was released automatically.</>;
     case "reservation-expired":
-      return <>Your seal on <strong>{name}</strong> is overdue. Extend it or unseal it when you are done.</>;
+      return <>Your seal on <strong>{name}</strong> has expired. Extend it or release it when you are done.</>;
     case "periodic-reminder":
       return <><strong>{name}</strong> has been sealed for {days !== null ? `${days} day${days === 1 ? "" : "s"}` : "a while"}. Still needed?</>;
     default:
@@ -1093,7 +1105,7 @@ const DocumentRibbon = () => {
         ? await invoke("request-section-edit", { sectionId: seal.id, reason: askReason })
         : await invoke("request-edit-access", { attachmentId: seal.id, reason: askReason });
       if (r?.success) { setAsking(false); await evaluate("edit request sent"); }
-      else setAskError(r?.reason || "Could not send the request.");
+      else setAskError(refusalText(r) || "Could not send the request.");
     } catch (_) { setAskError("Could not send the request."); }
     finally { setAskBusy(false); }
   }, [summary, askReason, evaluate]);
@@ -1153,7 +1165,8 @@ const DocumentRibbon = () => {
   switch (urgent?.kind) {
     case "restored":
       // WF-2: a demote destroys nothing — "Restored" would claim it did.
-      pill = { tone: "alert", text: urgent.alert?.type === "workflow-demoted" ? "Moved back" : "Restored", n: urgent.count > 1 ? urgent.count : null };
+      // SEC-3: "Undone" — the editor's point of view ("Restored" was the app's).
+      pill = { tone: "alert", text: alertWord(urgent.alert?.type), n: urgent.count > 1 ? urgent.count : null };
       sentence = alertSentence(urgent.alert, operatorId);
       // The editor's lost text is one click away: the page version the app reverted.
       if (urgent.alert?.revertedVersion && urgent.alert.editorAccountId === operatorId && urgent.alert.ownerAccountId !== operatorId && pageId) {
@@ -1177,6 +1190,10 @@ const DocumentRibbon = () => {
     case "waiting-for-owner":
       pill = { tone: "wait", text: `Waiting for ${urgent.seal.owner}` };
       sentence = <>Your edit request on <b>{urgent.seal.name}</b> was sent</>;
+      break;
+    case "declined": // SEC-8: the declined request is a visible state until its cooldown passes
+      pill = { tone: "declined", text: `Declined · ask again ${when(urgent.retryAt)}` };
+      sentence = <>Your request on <b>{urgent.seal.name}</b> was declined by <b>{urgent.seal.owner}</b>{urgent.seal.deniedReason ? <>: “{urgent.seal.deniedReason}”</> : null}</>;
       break;
     case "locked":
       pill = { tone: "lock", text: "Locked" };

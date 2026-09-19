@@ -235,6 +235,7 @@ button:focus-visible {
 .rb-state--ok { background: #15803D; }
 .rb-state--alert { background: #B91C1C; }
 .rb-state--lock { background: #475569; }
+.rb-state--declined { background: #B91C1C; } /* SEC-8 */
 .rb-state-n { min-width: 16px; height: 16px; padding: 0 5px; border-radius: 8px; background: #ffffff; color: #B45309; display: inline-flex; align-items: center; justify-content: center; font-size: 10.5px; }
 .rb-state--alert .rb-state-n { color: #B91C1C; }
 .rb-state--lock .rb-state-n { color: #475569; }

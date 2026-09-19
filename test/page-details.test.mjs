@@ -24,9 +24,12 @@ const req = { requesterAccountId: "acc-G", requesterName: "Gabriela Perdum", rea
 eq("owner with a pending request → Approve/Decline inline", kind({ ...base, isMine: true, pendingRequests: [req] }), "decide");
 eq("…for that request", primaryActionFor({ ...base, isMine: true, pendingRequests: [req] }).request.requesterAccountId, "acc-G");
 eq("owner: a request does not change the primary when it is someone else's seal", kind({ ...base, pendingRequests: [req] }), "request");
-eq("declined within the cooldown → Request edit, disabled", kind({ ...base, myEditStatus: "denied" }), "request");
-eq("…disabled with a hint", primaryActionFor({ ...base, myEditStatus: "denied" }).disabled, true);
-ok("…the hint says when to try again (the server's retry time, never a typed-in 48 hours)", /ask again after/.test(primaryActionFor({ ...base, myEditStatus: "denied", myRetryAt: "2026-09-17T12:50:00.000Z" }).hint) && !/48/.test(primaryActionFor({ ...base, myEditStatus: "denied" }).hint));
+// SEC-8: a declined request inside its cooldown is a VISIBLE state ("Declined · ask again W"),
+// never a disabled button with a tooltip; past the cooldown the row offers Request edit again.
+eq("declined within the cooldown → Declined (a state)", kind({ ...base, myEditStatus: "denied", myRetryAt: "2099-01-01T00:00:00.000Z" }), "declined");
+eq("…carrying the server's retry time (never a typed-in 48 hours)", primaryActionFor({ ...base, myEditStatus: "denied", myRetryAt: "2099-01-01T00:00:00.000Z" }).retryAt, "2099-01-01T00:00:00.000Z");
+eq("declined past the cooldown → Request edit", kind({ ...base, myEditStatus: "denied", myRetryAt: "2020-01-01T00:00:00.000Z" }), "request");
+eq("declined with no retry time → Request edit", kind({ ...base, myEditStatus: "denied" }), "request");
 eq("expired, someone else's attachment → Expired (no primary)", kind({ ...base, isExpired: true }), "expired");
 eq("expired, someone else's attachment, even with a grant → Expired", kind({ ...base, isExpired: true, myEditStatus: "granted" }), "expired");
 eq("expired, mine → Release", kind({ ...base, isExpired: true, isMine: true }), "release");

@@ -1,5 +1,6 @@
 /*
- * Page details (5.0, mockup §4) — the PURE row-state rules, zero imports.
+ * Page details (5.0, mockup §4) — the PURE row-state rules. One import: the SEC-3 vocabulary
+ * (status-language.js, itself zero-import), so the words here and on every surface are one set.
  *
  * Shared by the server (logic.js re-exports it for the resolver and the unit test) and the
  * browser bundle (src/ui/surfaces/page-details imports it directly — no Forge import may sit
@@ -19,8 +20,9 @@
  * @returns {{ kind: string, label?: string, until?: string|null, owner?: string|null,
  *             request?: object|null, disabled?: boolean, hint?: string }}
  */
-export const HELD_LABEL = "Locked by the approval of this page";
-export function primaryActionFor(row, viewer = {}) {
+import { WORDS } from "../../../ui/kit/status-language.js";
+export const HELD_LABEL = WORDS.held;
+export function primaryActionFor(row, viewer = {}, now = Date.now()) {
   if (!row || typeof row !== "object") return { kind: "none" };
   const pending = Array.isArray(row.pendingRequests) ? row.pendingRequests : [];
   if (row.kind === "attachment" && row.sealed === false) return { kind: "seal", label: "Seal" };
@@ -43,10 +45,15 @@ export function primaryActionFor(row, viewer = {}) {
       return { kind: "editnow", label: "Edit now", until: row.myEditExpiresAt || row.expiresAt || null };
     case "pending":
       return { kind: "waiting", label: "Waiting", owner: row.ownerName || null };
-    case "denied":
-      // The wait is the site's setting, so the hint names the actual time the server gave
-      // (myRetryAt) instead of a number typed here; the owner can also grant access directly.
-      return { kind: "request", label: "Request edit", disabled: true, retryAt: row.myRetryAt || null, hint: `Your last request was declined${row.myRetryAt ? `; you can ask again after ${new Date(row.myRetryAt).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}` : ""}. The owner can also give you access directly.` };
+    case "denied": {
+      // SEC-8: the declined state is VISIBLE — a state span ("Declined · ask again W"), never a
+      // disabled button with a tooltip. The wait is the site's setting, so `retryAt` is the time
+      // the server gave; once it has passed the row offers Request edit again. The surface
+      // formats the clock (status-language `stateText`) — this file composes no dates.
+      const retryMs = row.myRetryAt ? new Date(row.myRetryAt).getTime() : NaN;
+      if (Number.isFinite(retryMs) && retryMs > now) return { kind: "declined", label: WORDS.declined, retryAt: row.myRetryAt, reason: row.myDeniedReason || null, hint: "The owner can also give you access directly." };
+      return { kind: "request", label: "Request edit" };
+    }
     default:
       return { kind: "request", label: "Request edit" };
   }
