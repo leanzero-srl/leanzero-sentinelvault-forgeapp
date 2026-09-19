@@ -50,6 +50,7 @@ import { getPageActivity } from "../activity/actions.js";
 import { resolveSealHoldPeriod } from "../sealing/logic.js";
 import { collectPageSeals, readPageMeta } from "./logic.js";
 import { writeBylineFor } from "./byline.js";
+import { isWorkflowHeld, heldLabel } from "../../shared/seal-authority.js"; // SEC-2
 
 const NOT_AUTHORIZED = "Not authorized";
 const NUMERIC = /^\d{1,20}$/;
@@ -159,6 +160,7 @@ export const pageDetailsSummary = async (req) => {
           expiresAt: record.expiresAt || null, isExpired: isExpired(record.expiresAt), isMine, isTrashed: trashed,
           watching: !!watch, link: record.downloadLink || null, note: record.note || null,
           myEditStatus: mine.status, myEditExpiresAt: mine.expiresAt, myRetryAt: mine.retryAt || null, pendingRequests,
+          workflowHeld: isWorkflowHeld(record), heldLabel: heldLabel(record), // SEC-2
         };
       }),
       ...sections.map(async (record) => {
@@ -171,8 +173,9 @@ export const pageDetailsSummary = async (req) => {
           kind: "section", id, name: record.sectionTitle || "Sealed section",
           ownerAccountId: record.lockedBy, ownerName: record.lockedByName || null,
           expiresAt: record.expiresAt || null, isExpired: isExpired(record.expiresAt), isMine, isTrashed: false,
-          watching: false, link: null,
+          watching: false, link: null, note: record.note || null, // SEC-7: the seal-time note, like attachments
           myEditStatus: mine.status, myEditExpiresAt: mine.expiresAt, myRetryAt: mine.retryAt || null, pendingRequests,
+          workflowHeld: isWorkflowHeld(record), heldLabel: heldLabel(record), // SEC-2
         };
       }),
     ]);

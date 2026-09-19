@@ -5,6 +5,8 @@ import { kvs, WhereConditions } from "@forge/kvs";
 import { authorizeSteward } from "../../shared/steward-checks.js";
 import { canEditPage, canReadPage, mustVerify, resolvePageSpaceKey } from "../../shared/content-access.js";
 import { touchSealTimestamp, resolveSealHoldPeriod } from "../sealing/logic.js";
+import { BASELINE_HOLD_SPAN, sanitizeHoldDuration } from "../../shared/baseline.js";
+import { setUntil } from "../../shared/kvs-ttl.js"; // SEC-7: grants carried forward on extend
 import { listSectionSealRecordsForPage } from "./logic.js";
 import { restampIfEnforced } from "../workflow/logic.js";
 import {
@@ -26,6 +28,7 @@ import { sweepSectionEditAccess, getActiveSectionEditGrant } from "../editreq/lo
 import { recordActivity } from "../../infra/activity-log.js";
 import { validateReleaseReason } from "../../shared/release-reason.js";
 import { refreshByline } from "../page-details/byline.js"; // 5.0 byline chip
+import { heldRefusal, isWorkflowHeld, heldLabel } from "../../shared/seal-authority.js"; // SEC-2
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const newSectionId = () => {
@@ -105,8 +108,10 @@ export const enumerateSectionSeals = async (req) => {
         lockedByAccountId: v.lockedBy,
         lockedByName: v.lockedByName,
         expiresAt: v.expiresAt || null,
+        note: v.note || null,
         isMine: v.lockedBy === operatorAccountId,
         isExpired: !!(v.expiresAt && new Date(v.expiresAt) < new Date()),
+        workflowHeld: isWorkflowHeld(v), heldLabel: heldLabel(v), // SEC-2
       }));
     return { sections };
   } catch (e) {
@@ -122,6 +127,8 @@ export const enumerateSectionSeals = async (req) => {
  */
 export const sealSection = async (req) => {
   const { pageId: payloadPageId, headingIndex, headingText, lockDuration } = req.payload || {};
+  // SEC-7: an optional note, like the attachment seal action carries (kept on the record, shown on the rows).
+  const note = typeof req.payload?.note === "string" && req.payload.note.trim() ? req.payload.note.trim().slice(0, 300) : null;
   const operatorAccountId = req.context.accountId;
   const pageId = payloadPageId || req.context.extension?.content?.id;
   let realmId =
@@ -228,6 +235,7 @@ export const sealSection = async (req) => {
     lockedBy: operatorAccountId, lockedByName: operatorName, lockedByEmail: operatorEmail,
     timestamp: new Date().toISOString(), expiresAt, lockDuration: holdPeriod,
     sectionTitle, sealedVersion: result.version, contentHash, originalIndex: result.originalIndex,
+    note,
   };
   await kvs.set(`section-protection-${sectionId}`, record);
   await kvs.set(`section-snapshot-${sectionId}`, {
@@ -291,6 +299,9 @@ export const unsealSection = async (req) => {
     }
   }
   if (!allowed) return { success: false, reason: "Only the section owner or a space admin can unseal" };
+  // SEC-2: while the page is Approved the seal is the workflow's — the owner cannot release it;
+  // a steward's break-glass (typed reason, below) is the one door out.
+  { const held = heldRefusal(record, isOwner ? "release" : "force-release"); if (held) return { success: false, reason: held }; }
   // Part 3.5: break-glass (steward, or anyone releasing a lapsed seal) needs a TYPED reason that
   // the trail shows. ONE rule with the attachment paths — shared/release-reason.js.
   let forcedReason = null;
@@ -407,6 +418,7 @@ const sectionSealStatus = async (req) => {
       expiresAt: record.expiresAt || null,
       isExpired: !!(record.expiresAt && new Date(record.expiresAt).getTime() <= Date.now()),
       pageId: record.pageId,
+      workflowHeld: isWorkflowHeld(record), heldLabel: heldLabel(record), // SEC-2: the macro badge says so
     };
   } catch (e) {
     console.error("[SECTION] status failed:", e);
@@ -460,11 +472,79 @@ const guardPageNowAction = async (req) => {
   }
 };
 
+/**
+ * SEC-7 (UX critique 2026-09-19): extend a section seal — the mirror of sealing/actions.js
+ * extendSeal. Owner or a steward of the RECORD's space (never the caller's context space). A live
+ * seal extends from its current expiry, a lapsed one from now. Every edit grant on the section is
+ * carried forward to the new expiry (a grant inherits the seal's expiry at grant time, so leaving
+ * it behind would cut an editor off while the seal still holds). The snapshot, the hash and the
+ * workflow's enforce baseline are NOT touched: an extension changes when, never what.
+ */
+export const extendSection = async (req) => {
+  const { sectionId, additionalSeconds } = req.payload || {};
+  const operatorAccountId = req.context.accountId;
+  if (!sectionId) return { success: false, reason: "Missing sectionId" };
+  const record = await kvs.get(`section-protection-${sectionId}`);
+  if (!record || !record.lockedBy) return { success: false, reason: "Section is not sealed" };
+  let authorized = record.lockedBy === operatorAccountId;
+  if (!authorized) {
+    try {
+      const objectSpaceKey = record.spaceKey || (record.pageId ? await resolvePageSpaceKey(record.pageId) : null);
+      authorized = !!objectSpaceKey && await authorizeSteward(operatorAccountId, objectSpaceKey);
+    } catch (_) { authorized = false; }
+  }
+  if (!authorized) return { success: false, reason: "Only the seal owner or a space admin can extend this seal" };
+  { const held = heldRefusal(record, "extend"); if (held) return { success: false, reason: held }; } // SEC-2
+
+  let addSeconds = sanitizeHoldDuration(additionalSeconds, 0);
+  if (!addSeconds) addSeconds = await resolveSealHoldPeriod(record.spaceKey);
+  addSeconds = sanitizeHoldDuration(addSeconds, BASELINE_HOLD_SPAN);
+  const now = Date.now();
+  const currentExpiryMs = record.expiresAt ? new Date(record.expiresAt).getTime() : 0;
+  const anchorMs = Number.isFinite(currentExpiryMs) && currentExpiryMs > now ? currentExpiryMs : now;
+  const newExpiresAt = new Date(anchorMs + addSeconds * 1000).toISOString();
+  const newExpiryMs = anchorMs + addSeconds * 1000;
+
+  const updated = { ...record, expiresAt: newExpiresAt, extendedAt: new Date().toISOString(), extendedBy: operatorAccountId, extensionCount: (Number(record.extensionCount) || 0) + 1 };
+  await kvs.set(`section-protection-${sectionId}`, updated);
+  // Grants ride the seal: every grant on this section now ends when the seal does.
+  let grantsMoved = 0;
+  try {
+    const { results } = await kvs.query().where("key", WhereConditions.beginsWith(`section-edit-grant-${sectionId}-`)).limit(100).getMany();
+    for (const { key, value } of results || []) {
+      if (!value) continue;
+      await setUntil(key, { ...value, expiresAt: newExpiresAt }, newExpiryMs);
+      grantsMoved++;
+    }
+  } catch (e) { console.warn("[EXTEND-SECTION] grants carry-forward failed:", e?.message || e); }
+  if (record.spaceId) {
+    try {
+      const indexKey = `space-section-protection-${record.spaceId}-${sectionId}`;
+      const indexRow = await kvs.get(indexKey);
+      if (indexRow) await kvs.set(indexKey, { ...indexRow, expiresAt: newExpiresAt });
+    } catch (e) { console.warn("[EXTEND-SECTION] index row update failed:", e?.message || e); }
+  }
+  await touchSealTimestamp();
+  await recordActivity({
+    type: "section.extended",
+    pageId: record.pageId || null,
+    spaceKey: record.spaceKey || null,
+    actor: { accountId: operatorAccountId, name: record.lockedBy === operatorAccountId ? (record.lockedByName || null) : null },
+    target: { kind: "section", id: sectionId, name: record.sectionTitle || "Sealed section" },
+    details: { previousExpiresAt: record.expiresAt || null, expiresAt: newExpiresAt, addedSeconds: addSeconds, extensionCount: updated.extensionCount, grantsMoved, byOwner: record.lockedBy === operatorAccountId },
+    version: null,
+  });
+  if (record.pageId) await refreshSectionContentProp(record.pageId).catch(() => {});
+  if (record.pageId) await refreshByline(record.pageId).catch((e) => console.warn("[BYLINE] extend-section refresh failed:", e?.message || e));
+  return { success: true, expiresAt: newExpiresAt, extensionCount: updated.extensionCount, grantsMoved };
+};
+
 export const actions = [
   ["list-page-headings", listPageHeadings],
   ["enumerate-section-seals", enumerateSectionSeals],
   ["seal-section", sealSection],
   ["unseal-section", unsealSection],
+  ["extend-section", extendSection],
   ["refresh-section-snapshot", refreshSectionSnapshot],
   ["section-seal-status", sectionSealStatus],
   ["guard-page-now", guardPageNowAction],

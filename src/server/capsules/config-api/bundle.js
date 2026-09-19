@@ -37,6 +37,10 @@ export const CONTENT_OPS = Object.freeze({
   "unseal-attachment": { allow: ["attachmentId", "reason"], required: ["attachmentId"], resolverKey: "unseal-artifact", role: "editor" },
   "seal-section": { allow: ["pageId", "headingText", "lockDuration"], required: ["pageId", "headingText"], resolverKey: "seal-section", role: "editor" },
   "unseal-section": { allow: ["sectionId", "reason"], required: ["sectionId"], resolverKey: "unseal-section", role: "editor" },
+  // SEC-7 (2026-09-20): a seal can be extended over the API too — a section (new resolver) or an
+  // attachment (the existing extend-seal). `additionalSeconds` omitted = the space's default hold.
+  "extend-section": { allow: ["sectionId", "additionalSeconds"], required: ["sectionId"], resolverKey: "extend-section", role: "editor" },
+  "extend-attachment": { allow: ["attachmentId", "additionalSeconds"], required: ["attachmentId"], resolverKey: "extend-seal", role: "editor" },
   // Direct grants (2026-09-17): the seal owner (or a steward) names the editor — no request needed.
   "grant-attachment-edit": { allow: ["attachmentId", "editorAccountId"], required: ["attachmentId", "editorAccountId"], resolverKey: "grant-edit-access", role: "editor" },
   "revoke-attachment-edit": { allow: ["attachmentId", "editorAccountId"], required: ["attachmentId", "editorAccountId"], resolverKey: "revoke-edit-grant", role: "editor" },
@@ -169,6 +173,7 @@ export function validateBundle(bundle, { rawBytes = null } = {}) {
           if (c[k] !== undefined && c[k] !== null && !ID_RE.test(String(c[k]))) err(`${p}.${k}`, "invalid id");
         }
         if (c.lockDuration !== undefined && !(Number.isFinite(Number(c.lockDuration)) && Number(c.lockDuration) > 0)) err(`${p}.lockDuration`, "must be a positive number of seconds");
+        if (c.additionalSeconds !== undefined && !(Number.isFinite(Number(c.additionalSeconds)) && Number(c.additionalSeconds) > 0)) err(`${p}.additionalSeconds`, "must be a positive number of seconds");
       });
     }
   }
@@ -245,6 +250,12 @@ export function planBundle(bundle) {
         break;
       case "unseal-section":
         step(p, spec.resolverKey, { sectionId: String(c.sectionId), reason: c.reason });
+        break;
+      case "extend-section":
+        step(p, spec.resolverKey, { sectionId: String(c.sectionId), additionalSeconds: c.additionalSeconds });
+        break;
+      case "extend-attachment":
+        step(p, spec.resolverKey, { attachmentId: String(c.attachmentId), additionalSeconds: c.additionalSeconds });
         break;
       case "grant-attachment-edit":
       case "revoke-attachment-edit":

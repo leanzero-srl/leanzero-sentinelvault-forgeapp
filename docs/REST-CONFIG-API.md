@@ -94,6 +94,8 @@ writes the receipt.
     { "op": "unseal-attachment", "attachmentId": "att…", "reason": "release done" },
     { "op": "seal-section", "pageId": "…", "headingText": "Pricing" },
     { "op": "unseal-section", "sectionId": "…", "reason": "…" },
+    { "op": "extend-section", "sectionId": "…", "additionalSeconds": 86400 },
+    { "op": "extend-attachment", "attachmentId": "att…", "additionalSeconds": 86400 },
     { "op": "grant-attachment-edit", "attachmentId": "att…", "editorAccountId": "712020:…" },
     { "op": "revoke-attachment-edit", "attachmentId": "att…", "editorAccountId": "712020:…" },
     { "op": "grant-section-edit", "sectionId": "…", "editorAccountId": "712020:…" },
@@ -158,6 +160,16 @@ app's own resolvers withhold from non-stewards lands there. The mirror holds:
 
 `spaceAdmins`, `workflowSettings` (approver rosters, entry conditions) and `validation.ai` are never
 mirrored.
+
+**Seals on an Approved page (SEC-2, 2026-09-20).** A `transition` op (or any transition) INTO an
+enforced state takes custody of every seal on the page: the section / attachment seal records get
+`workflowHeld: { pageId, stateId, stateName, since, remainingMs, prevExpiresAt }` and `expiresAt: null`
+(expiry paused); `unseal-section`, `extend-section`, `unseal-attachment` (owner path), `extend-attachment`,
+the grant ops and edit requests answer `Locked by the approval of this page — changes go through the
+workflow` while it lasts (a space admin's forced `unseal-*` with a reason is the one door out). A
+transition OUT of the state hands each seal back with `expiresAt = now + remainingMs`. The
+`section-protection-` content property lists `workflowHeld` per section, so a script can read the
+custody without an app call; the trail carries `workflow.seals-held` / `workflow.seals-released`.
 
 **Per-page status over REST (WF-6, 2026-09-20).** The `sentinel-byline` content property on every page
 the app touched carries the same ONE status the chip shows — `title` is `<Level> · <Status>` with
