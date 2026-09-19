@@ -51,6 +51,7 @@ import { randomUUID } from "node:crypto";
 // marker claim and the side effect that marker protects (T6). It never throws.
 import { recordActivity } from "./infra/activity-log.js";
 import { refreshByline } from "./capsules/page-details/byline.js"; // 5.0 byline chip — refreshed once per page save, after the restore passes
+import { isWorkflowHeld, mayEditInside } from "./shared/seal-authority.js"; // SEC-2
 
 // --- Fix 3 (CORE T6 extension): cross-run violation-comment dedup ---
 // K1: `violation-noticed-{pageId}-{targetId}-{class}`, TTL 24h, claimed BEFORE the footer
@@ -358,6 +359,9 @@ export async function pageContentTrigger(event) {
           // are skipped. The flag remains an explicit opt-out. Shadow+strict were both
           // live-verified (drift detection exact; revert to baseline; one deduped comment).
           enforceMediaAttrs: globalPolicy?.enforceMediaPresentation !== false,
+          // SEC-2: on an Approved page the WORKFLOW's privileged set (approver snapshot ∩ live, or a
+          // steward) is the set that edits inside a held seal; the section pass reads this.
+          workflowPrivileged: enforcement?.action === "privileged",
         };
       } catch (err) {
         console.error("[PAGE-PROTECT] Failed to read page body:", err);
@@ -1036,7 +1040,12 @@ async function restoreSealedSectionsPass(ctx, sectionSeals, probeCache = new Map
     // Owner edits their own sealed section freely — but RE-BASELINE the snapshot (SV-M5),
     // otherwise a later unrelated non-owner save sees the stale hash and reverts the owner's
     // own edit, destroying it and falsely blaming the non-owner.
-    if (seal.lockedBy === ctx.atlassianId) {
+    // SEC-2: a held seal's "owner" for this pass is the workflow's privileged set (the personal
+    // owner and every grantee are outside it unless they are approvers); a personal seal keeps its
+    // owner. shared/seal-authority.js mayEditInside is the ONE rule.
+    const heldByWorkflow = isWorkflowHeld(seal);
+    const editorIsOwner = mayEditInside({ seal, actorId: ctx.atlassianId, isOwner: seal.lockedBy === ctx.atlassianId, hasGrant: false, workflowPrivileged: ctx.workflowPrivileged });
+    if (editorIsOwner) {
       const ownWrap = (wrappersById.get(seal.sectionId) || [])[0];
       if (ownWrap) {
         const ownHash = hashAdf(ownWrap.node.content);
@@ -1051,7 +1060,7 @@ async function restoreSealedSectionsPass(ctx, sectionSeals, probeCache = new Map
             });
             await touchSealTimestamp(); // hunt H2-F5: S5 — every seal mutation touches the stamp
             console.warn(`[SECTION] Owner re-baselined section ${seal.sectionId}`);
-            await recordSectionRebaseline(ctx, seal, "owner", prevSnap?.bodyContent, newBody);
+            await recordSectionRebaseline(ctx, seal, heldByWorkflow && seal.lockedBy !== ctx.atlassianId ? "approver" : "owner", prevSnap?.bodyContent, newBody);
           } catch (e) { console.error("[SECTION] owner re-baseline failed:", e); }
         }
       }
@@ -1133,7 +1142,8 @@ async function restoreSealedSectionsPass(ctx, sectionSeals, probeCache = new Map
     }
 
     // Approved section editor (Edit Requests) — allow the edit and re-baseline from the edited copy.
-    const sectionGrant = await getActiveSectionEditGrant(seal.sectionId, ctx.atlassianId);
+    // SEC-2: grants are FROZEN while the workflow holds the seal — a grantee is outside the approver set.
+    const sectionGrant = heldByWorkflow ? null : await getActiveSectionEditGrant(seal.sectionId, ctx.atlassianId);
     if (sectionGrant) {
       try {
         const edited = changedWrappers[0];
@@ -2784,6 +2794,8 @@ export async function recurringNudgeTask() {
         if (value.trashedOnly) {
           continue;
         }
+        // SEC-2: a seal the workflow holds has no expiry BY DESIGN (paused) — not a never-expiring seal to nag about.
+        if (isWorkflowHeld(value)) continue;
 
         const artifactId = key.replace("protection-", "");
         const sealCreatedAt = new Date(value.timestamp);

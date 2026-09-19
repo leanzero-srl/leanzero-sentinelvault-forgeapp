@@ -690,8 +690,20 @@ export const getWorkflowDashboard = async (req) => {
   };
 };
 
+// SEC-2 (d): what approving this page will take custody of — the approval dialog lists it.
+const sealsToFreezeAction = async (req) => {
+  const pageId = pageIdOf(req);
+  if (!pageId) return { sections: [], attachments: [] };
+  if (!(await callerMayReadPage(req, pageId))) return { sections: [], attachments: [] };
+  try {
+    const { describeSealsToFreeze } = await import("./seal-custody.js");
+    return await describeSealsToFreeze(pageId);
+  } catch (e) { console.warn("[SEAL-CUSTODY] seals-to-freeze failed:", e?.message || e); return { sections: [], attachments: [] }; }
+};
+
 export const actions = [
   ["get-page-workflow", getWorkflow],
+  ["workflow-seals-to-freeze", sealsToFreezeAction],
   ["get-workflow-dashboard", getWorkflowDashboard],
   ["get-workflow-log", getLog],
   ["assign-workflow", assignWorkflow],
