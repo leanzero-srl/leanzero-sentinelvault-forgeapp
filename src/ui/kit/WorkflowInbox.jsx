@@ -34,8 +34,14 @@ export default function WorkflowInbox({ emptyText = null, onDecided = null } = {
     setBusy(pageId); setMsg(null);
     try {
       const r = await invoke("decide-approval", { pageId, decision });
-      if (r?.success) { setMsg({ type: "success", text: decision === "approved" ? "Approved." : "Denied." }); await load(); onDecided?.(); }
-      else setMsg({ type: "error", text: r?.reason || "Could not record your decision." });
+      // WF-1: `success` is "recorded"; only a completed outcome is good news. A stale close / AI
+      // hold / AI block shows the server's reason instead of "Approved."
+      const outcome = r?.outcome || decision;
+      if (r?.success && (outcome === "approved" || outcome === "denied" || outcome === "pending")) {
+        setMsg({ type: "success", text: outcome === "denied" ? "Denied — the requester has been told." : r.transitioned ? "Approved — the page is now Approved." : outcome === "approved" ? "Approved — your sign-off is recorded." : "Your decision is recorded." });
+        await load(); onDecided?.();
+      } else if (r?.success) { setMsg({ type: "error", text: r.reason || "The request could not be completed." }); await load(); onDecided?.(); }
+      else { setMsg({ type: "error", text: r?.reason || "Could not record your decision." }); if (r?.stale) await load(); }
     } catch (_) {
       setMsg({ type: "error", text: "Could not record your decision." });
     } finally {
@@ -68,10 +74,11 @@ export default function WorkflowInbox({ emptyText = null, onDecided = null } = {
           <li key={it.pageId} className="wf-inbox-row">
             <div className="wf-inbox-info">
               <a className="wf-inbox-page" href={siteUrl ? `${siteUrl}/wiki/pages/viewpage.action?pageId=${it.pageId}` : "#"} onClick={(e) => open(e, it.pageId)} data-testid="wf-inbox-page">{it.pageTitle}</a>
-              <span className="wf-inbox-meta">Move to <strong>{it.toStateName}</strong>{it.requestedByName ? ` · requested by ${it.requestedByName}` : ""}</span>
+              <span className="wf-inbox-meta">Move to <strong>{it.toStateName}</strong>{it.requestedByName ? ` · requested by ${it.requestedByName}` : ""}{it.pinnedVersion != null ? ` · v${it.pinnedVersion}` : ""}</span>
+              {it.stale && <span className="wf-inbox-stale" data-testid="wf-inbox-stale">Page changed since the request (now v{it.liveVersion}) — open the page to re-request for the current version.</span>}
             </div>
             <div className="wf-inbox-actions">
-              <button type="button" className="wf-inbox-approve" aria-label={`Approve moving ${it.pageTitle} to ${it.toStateName}`} onClick={() => decide(it.pageId, "approved")} disabled={busy === it.pageId}>Approve</button>
+              <button type="button" className="wf-inbox-approve" aria-label={`Approve moving ${it.pageTitle} to ${it.toStateName}`} onClick={() => decide(it.pageId, "approved")} disabled={busy === it.pageId || !!it.stale} title={it.stale ? "The page changed after the request — re-request for the current version from the page first." : undefined}>Approve</button>
               <button type="button" className="wf-inbox-deny" aria-label={`Deny moving ${it.pageTitle} to ${it.toStateName}`} onClick={() => decide(it.pageId, "denied")} disabled={busy === it.pageId}>Deny</button>
             </div>
           </li>

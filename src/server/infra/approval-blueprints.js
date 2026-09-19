@@ -74,15 +74,35 @@ export async function postEnforceComment(pageId, editorId, kind, opts = {}) {
   }
 }
 
-// Notify the requester that their request was approved or denied.
-export async function notifyApprovalResolved({ pageId, requestedBy, outcome, targetName, deciderName }) {
-  if (!pageId || !requestedBy) return { success: false };
+// The requester's comment body — pure, so the copy is unit-tested (test/approval-notice.test.mjs).
+// `outcome` = "approved" | "denied" | "stale". WF-1 (UX critique 2026-09-19): a STALE close (the page
+// changed after the request, so an approval could not be applied) used to be posted as "declined by
+// <the approver>" — the approver had approved. It now says what happened and names no decider.
+// WF-3: a denial carries the approver's reason — the whole point of Deny + reason is to tell the
+// author what to fix.
+export function approvalResolvedBody({ requestedBy, outcome, targetName, deciderName, reason, pinnedVersion, liveVersion }) {
+  const target = `<strong>${escapeXml(targetName || "the next state")}</strong>`;
+  const who = mention(requestedBy);
+  if (outcome === "stale") {
+    const versions = pinnedVersion != null && liveVersion != null ? ` (v${escapeXml(pinnedVersion)} → v${escapeXml(liveVersion)})` : "";
+    return `
+<p>${HEADER} — <strong>Approval request closed</strong></p>
+<p>${who} — the page changed after you asked for approval to move it to ${target}${versions}, so the request was closed. Nobody declined it. Re-request approval when the page is ready.</p>
+`.trim();
+  }
   const verb = outcome === "approved" ? "approved" : "declined";
   const tail = outcome === "approved" ? " The page has moved." : " The page stays in its current state.";
-  const storageBody = `
+  const why = reason ? `: <em>“${escapeXml(reason)}”</em>` : "";
+  return `
 <p>${HEADER} — <strong>Approval ${verb}</strong></p>
-<p>${mention(requestedBy)} — your request to move this page to <strong>${escapeXml(targetName || "the next state")}</strong> was <strong>${verb}</strong>${deciderName ? ` by ${escapeXml(deciderName)}` : ""}.${tail}</p>
+<p>${who} — your request to move this page to ${target} was <strong>${verb}</strong>${deciderName ? ` by ${escapeXml(deciderName)}` : ""}${why}.${tail}</p>
 `.trim();
+}
+
+// Notify the requester that their request was approved, denied, or closed because the page changed.
+export async function notifyApprovalResolved({ pageId, requestedBy, outcome, targetName, deciderName, reason, pinnedVersion, liveVersion }) {
+  if (!pageId || !requestedBy) return { success: false };
+  const storageBody = approvalResolvedBody({ requestedBy, outcome, targetName, deciderName, reason, pinnedVersion, liveVersion });
   try {
     return await postCommentWithMention({ pageId, storageBody });
   } catch (e) {
