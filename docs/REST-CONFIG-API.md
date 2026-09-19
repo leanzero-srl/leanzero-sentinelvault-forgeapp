@@ -100,6 +100,8 @@ writes the receipt.
     { "op": "revoke-attachment-edit", "attachmentId": "att…", "editorAccountId": "712020:…" },
     { "op": "grant-section-edit", "sectionId": "…", "editorAccountId": "712020:…" },
     { "op": "revoke-section-edit", "sectionId": "…", "editorAccountId": "712020:…" },
+    { "op": "decline-attachment-edit", "attachmentId": "att…", "requesterAccountId": "712020:…", "reason": "not during the freeze" },
+    { "op": "decline-section-edit", "sectionId": "…", "requesterAccountId": "712020:…", "reason": "…" },
     { "op": "classify-page", "pageId": "…", "levelId": "restricted" },
     { "op": "assign-workflow", "pageId": "…", "workflowId": "review" },
     { "op": "transition", "pageId": "…", "toStateId": "approved", "reason": "…" }

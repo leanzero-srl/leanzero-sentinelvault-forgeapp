@@ -14,6 +14,7 @@ import {
   getActiveEditGrant, getActiveSectionEditGrant,
   writeOwnerIndex, dropOwnerIndex, listPendingRequestsForOwner,
   writeSectionOwnerIndex, dropSectionOwnerIndex, listPendingSectionRequestsForOwner,
+  writeMineIndex, listMyRequests,
   resolveEditCooldownMs,
 } from "./logic.js";
 import { retryAtFor } from "../../shared/edit-cooldown.js";
@@ -117,6 +118,7 @@ const requestEditAccess = async (req) => {
   });
   // K1: the owner's index row goes with the record (read back by key: the set is strongly consistent).
   await writeOwnerIndex(await kvs.get(`edit-request-${attachmentId}-${accountId}`)).catch((e) => console.warn("[EDIT-ACCESS] owner index", e));
+  await writeMineIndex({ requesterAccountId: accountId, kind: "attachment", id: attachmentId, name: seal.attachmentName || null, pageId: seal.contentId || null, spaceKey: seal.spaceKey || null }).catch((e) => console.warn("[EDIT-ACCESS] mine index", e)); // SEC-8
   // A1: the request exists from this write on.
   await recordActivity({
     type: "editreq.requested",
@@ -400,6 +402,7 @@ async function grantDirect({ scope, id, seal, pageId, name, accountId, editorAcc
     await kvs.delete(requestKey);
     await (section ? dropSectionOwnerIndex(request) : dropOwnerIndex(request));
   }
+  await writeMineIndex({ requesterAccountId: editorAccountId, kind: section ? "section" : "attachment", id, name, pageId: pageId || null, spaceKey: seal.spaceKey || null }).catch(() => {}); // SEC-8: the grantee's own list
   await recordActivity({
     type: "editreq.granted",
     pageId: pageId || null,
@@ -527,6 +530,7 @@ export const requestSectionEdit = async (req) => {
   });
   // P1-3: the owner's index row goes with the record (read back by key: the set is strongly consistent).
   await writeSectionOwnerIndex(await kvs.get(`section-edit-request-${sectionId}-${accountId}`)).catch((e) => console.warn("[SECTION-EDIT-REQ] owner index", e));
+  await writeMineIndex({ requesterAccountId: accountId, kind: "section", id: sectionId, name: sectionTitle, pageId: seal.pageId || null, spaceKey: seal.spaceKey || null }).catch((e) => console.warn("[SECTION-EDIT-REQ] mine index", e)); // SEC-8
   // A1 (section scope)
   await recordActivity({
     type: "editreq.requested",
@@ -723,6 +727,18 @@ const listMySectionEditRequests = async (req) => {
  * needs a REST lookup per page); the inbox card stays the authority for what is listed.
  * Every arm fails soft to 0 so one broken index cannot blank the whole badge.
  */
+/**
+ * SEC-8: the caller's OWN requests — pending / declined (inside the cooldown, with the owner's
+ * reason and the retry time) / granted (with the grant's expiry). The requester used to be the one
+ * person with nowhere to look. Index read only (editreq-mine-{me}-…), confirmed by key.
+ */
+const listMyRequestsAction = async (req) => {
+  const accountId = req.context.accountId;
+  if (!accountId) return { requests: [] };
+  const requests = await listMyRequests(accountId, await resolveEditCooldownMs());
+  return { requests };
+};
+
 const countMyWork = async (req) => {
   const accountId = req.context.accountId;
   if (!accountId) return { approvals: 0, fileRequests: 0, sectionRequests: 0, accessRequests: 0, total: 0 };
@@ -749,6 +765,7 @@ export const actions = [
   ["check-section-edit", checkSectionEdit],
   ["list-section-edit-requests", listSectionEditRequests],
   ["list-my-section-edit-requests", listMySectionEditRequests],
+  ["list-my-requests", listMyRequestsAction], // SEC-8
   ["count-my-work", countMyWork],
   ["approve-section-edit", approveSectionEdit],
   ["deny-section-edit", denySectionEdit],
