@@ -46,6 +46,9 @@ export const CONTENT_OPS = Object.freeze({
   "revoke-attachment-edit": { allow: ["attachmentId", "editorAccountId"], required: ["attachmentId", "editorAccountId"], resolverKey: "revoke-edit-grant", role: "editor" },
   "grant-section-edit": { allow: ["sectionId", "editorAccountId"], required: ["sectionId", "editorAccountId"], resolverKey: "grant-section-edit", role: "editor" },
   "revoke-section-edit": { allow: ["sectionId", "editorAccountId"], required: ["sectionId", "editorAccountId"], resolverKey: "revoke-section-edit-grant", role: "editor" },
+  // SEC-8 (2026-09-20): a request can be declined over the API, with the optional word that reaches the requester.
+  "decline-attachment-edit": { allow: ["attachmentId", "requesterAccountId", "reason"], required: ["attachmentId", "requesterAccountId"], resolverKey: "deny-edit-request", role: "editor" },
+  "decline-section-edit": { allow: ["sectionId", "requesterAccountId", "reason"], required: ["sectionId", "requesterAccountId"], resolverKey: "deny-section-edit", role: "editor" },
   "classify-page": { allow: ["pageId", "levelId"], required: ["pageId"], resolverKey: "classification-set-page", role: "editor" },
   "assign-workflow": { allow: ["pageId", "workflowId"], required: ["pageId"], resolverKey: "assign-workflow", role: "editor" },
   "transition": { allow: ["pageId", "toStateId", "reason"], required: ["pageId", "toStateId"], resolverKey: "request-transition", role: "editor" },
@@ -264,6 +267,12 @@ export function planBundle(bundle) {
       case "grant-section-edit":
       case "revoke-section-edit":
         step(p, spec.resolverKey, { sectionId: String(c.sectionId), editorAccountId: String(c.editorAccountId) });
+        break;
+      case "decline-attachment-edit":
+        step(p, spec.resolverKey, { attachmentId: String(c.attachmentId), requesterAccountId: String(c.requesterAccountId), reason: c.reason });
+        break;
+      case "decline-section-edit":
+        step(p, spec.resolverKey, { sectionId: String(c.sectionId), requesterAccountId: String(c.requesterAccountId), reason: c.reason });
         break;
       case "classify-page":
         step(p, spec.resolverKey, { pageId: String(c.pageId), levelId: c.levelId ?? null });

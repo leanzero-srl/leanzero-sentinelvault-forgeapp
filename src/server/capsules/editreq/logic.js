@@ -106,6 +106,57 @@ export const writeSectionOwnerIndex = sectionIndex.write;
 export const dropSectionOwnerIndex = sectionIndex.drop;
 export const listPendingSectionRequestsForOwner = sectionIndex.listPending;
 
+// SEC-8 (UX critique 2026-09-19): the REQUESTER's own index — "my requests" (pending / declined /
+// granted) had no home; the requester was the one person with nowhere to look. One row per
+// (requester, kind, object): editreq-mine-{requester}-{kind}-{id}. Written with the request and
+// with a direct grant; the read confirms by key against BOTH the request record and the grant, and
+// drops rows with neither (the read heals the index it walks, like the owner indexes above).
+const MINE_PREFIX = "editreq-mine";
+const mineKey = (requesterAccountId, kind, id) => `${MINE_PREFIX}-${requesterAccountId}-${kind}-${id}`;
+export async function writeMineIndex({ requesterAccountId, kind, id, name = null, pageId = null, spaceKey = null }) {
+  if (!requesterAccountId || !id || !["attachment", "section"].includes(kind)) return false;
+  // The row carries the name / page so a GRANT (which names neither) still lists readably.
+  await kvs.set(mineKey(requesterAccountId, kind, id), { kind, id, requesterAccountId, name, pageId, spaceKey, touchedAt: new Date().toISOString() });
+  return true;
+}
+const requestKeyOf = (kind, id, acct) => (kind === "section" ? `section-edit-request-${id}-${acct}` : `edit-request-${id}-${acct}`);
+const grantKeyOf = (kind, id, acct) => (kind === "section" ? `section-edit-grant-${id}-${acct}` : `edit-grant-${id}-${acct}`);
+/**
+ * The caller's own requests and grants, newest first: { kind, id, name, pageId, spaceKey, status:
+ * "pending"|"denied"|"granted", requestedAt, deniedAt, deniedReason, retryAt, expiresAt, ownerAccountId }.
+ * `cooldownMs` decides whether a denial is still inside its cooldown (then it is listed with
+ * retryAt); a denial past it is dropped with its index row.
+ */
+export async function listMyRequests(requesterAccountId, cooldownMs, now = Date.now()) {
+  if (!requesterAccountId) return [];
+  const out = [];
+  const prefix = `${MINE_PREFIX}-${requesterAccountId}-`;
+  let query = kvs.query().where("key", WhereConditions.beginsWith(prefix)).limit(100);
+  let iterations = 0;
+  do {
+    const { results, nextCursor } = await query.getMany();
+    for (const { key: k, value: row } of results || []) {
+      if (!row?.kind || !row?.id) { await kvs.delete(k).catch(() => {}); continue; }
+      const [request, grant] = await Promise.all([kvs.get(requestKeyOf(row.kind, row.id, requesterAccountId)).catch(() => null), kvs.get(grantKeyOf(row.kind, row.id, requesterAccountId)).catch(() => null)]);
+      const live = grant && (!grant.expiresAt || new Date(grant.expiresAt).getTime() > now) ? grant : null;
+      const name = request?.attachmentName || request?.sectionTitle || row.name || null;
+      const base = { kind: row.kind, id: row.id, name, pageId: request?.contentId || row.pageId || null, spaceKey: request?.spaceKey || row.spaceKey || null, ownerAccountId: request?.ownerAccountId || live?.grantedBy || null, requestedAt: request?.requestedAt || live?.grantedAt || null };
+      if (live) { out.push({ ...base, status: "granted", expiresAt: live.expiresAt || null }); continue; }
+      if (request?.status === "pending") { out.push({ ...base, status: "pending" }); continue; }
+      if (request?.status === "denied") {
+        const deniedMs = request.deniedAt ? new Date(request.deniedAt).getTime() : NaN;
+        const retryMs = Number.isFinite(deniedMs) && cooldownMs > 0 ? deniedMs + cooldownMs : NaN;
+        if (Number.isFinite(retryMs) && retryMs > now) { out.push({ ...base, status: "denied", deniedAt: request.deniedAt, deniedReason: request.deniedReason || null, retryAt: new Date(retryMs).toISOString() }); continue; }
+      }
+      await kvs.delete(k).catch(() => {});
+    }
+    if (!nextCursor || ++iterations >= 15) break;
+    query = kvs.query().where("key", WhereConditions.beginsWith(prefix)).limit(100).cursor(nextCursor);
+  } while (true);
+  out.sort((a, b) => String(b.requestedAt || "").localeCompare(String(a.requestedAt || "")));
+  return out;
+}
+
 // Space-admin access requests ("steward requests"): the approver is not one account but a ROLE
 // (site admin, space ADMINISTER, the configured admin users/groups), which cannot be indexed per
 // approver. The index is per SPACE — "which spaces have someone waiting" — one bounded prefix

@@ -20,7 +20,7 @@ ok("another year → day month year + time", /^\d{1,2} [A-Za-z]{3} 2027 \d{2}:\d
 ok("never a 12-hour clock", !/AM|PM|am|pm/.test(when("2026-09-22T20:57:00.000Z", now, "en-US")));
 eq("ribbon-rules.untilLabel IS the shared clock", untilLabel, when);
 eq("seal-row.when IS the shared clock", rowWhen, when);
-ok("whenDay is a calendar day, no clock", /^\d{1,2} [A-Za-z]{3} 2026$/.test(whenDay("2026-09-22T20:57:00.000Z", L)) && !/:/.test(whenDay("2026-09-22T20:57:00.000Z", L)));
+ok("whenDay is a calendar day, no clock", /^\d{1,2} [A-Za-z]{3,4} 2026$/.test(whenDay("2026-09-22T20:57:00.000Z", L)) && !/:/.test(whenDay("2026-09-22T20:57:00.000Z", L)));
 eq("whenDay utc pins the day", whenDay("2026-09-22T23:30:00.000Z", L, { utc: true }), "22 Sept 2026");
 
 // ── the words ────────────────────────────────────────────────────────────────────────────────
