@@ -44,6 +44,10 @@ If another user uploads a new version of your sealed file:
 
 The unauthorized editor's changes are not lost permanently -- they exist as a version in the attachment history -- but the active version is restored to what it was before their edit.
 
+### Sealing a section of a page
+
+Click the Sentinel Vault chip under the page title to open the page's details, then **Seal a section…** in "Seals on this page": pick the heading (each row says what the seal will freeze — the heading and everything under it, up to the next heading of the same level), choose how long it holds and, optionally, a note. The sealed section shows a badge on the page ("Sealed by you · until …"); the inline panel's Sealed Sections group offers the same picker. Edits inside a sealed section by anyone but the owner (and the people the owner approves) are undone automatically.
+
 ### Asking to edit someone else's sealed content
 
 On a file or section someone else holds sealed, the row (page-details modal, inline panel) and the page ribbon offer **Request edit**. The owner sees the request on the row, on the ribbon ("Waiting for you") and on My work, and answers **Approve** or **Decline** — Decline can carry a short word for you (optional; from the page-details modal). What you see afterwards uses one set of words everywhere: **Waiting for {owner}** while it is open, **Edit now · until {time}** once approved, **Declined · ask again {time}** when it was declined (the owner's word is on the row and in the ribbon sentence; the wait is the site's cooldown setting), and your own **My work → Your edit requests** card lists every request you made with the same states. The owner can also give you access directly at any time.
