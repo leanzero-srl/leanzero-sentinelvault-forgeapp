@@ -19,6 +19,7 @@ import {
 } from "../../infra/doc-surgery.js";
 import {
   computeSectionRange,
+  describeSectionRange,
   refreshSectionContentProp,
 } from "./logic.js";
 import { sweepSectionEditAccess, getActiveSectionEditGrant } from "../editreq/logic.js";
@@ -67,7 +68,10 @@ export const listPageHeadings = async (req) => {
     for (let i = 0; i < content.length; i++) {
       const b = content[i];
       if (b.type === "heading") {
-        headings.push({ index: i, level: b.attrs?.level || 1, text: textOfHeading(b) || "(untitled heading)" });
+        // SEC-1: the picker shows what the seal will cover (blocks after the heading and what
+        // ends the range) so the user sees the range BEFORE freezing it.
+        const { blocks, stopsAt } = describeSectionRange(content, i);
+        headings.push({ index: i, level: b.attrs?.level || 1, text: textOfHeading(b) || "(untitled heading)", blocks, stopsAt });
       } else if (b.type === "bodiedExtension" && isSealedSectionKey(b.attrs?.extensionKey)) {
         sealed++;
       }
