@@ -4,7 +4,7 @@ import { invoke, view } from "@forge/bridge";
 import { enablePaletteSync } from "../../kit/palette-sync";
 import ValidationsEditor from "../../kit/ValidationsEditor";
 import LicenseBanner from "../../kit/LicenseBanner";
-import ClassificationTab from "../../kit/ClassificationTab";
+import ClassificationTab, { LevelPicker } from "../../kit/ClassificationTab";
 import { ConfirmDialog } from "../../kit/Dialog";
 import { formatDurationHours } from "../../kit/format-duration";
 import logo from "../../assets/icons/icon.png";
@@ -71,7 +71,7 @@ const depthOf = (key) => {
  * a parent is indented under it and DISABLED with the reason while the parent is off — visibly
  * dependent, never silently inert.
  */
-export const ControlRow = ({ desc, values, siteValues, onChange, children, siteDefaultText }) => {
+export const ControlRow = ({ desc, values, siteValues, onChange, children, siteDefaultText, levels = [] }) => {
   const dep = dependencyState(desc.key, values, siteValues);
   const depth = depthOf(desc.key);
   const val = values[desc.key];
@@ -120,6 +120,9 @@ export const ControlRow = ({ desc, values, siteValues, onChange, children, siteD
       }
       case "choice":
         if (desc.key === "ribbonMode") input = <ChoiceBlocks value={val} onChange={set} options={RIBBON_MODE_OPTIONS} ariaLabel="Ribbon mode" testPrefix="ribbon-mode" disabled={disabled} />;
+        break;
+      case "level": // CLS-10: a level chip picker, never a rank number
+        input = <LevelPicker value={val || "__none__"} levels={levels} onChange={(id) => set(id === "__none__" ? null : id)} allowNone ariaLabel={desc.label} testId={`sv-level-${desc.key}`} disabled={disabled} placeholder="Choose a level…" />;
         break;
       default:
         input = null;
@@ -766,6 +769,9 @@ const GlobalPolicyEditor = () => {
   };
 
   const groupRows = useMemo(() => Object.fromEntries(GROUPS.map((g) => [g.id, controlsFor("global", g.id)])), []);
+  // CLS-10: the level list for the "Show the banner from" picker (the scheme in use).
+  const [levelList, setLevelList] = useState([]);
+  useEffect(() => { invoke("classification-provider", {}).then((r) => setLevelList(Array.isArray(r?.levels) ? r.levels : [])).catch(() => {}); }, []);
 
   if (loading) {
     return (
@@ -870,7 +876,7 @@ const GlobalPolicyEditor = () => {
                     )}
                   >
                     {groupRows[g.id].map((desc) => (
-                      <ControlRow key={desc.key} desc={desc} values={values} onChange={onChange} />
+                      <ControlRow key={desc.key} desc={desc} values={values} onChange={onChange} levels={levelList} />
                     ))}
                     {g.id === "alerts" && (
                       <p className="sv-group-note" data-testid="sv-quiet-note">

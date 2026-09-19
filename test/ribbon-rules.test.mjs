@@ -18,8 +18,18 @@ const locked = { name: "contract-v3.pdf", owner: "Mihai Perdum", until: "2026-09
 
 // ── settings ────────────────────────────────────────────────────────────────────────────────
 eq("defaults", [DEFAULT_RIBBON_MODE, DEFAULT_RIBBON_THRESHOLD_RANK, RIBBON_MODES], ["exceptions", 4, ["exceptions", "always"]]);
-eq("no stored settings → defaults", normalizeRibbonSettings(null), { ribbonMode: "exceptions", ribbonThresholdRank: 4 });
-eq("stored always + 3", normalizeRibbonSettings({ ribbonMode: "always", ribbonThresholdRank: 3 }), { ribbonMode: "always", ribbonThresholdRank: 3 });
+eq("no stored settings → defaults", normalizeRibbonSettings(null), { ribbonMode: "exceptions", ribbonThresholdRank: 4, ribbonThresholdLevel: null, thresholdFrom: "rank" });
+eq("stored always + 3", normalizeRibbonSettings({ ribbonMode: "always", ribbonThresholdRank: 3 }), { ribbonMode: "always", ribbonThresholdRank: 3, ribbonThresholdLevel: null, thresholdFrom: "rank" });
+// CLS-10: the threshold is a LEVEL; its rank is resolved against the scheme at read time.
+const LV = [{ id: "public", rank: 1 }, { id: "internal", rank: 2 }, { id: "confidential", rank: 3 }, { id: "restricted", rank: 4 }];
+eq("a known level wins over the stored rank", normalizeRibbonSettings({ ribbonThresholdRank: 4, ribbonThresholdLevel: "confidential" }, LV).ribbonThresholdRank, 3);
+eq("…and says so", normalizeRibbonSettings({ ribbonThresholdLevel: "confidential" }, LV).thresholdFrom, "level");
+eq("re-ranked level → the new rank, same level", normalizeRibbonSettings({ ribbonThresholdLevel: "confidential" }, [{ id: "confidential", rank: 2 }]).ribbonThresholdRank, 2);
+eq("an unknown level → the stored rank", normalizeRibbonSettings({ ribbonThresholdRank: 2, ribbonThresholdLevel: "gone" }, LV).ribbonThresholdRank, 2);
+eq("a level with no scheme handed in → the stored rank", normalizeRibbonSettings({ ribbonThresholdRank: 2, ribbonThresholdLevel: "confidential" }).ribbonThresholdRank, 2);
+eq("level validation: a string id passes", validateRibbonSettings({ ribbonThresholdLevel: "confidential" }).ok, true);
+eq("level validation: null clears", validateRibbonSettings({ ribbonThresholdLevel: null }).ok, true);
+eq("level validation: a number is refused", validateRibbonSettings({ ribbonThresholdLevel: 3 }).ok, false);
 eq("unknown mode → default", normalizeRibbonSettings({ ribbonMode: "sometimes" }).ribbonMode, "exceptions");
 eq("rank as a numeric string", normalizeRibbonSettings({ ribbonThresholdRank: "2" }).ribbonThresholdRank, 2);
 eq("rank 0 → default", normalizeRibbonSettings({ ribbonThresholdRank: 0 }).ribbonThresholdRank, 4);

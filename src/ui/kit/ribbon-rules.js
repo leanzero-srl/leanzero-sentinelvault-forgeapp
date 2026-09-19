@@ -30,12 +30,20 @@ export const RIBBON_MODES = Object.freeze(["exceptions", "always"]);
 export const DEFAULT_RIBBON_MODE = "exceptions";
 export const DEFAULT_RIBBON_THRESHOLD_RANK = 4;
 
-/** PURE. The steward settings as stored → the two values every reader uses. Unknown → defaults. */
-export function normalizeRibbonSettings(stored) {
+/**
+ * PURE. The steward settings as stored → the values every reader uses. Unknown → defaults.
+ * CLS-10: `ribbonThresholdLevel` (a level id) wins when `levels` knows it — its rank is resolved
+ * HERE, at read time, so a renamed or re-ranked level keeps meaning the same level; otherwise the
+ * stored rank (the API's and older installs' fallback), otherwise the default.
+ */
+export function normalizeRibbonSettings(stored, levels = null) {
   const mode = RIBBON_MODES.includes(stored?.ribbonMode) ? stored.ribbonMode : DEFAULT_RIBBON_MODE;
+  const levelId = typeof stored?.ribbonThresholdLevel === "string" && stored.ribbonThresholdLevel.trim() ? stored.ribbonThresholdLevel.trim() : null;
+  const known = levelId && Array.isArray(levels) ? levels.find((l) => String(l?.id) === levelId) : null;
   const raw = Number(stored?.ribbonThresholdRank);
-  const rank = Number.isInteger(raw) && raw >= 1 && raw <= 99 ? raw : DEFAULT_RIBBON_THRESHOLD_RANK;
-  return { ribbonMode: mode, ribbonThresholdRank: rank };
+  const storedRank = Number.isInteger(raw) && raw >= 1 && raw <= 99 ? raw : DEFAULT_RIBBON_THRESHOLD_RANK;
+  const levelRank = known && Number.isInteger(Number(known.rank)) && Number(known.rank) >= 1 ? Number(known.rank) : null;
+  return { ribbonMode: mode, ribbonThresholdRank: levelRank ?? storedRank, ribbonThresholdLevel: levelId, thresholdFrom: levelRank != null ? "level" : "rank" };
 }
 
 /**
@@ -50,6 +58,9 @@ export function validateRibbonSettings(data) {
   if ("ribbonThresholdRank" in data && data.ribbonThresholdRank != null) {
     const n = Number(data.ribbonThresholdRank);
     if (!Number.isInteger(n) || n < 1 || n > 99) return { ok: false, reason: "Ribbon threshold must be a whole-number rank from 1 to 99." };
+  }
+  if ("ribbonThresholdLevel" in data && data.ribbonThresholdLevel != null) {
+    if (typeof data.ribbonThresholdLevel !== "string" || !data.ribbonThresholdLevel.trim() || data.ribbonThresholdLevel.length > 64) return { ok: false, reason: "Ribbon threshold level must be a level id (up to 64 characters) or null." };
   }
   return { ok: true };
 }

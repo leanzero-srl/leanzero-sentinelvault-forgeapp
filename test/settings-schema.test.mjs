@@ -86,6 +86,7 @@ eq("global dependency table", dependencyTable("global").sort((a, b) => a.child.l
   { child: "reminderIntervalDays", parent: "enablePeriodicReminderEmail", parentValue: true },
   { child: "replaceAttachmentsMacro", parent: "globalAutoInsertMacro", parentValue: true },
   { child: "ribbonMode", parent: "enableDocRibbons", parentValue: true },
+  { child: "ribbonThresholdLevel", parent: "enableDocRibbons", parentValue: true },
   { child: "ribbonThresholdRank", parent: "enableDocRibbons", parentValue: true },
 ]);
 eq("space dependency table", dependencyTable("space").sort((a, b) => a.child.localeCompare(b.child)), [
@@ -149,7 +150,9 @@ eq("CLS-1: the space choice reads inherit unless exactly off", [readEffective("c
 eq("CLS-1: the space choice is locked with the site-admin reason while the site is off",
   dependencyState("classification", { classification: "inherit" }, { classificationEnabled: false }), { enabled: false, reason: "Off site-wide by a site admin (Classification levels)." });
 eq("CLS-1: …and free when the site is on", dependencyState("classification", { classification: "inherit" }, { classificationEnabled: true }).enabled, true);
-eq("CLS-1: the two ribbon controls are HIDDEN while classification is off", [controlVisible("ribbonMode", { classificationEnabled: false }), controlVisible("ribbonThresholdRank", {}), controlVisible("ribbonMode", { classificationEnabled: true })], [false, false, true]);
+eq("CLS-1: the two ribbon controls are HIDDEN while classification is off", [controlVisible("ribbonMode", { classificationEnabled: false }), controlVisible("ribbonThresholdLevel", {}), controlVisible("ribbonMode", { classificationEnabled: true })], [false, false, true]);
+eq("CLS-10: the rank fallback never has a row of its own", controlVisible("ribbonThresholdRank", { classificationEnabled: true }), false);
+eq("CLS-10: the level control reads a trimmed id or null", [readEffective("ribbonThresholdLevel", " confidential "), readEffective("ribbonThresholdLevel", ""), readEffective("ribbonThresholdLevel", 4)], ["confidential", null, null]);
 eq("CLS-1: a control without hiddenUnless is always visible", controlVisible("enableDocRibbons", { classificationEnabled: false }), true);
 eq("CLS-1: space write refuses a bad mode", validatePolicyWrite("space", { classification: "on" }).ok, false);
 eq("CLS-1: space write accepts off / inherit / null", [validatePolicyWrite("space", { classification: "off" }).ok, validatePolicyWrite("space", { classification: "inherit" }).ok, validatePolicyWrite("space", { classification: null }).ok], [true, true, true]);
