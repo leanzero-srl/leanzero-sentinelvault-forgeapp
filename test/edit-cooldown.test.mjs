@@ -44,11 +44,13 @@ eq("isCoolingDown mirrors retryAtFor", [isCoolingDown("2026-09-17T11:50:00.000Z"
 
 // ── the row: a declined requester is told WHEN, never "48 hours" ──
 const base = { kind: "attachment", sealed: true, isMine: false, isExpired: false, isTrashed: false, ownerName: "Mihai", expiresAt: null, pendingRequests: [] };
-const denied = primaryActionFor({ ...base, myEditStatus: "denied", myRetryAt: "2026-09-17T12:50:00.000Z" });
-eq("declined: Request edit, disabled, carries retryAt", [denied.kind, denied.disabled, denied.retryAt], ["request", true, "2026-09-17T12:50:00.000Z"]);
+const denied = primaryActionFor({ ...base, myEditStatus: "denied", myRetryAt: "2026-09-17T12:50:00.000Z" }, {}, new Date("2026-09-17T12:00:00.000Z").getTime());
+// SEC-8: the declined state is VISIBLE ("Declined · ask again W"), never a disabled button; the
+// clock is the server's retryAt, composed by the surface — never a typed-in "48 hours".
+eq("declined: a Declined state carrying retryAt", [denied.kind, denied.disabled, denied.retryAt], ["declined", undefined, "2026-09-17T12:50:00.000Z"]);
 ok("declined hint no longer names 48 hours", !/48/.test(denied.hint));
 ok("declined hint tells them the owner can grant directly", /owner can also give you access/.test(denied.hint));
-ok("declined with no retryAt still renders a hint", /declined/.test(primaryActionFor({ ...base, myEditStatus: "denied" }).hint));
+eq("declined with no retryAt → Request edit again", primaryActionFor({ ...base, myEditStatus: "denied" }).kind, "request");
 
 // ── the menu: Give edit access… ──
 ok("owner of a live attachment seal can give access", menuActionsFor({ ...base, isMine: true }).includes("give-access"));

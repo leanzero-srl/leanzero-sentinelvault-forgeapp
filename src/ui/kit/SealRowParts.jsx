@@ -6,6 +6,7 @@
  */
 import React from "react";
 import { when } from "./seal-row.js";
+import { stateText } from "./status-language.js"; // SEC-3: one vocabulary for the state spans
 
 /** The row's inline error (replaces the native alert; every refused action lands here). */
 export const ErrorRow = ({ message, onDismiss, testId = "sv-card-error" }) => (message ? (
@@ -32,7 +33,9 @@ export const PrimarySlot = ({ primary, name, busy, reqBusy, on, kind = "attachme
     case "seal":
       return <button type="button" className={`action-btn lock ${b("seal") ? "is-busy" : ""}`} onClick={on.seal} disabled={other("seal")} title="Seal this attachment so only you can change it" data-primary="seal"><Busy busy={b("seal")} idle="Seal" doing="Sealing" /></button>;
     case "release":
-      return <button type="button" className={`action-btn unlock ${b("unseal") ? "is-busy" : ""}`} onClick={on.release} disabled={other("unseal")} title={primary.forced ? "Release an expired seal you do not own — a reason is required" : `Release your seal so others can change this ${kind}`} data-primary="release"><Busy busy={b("unseal")} idle="Release" doing="Releasing" /></button>;
+      // SEC-10: your own Release is the quiet style; only a forced release (someone else's expired
+      // seal, typed reason) keeps the red.
+      return <button type="button" className={`action-btn ${primary.forced ? "unlock" : "release"} ${b("unseal") ? "is-busy" : ""}`} onClick={on.release} disabled={other("unseal")} title={primary.forced ? "Release an expired seal you do not own — a reason is required" : `Release your seal so others can change this ${kind}`} data-primary="release"><Busy busy={b("unseal")} idle="Release" doing="Releasing" /></button>;
     case "decide": {
       const rq = primary.request || {};
       const who = rq.requesterName || "the requester";
@@ -47,11 +50,13 @@ export const PrimarySlot = ({ primary, name, busy, reqBusy, on, kind = "attachme
     case "request":
       return <button type="button" className={`action-btn editreq ${b("editreq") ? "is-busy" : ""}`} onClick={on.request} disabled={other("editreq") || primary.disabled} title={primary.hint || `Ask the seal owner for permission to edit this ${kind}`} data-primary="request"><Busy busy={b("editreq")} idle="Request edit" doing="Requesting" /></button>;
     case "waiting":
-      return <span className="sv-state wait" role="status" data-primary="waiting" aria-label={`Waiting for ${primary.owner || "the owner"} to answer your edit request`}>Waiting for {primary.owner || "the owner"}</span>;
+      return <span className="sv-state wait" role="status" data-primary="waiting" aria-label={`Waiting for ${primary.owner || "the owner"} to answer your edit request`}>{stateText(primary)}</span>;
     case "editnow":
-      return <span className="sv-state ok" role="status" data-primary="editnow" aria-label={`You can edit ${name} now${primary.until ? `, until ${when(primary.until)}` : ""}`}>Edit now{primary.until ? ` until ${when(primary.until)}` : ""}</span>;
+      return <span className="sv-state ok" role="status" data-primary="editnow" aria-label={`You can edit ${name} now${primary.until ? `, until ${when(primary.until)}` : ""}`}>{stateText(primary)}</span>;
+    case "declined": // SEC-8: the declined state is visible, with the time it can be asked again
+      return <span className="sv-state declined" role="status" data-primary="declined" title={[primary.reason ? `Reason: “${primary.reason}”` : null, primary.hint].filter(Boolean).join(" ")} aria-label={`Your request to edit ${name} was declined${primary.retryAt ? `; you can ask again ${when(primary.retryAt)}` : ""}`}>{stateText(primary)}</span>;
     case "expired":
-      return <span className="sv-state expired" role="status" data-primary="expired" aria-label={`The seal on ${name} has expired`}>Expired</span>;
+      return <span className="sv-state expired" role="status" data-primary="expired" aria-label={`The seal on ${name} has expired`}>{stateText(primary)}</span>;
     case "held": // SEC-2: the workflow owns the seal while the page is Approved
       return <span className="sv-state held" role="status" data-primary="held" title={primary.hint || ""} aria-label={`${name}: ${primary.label}`}>{primary.label}</span>;
     case "restore":

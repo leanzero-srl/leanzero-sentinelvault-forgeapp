@@ -203,7 +203,7 @@ export const sealSection = async (req) => {
     // over it — the outer snapshot would then include the inner wrapper, and every legitimate
     // inner-owner edit would read as tampering of the outer one.
     if (rangeBlocks.some((b) => b?.type === "bodiedExtension" && isSealedSectionKey(b.attrs?.extensionKey))) {
-      return { success: false, reason: "This section already contains a sealed section — unseal that one first" };
+      return { success: false, reason: "This section already contains a sealed section — release that one first" };
     }
     const wrapper = buildSealedSectionNode({ sectionId, extensionKey, bodyContent: rangeBlocks });
     content.splice(start, end - start, wrapper);
@@ -298,7 +298,7 @@ export const unsealSection = async (req) => {
       try { allowed = await canEditPage(operatorAccountId, record.pageId); } catch (_) { /* deny */ }
     }
   }
-  if (!allowed) return { success: false, reason: "Only the section owner or a space admin can unseal" };
+  if (!allowed) return { success: false, reason: "Only the section owner or a space admin can release this seal" };
   // SEC-2: while the page is Approved the seal is the workflow's — the owner cannot release it;
   // a steward's break-glass (typed reason, below) is the one door out.
   { const held = heldRefusal(record, isOwner ? "release" : "force-release"); if (held) return { success: false, reason: held }; }

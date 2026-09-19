@@ -352,6 +352,10 @@ ${ctaLink(pageUrl, "Open the page")}
  * Edit access requested: a user is asking the seal owner for edit rights on a
  * sealed attachment. Recipient is the owner; the requester is also mentioned.
  */
+// SEC-9: `targetKind` ("attachment" | "section") — a section owner used to read "your sealed
+// FILE "Decisions"", and the requester "you can edit this FILE". One word per kind, here.
+const kindWord = (targetKind) => (targetKind === "section" ? "section" : "file");
+
 export function composeEditRequestLayout({
   ownerAccountId,
   requesterAccountId,
@@ -360,6 +364,7 @@ export function composeEditRequestLayout({
   pageTitle,
   pageUrl,
   reason,
+  targetKind = "attachment",
 }) {
   const requesterLabel = requesterAccountId
     ? mention(requesterAccountId)
@@ -371,9 +376,9 @@ export function composeEditRequestLayout({
 
   const storageBody = `
 <p>${HEADER} — <strong>Edit Access Requested</strong></p>
-<p>${mention(ownerAccountId)} — ${requesterLabel} is requesting permission to edit your sealed file <strong>"${escapeXml(artifactName)}"</strong>${pageTitle ? ` on <em>${escapeXml(pageTitle)}</em>` : ""}.</p>
+<p>${mention(ownerAccountId)} — ${requesterLabel} is requesting permission to edit your sealed ${kindWord(targetKind)} <strong>"${escapeXml(artifactName)}"</strong>${pageTitle ? ` on <em>${escapeXml(pageTitle)}</em>` : ""}.</p>
 ${reasonLine}
-<p>Approve or deny from the Sentinel Vault panel on the page, or the space console (Edit Requests).</p>
+<p>Approve or decline from the Sentinel Vault panel on the page, from the page's Sentinel Vault byline, or from My work.</p>
 ${ctaLink(pageUrl, "Open the page")}
 `.trim();
 
@@ -392,10 +397,11 @@ export function composeEditApprovedLayout({
   artifactName,
   pageTitle,
   pageUrl,
+  targetKind = "attachment",
 }) {
   const storageBody = `
 <p>${HEADER} — <strong>Edit Access Granted</strong></p>
-<p>${mention(ownerAccountId)} — your request to edit <strong>"${escapeXml(artifactName)}"</strong>${pageTitle ? ` on <em>${escapeXml(pageTitle)}</em>` : ""} has been approved. You can edit this file until the seal expires; other users remain blocked.</p>
+<p>${mention(ownerAccountId)} — your request to edit the sealed ${kindWord(targetKind)} <strong>"${escapeXml(artifactName)}"</strong>${pageTitle ? ` on <em>${escapeXml(pageTitle)}</em>` : ""} has been approved. You can edit this ${kindWord(targetKind)} until the seal expires; other users remain blocked.</p>
 ${ctaLink(pageUrl, "Open the page")}
 `.trim();
 
@@ -414,10 +420,14 @@ export function composeEditDeniedLayout({
   artifactName,
   pageTitle,
   pageUrl,
+  targetKind = "attachment",
+  reason = null,
 }) {
+  const reasonLine = reason ? `<p>The owner said: <em>"${escapeXml(reason)}"</em></p>` : "";
   const storageBody = `
 <p>${HEADER} — <strong>Edit Access Declined</strong></p>
-<p>${mention(ownerAccountId)} — your request to edit <strong>"${escapeXml(artifactName)}"</strong>${pageTitle ? ` on <em>${escapeXml(pageTitle)}</em>` : ""} was declined by the seal owner.</p>
+<p>${mention(ownerAccountId)} — your request to edit the sealed ${kindWord(targetKind)} <strong>"${escapeXml(artifactName)}"</strong>${pageTitle ? ` on <em>${escapeXml(pageTitle)}</em>` : ""} was declined by the seal owner.</p>
+${reasonLine}
 ${ctaLink(pageUrl, "Open the page")}
 `.trim();
 

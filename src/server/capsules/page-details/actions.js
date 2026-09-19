@@ -76,7 +76,7 @@ async function myEditStatusFor({ grant, requestKey }) {
     // Past the cooldown the request may be made again; the record itself is tidied by
     // check-edit-request on the next call that reads it, not by this read.
     const retryAt = retryAtFor(existing.deniedAt, await resolveEditCooldownMs());
-    return retryAt ? { status: "denied", expiresAt: null, retryAt } : { status: "none", expiresAt: null };
+    return retryAt ? { status: "denied", expiresAt: null, retryAt, deniedReason: existing.deniedReason || null } : { status: "none", expiresAt: null };
   }
   return { status: "none", expiresAt: null };
 }
@@ -159,7 +159,7 @@ export const pageDetailsSummary = async (req) => {
           ownerAccountId: record.lockedBy, ownerName: record.lockedByName || null,
           expiresAt: record.expiresAt || null, isExpired: isExpired(record.expiresAt), isMine, isTrashed: trashed,
           watching: !!watch, link: record.downloadLink || null, note: record.note || null,
-          myEditStatus: mine.status, myEditExpiresAt: mine.expiresAt, myRetryAt: mine.retryAt || null, pendingRequests,
+          myEditStatus: mine.status, myEditExpiresAt: mine.expiresAt, myRetryAt: mine.retryAt || null, myDeniedReason: mine.deniedReason || null, pendingRequests,
           workflowHeld: isWorkflowHeld(record), heldLabel: heldLabel(record), // SEC-2
         };
       }),
@@ -174,7 +174,7 @@ export const pageDetailsSummary = async (req) => {
           ownerAccountId: record.lockedBy, ownerName: record.lockedByName || null,
           expiresAt: record.expiresAt || null, isExpired: isExpired(record.expiresAt), isMine, isTrashed: false,
           watching: false, link: null, note: record.note || null, // SEC-7: the seal-time note, like attachments
-          myEditStatus: mine.status, myEditExpiresAt: mine.expiresAt, myRetryAt: mine.retryAt || null, pendingRequests,
+          myEditStatus: mine.status, myEditExpiresAt: mine.expiresAt, myRetryAt: mine.retryAt || null, myDeniedReason: mine.deniedReason || null, pendingRequests,
           workflowHeld: isWorkflowHeld(record), heldLabel: heldLabel(record), // SEC-2
         };
       }),

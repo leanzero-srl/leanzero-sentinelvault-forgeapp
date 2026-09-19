@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import { useSignedInvoke } from "../../kit/SignedInvoke";
 import { invoke, router } from "@forge/bridge";
 import { enablePaletteSync } from "../../kit/palette-sync";
+import { when, sealSentence, WORDS } from "../../kit/status-language.js"; // SEC-3: one vocabulary, one clock
 import WorkflowInbox from "../../kit/WorkflowInbox";
 import logo from "../../assets/icons/icon.png";
 import QRCode from "qrcode";
@@ -25,13 +26,7 @@ import QRCode from "qrcode";
 const viewPage = (pageId) => `/wiki/pages/viewpage.action?pageId=${pageId}`;
 const go = (path) => (e) => { e.preventDefault(); router.navigate(path); };
 // F11: the time as well as the date — "asked Sep 15" is not enough to tell a request made an
-// hour ago from one made this morning.
-const when = (iso) => {
-  const ms = iso ? new Date(iso).getTime() : NaN;
-  if (!Number.isFinite(ms)) return "";
-  const d = new Date(ms);
-  return `${d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}, ${d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}`;
-};
+// hour ago from one made this morning. SEC-3: the ONE clock (status-language `when`).
 
 // One loader for every card: `items` is null while loading, an array once loaded; `error` is set
 // (and items left as they were) when the resolver throws, so the card renders the error state
@@ -95,7 +90,7 @@ const EditRequests = ({ onChange }) => {
       {error && <p className="mw-error" role="alert">{error}</p>}
       {loadError && <LoadError what="the edit requests on your sealed files" onRetry={reload} testId="mw-requests-error" />}
       {!loadError && items === null && <p className="mw-loading">Checking for requests…</p>}
-      {!loadError && items && items.length === 0 && <p className="mw-none" data-testid="mw-requests-empty">Nobody is waiting on you to unlock a file.</p>}
+      {!loadError && items && items.length === 0 && <p className="mw-none" data-testid="mw-requests-empty">Nobody is waiting on you to release a file.</p>}
       {items && items.length > 0 && (
         <ul className="mw-list">
           {items.map((req) => {
@@ -154,7 +149,7 @@ const SectionRequests = ({ onChange }) => {
       {error && <p className="mw-error" role="alert">{error}</p>}
       {loadError && <LoadError what="the edit requests on your sealed sections" onRetry={reload} testId="mw-section-requests-error" />}
       {!loadError && items === null && <p className="mw-loading">Checking for requests…</p>}
-      {!loadError && items && items.length === 0 && <p className="mw-none" data-testid="mw-section-requests-empty">Nobody is waiting on you to unlock a section.</p>}
+      {!loadError && items && items.length === 0 && <p className="mw-none" data-testid="mw-section-requests-empty">Nobody is waiting on you to release a section.</p>}
       {items && items.length > 0 && (
         <ul className="mw-list">
           {items.map((req) => {
@@ -265,7 +260,8 @@ const MySeals = () => {
 
   const pill = (s) => {
     if (s.isStale) return <span className="mw-pill mw-pill-stale">{s.staleReason === "trashed" ? "In the trash" : "Unavailable"}</span>;
-    if (s.isExpired) return <span className="mw-pill mw-pill-overdue">Overdue</span>;
+    if (s.workflowHeld) return <span className="mw-pill mw-pill-held">{WORDS.held}</span>; // SEC-2
+    if (s.isExpired) return <span className="mw-pill mw-pill-overdue">{WORDS.expired}</span>; // SEC-3: one word
     return <span className="mw-pill mw-pill-live">Sealed</span>;
   };
 
@@ -287,7 +283,7 @@ const MySeals = () => {
                 <span className="mw-row-meta">
                   {s.pageId ? <a className="mw-link" href={viewPage(s.pageId)} onClick={go(viewPage(s.pageId))}>{s.pageTitle || "Open page"}</a> : (s.pageTitle || "")}
                   {s.spaceName || s.spaceKey ? ` · ${s.spaceName || s.spaceKey}` : ""}
-                  {s.workflowHeld ? " · held by the approval of the page (expiry paused)" : s.expiresAt ? ` · ${s.isExpired ? "was due" : "until"} ${when(s.expiresAt)}` : " · no end date"}
+                  {` · ${sealSentence({ isMine: true, workflowHeld: s.workflowHeld === true, isExpired: s.isExpired === true, expiresAt: s.expiresAt || null, isTrashed: s.isStale && s.staleReason === "trashed" }).replace(/^Sealed by you · |^Locked by the approval of this page · /, "")}`}
                 </span>
               </div>
               <div className="mw-row-actions">{pill(s)}</div>

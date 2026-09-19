@@ -17,6 +17,7 @@ import {
   resolveEditCooldownMs,
 } from "./logic.js";
 import { retryAtFor } from "../../shared/edit-cooldown.js";
+import { DECLINED_REASON } from "../../../ui/kit/status-language.js";
 import { listMyStewardRequestsCore } from "../realms/actions.js";
 import { listMyApprovals } from "../workflow/approvals.js";
 import { canReadPage, resolvePageSpaceKey } from "../../shared/content-access.js";
@@ -24,7 +25,11 @@ import { recordActivity } from "../../infra/activity-log.js";
 
 // The wait after a declined request is the site setting `editRequestCooldownHours`
 // (shared/edit-cooldown.js is its one home). A refusal names WHEN the person may ask again.
-const declinedReason = (retryAt) => `A previous request was declined; you can ask again after ${new Date(retryAt).toISOString().slice(0, 16).replace("T", " ")} UTC, or ask the owner to give you access directly`;
+// SEC-8: the server never formats a clock (the lambda runs in UTC — "20:19 UTC" reached a human
+// in the critique); the refusal carries `retryAt` and the surface composes "ask again Tue 22:19"
+// in the viewer's zone (status-language `refusalText`).
+const declinedReason = () => DECLINED_REASON;
+const clip = (v) => (typeof v === "string" ? v.trim().slice(0, 300) : "");
 
 /**
  * Load the seal for an owner-gated action and decide if the caller may act.
@@ -83,7 +88,7 @@ const requestEditAccess = async (req) => {
   if (existing?.status === "pending") return { success: false, reason: "Request already pending" };
   if (existing?.status === "denied") {
     const retryAt = retryAtFor(existing.deniedAt, await resolveEditCooldownMs());
-    if (retryAt) return { success: false, reason: declinedReason(retryAt), retryAt };
+    if (retryAt) return { success: false, reason: declinedReason(), retryAt };
   }
 
   let requesterName = "Unknown User";
@@ -156,7 +161,7 @@ const checkEditRequest = async (req) => {
       await dropOwnerIndex(existing);
       return { status: "none" };
     }
-    return { status: "denied", deniedAt: existing.deniedAt, retryAt };
+    return { status: "denied", deniedAt: existing.deniedAt, retryAt, deniedReason: existing.deniedReason || null };
   }
   return { status: "none" };
 };
@@ -265,6 +270,7 @@ export const approveEditRequest = async (req) => {
  */
 export const denyEditRequest = async (req) => {
   const { attachmentId, requesterAccountId } = req.payload || {};
+  const deniedReason = clip(req.payload?.reason); // SEC-8: an optional reason that reaches the requester
   const accountId = req.context.accountId;
   if (!attachmentId || !requesterAccountId) return { success: false, reason: "Missing params" };
   const { seal, authorized } = await loadSealForOwnerAction(attachmentId, accountId);
@@ -275,7 +281,7 @@ export const denyEditRequest = async (req) => {
   const requestKey = `edit-request-${attachmentId}-${requesterAccountId}`;
   const existing = await kvs.get(requestKey);
   if (!existing) return { success: false, reason: "Request not found" };
-  await kvs.set(requestKey, { ...existing, status: "denied", deniedAt: new Date().toISOString() });
+  await kvs.set(requestKey, { ...existing, status: "denied", deniedAt: new Date().toISOString(), deniedReason: deniedReason || null });
   await dropOwnerIndex(existing);
   // A1
   await recordActivity({
@@ -284,13 +290,13 @@ export const denyEditRequest = async (req) => {
     spaceKey: seal.spaceKey || null,
     actor: { accountId, name: seal.lockedBy === accountId ? (seal.lockedByName || null) : null },
     target: { kind: "attachment", id: attachmentId, name: seal.attachmentName || null },
-    details: { scope: "attachment", requesterAccountId, requesterName: existing.requesterName || null },
+    details: { scope: "attachment", requesterAccountId, requesterName: existing.requesterName || null, reason: deniedReason || null },
     version: null,
   });
 
   if (seal.contentId && (await notifyEnabled())) {
     try {
-      await mailEditDenied(requesterAccountId, seal.attachmentName || "Unknown Attachment", seal.contentId);
+      await mailEditDenied(requesterAccountId, seal.attachmentName || "Unknown Attachment", seal.contentId, null, { targetKind: "attachment", reason: deniedReason });
     } catch (e) { console.error("[EDIT-REQ] notify deny failed:", e); }
   }
 
@@ -503,7 +509,7 @@ export const requestSectionEdit = async (req) => {
   if (existing?.status === "pending") return { success: false, reason: "Request already pending" };
   if (existing?.status === "denied") {
     const retryAt = retryAtFor(existing.deniedAt, await resolveEditCooldownMs());
-    if (retryAt) return { success: false, reason: declinedReason(retryAt), retryAt };
+    if (retryAt) return { success: false, reason: declinedReason(), retryAt };
   }
 
   let requesterName = "Unknown User";
@@ -537,7 +543,7 @@ export const requestSectionEdit = async (req) => {
   });
 
   if (seal.pageId && (await notifyEnabled())) {
-    try { await mailEditRequest(seal.lockedBy, accountId, requesterName, sectionTitle, seal.pageId, reason); }
+    try { await mailEditRequest(seal.lockedBy, accountId, requesterName, sectionTitle, seal.pageId, reason, null, { targetKind: "section" }); }
     catch (e) { console.error("[SECTION-EDIT-REQ] notify failed:", e); }
   }
   return { success: true };
@@ -554,7 +560,7 @@ export const checkSectionEdit = async (req) => {
   if (existing.status === "denied") {
     const retryAt = retryAtFor(existing.deniedAt, await resolveEditCooldownMs());
     if (!retryAt) { await kvs.delete(`section-edit-request-${sectionId}-${accountId}`); await dropSectionOwnerIndex(existing); return { status: "none" }; }
-    return { status: "denied", deniedAt: existing.deniedAt, retryAt };
+    return { status: "denied", deniedAt: existing.deniedAt, retryAt, deniedReason: existing.deniedReason || null };
   }
   return { status: "none" };
 };
@@ -609,13 +615,14 @@ export const approveSectionEdit = async (req) => {
   });
 
   if (seal.pageId && (await notifyEnabled())) {
-    try { await mailEditApproved(requesterAccountId, seal.sectionTitle || "a sealed section", seal.pageId); } catch (_) { /* best effort */ }
+    try { await mailEditApproved(requesterAccountId, seal.sectionTitle || "a sealed section", seal.pageId, null, { targetKind: "section" }); } catch (_) { /* best effort */ }
   }
   return { success: true };
 };
 
 export const denySectionEdit = async (req) => {
   const { sectionId, requesterAccountId } = req.payload || {};
+  const deniedReason = clip(req.payload?.reason); // SEC-8
   const accountId = req.context.accountId;
   if (!sectionId || !requesterAccountId) return { success: false, reason: "Missing params" };
   const { seal, authorized } = await loadSectionForOwnerAction(sectionId, accountId);
@@ -625,7 +632,7 @@ export const denySectionEdit = async (req) => {
   const requestKey = `section-edit-request-${sectionId}-${requesterAccountId}`;
   const existing = await kvs.get(requestKey);
   if (!existing) return { success: false, reason: "Request not found" };
-  await kvs.set(requestKey, { ...existing, status: "denied", deniedAt: new Date().toISOString() });
+  await kvs.set(requestKey, { ...existing, status: "denied", deniedAt: new Date().toISOString(), deniedReason: deniedReason || null });
   await dropSectionOwnerIndex(existing);
   // A1 (section scope)
   await recordActivity({
@@ -634,11 +641,11 @@ export const denySectionEdit = async (req) => {
     spaceKey: seal.spaceKey || null,
     actor: { accountId, name: seal.lockedBy === accountId ? (seal.lockedByName || null) : null },
     target: { kind: "section", id: sectionId, name: seal.sectionTitle || "Sealed section" },
-    details: { scope: "section", requesterAccountId, requesterName: existing.requesterName || null },
+    details: { scope: "section", requesterAccountId, requesterName: existing.requesterName || null, reason: deniedReason || null },
     version: null,
   });
   if (seal.pageId && (await notifyEnabled())) {
-    try { await mailEditDenied(requesterAccountId, seal.sectionTitle || "a sealed section", seal.pageId); } catch (_) { /* best effort */ }
+    try { await mailEditDenied(requesterAccountId, seal.sectionTitle || "a sealed section", seal.pageId, null, { targetKind: "section", reason: deniedReason }); } catch (_) { /* best effort */ }
   }
   return { success: true };
 };

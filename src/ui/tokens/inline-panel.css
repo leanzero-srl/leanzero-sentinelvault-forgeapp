@@ -716,6 +716,17 @@ html[data-color-mode="dark"] .status-lozenge.trashed { background: #FB923C; colo
   background: var(--sv-interactive-danger-hover);
   border-color: var(--sv-interactive-danger-hover);
 }
+/* SEC-10: Release on YOUR OWN seal is routine — the quiet secondary style, never the danger red
+   (that stays for Force release / delete). */
+.action-btn.release {
+  background: var(--sv-bg-tertiary);
+  color: var(--sv-text-primary);
+  border-color: var(--sv-border-secondary);
+}
+.action-btn.release:hover:not(:disabled) {
+  border-color: var(--sv-interactive-primary);
+  color: var(--sv-interactive-primary);
+}
 
 .action-btn.watch {
   background: var(--sv-bg-tertiary);
@@ -1627,6 +1638,8 @@ html[data-color-mode="dark"] .sv-activity-chip-validation.is-active { background
 .sv-state.ok { background: #15803D; color: #FFFFFF; }
 .sv-state.expired { background: #DC2626; color: #FFFFFF; }
 .sv-state.held { background: #15803D; color: #FFFFFF; } /* SEC-2 */
+.sv-state.declined { background: #B91C1C; color: #FFFFFF; } /* SEC-8: the declined request is a visible state */
+html[data-color-mode="dark"] .sv-state.declined { background: #F87171; color: #0F172A; }
 .sv-state.trashed { background: #475569; color: #FFFFFF; }
 html[data-color-mode="dark"] .sv-state.wait { background: #FBBF24; color: #0F172A; }
 html[data-color-mode="dark"] .sv-state.ok { background: #22C55E; color: #052E16; }

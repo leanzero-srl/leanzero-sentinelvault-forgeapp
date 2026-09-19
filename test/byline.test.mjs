@@ -14,8 +14,9 @@ const custom = { id: "board", name: "Board only", color: "#7c3aed" };
 eq("page override title", composeByline({ level: restricted, source: "page", sealCount: 0 }).title, "Restricted · set on this page");
 eq("space default title", composeByline({ level: restricted, source: "space", sealCount: 0 }).title, "Restricted · space default");
 eq("unclassified title", composeByline({ level: null, source: "none", sealCount: 0 }).title, "Unclassified");
-eq("unclassified title even with seals", composeByline({ level: null, source: "none", sealCount: 3 }).title, "Unclassified");
-eq("custom level title", composeByline({ level: custom, source: "page", sealCount: 1 }).title, "Board only · set on this page");
+// SEC-3: the seal count is in the TITLE (the byline is the one surface every page shows).
+eq("unclassified title carries the seal count", composeByline({ level: null, source: "none", sealCount: 3 }).title, "Unclassified · Sealed (3)");
+eq("custom level title with a seal: the count replaces the source (which moves to the tooltip)", composeByline({ level: custom, source: "page", sealCount: 1 }).title, "Board only · Sealed (1)");
 eq("an unknown source reads as the space default", composeByline({ level: restricted, source: "weird", sealCount: 0 }).title, "Restricted · space default");
 
 // ── icons: colour ───────────────────────────────────────────────────────────────────────────
@@ -53,8 +54,8 @@ eq("static: custom colour maps to neutral", bylineIcon({ color: "#7C3AED", seale
 
 // ── CLS-1: classification off → the chip never mentions a level, even a stored one ──────────
 eq("off, no seals → the app's name", composeByline({ level: restricted, source: "page", sealCount: 0, classificationEnabled: false }).title, "Sentinel Vault");
-eq("off, one seal → the seal count is the title", composeByline({ level: restricted, source: "page", sealCount: 1, classificationEnabled: false }).title, "1 seal on this page");
-eq("off, seals → plural", composeByline({ level: null, source: "none", sealCount: 3, classificationEnabled: false }).title, "3 seals on this page");
+eq("off, one seal → the seal count is the title (SEC-3 words)", composeByline({ level: restricted, source: "page", sealCount: 1, classificationEnabled: false }).title, "Sealed (1)");
+eq("off, seals → the count", composeByline({ level: null, source: "none", sealCount: 3, classificationEnabled: false }).title, "Sealed (3)");
 eq("off tooltip has no classification words", composeByline({ level: restricted, source: "page", sealCount: 2, classificationEnabled: false }).tooltip, "2 seals on this page · Open Sentinel Vault");
 ok("off icon is neutral even with a level stored", decode(composeByline({ level: restricted, source: "page", sealCount: 0, classificationEnabled: false }).icon).includes(`fill="${NEUTRAL_COLOR}"`));
 ok("off + sealed → the lock", decode(composeByline({ level: null, source: "none", sealCount: 1, classificationEnabled: false }).icon).includes("<rect"));
@@ -67,7 +68,7 @@ const wfApproved = { kind: "enforced", text: "Approved v3", qualifier: "v3", sta
 const wfDraft = { kind: "state", text: "Draft", qualifier: null, stateName: "Draft", tone: "neutral", color: "#475569" };
 eq("workflow + classification on + level → Level · Status", composeByline({ level: restricted, source: "page", sealCount: 0, classificationEnabled: true, workflow: wfApproved }).title, "Restricted · Approved v3");
 eq("workflow + classification on + no level → Unclassified · Status", composeByline({ level: null, source: "none", sealCount: 0, classificationEnabled: true, workflow: wfDraft }).title, "Unclassified · Draft");
-eq("workflow + classification OFF → the status alone, even with a stored level", composeByline({ level: restricted, source: "page", sealCount: 2, classificationEnabled: false, workflow: wfApproved }).title, "Approved v3");
+eq("workflow + classification OFF → the status (+ the seal count), never the stored level", composeByline({ level: restricted, source: "page", sealCount: 2, classificationEnabled: false, workflow: wfApproved }).title, "Approved v3 · Sealed (2)");
 eq("workflow + switch undefined behaves as on", composeByline({ level: restricted, source: "space", sealCount: 0, workflow: wfDraft }).title, "Restricted · Draft");
 ok("the disc takes the status tone, not the level colour", decode(composeByline({ level: restricted, source: "page", sealCount: 0, workflow: wfApproved }).icon).includes('fill="#15803D"'));
 ok("…and keeps the lock when sealed", decode(composeByline({ level: null, source: "none", sealCount: 1, workflow: wfDraft }).icon).includes("<rect"));
