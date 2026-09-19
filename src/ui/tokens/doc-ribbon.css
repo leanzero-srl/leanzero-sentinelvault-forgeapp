@@ -703,6 +703,8 @@ html[data-color-mode="dark"] .wf-dot-neutral  { background: #64748b; }
 .wf-appr-rerequest:hover { filter: brightness(1.15); }
 .wf-appr-rerequest:disabled { opacity: 0.6; cursor: default; }
 .wf-appr-rerequest:focus-visible { outline: 2px solid var(--sv-border-focus); outline-offset: 2px; }
+/* WF-3: the approver's reason, quoted in solid ink on a real block — the one thing the author came for. */
+.wf-last-reason { margin-top: 8px; padding: 8px 10px; border-radius: 8px; background: #dc2626; color: #fff; font-size: 12px; font-weight: 700; line-height: 1.45; }
 /* WF-1/WF-4: the one-line outcome next to the chip. */
 .wf-notice { display: inline-flex; align-items: center; padding: 3px 9px; border-radius: 999px; font-size: 11px; font-weight: 700; white-space: nowrap; }
 .wf-notice-success { background: #15803d; color: #fff; }

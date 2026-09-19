@@ -16,6 +16,7 @@ import {
   storeWorkflowConfig,
   getPageWorkflow,
   getWorkflowLog,
+  lastDecisionFrom,
   assignPageWorkflow,
   transitionPageWorkflow,
   findState,
@@ -134,7 +135,14 @@ const getWorkflow = async (req) => {
   // next to the approval evidence without a second resolver call. Best-effort: null on failure
   // (the ribbon then just omits the stale line — never a guess). Not added to get-workflow-log.
   if (result?.assigned && result.record?.enforce) result.liveVersion = await fetchLivePageVersion(pageId); // only where the ribbon uses it
-  if (req.payload?.withLog) result.log = await getWorkflowLog(pageId);
+  // WF-3: on a page that is not enforced and has no open request, the ribbon's details chip shows
+  // the last denial (with its reason) or stale close — the author was reading "In Review · Set
+  // review date" after a rejection and the reason existed only in this log. One KVS query, only
+  // when it can matter.
+  if (result?.assigned && !result.record?.enforce && !(await kvs.get(`workflow-pending-${pageId}`))) {
+    const log = req.payload?.withLog ? (result.log = await getWorkflowLog(pageId)) : await getWorkflowLog(pageId);
+    result.lastDecision = lastDecisionFrom(log);
+  } else if (req.payload?.withLog) result.log = await getWorkflowLog(pageId);
   return result;
 };
 

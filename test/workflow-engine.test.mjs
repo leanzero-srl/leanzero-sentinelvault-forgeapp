@@ -16,6 +16,7 @@ import {
   sanitizeReviewAfterDaysByState,
   validateReviewDueAt,
   computeReviewDueAt,
+  lastDecisionFrom,
 } from "../src/server/capsules/workflow/logic.js";
 import { evaluateApproval, resolveApprovers, inboxKey, isOrphanApproval, ORPHAN_APPROVAL_MIN_AGE_MS, buildApprovalRecord } from "../src/server/capsules/workflow/approvals.js";
 import { eq, ok, report } from "./_assert.mjs";
@@ -69,6 +70,21 @@ ok("no auto-assign when page already has workflow", !shouldAutoAssign({ enabled:
 ok("no auto-assign when space disabled", !shouldAutoAssign({ enabled: false, autoAssignNew: true }, false));
 ok("no auto-assign when autoAssignNew off", !shouldAutoAssign({ enabled: true, autoAssignNew: false }, false));
 ok("no auto-assign on null settings", !shouldAutoAssign(null, false));
+
+// --- lastDecisionFrom (WF-3: the last denial / stale close that still matters) ---
+{
+  const denied = { ts: 20, kind: "approval-denied", to: "approved", byName: "Mihai Perdum", details: { approvalRecord: { pinnedVersion: 1, completedByName: "Mihai Perdum", decisions: [{ name: "Mihai Perdum", decision: "denied", reason: "Needs a summary", versionAtDecision: 1 }] } } };
+  const stale = { ts: 30, kind: "approval-stale", to: "approved", byName: "Mihai Perdum", details: { approvalRecord: { pinnedVersion: 2, decisions: [] } } };
+  const move = { ts: 40, from: "in_review", to: "draft", byName: "Gabriela" };
+  eq("empty log -> null", lastDecisionFrom([]), null);
+  eq("denied last -> denied with reason, who, version", lastDecisionFrom([{ ts: 10, from: "draft", to: "in_review" }, denied]),
+    { kind: "denied", at: 20, byName: "Mihai Perdum", reason: "Needs a summary", reviewedVersion: 1, to: "approved" });
+  eq("stale last -> stale, no reason", lastDecisionFrom([denied, stale]), { kind: "stale", at: 30, byName: "Mihai Perdum", reason: null, reviewedVersion: 2, to: "approved" });
+  eq("a later transition makes it history", lastDecisionFrom([denied, stale, move]), null);
+  eq("unsorted input is sorted by ts", lastDecisionFrom([move, denied]), null);
+  eq("denied without decisions falls back to byName", lastDecisionFrom([{ ts: 5, kind: "approval-denied", byName: "X", details: {} }]),
+    { kind: "denied", at: 5, byName: "X", reason: null, reviewedVersion: null, to: null });
+}
 
 // --- evaluateApproval (#43 quorum decision) ---
 eq("no approvers -> approved", evaluateApproval("any", 1, []), "approved");
