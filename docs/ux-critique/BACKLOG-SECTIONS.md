@@ -458,6 +458,8 @@ Release at all ("with the page").
 **Confidence** high.
 **Blast radius** `SealRowParts.jsx PrimarySlot`, `seal-row.js DANGER`, panel CSS.
 
+**Status (2026-09-20):** done in the SEC-3 commit (the shared vocabulary owns the button style; dev 8.21.0) and recorded here, evidence `scenarios/sentinel-vault/sec10-release-quiet.spec.ts` (browser: the owner's Release on the panel row is `action-btn release` with the quiet background rgb(241,245,249), never `unlock`; the modal's Release is `pd-btn quiet`; Force release under ⋯ on someone else's seal keeps the `danger` class on both surfaces; light + dark PNGs read). Shipped: `.action-btn.release` (inline-panel.css + overlay.css — the overlay's ArtifactCard uses the same `PrimarySlot`), `DANGER` in seal-row.js no longer lists `release`; the space console's own-seal button says Release in the same quiet style. With SEC-2 a held seal shows no Release at all.
+
 ### SEC-11 Sections are absent from every list that is not the page
 **Who** owner, space admin, compliance officer.
 **Observed** My work "Files you hold sealed 4" lists files only (`enumerate-operator-seals` is
