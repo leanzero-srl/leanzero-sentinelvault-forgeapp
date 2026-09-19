@@ -814,6 +814,16 @@ const DocumentRibbon = () => {
     }
   }, [spaceKey]);
 
+  // WF-4 (UX critique 2026-09-19): a decision or transition changes MORE than the workflow — the
+  // `ribbon-summary` waitingOnMe.approvals count drives the "Waiting for you" pill, and the alerts
+  // and validation state can move too. reloadWorkflow refreshed only workflow + approvals, so the
+  // pill contradicted the chip after every decision. Re-run the whole evaluation (same seq guard,
+  // same show rule); the workflow refresh first keeps the chip instant.
+  const afterWorkflowChange = useCallback(async () => {
+    await reloadWorkflow();
+    await evaluateRef.current?.("workflow changed");
+  }, [reloadWorkflow]);
+
   // Returns { res, error }: `error` is set when the summary THREW or answered ok:false with a
   // reason that is not the confirmed "nothing to show". Only a confirmed nothing may close the
   // banner (P1-7); everything else is an error row with Retry.
@@ -1201,7 +1211,7 @@ const DocumentRibbon = () => {
               siteUrl={siteUrl}
               isSteward={!!workflow?.canSetReviewDue}
               host={dialogHost}
-              onTransitioned={reloadWorkflow}
+              onTransitioned={afterWorkflowChange}
             />
           )}
           {!loading && validationState && (

@@ -213,6 +213,12 @@ show a one-line confirmation for 5 s (*"Approved — the page is now Approved"* 
 told"*).
 **Confidence** high.
 **Blast radius** `doc-ribbon/index.jsx` only.
+**Status (2026-09-20):** fixed in the WF-4 commit (dev 8.10.0), evidence
+`~/Projects/forge-live-harness/scenarios/sentinel-vault/wf4-ribbon-after-decision.spec.ts` (approve + deny beds,
+`evidence/wf4-ribbon-after-decision/*.png`). Shipped: `onTransitioned` = `afterWorkflowChange` (workflow reload, then
+the full `evaluate("workflow changed")` — summary, alerts, validation, the show rule); the outcome line next to the
+chip (`wf-notice`, 6 s) reads "Approved — the page is now Approved." / "Denied — Gabriela Perdum has been told."
+Pre-fix run: pill `1 Waiting for you` still present 20 s after Approve.
 
 ### WF-5 The requester is offered "Awaiting YOUR approval" and "You're the deciding approval" on their own request
 **Who** an author who is also an approver (every small team).
