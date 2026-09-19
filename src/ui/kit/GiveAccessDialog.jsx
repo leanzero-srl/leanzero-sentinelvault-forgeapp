@@ -11,7 +11,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { invoke } from "@forge/bridge";
 import Dialog from "./Dialog";
 
-export default function GiveAccessDialog({ target, name, onClose, onGranted, testId = "sv-give-access" }) {
+export default function GiveAccessDialog({ target, name, onClose, onGranted, testId = "sv-give-access", invoker = invoke }) {
   const [query, setQuery] = useState("");
   const [users, setUsers] = useState([]);
   const [searching, setSearching] = useState(false);
@@ -46,7 +46,7 @@ export default function GiveAccessDialog({ target, name, onClose, onGranted, tes
     setBusy(true);
     setError(null);
     try {
-      const r = await invoke(section ? "grant-section-edit" : "grant-edit-access", { ...target, editorAccountId: picked.accountId });
+      const r = await invoker(section ? "grant-section-edit" : "grant-edit-access", { ...target, editorAccountId: picked.accountId });
       if (r?.success) { onGranted?.(r.grant); onClose(); return; }
       setError(r?.reason || "Could not give edit access");
     } catch (_) {

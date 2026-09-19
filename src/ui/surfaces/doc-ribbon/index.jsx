@@ -15,6 +15,7 @@ import { createRoot } from "react-dom/client";
 import { createPortal } from "react-dom";
 import { invoke, view, Modal, router } from "@forge/bridge";
 import { enablePaletteSync } from "../../kit/palette-sync";
+import { myWorkPath } from "../../kit/my-work-path.js";
 import { useActionMenu } from "../../kit/ActionMenu";
 import DatePicker, { toYmd, fromYmd } from "../../kit/DatePicker";
 import { decideRibbon, untilLabel } from "../../kit/ribbon-rules";
@@ -533,7 +534,7 @@ const WorkflowControl = ({ workflow, approvals, operatorId, pageId, spaceKey, si
                       </label>
                     ) : (
                       <div className="wf-appr-sign-missing" data-testid="wf-appr-sign-missing">
-                        This space requires a signed decision. <a href="#" onClick={(e) => { e.preventDefault(); router.navigate("/wiki/apps/c30bf71e-4287-4872-954d-db49cc68f0ff/my-work"); }}>Set up your signature on My work</a> first.
+                        This space requires a signed decision. <a href="#" onClick={(e) => { e.preventDefault(); router.navigate(myWorkPath(window.__svCtx)); }}>Set up your signature on My work</a> first.
                       </div>
                     )}
                   </div>
@@ -791,6 +792,7 @@ const DocumentRibbon = () => {
     const stale = () => seq !== evalSeq.current;
     try {
       const context = await view.getContext();
+      window.__svCtx = context; // the My work link needs environmentId (kit/my-work-path.js)
       const ctxPageId = context?.extension?.content?.id || context?.contentId || null;
       const ctxSpaceKey = context?.extension?.content?.space?.key || context?.extension?.space?.key || null;
       const contentType = context?.extension?.content?.type || null;
@@ -841,7 +843,10 @@ const DocumentRibbon = () => {
       // version NOW instead of waiting for a page event that can be 20+ minutes late. If that run
       // restored something, evaluate again so the "Restored" row appears for the person who just
       // published. Never from the re-evaluation itself (no loop); fire-and-forget otherwise.
-      if (why !== "guard restored" && ((sum?.sealedAttachments || 0) + (sum?.sectionSeals || 0)) > 0) {
+      // Every page, not only sealed ones: validation rules and enforced workflow states ride the
+      // same pipeline and were waiting on the same late event (2026-09-19). A page with nothing
+      // to judge exits in one KVS read.
+      if (why !== "guard restored" && sum) {
         invoke("guard-page-now", {})
           .then((g) => { if (g?.restored && pageIdRef.current === ctxPageId) evaluateRef.current?.("guard restored"); })
           .catch((e) => console.info("[ribbon] guard-page-now failed", e?.message || e));

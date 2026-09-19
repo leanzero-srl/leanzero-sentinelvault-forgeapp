@@ -19,7 +19,7 @@ import {
 } from "../../infra/notice-composer.js";
 
 // Import from capsule logic
-import { writeSealContentProp, removeSealContentProp, touchSealTimestamp, resolveSealHoldPeriod } from "./logic.js";
+import { countPageAttachments, writeSealContentProp, removeSealContentProp, touchSealTimestamp, resolveSealHoldPeriod } from "./logic.js";
 import { readDocBody } from "../../infra/doc-surgery.js";
 import { confirmAttachmentPurged } from "../../infra/attachment-status.js";
 import { findSealedMediaSingle, capturePresentation } from "../../infra/media-presentation.js";
@@ -171,10 +171,18 @@ const enumerateDocArtifacts = async (req) => {
       }
     }
 
+    // Whole-page counts on the FIRST page only (tester report 2026-09-19: the group numbers were
+    // the cards on screen, not the attachments on the page).
+    let counts = null;
+    if (!cursor || cursor === "0") {
+      try { counts = await countPageAttachments(contentId, req.context.accountId, (u) => asUser().requestConfluence(u)); }
+      catch (e) { console.warn("[ENUMERATE-DOC-ARTIFACTS] counts failed:", e?.message || e); }
+    }
     return {
       attachments: artifactsWithSealState,
       hasMore,
       nextCursor,
+      counts,
     };
   } catch (error) {
     console.error("Error fetching attachments:", error);

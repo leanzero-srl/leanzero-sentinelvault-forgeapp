@@ -152,7 +152,13 @@ const enumeratePanelArtifacts = async (req) => {
       }
     }
 
-    return { attachments: enrichedArtifacts, hasMore, nextCursor };
+    // Whole-page counts ride the FIRST page only (the cards are paged; the numbers are not).
+    let counts = null;
+    if (!cursor || cursor === "0") {
+      try { const { countPageAttachments } = await import("../sealing/logic.js"); counts = await countPageAttachments(contentId, operatorAccountId, (u) => asUser().requestConfluence(u)); }
+      catch (e) { console.warn("[PANEL] counts failed:", e?.message || e); }
+    }
+    return { attachments: enrichedArtifacts, hasMore, nextCursor, counts };
   } catch (error) {
     console.error("[PANEL] Error fetching panel artifacts:", error);
     return { attachments: [], hasMore: false, nextCursor: null };

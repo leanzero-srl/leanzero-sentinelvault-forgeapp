@@ -7,6 +7,7 @@ import ActivityFeed from "../../kit/ActivityFeed";
 import ActionMenu from "../../kit/ActionMenu";
 import { ConfirmDialog } from "../../kit/Dialog";
 import GiveAccessDialog from "../../kit/GiveAccessDialog";
+import { useSignedInvoke } from "../../kit/SignedInvoke";
 import RovingList from "../../kit/RovingList";
 import { attachmentRow, sectionRow, rowActions, statusChip, copyText } from "../../kit/seal-row.js";
 import { PrimarySlot, ReasonBar, RequestInbox, GrantInbox, ErrorRow, CopiedNote } from "../../kit/SealRowParts";
@@ -292,6 +293,7 @@ const ArtifactCard = ({ att, onRefresh, columns, siteUrl, spaceKey, pageId, page
   const [grantBusy, setGrantBusy] = useState(null);
   const [giving, setGiving] = useState(false); // "Give edit access…" dialog
   const [copied, setCopied] = useState(false);
+  const { signedInvoke, signatureDialog } = useSignedInvoke(); // the code prompt when the site signs seal actions
 
   const isSealedByMe = att.lockStatus === "HELD_BY_ACTOR";
   const isSealedByOther = att.lockStatus === "HELD";
@@ -329,7 +331,7 @@ const ArtifactCard = ({ att, onRefresh, columns, siteUrl, spaceKey, pageId, page
     setActionBusy(busyKey);
     setActionError(null);
     try {
-      const r = await invoke(action, payload);
+      const r = await signedInvoke(action, payload);
       if (!r || r.success === false || r.ok === false) {
         setActionError(r?.reason || "That did not work. Try again.");
         return false;
@@ -350,7 +352,7 @@ const ArtifactCard = ({ att, onRefresh, columns, siteUrl, spaceKey, pageId, page
     setGrantBusy(editorAccountId);
     setActionError(null);
     try {
-      const r = await invoke("revoke-edit-grant", { attachmentId: att.id, editorAccountId });
+      const r = await signedInvoke("revoke-edit-grant", { attachmentId: att.id, editorAccountId });
       if (r?.success) setMyGrants((p) => (p || []).filter((g) => g.editorAccountId !== editorAccountId));
       else setActionError(r?.reason || "Could not revoke this editor's access");
     } catch (e) {
@@ -365,7 +367,7 @@ const ArtifactCard = ({ att, onRefresh, columns, siteUrl, spaceKey, pageId, page
     setReqBusy(`${requesterAccountId}:${action}`);
     setActionError(null);
     try {
-      const r = await invoke(action === "approve" ? "approve-edit-request" : "deny-edit-request", { attachmentId: att.id, requesterAccountId });
+      const r = await signedInvoke(action === "approve" ? "approve-edit-request" : "deny-edit-request", { attachmentId: att.id, requesterAccountId });
       if (r?.success) {
         setMyRequests((p) => (p || []).filter((x) => x.requesterAccountId !== requesterAccountId));
         if (action === "approve") invoke("list-edit-grants", { attachmentId: att.id }).then((g) => setMyGrants(g?.grants || [])).catch(() => {});
@@ -562,8 +564,10 @@ const ArtifactCard = ({ att, onRefresh, columns, siteUrl, spaceKey, pageId, page
       {bar && <ReasonBar mode={bar} value={reasonText} onChange={setReasonText} onSubmit={submitBar} onCancel={() => { setBar(null); setReasonText(""); }} busy={actionBusy === "unseal" || actionBusy === "editreq"} />}
 
       {isSealedByMe && <RequestInbox requests={myRequests} name={att.title} reqBusy={reqBusy} onDecide={resolveEditReq} firstDecidedAbove={primary.kind === "decide"} />}
+      {signatureDialog}
       {giving && (
         <GiveAccessDialog
+          invoker={signedInvoke}
           target={{ attachmentId: att.id }}
           name={att.title}
           onClose={() => setGiving(false)}
@@ -856,6 +860,7 @@ const SectionRow = ({ section: s, onUnseal, unsealing, viewer, siteUrl, pageId }
   const [editRetryAt, setEditRetryAt] = useState(null);
   const [error, setError] = useState(null);
   const [copied, setCopied] = useState(false);
+  const { signedInvoke, signatureDialog } = useSignedInvoke();
 
   useEffect(() => {
     let cancelled = false;
@@ -893,7 +898,7 @@ const SectionRow = ({ section: s, onUnseal, unsealing, viewer, siteUrl, pageId }
   const resolve = async (requesterAccountId, action) => {
     setReqBusy(`${requesterAccountId}:${action}`); setError(null);
     try {
-      const r = await invoke(action === "approve" ? "approve-section-edit" : "deny-section-edit", { sectionId: s.sectionId, requesterAccountId });
+      const r = await signedInvoke(action === "approve" ? "approve-section-edit" : "deny-section-edit", { sectionId: s.sectionId, requesterAccountId });
       if (r?.success) {
         setRequests((p) => (p || []).filter((x) => x.requesterAccountId !== requesterAccountId));
         if (action === "approve") invoke("list-section-edit-grants", { sectionId: s.sectionId }).then((g) => setGrants(g?.grants || [])).catch(() => {});
@@ -906,7 +911,7 @@ const SectionRow = ({ section: s, onUnseal, unsealing, viewer, siteUrl, pageId }
   const revokeGrant = async (editorAccountId) => {
     setGrantBusy(editorAccountId); setError(null);
     try {
-      const r = await invoke("revoke-section-edit-grant", { sectionId: s.sectionId, editorAccountId });
+      const r = await signedInvoke("revoke-section-edit-grant", { sectionId: s.sectionId, editorAccountId });
       if (r?.success) setGrants((p) => (p || []).filter((g) => g.editorAccountId !== editorAccountId));
       else setError(r?.reason || "Could not revoke this editor's access.");
     } catch (e) { console.error("Revoke section grant failed:", e); setError("Could not reach Sentinel Vault. Try again."); }
@@ -957,8 +962,10 @@ const SectionRow = ({ section: s, onUnseal, unsealing, viewer, siteUrl, pageId }
       <ErrorRow message={error} onDismiss={() => setError(null)} testId="sv-section-error" />
       {bar && <ReasonBar mode={bar} kind="section" value={reasonText} onChange={setReasonText} onSubmit={submitBar} onCancel={() => { setBar(null); setReasonText(""); }} busy={busy || unsealing} testId="sv-section-reason-bar" />}
       {s.isMine && <RequestInbox requests={requests} name={`section ${s.sectionTitle}`} reqBusy={reqBusy} onDecide={resolve} firstDecidedAbove={primary.kind === "decide"} testId="sv-section-inbox" />}
+      {signatureDialog}
       {giving && (
         <GiveAccessDialog
+          invoker={signedInvoke}
           target={{ sectionId: s.sectionId }}
           name={`section ${s.sectionTitle}`}
           onClose={() => setGiving(false)}
@@ -1037,11 +1044,12 @@ const SealedSectionsGroup = ({ pageId, onChanged, viewer, siteUrl }) => {
     }
   };
 
+  const { signedInvoke: signedUnseal, signatureDialog: unsealSignatureDialog } = useSignedInvoke();
   const unseal = async (sectionId, reason) => {
     setBusy(sectionId);
     setSealError(null);
     try {
-      const r = await invoke("unseal-section", reason ? { sectionId, reason } : { sectionId });
+      const r = await signedUnseal("unseal-section", reason ? { sectionId, reason } : { sectionId });
       if (r?.success) {
         await load();
         if (onChanged) onChanged();
@@ -1060,6 +1068,7 @@ const SealedSectionsGroup = ({ pageId, onChanged, viewer, siteUrl }) => {
 
   return (
     <div className="sv-card-section sv-section-seals">
+      {unsealSignatureDialog}
       <div className="sv-card-section-header">
         <button className="sv-group-toggle" onClick={() => setCollapsed(!collapsed)} title={collapsed ? "Expand" : "Collapse"}>
           <span className={`sv-group-caret ${collapsed ? "collapsed" : ""}`}>▾</span>
@@ -1197,6 +1206,7 @@ const ArtifactGridView = () => {
   const [viewer, setViewer] = useState({ canEditPage: true, isSpaceAdmin: false });
   const [isEditing, setIsEditing] = useState(false);
   const [hasMore, setHasMore] = useState(false);
+  const [counts, setCounts] = useState(null); // whole-page numbers from the lister's first page
   const [nextCursor, setNextCursor] = useState(null);
   const [loadingMore, setLoadingMore] = useState(false);
   const [panelConfig, setPanelConfig] = useState(INITIAL_CONFIG);
@@ -1237,6 +1247,7 @@ const ArtifactGridView = () => {
       });
       setHasMore(result.hasMore || false);
       setNextCursor(result.nextCursor || null);
+      if (result.counts) setCounts(result.counts);
     } catch (e) {
       console.error("[PANEL-UI] Error fetching artifacts:", e);
       setError("Unable to retrieve files.");
@@ -1403,13 +1414,13 @@ const ArtifactGridView = () => {
         </span>
         <span className="sv-panel-header-counts">
           {claimedFiles.length > 0 && (
-            <span className="sv-panel-header-badge">{claimedFiles.length} sealed</span>
+            <span className="sv-panel-header-badge">{counts?.sealed ?? claimedFiles.length} sealed</span>
           )}
           {staleFiles.length > 0 && (
             <span className="sv-panel-header-badge badge-stale">{staleFiles.length} missing</span>
           )}
           {availableFiles.length > 0 && (
-            <span className="sv-panel-header-badge badge-available">{availableFiles.length} available</span>
+            <span className="sv-panel-header-badge badge-available">{counts?.available ?? availableFiles.length} available</span>
           )}
         </span>
       </div>
@@ -1435,7 +1446,7 @@ const ArtifactGridView = () => {
             <div className="sv-card-section">
               <div className="sv-card-section-header">
                 <span className="sv-card-section-title">Sealed</span>
-                <span className="sv-card-section-count">{claimedFiles.length}</span>
+                <span className="sv-card-section-count" data-testid="sv-count-sealed">{counts?.sealed ?? claimedFiles.length}</span>
               </div>
               <RovingList {...gridProps} label="Sealed attachments">{renderCards(claimedFiles)}</RovingList>
             </div>
@@ -1453,7 +1464,7 @@ const ArtifactGridView = () => {
             <div className="sv-card-section">
               <div className="sv-card-section-header">
                 <span className="sv-card-section-title">Available</span>
-                <span className="sv-card-section-count">{availableFiles.length}</span>
+                <span className="sv-card-section-count" data-testid="sv-count-available">{counts?.available ?? availableFiles.length}</span>
               </div>
               <RovingList {...gridProps} label="Available attachments">{renderCards(availableFiles)}</RovingList>
             </div>

@@ -323,3 +323,34 @@ export async function breakSeal(
 
   return { success: false, reason: "Unlock failed" };
 }
+
+/**
+ * Whole-page attachment counts (tester report 2026-09-19: "AVAILABLE 11" was the number of cards
+ * on screen — the real number was 13, one Show more away). The listers page 10 at a time and
+ * enrich each card (labels, watches, previews), so the counts come from a separate cheap walk:
+ * ids only, at most 4 × 250, one KVS get per id. Same seal test the cards use (a record with an
+ * owner; trashed-only tracking records are not seals).
+ */
+export async function countPageAttachments(pageId, operatorAccountId, requestFn) {
+  const counts = { total: 0, sealed: 0, sealedByMe: 0, available: 0, complete: true };
+  let cursor = null;
+  for (let page = 0; page < 4; page++) {
+    const url = cursor
+      ? route`/wiki/api/v2/pages/${pageId}/attachments?limit=250&cursor=${cursor}`
+      : route`/wiki/api/v2/pages/${pageId}/attachments?limit=250`;
+    const res = await requestFn(url);
+    if (!res.ok) return { ...counts, complete: false };
+    const data = await res.json();
+    const ids = (data.results || []).map((a) => a.id).filter(Boolean);
+    const seals = await Promise.all(ids.map((id) => kvs.get(`protection-${id}`).catch(() => null)));
+    for (const seal of seals) {
+      counts.total++;
+      if (seal?.lockedBy && !seal.trashedOnly) { counts.sealed++; if (seal.lockedBy === operatorAccountId) counts.sealedByMe++; }
+      else counts.available++;
+    }
+    const next = data._links?.next ? new URL(data._links.next, "https://x").searchParams.get("cursor") : null;
+    if (!next) return counts;
+    cursor = next;
+  }
+  return { ...counts, complete: false };
+}

@@ -6,6 +6,7 @@ import ActivityFeed, { ActivityRow } from "../../kit/ActivityFeed";
 import { ACTIVITY_CATEGORIES, categoryOf } from "../../kit/activity-format";
 import { primaryActionFor, menuActionsFor } from "../../../server/capsules/page-details/row-state.js";
 import GiveAccessDialog from "../../kit/GiveAccessDialog";
+import { useSignedInvoke } from "../../kit/SignedInvoke";
 
 // 5.0 — the page-details modal (mockup §4), the page-level hub behind the byline chip. ONE
 // resource serves two modules: the byline item (`sentinel-vault-byline`, mode "details") and
@@ -15,8 +16,7 @@ import GiveAccessDialog from "../../kit/GiveAccessDialog";
 // Vocabulary in copy: space, space admin, user, group, attachment, seal (never realm / steward /
 // operator / guild / artifact / reservation). No native select / alert / confirm anywhere here.
 
-const APP_ID = "c30bf71e-4287-4872-954d-db49cc68f0ff";
-const MY_WORK_PATH = `/wiki/apps/${APP_ID}/my-work`;
+import { myWorkPath } from "../../kit/my-work-path.js";
 const NEUTRAL = "#475569";
 
 // "until Mon 09:00" inside the coming week, "until Sep 20, 17:00" beyond it.
@@ -177,6 +177,7 @@ const SealRow = ({ row, viewer, pageId, siteUrl, onChanged }) => {
   const [bar, setBar] = useState(null); // "request" | "force" | null
   const [giving, setGiving] = useState(false);
   const [copied, setCopied] = useState(false);
+  const { signedInvoke, signatureDialog } = useSignedInvoke();
   const primary = primaryActionFor(row, viewer);
   const menu = menuActionsFor(row, viewer);
   const isAtt = row.kind === "attachment";
@@ -185,7 +186,7 @@ const SealRow = ({ row, viewer, pageId, siteUrl, onChanged }) => {
   const run = async (action, payload, { reload = true } = {}) => {
     setBusy(true); setError(null);
     try {
-      const r = await invoke(action, payload);
+      const r = await signedInvoke(action, payload);
       if (r?.success === false || r?.ok === false) { setError(r?.reason || "That did not work."); return false; }
       if (reload) await onChanged();
       return true;
@@ -288,7 +289,8 @@ const SealRow = ({ row, viewer, pageId, siteUrl, onChanged }) => {
           busy={busy} onCancel={() => setBar(null)}
           onConfirm={async (reason) => { if (await run(isAtt ? "unseal-artifact" : "unseal-section", isAtt ? { attachmentId: row.id, adminOverride: true, reason } : { sectionId: row.id, reason })) setBar(null); }} />
       )}
-      {giving && <GiveAccessDialog target={idPayload} name={isAtt ? row.name : `section ${row.name}`} onClose={() => setGiving(false)} onGranted={() => onChanged()} testId="pd-give-access" />}
+      {signatureDialog}
+      {giving && <GiveAccessDialog invoker={signedInvoke} target={idPayload} name={isAtt ? row.name : `section ${row.name}`} onClose={() => setGiving(false)} onGranted={() => onChanged()} testId="pd-give-access" />}
       {error && <div className="pd-error" role="alert" data-testid="pd-row-error">{error}</div>}
     </li>
   );
@@ -425,6 +427,7 @@ const SealActionSeam = ({ summary, reload, siteUrl, loadError, onRetry }) => {
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState(null); // { sealed: n, failed: [{name, reason}] }
   const [givingFor, setGivingFor] = useState(null); // { id, name } — "Give edit access…" from a row's ⋯
+  const { signedInvoke: signedTab, signatureDialog: tabSignatureDialog } = useSignedInvoke();
   const attachments = summary?.attachments || [];
   const sealRowById = useMemo(() => new Map((summary?.seals || []).filter((r) => r.kind === "attachment").map((r) => [r.id, r])), [summary]);
   const selectable = attachments.filter((a) => !a.sealed);
@@ -498,12 +501,12 @@ const SealActionSeam = ({ summary, reload, siteUrl, loadError, onRetry }) => {
                       {row && (() => {
                         const primary = primaryActionFor(row, summary.viewer);
                         if (!primary || primary.kind === "seal") return null;
-                        if (primary.kind === "release") return <button type="button" className="pd-btn quiet" data-testid="pd-primary" data-action="release" onClick={() => invoke("unseal-artifact", { attachmentId: row.id }).then(reload)}>Release</button>;
+                        if (primary.kind === "release") return <button type="button" className="pd-btn quiet" data-testid="pd-primary" data-action="release" onClick={() => signedTab("unseal-artifact", { attachmentId: row.id }).then(reload)}>Release</button>;
                         return <span className="pd-state" data-testid="pd-primary" data-action={primary.kind}>{primary.label}</span>;
                       })()}
                       {row && <Kebab items={menuActionsFor(row, summary.viewer)} onPick={(id) => {
-                        if (id === "extend") invoke("extend-seal", { attachmentId: row.id }).then(reload);
-                        else if (id === "release") invoke("unseal-artifact", { attachmentId: row.id }).then(reload);
+                        if (id === "extend") signedTab("extend-seal", { attachmentId: row.id }).then(reload);
+                        else if (id === "release") signedTab("unseal-artifact", { attachmentId: row.id }).then(reload);
                         else if (id === "watch") invoke("watch-artifact", { attachmentId: row.id }).then(reload);
                         else if (id === "unwatch") invoke("unwatch-artifact", { attachmentId: row.id }).then(reload);
                         else if (id === "copy-link") navigator.clipboard?.writeText(`${siteUrl || ""}/wiki${row.link || `/pages/viewpage.action?pageId=${summary.pageId}`}`).catch(() => {});
@@ -515,7 +518,8 @@ const SealActionSeam = ({ summary, reload, siteUrl, loadError, onRetry }) => {
               );
             })}
           </ul>
-          {givingFor && <GiveAccessDialog target={{ attachmentId: givingFor.id }} name={givingFor.name} onClose={() => setGivingFor(null)} onGranted={() => reload()} testId="pd-give-access" />}
+          {tabSignatureDialog}
+          {givingFor && <GiveAccessDialog invoker={signedTab} target={{ attachmentId: givingFor.id }} name={givingFor.name} onClose={() => setGivingFor(null)} onGranted={() => reload()} testId="pd-give-access" />}
           <div className="pd-seal-form">
             <div className="pd-seal-field"><span className="pd-seal-label">Seal holds for</span><DurationPicker value={duration} defaultSeconds={summary.sealDefaults?.holdSeconds} onChange={setDuration} disabled={busy} /></div>
             <div className="pd-seal-field grow"><span className="pd-seal-label">Note (optional)</span><input className="pd-input" value={note} maxLength={300} placeholder="Why these are sealed — shown with the seal" onChange={(e) => setNote(e.target.value)} disabled={busy} data-testid="pd-note" /></div>
@@ -646,7 +650,7 @@ export const PageDetails = ({ mode = "details", ctx }) => {
       </div>
       <div className="pd-foot">
         <span>One primary action per row; everything else under ⋯ (Extend, Watch, Copy link, Force release — space admins, reason required).</span>
-        <button type="button" className="pd-btn quiet" onClick={(e) => { e.preventDefault(); router.navigate(MY_WORK_PATH); }} data-testid="pd-open-my-work">Open My work</button>
+        <button type="button" className="pd-btn quiet" onClick={(e) => { e.preventDefault(); router.navigate(myWorkPath(ctx)); }} data-testid="pd-open-my-work">Open My work</button>
       </div>
     </div>
   );
