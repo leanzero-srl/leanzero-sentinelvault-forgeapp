@@ -832,6 +832,19 @@ html[data-color-mode="dark"] .action-btn.editgrant {
   font-weight: 600;
   color: var(--sv-interactive-primary);
 }
+/* SEC-7: the "Holds for" step under a picked heading — solid chips, no native select — and the
+   owner's amber lapse warning on the sealed row. */
+.sv-section-pick { display: flex; flex-direction: column; gap: 6px; }
+.sv-section-pick.is-picked .sv-section-pick-row { border-color: var(--sv-interactive-primary); }
+.sv-section-hold { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 10px 12px 12px 44px; }
+.sv-section-hold-label { font-size: 12px; font-weight: 700; color: var(--sv-text-primary); }
+.sv-section-hold-opts { display: inline-flex; gap: 6px; flex-wrap: wrap; }
+.sv-hold-opt { height: 26px; padding: 0 10px; border-radius: 13px; border: 1.5px solid var(--sv-border-primary); background: var(--sv-bg-secondary); color: var(--sv-text-primary); font-size: 12px; font-weight: 600; cursor: pointer; font-family: inherit; }
+.sv-hold-opt.is-on { background: var(--sv-interactive-primary); border-color: var(--sv-interactive-primary); color: #FFFFFF; }
+.sv-section-hold-note { flex: 1 1 220px; min-width: 160px; height: 28px; padding: 0 10px; border-radius: 6px; border: 1px solid var(--sv-border-primary); background: var(--sv-bg-primary); color: var(--sv-text-primary); font-size: 12.5px; font-family: inherit; }
+.sv-section-row-warn { color: #B45309; font-weight: 700; }
+html[data-color-mode="dark"] .sv-section-row-warn { color: #FBBF24; }
+.sv-section-row-note { font-style: italic; }
 .sv-section-row {
   display: flex;
   align-items: center;
@@ -1613,6 +1626,7 @@ html[data-color-mode="dark"] .sv-activity-chip-validation.is-active { background
 .sv-state.wait { background: #B45309; color: #FFFFFF; }
 .sv-state.ok { background: #15803D; color: #FFFFFF; }
 .sv-state.expired { background: #DC2626; color: #FFFFFF; }
+.sv-state.held { background: #15803D; color: #FFFFFF; } /* SEC-2 */
 .sv-state.trashed { background: #475569; color: #FFFFFF; }
 html[data-color-mode="dark"] .sv-state.wait { background: #FBBF24; color: #0F172A; }
 html[data-color-mode="dark"] .sv-state.ok { background: #22C55E; color: #052E16; }
