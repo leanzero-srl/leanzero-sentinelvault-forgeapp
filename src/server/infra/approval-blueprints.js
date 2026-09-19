@@ -4,6 +4,7 @@
  * them — no external egress. Mirrors validation-blueprints.js.
  */
 import { postCommentWithMention } from "./outbound-notify.js";
+import { NOTICE_EDITOR_REVERT } from "../shared/notice-policy.js";
 
 const HEADER = "🛡️ Sentinel Vault";
 
@@ -37,41 +38,73 @@ export async function notifyApprovalRequested({ pageId, targetName, approvers, r
   }
 }
 
-// #44: enforcement notice. `kind` = "revert" | "demote" | "revert-failed". Every revert
-// notice carries a one-click page-history recovery link (CL-6) and mentions the editor.
-// Claim discipline: "reverted + attested", never "the badge can't be wrong".
-export async function postEnforceComment(pageId, editorId, kind, opts = {}) {
-  if (!pageId) return { success: false };
+// #44: enforcement notice. `kind` = "revert" | "demote" | "revert-failed" | "expired". The body is
+// pure (enforceCommentBody, unit-tested). WF-2 (UX critique 2026-09-19): the revert and demote
+// notices are addressed to the EDITOR whose published work was undone, so they ride the
+// editor_revert carve-out (posted even on a site that never opted into the comment channel, own
+// switch notifyEditorOnRevert, still yields to a quiet space) — and they say what happened in the
+// editor's words: which version holds their text, and what to do next. Never "structural compare",
+// never "request a transition".
+export function enforceCommentBody(pageId, editorId, kind, opts = {}) {
   const historyUrl = `/wiki/pages/viewpreviousversions.action?pageId=${pageId}`;
   const m = editorId ? mention(editorId) + " — " : "";
-  let body;
   if (kind === "expired" && opts.noTransition) {
     // A5: the review date passed but the page's state has no transition to Expired — it stays
     // where it is, overdue. Posted ONCE per due date (`workflow-review-notified-{pageId}` keeps
     // the announced date, no TTL): a re-set date that passes again is announced again.
-    body = `<p>${HEADER} — <strong>Review overdue</strong></p>
+    return `<p>${HEADER} — <strong>Review overdue</strong></p>
 <p>${m}this page's review date has passed${opts.stateName ? ` and it is still ${escapeXml(opts.stateName)}` : ""}. Review it and move it on, or set a new review date.</p>`;
-  } else if (kind === "expired") {
-    body = `<p>${HEADER} — <strong>Approval expired</strong></p>
+  }
+  if (kind === "expired") {
+    return `<p>${HEADER} — <strong>Approval expired</strong></p>
 <p>${m}this page's review period has elapsed, so Sentinel Vault moved it to Expired. Re-submit it for review to approve it again.</p>`;
-  } else if (kind === "demote") {
+  }
+  if (kind === "demote") {
     // A2: the target is the space's configured demote state (opts.demotedToName); Draft is the default.
     const to = escapeXml(opts.demotedToName || "Draft");
-    body = `<p>${HEADER} — <strong>Moved back to ${to}</strong></p>
-<p>${m}this page was edited after it was Approved, so Sentinel Vault moved it back to ${to}. Re-submit it for approval when the changes are ready.</p>`;
-  } else if (kind === "revert-failed") {
-    body = `<p>${HEADER} — <strong>Enforcement pending</strong></p>
-<p>Sentinel Vault could not re-apply the approved version of this page and will retry automatically. The current content is in the page history — <a href="${escapeXml(historyUrl)}">view previous versions</a>.</p>`;
-  } else {
-    body = `<p>${HEADER} — <strong>Enforced Approved state</strong></p>
-<p>${m}this page is in an enforced Approved state, so your change was reverted to the approved version${opts.approvedVersion ? ` (v${opts.approvedVersion})` : ""}, verified by structural compare. Your edit is preserved in the page history — <a href="${escapeXml(historyUrl)}">view previous versions</a>. To edit an approved page, first request a transition out of Approved.</p>`;
+    return `<p>${HEADER} — <strong>Moved back to ${to}</strong></p>
+<p>${m}this page was Approved, so your edit moved it back to ${to} for a new review. Nothing was lost: your change is still on the page. Request approval when the changes are ready, or ask an approver or space admin to review them.</p>`;
   }
+  if (kind === "revert-failed") {
+    return `<p>${HEADER} — <strong>Enforcement pending</strong></p>
+<p>Sentinel Vault could not re-apply the approved version of this page and will retry automatically. The current content is in the page history — <a href="${escapeXml(historyUrl)}">view previous versions</a>.</p>`;
+  }
+  const av = opts.approvedVersion != null ? ` (v${escapeXml(opts.approvedVersion)})` : "";
+  const myVersion = opts.revertedVersion != null
+    ? `<a href="${escapeXml(`/wiki/pages/viewpage.action?pageId=${pageId}&pageVersion=${opts.revertedVersion}`)}">open your version (v${escapeXml(opts.revertedVersion)})</a>`
+    : `<a href="${escapeXml(historyUrl)}">view previous versions</a>`;
+  return `<p>${HEADER} — <strong>Reverted to the approved version</strong></p>
+<p>${m}this page is Approved and protected, so your change was reverted to the approved version${av}. Your text is not lost: it is kept in the page history — ${myVersion}. To change an approved page, ask an approver or space admin to move it out of Approved first, or request approval for your version.</p>`;
+}
+
+export async function postEnforceComment(pageId, editorId, kind, opts = {}) {
+  if (!pageId) return { success: false };
+  const body = enforceCommentBody(pageId, editorId, kind, opts);
+  const noticeType = (kind === "revert" || kind === "demote") && editorId ? NOTICE_EDITOR_REVERT : null;
   try {
-    return await postCommentWithMention({ pageId, storageBody: body.trim() });
+    return await postCommentWithMention({ pageId, storageBody: body.trim(), noticeType });
   } catch (e) {
     console.error("[APPROVAL-NOTICE] enforce comment failed:", e);
     return { success: false };
   }
+}
+
+// WF-2: the dispatch record behind the ribbon's pill for a workflow enforcement — the editor and
+// the approver are the parties (recent-dispatches filters on either), the versions let the ribbon
+// link to the version holding the editor's text. Pure; unit-tested.
+export function buildWorkflowEnforcementDispatch({ pageId, mode, editorAccountId, approverAccountId, approvedVersion, revertedVersion, demotedToName, via }) {
+  return {
+    id: `notification-${Date.now()}`,
+    type: mode === "revert" ? "workflow-reverted" : "workflow-demoted",
+    pageId,
+    ownerAccountId: approverAccountId || null,
+    editorAccountId: editorAccountId || null,
+    approvedVersion: approvedVersion ?? null,
+    revertedVersion: mode === "revert" ? (revertedVersion ?? null) : null,
+    demotedToName: mode === "revert" ? null : (demotedToName || "Draft"),
+    via: via || "event",
+    timestamp: Date.now(),
+  };
 }
 
 // The requester's comment body — pure, so the copy is unit-tested (test/approval-notice.test.mjs).
