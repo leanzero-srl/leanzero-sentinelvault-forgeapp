@@ -93,6 +93,15 @@ button:focus-visible, input:focus-visible, [role="option"]:focus-visible { outli
 .pd-btn.danger:hover:not(:disabled) { background: var(--sv-interactive-danger-hover); }
 .pd-btn:disabled { opacity: .55; cursor: default; }
 
+/* ── workflow block (WF-6): solid tone pill, one sentence, meta chips, the decisions list ─── */
+.pd-wf-meta { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+.pd-wf-meta-item { display: inline-flex; align-items: center; height: 22px; padding: 0 10px; border-radius: 11px; background: var(--sv-bg-tertiary); color: var(--sv-text-primary); font-size: 12px; font-weight: 600; }
+.pd-wf-decisions { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 4px; font-size: 12.5px; color: var(--sv-text-secondary); }
+.pd-wf-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 8px; vertical-align: middle; }
+.pd-wf-hint { color: var(--sv-text-subtle); font-weight: 500; }
+.pd-ok { margin: 8px 0 0; color: #15803D; font-weight: 600; font-size: 12.5px; }
+html[data-color-mode="dark"] .pd-ok { color: #4ADE80; }
+
 /* ── classification block ────────────────────────────────────────────────────────────────── */
 .pd-cls-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .pd-cls-row .pd-desc { flex: 1; min-width: 200px; }
