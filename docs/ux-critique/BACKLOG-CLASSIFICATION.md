@@ -330,6 +330,8 @@ module on the test site (uninstall staging's byline or scope it to another space
 **Confidence** high on the title; this is a test-site hygiene item otherwise.
 **Blast radius** `manifest.yml` byline title; harness `_door.ts` (already handles it).
 
+**Status (2026-09-20):** done (test-site hygiene, no app code): the manifest's byline title already carries no environment word (`title: Sentinel Vault`; the host appends "(Development)"), and the STAGING install (`09032ffd-…`, app major 2) was uninstalled from wolfaenpak with `forge uninstall -e staging -s wolfaenpak.atlassian.net -p Confluence` — the doubled "(Staging) (Staging)" chip came from that old install's own byline. Evidence `scenarios/sentinel-vault/cls11-one-byline-chip.spec.ts` (browser: the byline row carries exactly one Sentinel Vault chip, ending in one "(Development)"). The "RESTRICTED (Development)" chip is another app's (Data classification) and stays.
+
 ---
 
 ## Questions only the owner can answer
