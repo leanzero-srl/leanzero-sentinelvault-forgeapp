@@ -171,7 +171,7 @@ Approved before editing, or request approval for your version."*
 **Confidence** high on (a)/(b) (mirrors the shipped seal path); medium on the exact pill copy.
 **Blast radius** `triggers.js` (two enforcement sites + sweep), `approval-blueprints.js`, `notice-policy.js`,
 `doc-ribbon/index.jsx` `alertSentence`, `ribbon-rules` (dispatch types).
-**Status (2026-09-20):** fixed in the WF-2 commit (dev 8.11.0), evidence
+**Status (2026-09-20):** fixed in the WF-2 commits (dev 8.13.0), evidence
 `~/Projects/forge-live-harness/scenarios/sentinel-vault/wf2-enforcement-notice.spec.ts` (server + browser,
 `evidence/wf2-enforcement-notice/*.png`). Shipped: ONE announcer in `triggers.js` (`announceWorkflowEnforcement`)
 behind all four sites (event demote, event revert, sweep demote, sweep revert): a dispatch `workflow-demoted` /
