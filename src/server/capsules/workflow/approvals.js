@@ -283,6 +283,9 @@ async function finalizeApprovedTransition(pageId, stateId, pending, actorAccount
       return { success: false, reason: "Could not verify the page version — approval not applied, please retry." };
     }
     if (pending.pinnedVersion != null && live !== pending.pinnedVersion) {
+      // WF-1: decideApproval refuses a stale approve BEFORE recording it (see there), so this
+      // branch is only the race (the page changed between that check and here) and the AI path.
+      // The request is closed and the requester is told the truth: nobody declined it.
       // A4: the decisions are about to be deleted; a stale outcome must not erase who said what.
       try {
         const staleRecord = buildApprovalRecord({
@@ -298,8 +301,8 @@ async function finalizeApprovedTransition(pageId, stateId, pending, actorAccount
         });
       } catch (e) { console.warn("[APPROVALS] stale trace failed:", e); }
       await clearPageApprovals(pageId, stateId, approvers);
-      await notifyApprovalResolved({ pageId, requestedBy: pending.requestedBy, outcome: "denied", targetName: pending.toStateName || stateId, deciderName: actorName }).catch(() => {});
-      return { success: true, outcome: "stale", transitioned: false, reason: "Page changed since review — re-approval required." };
+      await notifyApprovalResolved({ pageId, requestedBy: pending.requestedBy, outcome: "stale", targetName: pending.toStateName || stateId, pinnedVersion: pending.pinnedVersion, liveVersion: live }).catch(() => {});
+      return { success: true, outcome: "stale", transitioned: false, stale: true, pinnedVersion: pending.pinnedVersion, liveVersion: live, reason: describeStaleClosed(pending.pinnedVersion, live) };
     }
     // A4: snapshot the evidence from the strong per-key records NOW — clearPageApprovals below
     // deletes them, and the snapshot is what the page keeps (record.approvalRecord + the log).
@@ -378,6 +381,17 @@ export async function decideApproval({ pageId, approverAccountId, decision, reas
     return { success: false, reason: "Your decision has already been recorded" };
   }
   if (decision !== "approved" && decision !== "denied") return { success: false, reason: "Invalid decision" };
+  // WF-1 (UX critique 2026-09-19): an approval of a version nobody reviewed is refused UP FRONT —
+  // nothing recorded, the request stays open, no comment. Before this the vote was recorded, the
+  // finalizer threw the whole request away as "stale" and the requester read "declined by <the
+  // approver>". A denial is still accepted: "no" to a page that changed is still "no". Checked
+  // before the signature so a refused decision never burns the approver's code.
+  if (decision === "approved" && pending.pinnedVersion != null) {
+    const live = await fetchLivePageVersion(pageId);
+    if (live != null && live !== pending.pinnedVersion) {
+      return { success: false, stale: true, pinnedVersion: pending.pinnedVersion, liveVersion: live, reason: describeStaleRequest(pending.pinnedVersion, live, pending.requestedByName) };
+    }
+  }
   // B3: a space can require every decision to be SIGNED — a TOTP from the approver's enrolled
   // device. Verified AFTER every validity check above (review finding 14): a refused decision
   // must not burn the approver's current code, and a failed code leaves no trace.
@@ -476,15 +490,68 @@ export async function getPageApprovalStatus(pageId) {
   const current = await readPageWorkflow(pageId);
   // #44: staleness — the page changed since the approvers reviewed it, so a completion
   // now would be blocked at decideApproval (§1.5). Surface it in the inbox/panel.
-  const stale = pending.pinnedVersion != null && (await fetchLivePageVersion(pageId)) !== pending.pinnedVersion;
+  const liveVersion = await fetchLivePageVersion(pageId);
+  const stale = pending.pinnedVersion != null && liveVersion !== pending.pinnedVersion;
   return {
     pending: true, toStateId: pending.toStateId, mode: pending.mode, min: pending.min,
     requestedBy: pending.requestedBy, requestedByName: pending.requestedByName, requestedAt: pending.requestedAt,
-    pinnedVersion: pending.pinnedVersion, stale, currentStateId: current?.stateId || null,
+    pinnedVersion: pending.pinnedVersion, stale, liveVersion, currentStateId: current?.stateId || null,
     approvers: records.map((r) => ({ accountId: r.approverAccountId, name: r.approverName, status: r.status, reason: r.reason, decidedAt: r.decidedAt, signed: !!r.signature })),
     // #46: the AI review axis, if this transition requires one.
     aiGate: pending.aiGate?.required ? { status: pending.aiGate.status, reason: pending.aiGate.reason || null } : null,
   };
+}
+
+// WF-1: the two stale sentences, pure (unit-tested). The refusal names both versions and what to
+// do; the closed notice names the versions and that nobody declined.
+export function describeStaleRequest(pinnedVersion, liveVersion, requestedByName) {
+  const ask = requestedByName ? `, or ask ${requestedByName} to` : "";
+  return `This page changed after the request (reviewed v${pinnedVersion}, now v${liveVersion}). Approving would not move it — re-request approval for v${liveVersion}${ask}.`;
+}
+export function describeStaleClosed(pinnedVersion, liveVersion) {
+  return `The page changed after the request (v${pinnedVersion} → v${liveVersion}), so the request was closed — nobody declined it. Re-request approval when the page is ready.`;
+}
+
+// WF-1: re-pin the OPEN request to the live version, keeping the original requester (so the
+// approver who noticed the change can bring the request up to date and still decide on it —
+// re-requesting under their own name would trip segregation of duties). Every recorded decision
+// was about the old version, so all go back to pending. No-op when nothing changed. Authority is
+// the caller's: an approver on the request, its requester, or a steward (checked by the action).
+export async function rerequestApproval({ pageId, actorAccountId, actorName, isSteward = false }) {
+  const pending = await kvs.get(pendingKey(pageId));
+  if (!pending) return { success: false, reason: "No approval is pending for this page" };
+  const approvers = pending.approvers || [];
+  const allowed = isSteward || actorAccountId === pending.requestedBy || approvers.includes(actorAccountId);
+  if (!allowed) return { success: false, reason: "Only an approver, the requester or a space admin can re-request this approval" };
+  const live = await fetchLivePageVersion(pageId);
+  if (live == null) return { success: false, reason: "Could not verify the page version — please retry." };
+  if (pending.pinnedVersion === live) return { success: true, changed: false, pinnedVersion: live };
+  const from = pending.pinnedVersion;
+  const requestedAt = new Date().toISOString();
+  for (const acc of approvers) {
+    const key = approvalKey(pageId, pending.toStateId, acc);
+    const rec = (await kvs.get(key)) || { pageId, stateId: pending.toStateId, approverAccountId: acc, approverName: null };
+    await kvs.set(key, { ...rec, status: "pending", requestedAt, decidedAt: null, reason: null, signature: undefined, decidedVersion: undefined, pinnedVersion: live });
+    await kvs.set(inboxKey(acc, pageId), { pageId, stateId: pending.toStateId, requestedAt });
+  }
+  const next = { ...pending, pinnedVersion: live, rerequestedAt: requestedAt, rerequestedBy: actorAccountId || null, rerequestedByName: actorName || null };
+  if (next.aiGate?.required) next.aiGate = { ...next.aiGate, status: "pending", reviewedVersion: null, reason: null, enqueuedAt: Date.now() };
+  await kvs.set(pendingKey(pageId), next);
+  await appendWorkflowLog(pageId, {
+    kind: "approval-rerequested", from: (await readPageWorkflow(pageId))?.stateId ?? null, to: pending.toStateId,
+    by: actorAccountId || null, byName: actorName || null,
+    reason: `re-requested for v${live} (was v${from})`,
+  }).catch(() => {});
+  await recordActivity({
+    type: "workflow.approval-rerequested",
+    pageId,
+    spaceKey: pending.spaceKey || null,
+    actor: actorAccountId ? { accountId: actorAccountId, name: actorName || null } : null,
+    target: { kind: "page", id: pageId, name: null },
+    details: { to: pending.toStateId, toName: pending.toStateName || pending.toStateId, fromVersion: from, pinnedVersion: live, aiGate: !!next.aiGate?.required },
+    version: live,
+  }).catch(() => {});
+  return { success: true, changed: true, pinnedVersion: live, fromVersion: from, aiGate: !!next.aiGate?.required, spaceKey: pending.spaceKey || null };
 }
 
 // Inbox: the caller's pending approval records, read through the per-approver index

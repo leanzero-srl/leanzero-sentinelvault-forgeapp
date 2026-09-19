@@ -26,7 +26,7 @@ export const ACTIVITY_CATEGORIES = Object.freeze([
     "editreq.requested", "editreq.approved", "editreq.denied", "editreq.revoked", "editreq.granted",
   ]) },
   { id: "workflow", label: "Workflow", types: Object.freeze([
-    "workflow.transition", "workflow.approval-requested", "workflow.approval-decided",
+    "workflow.transition", "workflow.approval-requested", "workflow.approval-rerequested", "workflow.approval-decided",
     "workflow.enforced", "workflow.expired", "workflow.review-due", "workflow.read-confirmed",
   ]) },
   { id: "validation", label: "Validation", types: Object.freeze([
@@ -255,6 +255,11 @@ export function formatActivity(entry) {
       return { ...base, label: "Approval requested", glyph: "shield", tone: "info",
         sentence: `${who} asked for approval to move the page to ${d.toName || d.to || "the next state"}`,
         detail: [n ? `${n} approver${n === 1 ? "" : "s"}` : "", mode ? `${mode} must approve` : "", d.pinnedVersion != null ? `v${d.pinnedVersion}` : ""].filter(Boolean).join(" · ") };
+    }
+    case "workflow.approval-rerequested": {
+      return { ...base, label: "Approval re-requested", glyph: "shield", tone: "info",
+        sentence: `${who} re-requested approval to move the page to ${d.toName || d.to || "the next state"} for the current version`,
+        detail: [d.fromVersion != null && d.pinnedVersion != null ? `v${d.fromVersion} → v${d.pinnedVersion}` : d.pinnedVersion != null ? `v${d.pinnedVersion}` : ""].filter(Boolean).join(" · ") };
     }
     case "workflow.approval-decided": {
       const approved = d.decision === "approved" || d.decision === "approve";

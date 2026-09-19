@@ -138,6 +138,16 @@ ready."* — never "declined by X". (d) Same in `WorkflowInbox.jsx:37`.
 **Confidence** high — the server already has every fact; this is wiring and copy.
 **Blast radius** `approvals.js` (stale branch + `notifyApprovalResolved` outcome), `approval-blueprints.js`,
 `doc-ribbon/index.jsx` (`doDecide`, approval popover), `WorkflowInbox.jsx`, `my-work`.
+**Status (2026-09-20):** fixed in the WF-1 commit (dev 8.7.0), evidence
+`~/Projects/forge-live-harness/scenarios/sentinel-vault/wf1-stale-approval.spec.ts` (server + browser tests,
+`evidence/wf1-stale-approval/*.png`). Shipped: `decideApproval` REFUSES a stale approve up front (`success:false,
+stale:true`, nothing recorded, request kept, no comment); the finalizer's race branch posts outcome `stale`
+("Approval request closed … Nobody declined it") never "declined by"; `get-page-approvals` carries `liveVersion`;
+the popover shows a solid amber stale block with **Re-request for vN** (`rerequest-approval` re-pins the OPEN
+request, original requester kept — re-requesting under the approver's name would trip segregation of duties) and
+disables Approve; `doDecide` branches on `outcome` and says the result next to the chip (`wf-notice`); the
+inbox (My work + console) marks stale rows and disables Approve there. Unit: `test/approval-notice.test.mjs`.
+Pre-fix run: `{"success":true,"outcome":"stale"}` + comment "Approval declined … by <approver>".
 
 ### WF-2 The person whose edit was undone by workflow enforcement is not told on the page, and may not be told at all
 **Who** editor (non-approver) of an Approved page.
