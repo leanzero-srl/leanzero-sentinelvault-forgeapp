@@ -9,6 +9,7 @@ import ActivityFeed from "../../kit/ActivityFeed";
 import ActionMenu from "../../kit/ActionMenu";
 import { ConfirmDialog } from "../../kit/Dialog";
 import GiveAccessDialog from "../../kit/GiveAccessDialog";
+import { useSignedInvoke } from "../../kit/SignedInvoke";
 import RovingList from "../../kit/RovingList";
 import { attachmentRow, rowActions, statusChip, copyText } from "../../kit/seal-row.js";
 import { PrimarySlot, ReasonBar, RequestInbox, GrantInbox, ErrorRow, CopiedNote } from "../../kit/SealRowParts";
@@ -269,7 +270,7 @@ const SortPicker = ({ orderField, orderDir, onSort }) => {
 // One attachment card in the overlay. The primary action and the ⋯ items come from the SAME row
 // rule as the inline panel and the page-details modal (kit/seal-row.js → row-state.js); the
 // parent owns the resolver calls through `run` so a refusal lands on THIS card's error row.
-const OverlayArtifactCard = ({ artifact, visibleColumns, run, busyAction, errorMessage, onClearError, isWatching, viewer, formatRemainingTime, formatFileSize, siteUrl, spaceKey, pageId, pageLocation }) => {
+const OverlayArtifactCard = ({ artifact, visibleColumns, run, signedInvoke, busyAction, errorMessage, onClearError, isWatching, viewer, formatRemainingTime, formatFileSize, siteUrl, spaceKey, pageId, pageLocation }) => {
   const [pendingConfirm, setPendingConfirm] = useState(null); // "delete" | "purge" | null → kit ConfirmDialog
   const [expanded, setExpanded] = useState(false);
   const [cachedPreview, setCachedPreview] = useState(null);
@@ -524,7 +525,7 @@ const OverlayArtifactCard = ({ artifact, visibleColumns, run, busyAction, errorM
 
       {bar && <ReasonBar mode={bar} value={reasonText} onChange={setReasonText} onSubmit={submitBar} onCancel={() => { setBar(null); setReasonText(""); }} busy={busyAction === "unseal" || busyAction === "editreq"} />}
       {isSealedByMe && <RequestInbox requests={myRequests} name={artifact.title} reqBusy={reqBusy} onDecide={resolveEditReq} firstDecidedAbove={primary.kind === "decide"} />}
-      {giving && <GiveAccessDialog target={{ attachmentId: artifact.id }} name={artifact.title} onClose={() => setGiving(false)} onGranted={reloadGrants} />}
+      {giving && <GiveAccessDialog invoker={signedInvoke} target={{ attachmentId: artifact.id }} name={artifact.title} onClose={() => setGiving(false)} onGranted={reloadGrants} />}
       {(isSealedByMe || (myGrants || []).length > 0) && <GrantInbox grants={myGrants} name={artifact.title} grantBusy={grantBusy} onRevoke={revokeGrant} />}
 
       {/* Expand panel: thumbnail + view link */}
@@ -579,9 +580,10 @@ const ArtifactControlPanel = () => {
 
   // Pagination state for artifacts tab
   const [moreFilesAvailable, setMoreFilesAvailable] = useState(false);
+  const [counts, setCounts] = useState(null); // whole-page numbers from the lister's first page
   const [nextFileCursor, setNextFileCursor] = useState(null);
-  const [fetchingMoreFiles, setFetchingMoreFiles] =
-    useState(false);
+  const [fetchingMoreFiles, setFetchingMoreFiles] = useState(false);
+  const { signedInvoke, signatureDialog } = useSignedInvoke(); // the code prompt when the site signs seal actions
 
 
   const retrieveFileData = async (append = false, cursorOverride = null, isEnrichPhase = false) => {
@@ -631,6 +633,7 @@ const ArtifactControlPanel = () => {
 
       setMoreFilesAvailable(hasMore);
       setNextFileCursor(nextCursor);
+      if (result.counts) setCounts(result.counts);
 
       console.log(
         `[OVERLAY] Updated: hasMore=${hasMore}, nextCursor=${nextCursor}`,
@@ -773,7 +776,7 @@ const ArtifactControlPanel = () => {
     setBusyAction({ id: artifactId, action: busyKey });
     setCardErrors((p) => ({ ...p, [artifactId]: null }));
     try {
-      const r = await invoke(action, payload);
+      const r = await signedInvoke(action, payload);
       if (!r || r.success === false || r.ok === false) {
         setCardErrors((p) => ({ ...p, [artifactId]: r?.reason || "That did not work. Try again." }));
         return false;
@@ -922,6 +925,7 @@ const ArtifactControlPanel = () => {
 
   return (
     <div className="modal-container">
+      {signatureDialog}
       <div className="modal-header">
         <h1 className="modal-title">Sentinel Vault</h1>
         <button onClick={onDismiss} className="modal-close" title="Close Sentinel Vault overlay" aria-label="Close Sentinel Vault overlay">
@@ -1136,11 +1140,12 @@ const ArtifactControlPanel = () => {
                         <div className="sv-card-section">
                           <div className="sv-card-section-header">
                             <span className="sv-card-section-title">Sealed</span>
-                            <span className="sv-card-section-count">{claimedFiles.length}</span>
+                            <span className="sv-card-section-count" data-testid="sv-count-sealed">{counts?.sealed ?? claimedFiles.length}</span>
                           </div>
                           <RovingList className="sv-card-list" data-cols="3" label="Sealed attachments">
                             {claimedFiles.map((artifact) => (
                               <OverlayArtifactCard
+                                signedInvoke={signedInvoke}
                                 key={artifact.id}
                                 artifact={artifact}
                                 visibleColumns={visibleColumns}
@@ -1170,6 +1175,7 @@ const ArtifactControlPanel = () => {
                           <RovingList className="sv-card-list" data-cols="3" label="Trashed attachments">
                             {staleFiles.map((artifact) => (
                               <OverlayArtifactCard
+                                signedInvoke={signedInvoke}
                                 key={artifact.id}
                                 artifact={artifact}
                                 visibleColumns={visibleColumns}
@@ -1194,11 +1200,12 @@ const ArtifactControlPanel = () => {
                         <div className="sv-card-section">
                           <div className="sv-card-section-header">
                             <span className="sv-card-section-title">Available</span>
-                            <span className="sv-card-section-count">{availableFiles.length}</span>
+                            <span className="sv-card-section-count" data-testid="sv-count-available">{counts?.available ?? availableFiles.length}</span>
                           </div>
                           <RovingList className="sv-card-list" data-cols="3" label="Available attachments">
                             {availableFiles.map((artifact) => (
                               <OverlayArtifactCard
+                                signedInvoke={signedInvoke}
                                 key={artifact.id}
                                 artifact={artifact}
                                 visibleColumns={visibleColumns}

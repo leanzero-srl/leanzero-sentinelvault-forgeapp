@@ -1633,3 +1633,7 @@ html[data-color-mode="dark"] .sv-state.trashed { background: #94A3B8; color: #0F
 .sv-give-clear { font: inherit; font-size: 12px; font-weight: 700; color: var(--sv-text-on-primary); background: transparent; border: 1px solid var(--sv-text-on-primary); border-radius: 9999px; padding: 3px 10px; cursor: pointer; }
 .sv-give-error { margin-top: 10px; font-size: 12.5px; font-weight: 600; color: var(--sv-interactive-danger); }
 .sv-give-access .action-btn.lock { font-size: 12.5px; padding: 7px 14px; border-radius: 9999px; }
+
+/* Sign this action (kit/SignedInvoke.jsx) */
+.sv-sign .sv-sign-input { width: 100%; box-sizing: border-box; margin-top: 12px; font-size: 22px; letter-spacing: 6px; text-align: center; padding: 10px; font-variant-numeric: tabular-nums; }
+.sv-sign .action-btn.lock { font-size: 12.5px; padding: 7px 14px; border-radius: 9999px; }

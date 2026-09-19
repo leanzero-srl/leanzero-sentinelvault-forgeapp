@@ -38,6 +38,7 @@ import { readDocBody, readDocBodyAtVersion, writeDocBody, collectMediaFileIds, e
 import { probeAttachmentStatus, restoreAttachmentFromTrash, decideMediaRestoreAction, confirmAttachmentPurged } from "./infra/attachment-status.js";
 import { findSealedMediaSingle, findAllSealedMediaSingles, capturePresentation, presentationDiffers, applyPresentation } from "./infra/media-presentation.js";
 import { setWithTtl, setUntil } from "./shared/kvs-ttl.js";
+import { resolvePageSpaceKey } from "./shared/content-access.js";
 import { decideSectionRetry, nextRetryMarker, sectionRetryKey, SECTION_RETRY_PREFIX, SECTION_RETRY_TTL_MS, SECTION_RETRY_SWEEP_CAP } from "./shared/section-retry.js";
 // F5 (owner feedback 2026-08-27): a lapsed seal gets a bounded run of reminders and is then
 // released automatically. The decision is time-based, so it lives in a pure zero-import module
@@ -1586,8 +1587,12 @@ export async function workflowSweep() {
 
 // --- Conditions & Validations phase (runs after the body-protection pipeline) ---
 async function runValidationPhase(event, pageId, atlassianId) {
-  const spaceKey =
+  // The early guard's synthetic event carries no space; resolving it from the page keeps SPACE
+  // rules in play — otherwise this run judged the page against the global rules only and
+  // marked the version checked, so the real event (with the space) skipped it (2026-09-19).
+  let spaceKey =
     event?.space?.key || event?.content?.space?.key || event?.content?.spaceKey || null;
+  if (!spaceKey) spaceKey = await resolvePageSpaceKey(pageId).catch(() => null);
 
   const config = await resolveEffectiveConfig(spaceKey);
   if (!config.enabled || !(config.rules || []).length) return;
