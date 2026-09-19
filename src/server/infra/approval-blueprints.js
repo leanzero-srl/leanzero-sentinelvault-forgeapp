@@ -56,8 +56,9 @@ export function enforceCommentBody(pageId, editorId, kind, opts = {}) {
 <p>${m}this page's review date has passed${opts.stateName ? ` and it is still ${escapeXml(opts.stateName)}` : ""}. Review it and move it on, or set a new review date.</p>`;
   }
   if (kind === "expired") {
+    const to = escapeXml(opts.toName || "Needs re-review"); // WF-10: the state's own name
     return `<p>${HEADER} — <strong>Approval expired</strong></p>
-<p>${m}this page's review period has elapsed, so Sentinel Vault moved it to Expired. Re-submit it for review to approve it again.</p>`;
+<p>${m}this page's review period has elapsed, so Sentinel Vault moved it to ${to}. Re-submit it for review to approve it again.</p>`;
   }
   if (kind === "demote") {
     // A2: the target is the space's configured demote state (opts.demotedToName); Draft is the default.
@@ -66,8 +67,8 @@ export function enforceCommentBody(pageId, editorId, kind, opts = {}) {
 <p>${m}this page was Approved, so your edit moved it back to ${to} for a new review. Nothing was lost: your change is still on the page. Request approval when the changes are ready, or ask an approver or space admin to review them.</p>`;
   }
   if (kind === "revert-failed") {
-    return `<p>${HEADER} — <strong>Enforcement pending</strong></p>
-<p>Sentinel Vault could not re-apply the approved version of this page and will retry automatically. The current content is in the page history — <a href="${escapeXml(historyUrl)}">view previous versions</a>.</p>`;
+    return `<p>${HEADER} — <strong>Approved version not restored yet</strong></p>
+<p>Sentinel Vault could not restore the approved version of this page yet — it will retry automatically. The current content is in the page history — <a href="${escapeXml(historyUrl)}">view previous versions</a>.</p>`;
   }
   const av = opts.approvedVersion != null ? ` (v${escapeXml(opts.approvedVersion)})` : "";
   const myVersion = opts.revertedVersion != null

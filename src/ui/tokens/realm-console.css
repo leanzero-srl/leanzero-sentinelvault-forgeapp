@@ -2121,6 +2121,12 @@ html[data-color-mode="dark"] .sv-activity-chip-validation.is-active { background
 
 /* B1: workflow definition editor */
 .wf-defs { margin-top: 26px; padding-top: 22px; border-top: 1px solid var(--sv-border-primary); }
+.wf-defs--standalone { margin-top: 0; padding-top: 0; border-top: 0; } /* WF-11: its own view of the tab */
+.wf-def-note { margin: 10px 0 0; font-size: 12.5px; color: var(--sv-text-secondary); }
+/* WF-11: the effective rule in one sentence — a solid block, read before anything is changed */
+.wf-rule { margin: 0 0 18px; padding: 12px 14px; border-radius: 10px; background: #1D4ED8; color: #FFFFFF; font-size: 13.5px; font-weight: 700; line-height: 1.45; }
+html[data-color-mode="dark"] .wf-rule { background: #2563EB; color: #FFFFFF; }
+.wf-edit-states { margin-left: 10px; }
 .wf-defs-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 14px; }
 .wf-defs-sub { margin: 26px 0 4px; font-size: 15px; font-weight: 800; color: var(--sv-text-primary); }
 .wf-def { margin-top: 14px; padding: 16px 18px; border: 1px solid var(--sv-border-primary); border-radius: 12px; background: var(--sv-surface-raised, #fff); }
