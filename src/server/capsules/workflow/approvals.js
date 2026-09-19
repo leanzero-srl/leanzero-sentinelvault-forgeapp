@@ -24,7 +24,9 @@
 import { asApp, route } from "@forge/api";
 import { kvs, WhereConditions } from "@forge/kvs";
 import { setWithTtl } from "../../shared/kvs-ttl.js";
-import { transitionPageWorkflow, readPageWorkflow, fetchLivePageVersion, appendWorkflowLog, getSpaceWorkflowSettings } from "./logic.js";
+import { transitionPageWorkflow, readPageWorkflow, fetchLivePageVersion, appendWorkflowLog, getSpaceWorkflowSettings, getPageWorkflow, getWorkflowLog, lastDecisionFrom } from "./logic.js";
+import { workflowStatus, approvalSummary } from "./status.js";
+import { touchByline } from "../page-details/byline-touch.js"; // WF-6
 import { notifyApprovalRequested, notifyApprovalResolved } from "../../infra/approval-blueprints.js";
 import { recordActivity } from "../../infra/activity-log.js";
 import { verifySignature } from "./signature.js";
@@ -232,7 +234,29 @@ export async function requestApprovalTransition({ pageId, toStateId, toStateName
       approvers: approvers.map((id) => ({ id, name: (approverNames && approverNames[id]) || null })),
     }).catch(() => {});
   }
+  await touchByline(pageId); // WF-6: "Awaiting approval 0 of N"
   return { pending: true, approvers, mode, min, aiGate: aiGate?.required ? true : false };
+}
+
+/**
+ * WF-6. Everything the always-present surfaces (byline chip, details modal) say about a page's
+ * workflow, in one read: the record + state, the open request with how many have decided, the
+ * last decision where it still matters (not enforced, nothing pending — the WF-3 rule), the
+ * composed status and the approval sentence. `null` when the page has no workflow.
+ */
+export async function describeWorkflowForPage(pageId, { spaceKey = null, log = null } = {}) {
+  const wf = await getPageWorkflow(pageId, spaceKey);
+  if (!wf?.assigned) return null;
+  const pending = (await kvs.get(pendingKey(pageId)).catch(() => null)) || null;
+  let pendingDecided = 0;
+  if (pending?.toStateId && Array.isArray(pending.approvers) && pending.approvers.length) {
+    const records = await readApprovalRecords(pageId, pending.toStateId, pending.approvers);
+    pendingDecided = records.filter((r) => r?.status && r.status !== "pending").length;
+  }
+  const enforced = !!wf.record?.enforce && wf.record?.approvedVersion != null;
+  const lastDecision = !enforced && !pending ? lastDecisionFrom(log || await getWorkflowLog(pageId)) : null;
+  const status = workflowStatus({ record: wf.record, state: wf.state, pending, pendingDecided, lastDecision });
+  return { ...wf, pending, pendingDecided, lastDecision, status, approvalSummary: approvalSummary(wf.record) };
 }
 
 // Strongly-consistent read of the approval records over the KNOWN approver list —
@@ -245,6 +269,7 @@ async function readApprovalRecords(pageId, stateId, approvers) {
 
 export async function clearPageApprovals(pageId, stateId, approvers) {
   await kvs.delete(pendingKey(pageId)).catch(() => {});
+  await touchByline(pageId); // WF-6: the request is gone from the chip
   if (Array.isArray(approvers) && approvers.length) {
     // Delete the exact keys the engine created (strongly consistent) — don't leak
     // phantom-pending records into listMyApprovals via an eventually-consistent query.
@@ -421,6 +446,7 @@ export async function decideApproval({ pageId, approverAccountId, decision, reas
   // `outcome` here is what the quorum says; the finalizer may still turn "approved" into
   // "stale" (page changed) or a no-op, so the result's own outcome wins when it has one.
   const decided = async (result) => {
+    await touchByline(pageId); // WF-6: "Awaiting approval 1 of 2", or the state the finalizer moved to
     await recordActivity({
       type: "workflow.approval-decided",
       pageId,
@@ -538,6 +564,7 @@ export async function rerequestApproval({ pageId, actorAccountId, actorName, isS
   const next = { ...pending, pinnedVersion: live, rerequestedAt: requestedAt, rerequestedBy: actorAccountId || null, rerequestedByName: actorName || null };
   if (next.aiGate?.required) next.aiGate = { ...next.aiGate, status: "pending", reviewedVersion: null, reason: null, enqueuedAt: Date.now() };
   await kvs.set(pendingKey(pageId), next);
+  await touchByline(pageId); // WF-6: decisions were reset → "Awaiting approval 0 of N"
   await appendWorkflowLog(pageId, {
     kind: "approval-rerequested", from: (await readPageWorkflow(pageId))?.stateId ?? null, to: pending.toStateId,
     by: actorAccountId || null, byName: actorName || null,

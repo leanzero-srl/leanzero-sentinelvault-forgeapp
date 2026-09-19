@@ -4,7 +4,8 @@ import { invoke, view, router, Modal } from "@forge/bridge";
 import { enablePaletteSync } from "../../kit/palette-sync";
 import ActivityFeed, { ActivityRow } from "../../kit/ActivityFeed";
 import { ACTIVITY_CATEGORIES, categoryOf } from "../../kit/activity-format";
-import { primaryActionFor, menuActionsFor } from "../../../server/capsules/page-details/row-state.js";
+import { primaryActionFor, menuActionsFor, expiryWarning } from "../../../server/capsules/page-details/row-state.js";
+import { approvalSummary } from "../../../server/capsules/workflow/status.js"; // WF-6: the same sentence, in the viewer's zone
 import GiveAccessDialog from "../../kit/GiveAccessDialog";
 import { useSignedInvoke } from "../../kit/SignedInvoke";
 
@@ -293,6 +294,95 @@ const SealRow = ({ row, viewer, pageId, siteUrl, onChanged }) => {
       {giving && <GiveAccessDialog invoker={signedInvoke} target={idPayload} name={isAtt ? row.name : `section ${row.name}`} onClose={() => setGiving(false)} onGranted={() => onChanged()} testId="pd-give-access" />}
       {error && <div className="pd-error" role="alert" data-testid="pd-row-error">{error}</div>}
     </li>
+  );
+};
+
+// ── Workflow block (WF-6, UX critique 2026-09-19) ────────────────────────────────────────────
+// The always-present status surface: ONE status (state + one qualifier, the same text the byline
+// chip carries — workflow/status.js), the approval record in a sentence, the review date, the
+// readers count, the last decision with its reason, and the same Move-to targets the ribbon
+// offers. Decisions on an open request and signed moves stay on the ribbon (one place for the
+// approve/deny/sign dialogs); this block says so and points there.
+const TONE_BG = { success: "#15803D", info: "#1D4ED8", warning: "#B45309", critical: "#B91C1C", neutral: "#475569", discovery: "#6D28D9" };
+const fmtDay = (iso) => { const ms = iso ? new Date(iso).getTime() : NaN; return Number.isFinite(ms) ? new Date(ms).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" }) : ""; };
+const fmtDueDay = (iso) => { const ms = iso ? new Date(iso).getTime() : NaN; return Number.isFinite(ms) ? new Date(ms).toLocaleDateString(undefined, { timeZone: "UTC", month: "short", day: "numeric", year: "numeric" }) : ""; };
+
+const MoveMenu = ({ available, onPick, disabled }) => {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+  useEffect(() => {
+    if (!open) return undefined;
+    const close = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    const key = (e) => { if (e.key === "Escape") setOpen(false); };
+    document.addEventListener("mousedown", close); document.addEventListener("keydown", key);
+    return () => { document.removeEventListener("mousedown", close); document.removeEventListener("keydown", key); };
+  }, [open]);
+  return (
+    <div className="pd-kebab-wrap" ref={ref}>
+      <button type="button" className="pd-btn primary" aria-haspopup="menu" aria-expanded={open} disabled={disabled} onClick={() => setOpen((o) => !o)} data-testid="pd-wf-move">Move to… ▾</button>
+      {open && (
+        <div className="pd-menu" role="menu">
+          {available.map((s) => (
+            <button key={s.id} type="button" role="menuitem" className="pd-menu-item" data-testid={`pd-wf-move-${s.id}`} onClick={() => { setOpen(false); onPick(s); }}>
+              <span className="pd-wf-dot" style={{ background: TONE_BG[s.color] || TONE_BG.neutral }} />{s.name}{s.requiresApproval ? <span className="pd-wf-hint"> · asks the approvers</span> : null}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
+const WorkflowBlock = ({ wf, pageId, onChanged }) => {
+  const [busy, setBusy] = useState(false);
+  const [notice, setNotice] = useState(null); // { text, tone: "ok" | "error" }
+  if (!wf?.assigned) return null;
+  const status = wf.status || { text: wf.state?.name || "Workflow", tone: wf.state?.color || "neutral" };
+  const move = async (target) => {
+    setBusy(true); setNotice(null);
+    try {
+      const r = await invoke("request-transition", { pageId, toStateId: target.id });
+      if (r?.success && r?.pending) setNotice({ text: `Approval requested — the approvers have been asked to move this page to ${target.name}.`, tone: "ok" });
+      else if (r?.success) setNotice({ text: `Moved to ${target.name}.`, tone: "ok" });
+      else if (r?.signatureRequired) setNotice({ text: r.reason || "This move must be signed — use the workflow chip on the page's ribbon.", tone: "error" });
+      else setNotice({ text: r?.reason || "Could not move the page.", tone: "error" });
+      await onChanged();
+    } catch (_) { setNotice({ text: "Could not move the page.", tone: "error" }); }
+    finally { setBusy(false); }
+  };
+  // ONE sentence under the pill, by what matters most (the same order the status uses).
+  let line;
+  if (wf.reviewOverdue) line = `The review period elapsed on ${fmtDueDay(wf.reviewDueAt)} — review this page and move it on, or set a new date.`;
+  else if (wf.pending) line = `${wf.pending.requestedByName || "Someone"} asked to move this page to ${wf.pending.toStateName}${wf.pending.requestedAt ? ` on ${fmtDay(wf.pending.requestedAt)}` : ""} · ${wf.pending.decided} of ${wf.pending.required} decision${wf.pending.required === 1 ? "" : "s"} so far.${wf.pending.iCanDecide ? " Waiting for your decision — approve or deny from the workflow chip on the page's ribbon." : ""}`;
+  else if (wf.enforced) line = `${(wf.recordForSummary ? approvalSummary(wf.recordForSummary) : null) || wf.approvalSummary || ""} Edits by anyone but the approvers are ${wf.enforceMode === "revert" ? "reverted" : "moved back for review"}.`;
+  else if (wf.lastDecision) line = `${wf.lastDecision.kind === "denied" ? "Declined" : "Request closed"} by ${wf.lastDecision.byName || "an approver"} on ${fmtDay(wf.lastDecision.at)}${wf.lastDecision.reason ? ` — “${wf.lastDecision.reason}”` : ""}.`;
+  else line = wf.canMove ? "Move it on when it is ready." : "Waiting for someone who can move it on.";
+  const meta = [];
+  if (wf.reviewDueAt && !wf.reviewOverdue) meta.push({ id: "due", text: `Review due ${fmtDueDay(wf.reviewDueAt)}` });
+  if (wf.readers) meta.push({ id: "readers", text: `Read by ${wf.readers.acked} of ${wf.readers.audience}${wf.readers.mine ? " · you confirmed" : ""}` });
+  if (wf.enforced && wf.baselineVersion != null && wf.baselineVersion !== wf.reviewedVersion) meta.push({ id: "baseline", text: `Enforced from v${wf.baselineVersion}` });
+  return (
+    <section className="pd-sec" data-testid="pd-workflow" data-state={wf.state?.id || ""} data-tone={status.tone}>
+      <h4>Workflow{wf.workflowName ? ` · ${wf.workflowName}` : ""}</h4>
+      <div className="pd-cls-row">
+        <span className="pd-pill" style={{ background: TONE_BG[status.tone] || TONE_BG.neutral }} data-testid="pd-wf-state">{status.text}</span>
+        <span className="pd-desc" data-testid="pd-wf-line">{line}</span>
+        {wf.canMove && wf.available?.length > 0 && <MoveMenu available={wf.available} onPick={move} disabled={busy} />}
+      </div>
+      {meta.length > 0 && (
+        <div className="pd-wf-meta" data-testid="pd-wf-meta">
+          {meta.map((m) => <span key={m.id} className="pd-wf-meta-item" data-testid={`pd-wf-${m.id}`}>{m.text}</span>)}
+        </div>
+      )}
+      {wf.approvalRecord?.decisions?.length > 0 && (
+        <ul className="pd-wf-decisions" data-testid="pd-wf-decisions">
+          {wf.approvalRecord.decisions.map((d, i) => (
+            <li key={i}><strong>{d.name || "Approver"}</strong> · {d.decision === "denied" ? "Denied" : d.decision === "approved" ? "Approved" : "No decision before completion"}{d.decidedAt ? ` · ${fmtDay(d.decidedAt)}` : ""}{d.signed ? " · Signed" : ""}{d.reason ? ` · “${d.reason}”` : ""}</li>
+          ))}
+        </ul>
+      )}
+      {notice && <p className={notice.tone === "error" ? "pd-error" : "pd-ok"} role="status" data-testid="pd-wf-notice">{notice.text}</p>}
+    </section>
   );
 };
 
@@ -637,7 +727,9 @@ export const PageDetails = ({ mode = "details", ctx }) => {
         {!error && !summary && !(mode === "seal" && tab === "attachments") && <p className="pd-empty">Loading…</p>}
         {summary && tab === "overview" && (
           <>
-            <ClassificationBlock c={summary.classification} sealed={sealed} pageId={summary.pageId} onChanged={load} />
+            {/* WF-6: where the page is comes first; CLS-1: with classification off there is no Classification section at all. */}
+            <WorkflowBlock wf={summary.workflow} pageId={summary.pageId} onChanged={load} />
+            {summary.classification?.enabled !== false && <ClassificationBlock c={summary.classification} sealed={sealed} pageId={summary.pageId} onChanged={load} />}
             <SealsBlock summary={summary} onChanged={load} siteUrl={siteUrl} />
             <section className="pd-sec" data-testid="pd-recent">
               <h4>Recent activity</h4>
