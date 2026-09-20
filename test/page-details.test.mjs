@@ -79,14 +79,19 @@ eq("garbage in → nothing", menuActionsFor(undefined), []);
 {
   const heldMine = { ...base, kind: "section", isMine: true, workflowHeld: true };
   const heldTheirs = { ...base, kind: "section", workflowHeld: true };
-  eq("SEC-2: the owner's held row has no Release — the state is the primary", primaryActionFor(heldMine).kind, "held");
-  eq("SEC-2: …with the one label", primaryActionFor(heldMine).label, "Locked by the approval of this page");
-  eq("SEC-2: a stranger's held row offers no Request edit", primaryActionFor(heldTheirs).kind, "held");
-  eq("SEC-2: a pending request on a held seal is not offered for decision", primaryActionFor({ ...heldMine, pendingRequests: [{}] }).kind, "held");
+  // SEC-2 (e): the held row's primary is the WORKFLOW's door — "Propose a change" to the approvers —
+  // for the owner and the stranger alike (no Release, no Request edit to the owner).
+  eq("SEC-2 (e): the owner's held row has no Release — it proposes", primaryActionFor(heldMine).kind, "propose");
+  eq("SEC-2 (e): …with the one label", primaryActionFor(heldMine).label, "Propose a change");
+  eq("SEC-2 (e): a stranger's held row proposes too (no Request edit to the owner)", primaryActionFor(heldTheirs).kind, "propose");
+  eq("SEC-2: a pending request on a held seal is not offered to the owner for decision", primaryActionFor({ ...heldMine, pendingRequests: [{}] }).kind, "propose");
+  eq("SEC-2 (e): my proposal already made → waiting for the approvers", [primaryActionFor({ ...heldTheirs, myEditStatus: "pending" }).kind, primaryActionFor({ ...heldTheirs, myEditStatus: "pending" }).owner], ["waiting", "the approvers"]);
+  eq("SEC-2 (e): my declined proposal → declined with the retry time", primaryActionFor({ ...heldTheirs, myEditStatus: "denied", myRetryAt: "2099-01-01T00:00:00.000Z" }).kind, "declined");
+  eq("SEC-2 (e): a declined proposal past its retry time → propose again", primaryActionFor({ ...heldTheirs, myEditStatus: "denied", myRetryAt: "2000-01-01T00:00:00.000Z" }).kind, "propose");
   eq("SEC-2: the owner's menu is Copy link only (no Extend / Give access / Release)", menuActionsFor(heldMine), ["copy-link"]);
   eq("SEC-2: a stranger's menu is Copy link only", menuActionsFor(heldTheirs, { canEditPage: true }), ["copy-link"]);
   eq("SEC-2: a space admin keeps the break-glass Force release", menuActionsFor(heldTheirs, { isSpaceAdmin: true }), ["copy-link", "force-release"]);
-  eq("SEC-2: a held attachment likewise", [primaryActionFor({ ...base, isMine: true, workflowHeld: true }).kind, menuActionsFor({ ...base, isMine: true, workflowHeld: true })], ["held", ["copy-link"]]);
+  eq("SEC-2 (e): a held attachment likewise — propose, and Copy link only under ⋯", [primaryActionFor({ ...base, isMine: true, workflowHeld: true }).kind, menuActionsFor({ ...base, isMine: true, workflowHeld: true })], ["propose", ["copy-link"]]);
   eq("SEC-2: an unsealed attachment is untouched by the flag", primaryActionFor({ ...base, sealed: false, workflowHeld: true }).kind, "seal");
   eq("SEC-2: no lapse warning while held (expiry is paused)", expiryWarning({ ...heldMine, expiresAt: null }), null);
 }

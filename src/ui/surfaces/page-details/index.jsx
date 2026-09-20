@@ -146,8 +146,8 @@ const Kebab = ({ items, onPick, name }) => {
 };
 
 // One inline bar for anything that needs typed input: an edit request's reason, a force release's reason.
-const ReasonBar = ({ label, placeholder, confirm, danger, required, onConfirm, onCancel, busy }) => {
-  const [text, setText] = useState("");
+const ReasonBar = ({ label, placeholder, confirm, danger, required, onConfirm, onCancel, busy, initial = "" }) => {
+  const [text, setText] = useState(initial);
   const ref = useRef(null);
   useEffect(() => { ref.current?.focus(); }, []);
   return (
@@ -240,6 +240,8 @@ const SealRow = ({ row, viewer, pageId, siteUrl, onChanged }) => {
         return <button type="button" className="pd-btn quiet" disabled={busy} data-testid="pd-primary" data-action="release" onClick={() => run(isAtt ? "unseal-artifact" : "unseal-section", idPayload)}>Release</button>;
       case "request":
         return <button type="button" className="pd-btn primary" disabled={busy || primary.disabled} title={primary.hint || undefined} data-testid="pd-primary" data-action="request" onClick={() => setBar("request")}>Request edit</button>;
+      case "propose": // SEC-2 (e): the held row's door is the workflow's — a proposal to the approvers
+        return <button type="button" className="pd-btn primary" disabled={busy} title={primary.hint || undefined} data-testid="pd-primary" data-action="propose" onClick={() => setBar("propose")}>{primary.label}</button>;
       case "waiting":
         return <span className="pd-state wait" data-testid="pd-primary" data-action="waiting">{stateText(primary)}</span>;
       case "editnow":
@@ -275,6 +277,11 @@ const SealRow = ({ row, viewer, pageId, siteUrl, onChanged }) => {
       {copied && <div className="pd-note" role="status">Link copied</div>}
       {bar === "request" && (
         <ReasonBar label="Why do you need to edit it?" placeholder="A short reason for the owner (optional)" confirm="Send request"
+          busy={busy} onCancel={() => setBar(null)}
+          onConfirm={async (reason) => { if (await run(isAtt ? "request-edit-access" : "request-section-edit", { ...idPayload, reason })) setBar(null); }} />
+      )}
+      {bar === "propose" && ( // SEC-2 (e): prefilled, addressed to the approvers
+        <ReasonBar label="Propose a change to this approved page — the approvers decide" placeholder="What would you change? (optional)" confirm="Propose" initial="Proposed change to an approved page"
           busy={busy} onCancel={() => setBar(null)}
           onConfirm={async (reason) => { if (await run(isAtt ? "request-edit-access" : "request-section-edit", { ...idPayload, reason })) setBar(null); }} />
       )}

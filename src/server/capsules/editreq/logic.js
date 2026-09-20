@@ -40,9 +40,19 @@ function ownerIndex({ indexPrefix, recordPrefix, idField }) {
     });
     return true;
   };
+  // SEC-2 (e): a PROPOSAL (a request on a workflow-held seal) waits on the page's APPROVERS, not
+  // the seal's owner — one index row per approver, same key shape, confirmed the same way.
+  const proposalKeys = (record) => (record?.proposal && record?.[idField] && record?.requesterAccountId ? [...new Set(record.approvers || [])].filter(Boolean).map((a) => key(a, record[idField], record.requesterAccountId)) : []);
+  const writeProposal = async (record) => {
+    const keys = proposalKeys(record);
+    if (!keys.length || record.status !== "pending") return 0;
+    for (const k of keys) await kvs.set(k, { [idField]: record[idField], requesterAccountId: record.requesterAccountId, requestedAt: record.requestedAt || null, proposal: true });
+    return keys.length;
+  };
   const drop = async (record) => {
-    if (!record?.ownerAccountId || !record?.[idField] || !record?.requesterAccountId) return;
-    await kvs.delete(key(record.ownerAccountId, record[idField], record.requesterAccountId)).catch(() => {});
+    if (!record?.[idField] || !record?.requesterAccountId) return;
+    if (record.ownerAccountId) await kvs.delete(key(record.ownerAccountId, record[idField], record.requesterAccountId)).catch(() => {});
+    for (const k of proposalKeys(record)) await kvs.delete(k).catch(() => {});
   };
   // The requests waiting on this owner: read ONLY the owner's prefix, confirm each by key, and
   // drop index rows whose request is gone or no longer pending — the read heals the index it walks.
@@ -57,7 +67,7 @@ function ownerIndex({ indexPrefix, recordPrefix, idField }) {
       for (const { key: k, value: row } of results || []) {
         if (!row?.[idField] || !row?.requesterAccountId) { await kvs.delete(k).catch(() => {}); continue; }
         const record = await kvs.get(recordKey(row[idField], row.requesterAccountId));
-        if (record?.status === "pending" && record.ownerAccountId === ownerAccountId) { out.push(record); continue; }
+        if (record?.status === "pending" && (record.ownerAccountId === ownerAccountId || (record.proposal && (record.approvers || []).includes(ownerAccountId)))) { out.push(record); continue; }
         await kvs.delete(k).catch(() => {});
       }
       if (!nextCursor || ++iterations >= 15) break;
@@ -87,7 +97,7 @@ function ownerIndex({ indexPrefix, recordPrefix, idField }) {
     } while (true);
     return backfilled;
   };
-  return { key, recordKey, wants, write, drop, listPending, backfill };
+  return { key, recordKey, wants, write, drop, listPending, backfill, proposalKeys, writeProposal };
 }
 
 // Attachments (K1, 2026-09-05). The exported names are the ones actions.js and the tests use.
@@ -97,6 +107,8 @@ export const wantsOwnerIndex = attachmentIndex.wants;
 export const writeOwnerIndex = attachmentIndex.write;
 export const dropOwnerIndex = attachmentIndex.drop;
 export const listPendingRequestsForOwner = attachmentIndex.listPending;
+export const proposalIndexKeys = attachmentIndex.proposalKeys; // SEC-2 (e), pure
+export const writeProposalIndex = attachmentIndex.writeProposal;
 
 // Sections (P1-3, 2026-09-15). Same discipline, the record names its section as `sectionId`.
 const sectionIndex = ownerIndex({ indexPrefix: "sectionreq-owner", recordPrefix: "section-edit-request", idField: "sectionId" });
@@ -105,6 +117,8 @@ export const wantsSectionOwnerIndex = sectionIndex.wants;
 export const writeSectionOwnerIndex = sectionIndex.write;
 export const dropSectionOwnerIndex = sectionIndex.drop;
 export const listPendingSectionRequestsForOwner = sectionIndex.listPending;
+export const sectionProposalIndexKeys = sectionIndex.proposalKeys; // SEC-2 (e), pure
+export const writeSectionProposalIndex = sectionIndex.writeProposal;
 
 // SEC-8 (UX critique 2026-09-19): the REQUESTER's own index — "my requests" (pending / declined /
 // granted) had no home; the requester was the one person with nowhere to look. One row per

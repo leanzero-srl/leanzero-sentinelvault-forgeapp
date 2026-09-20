@@ -49,6 +49,8 @@ export const PrimarySlot = ({ primary, name, busy, reqBusy, on, kind = "attachme
     }
     case "request":
       return <button type="button" className={`action-btn editreq ${b("editreq") ? "is-busy" : ""}`} onClick={on.request} disabled={other("editreq") || primary.disabled} title={primary.hint || `Ask the seal owner for permission to edit this ${kind}`} data-primary="request"><Busy busy={b("editreq")} idle="Request edit" doing="Requesting" /></button>;
+    case "propose": // SEC-2 (e): the workflow-held row asks the approvers, not the owner
+      return <button type="button" className={`action-btn editreq ${b("editreq") ? "is-busy" : ""}`} onClick={on.propose} disabled={other("editreq")} title={primary.hint || "Ask this page's approvers for the change"} data-primary="propose"><Busy busy={b("editreq")} idle="Propose a change" doing="Proposing" /></button>;
     case "waiting":
       return <span className="sv-state wait" role="status" data-primary="waiting" aria-label={`Waiting for ${primary.owner || "the owner"} to answer your edit request`}>{stateText(primary)}</span>;
     case "editnow":
@@ -78,14 +80,15 @@ export const PrimarySlot = ({ primary, name, busy, reqBusy, on, kind = "attachme
  */
 export const ReasonBar = ({ mode, kind = "attachment", value, onChange, onSubmit, onCancel, busy, testId = "sv-reason-bar" }) => {
   const force = mode === "force";
+  const propose = mode === "propose"; // SEC-2 (e): the reason is prefilled; the button says Propose
   const ready = !force || value.trim().length >= 3;
   return (
     <div className="card-row card-reason-bar" data-testid={testId}>
       <input
         type="text"
         className="card-reason-input"
-        placeholder={force ? "Why are you releasing a seal you do not own? (required, 3–300 characters)" : `Why do you need to edit this ${kind}? (optional)`}
-        aria-label={force ? "Reason for the forced release" : "Reason for the edit request"}
+        placeholder={force ? "Why are you releasing a seal you do not own? (required, 3–300 characters)" : propose ? "What would you change? (optional)" : `Why do you need to edit this ${kind}? (optional)`}
+        aria-label={force ? "Reason for the forced release" : propose ? "The proposed change" : "Reason for the edit request"}
         value={value}
         maxLength={300}
         autoFocus
@@ -95,7 +98,7 @@ export const ReasonBar = ({ mode, kind = "attachment", value, onChange, onSubmit
       <span className="confirm-actions">
         {force
           ? <button type="button" className={`action-btn unlock ${busy ? "is-busy" : ""}`} onClick={onSubmit} disabled={busy || !ready} data-testid={`${testId}-confirm`}><Busy busy={busy} idle="Force release" doing="Releasing" /></button>
-          : <button type="button" className={`action-btn editreq ${busy ? "is-busy" : ""}`} onClick={onSubmit} disabled={busy} data-testid={`${testId}-confirm`}><Busy busy={busy} idle="Send request" doing="Sending" /></button>}
+          : <button type="button" className={`action-btn editreq ${busy ? "is-busy" : ""}`} onClick={onSubmit} disabled={busy} data-testid={`${testId}-confirm`}><Busy busy={busy} idle={propose ? "Propose" : "Send request"} doing={propose ? "Proposing" : "Sending"} /></button>}
         <button type="button" className="action-btn confirm-no" onClick={onCancel} disabled={busy}>Cancel</button>
       </span>
     </div>
