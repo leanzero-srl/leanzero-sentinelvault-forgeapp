@@ -177,10 +177,12 @@ export function composeHalfwayLayout({
   pageTitle,
   pageUrl,
   expiryDate,
+  targetKind = "attachment",
 }) {
+  const thing = targetKind === "section" ? "section" : "file";
   const storageBody = `
 <p>${HEADER} — <strong>Seal Half-way Through</strong></p>
-<p>${mention(ownerAccountId)} — your seal on <strong>"${escapeXml(artifactName)}"</strong> (<em>${escapeXml(pageTitle)}</em>) has reached its midpoint.</p>
+<p>${mention(ownerAccountId)} — your seal on ${thing} <strong>"${escapeXml(artifactName)}"</strong> (<em>${escapeXml(pageTitle)}</em>) has reached its midpoint.</p>
 ${expiryDate ? `<p>Lapses on <strong>${escapeXml(expiryDate)}</strong>. Consider wrapping up or renewing your seal before then.</p>` : ""}
 ${ctaLink(pageUrl, "Manage the seal")}
 `.trim();
@@ -200,10 +202,12 @@ export function composeExpiryLayout({
   pageTitle,
   pageUrl,
   expiryDate,
+  targetKind = "attachment",
 }) {
+  const thing = targetKind === "section" ? "section" : "file";
   const storageBody = `
 <p>${HEADER} — <strong>Seal Expired</strong></p>
-<p>${mention(ownerAccountId)} — your seal on <strong>"${escapeXml(artifactName)}"</strong> (<em>${escapeXml(pageTitle)}</em>) has expired${expiryDate ? ` on <strong>${escapeXml(expiryDate)}</strong>` : ""}.</p>
+<p>${mention(ownerAccountId)} — your seal on ${thing} <strong>"${escapeXml(artifactName)}"</strong> (<em>${escapeXml(pageTitle)}</em>) has expired${expiryDate ? ` on <strong>${escapeXml(expiryDate)}</strong>` : ""}.</p>
 <p>Please release the seal when you are finished, or re-seal if you still need exclusive access.</p>
 ${ctaLink(pageUrl, "Open the page")}
 `.trim();
@@ -231,7 +235,9 @@ export function composeLapseNoticeLayout({
   noticeNumber = 1,
   noticeLimit = 3,
   releaseDate,
+  targetKind = "attachment",
 }) {
+  const thing = targetKind === "section" ? "section" : "file";
   const remaining = Math.max(0, noticeLimit - noticeNumber);
   const deadline = releaseDate
     ? `on <strong>${escapeXml(releaseDate)}</strong>`
@@ -239,8 +245,8 @@ export function composeLapseNoticeLayout({
 
   const storageBody = `
 <p>${HEADER} — <strong>Seal Overdue</strong> (reminder ${noticeNumber} of ${noticeLimit})</p>
-<p>${mention(ownerAccountId)} — your seal on <strong>"${escapeXml(artifactName)}"</strong> (<em>${escapeXml(pageTitle)}</em>) lapsed${expiryDate ? ` on <strong>${escapeXml(expiryDate)}</strong>` : ""} and is no longer protecting the file.</p>
-<p>Extend it from the Sentinel Vault panel to keep it, or release it if you are finished. If nothing changes, Sentinel Vault will release it automatically ${deadline} and the file becomes available to everyone.</p>
+<p>${mention(ownerAccountId)} — your seal on ${thing} <strong>"${escapeXml(artifactName)}"</strong> (<em>${escapeXml(pageTitle)}</em>) lapsed${expiryDate ? ` on <strong>${escapeXml(expiryDate)}</strong>` : ""} and is no longer protecting the ${thing}.</p>
+<p>Extend it from Sentinel Vault under the page title (⋯ → Extend the seal) to keep it, or release it if you are finished. If nothing changes, Sentinel Vault will release it automatically ${deadline} and the ${thing} becomes available to everyone.</p>
 ${ctaLink(pageUrl, "Open the page")}
 `.trim();
 
@@ -259,11 +265,13 @@ export function composeAutoReleaseLayout({
   pageTitle,
   pageUrl,
   noticeLimit = 3,
+  targetKind = "attachment",
 }) {
+  const thing = targetKind === "section" ? "section" : "file";
   const storageBody = `
 <p>${HEADER} — <strong>Seal Released</strong></p>
-<p>${mention(ownerAccountId)} — the lapsed seal on <strong>"${escapeXml(artifactName)}"</strong> (<em>${escapeXml(pageTitle)}</em>) has been released automatically after ${noticeLimit} reminder${noticeLimit === 1 ? "" : "s"} with no extension.</p>
-<p>The file is available to everyone again. Seal it again from the Sentinel Vault panel if you still need exclusive access.</p>
+<p>${mention(ownerAccountId)} — the lapsed seal on ${thing} <strong>"${escapeXml(artifactName)}"</strong> (<em>${escapeXml(pageTitle)}</em>) has been released automatically after ${noticeLimit} reminder${noticeLimit === 1 ? "" : "s"} with no extension.</p>
+<p>The ${thing} is available to everyone again. Seal it again from Sentinel Vault under the page title if you still need it protected.</p>
 ${ctaLink(pageUrl, "Open the page")}
 `.trim();
 
