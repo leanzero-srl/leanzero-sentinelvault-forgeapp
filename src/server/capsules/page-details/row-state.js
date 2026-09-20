@@ -29,7 +29,18 @@ export function primaryActionFor(row, viewer = {}, now = Date.now()) {
   if (row.isTrashed) return { kind: "trashed", label: "In the trash" };
   // SEC-2: while the page is Approved the seal belongs to the workflow — no personal action on the
   // row (release / request / approve); the state IS the primary, for owner and stranger alike.
-  if (row.workflowHeld) return { kind: "held", label: HELD_LABEL, hint: "Changes go through the workflow: move the page back for review first." };
+  // SEC-2 (e): the personal path is closed, the workflow's is open — "Propose a change" asks the
+  // page's APPROVERS (not the seal's owner); if they agree the page goes back for review and the
+  // proposer gets edit access. A proposal already made shows as waiting / declined like any request.
+  if (row.workflowHeld) {
+    if (row.myEditStatus === "pending") return { kind: "waiting", label: "Waiting", owner: "the approvers" };
+    if (row.myEditStatus === "granted") return { kind: "editnow", label: "Edit now", until: row.myEditExpiresAt || row.expiresAt || null };
+    if (row.myEditStatus === "denied") {
+      const retryMs = row.myRetryAt ? new Date(row.myRetryAt).getTime() : NaN;
+      if (Number.isFinite(retryMs) && retryMs > now) return { kind: "declined", label: WORDS.declined, retryAt: row.myRetryAt, reason: row.myDeniedReason || null, hint: "An approver can also move the page back for review." };
+    }
+    return { kind: "propose", label: WORDS.propose, hint: "Asks this page's approvers. If they agree, the page goes back for review and you can make the change." };
+  }
   if (row.isMine) {
     if (pending.length > 0) return { kind: "decide", label: "Approve", request: pending[0] };
     return { kind: "release", label: "Release" };

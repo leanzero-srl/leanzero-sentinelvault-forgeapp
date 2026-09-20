@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { createRoot } from "react-dom/client";
 import { invoke, view, router } from "@forge/bridge";
+// SEC-2 (e): the proposal bar opens with this reason already typed — the approvers see what it is at a glance.
+const PROPOSE_PREFILL = "Proposed change to an approved page";
 import { enablePaletteSync } from "../../kit/palette-sync";
 import ThumbnailPreview from "../../kit/ThumbnailPreview";
 import ActivityFeed from "../../kit/ActivityFeed";
@@ -432,6 +434,7 @@ const ArtifactCard = ({ att, onRefresh, columns, siteUrl, spaceKey, pageId, page
     release: () => run("unseal", "unseal-artifact", { attachmentId: att.id }),
     decide: resolveEditReq,
     request: () => { setReasonText(""); setBar("request"); },
+    propose: () => { setReasonText(PROPOSE_PREFILL); setBar("propose"); }, // SEC-2 (e)
     restore: () => run("restore", "restore-sealed-artifact", { attachmentId: att.id }),
     purge: () => setPendingConfirm("purge"),
   };
@@ -952,6 +955,7 @@ const SectionRow = ({ section: s, onUnseal, unsealing, viewer, siteUrl, pageId, 
     release: () => (forced ? (setReasonText(""), setBar("force")) : onUnseal(s.sectionId)),
     decide: resolve,
     request: () => { setReasonText(""); setBar("request"); },
+    propose: () => { setReasonText(PROPOSE_PREFILL); setBar("propose"); }, // SEC-2 (e)
   };
   const submitBar = () => {
     if (bar === "force") { onUnseal(s.sectionId, reasonText.trim()); setBar(null); setReasonText(""); }

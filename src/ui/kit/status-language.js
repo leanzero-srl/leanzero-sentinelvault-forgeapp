@@ -64,6 +64,7 @@ export const WORDS = Object.freeze({
   undone: "Undone",
   movedBack: "Moved back",
   held: "Locked by the approval of this page",
+  propose: "Propose a change",
   heldReason: "Locked by the approval of this page — changes go through the workflow",
   inTrash: "In the trash",
   missing: "Missing",

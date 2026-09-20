@@ -42,6 +42,18 @@ correctly refused now. Real ones available: Mihai `712020:937bc860-…`, Gabriel
 `SVSEC1P` space, which is how the negative case is manufactured. Synthetic ids remain fine where
 the path filters on the caller's own accountId and never touches content.
 
+**Those three are all SITE admins** (`administer/application` — verified 2026-09-20), so the
+steward gate's site-admin arm answers "steward" for them on EVERY space; no space permission can
+make them plain editors. The one real, licensed, non-admin account is the second "Mihai Perdum"
+(mihai@leanzero.net) **`712020:6c8dccca-a6b1-4c6f-903c-329094a1bac1`** (`PLAIN` in
+`scenarios/sentinel-vault/_wf.ts`), a member of `confluence-users-wolfaenpak` only. The
+**plain-editor bed is space `SVPLAIN`** (id 344162767): that group has read/create/update,
+`administer` stays with confluence-admins-wolfaenpak, site-admins and Mihai — PLAIN can edit and
+seal there and is refused every steward-only action. Drive PLAIN through the hook's `actor` seam
+(no token, no browser session); `setupWorkflowPage(…, { space: PLAIN_SPACE })` builds a bed there.
+The hook seam `pageEvent` runs the whole page-content pipeline as a named editor (the page version
+itself is still authored by the harness token) — the closest thing to a non-privileged publish.
+
 ## Violation-comment dedup — the two races are closed (it69, 2026-09-06)
 
 `SECURITY-TODO.md` "Known, pre-existing" records two races that made `violation-dedup.spec.ts`
