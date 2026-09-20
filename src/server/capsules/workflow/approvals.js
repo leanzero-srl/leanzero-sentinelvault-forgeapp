@@ -25,6 +25,7 @@ import { asApp, route } from "@forge/api";
 import { kvs, WhereConditions } from "@forge/kvs";
 import { setWithTtl } from "../../shared/kvs-ttl.js";
 import { transitionPageWorkflow, readPageWorkflow, fetchLivePageVersion, appendWorkflowLog, getSpaceWorkflowSettings, getPageWorkflow, getWorkflowLog, lastDecisionFrom } from "./logic.js";
+import { myRequestKey, MY_REQUEST_PREFIX, classifyMyApprovalRequest } from "./my-requests.js"; // WF-3 (c)
 import { workflowStatus, approvalSummary } from "./status.js";
 import { touchByline } from "../page-details/byline-touch.js"; // WF-6
 import { notifyApprovalRequested, notifyApprovalResolved } from "../../infra/approval-blueprints.js";
@@ -208,6 +209,8 @@ export async function requestApprovalTransition({ pageId, toStateId, toStateName
     // signature at request time is what the AI-only completion carries (review finding 11).
     requestSignature: requestSignature || null,
   });
+  // WF-3 (c): the requester's own index row ("Approvals you asked for" on My work).
+  if (actorAccountId) await kvs.set(myRequestKey(actorAccountId, pageId), { requesterAccountId: actorAccountId, pageId: String(pageId), spaceKey: spaceKey || null, toStateId, toStateName: toStateName || null, requestedAt }).catch((e) => console.warn("[WORKFLOW] my-request index", e));
   // A1: the pending record is written — the request is open from here on.
   await recordActivity({
     type: "workflow.approval-requested",
@@ -654,4 +657,46 @@ export async function sweepApprovalIndex({ nowMs = Date.now(), maxOrphanPages = 
     aq = kvs.query().where("key", WhereConditions.beginsWith("workflow-approval-")).limit(100).cursor(nextCursor);
   } while (true);
   return stats;
+}
+
+// WF-3 (c): the caller's OWN approval requests — pending (n of m decided), approved, declined
+// (with the approver's reason) or refused as stale — read from wfreq-mine-{me}-* and confirmed
+// against the pending record, the page's record and its log. A row that says nothing any more
+// (the page moved on, or the decision is older than two weeks) is dropped on the way past.
+export async function listMyApprovalRequests(accountId, now = Date.now()) {
+  if (!accountId) return [];
+  const out = [];
+  const prefix = `${MY_REQUEST_PREFIX}-${accountId}-`;
+  let query = kvs.query().where("key", WhereConditions.beginsWith(prefix)).limit(100);
+  let iterations = 0;
+  do {
+    const { results, nextCursor } = await query.getMany();
+    for (const { key, value: row } of results || []) {
+      if (!row?.pageId) { await kvs.delete(key).catch(() => {}); continue; }
+      try {
+        const pending = await kvs.get(pendingKey(row.pageId));
+        let decided = 0;
+        if (pending && pending.requestedBy === accountId) {
+          for (const acc of pending.approvers || []) {
+            const r = await kvs.get(approvalKey(row.pageId, pending.toStateId, acc)).catch(() => null);
+            if (r && r.status !== "pending") decided++;
+          }
+        }
+        const record = pending ? null : await readPageWorkflow(row.pageId);
+        const lastDecision = pending ? null : lastDecisionFrom(await getWorkflowLog(row.pageId));
+        const c = classifyMyApprovalRequest({ row: { ...row, requesterAccountId: accountId }, pending, record, lastDecision, decided, now });
+        if (!c.keep) { await kvs.delete(key).catch(() => {}); continue; }
+        let pageTitle = null;
+        try {
+          const pr = await asApp().requestConfluence(route`/wiki/api/v2/pages/${row.pageId}`);
+          if (pr.ok) pageTitle = (await pr.json())?.title || null;
+        } catch (_) { /* the row lists without a title */ }
+        out.push({ ...c, pageTitle });
+      } catch (e) { console.warn("[WORKFLOW] my-request row", key, e?.message || e); }
+    }
+    if (!nextCursor || ++iterations >= 15) break;
+    query = kvs.query().where("key", WhereConditions.beginsWith(prefix)).limit(100).cursor(nextCursor);
+  } while (true);
+  out.sort((a, b) => String(b.requestedAt || "").localeCompare(String(a.requestedAt || "")));
+  return out;
 }

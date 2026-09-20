@@ -39,6 +39,7 @@ import {
   decideApproval,
   getPageApprovalStatus,
   listMyApprovals,
+  listMyApprovalRequests, // WF-3 (c)
   rerequestApproval,
   applyAiVerdict,
   buildApprovalRecord,
@@ -456,6 +457,12 @@ const enrollSignatureAction = async (req) => {
 const confirmSignatureAction = async (req) => confirmEnrollment(req.context?.accountId, typeof req.payload?.code === "string" ? req.payload.code : "");
 const revokeSignatureAction = async (req) => revokeSignature(req.context?.accountId, { code: typeof req.payload?.code === "string" ? req.payload.code : null });
 
+// WF-3 (c): the caller's own approval requests (self-scoped: the index is the caller's prefix).
+const listMyApprovalRequestsAction = async (req) => {
+  const accountId = req.context?.accountId;
+  if (!accountId) return { requests: [] };
+  return { requests: await listMyApprovalRequests(accountId) };
+};
 const listMyApprovalsAction = async (req) => {
   const raw = await listMyApprovals(req.context?.accountId);
   const out = [];
@@ -728,6 +735,7 @@ export const actions = [
   ["rerequest-approval", rerequestApprovalAction],
   ["get-page-approvals", getPageApprovals],
   ["list-my-approvals", listMyApprovalsAction],
+  ["list-my-approval-requests", listMyApprovalRequestsAction], // WF-3 (c)
   ["search-workflow-users", searchUsers],
   ["search-workflow-groups", searchGroups],
 ];
