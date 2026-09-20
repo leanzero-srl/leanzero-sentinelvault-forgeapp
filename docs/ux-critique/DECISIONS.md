@@ -31,3 +31,13 @@ and the shared browser profile — the three critics proved that parallel live r
 2. CLS-1 (default off), WF-6 (byline + modal), SEC-2 (workflow owns seals), SEC-7 (Extend for sections).
 3. Copy and consistency: SEC-3 (one status vocabulary), SEC-8–10, WF-10/11, CLS-10/11, SEC-4 (entry points).
 4. Parked until the owner picks: CLS-2 (reason to exist), sections-as-approval-units.
+
+## Shipped — production 6.1.0 (2026-09-20 evening, minor; Runs on Atlassian eligible)
+
+Everything in groups 1–4 (dev 8.13 → 8.37): the five bugs, CLS-1 off by default, WF-6, SEC-2,
+SEC-7 (incl. the section sweep), SEC-3/8/9/10, WF-10/11, CLS-10/11, SEC-4 (a)+(b), WF-3 (c),
+SEC-2 (e), the plain-editor bed. Verification: every item's own live spec on wolfaenpak passed
+when it shipped; the whole-suite re-run was cut short by the owner ("I will do it") — the manual
+test plan he received is the acceptance run. Parked: SEC-4 (c) second contentAction (new module),
+CLS-2 "reason to exist", sections-as-approval-units. leanzero-demo must accept major 6 under
+Manage apps (still "Outdated app" at deploy time).
