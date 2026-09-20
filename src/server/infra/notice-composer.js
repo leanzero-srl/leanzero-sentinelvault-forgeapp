@@ -269,12 +269,13 @@ export async function mailHalfwayReminder(
   pageId,
   expiryDate,
   spaceKey = null,
+  { targetKind = "attachment" } = {},
 ) {
   return dispatchNotice(ALERT_CATEGORIES.FIFTY_PERCENT_REMINDER, {
     recipientAccountId: ownerAccountId,
     pageId,
     artifactName,
-    extra: { expiryDate },
+    extra: { expiryDate, targetKind },
     spaceKey,
   });
 }
@@ -287,14 +288,14 @@ export async function mailLapseNotice(
   ownerAccountId,
   artifactName,
   pageId,
-  { expiryDate, noticeNumber, noticeLimit, releaseDate },
+  { expiryDate, noticeNumber, noticeLimit, releaseDate, targetKind = "attachment" },
   spaceKey = null,
 ) {
   return dispatchNotice(ALERT_CATEGORIES.LAPSE_NOTICE, {
     recipientAccountId: ownerAccountId,
     pageId,
     artifactName,
-    extra: { expiryDate, noticeNumber, noticeLimit, releaseDate },
+    extra: { expiryDate, noticeNumber, noticeLimit, releaseDate, targetKind },
     spaceKey,
   });
 }
@@ -306,14 +307,14 @@ export async function mailAutoReleaseNotice(
   ownerAccountId,
   artifactName,
   pageId,
-  { noticeLimit },
+  { noticeLimit, targetKind = "attachment" },
   spaceKey = null,
 ) {
   return dispatchNotice(ALERT_CATEGORIES.AUTO_RELEASE, {
     recipientAccountId: ownerAccountId,
     pageId,
     artifactName,
-    extra: { noticeLimit },
+    extra: { noticeLimit, targetKind },
     spaceKey,
   });
 }
@@ -324,12 +325,13 @@ export async function mailExpiryNotice(
   pageId,
   expiryDate,
   spaceKey = null,
+  { targetKind = "attachment" } = {},
 ) {
   return dispatchNotice(ALERT_CATEGORIES.EXPIRY_NOTIFICATION, {
     recipientAccountId: ownerAccountId,
     pageId,
     artifactName,
-    extra: { expiryDate },
+    extra: { expiryDate, targetKind },
     spaceKey,
   });
 }
