@@ -189,157 +189,26 @@ const isEnforceState = (s) => !!s?.enforce || s?.id === "approved";
 
 // `defRev` (B1): bumped by the definition editor after a save, so the state chips, the per-state
 // review clocks and the demote-target options here follow the definition without a reload.
-export default function WorkflowSettingsEditor({ spaceKey = null, defRev = 0, onEditStates = null }) {
-  const [settings, setSettings] = useState({ enabled: false, autoAssignNew: false, workflowId: "default", approval: null, enforceMode: "demote", demoteTo: "initial", reviewAfterDays: null, reviewAfterDaysByState: {}, entryConditions: {}, syncLabels: false, readConfirmation: null, requireSignature: false });
-  const [def, setDef] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [applying, setApplying] = useState(false);
-  const [cursor, setCursor] = useState(null); // resume point for bulk apply across batches
-  const [msg, setMsg] = useState(null);
-
-  useEffect(() => {
-    (async () => {
-      try {
-        const r = await invoke("get-space-workflow-settings", { spaceKey });
-        if (r?.settings) setSettings({ enabled: !!r.settings.enabled, autoAssignNew: !!r.settings.autoAssignNew, workflowId: r.settings.workflowId || "default", approval: r.settings.approval || null, enforceMode: r.settings.enforceMode === "revert" ? "revert" : "demote", demoteTo: cleanDemoteTo(r.settings.demoteTo, r.def), reviewAfterDays: r.settings.reviewAfterDays ?? null, reviewAfterDaysByState: cleanClocks(r.settings.reviewAfterDaysByState, r.def), entryConditions: r.settings.entryConditions || {}, syncLabels: !!r.settings.syncLabels, readConfirmation: r.settings.readConfirmation || null, requireSignature: !!r.settings.requireSignature });
-        if (r?.def) setDef(r.def);
-      } catch (e) {
-        console.error("Load workflow settings failed:", e);
-      } finally {
-        setLoading(false);
-      }
-    })();
-  }, [spaceKey, defRev]);
-
-  const save = async () => {
-    setSaving(true);
-    setMsg(null);
-    try {
-      // it16: check the resolver's success — set-space-workflow-settings returns
-      // { success:false, reason } (e.g. a non-steward) rather than throwing, so a blind
-      // "saved" would be a false success.
-      const r = await invoke("set-space-workflow-settings", { spaceKey, settings: { ...settings, demoteTo: cleanDemoteTo(settings.demoteTo, def), reviewAfterDaysByState: cleanClocks(settings.reviewAfterDaysByState, def) } });
-      if (r?.success) setMsg({ type: "success", text: "Workflow settings saved." });
-      else setMsg({ type: "error", text: r?.reason || "Could not save workflow settings." });
-    } catch (e) {
-      setMsg({ type: "error", text: "Could not save workflow settings." });
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const applyToExisting = async () => {
-    setApplying(true);
-    setMsg(null);
-    try {
-      const r = await invoke("bulk-assign-workflow", { spaceKey, cursor });
-      if (r?.success) {
-        // Advance the cursor so a subsequent click continues past this batch (null once done).
-        setCursor(r.capped ? (r.nextCursor || null) : null);
-        const more = r.capped ? ` (${r.scanned} scanned — run again to continue)` : "";
-        setMsg({ type: "success", text: `Applied the workflow to ${r.assigned} page${r.assigned !== 1 ? "s" : ""}${more}.` });
-      } else {
-        setMsg({ type: "error", text: r?.reason || "Could not apply the workflow." });
-      }
-    } catch (e) {
-      setMsg({ type: "error", text: "Could not apply the workflow to existing pages." });
-    } finally {
-      setApplying(false);
-    }
-  };
-
-  if (loading) return <div className="settings-panel">Loading…</div>;
-
+// WF-11: the approval and protection sections live on the STATES view (one Save with the states —
+// save-workflow-bundle, all-or-nothing); the settings view keeps the workflow's own switches and
+// the readers. Both editors compose the same rows from these two components.
+const deriveStates = (def) => {
   const states = def?.states || [];
   const initialState = states.find((s) => s.initial) || states[0] || null;
   const enforceState = states.find(isEnforceState) || null;
-  // A2: where a tampered Approved page lands. "initial" = whatever the first state is (survives a
-  // re-saved definition); a state id pins one. The first state is not repeated under its own name.
   const demoteOpts = [
     { value: "initial", label: `The first state (${initialState?.name || "Draft"})` },
     ...states.filter((s) => !isEnforceState(s) && s.id !== initialState?.id).map((s) => ({ value: s.id, label: s.name })),
   ];
-  // A5: every state except the enforce one gets a clock row here; Approved keeps its own row.
   const clockStates = states.filter((s) => !isEnforceState(s));
   const enforceName = enforceState?.name || "Approved";
-  // WF-10: the state an overdue page moves to has a name of its own (the built-in one is
-  // "Needs re-review"); the copy names it instead of a hard-coded "Expired".
   const expiredName = states.find((s) => s.id === "expired")?.name || "Needs re-review";
+  return { states, initialState, enforceState, demoteOpts, clockStates, enforceName, expiredName };
+};
 
+export const WorkflowApprovalSection = ({ settings, setSettings, def }) => {
+  const { enforceName } = deriveStates(def);
   return (
-    <div className="settings-panel">
-      {/* WF-11: what the settings below add up to, as one sentence — read it, then change it. */}
-      <p className="wf-rule" data-testid="wf-rule">{workflowRuleSentence(settings, def)}</p>
-      <SettingsRow
-        label="Enable document workflow"
-        description="Track a review/approval state on pages in this space. When on, pages carry a workflow state shown on the Sentinel Vault ribbon, and approvers and space admins move it along the workflow."
-      >
-        <Toggle label="Enable document workflow" checked={settings.enabled} onChange={(e) => setSettings((p) => ({ ...p, enabled: e.target.checked }))} />
-      </SettingsRow>
-
-      {settings.enabled && (
-        <div className="settings-sections">
-        <Section title="Workflow" description="Which pages run it, and the states they move through." testId="wf-section-workflow">
-          <SettingsRow label="Workflow states" description="The states every page moves through. Edit the states, their colours and the moves between them on their own page — it saves separately from these settings.">
-            <div className="wf-state-preview">
-              {states.map((s, i) => (
-                <React.Fragment key={s.id}>
-                  <span className={`wf-state-chip wf-state-${s.color || "neutral"}`}>{s.name}</span>
-                  {i < states.length - 1 && <span className="wf-state-arrow" aria-hidden="true">→</span>}
-                </React.Fragment>
-              ))}
-              {onEditStates && <button type="button" className="btn-secondary wf-edit-states" onClick={onEditStates} data-testid="wf-defs-toggle">Edit the states…</button>}
-            </div>
-          </SettingsRow>
-          <SettingsRow
-            label="Auto-start workflow on new pages"
-            description="Every new page created in this space starts the workflow automatically, at its first state (or the workflow its labels select)."
-          >
-            <Toggle label="Auto-start workflow on new pages" checked={settings.autoAssignNew} onChange={(e) => setSettings((p) => ({ ...p, autoAssignNew: e.target.checked }))} />
-          </SettingsRow>
-          <SettingsRow
-            label="Apply to existing pages"
-            description="Start the workflow on pages in this space that don't have one yet. Large spaces are processed in batches — run again to continue."
-          >
-            <button className="btn-secondary" onClick={applyToExisting} disabled={applying}>
-              {applying ? "Applying…" : "Apply to existing pages"}
-            </button>
-          </SettingsRow>
-          <SettingsRow
-            label="Show the state as a page label"
-            description="Adds a label like sv-state-approved to each page and keeps it in step with the workflow, so Content by Label, the Page Properties Report and CQL can filter on it. Turning it off removes the labels within the hour."
-          >
-            <Toggle label="Show the state as a page label" checked={!!settings.syncLabels} onChange={(e) => setSettings((p) => ({ ...p, syncLabels: e.target.checked }))} />
-          </SettingsRow>
-        </Section>
-
-        <Section title="Readers" description="Ask an audience to confirm they have read each approved version." testId="wf-section-readers">
-          <SettingsRow
-            label="Ask readers to confirm they have read Approved pages"
-            description="While a page is Approved, the people and groups below are asked to confirm they have read the approved version; the ribbon shows who has. A new approved version asks again."
-          >
-            <Toggle label="Ask readers to confirm they have read Approved pages" checked={!!settings.readConfirmation?.enabled} onChange={(e) => setSettings((p) => ({ ...p, readConfirmation: { enabled: e.target.checked, audience: p.readConfirmation?.audience || [] } }))} />
-          </SettingsRow>
-          {settings.readConfirmation?.enabled && (
-            <div className="nested-control" data-testid="wf-read-audience">
-              <SettingsRow label="Readers" description="People who must confirm.">
-                <UserPicker
-                  selected={(settings.readConfirmation.audience || []).filter((a) => (a.type || "user") === "user")}
-                  onChange={(users) => setSettings((p) => ({ ...p, readConfirmation: { ...p.readConfirmation, audience: [...users, ...(p.readConfirmation.audience || []).filter((a) => a.type === "group")] } }))}
-                />
-              </SettingsRow>
-              <SettingsRow label="Reader groups" description="Everyone in these groups must confirm.">
-                <GroupPicker
-                  selected={(settings.readConfirmation.audience || []).filter((a) => a.type === "group")}
-                  onChange={(groups) => setSettings((p) => ({ ...p, readConfirmation: { ...p.readConfirmation, audience: [...(p.readConfirmation.audience || []).filter((a) => (a.type || "user") === "user"), ...groups] } }))}
-                />
-              </SettingsRow>
-            </div>
-          )}
-
-        </Section>
-
         <Section title="Approval" description={`Who signs off before a page becomes ${enforceName}, and what must be true first.`} testId="wf-section-approval">
           <SettingsRow
             label="Require approval to reach Approved"
@@ -437,7 +306,12 @@ export default function WorkflowSettingsEditor({ spaceKey = null, defRev = 0, on
             </div>
           )}
         </Section>
+  );
+};
 
+export const WorkflowProtectionSection = ({ settings, setSettings, def }) => {
+  const { enforceName, expiredName, demoteOpts, clockStates, enforceState } = deriveStates(def);
+  return (
         <Section title={`Protecting ${enforceName} pages`} description={`${enforceName} pages are protected: an edit by someone who is not an approver or a space admin is undone or sends the page back, and every ${enforceName} page carries a review date.`} testId="wf-section-protection">
           <SettingsRow
             label={`If an ${enforceName} page is edited by a non-approver`}
@@ -521,6 +395,151 @@ export default function WorkflowSettingsEditor({ spaceKey = null, defRev = 0, on
           )}
 
         </Section>
+  );
+};
+
+/** The settings record as the editors hold it (one normaliser for both views). */
+export const settingsFromServer = (r) => ({ enabled: !!r.settings.enabled, autoAssignNew: !!r.settings.autoAssignNew, workflowId: r.settings.workflowId || "default", approval: r.settings.approval || null, enforceMode: r.settings.enforceMode === "revert" ? "revert" : "demote", demoteTo: cleanDemoteTo(r.settings.demoteTo, r.def), reviewAfterDays: r.settings.reviewAfterDays ?? null, reviewAfterDaysByState: cleanClocks(r.settings.reviewAfterDaysByState, r.def), entryConditions: r.settings.entryConditions || {}, syncLabels: !!r.settings.syncLabels, readConfirmation: r.settings.readConfirmation || null, requireSignature: !!r.settings.requireSignature });
+/** What is sent to the server on Save (state ids validated against the definition being saved with it). */
+export const cleanSettingsForSave = (settings, def) => ({ ...settings, demoteTo: cleanDemoteTo(settings.demoteTo, def), reviewAfterDaysByState: cleanClocks(settings.reviewAfterDaysByState, def) });
+
+export default function WorkflowSettingsEditor({ spaceKey = null, defRev = 0, onEditStates = null }) {
+  const [settings, setSettings] = useState({ enabled: false, autoAssignNew: false, workflowId: "default", approval: null, enforceMode: "demote", demoteTo: "initial", reviewAfterDays: null, reviewAfterDaysByState: {}, entryConditions: {}, syncLabels: false, readConfirmation: null, requireSignature: false });
+  const [def, setDef] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [applying, setApplying] = useState(false);
+  const [cursor, setCursor] = useState(null); // resume point for bulk apply across batches
+  const [msg, setMsg] = useState(null);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const r = await invoke("get-space-workflow-settings", { spaceKey });
+        if (r?.settings) setSettings(settingsFromServer(r));
+        if (r?.def) setDef(r.def);
+      } catch (e) {
+        console.error("Load workflow settings failed:", e);
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, [spaceKey, defRev]);
+
+  const save = async () => {
+    setSaving(true);
+    setMsg(null);
+    try {
+      // it16: check the resolver's success — set-space-workflow-settings returns
+      // { success:false, reason } (e.g. a non-steward) rather than throwing, so a blind
+      // "saved" would be a false success.
+      const r = await invoke("set-space-workflow-settings", { spaceKey, settings: cleanSettingsForSave(settings, def) });
+      if (r?.success) setMsg({ type: "success", text: "Workflow settings saved." });
+      else setMsg({ type: "error", text: r?.reason || "Could not save workflow settings." });
+    } catch (e) {
+      setMsg({ type: "error", text: "Could not save workflow settings." });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const applyToExisting = async () => {
+    setApplying(true);
+    setMsg(null);
+    try {
+      const r = await invoke("bulk-assign-workflow", { spaceKey, cursor });
+      if (r?.success) {
+        // Advance the cursor so a subsequent click continues past this batch (null once done).
+        setCursor(r.capped ? (r.nextCursor || null) : null);
+        const more = r.capped ? ` (${r.scanned} scanned — run again to continue)` : "";
+        setMsg({ type: "success", text: `Applied the workflow to ${r.assigned} page${r.assigned !== 1 ? "s" : ""}${more}.` });
+      } else {
+        setMsg({ type: "error", text: r?.reason || "Could not apply the workflow." });
+      }
+    } catch (e) {
+      setMsg({ type: "error", text: "Could not apply the workflow to existing pages." });
+    } finally {
+      setApplying(false);
+    }
+  };
+
+  if (loading) return <div className="settings-panel">Loading…</div>;
+
+  const { states } = deriveStates(def);
+
+  return (
+    <div className="settings-panel">
+      {/* WF-11: what the settings below add up to, as one sentence — read it, then change it. */}
+      <p className="wf-rule" data-testid="wf-rule">{workflowRuleSentence(settings, def)}</p>
+      <SettingsRow
+        label="Enable document workflow"
+        description="Track a review/approval state on pages in this space. When on, pages carry a workflow state shown on the Sentinel Vault ribbon, and approvers and space admins move it along the workflow."
+      >
+        <Toggle label="Enable document workflow" checked={settings.enabled} onChange={(e) => setSettings((p) => ({ ...p, enabled: e.target.checked }))} />
+      </SettingsRow>
+
+      {settings.enabled && (
+        <div className="settings-sections">
+        <Section title="Workflow" description="Which pages run it, and the states they move through." testId="wf-section-workflow">
+          <SettingsRow label="Workflow states, approvers and protection" description="The states every page moves through, who approves before a page is Approved, and what happens to an Approved page that is edited. They are edited together on their own page and save with ONE button there.">
+            <div className="wf-state-preview">
+              {states.map((s, i) => (
+                <React.Fragment key={s.id}>
+                  <span className={`wf-state-chip wf-state-${s.color || "neutral"}`}>{s.name}</span>
+                  {i < states.length - 1 && <span className="wf-state-arrow" aria-hidden="true">→</span>}
+                </React.Fragment>
+              ))}
+              {onEditStates && <button type="button" className="btn-secondary wf-edit-states" onClick={onEditStates} data-testid="wf-defs-toggle">Edit the states, approvers and protection…</button>}
+            </div>
+          </SettingsRow>
+          <SettingsRow
+            label="Auto-start workflow on new pages"
+            description="Every new page created in this space starts the workflow automatically, at its first state (or the workflow its labels select)."
+          >
+            <Toggle label="Auto-start workflow on new pages" checked={settings.autoAssignNew} onChange={(e) => setSettings((p) => ({ ...p, autoAssignNew: e.target.checked }))} />
+          </SettingsRow>
+          <SettingsRow
+            label="Apply to existing pages"
+            description="Start the workflow on pages in this space that don't have one yet. Large spaces are processed in batches — run again to continue."
+          >
+            <button className="btn-secondary" onClick={applyToExisting} disabled={applying}>
+              {applying ? "Applying…" : "Apply to existing pages"}
+            </button>
+          </SettingsRow>
+          <SettingsRow
+            label="Show the state as a page label"
+            description="Adds a label like sv-state-approved to each page and keeps it in step with the workflow, so Content by Label, the Page Properties Report and CQL can filter on it. Turning it off removes the labels within the hour."
+          >
+            <Toggle label="Show the state as a page label" checked={!!settings.syncLabels} onChange={(e) => setSettings((p) => ({ ...p, syncLabels: e.target.checked }))} />
+          </SettingsRow>
+        </Section>
+
+        <Section title="Readers" description="Ask an audience to confirm they have read each approved version." testId="wf-section-readers">
+          <SettingsRow
+            label="Ask readers to confirm they have read Approved pages"
+            description="While a page is Approved, the people and groups below are asked to confirm they have read the approved version; the ribbon shows who has. A new approved version asks again."
+          >
+            <Toggle label="Ask readers to confirm they have read Approved pages" checked={!!settings.readConfirmation?.enabled} onChange={(e) => setSettings((p) => ({ ...p, readConfirmation: { enabled: e.target.checked, audience: p.readConfirmation?.audience || [] } }))} />
+          </SettingsRow>
+          {settings.readConfirmation?.enabled && (
+            <div className="nested-control" data-testid="wf-read-audience">
+              <SettingsRow label="Readers" description="People who must confirm.">
+                <UserPicker
+                  selected={(settings.readConfirmation.audience || []).filter((a) => (a.type || "user") === "user")}
+                  onChange={(users) => setSettings((p) => ({ ...p, readConfirmation: { ...p.readConfirmation, audience: [...users, ...(p.readConfirmation.audience || []).filter((a) => a.type === "group")] } }))}
+                />
+              </SettingsRow>
+              <SettingsRow label="Reader groups" description="Everyone in these groups must confirm.">
+                <GroupPicker
+                  selected={(settings.readConfirmation.audience || []).filter((a) => a.type === "group")}
+                  onChange={(groups) => setSettings((p) => ({ ...p, readConfirmation: { ...p.readConfirmation, audience: [...(p.readConfirmation.audience || []).filter((a) => (a.type || "user") === "user"), ...groups] } }))}
+                />
+              </SettingsRow>
+            </div>
+          )}
+
+        </Section>
+
         </div>
       )}
 

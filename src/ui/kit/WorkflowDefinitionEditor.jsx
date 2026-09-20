@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { invoke } from "@forge/bridge";
-import { MiniSelect } from "./WorkflowSettingsEditor";
+import { MiniSelect, WorkflowApprovalSection, WorkflowProtectionSection, settingsFromServer, cleanSettingsForSave } from "./WorkflowSettingsEditor";
+import { bundleFailureText } from "../../server/capsules/workflow/bundle.js"; // WF-11: pure, no Forge import
 
 // B1: the definition editor — states, transitions and colours for the space's default workflow
 // and for any label-scoped workflows (Comala's model: a page labelled "contract" runs "Legal
@@ -23,7 +24,7 @@ const uniqueId = (base, taken) => { let id = base, n = 2; while (taken.has(id)) 
 const emptyDef = (id, name) => ({ id, name, states: [{ id: "draft", name: "Draft", color: "neutral", initial: true }], transitions: [] });
 
 // One workflow's editor: states table + transition checkboxes + (for extras) labels + priority.
-const DefinitionForm = ({ initial, isExtra, onSave, onDelete, saving, message }) => {
+const DefinitionForm = ({ initial, isExtra, onSave, onDelete, saving, message, renderSettings = null }) => {
   const [def, setDef] = useState(initial.def);
   const [labels, setLabels] = useState((initial.labels || []).join(", "));
   const [priority, setPriority] = useState(initial.priority ?? 0);
@@ -113,7 +114,9 @@ const DefinitionForm = ({ initial, isExtra, onSave, onDelete, saving, message })
           </div>
         ))}
       </div>
-      <p className="wf-def-note">An enforced state is protected: while a page is in it, an edit by someone who is not an approver or a space admin is undone or moves the page back (the Workflow tab chooses which).</p>
+      <p className="wf-def-note">An enforced state is protected: while a page is in it, an edit by someone who is not an approver or a space admin is undone or moves the page back{renderSettings ? " (chosen below)" : " (the Workflow tab chooses which)"}.</p>
+      {/* WF-11: the approval and protection settings ride the SAME Save as the states (all-or-nothing). */}
+      {renderSettings ? <div className="wf-def-settings" data-testid="wf-def-settings">{renderSettings(def)}</div> : null}
       <div className="wf-def-actions">
         <button type="button" className="btn-secondary" onClick={addState} data-testid="wf-def-add-state">Add a state</button>
         <span className="wf-def-spacer" />
@@ -135,21 +138,31 @@ export default function WorkflowDefinitionEditor({ spaceKey, onSaved = null, sta
   const [draftExtra, setDraftExtra] = useState(null); // a new label workflow being created
   const [open, setOpen] = useState(standalone);
 
+  // WF-11: on the states view the default workflow's form carries the approval / protection
+  // settings too, and ONE Save writes both records through save-workflow-bundle.
+  const [settings, setSettings] = useState(null);
+  const [settingsDef, setSettingsDef] = useState(null);
   const load = useCallback(async () => {
     try { setData(await invoke("list-space-workflows", { spaceKey })); } catch (_) { setData({ error: true }); }
-  }, [spaceKey]);
+    if (standalone) {
+      try { const r = await invoke("get-space-workflow-settings", { spaceKey }); if (r?.settings) { setSettings(settingsFromServer(r)); setSettingsDef(r.def || null); } } catch (_) { /* the form saves the states alone */ }
+    }
+  }, [spaceKey, standalone]);
   useEffect(() => { load(); }, [load]);
 
   const save = async (payload, key) => {
     setSaving(true); setMessages((m) => ({ ...m, [key]: null }));
     try {
-      const r = await invoke("store-space-workflow", { spaceKey, ...payload });
+      const bundle = standalone && key === "default" && settings;
+      const r = bundle
+        ? await invoke("save-workflow-bundle", { spaceKey, ...payload, settings: cleanSettingsForSave(settings, payload.def) })
+        : await invoke("store-space-workflow", { spaceKey, ...payload });
       if (r?.success) {
-        setMessages((m) => ({ ...m, [key]: { type: r.warning ? "error" : "success", text: r.warning ? `Saved, but: ${r.warning}` : "Workflow saved." } }));
+        setMessages((m) => ({ ...m, [key]: { type: r.warning ? "error" : "success", text: r.warning ? `Saved, but: ${r.warning}` : (bundle ? "Workflow and its settings saved." : "Workflow saved.") } }));
         setDraftExtra(null);
         await load();
         onSaved?.();
-      } else setMessages((m) => ({ ...m, [key]: { type: "error", text: r?.reason || "Could not save the workflow." } }));
+      } else setMessages((m) => ({ ...m, [key]: { type: "error", text: bundle ? (bundleFailureText(r) || r?.reason || "Could not save the workflow.") : (r?.reason || "Could not save the workflow.") } }));
     } catch (_) { setMessages((m) => ({ ...m, [key]: { type: "error", text: "Could not save the workflow." } })); }
     finally { setSaving(false); }
   };
@@ -175,7 +188,7 @@ export default function WorkflowDefinitionEditor({ spaceKey, onSaved = null, sta
         <div>
           <h3 className="wf-dash-title">{standalone ? "Workflow states" : "Workflow definitions"}</h3>
           <p className="wf-dash-sub">
-            The states pages move through and the moves allowed between them. {data.source === "builtin" ? "This space uses the built-in workflow; saving makes a copy for this space." : data.source === "global" ? "This space uses the site-wide workflow; saving makes a copy for this space." : "This space has its own workflow."}{standalone ? " Each workflow saves with its own Save workflow button." : ""}
+            The states pages move through and the moves allowed between them. {data.source === "builtin" ? "This space uses the built-in workflow; saving makes a copy for this space." : data.source === "global" ? "This space uses the site-wide workflow; saving makes a copy for this space." : "This space has its own workflow."}{standalone ? " The default workflow's Save writes its states and the approval / protection settings together — nothing is saved unless both are. Each workflow saves with its own Save workflow button." : ""}
           </p>
         </div>
         {standalone
@@ -184,7 +197,13 @@ export default function WorkflowDefinitionEditor({ spaceKey, onSaved = null, sta
       </div>
       {open && (
         <>
-          <DefinitionForm initial={initialDefault} isExtra={false} onSave={(p) => save(p, "default")} saving={saving} message={messages.default} />
+          <DefinitionForm initial={initialDefault} isExtra={false} onSave={(p) => save(p, "default")} saving={saving} message={messages.default}
+            renderSettings={standalone && settings ? (def) => (
+              <>
+                <WorkflowApprovalSection settings={settings} setSettings={setSettings} def={def || settingsDef} />
+                <WorkflowProtectionSection settings={settings} setSettings={setSettings} def={def || settingsDef} />
+              </>
+            ) : null} />
           <h4 className="wf-defs-sub">Workflows for labelled pages</h4>
           <p className="wf-dash-sub">A page created with one of these labels starts this workflow instead of the default (the highest priority wins when several match). Pages already assigned keep the workflow they have.</p>
           {initialExtras.map((x) => (

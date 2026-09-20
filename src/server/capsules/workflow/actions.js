@@ -30,8 +30,8 @@ import {
   sanitize,
   listSpaceWorkflows,
   storeSpaceWorkflow,
-  deleteSpaceWorkflow,
-} from "./logic.js";
+  deleteSpaceWorkflow, restoreSpaceDefaultWorkflow } from "./logic.js";
+import { runBundle } from "./bundle.js"; // WF-11
 import {
   extractApprovalConfig,
   resolveApproverIds,
@@ -562,6 +562,23 @@ const storeSpaceWorkflowAction = async (req) => {
   const { workflowId, def, labels, priority } = req.payload || {};
   return storeSpaceWorkflow(spaceKey, { workflowId: typeof workflowId === "string" ? workflowId : null, def, labels, priority });
 };
+// WF-11: ONE Save for the default workflow's states AND the approval / protection settings — two
+// records, all-or-nothing: the definition first, then the settings; a refused settings write puts
+// the definition back exactly as it was (bundle.js runBundle, pure). Steward-gated on the space.
+const saveWorkflowBundleAction = async (req) => {
+  const spaceKey = spaceKeyOf(req);
+  if (!spaceKey || !(await authorizeSteward(req.context?.accountId, spaceKey))) return { success: false, reason: "Only a space admin can edit workflow definitions" };
+  const { def, labels, priority, settings } = req.payload || {};
+  if (!settings || typeof settings !== "object") return storeSpaceWorkflow(spaceKey, { workflowId: "default", def, labels, priority });
+  const prev = await listSpaceWorkflows(spaceKey);
+  const prevSource = prev?.source || "builtin";
+  const prevDef = prevSource === "space" ? prev.default : null;
+  return runBundle({
+    storeDef: () => storeSpaceWorkflow(spaceKey, { workflowId: "default", def, labels, priority }),
+    storeSettings: () => setSpaceWorkflowSettings(spaceKey, settings || {}),
+    restoreDef: () => restoreSpaceDefaultWorkflow(spaceKey, prevSource, prevDef),
+  });
+};
 const deleteSpaceWorkflowAction = async (req) => {
   const spaceKey = spaceKeyOf(req);
   if (!spaceKey || !(await authorizeSteward(req.context?.accountId, spaceKey))) return { success: false, reason: "Only a space admin can edit workflow definitions" };
@@ -723,6 +740,7 @@ export const actions = [
   ["confirm-read", confirmReadAction],
   ["list-space-workflows", listSpaceWorkflowsAction],
   ["store-space-workflow", storeSpaceWorkflowAction],
+  ["save-workflow-bundle", saveWorkflowBundleAction], // WF-11
   ["delete-space-workflow", deleteSpaceWorkflowAction],
   ["signature-status", signatureStatusAction],
   ["enroll-signature", enrollSignatureAction],
