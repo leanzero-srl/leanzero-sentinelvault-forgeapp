@@ -279,6 +279,54 @@ const MyRequests = () => {
   );
 };
 
+// WF-3 (c): the approval requests the current user MADE — waiting (n of m decided), approved,
+// declined with the approver's word, or refused because the page changed. The requester used to
+// have nowhere to look but the page's own ribbon.
+const pickApprovalRequests = (r) => r?.requests;
+const MyApprovalRequests = () => {
+  const { items, error: loadError, reload } = useList("list-my-approval-requests", pickApprovalRequests);
+  const n = items ? items.length : 0;
+  const pill = (r) => {
+    if (r.status === "approved") return <span className="mw-pill mw-pill-held" data-testid="mw-my-approval-state">Approved</span>;
+    if (r.status === "denied") return <span className="mw-pill mw-pill-overdue" data-testid="mw-my-approval-state">{WORDS.declined}</span>;
+    if (r.status === "stale") return <span className="mw-pill mw-pill-overdue" data-testid="mw-my-approval-state">Page changed</span>;
+    return <span className="mw-pill mw-pill-stale" data-testid="mw-my-approval-state">Waiting</span>;
+  };
+  const line = (r) => {
+    if (r.status === "approved") return `Approved${r.byName ? ` by ${r.byName}` : ""}${r.at ? ` ${when(r.at)}` : ""}${r.approvedVersion != null ? ` · v${r.approvedVersion}` : ""}`;
+    if (r.status === "denied") return `Declined${r.byName ? ` by ${r.byName}` : ""}${r.reason ? `: “${r.reason}”` : ""}${r.at ? ` · ${when(r.at)}` : ""}`;
+    if (r.status === "stale") return `The page changed after you asked (reviewed v${r.reviewedVersion ?? "?"}) — ask again from the page`;
+    return `Waiting for the approvers · ${r.decided || 0} of ${r.approverCount || 0} decided${r.requestedAt ? ` · asked ${when(r.requestedAt)}` : ""}`;
+  };
+  return (
+    <section className="mw-card" data-testid="mw-my-approval-requests">
+      <div className="mw-card-head">
+        <span className="mw-card-title">Approvals you asked for</span>
+        <span className={`mw-count ${n ? "mw-count-requests" : "mw-count-zero"}`}>{n}</span>
+      </div>
+      {loadError && <LoadError what="your approval requests" onRetry={reload} testId="mw-my-approval-requests-error" />}
+      {!loadError && items === null && <p className="mw-loading">Checking your requests…</p>}
+      {!loadError && items && items.length === 0 && <p className="mw-none" data-testid="mw-my-approval-requests-empty">You have not asked for any page approvals lately.</p>}
+      {items && items.length > 0 && (
+        <ul className="mw-list">
+          {items.map((r) => (
+            <li key={r.pageId} className="mw-row" data-testid="mw-my-approval-row" data-status={r.status}>
+              <div className="mw-row-info">
+                <span className="mw-row-main">
+                  <strong>{r.pageTitle || "a page"}</strong> → {r.toStateName || "Approved"}
+                  {r.pageId ? <> · <a href={viewPage(r.pageId)} onClick={go(viewPage(r.pageId))}>open the page</a></> : null}
+                </span>
+                <span className="mw-row-meta" data-testid="mw-my-approval-line">{line(r)}{r.spaceKey ? ` · ${r.spaceKey}` : ""}</span>
+              </div>
+              <div className="mw-row-actions">{pill(r)}</div>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+};
+
 // The files the current user holds sealed, across every space, newest first, paged by the
 // resolver's keyset cursor.
 const MySeals = () => {
@@ -467,6 +515,7 @@ const MyWork = () => {
         <SectionRequests onChange={recount} />
         <AccessRequests onChange={recount} />
         <MyRequests />
+        <MyApprovalRequests />
         <MySeals />
         <SignatureCard />
       </div>

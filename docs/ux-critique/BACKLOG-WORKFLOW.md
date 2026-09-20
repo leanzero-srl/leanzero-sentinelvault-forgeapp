@@ -210,7 +210,7 @@ exists). (c) My work: the requester's own open requests as a card ("Approval req
 entry, null once anything moved the page since) only on a non-enforced page with no open request; the details chip
 reads "Declined Sep 20" (critical tone) / "Request closed …" and its popover has a "Last approval decision" section
 with who, when, reviewed vN and the reason in a solid block. Unit: `test/workflow-engine.test.mjs` (lastDecisionFrom).
-NOT done: (c) the requester's "Approval requests you made" card on My work — a new index, left for the WF-9/My-work pass.
+**(c) done (2026-09-20, dev 8.33.0):** the request writes `wfreq-mine-{requester}-{pageId}` (the SEC-8 requester-index pattern); `list-my-approval-requests` confirms each row against the pending record (Waiting · n of m decided), the page's `approvalRecord` (Approved by … · vN) and the log's last decision (Declined by … with the reason / "Page changed" for a stale refusal), drops rows that say nothing any more or are older than two weeks, and My work has an "Approvals you asked for" card. Pure rule `workflow/my-requests.js classifyMyApprovalRequest` (unit `test/my-approval-requests.test.mjs`); evidence `scenarios/sentinel-vault/wf3c-my-approval-requests.spec.ts` (server: pending 0 of 1 → denied with "needs a summary" → approved v1; browser: Mihai's own request on My work reads `Waiting for the approvers · 0 of 1 decided · asked Sun 08:45`, then `Declined by Gabriela Perdum: “add the risk table first” · Sun 08:48 · WFH` with the solid Declined pill, light + dark PNGs read).
 
 ### WF-4 The ribbon's "Waiting for you" pill and count are stale after every decision
 **Who** approver.
