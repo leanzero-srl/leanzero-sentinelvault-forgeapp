@@ -14,6 +14,8 @@ import { resolveBulletinToggles } from "./shared/bulletin-flags.js";
 import { touchSealTimestamp, removeSealContentProp } from "./capsules/sealing/logic.js";
 import { releaseSeal } from "./capsules/sealing/release.js";
 import { releaseSectionSeal } from "./capsules/section-seals/release.js"; // SEC-7 (d): the sweep hands lapsed sections back too
+import { adoptInsertedSection, insertIntentKey } from "./capsules/section-seals/adopt.js"; // SEC-4 (a): seal on insert
+import { refreshSectionContentProp } from "./capsules/section-seals/logic.js"; // SEC-4 (a): the macro badge reads the content property
 import { getActiveEditGrant, sweepEditAccess, getActiveSectionEditGrant, sweepEditRequestIndex } from "./capsules/editreq/logic.js";
 import {
   resolveEffectiveConfig,
@@ -27,7 +29,7 @@ import {
 import { evaluateRules } from "./infra/rules-engine.js";
 import { fetchPageLabels } from "./infra/labels.js";
 import {
-  autoAssignOnEvent, getSpaceWorkflowSettings, resolveWorkflowDef, findState, resolveDemoteTarget, validateTransition,
+  autoAssignOnEvent, getSpaceWorkflowSettings, resolveWorkflowDef, findState, resolveDemoteTarget, validateTransition, restampIfEnforced,
   transitionPageWorkflow, readPageWorkflow, purgePageWorkflow, mirrorStateLabel, readLabelStamp, clearStateLabel, restampApprovedVersion, fetchLivePageVersion,
 } from "./capsules/workflow/logic.js";
 import { resolveApproverIds, applyAiVerdict, sweepApprovalIndex, clearPageApprovals } from "./capsules/workflow/approvals.js";
@@ -35,7 +37,7 @@ import { fetchPageStatuses } from "./shared/page-status.js";
 import { postEnforceComment, buildWorkflowEnforcementDispatch } from "./infra/approval-blueprints.js";
 import { isAccountStewardAsApp } from "./shared/steward-checks.js";
 import { postValidationComment } from "./infra/validation-blueprints.js";
-import { readDocBody, readDocBodyAtVersion, writeDocBody, collectMediaFileIds, extractMediaSingleNodes, spliceMediaNodes, locateBodiedSectionNodes, spliceSectionWrapper, hashAdf, canonicalizeAdf, nonEmptySectionBody, adoptOrphanWrappers, summarizeAdfDiff } from "./infra/doc-surgery.js";
+import { readDocBody, readDocBodyAtVersion, writeDocBody, collectMediaFileIds, extractMediaSingleNodes, spliceMediaNodes, locateBodiedSectionNodes, spliceSectionWrapper, hashAdf, canonicalizeAdf, nonEmptySectionBody, adoptOrphanWrappers, summarizeAdfDiff, findUnrecordedWrappers, stampSectionId } from "./infra/doc-surgery.js";
 import { probeAttachmentStatus, restoreAttachmentFromTrash, decideMediaRestoreAction, confirmAttachmentPurged } from "./infra/attachment-status.js";
 import { findSealedMediaSingle, findAllSealedMediaSingles, capturePresentation, presentationDiffers, applyPresentation } from "./infra/media-presentation.js";
 import { setWithTtl, setUntil } from "./shared/kvs-ttl.js";
@@ -322,7 +324,10 @@ export async function pageContentTrigger(event) {
       : null;
     const needsRevert = enforcement?.action === "revert";
 
-    const hasBodyWork = sealFileMap.length > 0 || sectionSeals.length > 0 || needsRevert;
+    // SEC-4 (a): a Sealed Section macro was inserted on this page and not yet sealed — read the
+    // body to adopt it (the one case a page with no seal costs an ADF read).
+    const insertIntent = contentProtectionOn ? await kvs.get(insertIntentKey(pageId)).catch(() => null) : null;
+    const hasBodyWork = sealFileMap.length > 0 || sectionSeals.length > 0 || needsRevert || !!insertIntent;
 
     // --- Single read -> passes -> single write, with shared 409 backoff ---
     const MAX_RETRIES = 3;
@@ -336,6 +341,7 @@ export async function pageContentTrigger(event) {
     let enforceRevertVersion = null;
     let enforceObservedEqual = false; // #44: the revert pass CONFIRMED content-equality (no write needed)
     let sectionChanged = false; // GAP 2: the last attempt's section pass had a restore pending
+    const adoptedSections = []; // SEC-4 (a): wrappers this run sealed on publish (record written, id stamped)
 
     for (let attempt = 0; hasBodyWork && attempt < MAX_RETRIES; attempt++) {
       let ctx;
@@ -383,6 +389,13 @@ export async function pageContentTrigger(event) {
       // runs after, so at this point ctx.changed is the section pass's verdict alone. Read after
       // the loop to decide the retry marker when no attempt confirmed a write.
       sectionChanged = !ctx.enforcedRevert && ctx.changed;
+      // Pass A2 (SEC-4 (a)): a Sealed Section wrapper with no record — inserted in the editor and
+      // published — is sealed to the person who published it. Not while an enforce-revert is
+      // rewriting the body (the wrapper may not survive it); the next publish adopts it then.
+      if (!ctx.enforcedRevert && (insertIntent || sectionSeals.length > 0)) {
+        try { await adoptInsertedSectionsPass(ctx, sectionSeals, adoptedSections, enforcement); }
+        catch (e) { console.error("[SECTION-ADOPT] pass error:", e); }
+      }
       // Pass B: sealed-media restore
       if (!ctx.enforcedRevert && sealFileMap.length > 0) {
         try { await restoreMediaPass(ctx, sealFileMap, mediaProbeCache); }
@@ -458,6 +471,17 @@ export async function pageContentTrigger(event) {
       await touchSealTimestamp();
     }
 
+    // SEC-4 (a): the adopted wrappers' ids are on the page now (or the write failed and the next
+    // run re-adopts by title/hash through adoptOrphanWrappers); either way the marker is consumed.
+    if (adoptedSections.length) {
+      try {
+        await refreshSectionContentProp(pageId);
+        if (anyChange) await restampIfEnforced(pageId); // #44 §2.7: an enforced baseline stays seal-complete
+        await touchSealTimestamp();
+        console.warn(`[SECTION-ADOPT] page ${pageId}: sealed on publish ${adoptedSections.map((a) => `${a.sectionId} (${a.sectionTitle})`).join(", ")} for ${atlassianId}`);
+      } catch (e) { console.error("[SECTION-ADOPT] post-write:", e); }
+    }
+    if (insertIntent) await kvs.delete(insertIntentKey(pageId)).catch(() => {});
     await refreshByline(pageId).catch((e) => console.warn("[BYLINE] trigger refresh failed:", e?.message || e));
 
     // #44: the enforce-revert notice — only after a CONFIRMED write (SV-M2).
@@ -993,6 +1017,37 @@ async function recordSectionRebaseline(ctx, seal, by, prevBody, newBody) {
     details: { by, ownerAccountId: seal.lockedBy || null, diff },
     version: ctx.currentVersion || null,
   });
+}
+
+// SEC-4 (a): adopt every Sealed Section wrapper that has no record. The owner is the person who
+// published the version being judged (ctx.atlassianId) — the inserter, in the case this exists
+// for. On an ENFORCED page only the privileged set may add a sealed section this way (anyone
+// else's publish is being demoted / reverted by the workflow anyway); the wrapper is left as it
+// is and adopted on the next privileged publish. Mutates the nodes (id stamped) → ctx.changed.
+async function adoptInsertedSectionsPass(ctx, sectionSeals, adopted, enforcement) {
+  const candidates = findUnrecordedWrappers(ctx.adfDoc, sectionSeals.map((s) => s.sectionId));
+  if (!candidates.length) return;
+  if (enforcement && enforcement.action !== "privileged" && enforcement.action !== null) return;
+  if (!ctx.atlassianId) return;
+  // The publish's event and the view-time guard can judge the SAME version within seconds of each
+  // other (a page opened right after publish); without a claim both would mint a record for one
+  // wrapper. One claim per (page, version) — the first judge adopts, the other finds the claim.
+  const claimKey = `section-adopt-claim-${ctx.pageId}-v${ctx.currentVersion || 0}`;
+  if (await kvs.get(claimKey).catch(() => null)) { console.info(`[SECTION-ADOPT] page ${ctx.pageId} v${ctx.currentVersion}: already claimed by another run`); return; }
+  await setWithTtl(claimKey, { at: new Date().toISOString(), by: ctx.atlassianId }, 10 * 60_000);
+  let spaceKey = ctx.pageData?.spaceKey || null;
+  if (!spaceKey) { try { spaceKey = await resolvePageSpaceKey(ctx.pageId); } catch (_) { spaceKey = null; } }
+  for (const c of candidates) {
+    try {
+      const { sectionId, record } = await adoptInsertedSection({
+        pageId: ctx.pageId, spaceKey, spaceId: ctx.pageData?.spaceId || null, pageTitle: ctx.pageData?.title || null,
+        node: c.node, originalIndex: c.originalIndex, ownerAccountId: ctx.atlassianId, version: (ctx.currentVersion || 0) + 1,
+      });
+      stampSectionId(c.node, sectionId);
+      ctx.changed = true;
+      adopted.push({ sectionId, sectionTitle: record.sectionTitle });
+    } catch (e) { console.error("[SECTION-ADOPT] adopt failed:", e); }
+  }
 }
 
 async function restoreSealedSectionsPass(ctx, sectionSeals, probeCache = new Map()) {
@@ -2324,6 +2379,7 @@ export async function guardPageNow(pageId, source = "view") {
   await setWithTtl(key, { version: live.number, at: new Date().toISOString(), source }, PAGE_GUARD_TTL_MS);
   if (live.authorId === systemAccountId) return { checked: true, restored: false, reason: "app authored the live version", version: live.number };
 
+  const intentBefore = await kvs.get(insertIntentKey(pageId)).catch(() => null); // SEC-4 (a)
   console.info(`[PAGE-GUARD] ${source}: judging page=${pageId} v=${live.number} by=${live.authorId || "?"} ahead of its event`);
   await pageContentTrigger({
     eventType: "avi:confluence:updated:page",
@@ -2332,6 +2388,8 @@ export async function guardPageNow(pageId, source = "view") {
   });
   const after = await readLiveVersion(pageId);
   const restored = !!(after?.number > live.number && after.authorId === systemAccountId);
+  // SEC-4 (a): an insert marker consumed by this run means the publish's wrapper was sealed now.
+  const adoptedOnPublish = !!(intentBefore && !(await kvs.get(insertIntentKey(pageId)).catch(() => null)));
   let sectionIds = [];
   if (restored) {
     // Which sealed sections this run put back — read from the dispatch records the pipeline
@@ -2347,7 +2405,7 @@ export async function guardPageNow(pageId, source = "view") {
       restored: { from: live.number, authorId: live.authorId, sectionIds, at: new Date().toISOString() },
     }, PAGE_GUARD_TTL_MS);
   }
-  return { checked: true, restored, version: live.number, authorId: live.authorId, restoredVersion: restored ? after.number : undefined, sectionIds };
+  return { checked: true, restored, version: live.number, authorId: live.authorId, restoredVersion: restored ? after.number : undefined, sectionIds, adoptedOnPublish };
 }
 
 // Pages that carry a live seal whose PAGE BODY the app protects: sealed sections, and sealed

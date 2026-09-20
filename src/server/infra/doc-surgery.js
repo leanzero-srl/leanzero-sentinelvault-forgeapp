@@ -840,6 +840,40 @@ export function adoptOrphanWrappers(adfDoc, { sectionId, sectionTitle, snapshotH
 }
 
 /**
+ * SEC-4 (a) (2026-09-20, seal on insert): the Sealed Section wrappers on a page that carry NO
+ * seal record — a macro someone inserted in the editor and published (its config is empty: the
+ * app issues the id when it seals), or a wrapper stamped with an id no record knows. Deep scan
+ * like locateBodiedSectionNodes; a wrapper's body is never a nesting site. PURE.
+ * @returns [{ node, sectionId: string|null, originalIndex }]
+ */
+export function findUnrecordedWrappers(adfDoc, knownSectionIds = []) {
+  const out = [];
+  if (!adfDoc?.content) return out;
+  const known = new Set((knownSectionIds || []).filter(Boolean));
+  const visit = (node, topIndex) => {
+    if (!node || typeof node !== "object") return;
+    if (node.type === "bodiedExtension" && isSealedSectionKey(node.attrs?.extensionKey)) {
+      const id = getSectionId(node);
+      if (!id || !known.has(id)) out.push({ node, sectionId: id || null, originalIndex: topIndex });
+      return;
+    }
+    if (Array.isArray(node.content)) for (const c of node.content) visit(c, topIndex);
+  };
+  for (let i = 0; i < adfDoc.content.length; i++) visit(adfDoc.content[i], i);
+  return out;
+}
+
+/** PURE. Stamp the app-issued sectionId onto a wrapper node (guestParams, the shape sealSection writes). Mutates. */
+export function stampSectionId(node, sectionId) {
+  if (!node || !sectionId) return node;
+  node.attrs = node.attrs || {};
+  node.attrs.parameters = node.attrs.parameters || {};
+  node.attrs.parameters.guestParams = { ...(node.attrs.parameters.guestParams || {}), sectionId };
+  if (node.attrs.parameters.sectionId != null) node.attrs.parameters.sectionId = sectionId;
+  return node;
+}
+
+/**
  * Re-insert removed Sealed Section wrapper nodes at their original positions.
  * Processes insertions in descending index order to avoid offset drift.
  * Mutates and returns currentAdf. Entries: [{ node, originalIndex }, ...].

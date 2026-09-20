@@ -19,6 +19,7 @@ import {
   ADF_DIFF_SAMPLE_MAX,
 } from "../src/server/infra/doc-surgery.js";
 import { eq, ok, report } from "./_assert.mjs";
+import { findUnrecordedWrappers, stampSectionId, SEALED_SECTION_KEY_SUFFIX } from "../src/server/infra/doc-surgery.js";
 
 const EXT_KEY = "app123/env456/static/sentinel-vault-sealed-section";
 
@@ -270,6 +271,25 @@ const tableWithMedia = (id) => ({
   eq("p35 diff: sample is bounded", ld.sample.length, ADF_DIFF_SAMPLE_MAX);
   ok("p35 diff: whole object stays well under the 400-byte budget", JSON.stringify(ld).length <= 400);
   eq("p35 diff: nullish inputs → count as empty", summarizeAdfDiff(undefined, [para("x")]), { removed: 0, added: 1, changedBlocks: 0, sample: "x" });
+}
+
+// SEC-4 (a): a wrapper with no record is what "seal on insert" adopts.
+{
+  const K = `app/env${SEALED_SECTION_KEY_SUFFIX}`;
+  const wrap = (id, body = [{ type: "heading", attrs: { level: 2 }, content: [{ type: "text", text: "Risks" }] }]) => ({ type: "bodiedExtension", attrs: { extensionType: "com.atlassian.ecosystem", extensionKey: K, layout: "default", parameters: { extensionId: "x", extensionTitle: "Sentinel Vault Sealed Section", ...(id ? { guestParams: { sectionId: id } } : {}) } }, content: body });
+  const doc = { version: 1, type: "doc", content: [{ type: "paragraph", content: [] }, wrap(null), wrap("known-1"), { type: "layoutSection", content: [{ type: "layoutColumn", attrs: { width: 50 }, content: [wrap("stray-2")] }] }] };
+  const found = findUnrecordedWrappers(doc, ["known-1"]);
+  eq("sec4a: the unstamped wrapper and the unknown-id wrapper are found, the known one is not", found.map((f) => [f.sectionId, f.originalIndex]), [[null, 1], ["stray-2", 3]]);
+  eq("sec4a: a nested (layout column) wrapper reports its top-level index", found[1].originalIndex, 3);
+  eq("sec4a: nothing to adopt on a page without wrappers", findUnrecordedWrappers({ content: [{ type: "paragraph" }] }, []), []);
+  eq("sec4a: null doc → []", findUnrecordedWrappers(null), []);
+  const n = wrap(null);
+  stampSectionId(n, "new-9");
+  eq("sec4a: stamping writes guestParams.sectionId (the shape sealSection writes)", getSectionId(n), "new-9");
+  eq("sec4a: …and the stamped wrapper is no longer unrecorded once known", findUnrecordedWrappers({ content: [n] }, ["new-9"]), []);
+  const m = wrap("old"); m.attrs.parameters.sectionId = "old";
+  stampSectionId(m, "new-10");
+  eq("sec4a: a legacy parameters.sectionId is re-stamped too", [m.attrs.parameters.sectionId, getSectionId(m)], ["new-10", "new-10"]);
 }
 
 report("doc-surgery");
