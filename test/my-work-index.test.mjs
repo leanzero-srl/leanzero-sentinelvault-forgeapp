@@ -3,7 +3,7 @@
 // and that the space-admin index only holds spaces with a PENDING request.
 import {
   sectionreqOwnerKey, wantsSectionOwnerIndex, editreqOwnerKey, wantsOwnerIndex,
-  stewardreqSpaceKeyOf, wantsSpaceIndex,
+  stewardreqSpaceKeyOf, wantsSpaceIndex, sectionProposalIndexKeys, proposalIndexKeys,
 } from "../src/server/capsules/editreq/logic.js";
 import { eq, ok, report } from "./_assert.mjs";
 
@@ -26,4 +26,11 @@ ok("a pending access request puts its space in the index", wantsSpaceIndex(sreq)
 ok("a denied one does not", !wantsSpaceIndex({ ...sreq, status: "denied" }));
 ok("one without a space does not", !wantsSpaceIndex({ ...sreq, spaceKey: "" }));
 ok("null does not", !wantsSpaceIndex(null));
+// SEC-2 (e): a PROPOSAL (a request on a workflow-held seal) is indexed under every APPROVER, in
+// the same key shape the owner rows use — so the approvers' My work lists it without a new family.
+const prop = { ...rec, proposal: true, approvers: ["acc-A1", "acc-A2", "acc-A1", null] };
+eq("proposal: one row per distinct approver, the owner's key shape", sectionProposalIndexKeys(prop), ["sectionreq-owner-acc-A1-sec1-acc-R", "sectionreq-owner-acc-A2-sec1-acc-R"]);
+eq("a plain request has no proposal rows", sectionProposalIndexKeys(rec), []);
+eq("a proposal with no approvers has no rows (a steward decides from the seal)", sectionProposalIndexKeys({ ...prop, approvers: [] }), []);
+eq("attachment proposals use the attachment family", proposalIndexKeys({ artifactId: "att1", requesterAccountId: "acc-R", status: "pending", proposal: true, approvers: ["acc-A1"] }), ["editreq-owner-acc-A1-att1-acc-R"]);
 report("my-work-index");

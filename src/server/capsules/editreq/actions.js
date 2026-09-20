@@ -4,7 +4,8 @@ import { kvs, WhereConditions } from "@forge/kvs";
 import { authorizeSteward } from "../../shared/steward-checks.js";
 import { resolveBulletinToggles } from "../../shared/bulletin-flags.js";
 import { setUntil } from "../../shared/kvs-ttl.js";
-import { heldRefusal } from "../../shared/seal-authority.js"; // SEC-2: a held seal takes no personal action
+import { currentUserProfile } from "../../shared/user-or-app.js";
+import { heldRefusal, isWorkflowHeld } from "../../shared/seal-authority.js"; // SEC-2: a held seal takes no personal action — except a PROPOSAL to the approvers (SEC-2 (e))
 import {
   mailEditRequest,
   mailEditApproved,
@@ -15,8 +16,7 @@ import {
   writeOwnerIndex, dropOwnerIndex, listPendingRequestsForOwner,
   writeSectionOwnerIndex, dropSectionOwnerIndex, listPendingSectionRequestsForOwner,
   writeMineIndex, listMyRequests,
-  resolveEditCooldownMs,
-} from "./logic.js";
+  resolveEditCooldownMs, writeProposalIndex, writeSectionProposalIndex } from "./logic.js";
 import { retryAtFor } from "../../shared/edit-cooldown.js";
 import { DECLINED_REASON } from "../../../ui/kit/status-language.js";
 import { listMyStewardRequestsCore } from "../realms/actions.js";
@@ -47,6 +47,36 @@ async function loadSealForOwnerAction(attachmentId, accountId) {
   return { seal, authorized };
 }
 
+/**
+ * SEC-2 (e) "Propose a change": on a workflow-HELD seal the personal grant path is closed (the
+ * approval owns the seal), so a request becomes a PROPOSAL addressed to the page's approvers —
+ * the approver snapshot on the page's workflow record (a steward may decide too, as always).
+ * Approving a proposal is the workflow's own door: the page is moved back for review (custody
+ * hands every seal back), and only then is the ordinary grant minted on the now-personal seal.
+ */
+async function proposalApproversFor(pageId) {
+  if (!pageId) return [];
+  try {
+    const { readPageWorkflow } = await import("../workflow/logic.js");
+    const rec = await readPageWorkflow(pageId);
+    return Array.isArray(rec?.approvers) ? rec.approvers.filter(Boolean) : [];
+  } catch (_) { return []; }
+}
+async function moveBackForProposal(pageId, approverAccountId, request) {
+  const wf = await import("../workflow/logic.js");
+  const record = await wf.readPageWorkflow(pageId);
+  if (!record?.enforce) return { success: true, moved: false }; // already handed back
+  const def = await wf.resolveWorkflowDef(record.spaceKey, record.workflowId);
+  const settings = await wf.getSpaceWorkflowSettings(record.spaceKey);
+  const target = wf.resolveDemoteTarget(def, settings, record.stateId);
+  if (!target?.id) return { success: false, reason: "This workflow has no state to move the page back to" };
+  let actorName = null;
+  try { actorName = (await currentUserProfile(approverAccountId))?.displayName || null; } catch (_) { /* best effort */ }
+  const r = await wf.transitionPageWorkflow({ pageId, spaceKey: record.spaceKey, toStateId: target.id, actorAccountId: approverAccountId, actorName: actorName || "Approver", reason: `proposal by ${request?.requesterName || "a requester"} accepted — moved back to ${target.name || target.id} for the change` });
+  if (!r?.success) return { success: false, reason: r?.reason || "Could not move the page back for the change" };
+  return { success: true, moved: true, toStateId: target.id, toStateName: target.name || target.id };
+}
+
 async function notifyEnabled() {
   try {
     const toggles = await resolveBulletinToggles();
@@ -67,11 +97,13 @@ const requestEditAccess = async (req) => {
 
   const seal = await kvs.get(`protection-${attachmentId}`);
   if (!seal || !seal.lockedBy || seal.trashedOnly) return { success: false, reason: "This file is not sealed" };
-  { const held = heldRefusal(seal, "request"); if (held) return { success: false, reason: held }; } // SEC-2
+  // SEC-2 (e): on a held seal the request is a PROPOSAL to the page's approvers (the owner may
+  // propose too — the approval owns the seal, not them).
+  const proposal = isWorkflowHeld(seal);
   // The owner check runs FIRST deliberately: it is self-knowledge (you are this record's
   // lockedBy), so it discloses nothing, and the owner gets the accurate message rather than the
   // deliberately-vague one below.
-  if (seal.lockedBy === accountId) return { success: false, reason: "You own this seal" };
+  if (!proposal && seal.lockedBy === accountId) return { success: false, reason: "You own this seal" };
   // SV-SEC-1. attachmentId is payload-supplied and every sibling in this file gates through
   // loadSealForOwnerAction — this one did not. Unchecked it is both an oracle ("is file X
   // sealed?") and a way to have the app post an @mention comment, as the app, on a page the
@@ -104,6 +136,7 @@ const requestEditAccess = async (req) => {
     }
   } catch (_) { /* best effort */ }
 
+  const approvers = proposal ? await proposalApproversFor(seal.contentId) : [];
   await kvs.set(`edit-request-${attachmentId}-${accountId}`, {
     artifactId: attachmentId,
     requesterAccountId: accountId,
@@ -115,9 +148,13 @@ const requestEditAccess = async (req) => {
     reason: requestReason,
     status: "pending",
     requestedAt: new Date().toISOString(),
+    ...(proposal ? { proposal: true, approvers } : {}),
   });
-  // K1: the owner's index row goes with the record (read back by key: the set is strongly consistent).
-  await writeOwnerIndex(await kvs.get(`edit-request-${attachmentId}-${accountId}`)).catch((e) => console.warn("[EDIT-ACCESS] owner index", e));
+  // K1: the index row goes with the record (read back by key: the set is strongly consistent) —
+  // the owner's row, or (SEC-2 (e)) one per approver for a proposal.
+  const written = await kvs.get(`edit-request-${attachmentId}-${accountId}`);
+  if (proposal) await writeProposalIndex(written).catch((e) => console.warn("[EDIT-ACCESS] proposal index", e));
+  else await writeOwnerIndex(written).catch((e) => console.warn("[EDIT-ACCESS] owner index", e));
   await writeMineIndex({ requesterAccountId: accountId, kind: "attachment", id: attachmentId, name: seal.attachmentName || null, pageId: seal.contentId || null, spaceKey: seal.spaceKey || null }).catch((e) => console.warn("[EDIT-ACCESS] mine index", e)); // SEC-8
   // A1: the request exists from this write on.
   await recordActivity({
@@ -126,17 +163,16 @@ const requestEditAccess = async (req) => {
     spaceKey: seal.spaceKey || null,
     actor: { accountId, name: requesterName },
     target: { kind: "attachment", id: attachmentId, name: seal.attachmentName || null },
-    details: { scope: "attachment", reason: requestReason, ownerAccountId: seal.lockedBy || null },
+    details: { scope: "attachment", reason: requestReason, ownerAccountId: seal.lockedBy || null, ...(proposal ? { proposal: true, approvers: approvers.slice(0, 10) } : {}) },
     version: null,
   });
 
   if (seal.contentId && (await notifyEnabled())) {
     try {
-      await mailEditRequest(
-        seal.lockedBy, accountId, requesterName,
-        seal.attachmentName || "Unknown Attachment", seal.contentId, requestReason,
-      );
-    } catch (e) { console.error("[EDIT-REQ] notify owner failed:", e); }
+      for (const to of proposal ? (approvers.length ? approvers : [seal.lockedBy]) : [seal.lockedBy]) {
+        await mailEditRequest(to, accountId, requesterName, seal.attachmentName || "Unknown Attachment", seal.contentId, requestReason);
+      }
+    } catch (e) { console.error("[EDIT-REQ] notify failed:", e); }
   }
 
   return { success: true };
@@ -208,10 +244,20 @@ export const approveEditRequest = async (req) => {
   const { attachmentId, requesterAccountId } = req.payload || {};
   const accountId = req.context.accountId;
   if (!attachmentId || !requesterAccountId) return { success: false, reason: "Missing params" };
-  const { seal, authorized } = await loadSealForOwnerAction(attachmentId, accountId);
+  let { seal, authorized } = await loadSealForOwnerAction(attachmentId, accountId);
   if (!seal) return { success: false, reason: "Seal not found" };
+  const request0 = await kvs.get(`edit-request-${attachmentId}-${requesterAccountId}`);
+  // SEC-2 (e): a proposal is decided by the page's approvers (or a steward, as always).
+  if (!authorized && request0?.proposal && (request0.approvers || []).includes(accountId)) authorized = true;
   if (!authorized) return { success: false, reason: "Not the seal owner" };
-  { const held = heldRefusal(seal, "grant"); if (held) return { success: false, reason: held }; } // SEC-2
+  if (isWorkflowHeld(seal)) {
+    if (!request0?.proposal) { const held = heldRefusal(seal, "grant"); if (held) return { success: false, reason: held }; } // SEC-2
+    // The workflow's own door: move the page back for review (custody hands the seal back), then grant.
+    const moved = await moveBackForProposal(seal.contentId, accountId, request0);
+    if (!moved.success) return { success: false, reason: moved.reason };
+    seal = (await kvs.get(`protection-${attachmentId}`)) || seal;
+    if (isWorkflowHeld(seal)) return { success: false, reason: "The page was moved back but the seal is still held — try again in a moment" };
+  }
   // it54: an EXPIRED seal is inert — approving it would only mint a dead, never-reaped grant. Reject.
   // F1 (owner feedback 2026-08-27): "the request remains available even if I choose approve; it
   // disappears if I choose deny instead". This branch was the cause — deny has no expiry check, so
@@ -254,7 +300,7 @@ export const approveEditRequest = async (req) => {
     spaceKey: seal.spaceKey || null,
     actor: { accountId, name: seal.lockedBy === accountId ? (seal.lockedByName || null) : null },
     target: { kind: "attachment", id: attachmentId, name: seal.attachmentName || null },
-    details: { scope: "attachment", requesterAccountId, requesterName: editorName, expiresAt: grant.expiresAt },
+    details: { scope: "attachment", requesterAccountId, requesterName: editorName, expiresAt: grant.expiresAt, ...(request?.proposal ? { proposal: true } : {}) },
     version: null,
   });
 
@@ -275,13 +321,13 @@ export const denyEditRequest = async (req) => {
   const deniedReason = clip(req.payload?.reason); // SEC-8: an optional reason that reaches the requester
   const accountId = req.context.accountId;
   if (!attachmentId || !requesterAccountId) return { success: false, reason: "Missing params" };
-  const { seal, authorized } = await loadSealForOwnerAction(attachmentId, accountId);
+  let { seal, authorized } = await loadSealForOwnerAction(attachmentId, accountId);
   if (!seal) return { success: false, reason: "Seal not found" };
-  if (!authorized) return { success: false, reason: "Not the seal owner" };
-  { const held = heldRefusal(seal, "grant"); if (held) return { success: false, reason: held }; } // SEC-2
-
   const requestKey = `edit-request-${attachmentId}-${requesterAccountId}`;
   const existing = await kvs.get(requestKey);
+  if (!authorized && existing?.proposal && (existing.approvers || []).includes(accountId)) authorized = true; // SEC-2 (e)
+  if (!authorized) return { success: false, reason: "Not the seal owner" };
+  if (!existing?.proposal) { const held = heldRefusal(seal, "grant"); if (held) return { success: false, reason: held }; } // SEC-2
   if (!existing) return { success: false, reason: "Request not found" };
   await kvs.set(requestKey, { ...existing, status: "denied", deniedAt: new Date().toISOString(), deniedReason: deniedReason || null });
   await dropOwnerIndex(existing);
@@ -498,9 +544,9 @@ export const requestSectionEdit = async (req) => {
 
   const seal = await kvs.get(`section-protection-${sectionId}`);
   if (!seal || !seal.lockedBy) return { success: false, reason: "This section is not sealed" };
-  { const held = heldRefusal(seal, "request"); if (held) return { success: false, reason: held }; } // SEC-2
+  const proposal = isWorkflowHeld(seal); // SEC-2 (e): a request on a held seal is a proposal to the approvers
   // Owner first — self-knowledge, no disclosure, accurate message (see requestEditAccess).
-  if (seal.lockedBy === accountId) return { success: false, reason: "You own this section" };
+  if (!proposal && seal.lockedBy === accountId) return { success: false, reason: "You own this section" };
   // SV-SEC-1, mirror of requestEditAccess: same oracle, and the same app-authored @mention
   // comment carrying the caller's text onto a page they may have no access to.
   if (seal.pageId && !(await canReadPage(accountId, seal.pageId))) {
@@ -522,14 +568,19 @@ export const requestSectionEdit = async (req) => {
   } catch (_) { /* best effort */ }
 
   const sectionTitle = seal.sectionTitle || "a sealed section";
+  const approvers = proposal ? await proposalApproversFor(seal.pageId) : [];
   await kvs.set(`section-edit-request-${sectionId}-${accountId}`, {
     sectionId, requesterAccountId: accountId, requesterName, ownerAccountId: seal.lockedBy,
     contentId: seal.pageId || null, spaceKey: seal.spaceKey || null, sectionTitle,
     reason: typeof reason === "string" ? reason.trim().slice(0, 300) : "",
     status: "pending", requestedAt: new Date().toISOString(),
+    ...(proposal ? { proposal: true, approvers } : {}),
   });
-  // P1-3: the owner's index row goes with the record (read back by key: the set is strongly consistent).
-  await writeSectionOwnerIndex(await kvs.get(`section-edit-request-${sectionId}-${accountId}`)).catch((e) => console.warn("[SECTION-EDIT-REQ] owner index", e));
+  // P1-3: the index row goes with the record (read back by key: the set is strongly consistent) —
+  // the owner's row, or (SEC-2 (e)) one per approver for a proposal.
+  const written = await kvs.get(`section-edit-request-${sectionId}-${accountId}`);
+  if (proposal) await writeSectionProposalIndex(written).catch((e) => console.warn("[SECTION-EDIT-REQ] proposal index", e));
+  else await writeSectionOwnerIndex(written).catch((e) => console.warn("[SECTION-EDIT-REQ] owner index", e));
   await writeMineIndex({ requesterAccountId: accountId, kind: "section", id: sectionId, name: sectionTitle, pageId: seal.pageId || null, spaceKey: seal.spaceKey || null }).catch((e) => console.warn("[SECTION-EDIT-REQ] mine index", e)); // SEC-8
   // A1 (section scope)
   await recordActivity({
@@ -542,13 +593,17 @@ export const requestSectionEdit = async (req) => {
       scope: "section",
       reason: typeof reason === "string" ? reason.trim().slice(0, 300) : "",
       ownerAccountId: seal.lockedBy || null,
+      ...(proposal ? { proposal: true, approvers: approvers.slice(0, 10) } : {}),
     },
     version: null,
   });
 
   if (seal.pageId && (await notifyEnabled())) {
-    try { await mailEditRequest(seal.lockedBy, accountId, requesterName, sectionTitle, seal.pageId, reason, null, { targetKind: "section" }); }
-    catch (e) { console.error("[SECTION-EDIT-REQ] notify failed:", e); }
+    try {
+      for (const to of proposal ? (approvers.length ? approvers : [seal.lockedBy]) : [seal.lockedBy]) {
+        await mailEditRequest(to, accountId, requesterName, sectionTitle, seal.pageId, reason, null, { targetKind: "section" });
+      }
+    } catch (e) { console.error("[SECTION-EDIT-REQ] notify failed:", e); }
   }
   return { success: true };
 };
@@ -583,10 +638,19 @@ export const approveSectionEdit = async (req) => {
   const { sectionId, requesterAccountId } = req.payload || {};
   const accountId = req.context.accountId;
   if (!sectionId || !requesterAccountId) return { success: false, reason: "Missing params" };
-  const { seal, authorized } = await loadSectionForOwnerAction(sectionId, accountId);
+  let { seal, authorized } = await loadSectionForOwnerAction(sectionId, accountId);
   if (!seal) return { success: false, reason: "Section not found" };
+  const request0 = await kvs.get(`section-edit-request-${sectionId}-${requesterAccountId}`);
+  if (!authorized && request0?.proposal && (request0.approvers || []).includes(accountId)) authorized = true; // SEC-2 (e)
   if (!authorized) return { success: false, reason: "Not the section owner" };
-  { const held = heldRefusal(seal, "grant"); if (held) return { success: false, reason: held }; } // SEC-2
+  if (isWorkflowHeld(seal)) {
+    if (!request0?.proposal) { const held = heldRefusal(seal, "grant"); if (held) return { success: false, reason: held }; } // SEC-2
+    // SEC-2 (e): the workflow's own door — move the page back for review (custody hands the seal back), then grant.
+    const moved = await moveBackForProposal(seal.pageId, accountId, request0);
+    if (!moved.success) return { success: false, reason: moved.reason };
+    seal = (await kvs.get(`section-protection-${sectionId}`)) || seal;
+    if (isWorkflowHeld(seal)) return { success: false, reason: "The page was moved back but the seal is still held — try again in a moment" };
+  }
   // it54: an EXPIRED seal is inert (the section is no longer protected) — approving it would only
   // mint a dead, never-reaped grant (grant.expiresAt in the past → getActiveSectionEditGrant returns
   // null). Reject instead of leaking a zombie record.
@@ -614,7 +678,7 @@ export const approveSectionEdit = async (req) => {
     spaceKey: seal.spaceKey || null,
     actor: { accountId, name: seal.lockedBy === accountId ? (seal.lockedByName || null) : null },
     target: { kind: "section", id: sectionId, name: seal.sectionTitle || "Sealed section" },
-    details: { scope: "section", requesterAccountId, requesterName: grant.editorName, expiresAt: grant.expiresAt },
+    details: { scope: "section", requesterAccountId, requesterName: grant.editorName, expiresAt: grant.expiresAt, ...(request?.proposal ? { proposal: true } : {}) },
     version: null,
   });
 
@@ -629,12 +693,13 @@ export const denySectionEdit = async (req) => {
   const deniedReason = clip(req.payload?.reason); // SEC-8
   const accountId = req.context.accountId;
   if (!sectionId || !requesterAccountId) return { success: false, reason: "Missing params" };
-  const { seal, authorized } = await loadSectionForOwnerAction(sectionId, accountId);
+  let { seal, authorized } = await loadSectionForOwnerAction(sectionId, accountId);
   if (!seal) return { success: false, reason: "Section not found" };
-  if (!authorized) return { success: false, reason: "Not the section owner" };
-  { const held = heldRefusal(seal, "grant"); if (held) return { success: false, reason: held }; } // SEC-2
   const requestKey = `section-edit-request-${sectionId}-${requesterAccountId}`;
   const existing = await kvs.get(requestKey);
+  if (!authorized && existing?.proposal && (existing.approvers || []).includes(accountId)) authorized = true; // SEC-2 (e)
+  if (!authorized) return { success: false, reason: "Not the section owner" };
+  if (!existing?.proposal) { const held = heldRefusal(seal, "grant"); if (held) return { success: false, reason: held }; } // SEC-2
   if (!existing) return { success: false, reason: "Request not found" };
   await kvs.set(requestKey, { ...existing, status: "denied", deniedAt: new Date().toISOString(), deniedReason: deniedReason || null });
   await dropSectionOwnerIndex(existing);
