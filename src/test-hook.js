@@ -7,7 +7,7 @@
  * and grants — the deterministic state the harness asserts against.
  */
 import { kvs, WhereConditions } from "@forge/kvs";
-import { pageGuardSweep, guardPageNow, expirySweepTask, workflowSweep, collectWorkflowEnforcementForPage, sweepRevertToApproved, handleSealedArtifactDeleted, handleSealedArtifactTrash, lifecycleTrigger, recurringNudgeTask } from "./server/triggers";
+import { pageGuardSweep, guardPageNow, pageContentTrigger, expirySweepTask, workflowSweep, collectWorkflowEnforcementForPage, sweepRevertToApproved, handleSealedArtifactDeleted, handleSealedArtifactTrash, lifecycleTrigger, recurringNudgeTask } from "./server/triggers";
 import {
   assignPageWorkflow,
   transitionPageWorkflow,
@@ -212,6 +212,20 @@ export async function testStateTrigger(req) {
       // `guardPageNow` is here too so a spec can name the page without a Forge context.
       if (fn === "pageGuardSweep") return json(200, { invoked: fn, result: await pageGuardSweep() });
       if (fn === "guardPageNow") return json(200, { invoked: fn, result: await guardPageNow(q(req, "pageId"), "harness") });
+      // Plain-editor bed (2026-09-20): run the WHOLE page-content pipeline (enforcement decision,
+      // Pass 0 revert, section + media passes, the write, the dispatch and the comment) as if
+      // `actor` had just published `version`. The harness holds one token (a site admin), so a
+      // non-privileged save can only be manufactured by naming the editor here; the page version
+      // itself is authored by the harness user. Dev-only, stripped from production with the hook.
+      if (fn === "pageEvent") {
+        const ver = parseInt(q(req, "version"), 10);
+        await pageContentTrigger({
+          eventType: q(req, "eventType") || "avi:confluence:updated:page",
+          atlassianId: q(req, "actor"),
+          content: { id: String(q(req, "pageId")), version: { number: Number.isFinite(ver) ? ver : undefined } },
+        });
+        return json(200, { invoked: fn, result: { ran: true } });
+      }
       if (fn === "expirySweep") {
         const r = await expirySweepTask();
         let result = null;
