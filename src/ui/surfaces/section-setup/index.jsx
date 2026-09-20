@@ -89,6 +89,7 @@ const SectionMacro = () => {
   const [editing, setEditing] = useState(false);
   const [seal, setSeal] = useState(null); // section-seal-status result (editor only)
   const [existingConfig, setExistingConfig] = useState(null); // config already on the node (edit dialog)
+  const [adopted, setAdopted] = useState(false); // SEC-4 (a): this publish sealed the section (reload shows it)
   const [contextSectionId, setContextSectionId] = useState(null); // the id the macro context carries, if any
   const [undone, setUndone] = useState(null); // { mine, revertedVersion, pageId } — THIS section was just put back
 
@@ -123,11 +124,14 @@ const SectionMacro = () => {
         // drives the restore can arrive 20+ minutes late (tester report 2026-09-17); the person
         // who just published lands on this view, so the restore happens while they are still
         // here — and if it was THIS section, they are told where their text went.
-        if (!isEditing && hasBody && sectionId) {
+        // SEC-4 (a): a wrapper with no id yet (just published from the editor) asks the guard too —
+        // that run seals it to the publisher; the badge then says so until the reload shows the seal.
+        if (!isEditing && hasBody) {
           invoke("guard-page-now", {}).then((g) => {
-            if (g?.restored && Array.isArray(g.sectionIds) && g.sectionIds.includes(sectionId)) {
+            if (sectionId && g?.restored && Array.isArray(g.sectionIds) && g.sectionIds.includes(sectionId)) {
               setUndone({ mine: g.mine === true, fresh: g.fresh === true, revertedVersion: g.revertedVersion || null, pageId: context?.extension?.content?.id || null });
             }
+            if (!sectionId && g?.adoptedOnPublish) setAdopted(true);
           }).catch((e) => console.warn("[SECTION-UI] guard-page-now failed:", e?.message));
         }
 
@@ -214,6 +218,12 @@ const SectionMacro = () => {
       // that sectionId and MUST be preserved — submitting `{}` would strip it and orphan the seal.
       const cfg = { ...(existingConfig || {}) };
       if (!cfg.sectionId && contextSectionId) cfg.sectionId = contextSectionId;
+      // SEC-4 (a): a NEW section is sealed on publish — tell the server one is coming on this page
+      // so the publish reads the body and seals the wrapper to whoever publishes it.
+      if (!cfg.sectionId) {
+        const pageId = ctxRef.current?.extension?.content?.id || null;
+        if (pageId) invoke("section-insert-intent", { pageId }).catch((e) => console.info("[SECTION-UI] insert intent:", e?.message || e));
+      }
       await view.submit({ config: cfg });
       setStatus(cfg.sectionId ? "Saved" : "Inserted");
     } catch (e) {
@@ -254,10 +264,9 @@ const SectionMacro = () => {
         </div>
         {lockNotice}
         <p className="sec-config-desc">
-          Place the content you want to protect inside this section. To seal it, open
-          <strong>Sentinel Vault</strong> under the page title and use <strong>Seal a section…</strong>
-          (or the panel's <strong>Sealed Sections → Seal a section</strong>). The seal owner (or a
-          space admin) can release the seal at any time.
+          {existing
+            ? <>This section is sealed. Manage the seal from <strong>Sentinel Vault</strong> under the page title (Extend, Give access, Release).</>
+            : <>Put the content you want to protect inside this section and <strong>publish the page</strong> — it is sealed to you for the space's default period the moment it is published. You can also seal any heading without this macro: open <strong>Sentinel Vault</strong> under the page title and use <strong>Seal a section…</strong>. The seal owner (or a space admin) can release the seal at any time.</>}
         </p>
         <div className="sec-config-actions">
           <button className="sec-btn" onClick={onInsert} data-testid="sec-submit">{status || (existing ? "Done" : "Insert section")}</button>
@@ -280,10 +289,10 @@ const SectionMacro = () => {
   const badgeText = viewState === "pending" ? "Checking the seal…"
     : viewState === "sealed" || viewState === "expired"
       ? sealSentence({ isMine: seal.isMine === true, ownerName: seal.ownerName || "the seal owner", workflowHeld: seal.workflowHeld === true, isExpired: viewState === "expired", expiresAt: seal.expiresAt || null })
-      : "Not sealed yet — seal it from Sentinel Vault under the page title (Seal a section…) or from the panel";
+      : adopted ? "Sealed to you on publish — reload the page to see the seal" : "Not sealed yet — publish the page to seal it, or seal it from Sentinel Vault under the page title (Seal a section…)";
   const fallbackText = viewState === "sealed" ? "This section is sealed. Edits by anyone else are undone automatically."
     : viewState === "expired" ? "The seal on this section has expired. Edits are no longer reverted; the owner can seal it again from the Sentinel Vault panel."
-      : viewState === "unsealed" ? "This section is not sealed yet. Open Sentinel Vault under the page title and use Seal a section…, or the panel's Sealed Sections → Seal a section."
+      : viewState === "unsealed" ? (adopted ? "This section was sealed to you when the page was published. Reload the page to see the seal." : "This section is not sealed yet. Publishing the page seals it to you; or open Sentinel Vault under the page title and use Seal a section….")
         : "Checking the seal…";
   const bodyText = rendererTimedOut
     ? "Sentinel Vault could not display this section's text here — a display problem, not the seal. The text is still on the page; reload to try again."

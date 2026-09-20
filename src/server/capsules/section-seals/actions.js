@@ -30,6 +30,8 @@ import { validateReleaseReason } from "../../shared/release-reason.js";
 import { refreshByline } from "../page-details/byline.js"; // 5.0 byline chip
 import { heldRefusal, isWorkflowHeld, heldLabel } from "../../shared/seal-authority.js"; // SEC-2
 import { releaseSectionSeal } from "./release.js"; // SEC-7 (d): one teardown with the expiry sweep
+import { insertIntentKey, INSERT_INTENT_TTL_MS } from "./adopt.js"; // SEC-4 (a): seal on insert
+import { setWithTtl } from "../../shared/kvs-ttl.js";
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const newSectionId = () => {
@@ -517,6 +519,20 @@ export const extendSection = async (req) => {
   return { success: true, expiresAt: newExpiresAt, extensionCount: updated.extensionCount, grantsMoved };
 };
 
+/**
+ * SEC-4 (a): the macro's Insert button says "a sealed section is coming on this page". The marker
+ * (48 h) is what lets the page-content trigger read the ADF of a page with no seal yet — every
+ * other publish keeps the cheap probes. Gate: canEditPage (the caller is about to edit that page).
+ */
+const sectionInsertIntent = async (req) => {
+  const operatorAccountId = req.context.accountId;
+  const pageId = req.payload?.pageId || req.context.extension?.content?.id;
+  if (!pageId || !operatorAccountId) return { success: false, reason: "Missing pageId" };
+  if (!(await canEditPage(operatorAccountId, pageId))) return { success: false, reason: "You do not have permission to edit this page" };
+  await setWithTtl(insertIntentKey(pageId), { by: operatorAccountId, at: new Date().toISOString() }, INSERT_INTENT_TTL_MS);
+  return { success: true };
+};
+
 export const actions = [
   ["list-page-headings", listPageHeadings],
   ["enumerate-section-seals", enumerateSectionSeals],
@@ -526,4 +542,5 @@ export const actions = [
   ["refresh-section-snapshot", refreshSectionSnapshot],
   ["section-seal-status", sectionSealStatus],
   ["guard-page-now", guardPageNowAction],
+  ["section-insert-intent", sectionInsertIntent], // SEC-4 (a)
 ];
