@@ -4,8 +4,9 @@ import {
   priorNoticeCount,
   LAPSE_NOTICE_LIMIT_DEFAULT,
   LAPSE_NOTICE_INTERVAL_MS_DEFAULT,
+  lapseSubject,
 } from "../src/server/shared/lapse-policy.js";
-import { eq, report } from "./_assert.mjs";
+import { eq, ok, report } from "./_assert.mjs";
 
 // F5 (owner feedback 2026-08-27): "if a sealed image is overdue a notice message must be sent to
 // the owner and after 3 notifications/days if the user doesn't extend the period the image must
@@ -119,5 +120,21 @@ eq("an upgraded install continues the countdown instead of releasing at once",
     priorCount: priorNoticeCount({ sentAt: "2026-08-20T00:00:00.000Z" }),
     lastSentMs: T0 - 2 * DAY, nowMs: T0, limit: 3, intervalMs: DAY,
   }).noticeNumber, 2);
+
+// --- SEC-7 (d): section seals ride the same sweep — the one mapping between the two records ----
+const att = { attachmentId: "a1", attachmentName: "plan.docx", contentId: "77", spaceKey: "WFH", lockedBy: "acc-O", timestamp: "2026-09-01T00:00:00Z", expiresAt: "2026-09-04T00:00:00Z" };
+const sec = { sectionId: "s1", sectionTitle: "Risks", pageId: "77", spaceKey: "WFH", lockedBy: "acc-O", timestamp: "2026-09-01T00:00:00Z", expiresAt: "2026-09-04T00:00:00Z" };
+const A = lapseSubject("attachment", "protection-a1", att);
+const S = lapseSubject("section", "section-protection-s1", sec);
+eq("attachment subject: id from the key, name, page, owner", [A.kind, A.id, A.name, A.pageId, A.ownerAccountId], ["attachment", "a1", "plan.docx", "77", "acc-O"]);
+eq("section subject: id from the key, TITLE as the name, pageId (not contentId)", [S.kind, S.id, S.name, S.pageId, S.ownerAccountId], ["section", "s1", "Risks", "77", "acc-O"]);
+eq("both keep their own dedup keys", [A.dedupKey, A.halfwayKey, S.dedupKey, S.halfwayKey], ["expiry-notified-a1", "fifty-percent-reminder-sent-a1", "expiry-notified-s1", "fifty-percent-reminder-sent-s1"]);
+ok("a workflow-HELD seal (expiry paused: SEC-2) is skipped", lapseSubject("section", "section-protection-s1", { ...sec, expiresAt: null, workflowHeld: { remainingMs: 5 } }) === null);
+ok("a trashedOnly tracking record is not a seal", lapseSubject("attachment", "protection-a1", { ...att, trashedOnly: true }) === null);
+ok("no timestamp → skipped", lapseSubject("section", "section-protection-s1", { ...sec, timestamp: null }) === null);
+ok("no owner → skipped", lapseSubject("section", "section-protection-s1", { ...sec, lockedBy: null }) === null);
+ok("a section record without a sectionId is not a seal", lapseSubject("section", "section-protection-s1", { ...sec, sectionId: undefined }) === null);
+ok("null → null", lapseSubject("section", "k", null) === null);
+eq("a section without a title still has a name", lapseSubject("section", "section-protection-s2", { ...sec, sectionId: "s2", sectionTitle: "" }).name, "Sealed section");
 
 report("lapse-policy");

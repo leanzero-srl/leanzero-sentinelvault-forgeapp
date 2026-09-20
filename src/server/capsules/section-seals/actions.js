@@ -29,6 +29,7 @@ import { recordActivity } from "../../infra/activity-log.js";
 import { validateReleaseReason } from "../../shared/release-reason.js";
 import { refreshByline } from "../page-details/byline.js"; // 5.0 byline chip
 import { heldRefusal, isWorkflowHeld, heldLabel } from "../../shared/seal-authority.js"; // SEC-2
+import { releaseSectionSeal } from "./release.js"; // SEC-7 (d): one teardown with the expiry sweep
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const newSectionId = () => {
@@ -312,25 +313,10 @@ export const unsealSection = async (req) => {
   }
 
   const pageId = record.pageId;
-  let unwrapped = false; // A1 review F8: the record must say whether the wrapper came off
-  for (let attempt = 0; attempt < 3; attempt++) {
-    const { pageData, adfDoc } = await readDocBody(pageId);
-    const content = adfDoc.content || [];
-    const idx = content.findIndex(
-      (b) => b.type === "bodiedExtension" && isSealedSectionKey(b.attrs?.extensionKey) && getSectionId(b) === sectionId,
-    );
-    if (idx === -1) { unwrapped = true; break; } // wrapper already gone — just clean KVS
-    const body = Array.isArray(content[idx].content) ? content[idx].content : [];
-    content.splice(idx, 1, ...body);
-    adfDoc.content = content;
-    const putRes = await writeDocBody(pageId, pageData, adfDoc, "(Sentinel Vault unsealed a section)");
-    if (putRes.ok) { unwrapped = true; break; }
-    if (putRes.status === 409) { await sleep(Math.pow(2, attempt) * 500); continue; }
-    break;
-  }
-
-  await kvs.delete(`section-protection-${sectionId}`);
-  await kvs.delete(`section-snapshot-${sectionId}`);
+  // ONE teardown with the expiry sweep's auto-release (section-seals/release.js): unwrap the
+  // wrapper (body spliced back), then every key family the seal consists of. `unwrapped` says
+  // whether the wrapper came off (A1 review F8).
+  const { unwrapped } = await releaseSectionSeal(sectionId, record);
   // A1: the seal record is gone — released. `forced` says a steward did it to someone else's.
   await recordActivity({
     type: "section.released",
@@ -350,14 +336,6 @@ export const unsealSection = async (req) => {
     },
     version: null,
   });
-  if (record.spaceId) {
-    try { await kvs.delete(`space-section-protection-${record.spaceId}-${sectionId}`); }
-    catch (_) { /* best effort */ }
-  }
-  await sweepSectionEditAccess(sectionId);
-  await refreshSectionContentProp(pageId);
-  await touchSealTimestamp();
-  await refreshByline(pageId).catch((e) => console.warn("[BYLINE] unseal-section refresh failed:", e?.message || e));
   return { success: true };
 };
 

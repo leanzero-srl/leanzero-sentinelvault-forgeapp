@@ -93,3 +93,35 @@ export function priorNoticeCount(record) {
   if (Number.isFinite(n) && n > 0) return Math.floor(n);
   return record ? 1 : 0;
 }
+
+/**
+ * SEC-7 (d) (2026-09-20): the expiry sweep judges SECTION seals with the same clock as
+ * attachment seals. The two records name their things differently; this is the ONE mapping the
+ * sweep reads, so the reminder / lapse / auto-release code runs once for both kinds.
+ * PURE. Returns null for a record the sweep must skip (a released tracking record, a seal with
+ * no timestamp or expiry — including a workflow-HELD seal, whose expiry is paused: SEC-2).
+ * @param {"attachment"|"section"} kind
+ * @param {string} key   the KVS key (protection-{att} | section-protection-{sec})
+ * @param {object} value the record
+ */
+export function lapseSubject(kind, key, value) {
+  if (!key || !value || typeof value !== "object") return null;
+  if (!value.timestamp || !value.expiresAt || !value.lockedBy) return null;
+  if (kind === "section") {
+    const id = String(key).replace(/^section-protection-/, "");
+    if (!id || !value.sectionId) return null;
+    return {
+      kind, id, name: value.sectionTitle || "Sealed section", pageId: value.pageId || null,
+      spaceKey: value.spaceKey || null, ownerAccountId: value.lockedBy,
+      dedupKey: `expiry-notified-${id}`, halfwayKey: `fifty-percent-reminder-sent-${id}`,
+    };
+  }
+  if (value.trashedOnly) return null; // S7: a trashedOnly tracking record is not a seal
+  const id = String(key).replace(/^protection-/, "");
+  if (!id) return null;
+  return {
+    kind: "attachment", id, name: value.attachmentName || "Unknown Attachment", pageId: value.contentId || null,
+    spaceKey: value.spaceKey || null, ownerAccountId: value.lockedBy,
+    dedupKey: `expiry-notified-${id}`, halfwayKey: `fifty-percent-reminder-sent-${id}`,
+  };
+}

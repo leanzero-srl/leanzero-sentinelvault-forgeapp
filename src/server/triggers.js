@@ -13,6 +13,7 @@ import { recordDispatch, postDocFootnote } from "./capsules/bulletins/logic.js";
 import { resolveBulletinToggles } from "./shared/bulletin-flags.js";
 import { touchSealTimestamp, removeSealContentProp } from "./capsules/sealing/logic.js";
 import { releaseSeal } from "./capsules/sealing/release.js";
+import { releaseSectionSeal } from "./capsules/section-seals/release.js"; // SEC-7 (d): the sweep hands lapsed sections back too
 import { getActiveEditGrant, sweepEditAccess, getActiveSectionEditGrant, sweepEditRequestIndex } from "./capsules/editreq/logic.js";
 import {
   resolveEffectiveConfig,
@@ -43,7 +44,7 @@ import { decideSectionRetry, nextRetryMarker, sectionRetryKey, SECTION_RETRY_PRE
 // F5 (owner feedback 2026-08-27): a lapsed seal gets a bounded run of reminders and is then
 // released automatically. The decision is time-based, so it lives in a pure zero-import module
 // that unit tests can hand clocks to rather than waiting three days for a live sweep.
-import { decideLapseAction, resolveLapsePolicy, priorNoticeCount } from "./shared/lapse-policy.js";
+import { decideLapseAction, resolveLapsePolicy, priorNoticeCount, lapseSubject } from "./shared/lapse-policy.js";
 import { decideAnnounce, decideRelease, confirmClaim, decideClear } from "./shared/notice-dedup.js";
 import { randomUUID } from "node:crypto";
 // A1: the activity record. Written ONLY on a CONFIRMED outcome (after the successful page
@@ -2468,19 +2469,27 @@ export async function expirySweepTask() {
 
     // audit C1: cursor-paginate — a single limit(100) meant expiry + 50% notices were never
     // processed for seals beyond the first 100 instance-wide (a permanent blind spot).
-    const activeSeals = [];
-    {
-      let sq = kvs.query().where("key", WhereConditions.beginsWith("protection-")).limit(100);
+    // SEC-7 (d) (2026-09-20): SECTION seals ride the same sweep — the same clock, the same
+    // reminders, the same auto-release after the reminders run out. `lapseSubject` (pure,
+    // shared/lapse-policy.js) is the one mapping between the two record shapes.
+    const subjects = [];
+    for (const [prefix, kind] of [["protection-", "attachment"], ["section-protection-", "section"]]) {
+      let sq = kvs.query().where("key", WhereConditions.beginsWith(prefix)).limit(100);
       let si = 0;
       do {
         const { results, nextCursor } = await sq.getMany();
-        for (const e of results || []) activeSeals.push(e);
+        for (const e of results || []) {
+          // `protection-` is not a prefix of `section-protection-`, and neither of the other index
+          // families (space-protection-…, section-snapshot-…), so each loop sees exactly its own kind.
+          const subject = lapseSubject(kind, e.key, e.value);
+          if (subject) subjects.push({ ...subject, value: e.value });
+        }
         if (!nextCursor || ++si >= 50) break;
-        sq = kvs.query().where("key", WhereConditions.beginsWith("protection-")).limit(100).cursor(nextCursor);
+        sq = kvs.query().where("key", WhereConditions.beginsWith(prefix)).limit(100).cursor(nextCursor);
       } while (true);
     }
 
-    if (!activeSeals.length) {
+    if (!subjects.length) {
       return {
         statusCode: 200,
         headers: {},
@@ -2493,25 +2502,15 @@ export async function expirySweepTask() {
     let halfwayAlertsSent = 0;
     let autoReleasedCount = 0;
 
-    for (const { key, value } of activeSeals) {
+    for (const subject of subjects) {
+      const { kind, id: artifactId, name, pageId: subjectPageId, spaceKey: subjectSpaceKey, ownerAccountId, dedupKey, halfwayKey, value } = subject;
+      const isSection = kind === "section";
+      const mailOpts = { targetKind: kind };
       try {
-        const artifactId = key.replace("protection-", "");
-
-        if (!value || !value.timestamp || !value.expiresAt) {
-          continue;
-        }
-        // S7 (hunt F2a/F12 family): trashedOnly tracking records are NOT seals — an owner-trash
-        // conversion keeps expiresAt on the record, and a released seal must not produce
-        // expiry notices or halfway reminders.
-        if (value.trashedOnly) {
-          continue;
-        }
-
         const expiresAt = new Date(value.expiresAt);
 
         // --- Lapsed seal: remind, then release (F5) ---
         if (now >= expiresAt) {
-          const dedupKey = `expiry-notified-${artifactId}`;
           const prior = await kvs.get(dedupKey);
           const priorCount = priorNoticeCount(prior);
           const lastSentMs = prior?.sentAt ? new Date(prior.sentAt).getTime() : 0;
@@ -2527,31 +2526,32 @@ export async function expirySweepTask() {
 
           if (decision.action === "wait") continue;
 
-          // --- Reminders are exhausted: hand the file back ---
+          // --- Reminders are exhausted: hand the file / section back ---
           // This is the case the owner reported: someone seals a file, leaves the company, and
           // the file is listed as sealed forever because the only two ways out (the owner
           // unsealing, or a steward force-unsealing) both need a person who is not coming back.
           if (decision.action === "release") {
-            // A1: `autoRelease` makes the shared teardown record `seal.auto-released` once the
-            // deletion is confirmed — this is the only caller that passes it.
-            const released = await releaseSeal(artifactId, value, {
-              autoRelease: { reason: "lapse-policy", noticeCount: priorCount, noticeLimit: lapseNoticeLimit },
-            });
+            // A1: `autoRelease` makes the shared teardown record `seal.auto-released` /
+            // `section.auto-released` once the deletion is confirmed — this is the only caller that passes it.
+            const autoRelease = { reason: "lapse-policy", noticeCount: priorCount, noticeLimit: lapseNoticeLimit };
+            const released = isSection
+              ? await releaseSectionSeal(artifactId, value, { autoRelease })
+              : await releaseSeal(artifactId, value, { autoRelease });
             if (!released.success) {
-              console.error(`[EXPIRY-SWEEP] auto-release of ${artifactId} failed: ${released.reason}`);
+              console.error(`[EXPIRY-SWEEP] auto-release of ${kind} ${artifactId} failed: ${released.reason}`);
               continue;
             }
             autoReleasedCount++;
-            console.warn(`[EXPIRY-SWEEP] auto-released ${artifactId} after ${priorCount} reminder(s)`);
+            console.warn(`[EXPIRY-SWEEP] auto-released ${kind} ${artifactId} after ${priorCount} reminder(s)`);
 
-            if (bulletinToggles.ENABLE_NATIVE_NOTIFICATIONS && bulletinToggles.ENABLE_EXPIRY_NOTICE && value.contentId) {
+            if (bulletinToggles.ENABLE_NATIVE_NOTIFICATIONS && bulletinToggles.ENABLE_EXPIRY_NOTICE && subjectPageId) {
               try {
                 await mailAutoReleaseNotice(
-                  value.lockedBy,
-                  value.attachmentName || "Unknown Attachment",
-                  value.contentId,
-                  { noticeLimit: lapseNoticeLimit },
-                  value.spaceKey || null, // P1-4: the seal's own space → quiet mode without a page lookup
+                  ownerAccountId,
+                  name,
+                  subjectPageId,
+                  { noticeLimit: lapseNoticeLimit, ...mailOpts },
+                  subjectSpaceKey, // P1-4: the seal's own space → quiet mode without a page lookup
                 );
               } catch (noticeError) {
                 console.error("Error posting auto-release notice:", noticeError);
@@ -2560,13 +2560,13 @@ export async function expirySweepTask() {
             await recordDispatch({
               id: `notification-${Date.now()}`,
               type: "seal-auto-released",
-              attachmentId: artifactId,
-              attachmentName: value.attachmentName || "Unknown Attachment",
-              ownerAccountId: value.lockedBy,
+              ...(isSection ? { sectionId: artifactId } : { attachmentId: artifactId }),
+              attachmentName: name,
+              ownerAccountId,
               timestamp: Date.now(),
-              pageId: value.contentId,
+              pageId: subjectPageId,
             });
-            // releaseSeal already dropped the counter key with the rest of the seal's state.
+            // the teardown already dropped the counter key with the rest of the seal's state.
             continue;
           }
 
@@ -2580,7 +2580,7 @@ export async function expirySweepTask() {
           const noticeWanted =
             bulletinToggles.ENABLE_NATIVE_NOTIFICATIONS &&
             bulletinToggles.ENABLE_EXPIRY_NOTICE &&
-            value.contentId;
+            subjectPageId;
           if (noticeWanted) {
             try {
               const dateOpts = { year: "numeric", month: "long", day: "numeric" };
@@ -2588,23 +2588,25 @@ export async function expirySweepTask() {
               // would promise a release that never comes — send the plain expiry notice instead.
               const noticeResult = releaseEnabled
                 ? await mailLapseNotice(
-                  value.lockedBy,
-                  value.attachmentName || "Unknown Attachment",
-                  value.contentId,
+                  ownerAccountId,
+                  name,
+                  subjectPageId,
                   {
                     expiryDate: expiresAt.toLocaleDateString("en-US", dateOpts),
                     noticeNumber,
                     noticeLimit: lapseNoticeLimit,
                     releaseDate: new Date(releaseAtMs).toLocaleDateString("en-US", dateOpts),
+                    ...mailOpts,
                   },
-                  value.spaceKey || null, // P1-4
+                  subjectSpaceKey, // P1-4
                 )
                 : await mailExpiryNotice(
-                  value.lockedBy,
-                  value.attachmentName || "Unknown Attachment",
-                  value.contentId,
+                  ownerAccountId,
+                  name,
+                  subjectPageId,
                   expiresAt.toLocaleDateString("en-US", dateOpts),
-                  value.spaceKey || null, // P1-4
+                  subjectSpaceKey, // P1-4
+                  mailOpts,
                 );
 
               // P1-4: a DELIBERATE non-post (the space is in quiet mode, or the comment channel is
@@ -2631,7 +2633,7 @@ export async function expirySweepTask() {
               sentAt: now.toISOString(),
               firstSentAt: prior?.firstSentAt || now.toISOString(),
               count: noticeNumber,
-              attachmentId: artifactId,
+              ...(isSection ? { sectionId: artifactId } : { attachmentId: artifactId }),
             }, now.getTime() + (Math.max(lapseNoticeLimit, 1) + 1) * lapseNoticeIntervalMs + 7 * 86400000);
           }
 
@@ -2639,11 +2641,11 @@ export async function expirySweepTask() {
           await recordDispatch({
             id: `notification-${Date.now()}`,
             type: "reservation-expired",
-            attachmentId: artifactId,
-            attachmentName: value.attachmentName || "Unknown Attachment",
-            ownerAccountId: value.lockedBy,
+            ...(isSection ? { sectionId: artifactId } : { attachmentId: artifactId }),
+            attachmentName: name,
+            ownerAccountId,
             timestamp: Date.now(),
-            pageId: value.contentId,
+            pageId: subjectPageId,
           });
 
           notifiedCount++;
@@ -2651,7 +2653,7 @@ export async function expirySweepTask() {
         }
 
         // --- Halfway expiry reminder (only for non-expired seals) ---
-        if (!sendHalfwayAlerts || !value.lockedBy || !value.contentId) {
+        if (!sendHalfwayAlerts || !subjectPageId) {
           continue;
         }
 
@@ -2660,7 +2662,6 @@ export async function expirySweepTask() {
         const midpointTime = sealCreatedAt.getTime() + fullPeriod * 0.5;
 
         if (now.getTime() >= midpointTime && now.getTime() < expiresAt.getTime()) {
-          const halfwayKey = `fifty-percent-reminder-sent-${artifactId}`;
           const previouslySent = await kvs.get(halfwayKey);
           if (previouslySent) {
             continue;
@@ -2676,11 +2677,12 @@ export async function expirySweepTask() {
             });
 
             const result = await mailHalfwayReminder(
-              value.lockedBy,
-              value.attachmentName || "Unknown Attachment",
-              value.contentId,
+              ownerAccountId,
+              name,
+              subjectPageId,
               expiryDate,
-              value.spaceKey || null, // P1-4: the seal's own space → quiet mode without a page lookup
+              subjectSpaceKey, // P1-4: the seal's own space → quiet mode without a page lookup
+              mailOpts,
             );
 
             // P1-4: a suppressed reminder (quiet space / channel opt-out) is marked as handled
@@ -2693,7 +2695,7 @@ export async function expirySweepTask() {
               if (result.success) halfwayAlertsSent++;
             } else {
               console.warn(
-                `Failed to post halfway reminder for ${artifactId}: ${result.reason}`,
+                `Failed to post halfway reminder for ${kind} ${artifactId}: ${result.reason}`,
               );
             }
           } catch (noticeError) {
@@ -2701,7 +2703,7 @@ export async function expirySweepTask() {
           }
         }
       } catch (error) {
-        console.error(`Error processing seal ${key}:`, error);
+        console.error(`Error processing ${kind} seal ${artifactId}:`, error);
       }
     }
 

@@ -20,7 +20,7 @@ export const ACTIVITY_CATEGORIES = Object.freeze([
     "seal.deleted", "seal.revert-failed",
   ]) },
   { id: "sections", label: "Sections", types: Object.freeze([
-    "section.sealed", "section.released", "section.extended", "section.restored", "section.reverted", "section.rebaselined",
+    "section.sealed", "section.released", "section.extended", "section.restored", "section.reverted", "section.rebaselined", "section.auto-released",
   ]) },
   { id: "editreq", label: "Edit access", types: Object.freeze([
     "editreq.requested", "editreq.approved", "editreq.denied", "editreq.revoked", "editreq.granted",
@@ -211,6 +211,10 @@ export function formatActivity(entry) {
       }
       return { ...base, label: "Section unsealed", glyph: "unlock", tone: "neutral",
         sentence: `${who} unsealed section ${section()}` };
+    case "section.auto-released":
+      return { ...base, label: "Section seal lapsed", glyph: "hourglass", tone: "neutral",
+        sentence: `Seal on section ${section()} lapsed and was released automatically`,
+        detail: d.reason ? String(d.reason) : "" };
     case "section.rebaselined": {
       const diff = d.diff || {};
       const parts = [];
