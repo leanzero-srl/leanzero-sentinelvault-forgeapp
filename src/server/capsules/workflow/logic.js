@@ -345,6 +345,14 @@ export async function storeSpaceWorkflow(spaceKey, { workflowId, def, labels, pr
   return { ...r, def: clean };
 }
 
+/** WF-11: put the space's DEFAULT definition back as it was — a copy, or no copy (the global / built-in one). */
+export async function restoreSpaceDefaultWorkflow(spaceKey, prevSource, prevDef) {
+  if (!spaceKey) return { success: false, reason: "spaceKey required" };
+  if (prevSource === "space" && prevDef?.states?.length) return storeWorkflowConfig("space", spaceKey, prevDef);
+  await kvs.delete(`workflow-def-space-${sanitize(spaceKey)}`).catch(() => {});
+  return { success: true };
+}
+
 export async function deleteSpaceWorkflow(spaceKey, workflowId) {
   if (!spaceKey || !workflowId || workflowId === "default") return { success: false, reason: "Only a label-scoped workflow can be removed" };
   // Refuse while any page in the space still runs it: the WHOLE index (30 pages, ~3,000 rows,
