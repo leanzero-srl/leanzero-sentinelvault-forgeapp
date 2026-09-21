@@ -106,7 +106,10 @@ const enumerateDocArtifacts = async (req) => {
         let heldByAccountId = null;
         let hasLapsed = false;
 
-        if (sealRecord) {
+        // Tester report 2026-09-21 (counts vs cards): the SAME seal test countPageAttachments uses —
+        // an S7 trashedOnly tracking stub (or an ownerless record) is not a seal. Before, any record
+        // read as HELD here while the counter skipped it, so the badge and the cards disagreed.
+        if (sealRecord?.lockedBy && !sealRecord.trashedOnly) {
           const sealLapsed =
             sealRecord.expiresAt && new Date(sealRecord.expiresAt) < new Date();
 
@@ -1069,6 +1072,8 @@ const enumeratePageSeals = async (req) => {
           lockedOn: value.timestamp || null,
           isStale,
           staleReason,
+          trashedBy: value.trashedBy || null,
+          trashedAt: value.trashedAt || null,
           allowRestore,
           allowPurge,
           allowDelete,
