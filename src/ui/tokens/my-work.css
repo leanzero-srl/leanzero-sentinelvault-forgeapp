@@ -274,3 +274,10 @@ html[data-color-mode="dark"] .mw-row { background: var(--sv-bg-secondary); }
 .sv-sign .action-btn.lock, .sv-give-access .action-btn.lock { background: var(--sv-interactive-primary); color: var(--sv-text-on-primary); }
 .sv-sign .action-btn.lock:disabled { opacity: 0.55; cursor: not-allowed; }
 .sv-sign .action-btn.confirm-no, .sv-give-access .action-btn.confirm-no { background: transparent; color: var(--sv-text-primary); border-color: var(--sv-border-secondary); font-size: 12.5px; padding: 7px 14px; border-radius: 9999px; }
+
+/* Tester report 2026-09-21: signature status at a glance + how a signed decision reads. */
+.mw-sig-preview { display: flex; flex-direction: column; gap: 6px; margin: 10px 0 4px; }
+.mw-sig-sample { display: inline-flex; align-items: center; gap: 8px; padding: 8px 12px; border-radius: 10px; font-size: 13px; font-weight: 600; border: 2px solid #94A3B8; color: var(--sv-text-secondary, #475569); width: fit-content; max-width: 100%; }
+.mw-sig-sample.is-live { border-color: #0891B2; color: #0E7490; }
+.mw-sig-tick { display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; border-radius: 50%; background: #94A3B8; color: #fff; font-size: 12px; font-weight: 800; }
+.mw-sig-sample.is-live .mw-sig-tick { background: #0891B2; }

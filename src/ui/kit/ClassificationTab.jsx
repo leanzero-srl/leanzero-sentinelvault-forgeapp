@@ -71,7 +71,14 @@ export const LevelPicker = ({ value, levels, onChange, placeholder = "Choose a l
 };
 
 // Modal (no window.confirm): the bulk apply asks once, with the count and the chip, before writing.
-const Dialog = ({ title, children, onCancel, onConfirm, confirmLabel = "Apply", busy = false }) => (
+const Dialog = ({ title, children, onCancel, onConfirm, confirmLabel = "Apply", busy = false }) => {
+  // Escape dismisses too (tester report 2026-09-21); the backdrop click below already did.
+  useEffect(() => {
+    const onKey = (e) => { if (e.key === "Escape" && !busy) { e.preventDefault(); e.stopPropagation(); onCancel(); } };
+    document.addEventListener("keydown", onKey, true);
+    return () => document.removeEventListener("keydown", onKey, true);
+  }, [busy, onCancel]);
+  return (
   <div className="cls-dialog-backdrop" role="presentation" onMouseDown={(e) => { if (e.target === e.currentTarget && !busy) onCancel(); }}>
     <div className="cls-dialog" role="dialog" aria-modal="true" aria-label={title}>
       <h3 className="cls-dialog-title">{title}</h3>
@@ -82,7 +89,8 @@ const Dialog = ({ title, children, onCancel, onConfirm, confirmLabel = "Apply", 
       </div>
     </div>
   </div>
-);
+  );
+};
 
 // Solid palette for level colours (no native colour input): click the swatch, pick a hue, or type a hex.
 const PALETTE = ["#DC2626", "#EA580C", "#D97706", "#CA8A04", "#059669", "#0891B2", "#2563EB", "#7C3AED", "#DB2777", "#475569", "#0F172A"];

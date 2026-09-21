@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import { createRoot } from "react-dom/client";
 import { invoke, view, router } from "@forge/bridge";
 // SEC-2 (e): the proposal bar opens with this reason already typed — the approvers see what it is at a glance.
@@ -281,7 +281,7 @@ const UploadZone = ({ onUploadComplete }) => {
 
 // ── Artifact card component ─────────────────────────
 
-const ArtifactCard = ({ att, onRefresh, columns, siteUrl, spaceKey, pageId, pageLocation, viewer }) => {
+const ArtifactCard = ({ att, onRefresh, columns, siteUrl, spaceKey, pageId, pageLocation, viewer, onMoved, justMoved = false }) => {
   const [actionBusy, setActionBusy] = useState(null);
   const [pendingConfirm, setPendingConfirm] = useState(null); // "delete" | "purge" | null → kit ConfirmDialog
   const [actionError, setActionError] = useState(null); // inline error row (no native alert)
@@ -415,7 +415,7 @@ const ArtifactCard = ({ att, onRefresh, columns, siteUrl, spaceKey, pageId, page
   const onMenu = (id) => {
     switch (id) {
       case "extend": run("extend", "extend-seal", { attachmentId: att.id }); break;
-      case "release": run("unseal", "unseal-artifact", { attachmentId: att.id }); break;
+      case "release": run("unseal", "unseal-artifact", { attachmentId: att.id }, { onOk: () => onMoved?.(att.id, "unsealed") }); break;
       case "watch": run("watch", "watch-artifact", { attachmentId: att.id }); break;
       case "unwatch": run("watch", "unwatch-artifact", { attachmentId: att.id }); break;
       case "copy-link": copyLink(); break;
@@ -430,8 +430,8 @@ const ArtifactCard = ({ att, onRefresh, columns, siteUrl, spaceKey, pageId, page
   };
 
   const primaryHandlers = {
-    seal: () => run("seal", "seal-artifact", { attachmentId: att.id }),
-    release: () => run("unseal", "unseal-artifact", { attachmentId: att.id }),
+    seal: () => run("seal", "seal-artifact", { attachmentId: att.id }, { onOk: (r) => onMoved?.(att.id, "sealed", r) }),
+    release: () => run("unseal", "unseal-artifact", { attachmentId: att.id }, { onOk: () => onMoved?.(att.id, "unsealed") }),
     decide: resolveEditReq,
     request: () => { setReasonText(""); setBar("request"); },
     propose: () => { setReasonText(PROPOSE_PREFILL); setBar("propose"); }, // SEC-2 (e)
@@ -451,6 +451,15 @@ const ArtifactCard = ({ att, onRefresh, columns, siteUrl, spaceKey, pageId, page
       <span key="owner" className="card-meta-owner">
         <span className="card-meta-owner-label">Sealed by</span>
         <OperatorChip accountId={att.lockedByAccountId} />
+      </span>
+    );
+  }
+  // Tester report 2026-09-21 (Trash): who deleted it and when, read from the tracking record.
+  if (att.isStale && (att.trashedBy || att.trashedAt)) {
+    metaItems.push(
+      <span key="trash" className="card-meta-owner" data-testid="sv-card-trash-meta">
+        <span className="card-meta-owner-label">Deleted{att.trashedAt ? ` ${when(att.trashedAt)}` : ""}{att.trashedBy ? " by" : ""}</span>
+        {att.trashedBy && <OperatorChip accountId={att.trashedBy} />}
       </span>
     );
   }
@@ -474,7 +483,7 @@ const ArtifactCard = ({ att, onRefresh, columns, siteUrl, spaceKey, pageId, page
   const hasSecondLine = metaItems.length > 0 || showLabels;
 
   return (
-    <div className={`artifact-card status-${chip.cls}`} role="listitem" data-roving-card tabIndex={-1} aria-label={chip.aria} data-testid="sv-card" data-primary={primary.kind}>
+    <div className={`artifact-card status-${chip.cls}${justMoved ? " sv-just-moved" : ""}`} role="listitem" data-roving-card tabIndex={-1} aria-label={chip.aria} data-testid="sv-card" data-primary={primary.kind} data-just-moved={justMoved ? "1" : undefined}>
       {/* Line 1: filename + status + ONE primary action + ⋯ */}
       <div className="card-row card-row-primary">
         <span className="card-filename">
@@ -1002,6 +1011,13 @@ const SealedSectionsGroup = ({ pageId, onChanged, viewer, siteUrl }) => {
   const [sealingIndex, setSealingIndex] = useState(null);
   const [collapsed, setCollapsed] = useState(false);
   const [sealError, setSealError] = useState(null);  // why the last seal/unseal was refused
+  // Escape closes the heading picker (tester report 2026-09-21: pop-ups need a keyboard exit).
+  useEffect(() => {
+    if (!picking) return undefined;
+    const onKey = (e) => { if (e.key === "Escape" && sealingIndex == null) { e.preventDefault(); setPicking(false); } };
+    document.addEventListener("keydown", onKey, true);
+    return () => document.removeEventListener("keydown", onKey, true);
+  }, [picking, sealingIndex]);
 
   const load = useCallback(async () => {
     if (!pageId) return;
@@ -1245,6 +1261,8 @@ const ArtifactGridView = () => {
   const [isEditing, setIsEditing] = useState(false);
   const [hasMore, setHasMore] = useState(false);
   const [counts, setCounts] = useState(null); // whole-page numbers from the lister's first page
+  const [recent, setRecent] = useState({}); // id → ts of a seal/release done HERE (top of its new group, highlighted)
+  const recentRef = useRef({});
   const [nextCursor, setNextCursor] = useState(null);
   const [loadingMore, setLoadingMore] = useState(false);
   const [panelConfig, setPanelConfig] = useState(INITIAL_CONFIG);
@@ -1301,13 +1319,30 @@ const ArtifactGridView = () => {
     if (!pageId) return;
     try {
       const seals = await invoke("enumerate-page-seals", { pageId });
-      if (seals?.claimedArtifacts?.length > 0) {
-        setArtifacts(seals.claimedArtifacts);
-      }
+      const claimed = seals?.claimedArtifacts || [];
+      setArtifacts((prev) => {
+        const ids = new Set(claimed.map((c) => c.id));
+        const isHeld = (a) => a.lockStatus === "HELD" || a.lockStatus === "HELD_BY_ACTOR";
+        // A card released HERE is no longer in the seal list; keep it, as available, so it moves to
+        // the top of Available instead of vanishing until "Show more" reaches it again.
+        const released = prev.filter((a) => !ids.has(a.id) && recentRef.current[a.id] && isHeld(a) && !a.isStale).map((a) => ({ ...a, lockStatus: "OPEN", lockedByAccountId: null, expiresAt: null, isExpired: false, workflowHeld: false }));
+        if (claimed.length === 0 && released.length === 0) return prev;
+        const rest = prev.filter((a) => !ids.has(a.id) && !isHeld(a));
+        return [...claimed, ...released, ...rest];
+      });
     } catch (_) { /* fall through */ }
     retrieveFileData(pageId, false, null, true);
     setActivityReload((n) => n + 1);
   }, [pageId, retrieveFileData]);
+
+  // Tester report 2026-09-21: a sealed / released card goes to the TOP of its new group, highlighted.
+  const onMoved = useCallback((id, what, r) => {
+    recentRef.current = { ...recentRef.current, [id]: Date.now() };
+    setRecent(recentRef.current);
+    setArtifacts((prev) => prev.map((a) => (a.id !== id ? a : what === "sealed"
+      ? { ...a, lockStatus: "HELD_BY_ACTOR", lockedByAccountId: r?.lockedBy || a.lockedByAccountId || null, expiresAt: r?.expiresAt || a.expiresAt || null, isExpired: false }
+      : { ...a, lockStatus: "OPEN", lockedByAccountId: null, expiresAt: null, isExpired: false, workflowHeld: false })));
+  }, []);
 
   // Load more
   const onLoadMore = useCallback(() => {
@@ -1427,7 +1462,7 @@ const ArtifactGridView = () => {
 
   const cols = panelConfig.columns;
   const isClaimed = (a) => a.lockStatus === "HELD" || a.lockStatus === "HELD_BY_ACTOR";
-  const prioritized = [...artifacts].sort((a, b) => (isClaimed(a) ? 0 : 1) - (isClaimed(b) ? 0 : 1));
+  const prioritized = [...artifacts].sort((a, b) => ((recent[b.id] || 0) - (recent[a.id] || 0)) || ((isClaimed(a) ? 0 : 1) - (isClaimed(b) ? 0 : 1)));
   const staleFiles = prioritized.filter((a) => a.isStale);
   const claimedFiles = prioritized.filter((a) => isClaimed(a) && !a.isStale);
   const availableFiles = prioritized.filter((a) => !isClaimed(a) && !a.isStale);
@@ -1440,7 +1475,7 @@ const ArtifactGridView = () => {
 
   const renderCards = (files) =>
     files.map((att) => (
-      <ArtifactCard key={att.id} att={att} columns={cols} onRefresh={onRefresh} siteUrl={siteUrl} spaceKey={spaceKey} pageId={pageId} pageLocation={pageLocation} viewer={viewer} />
+      <ArtifactCard key={att.id} att={att} columns={cols} onRefresh={onRefresh} onMoved={onMoved} justMoved={!!recent[att.id]} siteUrl={siteUrl} spaceKey={spaceKey} pageId={pageId} pageLocation={pageLocation} viewer={viewer} />
     ));
 
   return (
@@ -1457,9 +1492,7 @@ const ArtifactGridView = () => {
           {staleFiles.length > 0 && (
             <span className="sv-panel-header-badge badge-stale">{staleFiles.length} missing</span>
           )}
-          {availableFiles.length > 0 && (
-            <span className="sv-panel-header-badge badge-available">{counts?.available ?? availableFiles.length} available</span>
-          )}
+          <span className="sv-panel-header-badge badge-available">{counts?.available ?? availableFiles.length} available</span>
         </span>
       </div>
 
@@ -1498,12 +1531,13 @@ const ArtifactGridView = () => {
               <RovingList {...gridProps} label="Missing attachments">{renderCards(staleFiles)}</RovingList>
             </div>
           )}
-          {availableFiles.length > 0 && (
+          {(
             <div className="sv-card-section">
               <div className="sv-card-section-header">
                 <span className="sv-card-section-title">Available</span>
                 <span className="sv-card-section-count" data-testid="sv-count-available">{counts?.available ?? availableFiles.length}</span>
               </div>
+              {availableFiles.length === 0 && <p className="sv-card-section-empty" data-testid="sv-available-empty">{enriching ? "Checking for unsealed files…" : "No unsealed files on this page — everything attached here is sealed."}</p>}
               <RovingList {...gridProps} label="Available attachments">{renderCards(availableFiles)}</RovingList>
             </div>
           )}

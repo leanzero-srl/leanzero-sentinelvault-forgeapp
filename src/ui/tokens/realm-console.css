@@ -2327,3 +2327,13 @@ html[data-color-mode="dark"] .wf-rule { background: #2563EB; color: #FFFFFF; }
 /* WF-11 (2): the approval / protection settings inside the default workflow form, saved with the states */
 .wf-def-settings { margin-top: 14px; padding-top: 6px; border-top: 1px solid var(--sv-border, #d6dbe3); }
 .wf-def-settings .settings-section { margin-top: 10px; }
+
+/* Tester report 2026-09-21: bulk chip moves + a sentence that says what the filter is doing. */
+.sv-activity-chip-bulk { display: inline-flex; align-items: center; gap: 10px; margin-left: 4px; }
+.sv-activity-chip-link { background: transparent; border: none; padding: 4px 2px; font-size: 12px; font-weight: 700; color: var(--sv-interactive-primary); cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
+.sv-activity-chip-link:disabled { color: var(--sv-text-subtle); cursor: default; text-decoration: none; }
+.sv-activity-chip-hint { flex-basis: 100%; font-size: 12px; color: var(--sv-text-secondary); }
+
+/* Validations: the save bar is IN FLOW under the AI section and only while dirty (tester report 2026-09-21). */
+.val-save-bar { display: flex; align-items: center; justify-content: flex-end; gap: 12px; margin-top: 16px; padding-top: 14px; border-top: 2px solid var(--sv-interactive-primary); }
+.val-save-note { margin-right: auto; font-size: 13px; font-weight: 700; color: var(--sv-interactive-primary); }
