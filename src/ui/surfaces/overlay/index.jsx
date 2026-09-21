@@ -12,6 +12,7 @@ import GiveAccessDialog from "../../kit/GiveAccessDialog";
 import { useSignedInvoke } from "../../kit/SignedInvoke";
 import RovingList from "../../kit/RovingList";
 import { attachmentRow, rowActions, statusChip, copyText } from "../../kit/seal-row.js";
+import { when } from "../../kit/status-language.js";
 import { PrimarySlot, ReasonBar, RequestInbox, GrantInbox, ErrorRow, CopiedNote } from "../../kit/SealRowParts";
 
 // ── Column definitions ──────────────────────────────────
@@ -270,7 +271,7 @@ const SortPicker = ({ orderField, orderDir, onSort }) => {
 // One attachment card in the overlay. The primary action and the ⋯ items come from the SAME row
 // rule as the inline panel and the page-details modal (kit/seal-row.js → row-state.js); the
 // parent owns the resolver calls through `run` so a refusal lands on THIS card's error row.
-const OverlayArtifactCard = ({ artifact, visibleColumns, run, signedInvoke, busyAction, errorMessage, onClearError, isWatching, viewer, formatRemainingTime, formatFileSize, siteUrl, spaceKey, pageId, pageLocation }) => {
+const OverlayArtifactCard = ({ artifact, visibleColumns, run, signedInvoke, busyAction, errorMessage, onClearError, isWatching, viewer, formatRemainingTime, formatFileSize, siteUrl, spaceKey, pageId, pageLocation, justMoved = false }) => {
   const [pendingConfirm, setPendingConfirm] = useState(null); // "delete" | "purge" | null → kit ConfirmDialog
   const [expanded, setExpanded] = useState(false);
   const [cachedPreview, setCachedPreview] = useState(null);
@@ -397,6 +398,15 @@ const OverlayArtifactCard = ({ artifact, visibleColumns, run, signedInvoke, busy
       </span>
     );
   }
+  // Tester report 2026-09-21 (Trash): who deleted it and when, read from the tracking record.
+  if (artifact.isStale && (artifact.trashedBy || artifact.trashedAt)) {
+    metaItems.push(
+      <span key="trash" className="card-meta-owner" data-testid="sv-card-trash-meta">
+        <span className="card-meta-owner-label">Deleted{artifact.trashedAt ? ` ${when(artifact.trashedAt)}` : ""}{artifact.trashedBy ? " by" : ""}</span>
+        {artifact.trashedBy && <OperatorTag accountId={artifact.trashedBy} />}
+      </span>
+    );
+  }
   if (visibleColumns.lapses && row.sealed) {
     metaItems.push(<span key="lapses" className="card-meta-item">{formatRemainingTime(artifact)}</span>);
   }
@@ -430,7 +440,7 @@ const OverlayArtifactCard = ({ artifact, visibleColumns, run, signedInvoke, busy
   const hasSecondLine = metaItems.length > 0 || showLabels;
 
   return (
-    <div className={`artifact-card status-${chip.cls}`} role="listitem" data-roving-card tabIndex={-1} aria-label={chip.aria} data-testid="sv-card" data-primary={primary.kind}>
+    <div className={`artifact-card status-${chip.cls}${justMoved ? " sv-just-moved" : ""}`} role="listitem" data-roving-card tabIndex={-1} aria-label={chip.aria} data-testid="sv-card" data-primary={primary.kind} data-just-moved={justMoved ? "1" : undefined}>
       <div className="card-row card-row-primary">
         <span className="card-filename">
           <button
@@ -581,6 +591,7 @@ const ArtifactControlPanel = () => {
   // Pagination state for artifacts tab
   const [moreFilesAvailable, setMoreFilesAvailable] = useState(false);
   const [counts, setCounts] = useState(null); // whole-page numbers from the lister's first page
+  const [recent, setRecent] = useState({}); // id → ts of a seal/release done HERE: the card goes to the top of its new group, highlighted
   const [nextFileCursor, setNextFileCursor] = useState(null);
   const [fetchingMoreFiles, setFetchingMoreFiles] = useState(false);
   const { signedInvoke, signatureDialog } = useSignedInvoke(); // the code prompt when the site signs seal actions
@@ -782,6 +793,20 @@ const ArtifactControlPanel = () => {
         return false;
       }
       if (watch !== null) setWatchStatus((prev) => ({ ...prev, [artifactId]: watch }));
+      if (flash === "sealed" || flash === "unsealed") {
+        // The card moves NOW (tester report 2026-09-21): patch its status locally, mark it recent so it
+        // sorts first in its new group, then re-read the seals — the page-1 refresh alone never
+        // touched a card that sits beyond the first page, so it used to stay put.
+        setRecent((p) => ({ ...p, [artifactId]: Date.now() }));
+        setFileList((prev) => prev.map((a) => (a.id !== artifactId ? a : flash === "sealed"
+          ? { ...a, lockStatus: "HELD_BY_ACTOR", lockedByAccountId: r?.lockedBy || a.lockedByAccountId || null, expiresAt: r?.expiresAt || a.expiresAt || null, isExpired: false }
+          : { ...a, lockStatus: "OPEN", lockedByAccountId: null, expiresAt: null, isExpired: false, workflowHeld: false })));
+        try {
+          const seals = await invoke("enumerate-page-seals", { pageId: null });
+          const byId = new Map((seals?.claimedArtifacts || []).map((c) => [c.id, c]));
+          setFileList((prev) => prev.map((a) => (byId.has(a.id) ? { ...a, ...byId.get(a.id) } : a)));
+        } catch (_) { /* the page-1 refresh below still runs */ }
+      }
       if (afterDelete) {
         // Wait for Confluence to process the trash before re-fetching, then re-fetch the seals
         // (to show the trashed item) and the attachments.
@@ -1130,7 +1155,7 @@ const ArtifactControlPanel = () => {
                 {(() => {
                   const sortedFiles = arrangeFileList();
                   const isClaimedFile = (a) => a.lockStatus === "HELD" || a.lockStatus === "HELD_BY_ACTOR";
-                  const prioritized = [...sortedFiles].sort((a, b) => (isClaimedFile(a) ? 0 : 1) - (isClaimedFile(b) ? 0 : 1));
+                  const prioritized = [...sortedFiles].sort((a, b) => ((recent[b.id] || 0) - (recent[a.id] || 0)) || ((isClaimedFile(a) ? 0 : 1) - (isClaimedFile(b) ? 0 : 1)));
                   const staleFiles = prioritized.filter((a) => a.isStale);
                   const claimedFiles = prioritized.filter((a) => isClaimedFile(a) && !a.isStale);
                   const availableFiles = prioritized.filter((a) => !isClaimedFile(a) && !a.isStale);
@@ -1147,6 +1172,7 @@ const ArtifactControlPanel = () => {
                               <OverlayArtifactCard
                                 signedInvoke={signedInvoke}
                                 key={artifact.id}
+                                justMoved={!!recent[artifact.id]}
                                 artifact={artifact}
                                 visibleColumns={visibleColumns}
                                 run={(busyKey, action, payload, opts) => runCardAction(artifact.id, busyKey, action, payload, opts)}
@@ -1177,6 +1203,7 @@ const ArtifactControlPanel = () => {
                               <OverlayArtifactCard
                                 signedInvoke={signedInvoke}
                                 key={artifact.id}
+                                justMoved={!!recent[artifact.id]}
                                 artifact={artifact}
                                 visibleColumns={visibleColumns}
                                 run={(busyKey, action, payload, opts) => runCardAction(artifact.id, busyKey, action, payload, opts)}
@@ -1196,17 +1223,19 @@ const ArtifactControlPanel = () => {
                           </RovingList>
                         </div>
                       )}
-                      {availableFiles.length > 0 && (
+                      {(
                         <div className="sv-card-section">
                           <div className="sv-card-section-header">
                             <span className="sv-card-section-title">Available</span>
                             <span className="sv-card-section-count" data-testid="sv-count-available">{counts?.available ?? availableFiles.length}</span>
                           </div>
+                          {availableFiles.length === 0 && <p className="sv-card-section-empty" data-testid="sv-available-empty">{enriching ? "Checking for unsealed files…" : "No unsealed files on this page — everything attached here is sealed."}</p>}
                           <RovingList className="sv-card-list" data-cols="3" label="Available attachments">
                             {availableFiles.map((artifact) => (
                               <OverlayArtifactCard
                                 signedInvoke={signedInvoke}
                                 key={artifact.id}
+                                justMoved={!!recent[artifact.id]}
                                 artifact={artifact}
                                 visibleColumns={visibleColumns}
                                 run={(busyKey, action, payload, opts) => runCardAction(artifact.id, busyKey, action, payload, opts)}

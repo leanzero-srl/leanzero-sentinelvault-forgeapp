@@ -81,6 +81,9 @@ export default function ValidationsEditor({ scope = "global", spaceKey = null })
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState(null);
+  // Tester report 2026-09-21: the Save button appears only while something changed, right under the
+  // AI section, and disappears again once saved. `saved` is the last stored shape.
+  const [saved, setSaved] = useState(null);
   const [aiModels, setAiModels] = useState([]);
   const [globalRules, setGlobalRules] = useState(null); // audit C6: for the informed-override note
 
@@ -89,12 +92,16 @@ export default function ValidationsEditor({ scope = "global", spaceKey = null })
       try {
         const r = await invoke("load-validation-config", { scope, key: spaceKey });
         if (r) {
-          setCfg({
+          const loaded = {
             enabled: !!r.enabled,
             modes: r.modes || { advisory: true, gate: false, revert: false },
             rules: r.rules || [],
             ai: { ...DEFAULT_AI, ...(r.ai || {}) },
-          });
+          };
+          setCfg(loaded);
+          setSaved(JSON.stringify(loaded));
+        } else {
+          setSaved(JSON.stringify({ enabled: false, modes: { advisory: true, gate: false, revert: false }, rules: [], ai: { ...DEFAULT_AI } }));
         }
         // C6: a space that SETS rules overrides global entirely (documented) — so surface
         // exactly what would be dropped, especially required (block-severity) global rules.
@@ -127,7 +134,7 @@ export default function ValidationsEditor({ scope = "global", spaceKey = null })
       // it16: surface a resolver rejection (returns { success:false, reason }) instead of a
       // blind "saved".
       const r = await invoke("store-validation-config", { scope, key: spaceKey, data: cfg });
-      if (r?.success) setMsg({ type: "success", text: "Validation rules saved." });
+      if (r?.success) { setSaved(JSON.stringify(cfg)); setMsg({ type: "success", text: "Validation rules saved." }); }
       else setMsg({ type: "error", text: r?.reason || "Could not save validation rules." });
     } catch (e) {
       setMsg({ type: "error", text: "Could not save validation rules." });
@@ -137,6 +144,8 @@ export default function ValidationsEditor({ scope = "global", spaceKey = null })
   };
 
   if (loading) return <div className="settings-panel">Loading…</div>;
+  const dirty = saved !== null && JSON.stringify(cfg) !== saved;
+  const discard = () => { try { setCfg(JSON.parse(saved)); } catch (_) { /* keep */ } setMsg(null); };
 
   const scopeNote = scope === "space"
     ? "These rules apply to this space, on top of the organisation's required (blocking) global rules — which always apply. Your rules replace the advisory global rules; leave empty to inherit all global rules."
@@ -272,9 +281,13 @@ export default function ValidationsEditor({ scope = "global", spaceKey = null })
       </div>
 
       {msg && <div role="status" aria-live="polite" className={msg.type === "success" ? "alert-success" : "alert-error"}>{msg.text}</div>}
-      <div className="action-bar">
-        <button className="btn-primary" onClick={save} disabled={saving}>{saving ? "Saving…" : "Save validation rules"}</button>
-      </div>
+      {dirty && (
+        <div className="val-save-bar" data-testid="val-save-bar">
+          <span className="val-save-note">You have unsaved changes.</span>
+          <button className="btn-secondary" onClick={discard} disabled={saving} data-testid="val-discard">Discard</button>
+          <button className="btn-primary" onClick={save} disabled={saving} data-testid="val-save">{saving ? "Saving…" : "Save validation rules"}</button>
+        </div>
+      )}
     </div>
   );
 }

@@ -2043,7 +2043,7 @@ export async function handleSealedArtifactTrash(sealRecord, artifactId, contentI
       // F5 discipline: merge onto a fresh read (the panel's own delete-artifact conversion can
       // race this event); this path owns only trashedOnly.
       const fresh = (await kvs.get(`protection-${artifactId}`)) || sealRecord;
-      await kvs.set(`protection-${artifactId}`, { ...fresh, trashedOnly: true });
+      await kvs.set(`protection-${artifactId}`, { ...fresh, trashedOnly: true, trashedBy: atlassianId, trashedAt: new Date().toISOString() });
       await touchSealTimestamp();
       // Review F2: same teardown discipline as every other seal end (release, purge, re-seal).
       await sweepEditAccess(artifactId).catch((e) => console.warn("[TRASH-RESTORE] edit-access sweep failed:", e));

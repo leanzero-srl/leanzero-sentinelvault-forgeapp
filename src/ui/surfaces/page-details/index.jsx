@@ -4,6 +4,7 @@ import { invoke, view, router, Modal } from "@forge/bridge";
 import { enablePaletteSync } from "../../kit/palette-sync";
 import ActivityFeed, { ActivityRow } from "../../kit/ActivityFeed";
 import { ACTIVITY_CATEGORIES, categoryOf } from "../../kit/activity-format";
+import { nextSelection, selectAll, clearAll, isAllOn } from "../../kit/activity-filter";
 import { primaryActionFor, menuActionsFor, expiryWarning } from "../../../server/capsules/page-details/row-state.js";
 import { approvalSummary } from "../../../server/capsules/workflow/status.js"; // WF-6: the same sentence, in the viewer's zone
 import GiveAccessDialog from "../../kit/GiveAccessDialog";
@@ -404,6 +405,12 @@ const SectionPicker = ({ pageId, onSealed, onClose }) => {
   const [hold, setHold] = useState(null);
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
+  // Escape closes the picker (not the whole modal — the root handler skips while `.pd-picker` is open).
+  useEffect(() => {
+    const onKey = (e) => { if (e.key === "Escape" && !busy) { e.preventDefault(); e.stopPropagation(); onClose(); } };
+    document.addEventListener("keydown", onKey, true);
+    return () => document.removeEventListener("keydown", onKey, true);
+  }, [busy, onClose]);
   useEffect(() => {
     let alive = true;
     (async () => {
@@ -718,7 +725,8 @@ const ActivityTab = ({ pageId }) => {
   const [entries, setEntries] = useState([]);
   const [cursor, setCursor] = useState(null);
   const [state, setState] = useState("loading");
-  const [on, setOn] = useState(() => new Set(ACTIVITY_CATEGORIES.map((c) => c.id)));
+  const ALL_IDS = ACTIVITY_CATEGORIES.map((c) => c.id);
+  const [on, setOn] = useState(() => new Set(ALL_IDS));
   const fetchPage = useCallback(async (c) => {
     const payload = { pageId, limit: 50 };
     if (c) payload.cursor = c;
@@ -736,11 +744,9 @@ const ActivityTab = ({ pageId }) => {
     try { const r = await fetchPage(cursor); setEntries((p) => [...p, ...r.entries]); setCursor(r.nextCursor); setState("ready"); }
     catch (_) { setState("error"); }
   };
-  const toggle = (id) => setOn((prev) => {
-    const n = new Set(prev);
-    if (n.has(id)) { if (n.size === 1) return prev; n.delete(id); } else n.add(id);
-    return n;
-  });
+  // activity-filter.js: all on + click one → isolate; else toggle; All / None are the bulk moves.
+  const toggle = (id) => setOn((prev) => new Set(nextSelection([...prev], id, ALL_IDS)));
+  const allOn = isAllOn([...on], ALL_IDS);
   const shown = entries.filter((e) => on.has(categoryOf(e?.type)));
   return (
     <div className="pd-activity" data-testid="pd-activity-tab">
@@ -748,10 +754,15 @@ const ActivityTab = ({ pageId }) => {
         {ACTIVITY_CATEGORIES.map((c) => (
           <button key={c.id} type="button" className={`sv-activity-chip-btn sv-activity-chip-${c.id} ${on.has(c.id) ? "is-active" : ""}`} aria-pressed={on.has(c.id)} onClick={() => toggle(c.id)} data-testid={`pd-chip-${c.id}`}>{c.label}</button>
         ))}
+        <span className="sv-activity-chip-bulk">
+          <button type="button" className="sv-activity-chip-link" disabled={allOn} onClick={() => setOn(new Set(selectAll(ALL_IDS)))} data-testid="pd-chip-all">Select all</button>
+          <button type="button" className="sv-activity-chip-link" disabled={on.size === 0} onClick={() => setOn(new Set(clearAll()))} data-testid="pd-chip-none">Clear all</button>
+        </span>
+        <span className="sv-activity-chip-hint" aria-live="polite">{allOn ? "Showing everything — click a category to see only that one" : on.size === 0 ? "No category selected" : `Showing ${on.size} of ${ALL_IDS.length} categories`}</span>
       </div>
       {state === "loading" && <p className="pd-empty">Loading activity…</p>}
       {state === "error" && <p className="pd-error" role="alert">Couldn’t load activity right now. Close and reopen to try again.</p>}
-      {state !== "loading" && shown.length === 0 && state !== "error" && <p className="pd-empty">{entries.length === 0 ? "No activity recorded yet on this page." : "Nothing in the selected categories."}</p>}
+      {state !== "loading" && shown.length === 0 && state !== "error" && <p className="pd-empty">{entries.length === 0 ? "No activity recorded yet on this page." : on.size === 0 ? "No category selected — pick one above, or Select all." : "Nothing in the selected categories."}</p>}
       {shown.length > 0 && <ul className="sv-activity-list">{shown.map((e, i) => <ActivityRow key={e.id || `${e.ts}-${i}`} entry={e} />)}</ul>}
       {cursor && state !== "loading" && <div className="sv-activity-footer"><button type="button" className="sv-activity-more" disabled={state === "more"} onClick={more}>{state === "more" ? "Loading…" : "Show more"}</button></div>}
     </div>
@@ -777,7 +788,7 @@ export const PageDetails = ({ mode = "details", ctx }) => {
   useEffect(() => { enablePaletteSync().catch(() => {}); }, []);
   useEffect(() => { load(); }, [load]);
   useEffect(() => {
-    const key = (e) => { if (e.key === "Escape" && !document.querySelector(".pd-menu, .pd-dd-menu, .pd-reason")) view.close().catch(() => {}); };
+    const key = (e) => { if (e.key === "Escape" && !document.querySelector(".pd-menu, .pd-dd-menu, .pd-reason, .pd-picker, .sv-dialog")) view.close().catch(() => {}); };
     document.addEventListener("keydown", key);
     return () => document.removeEventListener("keydown", key);
   }, []);
