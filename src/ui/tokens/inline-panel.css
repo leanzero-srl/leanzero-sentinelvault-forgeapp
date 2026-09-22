@@ -325,7 +325,8 @@ html[data-color-mode="dark"] .artifact-card.status-trashed { border-color: #FB92
 .card-meta {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  flex-wrap: wrap; /* a whole chip moves to the next line; its name and avatar stay together */
+  gap: 2px 6px;
   font-size: 12px;
   color: var(--sv-text-secondary);
 }
@@ -529,6 +530,7 @@ html[data-color-mode="dark"] .status-lozenge.trashed { background: #FB923C; colo
   align-items: center;
   gap: 6px;
   font-size: 12px;
+  white-space: nowrap; /* tester 2026-09-22 (item 6): the name never wraps under its avatar */
 }
 
 .user-avatar {
@@ -991,6 +993,19 @@ html[data-color-mode="dark"] .badge-stale {
 .sv-panel-footer {
   padding: 8px 14px;
   text-align: center;
+}
+
+/* Per-group Show more / Show fewer (tester 2026-09-22, items 1 + 5) */
+.sv-group-footer {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 4px 2px;
+}
+.sv-group-footer-count {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--sv-text-secondary);
 }
 
 .load-more-btn {
