@@ -2445,11 +2445,11 @@ const RealmPolicyDashboard = () => {
       {leaveTo && (
         <Dialog title="Apply your changes first?" onClose={() => setLeaveTo(null)} busy={loading} testId="sv-unsaved-dialog">
           <div className="sv-dialog-body">You changed settings on this tab and have not applied them. Leaving the tab now throws them away.</div>
-          <div className="sv-dialog-actions">
+          <div className="sv-dialog-actions sv-unsaved-actions">
             <button type="button" className="action-btn confirm-yes" style={{ background: "var(--sv-interactive-primary)" }} disabled={loading} data-testid="sv-unsaved-apply"
               onClick={async () => { const go = leaveTo; if (await onSaveRealmPrefs()) { setLeaveTo(null); go(); } }}>Apply and continue</button>
             <button type="button" className="action-btn confirm-no" disabled={loading} data-testid="sv-unsaved-discard"
-              onClick={() => { const go = leaveTo; discardPrefs(); setLeaveTo(null); go(); }}>Discard and continue</button>
+              onClick={() => { const go = leaveTo; discardPrefs(); setLeaveTo(null); go(); }}>Discard</button>
             <button type="button" className="action-btn confirm-no" disabled={loading} data-testid="sv-unsaved-stay" onClick={() => setLeaveTo(null)}>Stay here</button>
           </div>
         </Dialog>
