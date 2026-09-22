@@ -2337,3 +2337,40 @@ html[data-color-mode="dark"] .wf-rule { background: #2563EB; color: #FFFFFF; }
 /* Validations: the save bar is IN FLOW under the AI section and only while dirty (tester report 2026-09-21). */
 .val-save-bar { display: flex; align-items: center; justify-content: flex-end; gap: 12px; margin-top: 16px; padding-top: 14px; border-top: 2px solid var(--sv-interactive-primary); }
 .val-save-note { margin-right: auto; font-size: 13px; font-weight: 700; color: var(--sv-interactive-primary); }
+
+/* Unsaved-changes bar (tester 2026-09-22, item 4): solid amber pill while dirty, quiet note otherwise. */
+.action-bar.is-dirty { border-top: 3px solid #B45309; }
+.action-bar-note { margin-right: auto; font-size: 13px; font-weight: 500; color: var(--sv-text-subtle); }
+.action-bar-pill {
+  margin-right: auto; display: inline-flex; align-items: center; padding: 6px 14px; border-radius: 9999px;
+  background: #B45309; color: #FFFFFF; font-size: 12px; font-weight: 700; letter-spacing: 0.01em;
+}
+html[data-color-mode="dark"] .action-bar.is-dirty { border-top-color: #FBBF24; }
+html[data-color-mode="dark"] .action-bar-pill { background: #FBBF24; color: #0F172A; }
+.action-bar .btn-secondary { margin-right: 10px; }
+
+/* Dialogs (kit/Dialog.jsx) — the same block as steward-console.css. */
+.sv-dialog-backdrop {
+  position: fixed; inset: 0; z-index: 100; background: var(--sv-bg-overlay);
+  display: flex; align-items: center; justify-content: center; padding: 16px;
+}
+.sv-dialog {
+  width: min(480px, 100%); background: var(--sv-surface-overlay); border-radius: 14px;
+  box-shadow: 0 16px 48px rgba(2, 6, 23, 0.35); padding: 22px 24px; color: var(--sv-text-primary);
+  border: 2px solid transparent; outline: none;
+}
+.sv-dialog.danger { border-color: var(--sv-interactive-danger); }
+.sv-dialog-title { margin: 0 0 12px; font-size: 16px; font-weight: 700; }
+.sv-dialog-body { font-size: 14px; line-height: 1.5; }
+.sv-dialog-body p { margin: 0 0 8px; }
+.sv-dialog-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 18px; }
+.action-btn {
+  border: none; border-radius: 10px; padding: 10px 20px; font-family: inherit; font-size: 14px; font-weight: 600; cursor: pointer;
+  transition: background 150ms ease;
+}
+.action-btn:disabled { cursor: not-allowed; opacity: 0.7; }
+.action-btn.confirm-yes { background: var(--sv-interactive-danger); color: #FFFFFF; }
+.action-btn.confirm-yes:hover:not(:disabled) { background: var(--sv-interactive-danger-hover); }
+.action-btn.confirm-no { background: var(--sv-bg-tertiary); color: var(--sv-text-primary); }
+.action-btn.confirm-no:hover:not(:disabled) { background: var(--sv-bg-hover); }
+

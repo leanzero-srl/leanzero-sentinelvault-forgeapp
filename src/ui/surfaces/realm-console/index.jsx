@@ -13,6 +13,7 @@ import LicenseBanner from "../../kit/LicenseBanner";
 import { formatRemaining, formatDurationHours } from "../../kit/format-duration";
 import { WorkflowDashboard } from "../../kit/WorkflowDashboard";
 import ActivityReport from "../../kit/ActivityReport";
+import Dialog from "../../kit/Dialog";
 import logo from "../../assets/icons/icon.png";
 import { BUILD_INFO } from "../../../build-info.js";
 // P2 (UX review 2026-09-14 §3): the settings tabs render from the schema — one copy of the
@@ -487,6 +488,11 @@ const RealmPolicyDashboard = () => {
   const [siteUrl, setSiteUrl] = useState(null);
   const [realmName, setRealmName] = useState("Current Space");
 
+  // Tester report 2026-09-22 (item 4): toggles look live but persist only on Apply. `savedPrefs`
+  // is the last applied snapshot; the bar names unsaved changes, offers Discard, and a tab switch
+  // while dirty asks first (Apply / Discard / Stay) — a switch used to drop them silently.
+  const [savedPrefs, setSavedPrefs] = useState(null);
+  const [leaveTo, setLeaveTo] = useState(null); // () => void — the tab change waiting on the dirty dialog
   const [realmPrefs, setRealmPrefs] = useState({
     autoUnlockTimeoutHours: null,
     adminUsers: [],
@@ -651,7 +657,7 @@ const RealmPolicyDashboard = () => {
 
           // `activation` is gone: no server reader ever resolved it (UX review §3.2), so the
           // console no longer offers it and store-policy drops the key.
-          setRealmPrefs({
+          const loadedPrefs = {
             autoUnlockTimeoutHours: settings?.autoUnlockTimeoutHours || null,
             adminUsers: settings?.adminUsers || [],
             adminGroups: settings?.adminGroups || [],
@@ -661,7 +667,9 @@ const RealmPolicyDashboard = () => {
             // P1-4: anything but "quiet" reads as "normal" (same coercion the server applies).
             notificationsMode: settings?.notificationsMode === "quiet" ? "quiet" : "normal",
             classification: settings?.classification === "off" ? "off" : "inherit",
-          });
+          };
+          setRealmPrefs(loadedPrefs);
+          setSavedPrefs(JSON.stringify(loadedPrefs));
           // it26 (LIVE-BROWSER FIX): the essential data (space key, role, policy) is loaded —
           // RENDER the console NOW. The seals list + the group/user dropdown pre-fills are
           // SECONDARY; awaiting them blocked first paint, so a slow or HANGING Confluence
@@ -1186,6 +1194,8 @@ const RealmPolicyDashboard = () => {
       if (saveResult?.success) {
         setMessage("Space preferences updated!");
         setMessageType("success");
+        setSavedPrefs(JSON.stringify(realmPrefs));
+        return true;
       } else {
         setMessage(saveResult?.reason || "Could not save space settings.");
         setMessageType("error");
@@ -1197,7 +1207,11 @@ const RealmPolicyDashboard = () => {
     } finally {
       setLoading(false);
     }
+    return false;
   };
+  const prefsDirty = savedPrefs !== null && JSON.stringify(realmPrefs) !== savedPrefs;
+  const discardPrefs = () => { try { setRealmPrefs(JSON.parse(savedPrefs)); } catch (_) { /* keep */ } setMessage(null); setMessageType(null); };
+  const switchTab = (go) => { if (prefsDirty) setLeaveTo(() => go); else go(); };
 
   const onAddTeam = (group) => {
     if (!realmPrefs.adminGroups.includes(group)) {
@@ -1570,18 +1584,18 @@ const RealmPolicyDashboard = () => {
       <div className="tab-navigation">
         {userRole === "user" && (
           <button className={`tab-button ${activeTab === "my-claims" ? "active" : ""}`}
-            onClick={() => { setActiveTab("my-claims"); fetchMyClaimedFiles(); fetchMyEditRequests(); }}>
+            onClick={() => switchTab(() => { setActiveTab("my-claims"); fetchMyClaimedFiles(); fetchMyEditRequests(); })}>
             My Sealed Files
           </button>
         )}
         {userRole === "steward" && (
           <>
             <button className={`tab-button ${activeTab === "locked-attachments" ? "active" : ""}`}
-              onClick={() => setActiveTab("locked-attachments")}>
+              onClick={() => switchTab(() => setActiveTab("locked-attachments"))}>
               Sealed Files
             </button>
             <button className={`tab-button ${activeTab === "permissions" ? "active" : ""}`}
-              onClick={() => { setActiveTab("permissions"); fetchPendingRequests(); }}>
+              onClick={() => switchTab(() => { setActiveTab("permissions"); fetchPendingRequests(); })}>
               Access Control{pendingRequests.length > 0 && (
                 <span style={{
                   marginLeft: "6px",
@@ -1598,23 +1612,23 @@ const RealmPolicyDashboard = () => {
               )}
             </button>
             <button className={`tab-button ${activeTab === "unlock-timeouts" ? "active" : ""}`}
-              onClick={() => setActiveTab("unlock-timeouts")}>
+              onClick={() => switchTab(() => setActiveTab("unlock-timeouts"))}>
               Seal Duration
             </button>
             <button className={`tab-button ${activeTab === "macro-settings" ? "active" : ""}`}
-              onClick={() => setActiveTab("macro-settings")}>
+              onClick={() => switchTab(() => setActiveTab("macro-settings"))}>
               Macro
             </button>
             <button className={`tab-button ${activeTab === "validations" ? "active" : ""}`}
-              onClick={() => setActiveTab("validations")}>
+              onClick={() => switchTab(() => setActiveTab("validations"))}>
               Validations
             </button>
             <button className={`tab-button ${activeTab === "workflow" ? "active" : ""}`}
-              onClick={() => setActiveTab("workflow")}>
+              onClick={() => switchTab(() => setActiveTab("workflow"))}>
               Workflow
             </button>
             <button className={`tab-button ${activeTab === "activity" ? "active" : ""}`}
-              onClick={() => setActiveTab("activity")}>
+              onClick={() => switchTab(() => setActiveTab("activity"))}>
               Activity
             </button>
           </>
@@ -2411,16 +2425,34 @@ const RealmPolicyDashboard = () => {
       )}
 
       {userRole === "steward" && activeTab !== "validations" && activeTab !== "workflow" && activeTab !== "activity" && (
-        <div className="action-bar">
+        <div className={`action-bar ${prefsDirty ? "is-dirty" : ""}`} data-dirty={prefsDirty ? "1" : "0"} data-testid="sv-realm-action-bar">
+          {prefsDirty
+            ? <span className="action-bar-pill" role="status" data-testid="sv-unsaved-note">Unsaved changes — nothing takes effect until you apply</span>
+            : <span className="action-bar-note" role="status">All changes applied</span>}
+          {prefsDirty && (
+            <button type="button" className="btn-secondary" onClick={discardPrefs} disabled={loading} data-testid="sv-discard-realm-prefs">Discard</button>
+          )}
           <button
             className="btn-primary"
             onClick={onSaveRealmPrefs}
-            disabled={loading}
+            disabled={loading || !prefsDirty}
             data-testid="sv-save-realm-prefs"
           >
             {loading ? "Updating..." : "Apply Configuration"}
           </button>
         </div>
+      )}
+      {leaveTo && (
+        <Dialog title="Apply your changes first?" onClose={() => setLeaveTo(null)} busy={loading} testId="sv-unsaved-dialog">
+          <div className="sv-dialog-body">You changed settings on this tab and have not applied them. Leaving the tab now throws them away.</div>
+          <div className="sv-dialog-actions">
+            <button type="button" className="action-btn confirm-yes" style={{ background: "var(--sv-interactive-primary)" }} disabled={loading} data-testid="sv-unsaved-apply"
+              onClick={async () => { const go = leaveTo; if (await onSaveRealmPrefs()) { setLeaveTo(null); go(); } }}>Apply and continue</button>
+            <button type="button" className="action-btn confirm-no" disabled={loading} data-testid="sv-unsaved-discard"
+              onClick={() => { const go = leaveTo; discardPrefs(); setLeaveTo(null); go(); }}>Discard and continue</button>
+            <button type="button" className="action-btn confirm-no" disabled={loading} data-testid="sv-unsaved-stay" onClick={() => setLeaveTo(null)}>Stay here</button>
+          </div>
+        </Dialog>
       )}
     </div>
   );

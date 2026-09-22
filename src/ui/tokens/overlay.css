@@ -483,7 +483,8 @@ html[data-color-mode="dark"] .artifact-card.status-trashed { border-color: #FB92
 .card-meta {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  flex-wrap: wrap;
+  gap: 2px 6px;
   font-size: 12px;
   color: var(--sv-text-secondary);
 }
@@ -501,6 +502,7 @@ html[data-color-mode="dark"] .artifact-card.status-trashed { border-color: #FB92
   display: inline-flex;
   align-items: center;
   gap: 4px;
+  white-space: nowrap; /* tester 2026-09-22 (item 6): label, avatar and name stay on one line */
 }
 .card-meta-owner-label {
   color: var(--sv-text-subtle);
@@ -1382,3 +1384,28 @@ html[data-color-mode="dark"] .sv-state.trashed { background: #94A3B8; color: #0F
   font-size: 12px;
   color: var(--sv-text-secondary);
 }
+
+/* Per-group Show more / Show fewer (tester 2026-09-22, items 1 + 5) */
+.sv-group-footer {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 4px 2px;
+}
+.sv-group-footer-count {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--sv-text-secondary);
+}
+.load-more-btn {
+  background: none;
+  border: none;
+  color: var(--sv-interactive-primary);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 4px 12px;
+  font-family: inherit;
+}
+.load-more-btn:hover { text-decoration: underline; }
+.load-more-btn:disabled { cursor: wait; opacity: 0.85; }

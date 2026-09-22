@@ -9,6 +9,10 @@
  * reason }` — the surfaces open the code prompt on `signatureRequired` and retry with `code`.
  */
 export const SIGNED_SEAL_ACTION_KEYS = Object.freeze([
+  // Tester report 2026-09-22: sealing itself must be signed too — "as a user without a signature set
+  // up, I was able to seal an attachment without being notified". The seal is the act that starts
+  // custody; leaving it unsigned while its release was signed made the setting half a rule.
+  "seal-artifact", "seal-section",
   "unseal-artifact", "unseal-section", "steward-unseal", "extend-seal", "extend-section",
   "approve-edit-request", "deny-edit-request", "approve-section-edit", "deny-section-edit",
   "grant-edit-access", "grant-section-edit", "revoke-edit-grant", "revoke-section-edit-grant",
