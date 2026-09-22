@@ -1409,3 +1409,8 @@ html[data-color-mode="dark"] .sv-state.trashed { background: #94A3B8; color: #0F
 }
 .load-more-btn:hover { text-decoration: underline; }
 .load-more-btn:disabled { cursor: wait; opacity: 0.85; }
+
+/* The trash line ("Deleted … by …") stands on its own line under "Sealed by"; the separator
+   that would dangle at the end of the line above is dropped (tester 2026-09-22, item 6). */
+.card-meta [data-testid="sv-card-trash-meta"] { flex-basis: 100%; }
+.card-meta .card-meta-sep:has(+ [data-testid="sv-card-trash-meta"]) { display: none; }
