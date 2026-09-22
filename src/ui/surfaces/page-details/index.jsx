@@ -9,6 +9,7 @@ import { primaryActionFor, menuActionsFor, expiryWarning } from "../../../server
 import { approvalSummary } from "../../../server/capsules/workflow/status.js"; // WF-6: the same sentence, in the viewer's zone
 import GiveAccessDialog from "../../kit/GiveAccessDialog";
 import { useSignedInvoke } from "../../kit/SignedInvoke";
+import { listenOutside } from "../../kit/outside-close.js";
 
 // 5.0 — the page-details modal (mockup §4), the page-level hub behind the byline chip. ONE
 // resource serves two modules: the byline item (`sentinel-vault-byline`, mode "details") and
@@ -42,10 +43,7 @@ const LevelPicker = ({ levels, value, onPick, disabled }) => {
   const current = levels.find((l) => l.id === value) || null;
   useEffect(() => {
     if (!open) return undefined;
-    const close = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
-    const key = (e) => { if (e.key === "Escape") setOpen(false); };
-    document.addEventListener("mousedown", close); document.addEventListener("keydown", key);
-    return () => { document.removeEventListener("mousedown", close); document.removeEventListener("keydown", key); };
+    return listenOutside({ refs: [ref], onClose: () => setOpen(false) });
   }, [open]);
   return (
     <div className="pd-dd-wrap" ref={ref}>
@@ -118,9 +116,7 @@ const Kebab = ({ items, onPick, name }) => {
   const ref = useRef(null);
   useEffect(() => {
     if (!open) return undefined;
-    const close = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
-    document.addEventListener("mousedown", close);
-    return () => document.removeEventListener("mousedown", close);
+    return listenOutside({ refs: [ref], onClose: () => setOpen(false), escape: false });
   }, [open]);
   useEffect(() => { if (open) ref.current?.querySelector('[role="menuitem"]')?.focus(); }, [open]);
   const onKey = (e) => {
@@ -319,10 +315,7 @@ const MoveMenu = ({ available, onPick, disabled }) => {
   const ref = useRef(null);
   useEffect(() => {
     if (!open) return undefined;
-    const close = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
-    const key = (e) => { if (e.key === "Escape") setOpen(false); };
-    document.addEventListener("mousedown", close); document.addEventListener("keydown", key);
-    return () => { document.removeEventListener("mousedown", close); document.removeEventListener("keydown", key); };
+    return listenOutside({ refs: [ref], onClose: () => setOpen(false) });
   }, [open]);
   return (
     <div className="pd-kebab-wrap" ref={ref}>
@@ -405,6 +398,7 @@ const SectionPicker = ({ pageId, onSealed, onClose }) => {
   const [hold, setHold] = useState(null);
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
+  const { signedInvoke, signatureDialog } = useSignedInvoke(); // seal-section is a signed action (2026-09-22)
   // Escape closes the picker (not the whole modal — the root handler skips while `.pd-picker` is open).
   useEffect(() => {
     const onKey = (e) => { if (e.key === "Escape" && !busy) { e.preventDefault(); e.stopPropagation(); onClose(); } };
@@ -426,7 +420,7 @@ const SectionPicker = ({ pageId, onSealed, onClose }) => {
   const seal = async (h) => {
     setBusy(true); setError(null);
     try {
-      const r = await invoke("seal-section", { pageId, headingIndex: h.index, headingText: h.text, ...(hold ? { lockDuration: hold } : {}), ...(note.trim() ? { note: note.trim() } : {}) });
+      const r = await signedInvoke("seal-section", { pageId, headingIndex: h.index, headingText: h.text, ...(hold ? { lockDuration: hold } : {}), ...(note.trim() ? { note: note.trim() } : {}) });
       if (r?.success) { await onSealed(); onClose(); }
       else setError(r?.reason || "Could not seal this section.");
     } catch (_) { setError("Could not reach Sentinel Vault. Try again."); }
@@ -434,6 +428,7 @@ const SectionPicker = ({ pageId, onSealed, onClose }) => {
   };
   return (
     <div className="pd-picker" data-testid="pd-section-picker">
+      {signatureDialog}
       <div className="pd-picker-head"><span>Pick the heading to seal — the seal freezes it and everything under it, until the next heading of the same level.</span><button type="button" className="pd-btn quiet" onClick={onClose} disabled={busy}>Cancel</button></div>
       {error && <p className="pd-error" role="alert" data-testid="pd-section-picker-error">{error}</p>}
       {headings === null && <p className="pd-empty">Reading page…</p>}
@@ -525,10 +520,7 @@ const DurationPicker = ({ value, defaultSeconds, onChange, disabled }) => {
   const ref = useRef(null);
   useEffect(() => {
     if (!open) return undefined;
-    const close = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
-    const key = (e) => { if (e.key === "Escape") setOpen(false); };
-    document.addEventListener("mousedown", close); document.addEventListener("keydown", key);
-    return () => { document.removeEventListener("mousedown", close); document.removeEventListener("keydown", key); };
+    return listenOutside({ refs: [ref], onClose: () => setOpen(false) });
   }, [open]);
   const defLabel = `Space default${defaultSeconds ? ` (${humanSeconds(defaultSeconds)})` : ""}`;
   const options = [{ label: defLabel, seconds: null }, ...DURATIONS];
@@ -618,7 +610,7 @@ const SealActionSeam = ({ summary, reload, siteUrl, loadError, onRetry }) => {
         const payload = { attachmentId: a.id };
         if (duration) payload.lockDuration = duration;
         if (note.trim()) payload.note = note.trim();
-        const r = await invoke("seal-artifact", payload);
+        const r = await signedTab("seal-artifact", payload);
         if (r?.success) sealed += 1; else failed.push({ name: a.name, reason: r?.reason || "refused" });
       } catch (_) { failed.push({ name: a.name, reason: "did not go through" }); }
     }

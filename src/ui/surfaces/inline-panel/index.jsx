@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from "react";
+import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { createRoot } from "react-dom/client";
 import { invoke, view, router } from "@forge/bridge";
 // SEC-2 (e): the proposal bar opens with this reason already typed — the approvers see what it is at a glance.
@@ -479,7 +479,7 @@ const ArtifactCard = ({ att, onRefresh, columns, siteUrl, spaceKey, pageId, page
     metaItems.push(<span key="watching" className="card-meta-item card-meta-watching" role="status">Watching for release</span>);
   }
 
-  const showLabels = columns.labels;
+  const showLabels = columns.labels && !att.isStale; // a trashed file takes no labels (tester 2026-09-22, item 6)
   const hasSecondLine = metaItems.length > 0 || showLabels;
 
   return (
@@ -644,6 +644,25 @@ const renderByteSize = (bytes) => {
 const renderLapseDate = (dateStr) => (dateStr ? when(dateStr) || "—" : "—");
 
 // ── Skeleton card placeholder ────────────────────────
+
+// Tester report 2026-09-22 (items 1 + 5): every group shows an initial window of cards, says how
+// many it holds, and offers Show more / Show fewer — the Sealed group used to render ALL its cards
+// (the KVS phase is never paged), and Available could show its empty line while its cards were
+// still on a later server page.
+const GroupFooter = ({ shown, total, canMore, onMore, canFewer, onFewer, busy, testId }) => {
+  if (!canMore && !canFewer) return null;
+  return (
+    <div className="sv-group-footer" data-testid={testId}>
+      <span className="sv-group-footer-count">Showing {shown} of {total}</span>
+      {canMore && (
+        <button type="button" className={`load-more-btn ${busy ? "is-busy" : ""}`} onClick={onMore} disabled={busy} data-testid={`${testId}-more`}>
+          {busy ? <>Fetching<span className="btn-busy-bar" /></> : "Show more files"}
+        </button>
+      )}
+      {canFewer && <button type="button" className="load-more-btn" onClick={onFewer} data-testid={`${testId}-fewer`}>Show fewer</button>}
+    </div>
+  );
+};
 
 const SkeletonCard = () => (
   <div className="artifact-card skeleton-card">
@@ -1010,6 +1029,7 @@ const SealedSectionsGroup = ({ pageId, onChanged, viewer, siteUrl }) => {
   const [headingsLoading, setHeadingsLoading] = useState(false);
   const [sealingIndex, setSealingIndex] = useState(null);
   const [collapsed, setCollapsed] = useState(false);
+  const { signedInvoke, signatureDialog: sealSignatureDialog } = useSignedInvoke(); // seal-section is a signed action (2026-09-22)
   const [sealError, setSealError] = useState(null);  // why the last seal/unseal was refused
   // Escape closes the heading picker (tester report 2026-09-21: pop-ups need a keyboard exit).
   useEffect(() => {
@@ -1061,7 +1081,7 @@ const SealedSectionsGroup = ({ pageId, onChanged, viewer, siteUrl }) => {
     setSealingIndex(h.index);
     setSealError(null);
     try {
-      const r = await invoke("seal-section", { pageId, headingIndex: h.index, headingText: h.text, ...(hold ? { lockDuration: hold } : {}), ...(note.trim() ? { note: note.trim() } : {}) });
+      const r = await signedInvoke("seal-section", { pageId, headingIndex: h.index, headingText: h.text, ...(hold ? { lockDuration: hold } : {}), ...(note.trim() ? { note: note.trim() } : {}) });
       if (r?.success) {
         setPicking(false); setPicked(null); setHold(null); setNote("");
         await load();
@@ -1105,6 +1125,7 @@ const SealedSectionsGroup = ({ pageId, onChanged, viewer, siteUrl }) => {
   return (
     <div className="sv-card-section sv-section-seals">
       {unsealSignatureDialog}
+      {sealSignatureDialog}
       <div className="sv-card-section-header">
         <button className="sv-group-toggle" onClick={() => setCollapsed(!collapsed)} title={collapsed ? "Expand" : "Collapse"}>
           <span className={`sv-group-caret ${collapsed ? "collapsed" : ""}`}>▾</span>
@@ -1266,6 +1287,10 @@ const ArtifactGridView = () => {
   const [nextCursor, setNextCursor] = useState(null);
   const [loadingMore, setLoadingMore] = useState(false);
   const [panelConfig, setPanelConfig] = useState(INITIAL_CONFIG);
+  // Per-group visible window (tester 2026-09-22): WINDOW cards, then +WINDOW per "Show more files".
+  const WINDOW = panelConfig.rowsPerPage || INITIAL_CONFIG.rowsPerPage;
+  const [sealedExtra, setSealedExtra] = useState(0);
+  const [availExtra, setAvailExtra] = useState(0);
   // A1: bumped whenever seals change (an action here, or the stamp poll seeing another surface's
   // change) so the Activity group refetches and shows the event that just happened.
   const [activityReload, setActivityReload] = useState(0);
@@ -1444,6 +1469,28 @@ const ArtifactGridView = () => {
     return () => clearInterval(interval);
   }, [pageId, isEditing, retrieveFileData]);
 
+  const isClaimed = (a) => a.lockStatus === "HELD" || a.lockStatus === "HELD_BY_ACTOR";
+  const groups = useMemo(() => {
+    const prioritized = [...artifacts].sort((a, b) => ((recent[b.id] || 0) - (recent[a.id] || 0)) || ((isClaimed(a) ? 0 : 1) - (isClaimed(b) ? 0 : 1)));
+    return {
+      staleFiles: prioritized.filter((a) => a.isStale),
+      claimedFiles: prioritized.filter((a) => isClaimed(a) && !a.isStale),
+      availableFiles: prioritized.filter((a) => !isClaimed(a) && !a.isStale),
+    };
+  }, [artifacts, recent]);
+  const { staleFiles, claimedFiles, availableFiles } = groups;
+
+  // Item 5: the server pages the RAW attachment list, so the first page can be sealed files only
+  // (already on screen from the KVS phase) while every available file sits on a later page — the
+  // group then showed "No unsealed files" with "Show more files" underneath. Fill the Available
+  // window from the server until it holds WINDOW cards or the page has no more to give.
+  useEffect(() => {
+    if (loading || loadingMore || enriching || !hasMore || !pageId) return;
+    const want = WINDOW + availExtra;
+    const known = counts?.available;
+    if (availableFiles.length < want && (known == null || availableFiles.length < known)) onLoadMore();
+  }, [loading, loadingMore, enriching, hasMore, pageId, availableFiles.length, counts?.available, availExtra, WINDOW, onLoadMore]);
+
   // Editor mode: show read-only message
   if (isEditing) {
     return (
@@ -1461,11 +1508,10 @@ const ArtifactGridView = () => {
   }
 
   const cols = panelConfig.columns;
-  const isClaimed = (a) => a.lockStatus === "HELD" || a.lockStatus === "HELD_BY_ACTOR";
-  const prioritized = [...artifacts].sort((a, b) => ((recent[b.id] || 0) - (recent[a.id] || 0)) || ((isClaimed(a) ? 0 : 1) - (isClaimed(b) ? 0 : 1)));
-  const staleFiles = prioritized.filter((a) => a.isStale);
-  const claimedFiles = prioritized.filter((a) => isClaimed(a) && !a.isStale);
-  const availableFiles = prioritized.filter((a) => !isClaimed(a) && !a.isStale);
+  const sealedShown = Math.min(claimedFiles.length, WINDOW + sealedExtra);
+  const availShown = Math.min(availableFiles.length, WINDOW + availExtra);
+  const availTotal = Math.max(counts?.available ?? 0, availableFiles.length);
+  const availCanMore = availableFiles.length > availShown || (hasMore && availableFiles.length < availTotal);
 
   const gridProps = {
     className: "sv-card-list",
@@ -1519,7 +1565,8 @@ const ArtifactGridView = () => {
                 <span className="sv-card-section-title">Sealed</span>
                 <span className="sv-card-section-count" data-testid="sv-count-sealed">{counts?.sealed ?? claimedFiles.length}</span>
               </div>
-              <RovingList {...gridProps} label="Sealed attachments">{renderCards(claimedFiles)}</RovingList>
+              <RovingList {...gridProps} label="Sealed attachments">{renderCards(claimedFiles.slice(0, sealedShown))}</RovingList>
+              <GroupFooter shown={sealedShown} total={claimedFiles.length} canMore={claimedFiles.length > sealedShown} onMore={() => setSealedExtra((e) => e + WINDOW)} canFewer={sealedExtra > 0} onFewer={() => setSealedExtra(0)} testId="sv-sealed-footer" />
             </div>
           )}
           {staleFiles.length > 0 && (
@@ -1537,8 +1584,9 @@ const ArtifactGridView = () => {
                 <span className="sv-card-section-title">Available</span>
                 <span className="sv-card-section-count" data-testid="sv-count-available">{counts?.available ?? availableFiles.length}</span>
               </div>
-              {availableFiles.length === 0 && <p className="sv-card-section-empty" data-testid="sv-available-empty">{enriching ? "Checking for unsealed files…" : "No unsealed files on this page — everything attached here is sealed."}</p>}
-              <RovingList {...gridProps} label="Available attachments">{renderCards(availableFiles)}</RovingList>
+              {availableFiles.length === 0 && <p className="sv-card-section-empty" data-testid="sv-available-empty">{enriching || hasMore || loadingMore ? "Checking for unsealed files…" : "No unsealed files on this page — everything attached here is sealed."}</p>}
+              <RovingList {...gridProps} label="Available attachments">{renderCards(availableFiles.slice(0, availShown))}</RovingList>
+              <GroupFooter shown={availShown} total={availTotal} canMore={availCanMore} onMore={() => setAvailExtra((e) => e + WINDOW)} canFewer={availExtra > 0} onFewer={() => setAvailExtra(0)} busy={loadingMore} testId="sv-available-footer" />
             </div>
           )}
           {enriching && (
@@ -1552,19 +1600,6 @@ const ArtifactGridView = () => {
             </div>
           )}
         </>
-      )}
-
-      {/* Load more */}
-      {hasMore && (
-        <div className="sv-panel-footer">
-          <button
-            className={`load-more-btn ${loadingMore ? "is-busy" : ""}`}
-            onClick={onLoadMore}
-            disabled={loadingMore}
-          >
-            {loadingMore ? <>Fetching<span className="btn-busy-bar" /></> : "Show more files"}
-          </button>
-        </div>
       )}
 
       {/* Upload zone — F6 (owner feedback 2026-08-27): "the Drop files here or click to select
