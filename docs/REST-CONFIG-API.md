@@ -104,7 +104,9 @@ writes the receipt.
     { "op": "decline-section-edit", "sectionId": "…", "requesterAccountId": "712020:…", "reason": "…" },
     { "op": "classify-page", "pageId": "…", "levelId": "restricted" },
     { "op": "assign-workflow", "pageId": "…", "workflowId": "review" },
-    { "op": "transition", "pageId": "…", "toStateId": "approved", "reason": "…" }
+    { "op": "transition", "pageId": "…", "toStateId": "approved", "reason": "…" },
+    { "op": "recheck-validation", "pageId": "…" },
+    { "op": "approve-validation", "pageId": "…" }
   ]
 }
 ```

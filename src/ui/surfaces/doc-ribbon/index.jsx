@@ -813,7 +813,7 @@ const DocumentRibbon = () => {
   const [alerts, setAlerts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [visible, setVisible] = useState(false);
-  const [validationState, setValidationState] = useState(null); // "passed"|"failed"|"awaiting-approval"
+  const [validationState, setValidationState] = useState(null); // "passed" | "failed" | null
   const [aiCount, setAiCount] = useState(null); // number of latest AI findings, or null
   const [workflow, setWorkflow] = useState(null); // { assigned, state, available, def } or null
   const [approvals, setApprovals] = useState(null); // { pending, toStateId, approvers, mode, ... } or null
@@ -950,7 +950,9 @@ const DocumentRibbon = () => {
       if (stale()) return;
       const sum = sumRes?.res || null;
       const wfVal = wf?.assigned ? wf : null;
-      const vsVal = vs?.state?.state || null;
+      // Only the two states the server writes; anything else is not a status (2026-09-23 — the
+      // "awaiting approval" chip had no writer anywhere and could only show from bad data).
+      const vsVal = ["passed", "failed"].includes(vs?.state?.state) ? vs.state.state : null;
       setWorkflow(wfVal);
       setApprovals(appr?.pending ? appr : null);
       setValidationState(vsVal);
@@ -1273,7 +1275,7 @@ const DocumentRibbon = () => {
           )}
           {!loading && validationState && (
             <span className={`ribbon-chip ribbon-chip-${validationState}`} title="Page content validation status">
-              {validationState === "passed" ? "Validation: passed" : validationState === "failed" ? "Validation: issues" : "Validation: awaiting approval"}
+              {validationState === "passed" ? "Validation: passed" : "Validation: issues"}
             </span>
           )}
           {!loading && aiCount !== null && aiCount > 0 && (

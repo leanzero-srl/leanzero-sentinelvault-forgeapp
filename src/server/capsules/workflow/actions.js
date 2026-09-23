@@ -49,7 +49,8 @@ import { confirmRead, readStatus, readReport, readConfirmationRequired, required
 import { signatureStatus, startEnrollment, confirmEnrollment, revokeSignature, verifySignature } from "./signature.js";
 import { evaluateRules } from "../../infra/rules-engine.js";
 import { readDocBody } from "../../infra/doc-surgery.js";
-import { fetchPageLabels } from "../../infra/labels.js";
+import { fetchPageLabelsChecked } from "../../infra/labels.js";
+import { rulesNeedLabels } from "../../shared/rule-config.js";
 
 // #46 Part A: content-conditions gate — the space's block-severity validation rules must
 // pass before the page may enter the target state. Reuses evaluateRules verbatim (sync).
@@ -64,7 +65,11 @@ async function checkContentConditions(pageId, spaceKey) {
   let adfDoc;
   try { ({ adfDoc } = await readDocBody(pageId)); }
   catch (_) { return { success: false, blocked: true, reason: "Could not read the page to check content conditions — please retry." }; }
-  const labels = await fetchPageLabels(pageId);
+  // Fail closed on a label read that did not complete: an empty list would read as "missing".
+  const { labels, complete } = await fetchPageLabelsChecked(pageId);
+  if (!complete && rulesNeedLabels(rules)) {
+    return { success: false, blocked: true, reason: "Could not read the page's labels to check content conditions — please retry." };
+  }
   const { passed, violations } = evaluateRules(adfDoc, labels, rules);
   if (passed) return null;
   return {

@@ -331,8 +331,13 @@ export function formatActivity(entry) {
     case "validation.gate": {
       const passed = d.state === "passed";
       const v = joinLabels(d.violations);
+      if (d.approved) {
+        return { ...base, label: "Validation approved", glyph: "check", tone: "positive",
+          sentence: `${who} approved the page despite the validation rules${version}` };
+      }
+      const how = d.source === "recheck" ? " on a re-check" : "";
       return { ...base, label: passed ? "Validation passed" : "Validation failed", glyph: passed ? "check" : "alert", tone: passed ? "positive" : "critical",
-        sentence: passed ? `The page passed validation${version}` : `The page failed validation${v ? `: ${v}` : ""}${version}`,
+        sentence: passed ? `The page passed validation${how}${version}` : `The page failed validation${how}${v ? `: ${v}` : ""}${version}`,
         detail: v };
     }
 
