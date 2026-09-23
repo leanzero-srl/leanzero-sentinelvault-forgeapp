@@ -773,12 +773,22 @@ const AiReviewGroup = ({ pageId }) => {
 
 // ── Validation status group (Conditions & Validations) ──
 
-const ValidationStatus = ({ pageId }) => {
+const VAL_BADGE = { passed: "Passed", failed: "Issues found" };
+
+// 2026-09-23 (tester): the group used to (a) say "All checks passed." when the check could not
+// run at all, (b) keep a stale badge after Re-check — "Passed" above a listed violation — and
+// (c) never show the admin's "Approve anyway", whose resolver existed with no caller. Re-check
+// now STORES its verdict when pass/fail status is on and the viewer can edit the page, so the
+// badge, the ribbon chip and the workflow gate follow what was just shown.
+const ValidationStatus = ({ pageId, viewer }) => {
   const [state, setState] = useState(null);
-  const [result, setResult] = useState(null);
+  const [result, setResult] = useState(null); // the last Re-check answer
+  const [error, setError] = useState(null);   // a check that could not run — never "passed"
   const [busy, setBusy] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
+  const [confirming, setConfirming] = useState(false);
+  const [approving, setApproving] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -791,42 +801,78 @@ const ValidationStatus = ({ pageId }) => {
 
   const runNow = async () => {
     setBusy(true);
+    setError(null);
     try {
-      const r = await invoke("validate-page-now", { pageId });
-      setResult(r);
+      const r = await invoke("recheck-page-validation", { pageId });
+      if (r?.failureReason || r?.ok === false) {
+        setResult(null);
+        setError(r?.failureReason || "Could not check this page. Try again in a moment.");
+      } else {
+        setResult(r || null);
+        if (r?.persisted && r.state) setState(r.state);
+      }
     } catch (e) {
-      console.error("Validate now failed:", e);
+      console.error("Re-check failed:", e);
+      setResult(null);
+      setError("Could not check this page. Try again in a moment.");
     } finally {
       setBusy(false);
     }
   };
 
-  // Only surface when a gate status exists (keeps pages without validation clean).
-  if (!pageId || !loaded || !state || !state.state) return null;
+  const approve = async () => {
+    setApproving(true);
+    setError(null);
+    try {
+      const r = await invoke("approve-page-gate", { pageId });
+      if (r?.success) { setState(r.state || { state: "passed", violations: [] }); setResult(null); }
+      else setError(r?.reason || "Could not approve this page.");
+    } catch (e) {
+      console.error("Approve anyway failed:", e);
+      setError("Could not approve this page.");
+    } finally {
+      setApproving(false);
+      setConfirming(false);
+    }
+  };
 
-  const badge = state.state === "passed" ? "Passed" : state.state === "failed" ? "Issues found" : "Awaiting approval";
+  // Only surface when a pass/fail status exists (keeps pages without validation clean).
+  if (!pageId || !loaded || !state || !VAL_BADGE[state.state]) return null;
+
   const violations = result ? (result.violations || []) : (state.violations || []);
+  const shownPasses = !error && violations.length === 0 && !result?.noRules;
+  const canApprove = viewer?.isSpaceAdmin === true && state.state === "failed";
+  const liveDiffers = result && !result.persisted && !result.noRules
+    && (result.passed ? state.state !== "passed" : state.state !== "failed");
 
   return (
-    <div className="sv-card-section sv-validation">
+    <div className="sv-card-section sv-validation" data-testid="sv-validation">
       <div className="sv-card-section-header">
         <button className="sv-group-toggle" onClick={() => setCollapsed(!collapsed)} title={collapsed ? "Expand" : "Collapse"}>
           <span className={`sv-group-caret ${collapsed ? "collapsed" : ""}`}>▾</span>
         </button>
         <span className="sv-card-section-title">Validation</span>
-        <span className={`sv-val-badge sv-val-${state.state}`}>{badge}</span>
-        <button className="action-btn watch" style={{ marginLeft: "auto" }} onClick={runNow} disabled={busy}>
-          {busy ? <>Checking<span className="btn-busy-bar" /></> : "Re-check"}
-        </button>
+        <span className={`sv-val-badge sv-val-${state.state}`} role="status" data-testid="sv-validation-badge">{VAL_BADGE[state.state]}</span>
+        <span className="sv-val-actions">
+          {canApprove && (
+            <button className="action-btn watch" onClick={() => setConfirming(true)} disabled={busy || approving} data-testid="sv-validation-approve">
+              Approve anyway
+            </button>
+          )}
+          <button className="action-btn watch" onClick={runNow} disabled={busy || approving} data-testid="sv-validation-recheck">
+            {busy ? <>Checking<span className="btn-busy-bar" /></> : "Re-check"}
+          </button>
+        </span>
       </div>
       {!collapsed && (
         <>
-          {result && result.noRules && <div className="sv-panel-empty">No validation rules configured.</div>}
-          {violations.length === 0 && (result || state.state === "passed") && !result?.noRules && (
-            <div className="sv-val-ok">All checks passed.</div>
+          {error && <div className="card-action-error sv-val-error" role="alert" data-testid="sv-validation-error">{error}</div>}
+          {!error && result && result.noRules && <div className="sv-panel-empty">No validation rules apply to this page.</div>}
+          {shownPasses && (result || state.state === "passed") && (
+            <div className="sv-val-ok">{state.approvedBy && !result ? "Approved by a space admin." : "All checks passed."}</div>
           )}
-          {violations.length > 0 && (
-            <ul className="sv-val-list">
+          {!error && violations.length > 0 && (
+            <ul className="sv-val-list" data-testid="sv-validation-list">
               {violations.map((v, i) => (
                 <li key={i} className={`sv-val-item sv-val-item-${v.severity}`}>
                   <strong>{v.label}</strong>: {v.message}
@@ -834,7 +880,20 @@ const ValidationStatus = ({ pageId }) => {
               ))}
             </ul>
           )}
+          {!error && liveDiffers && result.note && <div className="sv-val-note" data-testid="sv-validation-note">{result.note}</div>}
         </>
+      )}
+      {confirming && (
+        <ConfirmDialog
+          title="Approve this page anyway?"
+          message={`The page breaks ${violations.length || "some"} validation rule${violations.length === 1 ? "" : "s"}. Approving marks this version as passed; the next published edit is checked again.`}
+          confirmLabel="Approve anyway"
+          danger={false}
+          busy={approving}
+          onConfirm={approve}
+          onCancel={() => setConfirming(false)}
+          testId="sv-validation-approve-confirm"
+        />
       )}
     </div>
   );
@@ -1549,7 +1608,7 @@ const ArtifactGridView = () => {
       )}
 
       {/* Validation status (Conditions & Validations) */}
-      {!loading && !isEditing && <ValidationStatus pageId={pageId} />}
+      {!loading && !isEditing && <ValidationStatus pageId={pageId} viewer={viewer} />}
 
       {/* AI Review (Semantic AI Validations) */}
       {!loading && !isEditing && <AiReviewGroup pageId={pageId} />}

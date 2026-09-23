@@ -27,7 +27,8 @@ import {
   markVersionChecked,
 } from "./capsules/validations/logic.js";
 import { evaluateRules } from "./infra/rules-engine.js";
-import { fetchPageLabels } from "./infra/labels.js";
+import { fetchPageLabelsChecked } from "./infra/labels.js";
+import { rulesNeedLabels } from "./shared/rule-config.js";
 import {
   autoAssignOnEvent, getSpaceWorkflowSettings, resolveWorkflowDef, findState, resolveDemoteTarget, validateTransition, restampIfEnforced,
   transitionPageWorkflow, readPageWorkflow, purgePageWorkflow, mirrorStateLabel, readLabelStamp, clearStateLabel, restampApprovedVersion, fetchLivePageVersion,
@@ -1698,12 +1699,20 @@ async function runValidationPhase(event, pageId, atlassianId) {
   const version = pageData.version?.number;
   if (!version) return; // SV-m1: an undefined version would bypass dedup entirely
   if (await wasVersionChecked(pageId, version)) return;
+
+  // Page labels (required-label rule) — read BEFORE the claim below, and only a read, so the
+  // SV-m1 "claim before any side effect" order still holds. A label read that did not complete
+  // must not be judged as "no labels" (tester, 2026-09-23): skip this run WITHOUT claiming the
+  // version, so a later delivery or the early guard judges it on a complete read.
+  const { labels, complete: labelsComplete } = await fetchPageLabelsChecked(pageId);
+  if (!labelsComplete && rulesNeedLabels(config.rules)) {
+    console.error(`[VALIDATE] page ${pageId} v${version}: label read incomplete — not judged this run (label rules present)`);
+    return;
+  }
+
   // SV-m1: claim this version up-front (before any side effect) so a duplicate updated:page
   // delivery for the same version can't double-post advisory comments / state writes.
   await markVersionChecked(pageId, version);
-
-  // Fetch page labels (required-label rule) — shared helper (#46 reuse).
-  const labels = await fetchPageLabels(pageId);
 
   const { passed, violations } = evaluateRules(adfDoc, labels, config.rules);
   const modes = config.modes || { advisory: true, gate: false, revert: false };
