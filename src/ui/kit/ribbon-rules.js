@@ -16,7 +16,7 @@
 //   input.lockedFor       { name, owner, until, kind, myRequest: "none"|"pending" } | null
 //   input.alerts          the viewer-relevant dispatches (array)
 //   input.workflow        the page workflow answer (truthy when assigned) | null
-//   input.validation      "passed" | "failed" | "awaiting-approval" | null
+//   input.validation      "passed" | "failed" | null
 //
 // The urgent state is exactly ONE pill (decision 3 of the mockup), chosen in this order: an active
 // violation alert ("Undone" / "Moved back"), work waiting on the viewer ("Waiting for you N"), an

@@ -52,6 +52,12 @@ export const CONTENT_OPS = Object.freeze({
   "classify-page": { allow: ["pageId", "levelId"], required: ["pageId"], resolverKey: "classification-set-page", role: "editor" },
   "assign-workflow": { allow: ["pageId", "workflowId"], required: ["pageId"], resolverKey: "assign-workflow", role: "editor" },
   "transition": { allow: ["pageId", "toStateId", "reason"], required: ["pageId", "toStateId"], resolverKey: "request-transition", role: "editor" },
+  // 2026-09-23: judge a page against its validation rules now and store the verdict (where
+  // pass/fail status is on and the token's minter can edit the page) — e.g. after a script
+  // changed its labels, which makes no page version and so no save check. And a space admin's
+  // "Approve anyway" for a page that fails.
+  "recheck-validation": { allow: ["pageId"], required: ["pageId"], resolverKey: "recheck-page-validation", role: "editor" },
+  "approve-validation": { allow: ["pageId"], required: ["pageId"], resolverKey: "approve-page-gate", role: "editor" },
 });
 
 const isObj = (v) => v !== null && typeof v === "object" && !Array.isArray(v);
@@ -282,6 +288,10 @@ export function planBundle(bundle) {
         break;
       case "transition":
         step(p, spec.resolverKey, { pageId: String(c.pageId), toStateId: String(c.toStateId), reason: c.reason });
+        break;
+      case "recheck-validation":
+      case "approve-validation":
+        step(p, spec.resolverKey, { pageId: String(c.pageId) });
         break;
       default:
         break;

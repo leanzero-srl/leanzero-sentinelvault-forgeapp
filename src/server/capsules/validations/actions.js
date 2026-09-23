@@ -1,7 +1,10 @@
 import { asApp, route } from "@forge/api";
 import { kvs } from "@forge/kvs";
 import { Queue } from "@forge/events";
-import { fetchPageLabels } from "../../infra/labels.js";
+import { fetchPageLabelsChecked } from "../../infra/labels.js";
+import { ruleListRefusal, rulesNeedLabels } from "../../shared/rule-config.js";
+import { recordActivity } from "../../infra/activity-log.js";
+import { decideRecheckWrite, recheckNote } from "./recheck.js";
 
 import { authorizeSteward, isOperatorSteward, isOperatorSiteAdmin } from "../../shared/steward-checks.js";
 import { setWithTtl } from "../../shared/kvs-ttl.js";
@@ -16,6 +19,7 @@ import {
   storeValidationConfig,
   readValidationState,
   writeValidationState,
+  resolveEffectiveConfig,
   resolveAiConfig,
   getMonthlyTokenUsage,
   getLatestFindings,
@@ -37,7 +41,11 @@ const sanitize = (key) => String(key).replace(/[^a-zA-Z0-9:._\s-#]/g, "_");
  */
 export async function resolveRules(spaceKey) {
   const global = (await kvs.get("validation-config-global")) || {};
-  const space = spaceKey ? await kvs.get(`validation-config-space-${sanitize(spaceKey)}`) : null;
+  let space = spaceKey ? await kvs.get(`validation-config-space-${sanitize(spaceKey)}`) : null;
+  // A space whose own switch is OFF is ignored, exactly as the save check ignores it
+  // (resolveEffectiveConfig, it50). Otherwise Re-check and the transition gate judged a page on
+  // space rules the save check never applies — two answers for one page (2026-09-23).
+  if (space && space.enabled === false) space = null;
   // audit C6: apply the global block-severity compliance floor here too (this feeds the
   // transition gate), so a space can't drop an org-mandatory rule from the gate either.
   return mergeEffectiveRules(global.rules, space?.rules);
@@ -61,6 +69,14 @@ const storeConfig = async (req) => {
     ? await isOperatorSteward(caller, key)
     : await isOperatorSiteAdmin(caller));
   if (!authorized) return { success: false, reason: "Not authorized — space admin access required." };
+  // 2026-09-23: a rule that checks nothing (a "Require a heading" with no text and no level
+  // passes on any heading) is refused here, the one door every save goes through — the rules
+  // editor, and the config REST API (which stores through this resolver).
+  if (data.rules !== undefined) {
+    if (!Array.isArray(data.rules)) return { success: false, reason: "Rules must be a list." };
+    const refusal = ruleListRefusal(data.rules);
+    if (refusal) return { success: false, reason: refusal };
+  }
   // Cost backstop: never persist a non-Haiku AI model.
   if (data.ai && data.ai.model && !isForgeLlmModelAllowed(data.ai.model)) {
     data.ai.model = FORGE_LLM_DEFAULT_MODEL;
@@ -68,8 +84,36 @@ const storeConfig = async (req) => {
   return await storeValidationConfig(scope || "global", key, data);
 };
 
+// The space whose rules apply is a property of the page, not of the caller. Context first (it is
+// authentic and free, and only when it names THIS page); otherwise resolve it from the page itself.
+async function pageSpaceKey(req, pageId) {
+  const ctxPageId = req.context.extension?.content?.id;
+  const ctxSpaceKey = req.context.extension?.content?.space?.key || req.context.extension?.space?.key || null;
+  if (ctxSpaceKey && ctxPageId && String(ctxPageId) === String(pageId)) return ctxSpaceKey;
+  return (await resolvePageSpaceKey(pageId)) || null;
+}
+
+// Judge the LIVE page against `rules`. Never fails open: a read error or an incomplete label
+// read (when a label rule is present) returns checked:false with a reason the panel shows.
+async function judgePage(pageId, rules) {
+  try {
+    const { pageData, adfDoc } = await readDocBody(pageId);
+    const version = pageData?.version?.number ?? null;
+    const { labels, complete } = await fetchPageLabelsChecked(pageId);
+    if (!complete && rulesNeedLabels(rules)) {
+      return { checked: false, version, failureReason: "Could not read this page's labels, so the label rules were not checked. Try again in a moment." };
+    }
+    const { passed, violations } = evaluateRules(adfDoc, labels, rules);
+    return { checked: true, version, passed, violations };
+  } catch (e) {
+    console.error("[VALIDATE-NOW] failed:", e);
+    // SV-m3: do NOT fail open — a page-read error must not render as "all checks passed".
+    return { checked: false, version: null, failureReason: "Could not read this page to check it. Try again in a moment.", error: String(e?.message || e) };
+  }
+}
+
 /**
- * On-demand validation (no mutation). Used by the "Validate now" button.
+ * On-demand validation (no mutation).
  */
 const validatePageNow = async (req) => {
   const ctxPageId = req.context.extension?.content?.id;
@@ -84,26 +128,66 @@ const validatePageNow = async (req) => {
     return { ok: false, passed: false, violations: [], failureReason: "Could not validate this page" };
   }
 
-  // Which ruleset applies is a property of the page, not of the caller. Taking spaceKey from the
-  // payload let a caller run one space's rules against another space's page. Context first (it is
-  // authentic and free); otherwise resolve it from the page itself.
-  const spaceKey =
-    req.context.extension?.content?.space?.key ||
-    req.context.extension?.space?.key ||
-    await resolvePageSpaceKey(pageId);
-
-  const rules = await resolveRules(spaceKey);
+  const rules = await resolveRules(await pageSpaceKey(req, pageId));
   if (!rules.length) return { passed: true, violations: [], noRules: true };
 
-  try {
-    const { adfDoc } = await readDocBody(pageId);
-    const labels = await fetchPageLabels(pageId);
-    return evaluateRules(adfDoc, labels, rules);
-  } catch (e) {
-    console.error("[VALIDATE-NOW] failed:", e);
-    // SV-m3: do NOT fail open — a page-read error must not render as "all checks passed".
-    return { ok: false, passed: false, violations: [], error: String(e?.message || e), failureReason: "Could not validate this page" };
+  const r = await judgePage(pageId, rules);
+  if (!r.checked) return { ok: false, passed: false, violations: [], failureReason: r.failureReason, error: r.error };
+  return { passed: r.passed, violations: r.violations, version: r.version };
+};
+
+/**
+ * Re-check (the panel's button, and the config API's `recheck-validation`): judge the live page
+ * NOW and, when pass/fail status is on for its space and the caller may edit the page, store the
+ * verdict — so the badge, the ribbon chip and the workflow gate agree with what was just shown.
+ * No comment, no revert: those stay with a published save. Reads the same effective rules as the
+ * save check, so the two can never judge one page differently.
+ */
+const recheckPageValidation = async (req) => {
+  const ctxPageId = req.context.extension?.content?.id;
+  const pageId = req.payload?.pageId || ctxPageId;
+  const accountId = req.context.accountId;
+  if (!pageId) return { ok: false, passed: false, violations: [], failureReason: "No page", reason: "No page" };
+
+  if (mustVerify(req.payload?.pageId, ctxPageId) && !(await canReadPage(accountId, pageId))) {
+    return { ok: false, passed: false, violations: [], failureReason: "Could not validate this page", reason: "Could not validate this page" };
   }
+
+  const spaceKey = await pageSpaceKey(req, pageId);
+  const effective = await resolveEffectiveConfig(spaceKey);
+  // Validation switched off site-wide: still answer the question on the authored rules (what the
+  // panel always did), but nothing is stored — there is no status to keep in step.
+  const rules = effective.enabled ? (effective.rules || []) : await resolveRules(spaceKey);
+  const stored = await readValidationState(pageId);
+  if (!rules.length) return { success: true, passed: true, violations: [], noRules: true, state: stored, persisted: false };
+
+  const r = await judgePage(pageId, rules);
+  if (!r.checked) {
+    return { ok: false, passed: false, violations: [], failureReason: r.failureReason, reason: r.failureReason, error: r.error, state: stored, persisted: false };
+  }
+
+  const gateOn = !!(effective.enabled && effective.modes?.gate);
+  const canEdit = gateOn ? await canEditPage(accountId, pageId) : false;
+  const decision = decideRecheckWrite({ gateOn, canEdit, checked: true, passed: r.passed, version: r.version, stored });
+  let state = stored;
+  if (decision.write) {
+    const next = r.passed ? "passed" : "failed";
+    state = { state: next, violations: r.passed ? [] : r.violations, version: r.version, checkedAt: new Date().toISOString(), checkedBy: accountId, source: "recheck" };
+    await writeValidationState(pageId, state);
+    if (stored?.state !== next) {
+      await recordActivity({
+        type: "validation.gate",
+        pageId,
+        spaceKey,
+        actor: accountId ? { accountId, name: null } : null,
+        target: { kind: "page", id: pageId, name: null },
+        details: { state: next, previous: stored?.state || null, source: "recheck", violations: next === "failed" ? r.violations.map((v) => v?.label || "rule").slice(0, 25) : [] },
+        version: r.version,
+      });
+    }
+  }
+  // `success` = the check ran (the config API's receipt reads it); `passed` is the verdict.
+  return { success: true, passed: r.passed, violations: r.violations, version: r.version, state, persisted: decision.write, note: recheckNote(decision.why) };
 };
 
 const getValidationState = async (req) => {
@@ -120,8 +204,9 @@ const getValidationState = async (req) => {
 };
 
 /**
- * Approve a page gate (approver: steward, or the configured approver). Stamps
- * the validation state property as passed.
+ * "Approve anyway": a space admin marks a page that fails validation as passed. Stands for the
+ * version they looked at (stamped here), so a re-check of that version keeps it and the next
+ * published edit is judged again. Only meaningful where pass/fail status is on.
  */
 const approvePageGate = async (req) => {
   const pageId = req.payload?.pageId || req.context.extension?.content?.id;
@@ -135,13 +220,28 @@ const approvePageGate = async (req) => {
   try { allowed = !!spaceKey && await authorizeSteward(accountId, spaceKey); } catch (_) { /* deny */ }
   if (!allowed) return { success: false, reason: "Only an admin of this page's space can approve it" };
 
-  await writeValidationState(pageId, {
-    state: "passed",
-    violations: [],
-    approvedBy: accountId,
-    checkedAt: new Date().toISOString(),
+  const effective = await resolveEffectiveConfig(spaceKey);
+  if (!effective.enabled || !effective.modes?.gate) {
+    return { success: false, reason: "Pass/fail status is off for this space, so there is nothing to approve." };
+  }
+
+  let version = null;
+  try { version = (await readDocBody(pageId)).pageData?.version?.number ?? null; }
+  catch (_) { return { success: false, reason: "Could not read the page. Try again in a moment." }; }
+
+  const stored = await readValidationState(pageId);
+  const state = { state: "passed", violations: [], version, approvedBy: accountId, approvedAt: new Date().toISOString(), checkedAt: new Date().toISOString() };
+  await writeValidationState(pageId, state);
+  await recordActivity({
+    type: "validation.gate",
+    pageId,
+    spaceKey,
+    actor: accountId ? { accountId, name: null } : null,
+    target: { kind: "page", id: pageId, name: null },
+    details: { state: "passed", previous: stored?.state || null, approved: true, violations: [] },
+    version,
   });
-  return { success: true };
+  return { success: true, state };
 };
 
 // --- Semantic AI Validations (Forge LLM) ---
@@ -289,6 +389,7 @@ export const actions = [
   ["load-validation-config", loadConfig],
   ["store-validation-config", storeConfig],
   ["validate-page-now", validatePageNow],
+  ["recheck-page-validation", recheckPageValidation],
   ["get-validation-state", getValidationState],
   ["approve-page-gate", approvePageGate],
   ["list-ai-models", listAiModels],

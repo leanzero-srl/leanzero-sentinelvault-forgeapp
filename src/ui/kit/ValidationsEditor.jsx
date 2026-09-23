@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { invoke } from "@forge/bridge";
+import { ruleConfigProblem, ruleListRefusal } from "../../server/shared/rule-config.js"; // one completeness rule, shared with the save resolver
 
 // Shared Conditions & Validations editor — used by the steward console (global
 // scope) and the realm console (per-space scope). Self-contained: its own
@@ -43,9 +44,38 @@ const MiniSelect = ({ value, options, onChange }) => {
   );
 };
 
+// A visible caption above every rule input (2026-09-23): the rule's report name and its value
+// used to be two identical placeholder-only boxes, and a tester filled the name thinking it was
+// the heading text — the rule then checked nothing.
+const Field = ({ label, hint, children, wide }) => (
+  <label className={`val-field${wide ? " val-field-wide" : ""}`}>
+    <span className="val-field-label">{label}</span>
+    {children}
+    {hint && <span className="val-field-hint">{hint}</span>}
+  </label>
+);
+
+// Keeps what the person TYPES (commas included) and hands the parsed list up. Parsing on every
+// keystroke dropped the comma as soon as it was typed, so a second label could never be entered.
+const LabelsInput = ({ labels, onChange }) => {
+  const [text, setText] = useState((labels || []).join(", "));
+  return (
+    <input
+      className="form-input"
+      placeholder="e.g. reviewed, security"
+      value={text}
+      onChange={(e) => {
+        setText(e.target.value);
+        onChange(e.target.value.split(",").map((x) => x.trim()).filter(Boolean));
+      }}
+    />
+  );
+};
+
 const RULE_TYPES = [
   { value: "required-heading", label: "Require a heading" },
   { value: "required-table", label: "Require a table" },
+  { value: "required-macro", label: "Require a macro" },
   { value: "required-label", label: "Require labels" },
   { value: "heading-hierarchy", label: "No skipped heading levels" },
   { value: "max-length", label: "Maximum length" },
@@ -116,11 +146,16 @@ export default function ValidationsEditor({ scope = "global", spaceKey = null })
 
   const updateAi = (patch) => setCfg((p) => ({ ...p, ai: { ...p.ai, ...patch } }));
   const addRule = () => setCfg((p) => ({ ...p, rules: [...p.rules, { id: `r${Date.now()}`, type: "required-heading", label: "", severity: "warn", config: {} }] }));
+  // Choosing the SAME type again must not wipe what was typed (2026-09-23: re-picking "Require a
+  // heading" silently cleared its heading text). A different type starts from an empty config.
+  const changeRuleType = (i, type) => setCfg((p) => ({ ...p, rules: p.rules.map((r, idx) => (idx === i && r.type !== type ? { ...r, type, config: {} } : r)) }));
   const updateRule = (i, patch) => setCfg((p) => ({ ...p, rules: p.rules.map((r, idx) => (idx === i ? { ...r, ...patch } : r)) }));
   const updateRuleConfig = (i, patch) => setCfg((p) => ({ ...p, rules: p.rules.map((r, idx) => (idx === i ? { ...r, config: { ...r.config, ...patch } } : r)) }));
   const removeRule = (i) => setCfg((p) => ({ ...p, rules: p.rules.filter((_, idx) => idx !== i) }));
 
+  const refusal = ruleListRefusal(cfg.rules);
   const save = async () => {
+    if (refusal) { setMsg({ type: "error", text: refusal }); return; }
     setSaving(true);
     setMsg(null);
     try {
@@ -188,34 +223,63 @@ export default function ValidationsEditor({ scope = "global", spaceKey = null })
         {cfg.rules.length === 0 && (
           <p className="settings-row-description">No rules yet. Add one to start validating pages.</p>
         )}
-        {cfg.rules.map((r, i) => (
-          <div key={r.id} className="val-rule-card">
+        {cfg.rules.map((r, i) => {
+          const problem = ruleConfigProblem(r);
+          const num = (v) => (v === "" ? undefined : parseInt(v, 10));
+          return (
+          <div key={r.id} className={`val-rule-card${problem ? " val-rule-card-invalid" : ""}`} data-testid="val-rule-card">
             <div className="val-rule-row">
-              <MiniSelect value={r.type} options={RULE_TYPES} onChange={(v) => updateRule(i, { type: v, config: {} })} />
+              <MiniSelect value={r.type} options={RULE_TYPES} onChange={(v) => changeRuleType(i, v)} />
               <MiniSelect value={r.severity} options={SEVERITY_OPTIONS} onChange={(v) => updateRule(i, { severity: v })} />
-              <button className="val-rule-remove" onClick={() => removeRule(i)} title="Remove rule">×</button>
+              <button className="val-rule-remove" onClick={() => removeRule(i)} title="Remove rule" aria-label="Remove rule">×</button>
             </div>
-            <input className="form-input" placeholder="Label (shown in the report)" value={r.label || ""} onChange={(e) => updateRule(i, { label: e.target.value })} />
+            <Field label="Name in reports" hint="Shown in the comment and the panel. It is not what the rule checks." wide>
+              <input className="form-input" placeholder="e.g. Security section" value={r.label || ""} onChange={(e) => updateRule(i, { label: e.target.value })} />
+            </Field>
             {r.type === "required-heading" && (
               <div className="val-rule-cfg">
-                <input className="form-input" placeholder="Heading text contains (optional)" value={r.config.text || ""} onChange={(e) => updateRuleConfig(i, { text: e.target.value })} />
-                <input className="form-input" type="number" placeholder="Level 1-6 (optional)" value={r.config.level || ""} onChange={(e) => updateRuleConfig(i, { level: e.target.value ? parseInt(e.target.value) : undefined })} />
+                <Field label="Heading text must contain" hint="Any heading containing this text counts; case is ignored.">
+                  <input className="form-input" placeholder="e.g. Security" value={r.config.text || ""} onChange={(e) => updateRuleConfig(i, { text: e.target.value })} />
+                </Field>
+                <Field label="Heading level (optional)" hint="1–6. Empty means any level.">
+                  <input className="form-input" type="number" min="1" max="6" placeholder="Any" value={r.config.level ?? ""} onChange={(e) => updateRuleConfig(i, { level: num(e.target.value) })} />
+                </Field>
               </div>
             )}
             {r.type === "required-table" && (
-              <input className="form-input" type="number" placeholder="Minimum tables" value={r.config.minCount || 1} onChange={(e) => updateRuleConfig(i, { minCount: parseInt(e.target.value) || 1 })} />
+              <Field label="Minimum number of tables">
+                <input className="form-input" type="number" min="1" value={r.config.minCount ?? 1} onChange={(e) => updateRuleConfig(i, { minCount: num(e.target.value) })} />
+              </Field>
+            )}
+            {r.type === "required-macro" && (
+              <div className="val-rule-cfg">
+                <Field label="Macro key" hint="The macro's key, e.g. toc, info or jira.">
+                  <input className="form-input" placeholder="e.g. toc" value={r.config.extensionKey || ""} onChange={(e) => updateRuleConfig(i, { extensionKey: e.target.value.trim() })} />
+                </Field>
+                <Field label="Minimum number">
+                  <input className="form-input" type="number" min="1" value={r.config.minCount ?? 1} onChange={(e) => updateRuleConfig(i, { minCount: num(e.target.value) })} />
+                </Field>
+              </div>
             )}
             {r.type === "required-label" && (
-              <input className="form-input" placeholder="Required labels (comma-separated)" value={(r.config.labels || []).join(", ")} onChange={(e) => updateRuleConfig(i, { labels: e.target.value.split(",").map((s) => s.trim()).filter(Boolean) })} />
+              <Field label="Required labels" hint="Separate labels with commas. Every one must be on the page." wide>
+                <LabelsInput labels={r.config.labels} onChange={(labels) => updateRuleConfig(i, { labels })} />
+              </Field>
             )}
             {r.type === "max-length" && (
-              <input className="form-input" type="number" placeholder="Max characters" value={r.config.maxChars || ""} onChange={(e) => updateRuleConfig(i, { maxChars: parseInt(e.target.value) || 0 })} />
+              <Field label="Maximum characters">
+                <input className="form-input" type="number" min="1" value={r.config.maxChars ?? ""} onChange={(e) => updateRuleConfig(i, { maxChars: num(e.target.value) })} />
+              </Field>
             )}
             {r.type === "min-length" && (
-              <input className="form-input" type="number" placeholder="Min characters" value={r.config.minChars || ""} onChange={(e) => updateRuleConfig(i, { minChars: parseInt(e.target.value) || 0 })} />
+              <Field label="Minimum characters">
+                <input className="form-input" type="number" min="1" value={r.config.minChars ?? ""} onChange={(e) => updateRuleConfig(i, { minChars: num(e.target.value) })} />
+              </Field>
             )}
+            {problem && <p className="val-rule-problem" role="alert" data-testid="val-rule-problem">{problem}</p>}
           </div>
-        ))}
+          );
+        })}
       </div>
 
       {/* Semantic AI Validations (Forge LLM — Runs on Atlassian) */}
@@ -273,7 +337,7 @@ export default function ValidationsEditor({ scope = "global", spaceKey = null })
 
       {msg && <div role="status" aria-live="polite" className={msg.type === "success" ? "alert-success" : "alert-error"}>{msg.text}</div>}
       <div className="action-bar">
-        <button className="btn-primary" onClick={save} disabled={saving}>{saving ? "Saving…" : "Save validation rules"}</button>
+        <button className="btn-primary" onClick={save} disabled={saving} title={refusal || undefined}>{saving ? "Saving…" : "Save validation rules"}</button>
       </div>
     </div>
   );
