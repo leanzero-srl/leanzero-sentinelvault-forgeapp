@@ -71,7 +71,8 @@ const enumeratePanelArtifacts = async (req) => {
         let expiresAt = null;
         let isExpired = false;
 
-        if (sealData) {
+        // Same seal test as countPageAttachments (tester report 2026-09-21: badge vs cards).
+        if (sealData?.lockedBy && !sealData.trashedOnly) {
           const sealLapsed =
             sealData.expiresAt &&
             new Date(sealData.expiresAt) < new Date();
@@ -291,6 +292,8 @@ export const deleteArtifact = async (req) => {
           attachmentId,
           attachmentName: attTitle,
           trashedOnly: true,
+          trashedBy: req.context.accountId,
+          trashedAt: new Date().toISOString(),
         });
         const { touchSealTimestamp } = await import("../sealing/logic.js");
         await touchSealTimestamp();
@@ -301,7 +304,7 @@ export const deleteArtifact = async (req) => {
         // non-owner page save un-trash this deliberate delete and blame a bystander.
         // Merge onto a fresh read — the trash trigger's own conversion can race this write.
         const freshSeal = (await kvs.get(`protection-${attachmentId}`)) || sealData;
-        await kvs.set(`protection-${attachmentId}`, { ...freshSeal, trashedOnly: true });
+        await kvs.set(`protection-${attachmentId}`, { ...freshSeal, trashedOnly: true, trashedBy: req.context.accountId, trashedAt: new Date().toISOString() });
         const { touchSealTimestamp } = await import("../sealing/logic.js");
         await touchSealTimestamp();
         // Review F2: the live seal ended here — pending requests and grants end with it, or
@@ -311,7 +314,10 @@ export const deleteArtifact = async (req) => {
         // A1: the seal ended here by the owner's own delete (A1 review F6).
         await recordActivity({
           type: "seal.released",
-          pageId: pageId || sealData.contentId || null,
+          // `pageId` was never declared in this function (since A1): the owner's delete succeeded,
+          // then this line threw and the panel reported "pageId is not defined". The seal record
+          // names its page; the context is the fallback.
+          pageId: sealData.contentId || req.context.extension?.content?.id || null,
           spaceKey: sealData.spaceKey || null,
           actor: { accountId: req.context.accountId, name: sealData.lockedByName || null },
           target: { kind: "attachment", id: attachmentId, name: sealData.attachmentName || attTitle || null },

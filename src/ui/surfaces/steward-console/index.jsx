@@ -5,7 +5,7 @@ import { enablePaletteSync } from "../../kit/palette-sync";
 import ValidationsEditor from "../../kit/ValidationsEditor";
 import LicenseBanner from "../../kit/LicenseBanner";
 import ClassificationTab, { LevelPicker } from "../../kit/ClassificationTab";
-import { ConfirmDialog } from "../../kit/Dialog";
+import Dialog, { ConfirmDialog } from "../../kit/Dialog";
 import { formatDurationHours } from "../../kit/format-duration";
 import logo from "../../assets/icons/icon.png";
 import { BUILD_INFO } from "../../../build-info.js";
@@ -715,8 +715,15 @@ const GlobalPolicyEditor = () => {
   const [message, setMessage] = useState(null);
   const [messageType, setMessageType] = useState(null);
 
+  // Tester report 2026-09-22 (item 4): the last applied snapshot of the schema's keys; the bar names
+  // unsaved changes, offers Discard, and leaving the Settings tab while dirty asks first.
+  const [saved, setSaved] = useState(null);
+  const [leaveTo, setLeaveTo] = useState(null);
+  const snapshotOf = (vals) => { const d = {}; for (const c of controlsFor("global")) d[c.key] = vals[c.key]; return JSON.stringify(d); };
   const applyRecord = (rec) => {
-    setValues(readAllEffective("global", rec));
+    const vals = readAllEffective("global", rec);
+    setValues(vals);
+    setSaved(snapshotOf(vals));
     setSetupDone(!needsSetup(rec));
   };
 
@@ -756,6 +763,8 @@ const GlobalPolicyEditor = () => {
       if (saveResult?.success) {
         setMessage("Preferences updated successfully!");
         setMessageType("success");
+        setSaved(snapshotOf(values));
+        return true;
       } else {
         setMessage(saveResult?.reason || "Unable to save preferences. Verify your access rights.");
         setMessageType("error");
@@ -766,7 +775,11 @@ const GlobalPolicyEditor = () => {
     } finally {
       setLoading(false);
     }
+    return false;
   };
+  const dirty = saved !== null && snapshotOf(values) !== saved;
+  const discard = () => { try { setValues((prev) => ({ ...prev, ...JSON.parse(saved) })); } catch (_) { /* keep */ } setMessage(null); setMessageType(null); };
+  const switchTab = (tab) => { if (dirty && activeTab === "settings" && tab !== "settings") setLeaveTo(() => () => setActiveTab(tab)); else setActiveTab(tab); };
 
   const groupRows = useMemo(() => Object.fromEntries(GROUPS.map((g) => [g.id, controlsFor("global", g.id)])), []);
   // CLS-10: the level list for the "Show the banner from" picker (the scheme in use).
@@ -821,16 +834,16 @@ const GlobalPolicyEditor = () => {
         <>
           {/* Tab Navigation */}
           <div className="tab-navigation">
-            <button className={`tab-button ${activeTab === "settings" ? "active" : ""}`} onClick={() => setActiveTab("settings")} data-testid="tab-settings">
+            <button className={`tab-button ${activeTab === "settings" ? "active" : ""}`} onClick={() => switchTab("settings")} data-testid="tab-settings">
               Settings
             </button>
-            <button className={`tab-button ${activeTab === "validations" ? "active" : ""}`} onClick={() => setActiveTab("validations")} data-testid="tab-validations">
+            <button className={`tab-button ${activeTab === "validations" ? "active" : ""}`} onClick={() => switchTab("validations")} data-testid="tab-validations">
               Validations
             </button>
-            <button className={`tab-button ${activeTab === "classification" ? "active" : ""}`} onClick={() => setActiveTab("classification")} data-testid="tab-classification">
+            <button className={`tab-button ${activeTab === "classification" ? "active" : ""}`} onClick={() => switchTab("classification")} data-testid="tab-classification">
               Classification
             </button>
-            <button className={`tab-button ${activeTab === "api" ? "active" : ""}`} onClick={() => setActiveTab("api")} data-testid="tab-api-access">
+            <button className={`tab-button ${activeTab === "api" ? "active" : ""}`} onClick={() => switchTab("api")} data-testid="tab-api-access">
               API access
             </button>
           </div>
@@ -895,11 +908,27 @@ const GlobalPolicyEditor = () => {
           {/* The Validations and Classification tabs save their own state; the policy Apply bar is
               for the Settings tab only. */}
           {activeTab === "settings" && (
-            <div className="action-bar">
-              <button className="btn-primary" onClick={onSavePreferences} disabled={loading}>
+            <div className={`action-bar ${dirty ? "is-dirty" : ""}`} data-dirty={dirty ? "1" : "0"} data-testid="sv-global-action-bar">
+              {dirty
+                ? <span className="action-bar-pill" role="status" data-testid="sv-unsaved-note">Unsaved changes — nothing takes effect until you apply</span>
+                : <span className="action-bar-note" role="status">All changes applied</span>}
+              {dirty && <button type="button" className="btn-secondary" onClick={discard} disabled={loading} data-testid="sv-discard-global-prefs">Discard</button>}
+              <button className="btn-primary" onClick={onSavePreferences} disabled={loading || !dirty} data-testid="sv-save-global-prefs">
                 {loading ? "Updating..." : "Apply Configuration"}
               </button>
             </div>
+          )}
+          {leaveTo && (
+            <Dialog title="Apply your changes first?" onClose={() => setLeaveTo(null)} busy={loading} testId="sv-unsaved-dialog">
+              <div className="sv-dialog-body">You changed settings and have not applied them. Leaving the tab now throws them away.</div>
+              <div className="sv-dialog-actions sv-unsaved-actions">
+                <button type="button" className="action-btn confirm-yes" style={{ background: "var(--sv-interactive-primary)" }} disabled={loading} data-testid="sv-unsaved-apply"
+                  onClick={async () => { const go = leaveTo; if (await onSavePreferences()) { setLeaveTo(null); go(); } }}>Apply and continue</button>
+                <button type="button" className="action-btn confirm-no" disabled={loading} data-testid="sv-unsaved-discard"
+                  onClick={() => { const go = leaveTo; discard(); setLeaveTo(null); go(); }}>Discard</button>
+                <button type="button" className="action-btn confirm-no" disabled={loading} data-testid="sv-unsaved-stay" onClick={() => setLeaveTo(null)}>Stay here</button>
+              </div>
+            </Dialog>
           )}
         </>
       )}

@@ -5,6 +5,7 @@ import { ActivityGlyph } from "./ActivityFeed";
 import {
   ACTIVITY_CATEGORIES, activityToCsv, formatAbsolute, formatActivity, pageTitleOf, relativeTime,
 } from "./activity-format";
+import { nextSelection, selectAll, clearAll, isAllOn } from "./activity-filter";
 
 // A1 — the space Activity report (realm console, stewards only). Reads `get-space-activity`
 // with the category + date filters applied SERVER-SIDE (a fetched page may come back short —
@@ -70,13 +71,16 @@ export default function ActivityReport({ spaceKey, siteUrl = null }) {
   // Filters changed → start over from the newest entry.
   useEffect(() => {
     if (!spaceKey) { setLoading(false); return undefined; }
+    // An empty chip selection means "show nothing" — say so without a server round-trip (an empty
+    // `types` list would read as "no filter" on the server and show everything).
+    if (activeCats.length === 0) { setEntries([]); setNextCursor(null); setLoading(false); setError(false); return undefined; }
     let cancelled = false;
     setLoading(true); setError(false); setExportNote("");
     fetchPage(null, PAGE_LIMIT)
       .then((r) => { if (!cancelled && alive.current) { setEntries(r.entries); setNextCursor(r.nextCursor); setLoading(false); } })
       .catch((e) => { console.warn("Activity report load failed:", e); if (!cancelled && alive.current) { setError(true); setLoading(false); } });
     return () => { cancelled = true; };
-  }, [fetchPage, spaceKey]);
+  }, [fetchPage, spaceKey, activeCats.length]);
 
   const loadMore = async () => {
     if (!nextCursor || loadingMore) return;
@@ -94,14 +98,9 @@ export default function ActivityReport({ spaceKey, siteUrl = null }) {
     }
   };
 
-  const toggleCat = (id) => {
-    setActiveCats((prev) => {
-      const on = prev.includes(id);
-      // Never let the last chip go dark: an empty selection would read as "show nothing".
-      if (on && prev.length === 1) return prev;
-      return on ? prev.filter((c) => c !== id) : ALL_CATEGORY_IDS.filter((c) => c === id || prev.includes(c));
-    });
-  };
+  // activity-filter.js: all on + click one → isolate; else toggle; All / None are the bulk moves.
+  const toggleCat = (id) => setActiveCats((prev) => nextSelection(prev, id, ALL_CATEGORY_IDS));
+  const allOn = isAllOn(activeCats, ALL_CATEGORY_IDS);
 
   const q = titleQuery.trim().toLowerCase();
   const matchesTitle = useCallback((e) => !q || pageTitleOf(e).toLowerCase().includes(q) || String(e.pageId || "").includes(q), [q]);
@@ -144,6 +143,7 @@ export default function ActivityReport({ spaceKey, siteUrl = null }) {
   const status = error
     ? "Couldn’t load activity right now. Reload the page to try again."
     : loading ? "Loading activity…"
+    : activeCats.length === 0 ? "No category selected — pick one above, or Select all."
     : entries.length === 0 ? "No activity recorded yet in this space for these filters."
     : visible.length === 0 ? "No loaded rows match that page title. Try “Load more” or clear the title filter."
     : "";
@@ -177,6 +177,11 @@ export default function ActivityReport({ spaceKey, siteUrl = null }) {
               </button>
             );
           })}
+          <span className="sv-activity-chip-bulk">
+            <button type="button" className="sv-activity-chip-link" disabled={allOn} onClick={() => setActiveCats(selectAll(ALL_CATEGORY_IDS))} data-testid="sv-activity-filter-all">Select all</button>
+            <button type="button" className="sv-activity-chip-link" disabled={activeCats.length === 0} onClick={() => setActiveCats(clearAll())} data-testid="sv-activity-filter-none">Clear all</button>
+          </span>
+          <span className="sv-activity-chip-hint" aria-live="polite">{allOn ? "Showing everything — click a category to see only that one" : activeCats.length === 0 ? "No category selected" : `Showing ${activeCats.length} of ${ALL_CATEGORY_IDS.length} categories`}</span>
         </div>
         <div className="sv-activity-filter-controls">
           <MiniSelect ariaLabel="Time range" value={preset} options={DATE_PRESETS} onChange={setPreset} />
