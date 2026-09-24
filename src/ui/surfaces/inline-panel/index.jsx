@@ -1,3 +1,34 @@
+          {claimedFiles.length > 0 && (() => {
+            // Ticket 2026-09-24: grouped by what YOU can do — sealed by you, edit now, others.
+            // Others' files wait for their statuses (one list-level read) so nothing jumps groups.
+            const groups = groupSealedFiles(claimedFiles, editStatusById);
+            return (
+              <div className="sv-card-section" data-testid="sv-sealed-groups">
+                <div className="sv-card-section-header">
+                  <span className="sv-card-section-title">Sealed</span>
+                  <span className="sv-card-section-count" data-testid="sv-count-sealed">{counts?.sealed ?? claimedFiles.length}</span>
+                </div>
+                {SEALED_GROUPS.map((g) => {
+                  const files = groups[g.id];
+                  if (!files.length) return null;
+                  const waiting = g.id !== "mine" && !editStatusReady;
+                  if (waiting && g.id === "editNow") return null;
+                  return (
+                    <div key={g.id} className="sv-sealed-group" data-testid={`sv-sealed-group-${g.id}`}>
+                      <div className="sv-sealed-group-header">
+                        <span className="sv-sealed-group-title">{g.title}</span>
+                        <span className="sv-sealed-group-count">{files.length}</span>
+                        <span className="sv-sealed-group-note">{g.note}</span>
+                      </div>
+                      {waiting
+                        ? <div className="sv-sealed-group-wait" role="status">Checking your access…</div>
+                        : <RovingList {...gridProps} label={`${g.title} attachments`}>{renderCards(files)}</RovingList>}
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          })()}
 import React, { useState, useEffect, useCallback } from "react";
 import { createRoot } from "react-dom/client";
 import { invoke, view, router } from "@forge/bridge";
@@ -11,6 +42,8 @@ import { ConfirmDialog } from "../../kit/Dialog";
 import GiveAccessDialog from "../../kit/GiveAccessDialog";
 import { useSignedInvoke } from "../../kit/SignedInvoke";
 import RovingList from "../../kit/RovingList";
+import useEditStatuses from "../../kit/useEditStatuses";
+import { SEALED_GROUPS, groupSealedFiles } from "../../kit/sealed-groups.js";
 import { describeRange } from "../../kit/section-range.js";
 import { expiryWarning } from "../../../server/capsules/page-details/row-state.js"; // SEC-7: the owner's lapse warning
 import { attachmentRow, sectionRow, rowActions, statusChip, copyText } from "../../kit/seal-row.js";
@@ -281,15 +314,16 @@ const UploadZone = ({ onUploadComplete }) => {
 
 // ── Artifact card component ─────────────────────────
 
-const ArtifactCard = ({ att, onRefresh, columns, siteUrl, spaceKey, pageId, pageLocation, viewer }) => {
+const ArtifactCard = ({ att, onRefresh, columns, siteUrl, spaceKey, pageId, pageLocation, viewer, editInfo }) => {
   const [actionBusy, setActionBusy] = useState(null);
   const [pendingConfirm, setPendingConfirm] = useState(null); // "delete" | "purge" | null → kit ConfirmDialog
   const [actionError, setActionError] = useState(null); // inline error row (no native alert)
   const [expanded, setExpanded] = useState(false);
   const [cachedPreview, setCachedPreview] = useState(null);
-  const [editStatus, setEditStatus] = useState(att.editStatus || null); // none|pending|granted|denied
-  const [editExpiresAt, setEditExpiresAt] = useState(null);
-  const [editRetryAt, setEditRetryAt] = useState(null); // declined: when the server lets them ask again
+  // Seeded by the list (useEditStatuses) when it already asked — the card then skips its own call.
+  const [editStatus, setEditStatus] = useState(editInfo?.status || att.editStatus || null); // none|pending|granted|denied
+  const [editExpiresAt, setEditExpiresAt] = useState(editInfo?.expiresAt || null);
+  const [editRetryAt, setEditRetryAt] = useState(editInfo?.retryAt || null); // declined: when the server lets them ask again
   const [bar, setBar] = useState(null); // "request" | "force" | null — the typed-reason bar
   const [reasonText, setReasonText] = useState("");
   const [myRequests, setMyRequests] = useState(null); // owner: pending edit requests on this file
@@ -1304,6 +1338,7 @@ const ExplainerBanner = () => {
 
 const ArtifactGridView = () => {
   const [artifacts, setArtifacts] = useState([]);
+  const { statusById: editStatusById, ready: editStatusReady } = useEditStatuses(artifacts); // groups the Sealed list
   const [loading, setLoading] = useState(true);
   const [enriching, setEnriching] = useState(false);
   const [error, setError] = useState(null);
@@ -1514,7 +1549,7 @@ const ArtifactGridView = () => {
 
   const renderCards = (files) =>
     files.map((att) => (
-      <ArtifactCard key={att.id} att={att} columns={cols} onRefresh={onRefresh} siteUrl={siteUrl} spaceKey={spaceKey} pageId={pageId} pageLocation={pageLocation} viewer={viewer} />
+      <ArtifactCard key={att.id} att={att} columns={cols} onRefresh={onRefresh} siteUrl={siteUrl} spaceKey={spaceKey} pageId={pageId} pageLocation={pageLocation} viewer={viewer} editInfo={editStatusById[att.id]} />
     ));
 
   return (
