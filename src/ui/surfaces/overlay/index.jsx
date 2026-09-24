@@ -10,11 +10,13 @@ import ActionMenu from "../../kit/ActionMenu";
 import { ConfirmDialog } from "../../kit/Dialog";
 import GiveAccessDialog from "../../kit/GiveAccessDialog";
 import { useSignedInvoke } from "../../kit/SignedInvoke";
+import { listenOutside } from "../../kit/outside-close.js";
 import RovingList from "../../kit/RovingList";
 import useEditStatuses from "../../kit/useEditStatuses";
 import CappedGroup from "../../kit/CappedGroup";
 import { SEALED_GROUPS, groupSealedFiles } from "../../kit/sealed-groups.js";
 import { attachmentRow, rowActions, statusChip, copyText } from "../../kit/seal-row.js";
+import { when } from "../../kit/status-language.js";
 import { PrimarySlot, ReasonBar, RequestInbox, GrantInbox, ErrorRow, CopiedNote } from "../../kit/SealRowParts";
 
 // ── Column definitions ──────────────────────────────────
@@ -59,11 +61,7 @@ const ColumnPicker = ({ columns, visible, onChange, isOpen, onToggle }) => {
 
   useEffect(() => {
     if (!isOpen) return;
-    const close = (e) => {
-      if (ref.current && !ref.current.contains(e.target)) onToggle(false);
-    };
-    document.addEventListener("mousedown", close);
-    return () => document.removeEventListener("mousedown", close);
+    return listenOutside({ refs: [ref], onClose: () => onToggle(false) });
   }, [isOpen]);
 
   return (
@@ -188,6 +186,25 @@ const OperatorTag = ({ accountId }) => {
   );
 };
 
+// Tester report 2026-09-22 (items 1 + 5): each group shows a window of cards with Show more / Show
+// fewer and its total; the Sealed group used to render every card, and Available could show its
+// empty line while its cards were still on a later server page (see the auto-fill effect).
+const OVERLAY_WINDOW = 12;
+const GroupFooter = ({ shown, total, canMore, onMore, canFewer, onFewer, busy, testId }) => {
+  if (!canMore && !canFewer) return null;
+  return (
+    <div className="sv-group-footer" data-testid={testId}>
+      <span className="sv-group-footer-count">Showing {shown} of {total}</span>
+      {canMore && (
+        <button type="button" className={`load-more-btn ${busy ? "is-busy" : ""}`} onClick={onMore} disabled={busy} data-testid={`${testId}-more`}>
+          {busy ? "Fetching…" : "Show more files"}
+        </button>
+      )}
+      {canFewer && <button type="button" className="load-more-btn" onClick={onFewer} data-testid={`${testId}-fewer`}>Show fewer</button>}
+    </div>
+  );
+};
+
 const SkeletonCard = () => (
   <div className="artifact-card skeleton-card">
     <div className="card-row card-row-primary">
@@ -226,11 +243,7 @@ const SortPicker = ({ orderField, orderDir, onSort }) => {
 
   useEffect(() => {
     if (!isOpen) return;
-    const close = (e) => {
-      if (ref.current && !ref.current.contains(e.target)) setIsOpen(false);
-    };
-    document.addEventListener("mousedown", close);
-    return () => document.removeEventListener("mousedown", close);
+    return listenOutside({ refs: [ref], onClose: () => setIsOpen(false) });
   }, [isOpen]);
 
   const fields = SORT_FIELDS;
@@ -273,7 +286,7 @@ const SortPicker = ({ orderField, orderDir, onSort }) => {
 // One attachment card in the overlay. The primary action and the ⋯ items come from the SAME row
 // rule as the inline panel and the page-details modal (kit/seal-row.js → row-state.js); the
 // parent owns the resolver calls through `run` so a refusal lands on THIS card's error row.
-const OverlayArtifactCard = ({ artifact, editInfo, visibleColumns, run, signedInvoke, busyAction, errorMessage, onClearError, isWatching, viewer, formatRemainingTime, formatFileSize, siteUrl, spaceKey, pageId, pageLocation }) => {
+const OverlayArtifactCard = ({ artifact, editInfo, visibleColumns, run, signedInvoke, busyAction, errorMessage, onClearError, isWatching, viewer, formatRemainingTime, formatFileSize, siteUrl, spaceKey, pageId, pageLocation, justMoved = false }) => {
   const [pendingConfirm, setPendingConfirm] = useState(null); // "delete" | "purge" | null → kit ConfirmDialog
   const [expanded, setExpanded] = useState(false);
   const [cachedPreview, setCachedPreview] = useState(null);
@@ -401,6 +414,15 @@ const OverlayArtifactCard = ({ artifact, editInfo, visibleColumns, run, signedIn
       </span>
     );
   }
+  // Tester report 2026-09-21 (Trash): who deleted it and when, read from the tracking record.
+  if (artifact.isStale && (artifact.trashedBy || artifact.trashedAt)) {
+    metaItems.push(
+      <span key="trash" className="card-meta-owner" data-testid="sv-card-trash-meta">
+        <span className="card-meta-owner-label">Deleted{artifact.trashedAt ? ` ${when(artifact.trashedAt)}` : ""}{artifact.trashedBy ? " by" : ""}</span>
+        {artifact.trashedBy && <OperatorTag accountId={artifact.trashedBy} />}
+      </span>
+    );
+  }
   if (visibleColumns.lapses && row.sealed) {
     metaItems.push(<span key="lapses" className="card-meta-item">{formatRemainingTime(artifact)}</span>);
   }
@@ -434,7 +456,7 @@ const OverlayArtifactCard = ({ artifact, editInfo, visibleColumns, run, signedIn
   const hasSecondLine = metaItems.length > 0 || showLabels;
 
   return (
-    <div className={`artifact-card status-${chip.cls}`} role="listitem" data-roving-card tabIndex={-1} aria-label={chip.aria} data-testid="sv-card" data-primary={primary.kind}>
+    <div className={`artifact-card status-${chip.cls}${justMoved ? " sv-just-moved" : ""}`} role="listitem" data-roving-card tabIndex={-1} aria-label={chip.aria} data-testid="sv-card" data-primary={primary.kind} data-just-moved={justMoved ? "1" : undefined}>
       <div className="card-row card-row-primary">
         <span className="card-filename">
           <button
@@ -586,9 +608,11 @@ const ArtifactControlPanel = () => {
   // Pagination state for artifacts tab
   const [moreFilesAvailable, setMoreFilesAvailable] = useState(false);
   const [counts, setCounts] = useState(null); // whole-page numbers from the lister's first page
+  const [recent, setRecent] = useState({}); // id → ts of a seal/release done HERE: the card goes to the top of its new group, highlighted
   const [nextFileCursor, setNextFileCursor] = useState(null);
   const [fetchingMoreFiles, setFetchingMoreFiles] = useState(false);
   const { signedInvoke, signatureDialog } = useSignedInvoke(); // the code prompt when the site signs seal actions
+  const [availExtra, setAvailExtra] = useState(0);
 
 
   const retrieveFileData = async (append = false, cursorOverride = null, isEnrichPhase = false) => {
@@ -769,6 +793,16 @@ const ArtifactControlPanel = () => {
     }
   }, [moreFilesAvailable, fetchingMoreFiles, nextFileCursor]);
 
+  // Item 5: the server pages the RAW attachment list; a first page of sealed files only (already on
+  // screen from the KVS phase) left Available empty with "Show more files" under it. Fill the
+  // Available window from the server until it holds OVERLAY_WINDOW cards or nothing is left.
+  useEffect(() => {
+    if (loading || fetchingMoreFiles || enriching || !moreFilesAvailable) return;
+    const avail = fileList.filter((a) => !a.isStale && a.lockStatus !== "HELD" && a.lockStatus !== "HELD_BY_ACTOR").length;
+    const known = counts?.available;
+    if (avail < OVERLAY_WINDOW + availExtra && (known == null || avail < known)) fetchNextFilePage();
+  }, [loading, fetchingMoreFiles, enriching, moreFilesAvailable, fileList, counts?.available, availExtra, fetchNextFilePage]);
+
 
   const onDismiss = () => {
     view.close();
@@ -787,6 +821,20 @@ const ArtifactControlPanel = () => {
         return false;
       }
       if (watch !== null) setWatchStatus((prev) => ({ ...prev, [artifactId]: watch }));
+      if (flash === "sealed" || flash === "unsealed") {
+        // The card moves NOW (tester report 2026-09-21): patch its status locally, mark it recent so it
+        // sorts first in its new group, then re-read the seals — the page-1 refresh alone never
+        // touched a card that sits beyond the first page, so it used to stay put.
+        setRecent((p) => ({ ...p, [artifactId]: Date.now() }));
+        setFileList((prev) => prev.map((a) => (a.id !== artifactId ? a : flash === "sealed"
+          ? { ...a, lockStatus: "HELD_BY_ACTOR", lockedByAccountId: r?.lockedBy || a.lockedByAccountId || null, expiresAt: r?.expiresAt || a.expiresAt || null, isExpired: false }
+          : { ...a, lockStatus: "OPEN", lockedByAccountId: null, expiresAt: null, isExpired: false, workflowHeld: false })));
+        try {
+          const seals = await invoke("enumerate-page-seals", { pageId: null });
+          const byId = new Map((seals?.claimedArtifacts || []).map((c) => [c.id, c]));
+          setFileList((prev) => prev.map((a) => (byId.has(a.id) ? { ...a, ...byId.get(a.id) } : a)));
+        } catch (_) { /* the page-1 refresh below still runs */ }
+      }
       if (afterDelete) {
         // Wait for Confluence to process the trash before re-fetching, then re-fetch the seals
         // (to show the trashed item) and the attachments.
@@ -1135,10 +1183,13 @@ const ArtifactControlPanel = () => {
                 {(() => {
                   const sortedFiles = arrangeFileList();
                   const isClaimedFile = (a) => a.lockStatus === "HELD" || a.lockStatus === "HELD_BY_ACTOR";
-                  const prioritized = [...sortedFiles].sort((a, b) => (isClaimedFile(a) ? 0 : 1) - (isClaimedFile(b) ? 0 : 1));
+                  const prioritized = [...sortedFiles].sort((a, b) => ((recent[b.id] || 0) - (recent[a.id] || 0)) || ((isClaimedFile(a) ? 0 : 1) - (isClaimedFile(b) ? 0 : 1)));
                   const staleFiles = prioritized.filter((a) => a.isStale);
                   const claimedFiles = prioritized.filter((a) => isClaimedFile(a) && !a.isStale);
                   const availableFiles = prioritized.filter((a) => !isClaimedFile(a) && !a.isStale);
+                  const availShown = Math.min(availableFiles.length, OVERLAY_WINDOW + availExtra);
+                  const availTotal = Math.max(counts?.available ?? 0, availableFiles.length);
+                  const availCanMore = availableFiles.length > availShown || (moreFilesAvailable && availableFiles.length < availTotal);
                   return (
                     <>
                       {claimedFiles.length > 0 && (() => {
@@ -1172,6 +1223,7 @@ const ArtifactControlPanel = () => {
                                 signedInvoke={signedInvoke}
                                 key={artifact.id}
                                 editInfo={editStatusById[artifact.id]}
+                                justMoved={!!recent[artifact.id]}
                                 artifact={artifact}
                                 visibleColumns={visibleColumns}
                                 run={(busyKey, action, payload, opts) => runCardAction(artifact.id, busyKey, action, payload, opts)}
@@ -1208,6 +1260,7 @@ const ArtifactControlPanel = () => {
                               <OverlayArtifactCard
                                 signedInvoke={signedInvoke}
                                 key={artifact.id}
+                                justMoved={!!recent[artifact.id]}
                                 artifact={artifact}
                                 visibleColumns={visibleColumns}
                                 run={(busyKey, action, payload, opts) => runCardAction(artifact.id, busyKey, action, payload, opts)}
@@ -1227,17 +1280,19 @@ const ArtifactControlPanel = () => {
                           </RovingList>
                         </div>
                       )}
-                      {availableFiles.length > 0 && (
+                      {(
                         <div className="sv-card-section">
                           <div className="sv-card-section-header">
                             <span className="sv-card-section-title">Available</span>
                             <span className="sv-card-section-count" data-testid="sv-count-available">{counts?.available ?? availableFiles.length}</span>
                           </div>
+                          {availableFiles.length === 0 && <p className="sv-card-section-empty" data-testid="sv-available-empty">{enriching || moreFilesAvailable || fetchingMoreFiles ? "Checking for unsealed files…" : "No unsealed files on this page — everything attached here is sealed."}</p>}
                           <RovingList className="sv-card-list" data-cols="3" label="Available attachments">
-                            {availableFiles.map((artifact) => (
+                            {availableFiles.slice(0, availShown).map((artifact) => (
                               <OverlayArtifactCard
                                 signedInvoke={signedInvoke}
                                 key={artifact.id}
+                                justMoved={!!recent[artifact.id]}
                                 artifact={artifact}
                                 visibleColumns={visibleColumns}
                                 run={(busyKey, action, payload, opts) => runCardAction(artifact.id, busyKey, action, payload, opts)}
@@ -1255,6 +1310,7 @@ const ArtifactControlPanel = () => {
                               />
                             ))}
                           </RovingList>
+                          <GroupFooter shown={availShown} total={availTotal} canMore={availCanMore} onMore={() => setAvailExtra((e) => e + OVERLAY_WINDOW)} canFewer={availExtra > 0} onFewer={() => setAvailExtra(0)} busy={fetchingMoreFiles} testId="sv-available-footer" />
                         </div>
                       )}
                       {enriching && (
@@ -1270,47 +1326,6 @@ const ArtifactControlPanel = () => {
                     </>
                   );
                 })()}
-                {(fetchingMoreFiles || moreFilesAvailable) && (
-                  <div
-                    style={{
-                      display: "flex",
-                      justifyContent: "center",
-                      alignItems: "center",
-                      padding: "20px",
-                    }}
-                  >
-                    {fetchingMoreFiles ? (
-                      <div className="sv-card-list" data-cols="3" style={{ '--sv-cards-per-row': 3 }}>
-                        {Array.from({ length: 3 }).map((_, i) => <SkeletonCard key={`more-skel-${i}`} />)}
-                      </div>
-                    ) : (
-                      <button
-                        onClick={fetchNextFilePage}
-                        style={{
-                          backgroundColor: "var(--sv-interactive-primary)",
-                          color: "var(--sv-text-inverse)",
-                          border: "none",
-                          padding: "8px 16px",
-                          borderRadius: "4px",
-                          fontSize: "12px",
-                          cursor: "pointer",
-                          fontWeight: 500,
-                          transition: "all 0.15s ease",
-                        }}
-                        onMouseEnter={(e) => {
-                          e.target.style.backgroundColor =
-                            "var(--sv-interactive-primary-hover)";
-                        }}
-                        onMouseLeave={(e) => {
-                          e.target.style.backgroundColor =
-                            "var(--sv-interactive-primary)";
-                        }}
-                      >
-                        Show more files
-                      </button>
-                    )}
-                  </div>
-                )}
                 {!moreFilesAvailable && fileList.length > 0 && !loading && (
                   <div
                     style={{

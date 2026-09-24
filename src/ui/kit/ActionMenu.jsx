@@ -17,6 +17,7 @@
 import React, { useState, useEffect, useLayoutEffect, useRef, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { nextMenuIndex } from "./menu-keys.js";
+import { listenOutside } from "./outside-close.js";
 
 export { nextMenuIndex };
 
@@ -39,16 +40,15 @@ export function useActionMenu({ open, setOpen, count, triggerRef, menuRef }) {
     if (restoreFocus) requestAnimationFrame(() => triggerRef.current?.focus());
   }, [setOpen, triggerRef]);
 
-  // Outside click, or focus leaving both the trigger and the menu, closes it (no focus return —
-  // the user moved on deliberately).
+  // Outside click (inside OR outside the iframe — kit/outside-close.js), or focus leaving both
+  // the trigger and the menu, closes it (no focus return — the user moved on deliberately).
   useEffect(() => {
     if (!open) return undefined;
     const outside = (e) => !menuRef.current?.contains(e.target) && !triggerRef.current?.contains(e.target);
-    const onDown = (e) => { if (outside(e)) setOpen(false); };
     const onFocusIn = (e) => { if (outside(e)) setOpen(false); };
-    document.addEventListener("mousedown", onDown);
+    const stop = listenOutside({ refs: [menuRef, triggerRef], onClose: () => setOpen(false), escape: false });
     document.addEventListener("focusin", onFocusIn);
-    return () => { document.removeEventListener("mousedown", onDown); document.removeEventListener("focusin", onFocusIn); };
+    return () => { stop(); document.removeEventListener("focusin", onFocusIn); };
   }, [open, setOpen, menuRef, triggerRef]);
 
   // ARIA menu pattern: on open, focus moves to the first item. Synchronously in a layout effect

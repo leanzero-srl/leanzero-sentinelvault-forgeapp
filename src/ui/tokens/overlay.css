@@ -483,7 +483,8 @@ html[data-color-mode="dark"] .artifact-card.status-trashed { border-color: #FB92
 .card-meta {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  flex-wrap: wrap;
+  gap: 2px 6px;
   font-size: 12px;
   color: var(--sv-text-secondary);
 }
@@ -501,6 +502,7 @@ html[data-color-mode="dark"] .artifact-card.status-trashed { border-color: #FB92
   display: inline-flex;
   align-items: center;
   gap: 4px;
+  white-space: nowrap; /* tester 2026-09-22 (item 6): label, avatar and name stay on one line */
 }
 .card-meta-owner-label {
   color: var(--sv-text-subtle);
@@ -1378,9 +1380,40 @@ html[data-color-mode="dark"] .sv-state.trashed { background: #94A3B8; color: #0F
 .sv-sealed-group + .sv-sealed-group .sv-sealed-group-wait { padding-left: 0; padding-right: 0; }
 .sv-sealed-group + .sv-sealed-group .sv-card-list { padding-left: 0; padding-right: 0; }
 
-/* A group folded to 12 items: "Show N more files" / "Show fewer files" (owner, 2026-09-24). */
-.sv-group-more { display: flex; justify-content: center; padding: 2px 0 6px; }
-.sv-group-more-btn {
+/* ── Tester report 2026-09-21: a card sealed / released HERE moves to the top of its new group
+   and flashes a solid accent ring so the change is seen without scrolling. Keyframes live here
+   (Forge CSP forbids inline @keyframes); reduced motion keeps the ring, drops the pulse. */
+.artifact-card.sv-just-moved {
+  animation: sv-just-moved 2.4s ease-out both;
+  outline: 2px solid var(--sv-interactive-primary);
+  outline-offset: 1px;
+}
+@keyframes sv-just-moved {
+  0% { box-shadow: 0 0 0 6px var(--sv-interactive-primary); }
+  100% { box-shadow: 0 0 0 0 transparent; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .artifact-card.sv-just-moved { animation: none; }
+}
+.sv-card-section-empty {
+  margin: 4px 0 8px;
+  font-size: 12px;
+  color: var(--sv-text-secondary);
+}
+
+/* Per-group Show more / Show fewer (tester 2026-09-22, items 1 + 5) */
+.sv-group-footer {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 4px 2px;
+}
+.sv-group-footer-count {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--sv-text-secondary);
+}
+.load-more-btn {
   background: none;
   border: none;
   color: var(--sv-interactive-primary);
@@ -1388,6 +1421,12 @@ html[data-color-mode="dark"] .sv-state.trashed { background: #94A3B8; color: #0F
   font-size: 12px;
   font-weight: 600;
   padding: 4px 12px;
+  font-family: inherit;
 }
-.sv-group-more-btn:hover { text-decoration: underline; }
-.sv-group-more-btn:focus-visible { outline: 2px solid var(--sv-interactive-primary); outline-offset: 2px; border-radius: 4px; }
+.load-more-btn:hover { text-decoration: underline; }
+.load-more-btn:disabled { cursor: wait; opacity: 0.85; }
+
+/* The trash line ("Deleted … by …") stands on its own line under "Sealed by"; the separator
+   that would dangle at the end of the line above is dropped (tester 2026-09-22, item 6). */
+.card-meta [data-testid="sv-card-trash-meta"] { flex-basis: 100%; }
+.card-meta .card-meta-sep:has(+ [data-testid="sv-card-trash-meta"]) { display: none; }

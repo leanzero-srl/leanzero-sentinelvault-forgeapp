@@ -407,11 +407,15 @@ const SignatureCard = () => {
   }, []);
   useEffect(() => { load(); }, [load]);
 
-  const start = async () => {
+  // Replacing an enrolled device needs its current code (see requireCurrentDevice on the server).
+  const [replacing, setReplacing] = useState(false);
+  const [replaceCode, setReplaceCode] = useState("");
+  const start = async (currentCode = null) => {
     setBusy(true); setMsg(null);
     try {
-      const r = await invoke("enroll-signature", {});
+      const r = await invoke("enroll-signature", currentCode ? { code: currentCode } : {});
       if (!r?.success) { setMsg({ type: "error", text: r?.reason || "Could not start the setup." }); return; }
+      setReplacing(false); setReplaceCode("");
       let qr = null;
       try { qr = await QRCode.toDataURL(r.uri, { margin: 1, width: 168 }); } catch (_) { qr = null; }
       setEnrol({ secret: r.secret, uri: r.uri, qr });
@@ -449,8 +453,17 @@ const SignatureCard = () => {
       </div>
       <p className="mw-none">Some spaces require a signed decision: the current code from an authenticator app you enrol here (Google Authenticator, 1Password, Microsoft Authenticator…). It proves the approval came from you and your device.</p>
       {msg && <p className={msg.type === "ok" ? "mw-ok" : "mw-error"} role="status" data-testid="mw-signature-msg">{msg.text}</p>}
+      {status && !enrol && (
+        <div className="mw-sig-preview" data-testid="mw-signature-preview">
+          <span className="mw-row-meta">How a decision you sign appears in the record:</span>
+          <span className={`mw-sig-sample ${status.enrolled ? "is-live" : ""}`}>
+            <span className="mw-sig-tick" aria-hidden="true">{status.enrolled ? "✓" : "○"}</span>
+            {status.enrolled ? `Signed by you · ${when(new Date().toISOString())} · authenticator code verified` : "Not signed — set up your signature to sign approvals, seals and releases"}
+          </span>
+        </div>
+      )}
       {status && !status.enrolled && !enrol && (
-        <div className="mw-foot"><button type="button" className="mw-btn mw-btn-more" disabled={busy} onClick={start} data-testid="mw-signature-start">Set up signature</button></div>
+        <div className="mw-foot"><button type="button" className="mw-btn mw-btn-more" disabled={busy} onClick={() => start(null)} data-testid="mw-signature-start">Set up signature</button></div>
       )}
       {enrol && (
         <div className="mw-enrol" data-testid="mw-signature-enrol">
@@ -467,9 +480,18 @@ const SignatureCard = () => {
           </div>
         </div>
       )}
-      {status?.enrolled && !enrol && !revoking && (
+      {status?.enrolled && !enrol && !revoking && replacing && (
+        <div className="mw-foot" data-testid="mw-signature-replace-confirm">
+          <span className="mw-row-meta">Enter the current code from your authenticator to replace the device.</span>
+          <input className="mw-code" inputMode="numeric" autoComplete="one-time-code" maxLength={8} placeholder="123 456" value={replaceCode} onChange={(e) => setReplaceCode(e.target.value)} aria-label="Authenticator code" data-testid="mw-signature-replace-code" />
+          <button type="button" className="mw-btn mw-btn-approve" disabled={busy || !replaceCode.trim()} onClick={() => start(replaceCode.trim())} data-testid="mw-signature-replace-go">Continue</button>
+          <button type="button" className="mw-btn mw-btn-more" disabled={busy} onClick={() => { setReplacing(false); setReplaceCode(""); }}>Cancel</button>
+        </div>
+      )}
+      {status?.enrolled && !enrol && !revoking && !replacing && (
         <div className="mw-foot">
           <span className="mw-row-meta">Enrolled {status.enrolledAt ? when(status.enrolledAt) : ""}.</span>
+          <button type="button" className="mw-btn mw-btn-more" disabled={busy} onClick={() => setReplacing(true)} data-testid="mw-signature-replace">Replace device</button>
           <button type="button" className="mw-btn mw-btn-deny" disabled={busy} onClick={() => setRevoking(true)} data-testid="mw-signature-revoke">Remove signature</button>
         </div>
       )}
