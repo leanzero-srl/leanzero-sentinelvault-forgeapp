@@ -1,4 +1,4 @@
-import { groupSealedFiles, SEALED_GROUPS } from "../src/ui/kit/sealed-groups.js";
+import { groupSealedFiles, groupSealedSections, SEALED_GROUPS } from "../src/ui/kit/sealed-groups.js";
 import { eq, report } from "./_assert.mjs";
 
 const now = Date.parse("2026-09-24T12:00:00Z");
@@ -20,5 +20,13 @@ eq("grant with no end → edit now", ids(groupSealedFiles([f("x", "HELD")], { x:
 eq("unknown status → others (Request edit)", ids(groupSealedFiles([f("x", "HELD")], {}, now).others), ["x"]);
 eq("every file lands exactly once", g.mine.length + g.editNow.length + g.others.length, files.length);
 eq("empty / bad input", groupSealedFiles(null), { mine: [], editNow: [], others: [] });
+
+// Sections: the same three groups, keyed by sectionId.
+const secs = [{ sectionId: "s1", isMine: true }, { sectionId: "s2" }, { sectionId: "s3" }, { sectionId: "s4", isExpired: true }];
+const sg = groupSealedSections(secs, { s2: { status: "granted" }, s3: { status: "pending" } });
+eq("sections: mine", sg.mine.map((x) => x.sectionId), ["s1"]);
+eq("sections: edit now", sg.editNow.map((x) => x.sectionId), ["s2"]);
+eq("sections: others (pending, expired)", sg.others.map((x) => x.sectionId), ["s3", "s4"]);
+eq("sections: bad input", groupSealedSections(undefined), { mine: [], editNow: [], others: [] });
 
 report("sealed-groups");
