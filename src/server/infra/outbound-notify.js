@@ -15,34 +15,6 @@ import { asApp, route } from "@forge/api";
 import { resolveBulletinToggles, resolveSpaceNotificationsMode } from "../shared/bulletin-flags.js";
 import { shouldPostComment } from "../shared/notice-policy.js";
 import { resolvePageSpaceKey } from "../shared/content-access.js";
-import { tokenizeMentions, injectMentions } from "./mention-adf.js";
-
-/**
- * The comment body to POST: ADF with real `mention` nodes when the storage names people (see
- * mention-adf.js — a storage user link reached nobody's bell), else the storage as before. Falls
- * back to storage on ANY conversion problem, so a notice is never lost to this step.
- */
-async function commentBody(storageBody) {
-  const { storage, ids } = tokenizeMentions(storageBody);
-  if (!ids.length) return { representation: "storage", value: storageBody };
-  try {
-    const res = await asApp().requestConfluence(route`/wiki/rest/api/contentbody/convert/atlas_doc_format`, {
-      method: "POST",
-      headers: { Accept: "application/json", "Content-Type": "application/json" },
-      body: JSON.stringify({ value: storage, representation: "storage" }),
-    });
-    if (!res.ok) throw new Error(`convert HTTP ${res.status}`);
-    const data = await res.json();
-    const adf = typeof data?.value === "string" ? JSON.parse(data.value) : data?.value;
-    if (!adf || adf.type !== "doc") throw new Error("convert returned no ADF document");
-    const { doc, placed } = injectMentions(adf, ids);
-    if (placed !== ids.length) throw new Error(`placed ${placed} of ${ids.length} mentions`);
-    return { representation: "atlas_doc_format", value: JSON.stringify(doc) };
-  } catch (e) {
-    console.warn(`[NOTIFY] ADF mention conversion failed — posting storage instead: ${e?.message || e}`);
-    return { representation: "storage", value: storageBody };
-  }
-}
 
 
 const RETRY_CONFIG = {
@@ -107,7 +79,6 @@ export async function postCommentWithMention({ pageId, storageBody, spaceKey = n
   }
 
   let lastReason = null;
-  const body = await commentBody(storageBody);
 
   for (let attempt = 1; attempt <= RETRY_CONFIG.maxRetries; attempt++) {
     try {
@@ -121,7 +92,10 @@ export async function postCommentWithMention({ pageId, storageBody, spaceKey = n
           },
           body: JSON.stringify({
             pageId,
-            body,
+            body: {
+              representation: "storage",
+              value: storageBody,
+            },
           }),
         },
       );
