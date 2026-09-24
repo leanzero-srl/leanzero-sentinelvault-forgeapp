@@ -1271,7 +1271,11 @@ const SealedSectionsGroup = ({ pageId, onChanged, viewer, siteUrl }) => {
                       <span className="sv-section-pick-text">{h.text}</span>
                       <span className="sv-section-pick-range" data-testid="sv-section-pick-range">{describeRange(h)}</span>
                     </span>
-                    <span className="sv-section-pick-cta">{picked?.index === h.index ? "Choose how long ▾" : "Seal…"}</span>
+                    {/* The attachment cards' own Seal button look (owner, 2026-09-24). The whole row is the button,
+                        so this is its face, not a second button inside it. */}
+                    {picked?.index === h.index
+                      ? <span className="sv-section-pick-cta">Choose how long ▾</span>
+                      : <span className="action-btn lock sv-section-pick-seal" aria-hidden="true">Seal</span>}
                   </button>
                   {picked?.index === h.index && (
                     <div className="sv-section-hold" data-testid="sv-section-hold">
