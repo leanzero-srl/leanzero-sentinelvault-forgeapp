@@ -29,6 +29,7 @@ import {
 import { evaluateRules } from "./infra/rules-engine.js";
 import { fetchPageLabelsChecked } from "./infra/labels.js";
 import { rulesNeedLabels } from "./shared/rule-config.js";
+import { rulesFingerprint } from "./capsules/validations/recheck.js";
 import {
   autoAssignOnEvent, getSpaceWorkflowSettings, resolveWorkflowDef, findState, resolveDemoteTarget, validateTransition, restampIfEnforced,
   transitionPageWorkflow, readPageWorkflow, purgePageWorkflow, mirrorStateLabel, readLabelStamp, clearStateLabel, restampApprovedVersion, fetchLivePageVersion,
@@ -1741,7 +1742,7 @@ async function runValidationPhase(event, pageId, atlassianId) {
   if (passed) {
     await setLastGoodVersion(pageId, version);
     if (modes.gate) {
-      await writeValidationState(pageId, { state: "passed", violations: [], version, checkedAt: new Date().toISOString() });
+      await writeValidationState(pageId, { state: "passed", violations: [], version, checkedAt: new Date().toISOString(), rulesFp: rulesFingerprint(config.rules) });
       await recordGateIfChanged("passed");
     }
     await markVersionChecked(pageId, version);
@@ -1757,7 +1758,7 @@ async function runValidationPhase(event, pageId, atlassianId) {
     catch (e) { console.error("[VALIDATE] advisory comment failed:", e); }
   }
   if (modes.gate) {
-    await writeValidationState(pageId, { state: "failed", violations, version, checkedAt: new Date().toISOString() });
+    await writeValidationState(pageId, { state: "failed", violations, version, checkedAt: new Date().toISOString(), rulesFp: rulesFingerprint(config.rules) });
     await recordGateIfChanged("failed");
   }
   if (modes.revert) {
@@ -1793,7 +1794,7 @@ async function runValidationPhase(event, pageId, atlassianId) {
             // panel / doc ribbon don't keep showing a stale "failed".
             if (modes.gate) {
               try {
-                await writeValidationState(pageId, { state: "passed", violations: [], version: newVersion, checkedAt: new Date().toISOString() });
+                await writeValidationState(pageId, { state: "passed", violations: [], version: newVersion, checkedAt: new Date().toISOString(), rulesFp: rulesFingerprint(config.rules) });
               } catch (_) { /* best effort */ }
             }
             break;
