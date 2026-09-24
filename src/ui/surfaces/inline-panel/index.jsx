@@ -1044,8 +1044,11 @@ const SectionRow = ({ section: s, onUnseal, unsealing, viewer, siteUrl, pageId, 
   };
 
   return (
-    <div className="sv-section-block" role="listitem" data-roving-card tabIndex={-1} aria-label={aria} data-testid="sv-section-row" data-primary={primary.kind}>
-      <div className={`sv-section-row status-${s.isExpired ? "expired" : s.isMine ? "locked-by-me" : "locked"}`}>
+    // The border wraps the WHOLE block — row, editors with access, request bars, errors — the way
+    // an attachment card holds its inboxes (owner, 2026-09-24). Yours is always indigo, expired or
+    // not (the row's text says "expired"); someone else's amber, red once it has expired.
+    <div className={`sv-section-block status-${s.isMine ? "locked-by-me" : s.isExpired ? "expired" : "locked"}`} role="listitem" data-roving-card tabIndex={-1} aria-label={aria} data-testid="sv-section-row" data-primary={primary.kind}>
+      <div className="sv-section-row">
         <span className="sv-section-row-title" title={s.sectionTitle}>{s.sectionTitle}</span>
         <span className="sv-section-row-meta">{sentence}{warning ? <span className="sv-section-row-warn" data-testid="sv-section-expiry-warning"> · {warning.text}</span> : null}{s.note ? <span className="sv-section-row-note" title={s.note}> · “{s.note}”</span> : null}</span>
         {primary.kind === "none" && editStatus === null && !s.isMine && !s.isExpired
