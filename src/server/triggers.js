@@ -2053,7 +2053,7 @@ export async function handleSealedArtifactTrash(sealRecord, artifactId, contentI
       // F5 discipline: merge onto a fresh read (the panel's own delete-artifact conversion can
       // race this event); this path owns only trashedOnly.
       const fresh = (await kvs.get(`protection-${artifactId}`)) || sealRecord;
-      await kvs.set(`protection-${artifactId}`, { ...fresh, trashedOnly: true });
+      await kvs.set(`protection-${artifactId}`, { ...fresh, trashedOnly: true, trashedBy: atlassianId, trashedAt: new Date().toISOString() });
       await touchSealTimestamp();
       // Review F2: same teardown discipline as every other seal end (release, purge, re-seal).
       await sweepEditAccess(artifactId).catch((e) => console.warn("[TRASH-RESTORE] edit-access sweep failed:", e));
@@ -2443,12 +2443,37 @@ async function collectGuardedPageIds() {
   return [...pages].sort();
 }
 
+// Tester report 2026-09-22 (item 7, "Require a heading does nothing on save"): the validation
+// phase rides the page event, which on this platform can arrive 10+ minutes late, and the ribbon's
+// guard call only runs for someone who VIEWS the page afterwards. With validation on, every page
+// edited in the last VALIDATION_SWEEP_LOOKBACK is judged by the sweep as well (guardPageNow skips a
+// version it has already seen in one KVS read), so a rule's verdict lands within a sweep interval
+// whether or not the event or a viewer ever shows up. One CQL search per run, bounded.
+const VALIDATION_SWEEP_LOOKBACK = "-20m";
+const VALIDATION_SWEEP_LIMIT = 50;
+async function collectRecentlyEditedPagesForValidation() {
+  let cfg = null;
+  try { cfg = await kvs.get("validation-config-global"); } catch (_) { return []; }
+  if (!cfg || cfg.enabled !== true || !(cfg.rules || []).length) return [];
+  try {
+    const cql = `type = page and lastmodified > now("${VALIDATION_SWEEP_LOOKBACK}") order by lastmodified desc`;
+    const res = await asApp().requestConfluence(route`/wiki/rest/api/content/search?cql=${cql}&limit=${String(VALIDATION_SWEEP_LIMIT)}`, { headers: { Accept: "application/json" } });
+    if (!res.ok) { console.warn(`[PAGE-GUARD] validation lookback search answered ${res.status}`); return []; }
+    const data = await res.json();
+    return (data?.results || []).map((r) => String(r.id)).filter((id) => /^\d+$/.test(id));
+  } catch (e) { console.warn("[PAGE-GUARD] validation lookback search failed:", e?.message || e); return []; }
+}
+
 export async function pageGuardSweep() {
   const started = Date.now();
   try {
     const globalPolicy = await kvs.get("admin-settings-global");
     if (globalPolicy?.enableContentProtection === false) return { pages: 0, judged: 0, restored: 0 };
-    const pages = await collectGuardedPageIds();
+    const guarded = await collectGuardedPageIds();
+    const recent = await collectRecentlyEditedPagesForValidation();
+    // Recently edited pages go FIRST (their verdict is what someone is waiting for); the rotating
+    // cursor below still walks the guarded set fairly.
+    const pages = [...new Set([...recent, ...guarded])];
     if (pages.length === 0) return { pages: 0, judged: 0, restored: 0 };
     const state = (await kvs.get("page-guard-sweep-cursor")) || { after: null };
     const startAt = state.after ? Math.max(0, pages.findIndex((p) => p > state.after)) : 0;

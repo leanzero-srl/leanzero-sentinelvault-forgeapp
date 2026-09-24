@@ -13,9 +13,11 @@ export default function CappedGroup({ items, noun = "files", limit = GROUP_LIMIT
     <>
       {children(visible)}
       {hidden > 0 && (
-        <div className="sv-group-more">
-          <button type="button" className="sv-group-more-btn" aria-expanded={expanded} onClick={() => setExpanded(!expanded)} data-testid="sv-group-more">
-            {expanded ? `Show fewer ${noun}` : `Show ${hidden} more ${noun}`}
+        // Same footer as the laptop's GroupFooter (2026-09-22, shipped in 6.3.0): "Showing N of M".
+        <div className="sv-group-footer" data-testid="sv-group-more">
+          <span className="sv-group-footer-count">Showing {visible.length} of {items.length}</span>
+          <button type="button" className="load-more-btn" aria-expanded={expanded} onClick={() => setExpanded(!expanded)} data-testid={expanded ? "sv-group-more-fewer" : "sv-group-more-more"}>
+            {expanded ? "Show fewer" : `Show ${hidden} more ${noun}`}
           </button>
         </div>
       )}
