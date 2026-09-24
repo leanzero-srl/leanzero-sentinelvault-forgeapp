@@ -1259,24 +1259,18 @@ const SealedSectionsGroup = ({ pageId, onChanged, viewer, siteUrl }) => {
               )}
               {!headingsLoading && headings.map((h) => (
                 <div key={h.index} className={`sv-section-pick${picked?.index === h.index ? " is-picked" : ""}`}>
-                  <button
-                    className="sv-section-pick-row"
-                    disabled={sealingIndex !== null}
-                    aria-expanded={picked?.index === h.index}
-                    onClick={() => { setPicked(picked?.index === h.index ? null : h); setSealError(null); }}
-                    data-testid="sv-section-pick"
-                  >
+                  {/* The row is information; Seal is its own button (owner, 2026-09-24: the whole
+                      rectangle lit up on hover, not the button). */}
+                  <div className={`sv-section-pick-row${sealingIndex !== null ? " is-disabled" : ""}`}>
                     <span className="sv-section-pick-level">H{h.level}</span>
                     <span className="sv-section-pick-main">
                       <span className="sv-section-pick-text">{h.text}</span>
                       <span className="sv-section-pick-range" data-testid="sv-section-pick-range">{describeRange(h)}</span>
                     </span>
-                    {/* The attachment cards' own Seal button look (owner, 2026-09-24). The whole row is the button,
-                        so this is its face, not a second button inside it. */}
                     {picked?.index === h.index
-                      ? <span className="sv-section-pick-cta">Choose how long ▾</span>
-                      : <span className="action-btn lock sv-section-pick-seal" aria-hidden="true">Seal</span>}
-                  </button>
+                      ? <button type="button" className="action-btn sv-section-pick-cancel" disabled={sealingIndex !== null} aria-expanded="true" onClick={() => { setPicked(null); setSealError(null); }} data-testid="sv-section-pick">Choose how long ▾</button>
+                      : <button type="button" className="action-btn lock" disabled={sealingIndex !== null} aria-expanded="false" aria-label={`Seal the section "${h.text}"`} onClick={() => { setPicked(h); setSealError(null); }} data-testid="sv-section-pick">Seal</button>}
+                  </div>
                   {picked?.index === h.index && (
                     <div className="sv-section-hold" data-testid="sv-section-hold">
                       <span className="sv-section-hold-label">Holds for</span>
