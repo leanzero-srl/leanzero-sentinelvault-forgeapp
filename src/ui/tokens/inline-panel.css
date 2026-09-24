@@ -1757,3 +1757,4 @@ html[data-color-mode="dark"] .sv-section-block.status-expired { border-color: #F
 .sv-section-pick-row > .action-btn { flex: 0 0 auto; }
 .action-btn.sv-section-pick-cancel { background: none; color: var(--sv-interactive-primary); border-color: var(--sv-interactive-primary); }
 .action-btn.sv-section-pick-cancel:hover:not(:disabled) { background: var(--sv-bg-hover); }
+.sv-panel-crash-detail { display: block; margin-top: 8px; font-size: 11px; color: var(--sv-text-primary); word-break: break-word; }
