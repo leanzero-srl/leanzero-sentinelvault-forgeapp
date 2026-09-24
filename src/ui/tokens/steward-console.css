@@ -144,7 +144,9 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .admin-container {
   padding: 0;
   background-color: var(--sv-bg-secondary);
-  min-height: 100vh;
+  /* No min-height: 100vh — Confluence sizes this iframe to its content, so 100vh IS the
+     iframe's own height and the page could never shrink: after a long tab (or the AI section
+     opened) a short tab kept a screen of blank space with the fixed Save bar below it. */
   font-family: var(--sv-font-family);
   padding-bottom: 88px;
 }
