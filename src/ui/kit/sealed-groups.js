@@ -54,8 +54,8 @@ export function groupSealedSections(sections, statusById = {}) {
   return out;
 }
 
-/** How many items a group shows before "Show N more" (owner, 2026-09-24). */
-export const GROUP_LIMIT = 12;
+/** How many items a group shows before "Show N more" — 15, the same as the Available list (owner, 2026-09-24). */
+export const GROUP_LIMIT = 15;
 
 /** PURE. The items a group shows, and how many are folded away. */
 export function capItems(items, expanded, limit = GROUP_LIMIT) {
