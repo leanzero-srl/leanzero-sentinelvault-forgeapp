@@ -1681,3 +1681,13 @@ html[data-color-mode="dark"] .sv-state.trashed { background: #94A3B8; color: #0F
 /* Sign this action (kit/SignedInvoke.jsx) */
 .sv-sign .sv-sign-input { width: 100%; box-sizing: border-box; margin-top: 12px; font-size: 22px; letter-spacing: 6px; text-align: center; padding: 10px; font-variant-numeric: tabular-nums; }
 .sv-sign .action-btn.lock { font-size: 12.5px; padding: 7px 14px; border-radius: 9999px; }
+
+/* Sealed files grouped by what the viewer can do (ticket 2026-09-24): sealed by you / you can
+   edit now / sealed by others. A plain labelled sub-heading per group — no rails, no tints. */
+.sv-sealed-group { margin-top: 10px; }
+.sv-sealed-group + .sv-sealed-group { margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--sv-border-secondary); }
+.sv-sealed-group-header { display: flex; align-items: baseline; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; }
+.sv-sealed-group-title { font-size: 12px; font-weight: 700; color: var(--sv-text-primary); }
+.sv-sealed-group-count { font-size: 11px; font-weight: 700; color: var(--sv-text-secondary); }
+.sv-sealed-group-note { font-size: 11px; color: var(--sv-text-secondary); }
+.sv-sealed-group-wait { font-size: 12px; color: var(--sv-text-secondary); padding: 6px 0; }
