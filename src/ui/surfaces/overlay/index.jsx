@@ -189,7 +189,7 @@ const OperatorTag = ({ accountId }) => {
 // Tester report 2026-09-22 (items 1 + 5): each group shows a window of cards with Show more / Show
 // fewer and its total; the Sealed group used to render every card, and Available could show its
 // empty line while its cards were still on a later server page (see the auto-fill effect).
-const OVERLAY_WINDOW = 12;
+const OVERLAY_WINDOW = 15; // every group, Sealed and Available alike (owner, 2026-09-24)
 const GroupFooter = ({ shown, total, canMore, onMore, canFewer, onFewer, busy, testId }) => {
   if (!canMore && !canFewer) return null;
   return (
@@ -1216,7 +1216,7 @@ const ArtifactControlPanel = () => {
                                   {waiting
                                     ? <div className="sv-sealed-group-wait" role="status">Checking your access…</div>
                                     : (
-                                      <CappedGroup items={files}>{(shown) => (
+                                      <CappedGroup items={files} limit={OVERLAY_WINDOW}>{(shown) => (
                                       <RovingList className="sv-card-list" data-cols="3" label={`${g.title} attachments`}>
                                         {shown.map((artifact) => (
                                           <OverlayArtifactCard
