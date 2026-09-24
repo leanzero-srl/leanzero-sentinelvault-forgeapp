@@ -12,6 +12,7 @@ import GiveAccessDialog from "../../kit/GiveAccessDialog";
 import { useSignedInvoke } from "../../kit/SignedInvoke";
 import RovingList from "../../kit/RovingList";
 import useEditStatuses from "../../kit/useEditStatuses";
+import CappedGroup from "../../kit/CappedGroup";
 import { SEALED_GROUPS, groupSealedFiles } from "../../kit/sealed-groups.js";
 import { attachmentRow, rowActions, statusChip, copyText } from "../../kit/seal-row.js";
 import { PrimarySlot, ReasonBar, RequestInbox, GrantInbox, ErrorRow, CopiedNote } from "../../kit/SealRowParts";
@@ -1164,8 +1165,9 @@ const ArtifactControlPanel = () => {
                                   {waiting
                                     ? <div className="sv-sealed-group-wait" role="status">Checking your access…</div>
                                     : (
+                                      <CappedGroup items={files}>{(shown) => (
                                       <RovingList className="sv-card-list" data-cols="3" label={`${g.title} attachments`}>
-                                        {files.map((artifact) => (
+                                        {shown.map((artifact) => (
                                           <OverlayArtifactCard
                                 signedInvoke={signedInvoke}
                                 key={artifact.id}
@@ -1187,6 +1189,7 @@ const ArtifactControlPanel = () => {
                               />
                                         ))}
                                       </RovingList>
+                                      )}</CappedGroup>
                                     )}
                                 </div>
                               );
