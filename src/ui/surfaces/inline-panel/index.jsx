@@ -12,7 +12,7 @@ import GiveAccessDialog from "../../kit/GiveAccessDialog";
 import { useSignedInvoke } from "../../kit/SignedInvoke";
 import RovingList from "../../kit/RovingList";
 import useEditStatuses from "../../kit/useEditStatuses";
-import { SEALED_GROUPS, groupSealedFiles } from "../../kit/sealed-groups.js";
+import { SEALED_GROUPS, groupSealedFiles, groupSealedSections } from "../../kit/sealed-groups.js";
 import { describeRange } from "../../kit/section-range.js";
 import { expiryWarning } from "../../../server/capsules/page-details/row-state.js"; // SEC-7: the owner's lapse warning
 import { attachmentRow, sectionRow, rowActions, statusChip, copyText } from "../../kit/seal-row.js";
@@ -923,8 +923,9 @@ const ValidationStatus = ({ pageId, viewer }) => {
 // owner (or anyone who can edit the page once the seal has expired, server rule F6), Request edit
 // / Waiting for {owner} / Edit now until {time} for everyone else, Approve/Decline for the owner
 // while someone waits. Copy link and Force release (space admin, typed reason) sit under ⋯.
-const SectionRow = ({ section: s, onUnseal, unsealing, viewer, siteUrl, pageId, onChanged }) => {
-  const [editStatus, setEditStatus] = useState(null); // others' sections
+const SectionRow = ({ section: s, onUnseal, unsealing, viewer, siteUrl, pageId, onChanged, editInfo }) => {
+  // Seeded by the list (it reads every status once to group the sections); the row then skips its call.
+  const [editStatus, setEditStatus] = useState(editInfo?.status || null); // others' sections
   const [bar, setBar] = useState(null); // "request" | "force" | null — the typed-reason bar
   const [reasonText, setReasonText] = useState("");
   const [busy, setBusy] = useState(false);
@@ -933,7 +934,7 @@ const SectionRow = ({ section: s, onUnseal, unsealing, viewer, siteUrl, pageId, 
   const [grants, setGrants] = useState(null); // owner: editors currently granted access
   const [grantBusy, setGrantBusy] = useState(null);
   const [giving, setGiving] = useState(false); // "Give edit access…" dialog
-  const [editRetryAt, setEditRetryAt] = useState(null);
+  const [editRetryAt, setEditRetryAt] = useState(editInfo?.retryAt || null);
   const [error, setError] = useState(null);
   const [copied, setCopied] = useState(false);
   const { signedInvoke, signatureDialog } = useSignedInvoke();
@@ -948,9 +949,11 @@ const SectionRow = ({ section: s, onUnseal, unsealing, viewer, siteUrl, pageId, 
         .then((r) => { if (!cancelled) setGrants(r?.grants || []); })
         .catch(() => { if (!cancelled) setGrants([]); });
     } else if (!s.isExpired) {
-      invoke("check-section-edit", { sectionId: s.sectionId })
-        .then((r) => { if (!cancelled) { setEditStatus(r?.status || "none"); setEditRetryAt(r?.retryAt || null); } })
-        .catch(() => { if (!cancelled) setEditStatus("none"); });
+      if (!editInfo) {
+        invoke("check-section-edit", { sectionId: s.sectionId })
+          .then((r) => { if (!cancelled) { setEditStatus(r?.status || "none"); setEditRetryAt(r?.retryAt || null); } })
+          .catch(() => { if (!cancelled) setEditStatus("none"); });
+      }
       // A space admin can give (and so must see and revoke) access on someone else's section.
       if (viewer?.isSpaceAdmin === true) {
         invoke("list-section-edit-grants", { sectionId: s.sectionId })
@@ -1079,6 +1082,23 @@ const SealedSectionsGroup = ({ pageId, onChanged, viewer, siteUrl }) => {
   const [sealingIndex, setSealingIndex] = useState(null);
   const [collapsed, setCollapsed] = useState(false);
   const [sealError, setSealError] = useState(null);  // why the last seal/unseal was refused
+
+  // Each section's edit status for THIS viewer, read once for the list (ticket 2026-09-24: the
+  // sections are grouped like the files — by you / you can edit now / by others).
+  const [sectionStatus, setSectionStatus] = useState({});
+  const [sectionStatusReady, setSectionStatusReady] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    const others = sections.filter((x) => !x.isMine && !x.isExpired);
+    if (!others.length) { setSectionStatus({}); setSectionStatusReady(true); return undefined; }
+    setSectionStatusReady(false);
+    Promise.all(others.map((x) =>
+      invoke("check-section-edit", { sectionId: x.sectionId })
+        .then((r) => [x.sectionId, { status: r?.status || "none", retryAt: r?.retryAt || null }])
+        .catch(() => [x.sectionId, { status: "none", retryAt: null }]),
+    )).then((pairs) => { if (!cancelled) { setSectionStatus(Object.fromEntries(pairs)); setSectionStatusReady(true); } });
+    return () => { cancelled = true; };
+  }, [sections]);
 
   const load = useCallback(async () => {
     if (!pageId) return;
@@ -1233,13 +1253,33 @@ const SealedSectionsGroup = ({ pageId, onChanged, viewer, siteUrl }) => {
             <div className="sv-panel-loading">Loading sealed sections…</div>
           )}
 
-          {sections.length > 0 && (
-            <RovingList label="Sealed sections" className="sv-section-list">
-              {sections.map((s) => (
-                <SectionRow key={s.sectionId} section={s} unsealing={busy === s.sectionId} onUnseal={unseal} viewer={viewer} siteUrl={siteUrl} pageId={pageId} onChanged={async () => { await load(); if (onChanged) onChanged(); }} />
-              ))}
-            </RovingList>
-          )}
+          {sections.length > 0 && (() => {
+            const groups = groupSealedSections(sections, sectionStatus);
+            return SEALED_GROUPS.map((g) => {
+              const items = groups[g.id];
+              if (!items.length) return null;
+              const waiting = g.id !== "mine" && !sectionStatusReady;
+              if (waiting && g.id === "editNow") return null;
+              return (
+                <div key={g.id} className="sv-sealed-group" data-testid={`sv-section-group-${g.id}`}>
+                  <div className="sv-sealed-group-header">
+                    <span className="sv-sealed-group-title">{g.title}</span>
+                    <span className="sv-sealed-group-count">{items.length}</span>
+                    <span className="sv-sealed-group-note">{g.note}</span>
+                  </div>
+                  {waiting
+                    ? <div className="sv-sealed-group-wait" role="status">Checking your access…</div>
+                    : (
+                      <RovingList label={`Sealed sections — ${g.title}`} className="sv-section-list">
+                        {items.map((s) => (
+                          <SectionRow key={s.sectionId} section={s} editInfo={sectionStatus[s.sectionId]} unsealing={busy === s.sectionId} onUnseal={unseal} viewer={viewer} siteUrl={siteUrl} pageId={pageId} onChanged={async () => { await load(); if (onChanged) onChanged(); }} />
+                        ))}
+                      </RovingList>
+                    )}
+                </div>
+              );
+            });
+          })()}
         </>
       )}
     </div>
@@ -1648,8 +1688,6 @@ const ArtifactGridView = () => {
         </div>
       )}
 
-      {/* Validation status (Conditions & Validations) */}
-      {!loading && !isEditing && <ValidationStatus pageId={pageId} viewer={viewer} />}
 
       {/* AI Review (Semantic AI Validations) */}
       {!loading && !isEditing && <AiReviewGroup pageId={pageId} />}
@@ -1657,6 +1695,9 @@ const ArtifactGridView = () => {
       {/* Sealed Sections (Content Sealing) — page CONTENT, not files. Kept last and visually
           divided from everything above so the two are never read as one surface. */}
       {!loading && !isEditing && <SealedSectionsGroup pageId={pageId} onChanged={onRefresh} viewer={viewer} siteUrl={siteUrl} />}
+
+      {/* Validation status — below Sealed Sections (owner, 2026-09-24) */}
+      {!loading && !isEditing && <ValidationStatus pageId={pageId} viewer={viewer} />}
 
       {/* Activity (A1) — the record of what happened on this page, newest first. Last, because it
           is a log to consult rather than a control to act on. */}
