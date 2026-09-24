@@ -37,3 +37,41 @@ export function recheckNote(why) {
     default: return null;
   }
 }
+
+// Which rules a stored status was judged against (2026-09-24, tester: a space rule was deleted
+// and the page still read "Issues found · Missing required label: test" — nothing re-judges a
+// page when its RULES change, only when the page does). Every writer stamps this; a read whose
+// current rules differ treats the stored status as stale instead of showing it.
+const stable = (v) => {
+  if (Array.isArray(v)) return `[${v.map(stable).join(",")}]`;
+  if (v && typeof v === "object") return `{${Object.keys(v).sort().map((k) => `${JSON.stringify(k)}:${stable(v[k])}`).join(",")}}`;
+  return JSON.stringify(v === undefined ? null : v);
+};
+
+/** PURE. Order-insensitive fingerprint of the active rules (id, type, severity, config). */
+export function rulesFingerprint(rules) {
+  const active = (Array.isArray(rules) ? rules : [])
+    .filter((r) => r && r.enabled !== false)
+    .map((r) => stable({ id: r.id ?? null, type: r.type ?? null, severity: r.severity === "block" ? "block" : "warn", config: r.config || {} }))
+    .sort();
+  const str = active.join("|");
+  let h = 0x811c9dc5;
+  for (let i = 0; i < str.length; i++) {
+    h ^= str.charCodeAt(i);
+    h = (h + ((h << 1) + (h << 4) + (h << 7) + (h << 8) + (h << 24))) >>> 0;
+  }
+  return ("0000000" + h.toString(16)).slice(-8);
+}
+
+/**
+ * PURE. What a reader should be shown for a stored status under the CURRENT effective config.
+ * No status at all when validation is off, pass/fail status is off, or no rule applies any more;
+ * `stale` when the rules changed since it was written (older records carry no stamp → stale).
+ */
+export function reconcileStoredState({ effective, stored, fingerprint }) {
+  if (!effective || !effective.enabled || !effective.modes?.gate) return { state: null, stale: false, why: "gate-off" };
+  if (!Array.isArray(effective.rules) || effective.rules.filter((r) => r && r.enabled !== false).length === 0) return { state: null, stale: false, why: "no-rules" };
+  if (!stored || !["passed", "failed"].includes(stored.state)) return { state: null, stale: false, why: "none" };
+  const stale = !stored.rulesFp || stored.rulesFp !== fingerprint;
+  return { state: stored, stale, why: stale ? "rules-changed" : "current" };
+}

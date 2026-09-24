@@ -1265,6 +1265,7 @@ html[data-color-mode="dark"] .badge-stale {
 }
 .sv-val-passed { background: var(--sv-interactive-success); color: var(--sv-text-on-primary); }
 .sv-val-failed { background: var(--sv-interactive-danger); color: var(--sv-text-on-primary); }
+.sv-val-checking { background: var(--sv-text-secondary); color: var(--sv-text-on-primary); }
 .sv-val-actions { margin-left: auto; display: flex; gap: 6px; }
 .sv-val-error { margin-top: 6px; font-size: 12px; color: var(--sv-text-primary); }
 .sv-val-note { margin-top: 6px; font-size: 11px; color: var(--sv-text-secondary); }

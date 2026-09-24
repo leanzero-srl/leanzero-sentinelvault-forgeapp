@@ -1,5 +1,5 @@
 import { ruleConfigProblem, ruleListProblems, ruleListRefusal, rulesNeedLabels, RULE_TYPES } from "../src/server/shared/rule-config.js";
-import { decideRecheckWrite, recheckNote } from "../src/server/capsules/validations/recheck.js";
+import { decideRecheckWrite, recheckNote, rulesFingerprint, reconcileStoredState } from "../src/server/capsules/validations/recheck.js";
 import { evaluateRules } from "../src/server/infra/rules-engine.js";
 import { eq, report } from "./_assert.mjs";
 
@@ -67,5 +67,27 @@ eq("recheck: first check of a page (no stored state)", decideRecheckWrite({ ...b
 ok("note: gate-off explains", /Pass\/fail status is off/.test(recheckNote("gate-off")));
 ok("note: reader explains", /someone who can edit/.test(recheckNote("cannot-edit")));
 eq("note: none for a write", recheckNote("ok"), null);
+
+// Stored status vs CURRENT rules (2026-09-24: a deleted space rule kept "Issues found" on screen).
+const labelRule = r("required-label", { labels: ["test"] });
+const headRule = { ...r("required-heading", { text: "Security" }), id: "r2" };
+const fp1 = rulesFingerprint([labelRule, headRule]);
+eq("fp: order-insensitive", rulesFingerprint([headRule, labelRule]), fp1);
+ok("fp: a config change moves it", rulesFingerprint([labelRule, { ...headRule, config: { text: "Privacy" } }]) !== fp1);
+ok("fp: a severity change moves it", rulesFingerprint([labelRule, { ...headRule, severity: "warn" }]) !== fp1);
+ok("fp: a deleted rule moves it", rulesFingerprint([headRule]) !== fp1);
+eq("fp: disabled rules do not count", rulesFingerprint([headRule, { ...labelRule, enabled: false }]), rulesFingerprint([headRule]));
+eq("fp: config key order does not matter", rulesFingerprint([r("required-heading", { text: "a", level: 2 })]), rulesFingerprint([r("required-heading", { level: 2, text: "a" })]));
+const eff = { enabled: true, modes: { gate: true }, rules: [labelRule, headRule] };
+const failed = { state: "failed", violations: [{ label: "test" }], rulesFp: fp1 };
+eq("reconcile: current rules → shown, not stale", reconcileStoredState({ effective: eff, stored: failed, fingerprint: fp1 }).stale, false);
+eq("reconcile: rules changed → stale", reconcileStoredState({ effective: { ...eff, rules: [headRule] }, stored: failed, fingerprint: rulesFingerprint([headRule]) }).stale, true);
+eq("reconcile: THE REPORT — last rule deleted → no status", reconcileStoredState({ effective: { ...eff, rules: [] }, stored: failed, fingerprint: rulesFingerprint([]) }).state, null);
+eq("reconcile: validation off → no status", reconcileStoredState({ effective: { enabled: false }, stored: failed, fingerprint: fp1 }).state, null);
+eq("reconcile: gate off → no status", reconcileStoredState({ effective: { ...eff, modes: { gate: false } }, stored: failed, fingerprint: fp1 }).state, null);
+eq("reconcile: only disabled rules left → no status", reconcileStoredState({ effective: { ...eff, rules: [{ ...labelRule, enabled: false }] }, stored: failed, fingerprint: fp1 }).state, null);
+eq("reconcile: an old record without a stamp is stale", reconcileStoredState({ effective: eff, stored: { state: "failed" }, fingerprint: fp1 }).stale, true);
+eq("reconcile: no stored status → none", reconcileStoredState({ effective: eff, stored: null, fingerprint: fp1 }).state, null);
+eq("reconcile: unknown stored state → none", reconcileStoredState({ effective: eff, stored: { state: "awaiting-approval", rulesFp: fp1 }, fingerprint: fp1 }).state, null);
 
 report("validation-rule-config");
