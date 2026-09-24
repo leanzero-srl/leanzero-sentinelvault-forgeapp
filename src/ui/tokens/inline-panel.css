@@ -1691,3 +1691,28 @@ html[data-color-mode="dark"] .sv-state.trashed { background: #94A3B8; color: #0F
 .sv-sealed-group-count { font-size: 11px; font-weight: 700; color: var(--sv-text-secondary); }
 .sv-sealed-group-note { font-size: 11px; color: var(--sv-text-secondary); }
 .sv-sealed-group-wait { font-size: 12px; color: var(--sv-text-secondary); padding: 6px 0; }
+
+/* A group folded to 12 items: "Show N more files" / "Show fewer files" (owner, 2026-09-24). */
+.sv-group-more { display: flex; justify-content: center; padding: 2px 0 6px; }
+.sv-group-more-btn {
+  background: none;
+  border: none;
+  color: var(--sv-interactive-primary);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 4px 12px;
+}
+.sv-group-more-btn:hover { text-decoration: underline; }
+.sv-group-more-btn:focus-visible { outline: 2px solid var(--sv-interactive-primary); outline-offset: 2px; border-radius: 4px; }
+
+/* Sealed section rows wear the attachment cards' state colours (owner, 2026-09-24): a solid 2px
+   border — yours indigo, someone else's amber, expired red — and the cards' hover. */
+.sv-section-row { border-width: 2px; border-radius: 8px; transition: background 0.15s ease, box-shadow 0.15s ease; }
+.sv-section-row:hover { background: var(--sv-bg-hover); box-shadow: 0 2px 6px var(--sv-shadow-light); }
+.sv-section-row.status-locked-by-me { border-color: #4F46E5; }
+.sv-section-row.status-locked { border-color: #B45309; }
+.sv-section-row.status-expired { border-color: #DC2626; }
+html[data-color-mode="dark"] .sv-section-row.status-locked-by-me { border-color: #818CF8; }
+html[data-color-mode="dark"] .sv-section-row.status-locked { border-color: #FBBF24; }
+html[data-color-mode="dark"] .sv-section-row.status-expired { border-color: #F87171; }

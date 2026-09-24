@@ -53,3 +53,13 @@ export function groupSealedSections(sections, statusById = {}) {
   }
   return out;
 }
+
+/** How many items a group shows before "Show N more" (owner, 2026-09-24). */
+export const GROUP_LIMIT = 12;
+
+/** PURE. The items a group shows, and how many are folded away. */
+export function capItems(items, expanded, limit = GROUP_LIMIT) {
+  const list = Array.isArray(items) ? items : [];
+  const hidden = Math.max(0, list.length - limit);
+  return { visible: expanded || hidden === 0 ? list : list.slice(0, limit), hidden };
+}

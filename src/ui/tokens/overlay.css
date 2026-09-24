@@ -1377,3 +1377,17 @@ html[data-color-mode="dark"] .sv-state.trashed { background: #94A3B8; color: #0F
 .sv-sealed-group + .sv-sealed-group .sv-sealed-group-header,
 .sv-sealed-group + .sv-sealed-group .sv-sealed-group-wait { padding-left: 0; padding-right: 0; }
 .sv-sealed-group + .sv-sealed-group .sv-card-list { padding-left: 0; padding-right: 0; }
+
+/* A group folded to 12 items: "Show N more files" / "Show fewer files" (owner, 2026-09-24). */
+.sv-group-more { display: flex; justify-content: center; padding: 2px 0 6px; }
+.sv-group-more-btn {
+  background: none;
+  border: none;
+  color: var(--sv-interactive-primary);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 4px 12px;
+}
+.sv-group-more-btn:hover { text-decoration: underline; }
+.sv-group-more-btn:focus-visible { outline: 2px solid var(--sv-interactive-primary); outline-offset: 2px; border-radius: 4px; }
