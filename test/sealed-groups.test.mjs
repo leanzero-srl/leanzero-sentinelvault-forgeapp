@@ -1,0 +1,24 @@
+import { groupSealedFiles, SEALED_GROUPS } from "../src/ui/kit/sealed-groups.js";
+import { eq, report } from "./_assert.mjs";
+
+const now = Date.parse("2026-09-24T12:00:00Z");
+const f = (id, lockStatus, extra = {}) => ({ id, lockStatus, ...extra });
+const files = [f("a", "HELD"), f("b", "HELD_BY_ACTOR"), f("c", "HELD"), f("d", "HELD"), f("e", "HELD_BY_ACTOR"), f("g", "HELD")];
+const status = {
+  a: { status: "granted", expiresAt: "2026-09-24T15:00:00Z" },
+  c: { status: "pending" },
+  d: { status: "granted", expiresAt: "2026-09-24T11:00:00Z" }, // ended an hour ago
+  g: { status: "denied" },
+};
+const g = groupSealedFiles(files, status, now);
+const ids = (xs) => xs.map((x) => x.id);
+eq("order from the ticket", SEALED_GROUPS.map((x) => x.id), ["mine", "editNow", "others"]);
+eq("mine: sealed by you, input order kept", ids(g.mine), ["b", "e"]);
+eq("editNow: live grant only", ids(g.editNow), ["a"]);
+eq("others: pending, lapsed grant, declined", ids(g.others), ["c", "d", "g"]);
+eq("grant with no end → edit now", ids(groupSealedFiles([f("x", "HELD")], { x: { status: "granted" } }, now).editNow), ["x"]);
+eq("unknown status → others (Request edit)", ids(groupSealedFiles([f("x", "HELD")], {}, now).others), ["x"]);
+eq("every file lands exactly once", g.mine.length + g.editNow.length + g.others.length, files.length);
+eq("empty / bad input", groupSealedFiles(null), { mine: [], editNow: [], others: [] });
+
+report("sealed-groups");

@@ -11,6 +11,8 @@ import { ConfirmDialog } from "../../kit/Dialog";
 import GiveAccessDialog from "../../kit/GiveAccessDialog";
 import { useSignedInvoke } from "../../kit/SignedInvoke";
 import RovingList from "../../kit/RovingList";
+import useEditStatuses from "../../kit/useEditStatuses";
+import { SEALED_GROUPS, groupSealedFiles } from "../../kit/sealed-groups.js";
 import { attachmentRow, rowActions, statusChip, copyText } from "../../kit/seal-row.js";
 import { PrimarySlot, ReasonBar, RequestInbox, GrantInbox, ErrorRow, CopiedNote } from "../../kit/SealRowParts";
 
@@ -270,17 +272,18 @@ const SortPicker = ({ orderField, orderDir, onSort }) => {
 // One attachment card in the overlay. The primary action and the ⋯ items come from the SAME row
 // rule as the inline panel and the page-details modal (kit/seal-row.js → row-state.js); the
 // parent owns the resolver calls through `run` so a refusal lands on THIS card's error row.
-const OverlayArtifactCard = ({ artifact, visibleColumns, run, signedInvoke, busyAction, errorMessage, onClearError, isWatching, viewer, formatRemainingTime, formatFileSize, siteUrl, spaceKey, pageId, pageLocation }) => {
+const OverlayArtifactCard = ({ artifact, editInfo, visibleColumns, run, signedInvoke, busyAction, errorMessage, onClearError, isWatching, viewer, formatRemainingTime, formatFileSize, siteUrl, spaceKey, pageId, pageLocation }) => {
   const [pendingConfirm, setPendingConfirm] = useState(null); // "delete" | "purge" | null → kit ConfirmDialog
   const [expanded, setExpanded] = useState(false);
   const [cachedPreview, setCachedPreview] = useState(null);
-  const [editStatus, setEditStatus] = useState(null); // none|pending|granted|denied (others' seals)
-  const [editExpiresAt, setEditExpiresAt] = useState(null);
+  // Seeded by the list (useEditStatuses) when it already asked — the card then skips its own call.
+  const [editStatus, setEditStatus] = useState(editInfo?.status || null); // none|pending|granted|denied (others' seals)
+  const [editExpiresAt, setEditExpiresAt] = useState(editInfo?.expiresAt || null);
   const [bar, setBar] = useState(null); // "request" | "force" | null
   const [reasonText, setReasonText] = useState("");
   const [myRequests, setMyRequests] = useState(null); // owner: pending edit requests
   const [reqBusy, setReqBusy] = useState(null);
-  const [editRetryAt, setEditRetryAt] = useState(null);
+  const [editRetryAt, setEditRetryAt] = useState(editInfo?.retryAt || null);
   // Editors with access: the panel had this, the overlay did not — an owner working in the
   // overlay could neither see nor revoke a grant (one rule, every surface).
   const [myGrants, setMyGrants] = useState(null);
@@ -546,6 +549,7 @@ const OverlayArtifactCard = ({ artifact, visibleColumns, run, signedInvoke, busy
 
 const ArtifactControlPanel = () => {
   const [fileList, setFileList] = useState([]);
+  const { statusById: editStatusById, ready: editStatusReady } = useEditStatuses(fileList); // groups the Sealed grid
   const [loading, setLoading] = useState(true);
   const [enriching, setEnriching] = useState(false);
   const [error, setError] = useState(null);
@@ -1136,17 +1140,36 @@ const ArtifactControlPanel = () => {
                   const availableFiles = prioritized.filter((a) => !isClaimedFile(a) && !a.isStale);
                   return (
                     <>
-                      {claimedFiles.length > 0 && (
-                        <div className="sv-card-section">
-                          <div className="sv-card-section-header">
-                            <span className="sv-card-section-title">Sealed</span>
-                            <span className="sv-card-section-count" data-testid="sv-count-sealed">{counts?.sealed ?? claimedFiles.length}</span>
-                          </div>
-                          <RovingList className="sv-card-list" data-cols="3" label="Sealed attachments">
-                            {claimedFiles.map((artifact) => (
-                              <OverlayArtifactCard
+                      {claimedFiles.length > 0 && (() => {
+                        // Ticket 2026-09-24: grouped by what YOU can do (kit/sealed-groups.js, shared with the panel).
+                        const groups = groupSealedFiles(claimedFiles, editStatusById);
+                        return (
+                          <div className="sv-card-section" data-testid="sv-sealed-groups">
+                            <div className="sv-card-section-header">
+                              <span className="sv-card-section-title">Sealed</span>
+                              <span className="sv-card-section-count" data-testid="sv-count-sealed">{counts?.sealed ?? claimedFiles.length}</span>
+                            </div>
+                            {SEALED_GROUPS.map((g) => {
+                              const files = groups[g.id];
+                              if (!files.length) return null;
+                              const waiting = g.id !== "mine" && !editStatusReady;
+                              if (waiting && g.id === "editNow") return null;
+                              return (
+                                <div key={g.id} className="sv-sealed-group" data-testid={`sv-sealed-group-${g.id}`}>
+                                  <div className="sv-sealed-group-header">
+                                    <span className="sv-sealed-group-title">{g.title}</span>
+                                    <span className="sv-sealed-group-count">{files.length}</span>
+                                    <span className="sv-sealed-group-note">{g.note}</span>
+                                  </div>
+                                  {waiting
+                                    ? <div className="sv-sealed-group-wait" role="status">Checking your access…</div>
+                                    : (
+                                      <RovingList className="sv-card-list" data-cols="3" label={`${g.title} attachments`}>
+                                        {files.map((artifact) => (
+                                          <OverlayArtifactCard
                                 signedInvoke={signedInvoke}
                                 key={artifact.id}
+                                editInfo={editStatusById[artifact.id]}
                                 artifact={artifact}
                                 visibleColumns={visibleColumns}
                                 run={(busyKey, action, payload, opts) => runCardAction(artifact.id, busyKey, action, payload, opts)}
@@ -1162,10 +1185,15 @@ const ArtifactControlPanel = () => {
                                 pageId={pageId}
                                 pageLocation={pageLocation}
                               />
-                            ))}
-                          </RovingList>
-                        </div>
-                      )}
+                                        ))}
+                                      </RovingList>
+                                    )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        );
+                      })()}
                       {staleFiles.length > 0 && (
                         <div className="sv-card-section">
                           <div className="sv-card-section-header">
