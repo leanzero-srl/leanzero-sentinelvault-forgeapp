@@ -789,15 +789,24 @@ const ValidationStatus = ({ pageId, viewer }) => {
   const [collapsed, setCollapsed] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [approving, setApproving] = useState(false);
+  const [stale, setStale] = useState(false); // stored status was judged on rules that changed
 
   useEffect(() => {
     let cancelled = false;
     if (!pageId) return;
     invoke("get-validation-state", { pageId })
-      .then((r) => { if (!cancelled) { setState(r?.state || null); setLoaded(true); } })
+      .then((r) => {
+        if (cancelled) return;
+        setState(r?.state || null);
+        setStale(!!r?.stale);
+        setLoaded(true);
+        // The rules changed since this status was written (a rule edited or deleted): judge the
+        // page again now rather than show a verdict against rules that no longer apply.
+        if (r?.stale) runNow();
+      })
       .catch(() => { if (!cancelled) setLoaded(true); });
     return () => { cancelled = true; };
-  }, [pageId]);
+  }, [pageId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const runNow = async () => {
     setBusy(true);
@@ -809,7 +818,8 @@ const ValidationStatus = ({ pageId, viewer }) => {
         setError(r?.failureReason || "Could not check this page. Try again in a moment.");
       } else {
         setResult(r || null);
-        if (r?.persisted && r.state) setState(r.state);
+        if (r?.persisted && r.state) { setState(r.state); setStale(false); }
+        else if (r?.noRules) setState(null); // no rule applies any more — the group goes away
       }
     } catch (e) {
       console.error("Re-check failed:", e);
@@ -825,7 +835,7 @@ const ValidationStatus = ({ pageId, viewer }) => {
     setError(null);
     try {
       const r = await invoke("approve-page-gate", { pageId });
-      if (r?.success) { setState(r.state || { state: "passed", violations: [] }); setResult(null); }
+      if (r?.success) { setState(r.state || { state: "passed", violations: [] }); setResult(null); setStale(false); }
       else setError(r?.reason || "Could not approve this page.");
     } catch (e) {
       console.error("Approve anyway failed:", e);
@@ -839,11 +849,14 @@ const ValidationStatus = ({ pageId, viewer }) => {
   // Only surface when a pass/fail status exists (keeps pages without validation clean).
   if (!pageId || !loaded || !state || !VAL_BADGE[state.state]) return null;
 
-  const violations = result ? (result.violations || []) : (state.violations || []);
+  const violations = result ? (result.violations || []) : (stale ? [] : (state.violations || []));
+  // A stale status is never shown as a verdict: "Checking…" until the re-check answers, then the
+  // live result (a reader's re-check is not stored, so the stored one stays stale for them).
+  const shownState = stale ? (result ? (result.passed ? "passed" : "failed") : null) : state.state;
   const shownPasses = !error && violations.length === 0 && !result?.noRules;
-  const canApprove = viewer?.isSpaceAdmin === true && state.state === "failed";
+  const canApprove = viewer?.isSpaceAdmin === true && shownState === "failed";
   const liveDiffers = result && !result.persisted && !result.noRules
-    && (result.passed ? state.state !== "passed" : state.state !== "failed");
+    && (stale || (result.passed ? state.state !== "passed" : state.state !== "failed"));
 
   return (
     <div className="sv-card-section sv-validation" data-testid="sv-validation">
@@ -852,7 +865,9 @@ const ValidationStatus = ({ pageId, viewer }) => {
           <span className={`sv-group-caret ${collapsed ? "collapsed" : ""}`}>▾</span>
         </button>
         <span className="sv-card-section-title">Validation</span>
-        <span className={`sv-val-badge sv-val-${state.state}`} role="status" data-testid="sv-validation-badge">{VAL_BADGE[state.state]}</span>
+        {shownState
+          ? <span className={`sv-val-badge sv-val-${shownState}`} role="status" data-testid="sv-validation-badge">{VAL_BADGE[shownState]}</span>
+          : <span className="sv-val-badge sv-val-checking" role="status" data-testid="sv-validation-badge">{error ? "Not checked" : "Checking…"}</span>}
         <span className="sv-val-actions">
           {canApprove && (
             <button className="action-btn watch" onClick={() => setConfirming(true)} disabled={busy || approving} data-testid="sv-validation-approve">
@@ -868,7 +883,7 @@ const ValidationStatus = ({ pageId, viewer }) => {
         <>
           {error && <div className="card-action-error sv-val-error" role="alert" data-testid="sv-validation-error">{error}</div>}
           {!error && result && result.noRules && <div className="sv-panel-empty">No validation rules apply to this page.</div>}
-          {shownPasses && (result || state.state === "passed") && (
+          {shownPasses && (result || (!stale && state.state === "passed")) && (
             <div className="sv-val-ok">{state.approvedBy && !result ? "Approved by a space admin." : "All checks passed."}</div>
           )}
           {!error && violations.length > 0 && (

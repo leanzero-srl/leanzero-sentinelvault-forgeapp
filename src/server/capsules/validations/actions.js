@@ -4,7 +4,7 @@ import { Queue } from "@forge/events";
 import { fetchPageLabelsChecked } from "../../infra/labels.js";
 import { ruleListRefusal, rulesNeedLabels } from "../../shared/rule-config.js";
 import { recordActivity } from "../../infra/activity-log.js";
-import { decideRecheckWrite, recheckNote } from "./recheck.js";
+import { decideRecheckWrite, recheckNote, rulesFingerprint, reconcileStoredState } from "./recheck.js";
 
 import { authorizeSteward, isOperatorSteward, isOperatorSiteAdmin } from "../../shared/steward-checks.js";
 import { setWithTtl } from "../../shared/kvs-ttl.js";
@@ -159,7 +159,7 @@ const recheckPageValidation = async (req) => {
   // panel always did), but nothing is stored — there is no status to keep in step.
   const rules = effective.enabled ? (effective.rules || []) : await resolveRules(spaceKey);
   const stored = await readValidationState(pageId);
-  if (!rules.length) return { success: true, passed: true, violations: [], noRules: true, state: stored, persisted: false };
+  if (!rules.length) return { success: true, passed: true, violations: [], noRules: true, state: null, persisted: false };
 
   const r = await judgePage(pageId, rules);
   if (!r.checked) {
@@ -172,7 +172,7 @@ const recheckPageValidation = async (req) => {
   let state = stored;
   if (decision.write) {
     const next = r.passed ? "passed" : "failed";
-    state = { state: next, violations: r.passed ? [] : r.violations, version: r.version, checkedAt: new Date().toISOString(), checkedBy: accountId, source: "recheck" };
+    state = { state: next, violations: r.passed ? [] : r.violations, version: r.version, checkedAt: new Date().toISOString(), checkedBy: accountId, source: "recheck", rulesFp: rulesFingerprint(rules) };
     await writeValidationState(pageId, state);
     if (stored?.state !== next) {
       await recordActivity({
@@ -199,8 +199,13 @@ const getValidationState = async (req) => {
     && !(await canReadPage(req.context.accountId, pageId))) {
     return { state: null };
   }
-  const state = await readValidationState(pageId);
-  return { state };
+  // 2026-09-24: answer for the CURRENT rules. Validation or pass/fail off, or no rule left →
+  // no status (the panel group and the ribbon chip disappear); rules changed since the status
+  // was written → `stale`, and the panel re-checks instead of showing the old verdict.
+  const effective = await resolveEffectiveConfig(await pageSpaceKey(req, pageId));
+  const stored = await readValidationState(pageId);
+  const { state, stale } = reconcileStoredState({ effective, stored, fingerprint: rulesFingerprint(effective.rules) });
+  return { state, stale };
 };
 
 /**
@@ -230,7 +235,7 @@ const approvePageGate = async (req) => {
   catch (_) { return { success: false, reason: "Could not read the page. Try again in a moment." }; }
 
   const stored = await readValidationState(pageId);
-  const state = { state: "passed", violations: [], version, approvedBy: accountId, approvedAt: new Date().toISOString(), checkedAt: new Date().toISOString() };
+  const state = { state: "passed", violations: [], version, approvedBy: accountId, approvedAt: new Date().toISOString(), checkedAt: new Date().toISOString(), rulesFp: rulesFingerprint(effective.rules) };
   await writeValidationState(pageId, state);
   await recordActivity({
     type: "validation.gate",

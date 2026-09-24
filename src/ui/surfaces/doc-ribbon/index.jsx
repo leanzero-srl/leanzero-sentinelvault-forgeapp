@@ -952,7 +952,7 @@ const DocumentRibbon = () => {
       const wfVal = wf?.assigned ? wf : null;
       // Only the two states the server writes; anything else is not a status (2026-09-23 — the
       // "awaiting approval" chip had no writer anywhere and could only show from bad data).
-      const vsVal = ["passed", "failed"].includes(vs?.state?.state) ? vs.state.state : null;
+      const vsVal = !vs?.stale && ["passed", "failed"].includes(vs?.state?.state) ? vs.state.state : null; // stale = judged on rules that changed
       setWorkflow(wfVal);
       setApprovals(appr?.pending ? appr : null);
       setValidationState(vsVal);
