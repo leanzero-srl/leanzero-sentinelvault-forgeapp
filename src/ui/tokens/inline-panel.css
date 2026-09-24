@@ -1748,8 +1748,12 @@ html[data-color-mode="dark"] .sv-section-block.status-expired { border-color: #F
 .card-meta [data-testid="sv-card-trash-meta"] { flex-basis: 100%; }
 .card-meta .card-meta-sep:has(+ [data-testid="sv-card-trash-meta"]) { display: none; }
 
-/* The heading picker's Seal: the attachment cards' solid Seal button (owner, 2026-09-24). It is the
-   face of the row button, so the row's hover darkens it like a hovered button. */
-.sv-section-pick-seal { flex: 0 0 auto; pointer-events: none; }
-.sv-section-pick-row:hover:not(:disabled) .sv-section-pick-seal { background: var(--sv-interactive-primary-hover); border-color: var(--sv-interactive-primary-hover); }
-.sv-section-pick-row:disabled .sv-section-pick-seal { opacity: 0.5; }
+/* The heading picker row is information; its Seal is a real button with its own hover
+   (owner, 2026-09-24). The row itself no longer reacts to the pointer. */
+.sv-section-pick-row { cursor: default; }
+.sv-section-pick-row:hover { border-color: var(--sv-border-secondary); }
+.sv-section-pick.is-picked .sv-section-pick-row { border-color: var(--sv-interactive-primary); }
+.sv-section-pick-row.is-disabled { opacity: 0.5; }
+.sv-section-pick-row > .action-btn { flex: 0 0 auto; }
+.action-btn.sv-section-pick-cancel { background: none; color: var(--sv-interactive-primary); border-color: var(--sv-interactive-primary); }
+.action-btn.sv-section-pick-cancel:hover:not(:disabled) { background: var(--sv-bg-hover); }
