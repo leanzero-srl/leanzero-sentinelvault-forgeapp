@@ -31,12 +31,13 @@ eq("sections: bad input", groupSealedSections(undefined), { mine: [], editNow: [
 
 // Folding a group at 12 (owner, 2026-09-24).
 const many = Array.from({ length: 29 }, (_, i) => i);
-eq("limit is 12", GROUP_LIMIT, 12);
-eq("folded: first 12", capItems(many, false).visible, many.slice(0, 12));
-eq("folded: 17 hidden", capItems(many, false).hidden, 17);
+eq("limit is 15", GROUP_LIMIT, 15);
+eq("folded: first 15", capItems(many, false).visible, many.slice(0, 15));
+eq("folded: 14 hidden", capItems(many, false).hidden, 14);
 eq("expanded: all 29", capItems(many, true).visible.length, 29);
-eq("expanded still reports what folding hides", capItems(many, true).hidden, 17);
-eq("12 exactly: no toggle", capItems(many.slice(0, 12), false).hidden, 0);
+eq("expanded still reports what folding hides", capItems(many, true).hidden, 14);
+eq("15 exactly: no toggle", capItems(many.slice(0, 15), false).hidden, 0);
+eq("a custom limit (the panel's files-per-page)", capItems(many, false, 10).visible.length, 10);
 eq("bad input", capItems(null, false), { visible: [], hidden: 0 });
 
 report("sealed-groups");

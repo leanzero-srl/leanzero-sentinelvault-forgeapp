@@ -1703,7 +1703,7 @@ const ArtifactGridView = () => {
                       </div>
                       {waiting
                         ? <div className="sv-sealed-group-wait" role="status">Checking your access…</div>
-                        : <CappedGroup items={files}>{(shown) => <RovingList {...gridProps} label={`${g.title} attachments`}>{renderCards(shown)}</RovingList>}</CappedGroup>}
+                        : <CappedGroup items={files} limit={WINDOW}>{(shown) => <RovingList {...gridProps} label={`${g.title} attachments`}>{renderCards(shown)}</RovingList>}</CappedGroup>}
                     </div>
                   );
                 })}
