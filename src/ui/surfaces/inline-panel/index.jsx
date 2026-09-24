@@ -13,6 +13,7 @@ import { useSignedInvoke } from "../../kit/SignedInvoke";
 import RovingList from "../../kit/RovingList";
 import useEditStatuses from "../../kit/useEditStatuses";
 import CappedGroup from "../../kit/CappedGroup";
+import PanelErrorBoundary from "../../kit/PanelErrorBoundary";
 import { SEALED_GROUPS, groupSealedFiles, groupSealedSections } from "../../kit/sealed-groups.js";
 import { describeRange } from "../../kit/section-range.js";
 import { expiryWarning } from "../../../server/capsules/page-details/row-state.js"; // SEC-7: the owner's lapse warning
@@ -1780,7 +1781,7 @@ const ArtifactGridView = () => {
 
 function renderApp() {
   const root = createRoot(document.getElementById("root"));
-  root.render(<ArtifactGridView />);
+  root.render(<PanelErrorBoundary><ArtifactGridView /></PanelErrorBoundary>);
 }
 
 if (document.readyState === "loading") {
