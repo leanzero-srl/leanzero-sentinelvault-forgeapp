@@ -12,6 +12,7 @@ import GiveAccessDialog from "../../kit/GiveAccessDialog";
 import { useSignedInvoke } from "../../kit/SignedInvoke";
 import RovingList from "../../kit/RovingList";
 import useEditStatuses from "../../kit/useEditStatuses";
+import CappedGroup from "../../kit/CappedGroup";
 import { SEALED_GROUPS, groupSealedFiles, groupSealedSections } from "../../kit/sealed-groups.js";
 import { describeRange } from "../../kit/section-range.js";
 import { expiryWarning } from "../../../server/capsules/page-details/row-state.js"; // SEC-7: the owner's lapse warning
@@ -1044,7 +1045,7 @@ const SectionRow = ({ section: s, onUnseal, unsealing, viewer, siteUrl, pageId, 
 
   return (
     <div className="sv-section-block" role="listitem" data-roving-card tabIndex={-1} aria-label={aria} data-testid="sv-section-row" data-primary={primary.kind}>
-      <div className="sv-section-row">
+      <div className={`sv-section-row status-${s.isExpired ? "expired" : s.isMine ? "locked-by-me" : "locked"}`}>
         <span className="sv-section-row-title" title={s.sectionTitle}>{s.sectionTitle}</span>
         <span className="sv-section-row-meta">{sentence}{warning ? <span className="sv-section-row-warn" data-testid="sv-section-expiry-warning"> · {warning.text}</span> : null}{s.note ? <span className="sv-section-row-note" title={s.note}> · “{s.note}”</span> : null}</span>
         {primary.kind === "none" && editStatus === null && !s.isMine && !s.isExpired
@@ -1270,11 +1271,13 @@ const SealedSectionsGroup = ({ pageId, onChanged, viewer, siteUrl }) => {
                   {waiting
                     ? <div className="sv-sealed-group-wait" role="status">Checking your access…</div>
                     : (
+                      <CappedGroup items={items} noun="sections">{(shown) => (
                       <RovingList label={`Sealed sections — ${g.title}`} className="sv-section-list">
-                        {items.map((s) => (
+                        {shown.map((s) => (
                           <SectionRow key={s.sectionId} section={s} editInfo={sectionStatus[s.sectionId]} unsealing={busy === s.sectionId} onUnseal={unseal} viewer={viewer} siteUrl={siteUrl} pageId={pageId} onChanged={async () => { await load(); if (onChanged) onChanged(); }} />
                         ))}
                       </RovingList>
+                      )}</CappedGroup>
                     )}
                 </div>
               );
@@ -1622,7 +1625,7 @@ const ArtifactGridView = () => {
                       </div>
                       {waiting
                         ? <div className="sv-sealed-group-wait" role="status">Checking your access…</div>
-                        : <RovingList {...gridProps} label={`${g.title} attachments`}>{renderCards(files)}</RovingList>}
+                        : <CappedGroup items={files}>{(shown) => <RovingList {...gridProps} label={`${g.title} attachments`}>{renderCards(shown)}</RovingList>}</CappedGroup>}
                     </div>
                   );
                 })}
