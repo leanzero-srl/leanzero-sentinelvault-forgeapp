@@ -1,34 +1,3 @@
-          {claimedFiles.length > 0 && (() => {
-            // Ticket 2026-09-24: grouped by what YOU can do — sealed by you, edit now, others.
-            // Others' files wait for their statuses (one list-level read) so nothing jumps groups.
-            const groups = groupSealedFiles(claimedFiles, editStatusById);
-            return (
-              <div className="sv-card-section" data-testid="sv-sealed-groups">
-                <div className="sv-card-section-header">
-                  <span className="sv-card-section-title">Sealed</span>
-                  <span className="sv-card-section-count" data-testid="sv-count-sealed">{counts?.sealed ?? claimedFiles.length}</span>
-                </div>
-                {SEALED_GROUPS.map((g) => {
-                  const files = groups[g.id];
-                  if (!files.length) return null;
-                  const waiting = g.id !== "mine" && !editStatusReady;
-                  if (waiting && g.id === "editNow") return null;
-                  return (
-                    <div key={g.id} className="sv-sealed-group" data-testid={`sv-sealed-group-${g.id}`}>
-                      <div className="sv-sealed-group-header">
-                        <span className="sv-sealed-group-title">{g.title}</span>
-                        <span className="sv-sealed-group-count">{files.length}</span>
-                        <span className="sv-sealed-group-note">{g.note}</span>
-                      </div>
-                      {waiting
-                        ? <div className="sv-sealed-group-wait" role="status">Checking your access…</div>
-                        : <RovingList {...gridProps} label={`${g.title} attachments`}>{renderCards(files)}</RovingList>}
-                    </div>
-                  );
-                })}
-              </div>
-            );
-          })()}
 import React, { useState, useEffect, useCallback } from "react";
 import { createRoot } from "react-dom/client";
 import { invoke, view, router } from "@forge/bridge";
@@ -1589,15 +1558,37 @@ const ArtifactGridView = () => {
       {/* Grouped sections */}
       {!loading && !error && artifacts.length > 0 && (
         <>
-          {claimedFiles.length > 0 && (
-            <div className="sv-card-section">
-              <div className="sv-card-section-header">
-                <span className="sv-card-section-title">Sealed</span>
-                <span className="sv-card-section-count" data-testid="sv-count-sealed">{counts?.sealed ?? claimedFiles.length}</span>
+          {claimedFiles.length > 0 && (() => {
+            // Ticket 2026-09-24: grouped by what YOU can do — sealed by you, edit now, others.
+            // Others' files wait for their statuses (one list-level read) so nothing jumps groups.
+            const groups = groupSealedFiles(claimedFiles, editStatusById);
+            return (
+              <div className="sv-card-section" data-testid="sv-sealed-groups">
+                <div className="sv-card-section-header">
+                  <span className="sv-card-section-title">Sealed</span>
+                  <span className="sv-card-section-count" data-testid="sv-count-sealed">{counts?.sealed ?? claimedFiles.length}</span>
+                </div>
+                {SEALED_GROUPS.map((g) => {
+                  const files = groups[g.id];
+                  if (!files.length) return null;
+                  const waiting = g.id !== "mine" && !editStatusReady;
+                  if (waiting && g.id === "editNow") return null;
+                  return (
+                    <div key={g.id} className="sv-sealed-group" data-testid={`sv-sealed-group-${g.id}`}>
+                      <div className="sv-sealed-group-header">
+                        <span className="sv-sealed-group-title">{g.title}</span>
+                        <span className="sv-sealed-group-count">{files.length}</span>
+                        <span className="sv-sealed-group-note">{g.note}</span>
+                      </div>
+                      {waiting
+                        ? <div className="sv-sealed-group-wait" role="status">Checking your access…</div>
+                        : <RovingList {...gridProps} label={`${g.title} attachments`}>{renderCards(files)}</RovingList>}
+                    </div>
+                  );
+                })}
               </div>
-              <RovingList {...gridProps} label="Sealed attachments">{renderCards(claimedFiles)}</RovingList>
-            </div>
-          )}
+            );
+          })()}
           {staleFiles.length > 0 && (
             <div className="sv-card-section">
               <div className="sv-card-section-header">
