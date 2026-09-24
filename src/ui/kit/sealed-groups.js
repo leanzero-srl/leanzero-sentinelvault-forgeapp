@@ -13,7 +13,7 @@
 
 export const SEALED_GROUPS = Object.freeze([
   { id: "mine", title: "Sealed by you", note: "Release them, or manage who can edit" },
-  { id: "editNow", title: "You can edit now", note: "Your edit access runs out at the time on each file" },
+  { id: "editNow", title: "You can edit now", note: "Your edit access runs out at the time shown on each" },
   { id: "others", title: "Sealed by others", note: "Request edit to change one of these" },
 ]);
 
@@ -34,6 +34,22 @@ export function groupSealedFiles(files, statusById = {}, now = Date.now()) {
     // A grant whose end has already passed is not "edit now" (the server stops honouring it).
     const live = s && s.status === "granted" && !(Number.isFinite(until) && until <= now);
     (live ? out.editNow : out.others).push(f);
+  }
+  return out;
+}
+
+/**
+ * PURE. The same three groups for sealed SECTIONS (enumerate-section-seals items: `isMine`,
+ * `sectionId`). `statusById` is keyed by sectionId from check-section-edit, whose "granted" is
+ * already a live grant (the server only answers granted for one that has not run out).
+ */
+export function groupSealedSections(sections, statusById = {}) {
+  const out = { mine: [], editNow: [], others: [] };
+  for (const s of Array.isArray(sections) ? sections : []) {
+    if (!s) continue;
+    if (s.isMine) out.mine.push(s);
+    else if (statusById[s.sectionId]?.status === "granted") out.editNow.push(s);
+    else out.others.push(s);
   }
   return out;
 }
