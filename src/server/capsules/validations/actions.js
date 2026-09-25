@@ -204,8 +204,8 @@ const getValidationState = async (req) => {
   // was written → `stale`, and the panel re-checks instead of showing the old verdict.
   const effective = await resolveEffectiveConfig(await pageSpaceKey(req, pageId));
   const stored = await readValidationState(pageId);
-  const { state, stale } = reconcileStoredState({ effective, stored, fingerprint: rulesFingerprint(effective.rules) });
-  return { state, stale };
+  const { state, stale, applies } = reconcileStoredState({ effective, stored, fingerprint: rulesFingerprint(effective.rules) });
+  return { state, stale, applies: applies === true };
 };
 
 /**
