@@ -2414,3 +2414,9 @@ html[data-color-mode="dark"] .action-bar-pill { background: #FBBF24; color: #0F1
 .sv-unsaved-float .btn-primary { background: #1F2937; color: #FFFFFF; border-color: #1F2937; }
 html[data-color-mode="dark"] .sv-unsaved-float { background: #FBBF24; color: #0F172A; }
 @media (prefers-reduced-motion: no-preference) { .sv-unsaved-float { transition: top 120ms ease; } }
+
+/* People picker: a second line that tells namesakes apart — email when Confluence shares it (owner, 2026-09-25). */
+.wf-userpicker-opt { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; }
+.wf-userpicker-name { font-weight: 600; }
+.wf-userpicker-hint { font-size: 11px; color: var(--sv-text-secondary); }
+.wf-userchip-hint { margin-left: 6px; font-size: 11px; font-weight: 500; opacity: 0.9; }
