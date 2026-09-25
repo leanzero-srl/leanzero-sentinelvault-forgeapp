@@ -1436,3 +1436,4 @@ html[data-color-mode="dark"] .sv-state.trashed { background: #94A3B8; color: #0F
 .sv-decline-reason { width: 100%; box-sizing: border-box; font: inherit; font-size: 13px; padding: 8px 10px; border: 1px solid var(--sv-border-primary); border-radius: 8px; background: var(--sv-bg-primary); color: var(--sv-text-primary); resize: vertical; }
 .sv-decline-reason:focus { outline: 2px solid var(--sv-interactive-primary); outline-offset: 1px; }
 .sv-decline-hint { display: block; margin-top: 6px; font-size: 11px; color: var(--sv-text-secondary); }
+.sv-declined-reason { margin-top: 6px; font-size: 12px; font-style: italic; color: var(--sv-text-secondary); }

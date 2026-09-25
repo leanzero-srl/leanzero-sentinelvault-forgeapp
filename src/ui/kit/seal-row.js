@@ -59,6 +59,7 @@ export function attachmentRow(att, live = {}) {
     myEditStatus: live.editStatus || "none",
     myEditExpiresAt: live.editExpiresAt || null,
     myRetryAt: live.editRetryAt || null,
+    myDeniedReason: live.editDeniedReason || null, // SEC-8: the decider's word, shown on the row
     pendingRequests: Array.isArray(live.pendingRequests) ? live.pendingRequests : [],
     watching: live.watching === true,
   };
@@ -79,6 +80,7 @@ export function sectionRow(s, live = {}) {
     myEditStatus: live.editStatus || "none",
     myEditExpiresAt: live.editExpiresAt || null,
     myRetryAt: live.editRetryAt || null,
+    myDeniedReason: live.editDeniedReason || null, // SEC-8: the decider's word, shown on the row
     pendingRequests: Array.isArray(live.pendingRequests) ? live.pendingRequests : [],
   };
 }
