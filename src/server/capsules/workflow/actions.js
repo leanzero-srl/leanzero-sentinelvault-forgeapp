@@ -511,7 +511,9 @@ const searchUsers = async (req) => {
     if (!res.ok) return { users: [] };
     const body = await res.json();
     const users = (body?.results || [])
-      .map((r) => ({ accountId: r.user?.accountId, name: r.user?.displayName || r.user?.publicName }))
+      // email when the person's profile makes it visible to apps (Confluence withholds it
+      // otherwise); publicName as the next best way to tell two "Mihai Perdum"s apart.
+      .map((r) => ({ accountId: r.user?.accountId, name: r.user?.displayName || r.user?.publicName, email: r.user?.email || null, publicName: r.user?.publicName || null }))
       .filter((u) => u.accountId);
     return { users };
   } catch (_) {

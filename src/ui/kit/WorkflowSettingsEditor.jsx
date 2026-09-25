@@ -70,7 +70,16 @@ export const MiniSelect = ({ value, options, onChange, ariaLabel, testId }) => {
   );
 };
 
-// Search-and-add people picker (no native control). Selected = [{ type, id, name }].
+// What tells two people with the same name apart (owner, 2026-09-25): the email when Confluence
+// shares it, else a public name that differs from the display name, else the account id's tail.
+const personHint = (u) => {
+  if (u.email) return u.email;
+  if (u.publicName && u.publicName !== u.name) return u.publicName;
+  const id = u.accountId || u.id || "";
+  return id ? `account …${String(id).slice(-6)}` : "";
+};
+
+// Search-and-add people picker (no native control). Selected = [{ type, id, name, hint }].
 const UserPicker = ({ selected, onChange }) => {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState([]);
@@ -81,13 +90,14 @@ const UserPicker = ({ selected, onChange }) => {
     const t = setTimeout(async () => {
       try {
         const r = await invoke("search-workflow-users", { query });
-        if (!cancelled) { setResults(r?.users || []); setOpen(true); }
+        // Someone already chosen is not offered again (owner, 2026-09-25).
+        if (!cancelled) { setResults((r?.users || []).filter((u) => !selected.some((s) => s.id === u.accountId))); setOpen(true); }
       } catch (_) { /* ignore */ }
     }, 300);
     return () => { cancelled = true; clearTimeout(t); };
   }, [query]);
   const add = (u) => {
-    if (!selected.find((s) => s.id === u.accountId)) onChange([...selected, { type: "user", id: u.accountId, name: u.name }]);
+    if (!selected.find((s) => s.id === u.accountId)) onChange([...selected, { type: "user", id: u.accountId, name: u.name, hint: personHint(u) }]);
     setQuery(""); setResults([]); setOpen(false);
   };
   const remove = (id) => onChange(selected.filter((s) => s.id !== id));
@@ -96,8 +106,9 @@ const UserPicker = ({ selected, onChange }) => {
       {selected.length > 0 && (
         <div className="wf-userpicker-chips">
           {selected.map((s) => (
-            <span key={s.id} className="wf-userchip">
+            <span key={s.id} className="wf-userchip" title={s.hint || personHint(s)}>
               {s.name || s.id}
+              <span className="wf-userchip-hint">{s.hint || personHint(s)}</span>
               <button type="button" className="wf-userchip-x" onClick={() => remove(s.id)} aria-label={`Remove ${s.name || s.id}`}>×</button>
             </span>
           ))}
@@ -107,7 +118,10 @@ const UserPicker = ({ selected, onChange }) => {
       {open && results.length > 0 && (
         <div className="wf-userpicker-menu" role="listbox">
           {results.map((u) => (
-            <button type="button" key={u.accountId} role="option" className="wf-userpicker-opt" onClick={() => add(u)}>{u.name}</button>
+            <button type="button" key={u.accountId} role="option" className="wf-userpicker-opt" onClick={() => add(u)}>
+              <span className="wf-userpicker-name">{u.name}</span>
+              <span className="wf-userpicker-hint">{personHint(u)}</span>
+            </button>
           ))}
         </div>
       )}
