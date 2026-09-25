@@ -281,3 +281,9 @@ html[data-color-mode="dark"] .mw-row { background: var(--sv-bg-secondary); }
 .mw-sig-sample.is-live { border-color: #0891B2; color: #0E7490; }
 .mw-sig-tick { display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; border-radius: 50%; background: #94A3B8; color: #fff; font-size: 12px; font-weight: 800; }
 .mw-sig-sample.is-live .mw-sig-tick { background: #0891B2; }
+
+/* Decline with a reason (kit/DeclineReason.jsx, tester 2026-09-25). */
+.sv-decline-label { display: block; font-size: 13px; font-weight: 600; color: var(--sv-text-primary); margin-bottom: 6px; }
+.sv-decline-reason { width: 100%; box-sizing: border-box; font: inherit; font-size: 13px; padding: 8px 10px; border: 1px solid var(--sv-border-primary); border-radius: 8px; background: var(--sv-bg-primary); color: var(--sv-text-primary); resize: vertical; }
+.sv-decline-reason:focus { outline: 2px solid var(--sv-interactive-primary); outline-offset: 1px; }
+.sv-decline-hint { display: block; margin-top: 6px; font-size: 11px; color: var(--sv-text-secondary); }

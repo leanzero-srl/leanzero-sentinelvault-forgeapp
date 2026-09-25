@@ -1,3 +1,4 @@
+import { useDeclineReason } from "../../kit/DeclineReason";
 import React, { useCallback, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { useSignedInvoke } from "../../kit/SignedInvoke";
@@ -68,11 +69,18 @@ const EditRequests = ({ onChange }) => {
   const load = useCallback(async () => { await reload(); if (onChange) onChange(); }, [reload, onChange]);
 
   const { signedInvoke, signatureDialog } = useSignedInvoke();
+  const { askDeclineReason, declineDialog } = useDeclineReason(); // Decline asks for an optional reason
   const decide = async (req, action) => {
     const key = `${req.artifactId}-${req.requesterAccountId}`;
+    let reason;
+    if (action !== "approve") {
+      const a = await askDeclineReason(req.requesterName);
+      if (!a.ok) return;
+      reason = a.reason;
+    }
     setBusy(key); setError(null);
     try {
-      const r = await signedInvoke(action === "approve" ? "approve-edit-request" : "deny-edit-request", { attachmentId: req.artifactId, requesterAccountId: req.requesterAccountId });
+      const r = await signedInvoke(action === "approve" ? "approve-edit-request" : "deny-edit-request", { attachmentId: req.artifactId, requesterAccountId: req.requesterAccountId, ...(reason ? { reason } : {}) });
       if (r?.success) await load();
       else setError(r?.reason || "Could not record your decision.");
     } catch (_) { setError("Could not record your decision."); }
@@ -83,6 +91,7 @@ const EditRequests = ({ onChange }) => {
   return (
     <section className="mw-card" data-testid="mw-requests">
       {signatureDialog}
+      {declineDialog}
       <div className="mw-card-head">
         <span className="mw-card-title">Edit requests on your sealed files</span>
         <span className={`mw-count ${n ? "mw-count-requests" : "mw-count-zero"}`}>{n}</span>
@@ -127,11 +136,18 @@ const SectionRequests = ({ onChange }) => {
   const load = useCallback(async () => { await reload(); if (onChange) onChange(); }, [reload, onChange]);
 
   const { signedInvoke, signatureDialog } = useSignedInvoke();
+  const { askDeclineReason, declineDialog } = useDeclineReason(); // Decline asks for an optional reason
   const decide = async (req, action) => {
     const key = `${req.sectionId}-${req.requesterAccountId}`;
+    let reason;
+    if (action !== "approve") {
+      const a = await askDeclineReason(req.requesterName);
+      if (!a.ok) return;
+      reason = a.reason;
+    }
     setBusy(key); setError(null);
     try {
-      const r = await signedInvoke(action === "approve" ? "approve-section-edit" : "deny-section-edit", { sectionId: req.sectionId, requesterAccountId: req.requesterAccountId });
+      const r = await signedInvoke(action === "approve" ? "approve-section-edit" : "deny-section-edit", { sectionId: req.sectionId, requesterAccountId: req.requesterAccountId, ...(reason ? { reason } : {}) });
       if (r?.success) await load();
       else setError(r?.reason || "Could not record your decision.");
     } catch (_) { setError("Could not record your decision."); }
@@ -142,6 +158,7 @@ const SectionRequests = ({ onChange }) => {
   return (
     <section className="mw-card" data-testid="mw-section-requests">
       {signatureDialog}
+      {declineDialog}
       <div className="mw-card-head">
         <span className="mw-card-title">Edit requests on your sealed sections</span>
         <span className={`mw-count ${n ? "mw-count-sections" : "mw-count-zero"}`}>{n}</span>

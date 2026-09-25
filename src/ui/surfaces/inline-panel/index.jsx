@@ -14,6 +14,7 @@ import RovingList from "../../kit/RovingList";
 import useEditStatuses from "../../kit/useEditStatuses";
 import CappedGroup from "../../kit/CappedGroup";
 import PanelErrorBoundary from "../../kit/PanelErrorBoundary";
+import { useDeclineReason } from "../../kit/DeclineReason";
 import { SEALED_GROUPS, groupSealedFiles, groupSealedSections } from "../../kit/sealed-groups.js";
 import { describeRange } from "../../kit/section-range.js";
 import { expiryWarning } from "../../../server/capsules/page-details/row-state.js"; // SEC-7: the owner's lapse warning
@@ -304,6 +305,7 @@ const ArtifactCard = ({ att, onRefresh, columns, siteUrl, spaceKey, pageId, page
   const [giving, setGiving] = useState(false); // "Give edit access…" dialog
   const [copied, setCopied] = useState(false);
   const { signedInvoke, signatureDialog } = useSignedInvoke(); // the code prompt when the site signs seal actions
+  const { askDeclineReason, declineDialog } = useDeclineReason(); // Decline asks for an optional reason
 
   const isSealedByMe = att.lockStatus === "HELD_BY_ACTOR";
   const isSealedByOther = att.lockStatus === "HELD";
@@ -374,10 +376,17 @@ const ArtifactCard = ({ att, onRefresh, columns, siteUrl, spaceKey, pageId, page
   };
 
   const resolveEditReq = async (requesterAccountId, action) => {
+    let reason;
+    if (action !== "approve") {
+      const who = (myRequests || []).find((x) => x.requesterAccountId === requesterAccountId)?.requesterName;
+      const a = await askDeclineReason(who);
+      if (!a.ok) return;
+      reason = a.reason;
+    }
     setReqBusy(`${requesterAccountId}:${action}`);
     setActionError(null);
     try {
-      const r = await signedInvoke(action === "approve" ? "approve-edit-request" : "deny-edit-request", { attachmentId: att.id, requesterAccountId });
+      const r = await signedInvoke(action === "approve" ? "approve-edit-request" : "deny-edit-request", { attachmentId: att.id, requesterAccountId, ...(reason ? { reason } : {}) });
       if (r?.success) {
         setMyRequests((p) => (p || []).filter((x) => x.requesterAccountId !== requesterAccountId));
         if (action === "approve") invoke("list-edit-grants", { attachmentId: att.id }).then((g) => setMyGrants(g?.grants || [])).catch(() => {});
@@ -585,6 +594,7 @@ const ArtifactCard = ({ att, onRefresh, columns, siteUrl, spaceKey, pageId, page
 
       {isSealedByMe && <RequestInbox requests={myRequests} name={att.title} reqBusy={reqBusy} onDecide={resolveEditReq} firstDecidedAbove={primary.kind === "decide"} />}
       {signatureDialog}
+      {declineDialog}
       {giving && (
         <GiveAccessDialog
           invoker={signedInvoke}
@@ -968,6 +978,7 @@ const SectionRow = ({ section: s, onUnseal, unsealing, viewer, siteUrl, pageId, 
   const [error, setError] = useState(null);
   const [copied, setCopied] = useState(false);
   const { signedInvoke, signatureDialog } = useSignedInvoke();
+  const { askDeclineReason, declineDialog } = useDeclineReason(); // Decline asks for an optional reason
 
   useEffect(() => {
     let cancelled = false;
@@ -1005,9 +1016,16 @@ const SectionRow = ({ section: s, onUnseal, unsealing, viewer, siteUrl, pageId, 
   };
 
   const resolve = async (requesterAccountId, action) => {
+    let reason;
+    if (action !== "approve") {
+      const who = (requests || []).find((x) => x.requesterAccountId === requesterAccountId)?.requesterName;
+      const a = await askDeclineReason(who);
+      if (!a.ok) return;
+      reason = a.reason;
+    }
     setReqBusy(`${requesterAccountId}:${action}`); setError(null);
     try {
-      const r = await signedInvoke(action === "approve" ? "approve-section-edit" : "deny-section-edit", { sectionId: s.sectionId, requesterAccountId });
+      const r = await signedInvoke(action === "approve" ? "approve-section-edit" : "deny-section-edit", { sectionId: s.sectionId, requesterAccountId, ...(reason ? { reason } : {}) });
       if (r?.success) {
         setRequests((p) => (p || []).filter((x) => x.requesterAccountId !== requesterAccountId));
         if (action === "approve") invoke("list-section-edit-grants", { sectionId: s.sectionId }).then((g) => setGrants(g?.grants || [])).catch(() => {});
@@ -1090,6 +1108,7 @@ const SectionRow = ({ section: s, onUnseal, unsealing, viewer, siteUrl, pageId, 
       {bar && <ReasonBar mode={bar} kind="section" value={reasonText} onChange={setReasonText} onSubmit={submitBar} onCancel={() => { setBar(null); setReasonText(""); }} busy={busy || unsealing} testId="sv-section-reason-bar" />}
       {s.isMine && <RequestInbox requests={requests} name={`section ${s.sectionTitle}`} reqBusy={reqBusy} onDecide={resolve} firstDecidedAbove={primary.kind === "decide"} testId="sv-section-inbox" />}
       {signatureDialog}
+      {declineDialog}
       {giving && (
         <GiveAccessDialog
           invoker={signedInvoke}

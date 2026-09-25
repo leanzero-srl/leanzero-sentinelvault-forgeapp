@@ -1430,3 +1430,9 @@ html[data-color-mode="dark"] .sv-state.trashed { background: #94A3B8; color: #0F
    that would dangle at the end of the line above is dropped (tester 2026-09-22, item 6). */
 .card-meta [data-testid="sv-card-trash-meta"] { flex-basis: 100%; }
 .card-meta .card-meta-sep:has(+ [data-testid="sv-card-trash-meta"]) { display: none; }
+
+/* Decline with a reason (kit/DeclineReason.jsx, tester 2026-09-25). */
+.sv-decline-label { display: block; font-size: 13px; font-weight: 600; color: var(--sv-text-primary); margin-bottom: 6px; }
+.sv-decline-reason { width: 100%; box-sizing: border-box; font: inherit; font-size: 13px; padding: 8px 10px; border: 1px solid var(--sv-border-primary); border-radius: 8px; background: var(--sv-bg-primary); color: var(--sv-text-primary); resize: vertical; }
+.sv-decline-reason:focus { outline: 2px solid var(--sv-interactive-primary); outline-offset: 1px; }
+.sv-decline-hint { display: block; margin-top: 6px; font-size: 11px; color: var(--sv-text-secondary); }

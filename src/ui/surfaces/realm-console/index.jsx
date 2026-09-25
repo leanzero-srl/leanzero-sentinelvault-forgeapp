@@ -1,5 +1,6 @@
 // src/ui/surfaces/realm-console/index.jsx
 
+import { useDeclineReason } from "../../kit/DeclineReason";
 import React, { useState, useEffect, useRef } from "react";
 import { createRoot } from "react-dom/client";
 import { invoke, view, router } from "@forge/bridge";
@@ -576,6 +577,7 @@ const RealmPolicyDashboard = () => {
   const [editRequests, setEditRequests] = useState([]);
   const [editRequestsLoading, setEditRequestsLoading] = useState(false);
   const [editReqBusy, setEditReqBusy] = useState(null); // { id: "artifactId:accountId", action }
+  const { askDeclineReason, declineDialog } = useDeclineReason(); // Decline asks for an optional reason
 
   useEffect(() => {
     const bootstrapRealm = async () => {
@@ -869,9 +871,12 @@ const RealmPolicyDashboard = () => {
   };
 
   const handleDenyEdit = async (artifactId, requesterAccountId) => {
+    const who = editRequests.find((r) => r.artifactId === artifactId && r.requesterAccountId === requesterAccountId)?.requesterName;
+    const a = await askDeclineReason(who);
+    if (!a.ok) return;
     setEditReqBusy({ id: `${artifactId}:${requesterAccountId}`, action: "deny" });
     try {
-      const result = await invoke("deny-edit-request", { attachmentId: artifactId, requesterAccountId });
+      const result = await invoke("deny-edit-request", { attachmentId: artifactId, requesterAccountId, ...(a.reason ? { reason: a.reason } : {}) });
       if (result?.success) {
         setEditRequests((prev) => prev.filter((r) => !(r.artifactId === artifactId && r.requesterAccountId === requesterAccountId)));
         setMessage("Edit request declined.");
@@ -2442,6 +2447,7 @@ const RealmPolicyDashboard = () => {
           </button>
         </div>
       )}
+      {declineDialog}
       {leaveTo && (
         <Dialog title="Apply your changes first?" onClose={() => setLeaveTo(null)} busy={loading} testId="sv-unsaved-dialog">
           <div className="sv-dialog-body">You changed settings on this tab and have not applied them. Leaving the tab now throws them away.</div>
