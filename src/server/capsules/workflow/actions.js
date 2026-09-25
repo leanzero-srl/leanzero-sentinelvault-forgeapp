@@ -439,8 +439,15 @@ const getPageApprovals = async (req) => {
   // B3: the ribbon asks for a code only when the space requires one, and can say "set up your
   // signature first" when the caller has none.
   if (status?.pending) {
-    const settings = await getSpaceWorkflowSettings(status.spaceKey || (await readPageWorkflow(pageId))?.spaceKey);
+    const spaceKey = status.spaceKey || (await readPageWorkflow(pageId))?.spaceKey;
+    const settings = await getSpaceWorkflowSettings(spaceKey);
     status.requireSignature = !!settings?.requireSignature;
+    // A space admin who is not listed may still decide (owner, 2026-09-25) — the ribbon offers it.
+    const me = req.context?.accountId;
+    const listed = (status.approvers || []).some((a) => a.accountId === me);
+    if (me && !listed && me !== status.requestedBy && settings?.approval?.adminsCanApprove !== false) {
+      status.adminCanDecide = await authorizeSteward(me, spaceKey).catch(() => false);
+    }
     if (status.requireSignature) status.signatureEnrolled = (await signatureStatus(req.context?.accountId)).enrolled;
   }
   return status;

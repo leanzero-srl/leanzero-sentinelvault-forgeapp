@@ -528,18 +528,24 @@ const WorkflowControl = ({ workflow, approvals, operatorId, pageId, spaceKey, si
   // APPROVAL MODE — the page is awaiting sign-off before it can move to the enforce state.
   if (pendingApproval) {
     const approverList = pendingApproval.approvers || [];
-    const approvedCount = approverList.filter((a) => a.status === "approved").length;
+    // The count is over the LISTED approvers; a space admin who decided shows in the list but is
+    // not one of the required approvers (owner, 2026-09-25).
+    const listedApprovers = approverList.filter((a) => !a.admin);
+    const approvedCount = listedApprovers.filter((a) => a.status === "approved").length;
     const rawTarget = pendingApproval.toStateId || "";
     const targetName = workflow.def?.states?.find((s) => s.id === rawTarget)?.name
       || (rawTarget ? rawTarget.charAt(0).toUpperCase() + rawTarget.slice(1).replace(/_/g, " ") : "the next state");
     const mine = approverList.find((a) => a.accountId === operatorId);
-    const iCanDecide = mine && mine.status === "pending";
+    // Listed approver with no decision yet — or a space admin (not listed) the server says may decide.
+    const iCanDecide = (mine && mine.status === "pending") || (!mine && pendingApproval.adminCanDecide === true);
     const others = approverList.filter((a) => a.accountId !== operatorId);
+    // Mirrors evaluateApproval: admin approvals count toward "min"; "all" needs every LISTED approver.
+    const approvedAny = approverList.filter((a) => a.status === "approved").length;
     const wouldComplete = pendingApproval.mode === "any"
       ? true
       : pendingApproval.mode === "min"
-        ? approvedCount + 1 >= (pendingApproval.min || 1)
-        : others.every((a) => a.status === "approved");
+        ? approvedAny + 1 >= (pendingApproval.min || 1)
+        : listedApprovers.every((a) => a.accountId === operatorId || a.status === "approved"); // "all": every listed approver but me already approved
     return (
       <span className="wf-control">
         <button
@@ -555,7 +561,7 @@ const WorkflowControl = ({ workflow, approvals, operatorId, pageId, spaceKey, si
             <path d="M4 22V4a1 1 0 0 1 1-1h13l-3 4 3 4H5" />
           </svg>
           <span className="wf-chip-label">{iCanDecide ? "Awaiting your approval" : "Awaiting approval"}</span>
-          <span className="wf-chip-count" aria-hidden="true">{approvedCount} of {approverList.length}</span>
+          <span className="wf-chip-count" aria-hidden="true">{approvedCount} of {listedApprovers.length}</span>
           <span className="wf-chip-caret" aria-hidden="true">▾</span>
         </button>
         {panelOpen && inHost(host, (
@@ -566,7 +572,7 @@ const WorkflowControl = ({ workflow, approvals, operatorId, pageId, spaceKey, si
               Requested by {pendingApproval.requestedByName || "a colleague"} · {MODE_TEXT[pendingApproval.mode] || MODE_TEXT.any}
               {pendingApproval.mode === "min" ? ` (at least ${pendingApproval.min})` : ""}
             </div>
-            <div className="wf-appr-progress">{approvedCount} of {approverList.length} approved</div>
+            <div className="wf-appr-progress">{approvedCount} of {listedApprovers.length} approved</div>
             {freezeLine && <div className="wf-appr-sub wf-appr-freeze" data-testid="wf-appr-freeze">{freezeLine}</div>}
             {pendingApproval.pinnedVersion != null && (
               <VersionLink siteUrl={siteUrl} pageId={pageId} version={pendingApproval.pinnedVersion} testId="wf-pinned-version-link">
@@ -577,7 +583,7 @@ const WorkflowControl = ({ workflow, approvals, operatorId, pageId, spaceKey, si
               {approverList.map((a) => (
                 <li key={a.accountId} className="wf-appr-row">
                   <span className={`wf-appr-badge wf-appr-${a.status || "pending"}`}>{APPR_STATUS[a.status] || "Pending"}</span>
-                  <span className="wf-appr-name">{a.name || "Approver"}{a.accountId === operatorId ? " (you)" : ""}</span>
+                  <span className="wf-appr-name">{a.name || "Approver"}{a.admin ? " (space admin)" : ""}{a.accountId === operatorId ? " (you)" : ""}</span>
                   {a.reason ? <span className="wf-appr-reason">“{a.reason}”</span> : null}
                 </li>
               ))}
