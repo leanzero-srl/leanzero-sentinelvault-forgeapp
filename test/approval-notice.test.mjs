@@ -24,7 +24,8 @@ ok("stale without versions still reads", approvalResolvedBody({ requestedBy: REQ
 {
   const b = approvalResolvedBody({ requestedBy: REQ, outcome: "denied", targetName: "Approved", deciderName: "Mihai Perdum", reason: "Needs a summary section at the top" });
   ok("denied: says declined by the decider", b.includes("was <strong>declined</strong> by Mihai Perdum"));
-  ok("denied: prints the reason", b.includes(": <em>“Needs a summary section at the top”</em>."));
+  ok("denied: prints the reason on its own labelled line", b.includes("<p><strong>Reason:</strong> <em>“Needs a summary section at the top”</em></p>"));
+  ok("denied: the sentence ends before the reason", b.includes("was <strong>declined</strong> by Mihai Perdum. The page stays in its current state.</p>"));
   ok("denied: stays in state", b.includes("The page stays in its current state."));
   const noReason = approvalResolvedBody({ requestedBy: REQ, outcome: "denied", targetName: "Approved", deciderName: "Mihai Perdum" });
   ok("denied without reason: no empty quotes", !noReason.includes("“”") && noReason.includes("by Mihai Perdum."));
