@@ -457,21 +457,35 @@ export default function WorkflowSettingsEditor({ spaceKey = null, defRev = 0, on
     }
   };
 
+  // ONE click goes through the whole space (owner, 2026-09-25: pressing it again for every 25
+  // pages was tedious, and a slow batch failed the whole click with "Could not apply…"). Batches
+  // stay small so each call finishes inside Forge's time limit; a failed batch is retried twice
+  // from the same place before giving up, and the message says how far it got.
   const applyToExisting = async () => {
     setApplying(true);
     setMsg(null);
+    let at = cursor || null, assigned = 0, scanned = 0;
     try {
-      const r = await invoke("bulk-assign-workflow", { spaceKey, cursor });
-      if (r?.success) {
-        // Advance the cursor so a subsequent click continues past this batch (null once done).
-        setCursor(r.capped ? (r.nextCursor || null) : null);
-        const more = r.capped ? ` (${r.scanned} scanned — run again to continue)` : "";
-        setMsg({ type: "success", text: `Applied the workflow to ${r.assigned} page${r.assigned !== 1 ? "s" : ""}${more}.` });
-      } else {
-        setMsg({ type: "error", text: r?.reason || "Could not apply the workflow." });
+      for (let batch = 0; batch < 400; batch++) {
+        let r = null;
+        for (let attempt = 0; attempt < 3 && !r?.success; attempt++) {
+          try { r = await invoke("bulk-assign-workflow", { spaceKey, cursor: at }); }
+          catch (_) { r = null; }
+          if (r && !r.success && r.reason && !/list pages/i.test(r.reason)) break; // a refusal, not a blip
+        }
+        if (!r?.success) {
+          setMsg({ type: "error", text: `${r?.reason || "Could not reach Sentinel Vault."} Started the workflow on ${assigned} page${assigned !== 1 ? "s" : ""} before this (${scanned} checked) — press again to continue from there.` });
+          setCursor(at);
+          return;
+        }
+        assigned += r.assigned || 0;
+        scanned += r.scanned || 0;
+        setMsg({ type: "success", text: `Working… ${scanned} pages checked, workflow started on ${assigned}.` });
+        if (!r.capped || !r.nextCursor) break;
+        at = r.nextCursor;
       }
-    } catch (e) {
-      setMsg({ type: "error", text: "Could not apply the workflow to existing pages." });
+      setCursor(null);
+      setMsg({ type: "success", text: `Done — checked ${scanned} page${scanned !== 1 ? "s" : ""}, started the workflow on ${assigned}. Pages that already had it were left as they are.` });
     } finally {
       setApplying(false);
     }

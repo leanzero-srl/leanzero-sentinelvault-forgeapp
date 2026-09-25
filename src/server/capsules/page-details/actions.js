@@ -237,6 +237,12 @@ export const pageDetailsSummary = async (req) => {
       };
     }
   } catch (e) { console.warn("[PAGE-DETAILS] workflow failed:", e?.message || e); workflow = { assigned: false, error: "Could not load the workflow" }; }
+  // Not in the workflow yet, the space runs one, and the viewer is its admin: offer to start it
+  // on THIS page (owner, 2026-09-25 — "Apply to existing pages" was the only way in).
+  if (!workflow.assigned && !workflow.error && isSpaceAdmin && spaceKey) {
+    try { if ((await getSpaceWorkflowSettings(spaceKey))?.enabled) workflow = { assigned: false, canStart: true }; }
+    catch (_) { /* no offer */ }
+  }
 
   // ── activity (its own read gate; one permission call) ────────────────────────────────────────
   let activity = { entries: [], nextCursor: null };
