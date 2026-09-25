@@ -30,32 +30,43 @@ import { workflowStatus, approvalSummary } from "./status.js";
 import { touchByline } from "../page-details/byline-touch.js"; // WF-6
 import { notifyApprovalRequested, notifyApprovalResolved } from "../../infra/approval-blueprints.js";
 import { recordActivity } from "../../infra/activity-log.js";
+import { isAccountStewardAsApp } from "../../shared/steward-checks.js";
 import { verifySignature } from "./signature.js";
 
 const APPROVAL_ID = "approval"; // v1 single default round; schema carries the segment for future named rounds
 
 // --- Pure decision (unit-tested). decisions: array of "approved"|"denied"|"pending". ---
-export function evaluateApproval(mode, min, decisions) {
+// `adminDecisions` (owner, 2026-09-25): space admins may decide without being listed, and count
+// like an approver — an admin approval completes "any" and is one of N for "min"; "all" still
+// needs every LISTED approver, and an admin's denial closes it like any approver's. Admin
+// denials never make "any"/"min" unreachable on their own: the listed approvers still decide.
+export function evaluateApproval(mode, min, decisions, adminDecisions = []) {
+  const extra = Array.isArray(adminDecisions) ? adminDecisions : [];
+  const adminApproved = extra.filter((d) => d === "approved").length;
+  const adminDenied = extra.filter((d) => d === "denied").length;
   const approved = decisions.filter((d) => d === "approved").length;
   const denied = decisions.filter((d) => d === "denied").length;
   const total = decisions.length;
   const pending = total - approved - denied;
   if (total === 0) return "approved"; // no approvers required → auto-approve
   if (mode === "all") {
-    if (denied > 0) return "denied";            // one denial kills an all-of
+    if (denied > 0 || adminDenied > 0) return "denied"; // one denial kills an all-of
     return approved === total ? "approved" : "pending";
   }
   if (mode === "min") {
     const need = Math.max(1, min || 1);
-    if (approved >= need) return "approved";
-    if (approved + pending < need) return "denied"; // threshold no longer reachable
+    if (approved + adminApproved >= need) return "approved";
+    if (approved + adminApproved + pending < need) return "denied"; // threshold no longer reachable
     return "pending";
   }
   // "any" (default): first approval wins; only all-denied rejects.
-  if (approved >= 1) return "approved";
+  if (approved + adminApproved >= 1) return "approved";
   if (denied === total) return "denied";
   return "pending";
 }
+
+/** Everyone whose decision record may exist for a pending request: listed approvers + admins who decided. */
+export const deciderIds = (pending) => [...(pending?.approvers || []), ...((pending?.adminDeciders || []).filter((id) => !(pending?.approvers || []).includes(id)))];
 
 // --- Pure (unit-tested; no I/O). A4: the approval EVIDENCE snapshot. ---
 // The per-approver records are deleted the moment an approval resolves (clearPageApprovals),
@@ -297,7 +308,7 @@ export async function clearPageApprovals(pageId, stateId, approvers) {
 const completingKey = (pageId) => `workflow-completing-${pageId}`;
 
 async function finalizeApprovedTransition(pageId, stateId, pending, actorAccountId, actorName, voteSummary) {
-  const approvers = pending.approvers || [];
+  const approvers = deciderIds(pending); // records to snapshot and clear: listed + admins who decided
   // One-shot completion CLAIM (dedup concurrent finalizers: duplicate AI delivery, and the
   // AI-verdict-vs-last-human-vote race). KVS has no CAS, so this narrows the window; the
   // DURABLE backstop is gating every side-effect on the transition actually happening below.
@@ -360,9 +371,12 @@ async function finalizeApprovedTransition(pageId, stateId, pending, actorAccount
 }
 
 // Whether the human approval axis is satisfied (vacuously true for an AI-only gate).
-function humanQuorumMet(pending, records) {
+async function humanQuorumMet(pageId, pending, records) {
   if (!pending.approvers || pending.approvers.length === 0) return true;
-  return evaluateApproval(pending.mode, pending.min, records.map((r) => r.status || "pending")) === "approved";
+  // Admins who decided count like approvers here too (the AI verdict can land after their vote).
+  const adminIds = deciderIds(pending).filter((id) => !pending.approvers.includes(id));
+  const adminRecords = adminIds.length ? await readApprovalRecords(pageId, pending.toStateId, adminIds) : [];
+  return evaluateApproval(pending.mode, pending.min, records.map((r) => r.status || "pending"), adminRecords.map((r) => r.status || "pending")) === "approved";
 }
 
 // #46 Part B: the AI review verdict lands here (from aiValidationConsumer's gate branch, or a
@@ -386,7 +400,7 @@ export async function applyAiVerdict(pageId, reviewedVersion, status, reason) {
   if (pending.aiGate.status !== "passed") return { applied: true, status: pending.aiGate.status };
   // AI passed — complete iff the human axis is also met (else wait for the last human vote).
   const records = await readApprovalRecords(pageId, pending.toStateId, pending.approvers);
-  if (!humanQuorumMet(pending, records)) return { applied: true, status: "passed", waiting: "humans" };
+  if (!(await humanQuorumMet(pageId, pending, records))) return { applied: true, status: "passed", waiting: "humans" };
   // The AI was a CONDITION; the authority was the steward who requested the transition.
   const res = await finalizeApprovedTransition(pageId, pending.toStateId, pending, pending.requestedBy || null, pending.requestedByName || "Sentinel Vault", "approved (AI review + approvals)");
   return { applied: true, status: "passed", ...res };
@@ -403,8 +417,22 @@ export async function decideApproval({ pageId, approverAccountId, decision, reas
   const stateId = pending.toStateId;
   const approvers = pending.approvers || [];
   const key = approvalKey(pageId, stateId, approverAccountId);
-  const record = await kvs.get(key);
-  if (!record) return { success: false, reason: "You are not an approver for this transition" };
+  let record = await kvs.get(key);
+  const spaceSettings = await getSpaceWorkflowSettings(pending.spaceKey);
+  if (!record) {
+    // Space admins may decide without being listed (owner, 2026-09-25; on unless the space turns
+    // it off). The record is made now and the admin is added to the request's decider list, so
+    // every read, the evidence snapshot and the cleanup see it.
+    const adminsMay = spaceSettings?.approval?.adminsCanApprove !== false;
+    const isAdmin = adminsMay && await isAccountStewardAsApp(approverAccountId, pending.spaceKey).catch(() => false);
+    if (!isAdmin) return { success: false, reason: "You are not an approver for this transition" };
+    record = { approverAccountId, status: "pending", admin: true, approverName: actorName || null, createdAt: new Date().toISOString() };
+    await kvs.set(key, record);
+    const fresh = (await kvs.get(pendingKey(pageId))) || pending;
+    fresh.adminDeciders = [...new Set([...(fresh.adminDeciders || []), approverAccountId])];
+    await kvs.set(pendingKey(pageId), fresh);
+    pending.adminDeciders = fresh.adminDeciders;
+  }
   if (record.status && record.status !== "pending") {
     return { success: false, reason: "Your decision has already been recorded" };
   }
@@ -424,7 +452,6 @@ export async function decideApproval({ pageId, approverAccountId, decision, reas
   // device. Verified AFTER every validity check above (review finding 14): a refused decision
   // must not burn the approver's current code, and a failed code leaves no trace.
   let signature = null;
-  const spaceSettings = await getSpaceWorkflowSettings(pending.spaceKey);
   if (spaceSettings?.requireSignature) {
     const v = await verifySignature(approverAccountId, signatureCode);
     if (!v.ok) return { success: false, reason: v.reason, signatureRequired: true };
@@ -442,8 +469,11 @@ export async function decideApproval({ pageId, approverAccountId, decision, reas
   await kvs.set(key, record);
 
   // Aggregate from strongly-consistent per-key gets over the known approver list.
-  const records = await readApprovalRecords(pageId, stateId, approvers);
-  const outcome = evaluateApproval(pending.mode, pending.min, records.map((r) => r.status || "pending"));
+  const listedRecords = await readApprovalRecords(pageId, stateId, approvers);
+  const adminIds = deciderIds(pending).filter((id) => !approvers.includes(id));
+  const adminRecords = adminIds.length ? await readApprovalRecords(pageId, stateId, adminIds) : [];
+  const records = [...listedRecords, ...adminRecords]; // evidence + vote summary name every decider
+  const outcome = evaluateApproval(pending.mode, pending.min, listedRecords.map((r) => r.status || "pending"), adminRecords.map((r) => r.status || "pending"));
 
   // A1: the vote is recorded (kvs.set above) — witness it with the outcome the vote produced.
   // `outcome` here is what the quorum says; the finalizer may still turn "approved" into
@@ -504,7 +534,7 @@ export async function decideApproval({ pageId, approverAccountId, decision, reas
       reason: "approval denied",
       details: { approvalRecord },
     });
-    await clearPageApprovals(pageId, stateId, approvers);
+    await clearPageApprovals(pageId, stateId, deciderIds(pending));
     // WF-3: the approver's reason travels with the denial — it is the point of Deny + reason.
     await notifyApprovalResolved({ pageId, requestedBy: pending.requestedBy, outcome: "denied", targetName: pending.toStateName || stateId, deciderName: actorName, reason: record.reason || null }).catch(() => {});
     return decided({ success: true, outcome: "denied" });
@@ -516,7 +546,7 @@ export async function decideApproval({ pageId, approverAccountId, decision, reas
 export async function getPageApprovalStatus(pageId) {
   const pending = await kvs.get(pendingKey(pageId));
   if (!pending) return { pending: false };
-  const records = await readApprovalRecords(pageId, pending.toStateId, pending.approvers);
+  const records = await readApprovalRecords(pageId, pending.toStateId, deciderIds(pending));
   const current = await readPageWorkflow(pageId);
   // #44: staleness — the page changed since the approvers reviewed it, so a completion
   // now would be blocked at decideApproval (§1.5). Surface it in the inbox/panel.
@@ -526,7 +556,7 @@ export async function getPageApprovalStatus(pageId) {
     pending: true, toStateId: pending.toStateId, mode: pending.mode, min: pending.min,
     requestedBy: pending.requestedBy, requestedByName: pending.requestedByName, requestedAt: pending.requestedAt,
     pinnedVersion: pending.pinnedVersion, stale, liveVersion, currentStateId: current?.stateId || null,
-    approvers: records.map((r) => ({ accountId: r.approverAccountId, name: r.approverName, status: r.status, reason: r.reason, decidedAt: r.decidedAt, signed: !!r.signature })),
+    approvers: records.map((r) => ({ accountId: r.approverAccountId, name: r.approverName, status: r.status, reason: r.reason, decidedAt: r.decidedAt, signed: !!r.signature, admin: r.admin === true })),
     // #46: the AI review axis, if this transition requires one.
     aiGate: pending.aiGate?.required ? { status: pending.aiGate.status, reason: pending.aiGate.reason || null } : null,
   };

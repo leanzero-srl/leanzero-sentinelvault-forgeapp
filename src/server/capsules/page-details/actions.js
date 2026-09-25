@@ -228,7 +228,9 @@ export const pageDetailsSummary = async (req) => {
         pending: wf.pending ? {
           toStateId: wf.pending.toStateId, toStateName: wf.pending.toStateName || wf.pending.toStateId, requestedByName: wf.pending.requestedByName || null, requestedAt: wf.pending.requestedAt || null,
           decided: wf.pendingDecided, required: wf.pending.mode === "any" ? 1 : (wf.pending.min || (wf.pending.approvers || []).length), mode: wf.pending.mode || null,
-          iCanDecide: Array.isArray(wf.pending.approvers) && wf.pending.approvers.includes(accountId) && wf.pending.requestedBy !== accountId,
+          iCanDecide: wf.pending.requestedBy !== accountId && (
+            (Array.isArray(wf.pending.approvers) && wf.pending.approvers.includes(accountId))
+            || (isSpaceAdmin && settings?.approval?.adminsCanApprove !== false)), // admins may decide too
         } : null,
         available: (wf.available || []).filter(Boolean).map((s) => ({ id: s.id, name: s.name, color: s.color || "neutral", requiresApproval: !!(s.enforce && hasApprovers) })),
         canMove: canEdit && (wf.available || []).length > 0 && !wf.pending,
