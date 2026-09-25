@@ -518,6 +518,12 @@ const uploadArtifact = async (req) => {
     console.error(
       `[PANEL] Failed to upload artifact: ${response.status} - ${errorText}`,
     );
+    // Confluence refuses a NEW attachment whose name is already on the page (400, "Cannot add a
+    // new attachment with same file name"). "Add a file" only adds; say so, and where a new
+    // version is uploaded instead (tester 2026-09-25: the panel only said "Upload failed: 400").
+    if (response.status === 400 && /same file name/i.test(errorText)) {
+      return { success: false, reason: `A file named "${fileName}" is already on this page. Rename the file to add it, or upload a new version from the page's ⋯ → Attachments.` };
+    }
     return { success: false, reason: `Upload failed: ${response.status}` };
   } catch (error) {
     console.error("[PANEL] Error uploading artifact:", error);
