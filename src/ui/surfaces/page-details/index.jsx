@@ -336,6 +336,27 @@ const MoveMenu = ({ available, onPick, disabled }) => {
 const WorkflowBlock = ({ wf, pageId, onChanged }) => {
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState(null); // { text, tone: "ok" | "error" }
+  if (!wf?.assigned && wf?.canStart) {
+    const start = async () => {
+      setBusy(true); setNotice(null);
+      try {
+        const r = await invoke("assign-workflow", { pageId });
+        if (r?.success) await onChanged();
+        else setNotice({ text: r?.reason || "Could not start the workflow.", tone: "error" });
+      } catch (_) { setNotice({ text: "Could not start the workflow.", tone: "error" }); }
+      finally { setBusy(false); }
+    };
+    return (
+      <section className="pd-sec" data-testid="pd-workflow" data-state="">
+        <h4>Workflow</h4>
+        <div className="pd-cls-row">
+          <span className="pd-desc">This page is not in the space's workflow yet.</span>
+          <button type="button" className="pd-btn primary" onClick={start} disabled={busy} data-testid="pd-wf-start">{busy ? "Starting…" : "Start workflow on this page"}</button>
+        </div>
+        {notice && <p className={`pd-note ${notice.tone === "error" ? "is-error" : ""}`} role="status">{notice.text}</p>}
+      </section>
+    );
+  }
   if (!wf?.assigned) return null;
   const status = wf.status || { text: wf.state?.name || "Workflow", tone: wf.state?.color || "neutral" };
   const move = async (target) => {

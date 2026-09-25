@@ -332,3 +332,4 @@ html[data-color-mode="dark"] .sv-activity-chip-validation.is-active { background
 .sv-activity-chip-link { background: transparent; border: none; padding: 4px 2px; font-size: 12px; font-weight: 700; color: var(--sv-interactive-primary); cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
 .sv-activity-chip-link:disabled { color: var(--sv-text-subtle); cursor: default; text-decoration: none; }
 .sv-activity-chip-hint { flex-basis: 100%; font-size: 12px; color: var(--sv-text-secondary); }
+.pd-note.is-error { color: var(--sv-interactive-danger); }

@@ -929,8 +929,8 @@ export async function setPageReviewDue({ pageId, reviewDueAt, actorAccountId, ac
 export async function bulkAssignPagesInSpace({ spaceKey, spaceId, cursor, actorAccountId }) {
   if (!spaceKey || !spaceId) return { success: false, reason: "spaceKey and spaceId required" };
   const listRes = cursor
-    ? await asApp().requestConfluence(route`/wiki/api/v2/spaces/${spaceId}/pages?status=current&limit=25&cursor=${cursor}`)
-    : await asApp().requestConfluence(route`/wiki/api/v2/spaces/${spaceId}/pages?status=current&limit=25`);
+    ? await asApp().requestConfluence(route`/wiki/api/v2/spaces/${spaceId}/pages?status=current&limit=10&cursor=${cursor}`)
+    : await asApp().requestConfluence(route`/wiki/api/v2/spaces/${spaceId}/pages?status=current&limit=10`);
   if (!listRes.ok) return { success: false, reason: `Could not list pages (${listRes.status})` };
   const body = await listRes.json();
   const pages = body?.results || [];
