@@ -88,6 +88,8 @@ eq("reconcile: gate off → no status", reconcileStoredState({ effective: { ...e
 eq("reconcile: only disabled rules left → no status", reconcileStoredState({ effective: { ...eff, rules: [{ ...labelRule, enabled: false }] }, stored: failed, fingerprint: fp1 }).state, null);
 eq("reconcile: an old record without a stamp is stale", reconcileStoredState({ effective: eff, stored: { state: "failed" }, fingerprint: fp1 }).stale, true);
 eq("reconcile: no stored status → none", reconcileStoredState({ effective: eff, stored: null, fingerprint: fp1 }).state, null);
+eq("reconcile: never checked but a rule applies → applies", reconcileStoredState({ effective: eff, stored: null, fingerprint: fp1 }).applies, true);
+eq("reconcile: no rules → no applies", reconcileStoredState({ effective: { ...eff, rules: [] }, stored: null, fingerprint: fp1 }).applies, undefined);
 eq("reconcile: unknown stored state → none", reconcileStoredState({ effective: eff, stored: { state: "awaiting-approval", rulesFp: fp1 }, fingerprint: fp1 }).state, null);
 
 report("validation-rule-config");

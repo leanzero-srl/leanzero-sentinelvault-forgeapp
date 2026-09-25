@@ -71,7 +71,10 @@ export function rulesFingerprint(rules) {
 export function reconcileStoredState({ effective, stored, fingerprint }) {
   if (!effective || !effective.enabled || !effective.modes?.gate) return { state: null, stale: false, why: "gate-off" };
   if (!Array.isArray(effective.rules) || effective.rules.filter((r) => r && r.enabled !== false).length === 0) return { state: null, stale: false, why: "no-rules" };
-  if (!stored || !["passed", "failed"].includes(stored.state)) return { state: null, stale: false, why: "none" };
+  // Rules apply and pass/fail is on, but this page was never judged (no save since the rule was
+  // added): `applies` lets the panel show the group and check it now instead of hiding it —
+  // Re-check lived INSIDE the hidden group (tester 2026-09-25).
+  if (!stored || !["passed", "failed"].includes(stored.state)) return { state: null, stale: false, applies: true, why: "never-checked" };
   const stale = !stored.rulesFp || stored.rulesFp !== fingerprint;
   return { state: stored, stale, why: stale ? "rules-changed" : "current" };
 }
