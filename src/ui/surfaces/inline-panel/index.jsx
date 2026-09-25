@@ -484,8 +484,12 @@ const ArtifactCard = ({ att, onRefresh, columns, siteUrl, spaceKey, pageId, page
   if (columns.fileType && att.mediaType) {
     metaItems.push(<span key="type" className="card-meta-item card-meta-type">{att.mediaType.split("/").pop()}</span>);
   }
-  if (columns.expiresAt && att.expiresAt) {
-    metaItems.push(<span key="exp" className="card-meta-item">{renderLapseDate(att.expiresAt)}</span>);
+  // A sealed card always says when its seal ends ("until Sat 12:39"), like a sealed section's row
+  // — the "Overdue on" column was off by default, so an Extend changed a date no one could see
+  // (tester 2026-09-25). The column still adds the date to other cards when switched on.
+  if ((columns.expiresAt || isSealedByMe || isSealedByOther) && att.expiresAt && !att.isStale) {
+    const ended = att.isExpired === true || new Date(att.expiresAt).getTime() <= Date.now();
+    metaItems.push(<span key="exp" className="card-meta-item card-meta-until" data-testid="sv-card-until">{ended ? "expired" : "until"} {renderLapseDate(att.expiresAt)}</span>);
   }
   if (columns.comment && att.comment) {
     metaItems.push(<span key="cmt" className="card-meta-item card-meta-comment" title={att.comment}>{att.comment}</span>);
