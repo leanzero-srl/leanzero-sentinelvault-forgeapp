@@ -26,6 +26,7 @@ import {
 } from "./logic.js";
 import { sweepSectionEditAccess, getActiveSectionEditGrant } from "../editreq/logic.js";
 import { recordActivity } from "../../infra/activity-log.js";
+import { mailStewardOverrideNotice } from "../../infra/notice-composer.js";
 import { validateReleaseReason } from "../../shared/release-reason.js";
 import { refreshByline } from "../page-details/byline.js"; // 5.0 byline chip
 import { heldRefusal, isWorkflowHeld, heldLabel } from "../../shared/seal-authority.js"; // SEC-2
@@ -285,6 +286,7 @@ export const unsealSection = async (req) => {
 
   const isOwner = record.lockedBy === operatorAccountId;
   let allowed = isOwner;
+  let viaSteward = false; // a space admin's override, as opposed to an editor clearing a lapsed seal
   if (!allowed) {
     // Review F3: the space is a property of the RECORD's page, never of where the caller is
     // standing (CLAUDE.md — the confused-deputy shape). A record with no spaceKey is resolved
@@ -292,6 +294,7 @@ export const unsealSection = async (req) => {
     const objectSpaceKey = record.spaceKey || (record.pageId ? await resolvePageSpaceKey(record.pageId) : null);
     try { allowed = !!objectSpaceKey && await authorizeSteward(operatorAccountId, objectSpaceKey); }
     catch (_) { /* deny */ }
+    viaSteward = allowed;
   }
   if (!allowed) {
     // Review F6: no sweep releases an expired section seal, and the panel offers "Unseal" on an
@@ -338,6 +341,26 @@ export const unsealSection = async (req) => {
     },
     version: null,
   });
+  // The owner is told when someone ELSE released their section seal, with the typed reason —
+  // the activity trail alone reached nobody (tester 2026-09-25). Best effort: the release stands.
+  if (!isOwner && record.lockedBy) {
+    try {
+      const when = new Date().toLocaleString("en-US", { year: "numeric", month: "long", day: "numeric", hour: "2-digit", minute: "2-digit" });
+      await mailStewardOverrideNotice(
+        record.lockedBy,
+        operatorAccountId,
+        null,
+        record.sectionTitle || "a sealed section",
+        pageId,
+        when,
+        record.spaceKey || realmKey || null,
+        forcedReason,
+        { targetKind: "section", lapsed: !viaSteward },
+      );
+    } catch (e) {
+      console.error("[SECTION-UNSEAL] owner notice failed:", e?.message || e);
+    }
+  }
   return { success: true };
 };
 
