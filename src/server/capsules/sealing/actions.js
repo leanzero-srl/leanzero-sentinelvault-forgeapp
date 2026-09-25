@@ -313,6 +313,14 @@ const sealArtifact = async (req) => {
   if (artifactPageId && String(artifactPageId) !== String(contentId || "")) {
     contentId = String(artifactPageId);
   }
+  // SEC-2 (tester 2026-09-25): on an Approved page nothing is sealed except by the workflow's
+  // privileged set — a new personal seal would hand one person control of a file on a page that
+  // is meant to change only through its approvers. Dynamic import: no cycle with workflow.
+  if (contentId) {
+    const { workflowPrivilegeForPage, ENFORCED_SEAL_REFUSAL } = await import("../workflow/privilege.js");
+    const p = await workflowPrivilegeForPage(contentId, operatorAccountId).catch(() => ({ enforced: false }));
+    if (p.enforced && !p.privileged) return { success: false, reason: ENFORCED_SEAL_REFUSAL };
+  }
   // No panel context (the config API consumer, the hook): the space is a property of the page
   // the file LIVES on, derived from the object itself — never from a caller-supplied context.
   if (!realmKey && contentId) {

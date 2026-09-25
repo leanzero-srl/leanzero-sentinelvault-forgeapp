@@ -166,6 +166,12 @@ export const sealSection = async (req) => {
   if (!(await canEditPage(operatorAccountId, pageId))) {
     return { success: false, reason: "You do not have permission to edit this page" };
   }
+  // SEC-2 (tester 2026-09-25): no new personal seal on an Approved page except by its privileged set.
+  {
+    const { workflowPrivilegeForPage, ENFORCED_SEAL_REFUSAL } = await import("../workflow/privilege.js");
+    const p = await workflowPrivilegeForPage(pageId, operatorAccountId).catch(() => ({ enforced: false }));
+    if (p.enforced && !p.privileged) return { success: false, reason: ENFORCED_SEAL_REFUSAL };
+  }
 
   const extensionKey = await resolveSealedSectionKey();
   if (!extensionKey) return { success: false, reason: "Could not resolve section macro key" };

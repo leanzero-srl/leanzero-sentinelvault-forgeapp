@@ -32,7 +32,8 @@ export function groupSealedFiles(files, statusById = {}, now = Date.now()) {
     const s = statusById[f.id];
     const until = s && s.expiresAt ? new Date(s.expiresAt).getTime() : NaN;
     // A grant whose end has already passed is not "edit now" (the server stops honouring it).
-    const live = s && s.status === "granted" && !(Number.isFinite(until) && until <= now);
+    // A grant is frozen while the page is Approved (the seal is the workflow's) — not "edit now".
+    const live = !f.workflowHeld && s && s.status === "granted" && !(Number.isFinite(until) && until <= now);
     (live ? out.editNow : out.others).push(f);
   }
   return out;
@@ -48,7 +49,7 @@ export function groupSealedSections(sections, statusById = {}) {
   for (const s of Array.isArray(sections) ? sections : []) {
     if (!s) continue;
     if (s.isMine) out.mine.push(s);
-    else if (statusById[s.sectionId]?.status === "granted") out.editNow.push(s);
+    else if (!s.workflowHeld && statusById[s.sectionId]?.status === "granted") out.editNow.push(s);
     else out.others.push(s);
   }
   return out;

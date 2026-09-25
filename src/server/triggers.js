@@ -57,6 +57,7 @@ import { randomUUID } from "node:crypto";
 import { recordActivity } from "./infra/activity-log.js";
 import { refreshByline } from "./capsules/page-details/byline.js"; // 5.0 byline chip — refreshed once per page save, after the restore passes
 import { isWorkflowHeld, mayEditInside } from "./shared/seal-authority.js"; // SEC-2
+import { workflowPrivilegeForPage } from "./capsules/workflow/privilege.js";
 
 // --- Fix 3 (CORE T6 extension): cross-run violation-comment dedup ---
 // K1: `violation-noticed-{pageId}-{targetId}-{class}`, TTL 24h, claimed BEFORE the footer
@@ -1851,8 +1852,16 @@ async function handleSealedArtifactEdit(sealRecord, artifactId, contentId, atlas
   let currentVersion = attachment.version?.number;
   let pageId = contentId || sealRecord.contentId;
 
-  // Allow the seal owner to edit their own sealed artifact
-  if (sealRecord.lockedBy === atlassianId) {
+  // SEC-2 parity (tester 2026-09-25): while the page is Approved the seal is the WORKFLOW's — its
+  // privileged set (approvers, space admins) may change the file; the personal owner and any
+  // grantee may not, exactly as sections already do (mayEditInside, grants frozen). Before this,
+  // an "Edit now" grant still let its holder replace a file on an Approved page.
+  const held = isWorkflowHeld(sealRecord);
+  if (held) {
+    const p = await workflowPrivilegeForPage(pageId, atlassianId).catch(() => ({ privileged: false }));
+    if (p.privileged) return;
+  } else if (sealRecord.lockedBy === atlassianId) {
+    // Allow the seal owner to edit their own sealed artifact
     return;
   }
 
@@ -1875,7 +1884,7 @@ async function handleSealedArtifactEdit(sealRecord, artifactId, contentId, atlas
   // Allow approved editors (Edit Requests) to edit without reverting. Re-baseline
   // the seal to the new version + fileId so future reverts target the edited
   // content, and pageContentTrigger's media-presence check keeps matching.
-  const grant = await getActiveEditGrant(artifactId, atlassianId);
+  const grant = held ? null : await getActiveEditGrant(artifactId, atlassianId); // frozen while held
   if (grant) {
     try {
       let newFileId = sealRecord.sealedFileId || null;
