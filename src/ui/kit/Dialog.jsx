@@ -12,8 +12,22 @@
  * Renders through a portal onto document.body so an `overflow: hidden` card cannot clip it.
  * Native window.confirm/alert are never used (owner rule).
  */
-import React, { useEffect, useRef, useId } from "react";
+import React, { useEffect, useLayoutEffect, useRef, useId, useState } from "react";
 import { createPortal } from "react-dom";
+
+// ANCHORED mode (owner, 2026-09-24). The page panel's iframe is as tall as its content and the
+// Confluence page scrolls AROUND it, so the iframe's "viewport centre" can be a thousand pixels
+// below what the person is looking at — the Decline dialog opened off-screen at the bottom. A
+// surface in that situation calls `anchorDialogsToOpener()` once; its dialogs then open level
+// with the control that opened them (or the last click, for browsers that do not focus a
+// clicked button — Safari). Surfaces with a real viewport (overlay, modal, consoles) centre.
+let anchorMode = false;
+let lastPointerY = null;
+export function anchorDialogsToOpener() {
+  if (anchorMode) return;
+  anchorMode = true;
+  document.addEventListener("pointerdown", (e) => { lastPointerY = e.clientY; }, true);
+}
 
 const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
@@ -21,6 +35,17 @@ export default function Dialog({ title, children, onClose, busy = false, danger 
   const ref = useRef(null);
   const openerRef = useRef(null);
   const titleId = useId();
+  const [top, setTop] = useState(null); // anchored mode: the dialog's top edge, px
+
+  useLayoutEffect(() => {
+    if (!anchorMode || !ref.current) return;
+    const opener = document.activeElement && document.activeElement !== document.body ? document.activeElement : null;
+    const y = opener ? opener.getBoundingClientRect().top : lastPointerY;
+    if (y == null) return;
+    const h = ref.current.getBoundingClientRect().height || 240;
+    const max = Math.max(16, window.innerHeight - h - 16);
+    setTop(Math.min(max, Math.max(16, y - h / 2)));
+  }, []);
 
   useEffect(() => {
     openerRef.current = document.activeElement;
@@ -51,8 +76,8 @@ export default function Dialog({ title, children, onClose, busy = false, danger 
   }, [onClose, busy, initialFocus]);
 
   return createPortal(
-    <div className="sv-dialog-backdrop" role="presentation" onMouseDown={(e) => { if (e.target === e.currentTarget && !busy) onClose(); }} data-testid={`${testId}-backdrop`}>
-      <div ref={ref} className={`sv-dialog${danger ? " danger" : ""} ${className}`.trim()} role="dialog" aria-modal="true" aria-labelledby={titleId} tabIndex={-1} data-testid={testId}>
+    <div className={`sv-dialog-backdrop${top != null ? " is-anchored" : ""}`} role="presentation" onMouseDown={(e) => { if (e.target === e.currentTarget && !busy) onClose(); }} data-testid={`${testId}-backdrop`}>
+      <div ref={ref} style={top != null ? { marginTop: `${Math.round(top)}px` } : undefined} className={`sv-dialog${danger ? " danger" : ""} ${className}`.trim()} role="dialog" aria-modal="true" aria-labelledby={titleId} tabIndex={-1} data-testid={testId}>
         <h3 className="sv-dialog-title" id={titleId}>{title}</h3>
         {children}
       </div>

@@ -7,7 +7,7 @@ import { enablePaletteSync } from "../../kit/palette-sync";
 import ThumbnailPreview from "../../kit/ThumbnailPreview";
 import ActivityFeed from "../../kit/ActivityFeed";
 import ActionMenu from "../../kit/ActionMenu";
-import { ConfirmDialog } from "../../kit/Dialog";
+import { ConfirmDialog, anchorDialogsToOpener } from "../../kit/Dialog";
 import GiveAccessDialog from "../../kit/GiveAccessDialog";
 import { useSignedInvoke } from "../../kit/SignedInvoke";
 import RovingList from "../../kit/RovingList";
@@ -1803,6 +1803,7 @@ const ArtifactGridView = () => {
 // ── Render ────────────────────────────────────────────
 
 function renderApp() {
+  anchorDialogsToOpener(); // the panel iframe is content-tall: dialogs open beside what opened them
   const root = createRoot(document.getElementById("root"));
   root.render(<PanelErrorBoundary><ArtifactGridView /></PanelErrorBoundary>);
 }
