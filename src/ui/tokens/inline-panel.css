@@ -1765,3 +1765,4 @@ html[data-color-mode="dark"] .sv-section-block.status-expired { border-color: #F
 .sv-decline-reason:focus { outline: 2px solid var(--sv-interactive-primary); outline-offset: 1px; }
 .sv-decline-hint { display: block; margin-top: 6px; font-size: 11px; color: var(--sv-text-secondary); }
 .sv-declined-reason { margin-top: 6px; font-size: 12px; font-style: italic; color: var(--sv-text-secondary); }
+.sv-dialog-backdrop.is-anchored { align-items: flex-start; }
