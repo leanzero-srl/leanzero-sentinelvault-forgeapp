@@ -126,10 +126,12 @@ export function approvalResolvedBody({ requestedBy, outcome, targetName, decider
   }
   const verb = outcome === "approved" ? "approved" : "declined";
   const tail = outcome === "approved" ? " The page has moved." : " The page stays in its current state.";
-  const why = reason ? `: <em>“${escapeXml(reason)}”</em>` : "";
+  // The reason on its own labelled line, like the other notices (owner, 2026-09-25) — tucked in
+  // after a colon it read as part of the sentence.
+  const why = reason ? `\n<p><strong>Reason:</strong> <em>“${escapeXml(reason)}”</em></p>` : "";
   return `
 <p>${HEADER} — <strong>Approval ${verb}</strong></p>
-<p>${who} — your request to move this page to ${target} was <strong>${verb}</strong>${deciderName ? ` by ${escapeXml(deciderName)}` : ""}${why}.${tail}</p>
+<p>${who} — your request to move this page to ${target} was <strong>${verb}</strong>${deciderName ? ` by ${escapeXml(deciderName)}` : ""}.${tail}</p>${why}
 `.trim();
 }
 
