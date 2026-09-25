@@ -1088,3 +1088,19 @@ html[data-color-mode="dark"] .action-bar-pill { background: #FBBF24; color: #0F1
 .sv-unsaved-actions .action-btn { padding: 10px 16px; }
 /* Apply is disabled while nothing changed — say so visually. */
 .action-bar .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* "Not applied yet" beside the last setting touched (kit/UnsavedFloat.jsx, owner 2026-09-25):
+   solid amber like the bar's pill, no tint, no rail. */
+.sv-unsaved-float {
+  position: fixed; right: 24px; z-index: 900;
+  display: inline-flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  padding: 8px 10px 8px 14px; border-radius: 12px;
+  background: #B45309; color: #FFFFFF; box-shadow: 0 6px 20px rgba(2, 6, 23, 0.25);
+  max-width: calc(100% - 48px);
+}
+.sv-unsaved-float-text { font-size: 12px; font-weight: 700; }
+.sv-unsaved-float .btn-secondary, .sv-unsaved-float .btn-primary { padding: 6px 14px; font-size: 12px; }
+.sv-unsaved-float .btn-secondary { background: #FFFFFF; color: #1F2937; border-color: #FFFFFF; }
+.sv-unsaved-float .btn-primary { background: #1F2937; color: #FFFFFF; border-color: #1F2937; }
+html[data-color-mode="dark"] .sv-unsaved-float { background: #FBBF24; color: #0F172A; }
+@media (prefers-reduced-motion: no-preference) { .sv-unsaved-float { transition: top 120ms ease; } }

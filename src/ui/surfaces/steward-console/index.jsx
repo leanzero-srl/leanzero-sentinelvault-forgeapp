@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { createRoot } from "react-dom/client";
 import { invoke, view } from "@forge/bridge";
 import { enablePaletteSync } from "../../kit/palette-sync";
+import UnsavedFloat from "../../kit/UnsavedFloat";
 import ValidationsEditor from "../../kit/ValidationsEditor";
 import LicenseBanner from "../../kit/LicenseBanner";
 import ClassificationTab, { LevelPicker } from "../../kit/ClassificationTab";
@@ -907,6 +908,7 @@ const GlobalPolicyEditor = () => {
 
           {/* The Validations and Classification tabs save their own state; the policy Apply bar is
               for the Settings tab only. */}
+          {activeTab === "settings" && <UnsavedFloat dirty={dirty} busy={loading} onApply={onSavePreferences} onDiscard={discard} />}
           {activeTab === "settings" && (
             <div className={`action-bar ${dirty ? "is-dirty" : ""}`} data-dirty={dirty ? "1" : "0"} data-testid="sv-global-action-bar">
               {dirty

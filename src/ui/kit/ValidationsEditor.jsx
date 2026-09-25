@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { invoke } from "@forge/bridge";
+import UnsavedFloat from "./UnsavedFloat";
 import { ruleConfigProblem, ruleListRefusal } from "../../server/shared/rule-config.js"; // one completeness rule, shared with the save resolver
 
 // Shared Conditions & Validations editor — used by the steward console (global
@@ -345,6 +346,7 @@ export default function ValidationsEditor({ scope = "global", spaceKey = null })
       </div>
 
       {msg && <div role="status" aria-live="polite" className={msg.type === "success" ? "alert-success" : "alert-error"}>{msg.text}</div>}
+      <UnsavedFloat dirty={dirty} busy={saving} onApply={save} onDiscard={discard} />
       {dirty && (
         <div className="val-save-bar" data-testid="val-save-bar">
           <span className="val-save-note">You have unsaved changes.</span>
