@@ -339,16 +339,23 @@ export function composeStewardOverrideLayout({
   pageUrl,
   unlockDate,
   reason,
+  targetKind = "attachment",
+  lapsed = false,
 }) {
   const stewardLabel = stewardAccountId
     ? mention(stewardAccountId)
     : `<strong>${escapeXml(stewardDisplayName || "A space admin")}</strong>`;
+  // A section is not a file (SEC-9), and an editor clearing an EXPIRED section seal is not an
+  // admin override (F6) — the title and the sentence say which happened.
+  const what = targetKind === "section" ? "section" : "file";
+  const title = lapsed ? "Expired seal released" : "Space admin override";
+  const lapsedNote = lapsed ? ` Your seal had expired, so anyone who can edit the page may release it.` : "";
 
   const storageBody = `
-<p>${HEADER} — <strong>Space admin override</strong></p>
-<p>${mention(ownerAccountId)} — ${stewardLabel} released your seal on <strong>"${escapeXml(artifactName)}"</strong> (<em>${escapeXml(pageTitle)}</em>)${unlockDate ? ` on <strong>${escapeXml(unlockDate)}</strong>` : ""}.</p>
+<p>${HEADER} — <strong>${title}</strong></p>
+<p>${mention(ownerAccountId)} — ${stewardLabel} released your seal on <strong>"${escapeXml(artifactName)}"</strong> (<em>${escapeXml(pageTitle)}</em>)${unlockDate ? ` on <strong>${escapeXml(unlockDate)}</strong>` : ""}.${lapsedNote}</p>
 ${reason ? `<p>Their reason: <em>“${escapeXml(reason)}”</em></p>` : ""}
-<p>You no longer hold exclusive access to this file. Re-seal if you still need it, or contact the space admin if this was unintended.</p>
+<p>You no longer hold exclusive access to this ${what}. Re-seal if you still need it, or contact the space admin if this was unintended.</p>
 ${ctaLink(pageUrl, "Open the page")}
 `.trim();
 
