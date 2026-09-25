@@ -846,9 +846,12 @@ const ValidationStatus = ({ pageId, viewer }) => {
     invoke("get-validation-state", { pageId })
       .then((r) => {
         if (cancelled) return;
-        setState(r?.state || null);
-        setStale(!!r?.stale);
+        // Never judged yet but a rule applies: show the group and judge it now (tester 2026-09-25).
+        const neverChecked = !r?.state && r?.applies === true;
+        setState(r?.state || (neverChecked ? { state: "none" } : null));
+        setStale(!!r?.stale || neverChecked);
         setLoaded(true);
+        if (neverChecked) { runNow(); return; }
         // The rules changed since this status was written (a rule edited or deleted): judge the
         // page again now rather than show a verdict against rules that no longer apply.
         if (r?.stale) runNow();
@@ -896,7 +899,7 @@ const ValidationStatus = ({ pageId, viewer }) => {
   };
 
   // Only surface when a pass/fail status exists (keeps pages without validation clean).
-  if (!pageId || !loaded || !state || !VAL_BADGE[state.state]) return null;
+  if (!pageId || !loaded || !state || (!VAL_BADGE[state.state] && !stale)) return null;
 
   const violations = result ? (result.violations || []) : (stale ? [] : (state.violations || []));
   // A stale status is never shown as a verdict: "Checking…" until the re-check answers, then the
