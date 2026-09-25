@@ -423,6 +423,7 @@ const stewardUnseal = async (req) => {
         sealRecord.contentId,
         unsealDate,
         sealRecord.spaceKey || null, // P1-4: the seal's own space → quiet mode without a page lookup
+        forcedReason,
       );
     } catch (noticeError) {
       console.error(

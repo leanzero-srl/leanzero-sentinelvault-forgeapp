@@ -338,6 +338,7 @@ export function composeStewardOverrideLayout({
   pageTitle,
   pageUrl,
   unlockDate,
+  reason,
 }) {
   const stewardLabel = stewardAccountId
     ? mention(stewardAccountId)
@@ -346,6 +347,7 @@ export function composeStewardOverrideLayout({
   const storageBody = `
 <p>${HEADER} — <strong>Space admin override</strong></p>
 <p>${mention(ownerAccountId)} — ${stewardLabel} released your seal on <strong>"${escapeXml(artifactName)}"</strong> (<em>${escapeXml(pageTitle)}</em>)${unlockDate ? ` on <strong>${escapeXml(unlockDate)}</strong>` : ""}.</p>
+${reason ? `<p>Their reason: <em>“${escapeXml(reason)}”</em></p>` : ""}
 <p>You no longer hold exclusive access to this file. Re-seal if you still need it, or contact the space admin if this was unintended.</p>
 ${ctaLink(pageUrl, "Open the page")}
 `.trim();
