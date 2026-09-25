@@ -18,7 +18,7 @@ import CappedGroup from "../../kit/CappedGroup";
 import { SEALED_GROUPS, groupSealedFiles } from "../../kit/sealed-groups.js";
 import { attachmentRow, rowActions, statusChip, copyText } from "../../kit/seal-row.js";
 import { when } from "../../kit/status-language.js";
-import { PrimarySlot, ReasonBar, RequestInbox, GrantInbox, ErrorRow, CopiedNote } from "../../kit/SealRowParts";
+import { PrimarySlot, ReasonBar, RequestInbox, GrantInbox, ErrorRow, CopiedNote, DeclinedReason } from "../../kit/SealRowParts";
 
 // ── Column definitions ──────────────────────────────────
 const OVERLAY_COLUMNS = [
@@ -300,6 +300,7 @@ const OverlayArtifactCard = ({ artifact, editInfo, visibleColumns, run, signedIn
   const [myRequests, setMyRequests] = useState(null); // owner: pending edit requests
   const [reqBusy, setReqBusy] = useState(null);
   const [editRetryAt, setEditRetryAt] = useState(editInfo?.retryAt || null);
+  const [editDeniedReason, setEditDeniedReason] = useState(editInfo?.deniedReason || null);
   // Editors with access: the panel had this, the overlay did not — an owner working in the
   // overlay could neither see nor revoke a grant (one rule, every surface).
   const [myGrants, setMyGrants] = useState(null);
@@ -327,7 +328,7 @@ const OverlayArtifactCard = ({ artifact, editInfo, visibleColumns, run, signedIn
     let cancelled = false;
     if (isSealedByOther && !isStale && editStatus === null) {
       invoke("check-edit-request", { attachmentId: artifact.id })
-        .then((r) => { if (!cancelled) { setEditStatus(r?.status || "none"); setEditExpiresAt(r?.expiresAt || null); setEditRetryAt(r?.retryAt || null); } })
+        .then((r) => { if (!cancelled) { setEditStatus(r?.status || "none"); setEditExpiresAt(r?.expiresAt || null); setEditRetryAt(r?.retryAt || null); setEditDeniedReason(r?.deniedReason || null); } })
         .catch(() => { if (!cancelled) setEditStatus("none"); });
     }
     return () => { cancelled = true; };
@@ -378,7 +379,7 @@ const OverlayArtifactCard = ({ artifact, editInfo, visibleColumns, run, signedIn
     setTimeout(() => setCopied(false), 1800);
   };
 
-  const row = attachmentRow(artifact, { editStatus, editExpiresAt, editRetryAt, pendingRequests: myRequests || [], watching: isWatching });
+  const row = attachmentRow(artifact, { editStatus, editExpiresAt, editRetryAt, editDeniedReason, pendingRequests: myRequests || [], watching: isWatching });
   const { primary, menu } = rowActions(row, viewer, { allowRestore: artifact.allowRestore, allowPurge: artifact.allowPurge, allowDelete: artifact.allowDelete, viewUrl, propertiesUrl });
   const chip = statusChip(artifact);
 
@@ -535,6 +536,7 @@ const OverlayArtifactCard = ({ artifact, editInfo, visibleColumns, run, signedIn
       )}
 
       <CopiedNote shown={copied} />
+      <DeclinedReason primary={primary} owner={row.ownerName} />
       <ErrorRow message={errorMessage} onDismiss={onClearError} />
       {declineDialog}
 

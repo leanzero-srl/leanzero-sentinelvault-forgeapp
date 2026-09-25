@@ -20,7 +20,7 @@ import { describeRange } from "../../kit/section-range.js";
 import { expiryWarning } from "../../../server/capsules/page-details/row-state.js"; // SEC-7: the owner's lapse warning
 import { attachmentRow, sectionRow, rowActions, statusChip, copyText } from "../../kit/seal-row.js";
 import { when, sealSentence, refusalText } from "../../kit/status-language.js"; // SEC-3: one vocabulary, one clock
-import { PrimarySlot, ReasonBar, RequestInbox, GrantInbox, ErrorRow, CopiedNote } from "../../kit/SealRowParts";
+import { PrimarySlot, ReasonBar, RequestInbox, GrantInbox, ErrorRow, CopiedNote, DeclinedReason } from "../../kit/SealRowParts";
 
 // ── Icon components ──────────────────────────────────
 
@@ -296,6 +296,7 @@ const ArtifactCard = ({ att, onRefresh, columns, siteUrl, spaceKey, pageId, page
   const [editStatus, setEditStatus] = useState(editInfo?.status || att.editStatus || null); // none|pending|granted|denied
   const [editExpiresAt, setEditExpiresAt] = useState(editInfo?.expiresAt || null);
   const [editRetryAt, setEditRetryAt] = useState(editInfo?.retryAt || null); // declined: when the server lets them ask again
+  const [editDeniedReason, setEditDeniedReason] = useState(editInfo?.deniedReason || null); // declined: the owner's word
   const [bar, setBar] = useState(null); // "request" | "force" | null — the typed-reason bar
   const [reasonText, setReasonText] = useState("");
   const [myRequests, setMyRequests] = useState(null); // owner: pending edit requests on this file
@@ -316,7 +317,7 @@ const ArtifactCard = ({ att, onRefresh, columns, siteUrl, spaceKey, pageId, page
     let cancelled = false;
     if (isSealedByOther && editStatus === null) {
       invoke("check-edit-request", { attachmentId: att.id })
-        .then((r) => { if (!cancelled) { setEditStatus(r?.status || "none"); setEditExpiresAt(r?.expiresAt || null); setEditRetryAt(r?.retryAt || null); } })
+        .then((r) => { if (!cancelled) { setEditStatus(r?.status || "none"); setEditExpiresAt(r?.expiresAt || null); setEditRetryAt(r?.retryAt || null); setEditDeniedReason(r?.deniedReason || null); } })
         .catch(() => { if (!cancelled) setEditStatus("none"); });
     }
     return () => { cancelled = true; };
@@ -422,7 +423,7 @@ const ArtifactCard = ({ att, onRefresh, columns, siteUrl, spaceKey, pageId, page
   };
 
   // ── the ONE row rule (mockup decision 5) ───────────────────────────────────────────────────
-  const row = attachmentRow(att, { editStatus, editExpiresAt, editRetryAt, pendingRequests: myRequests || [], watching: att.notifyRequested });
+  const row = attachmentRow(att, { editStatus, editExpiresAt, editRetryAt, editDeniedReason, pendingRequests: myRequests || [], watching: att.notifyRequested });
   const { primary, menu } = rowActions(row, viewer, { allowRestore: att.allowRestore, allowPurge: att.allowPurge, allowDelete: att.allowDelete, viewUrl, propertiesUrl });
   const chip = statusChip(att);
 
@@ -566,6 +567,7 @@ const ArtifactCard = ({ att, onRefresh, columns, siteUrl, spaceKey, pageId, page
       )}
 
       <CopiedNote shown={copied} />
+      <DeclinedReason primary={primary} owner={row.ownerName} />
       <ErrorRow message={actionError} onDismiss={() => setActionError(null)} />
 
       {/* Destructive confirmations: a real dialog (focus trap, Escape, focus back to the opener). */}
@@ -975,6 +977,7 @@ const SectionRow = ({ section: s, onUnseal, unsealing, viewer, siteUrl, pageId, 
   const [grantBusy, setGrantBusy] = useState(null);
   const [giving, setGiving] = useState(false); // "Give edit access…" dialog
   const [editRetryAt, setEditRetryAt] = useState(editInfo?.retryAt || null);
+  const [editDeniedReason, setEditDeniedReason] = useState(editInfo?.deniedReason || null);
   const [error, setError] = useState(null);
   const [copied, setCopied] = useState(false);
   const { signedInvoke, signatureDialog } = useSignedInvoke();
@@ -992,7 +995,7 @@ const SectionRow = ({ section: s, onUnseal, unsealing, viewer, siteUrl, pageId, 
     } else if (!s.isExpired) {
       if (!editInfo) {
         invoke("check-section-edit", { sectionId: s.sectionId })
-          .then((r) => { if (!cancelled) { setEditStatus(r?.status || "none"); setEditRetryAt(r?.retryAt || null); } })
+          .then((r) => { if (!cancelled) { setEditStatus(r?.status || "none"); setEditRetryAt(r?.retryAt || null); setEditDeniedReason(r?.deniedReason || null); } })
           .catch(() => { if (!cancelled) setEditStatus("none"); });
       }
       // A space admin can give (and so must see and revoke) access on someone else's section.
@@ -1063,7 +1066,7 @@ const SectionRow = ({ section: s, onUnseal, unsealing, viewer, siteUrl, pageId, 
     setTimeout(() => setCopied(false), 1800);
   };
 
-  const row = sectionRow(s, { editStatus, editRetryAt, pendingRequests: requests || [] });
+  const row = sectionRow(s, { editStatus, editRetryAt, editDeniedReason, pendingRequests: requests || [] });
   const { primary, menu } = rowActions(row, viewer);
   const warning = expiryWarning(row); // SEC-7
   // A non-owner's Release (expired seal) goes through the typed-reason bar (server: reason required).
@@ -1104,6 +1107,7 @@ const SectionRow = ({ section: s, onUnseal, unsealing, viewer, siteUrl, pageId, 
         <ActionMenu items={menu} onPick={onMenu} label={`More actions for section ${s.sectionTitle}`} testId="sv-section-kebab" />
       </div>
       <CopiedNote shown={copied} />
+      <DeclinedReason primary={primary} owner={row.ownerName} />
       <ErrorRow message={error} onDismiss={() => setError(null)} testId="sv-section-error" />
       {bar && <ReasonBar mode={bar} kind="section" value={reasonText} onChange={setReasonText} onSubmit={submitBar} onCancel={() => { setBar(null); setReasonText(""); }} busy={busy || unsealing} testId="sv-section-reason-bar" />}
       {s.isMine && <RequestInbox requests={requests} name={`section ${s.sectionTitle}`} reqBusy={reqBusy} onDecide={resolve} firstDecidedAbove={primary.kind === "decide"} testId="sv-section-inbox" />}
@@ -1154,7 +1158,7 @@ const SealedSectionsGroup = ({ pageId, onChanged, viewer, siteUrl }) => {
     setSectionStatusReady(false);
     Promise.all(others.map((x) =>
       invoke("check-section-edit", { sectionId: x.sectionId })
-        .then((r) => [x.sectionId, { status: r?.status || "none", retryAt: r?.retryAt || null }])
+        .then((r) => [x.sectionId, { status: r?.status || "none", retryAt: r?.retryAt || null, deniedReason: r?.deniedReason || null }])
         .catch(() => [x.sectionId, { status: "none", retryAt: null }]),
     )).then((pairs) => { if (!cancelled) { setSectionStatus(Object.fromEntries(pairs)); setSectionStatusReady(true); } });
     return () => { cancelled = true; };
