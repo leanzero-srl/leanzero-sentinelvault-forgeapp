@@ -4,6 +4,21 @@ import { view, invoke, router } from "@forge/bridge";
 import { enablePaletteSync } from "../../kit/palette-sync";
 import { when, sealSentence } from "../../kit/status-language.js"; // SEC-3: one vocabulary, one clock
 
+// The "was undone" notice can be closed, and stays closed for THAT restore across reloads (owner,
+// 2026-09-25: it came back on every reload for minutes, with no way to dismiss it). The key is the
+// section + the version the app wrote; a later restore of the same section is a new notice.
+// Browser storage can be missing (private window, blocked site data) — then it simply reopens.
+const undoneKey = (sectionId, v) => `sv-undone-dismissed-${sectionId}-${v ?? "x"}`;
+const wasDismissed = (k) => { try { return window.localStorage.getItem(k) === "1"; } catch (_) { return false; } };
+const rememberDismissed = (k) => { try { window.localStorage.setItem(k, "1"); } catch (_) { /* not stored */ } };
+
+// router.reload() returns a PROMISE: a try/catch around it never saw its failure, so the button
+// did nothing (tester 2026-09-25). Fall back to navigating to the page itself.
+const reloadPage = (location) => {
+  const again = () => { try { if (location) router.navigate(location); } catch (_) { /* nothing left to try */ } };
+  try { Promise.resolve(router.reload()).catch(again); } catch (_) { again(); }
+};
+
 // Sentinel Vault "Sealed Section" bodied macro.
 // One resource serves both the macro VIEW (renders the protected body with a
 // sealed header) and the CONFIG panel (shown on insert). Sealing itself is
@@ -92,6 +107,7 @@ const SectionMacro = () => {
   const [adopted, setAdopted] = useState(false); // SEC-4 (a): this publish sealed the section (reload shows it)
   const [contextSectionId, setContextSectionId] = useState(null); // the id the macro context carries, if any
   const [undone, setUndone] = useState(null); // { mine, revertedVersion, pageId } — THIS section was just put back
+  const [pageLocation, setPageLocation] = useState(null); // the page URL — the reload fallback
 
   useEffect(() => {
     (async () => {
@@ -104,6 +120,7 @@ const SectionMacro = () => {
 
         const isEditing = !!ext.isEditing;
         setEditing(isEditing);
+        setPageLocation(ext.location || null);
         const sectionId = readSectionId(ext);
         setContextSectionId(sectionId);
         // Logged once so the context shape is visible in the console when it matters.
@@ -129,7 +146,8 @@ const SectionMacro = () => {
         if (!isEditing && hasBody) {
           invoke("guard-page-now", {}).then((g) => {
             if (sectionId && g?.restored && Array.isArray(g.sectionIds) && g.sectionIds.includes(sectionId)) {
-              setUndone({ mine: g.mine === true, fresh: g.fresh === true, revertedVersion: g.revertedVersion || null, pageId: context?.extension?.content?.id || null });
+              const key = undoneKey(sectionId, g.restoredVersion ?? g.version ?? g.revertedVersion);
+              if (!wasDismissed(key)) setUndone({ key, mine: g.mine === true, fresh: g.fresh === true, revertedVersion: g.revertedVersion || null, pageId: context?.extension?.content?.id || null, location: context?.extension?.location || null });
             }
             if (!sectionId && g?.adoptedOnPublish) setAdopted(true);
           }).catch((e) => console.warn("[SECTION-UI] guard-page-now failed:", e?.message));
@@ -318,7 +336,9 @@ const SectionMacro = () => {
                 Open my version
               </button>
             )}
-            {undone.fresh && <button type="button" className="sec-undone-btn" onClick={() => { try { router.reload(); } catch (_) { /* older bridge */ } }}>Reload the page</button>}
+            {undone.fresh && <button type="button" className="sec-undone-btn" onClick={() => reloadPage(undone.location)}>Reload the page</button>}
+            <button type="button" className="sec-undone-close" aria-label="Dismiss this notice" data-testid="sec-undone-dismiss"
+              onClick={() => { rememberDismissed(undone.key); setUndone(null); }}>×</button>
           </span>
           {undone.mine && <span className="sec-undone-hint">To edit it, use Request edit — under the page title (Sentinel Vault) or in the panel — or ask the owner to give you access.</span>}
         </div>
@@ -327,7 +347,7 @@ const SectionMacro = () => {
         {showFallback && (
           <div className="sec-body-fallback" data-testid="sec-body-fallback" data-timedout={rendererTimedOut ? "true" : "false"}>
             {bodyProps ? bodyText : fallbackText}
-            {rendererTimedOut && <button type="button" className="sec-undone-btn sec-body-reload" onClick={() => { try { router.reload(); } catch (_) { /* older bridge */ } }}>Reload the page</button>}
+            {rendererTimedOut && <button type="button" className="sec-undone-btn sec-body-reload" onClick={() => reloadPage(pageLocation)}>Reload the page</button>}
           </div>
         )}
         {bodyProps && !rendererTimedOut && (
