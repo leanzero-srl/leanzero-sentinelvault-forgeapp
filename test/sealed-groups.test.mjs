@@ -40,4 +40,7 @@ eq("15 exactly: no toggle", capItems(many.slice(0, 15), false).hidden, 0);
 eq("a custom limit (the panel's files-per-page)", capItems(many, false, 10).visible.length, 10);
 eq("bad input", capItems(null, false), { visible: [], hidden: 0 });
 
+eq("held file with a grant → others (grants frozen on an Approved page)", ids(groupSealedFiles([f("h", "HELD", { workflowHeld: true })], { h: { status: "granted" } }, now).others), ["h"]);
+eq("held section with a grant → others", groupSealedSections([{ sectionId: "z", workflowHeld: true }], { z: { status: "granted" } }).others.length, 1);
+
 report("sealed-groups");

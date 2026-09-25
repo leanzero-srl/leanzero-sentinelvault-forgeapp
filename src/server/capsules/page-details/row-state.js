@@ -34,7 +34,8 @@ export function primaryActionFor(row, viewer = {}, now = Date.now()) {
   // proposer gets edit access. A proposal already made shows as waiting / declined like any request.
   if (row.workflowHeld) {
     if (row.myEditStatus === "pending") return { kind: "waiting", label: "Waiting", owner: "the approvers" };
-    if (row.myEditStatus === "granted") return { kind: "editnow", label: "Edit now", until: row.myEditExpiresAt || row.expiresAt || null };
+    // A grant is FROZEN while the page is Approved (the server refuses the grantee's change, as for
+    // sections) — so the row never offers "Edit now" here (tester 2026-09-25).
     if (row.myEditStatus === "denied") {
       const retryMs = row.myRetryAt ? new Date(row.myRetryAt).getTime() : NaN;
       if (Number.isFinite(retryMs) && retryMs > now) return { kind: "declined", label: WORDS.declined, retryAt: row.myRetryAt, reason: row.myDeniedReason || null, hint: "An approver can also move the page back for review." };
