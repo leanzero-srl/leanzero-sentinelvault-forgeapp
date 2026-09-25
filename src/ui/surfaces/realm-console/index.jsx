@@ -6,6 +6,7 @@ import { createRoot } from "react-dom/client";
 import { invoke, view, router } from "@forge/bridge";
 import { enablePaletteSync } from "../../kit/palette-sync";
 import ThumbnailPreview from "../../kit/ThumbnailPreview";
+import UnsavedFloat from "../../kit/UnsavedFloat";
 import ValidationsEditor from "../../kit/ValidationsEditor";
 import WorkflowSettingsEditor from "../../kit/WorkflowSettingsEditor";
 import WorkflowDefinitionEditor from "../../kit/WorkflowDefinitionEditor";
@@ -2429,6 +2430,9 @@ const RealmPolicyDashboard = () => {
         </div>
       )}
 
+      {userRole === "steward" && activeTab !== "validations" && activeTab !== "workflow" && activeTab !== "activity" && (
+        <UnsavedFloat dirty={prefsDirty} busy={loading} onApply={onSaveRealmPrefs} onDiscard={discardPrefs} />
+      )}
       {userRole === "steward" && activeTab !== "validations" && activeTab !== "workflow" && activeTab !== "activity" && (
         <div className={`action-bar ${prefsDirty ? "is-dirty" : ""}`} data-dirty={prefsDirty ? "1" : "0"} data-testid="sv-realm-action-bar">
           {prefsDirty
