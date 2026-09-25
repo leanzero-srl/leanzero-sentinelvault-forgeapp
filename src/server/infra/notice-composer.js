@@ -388,12 +388,13 @@ export async function mailStewardOverrideNotice(
   unlockDate,
   spaceKey = null,
   reason = null, // the admin's typed reason — the owner is told WHY (tester 2026-09-25)
+  { targetKind = "attachment", lapsed = false } = {}, // a SECTION seal; released as expired by an editor
 ) {
   return dispatchNotice(ALERT_CATEGORIES.STEWARD_OVERRIDE_RELEASE, {
     recipientAccountId: sealOwnerAccountId,
     pageId,
     artifactName,
-    extra: { stewardAccountId, stewardDisplayName, unlockDate, reason },
+    extra: { stewardAccountId, stewardDisplayName, unlockDate, reason, targetKind, lapsed },
     spaceKey,
   });
 }
