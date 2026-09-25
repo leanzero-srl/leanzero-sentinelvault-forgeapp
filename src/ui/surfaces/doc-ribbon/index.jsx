@@ -20,6 +20,7 @@ import { useActionMenu } from "../../kit/ActionMenu";
 import DatePicker, { toYmd, fromYmd } from "../../kit/DatePicker";
 import { decideRibbon, untilLabel } from "../../kit/ribbon-rules";
 import { alertWord, refusalText, when } from "../../kit/status-language.js"; // SEC-3: one vocabulary, one clock
+import BusyVeil from "../../kit/BusyVeil";
 
 /**
  * Workflow state chip + transition control (#42). Shows the page's current
@@ -432,8 +433,9 @@ const WorkflowControl = ({ workflow, approvals, operatorId, pageId, spaceKey, si
   // Close the approval panel on outside click / Escape; focus in on open, back to the chip on Escape.
   useDismissableDialog(panelOpen, setPanelOpen, panelRef, apprBtnRef);
 
+  const [decideKind, setDecideKind] = useState(null); // which decision the veil is showing
   const doDecide = useCallback(async (decision) => {
-    setDecideBusy(true); setDecideMsg(null);
+    setDecideBusy(true); setDecideKind(decision); setDecideMsg(null);
     try {
       const r = await invoke("decide-approval", { pageId, decision, reason, code: sigCode || null });
       if (r?.success) {
@@ -558,6 +560,7 @@ const WorkflowControl = ({ workflow, approvals, operatorId, pageId, spaceKey, si
         </button>
         {panelOpen && inHost(host, (
           <div className="wf-appr-panel" role="dialog" aria-label={`Approval to move to ${targetName}`} ref={panelRef} tabIndex={-1}>
+            {decideBusy && <BusyVeil text={decideKind === "denied" ? "Recording your decision…" : `Recording your approval — moving the page to ${targetName}…`} />}
             <div className="wf-appr-head">Approval to move to <strong>{targetName}</strong></div>
             <div className="wf-appr-sub">
               Requested by {pendingApproval.requestedByName || "a colleague"} · {MODE_TEXT[pendingApproval.mode] || MODE_TEXT.any}

@@ -287,3 +287,26 @@ html[data-color-mode="dark"] .mw-row { background: var(--sv-bg-secondary); }
 .sv-decline-reason { width: 100%; box-sizing: border-box; font: inherit; font-size: 13px; padding: 8px 10px; border: 1px solid var(--sv-border-primary); border-radius: 8px; background: var(--sv-bg-primary); color: var(--sv-text-primary); resize: vertical; }
 .sv-decline-reason:focus { outline: 2px solid var(--sv-interactive-primary); outline-offset: 1px; }
 .sv-decline-hint { display: block; margin-top: 6px; font-size: 11px; color: var(--sv-text-secondary); }
+
+/* Frosted busy veil (kit/BusyVeil.jsx, owner 2026-09-25) — the approval card while a decision is
+   being recorded and the page moves. Keyframes live here (Forge CSP forbids inline @keyframes). */
+.sv-busy-veil {
+  position: absolute; inset: 0; z-index: 20;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px;
+  border-radius: inherit;
+  background: var(--sv-frosted-bg, rgba(255, 255, 255, 0.85));
+  backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+}
+html[data-color-mode="dark"] .sv-busy-veil { background: var(--sv-frosted-bg, rgba(2, 6, 23, 0.85)); }
+.sv-busy-bar {
+  width: 48px; height: 6px; border-radius: 3px;
+  background: var(--sv-interactive-primary, #0E7490);
+  animation: sv-busy-pulse 1.2s ease-in-out infinite;
+}
+@keyframes sv-busy-pulse {
+  0%, 100% { opacity: 0.3; transform: scaleX(0.6); }
+  50% { opacity: 1; transform: scaleX(1); }
+}
+.sv-busy-text { font-size: 13px; font-weight: 600; color: var(--sv-text-primary, #0F172A); text-align: center; padding: 0 12px; }
+@media (prefers-reduced-motion: reduce) { .sv-busy-bar { animation: none; opacity: 1; } }
+.wf-appr-panel, .wf-inbox-row { position: relative; }
