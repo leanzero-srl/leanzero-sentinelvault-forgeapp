@@ -724,6 +724,8 @@ export async function setSpaceWorkflowSettings(spaceKey, settings) {
       approvers: settings.approval.approvers.filter((a) => a && a.id).map((a) => ({ type: a.type || "user", id: String(a.id).slice(0, 200), name: typeof a.name === "string" ? a.name.slice(0, 120) : null, ...(typeof a.hint === "string" && a.hint ? { hint: a.hint.slice(0, 200) } : {}) })), // hint: email / public name, to tell namesakes apart
       mode: ["any", "all", "min"].includes(settings.approval.mode) ? settings.approval.mode : "any",
       min: Math.max(1, parseInt(settings.approval.min, 10) || 1),
+      // Space admins may decide without being listed (default ON; owner, 2026-09-25).
+      adminsCanApprove: settings.approval.adminsCanApprove !== false,
     };
   }
   await kvs.set(`workflow-settings-${sanitize(spaceKey)}`, clean);
@@ -835,7 +837,7 @@ export async function transitionPageWorkflow({ pageId, spaceKey, toStateId, acto
       const pending = await kvs.get(`workflow-pending-${pageId}`);
       if (pending) {
         const { clearPageApprovals } = await import("./approvals.js");
-        await clearPageApprovals(pageId, pending.toStateId, pending.approvers);
+        await clearPageApprovals(pageId, pending.toStateId, [...(pending.approvers || []), ...(pending.adminDeciders || [])]);
         console.warn(`[WORKFLOW] pending approval to ${pending.toStateId} voided: page ${pageId} moved ${current.stateId} → ${toStateId}`);
       }
     } catch (e) { console.warn("[WORKFLOW] could not void the pending approval:", e); }

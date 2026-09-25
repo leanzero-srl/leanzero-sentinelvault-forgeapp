@@ -249,6 +249,13 @@ export const WorkflowApprovalSection = ({ settings, setSettings, def }) => {
                   onChange={(groups) => setSettings((p) => ({ ...p, approval: { ...p.approval, approvers: [...(p.approval.approvers || []).filter((a) => (a.type || "user") === "user"), ...groups] } }))}
                 />
               </SettingsRow>
+              <SettingsRow label="Space admins can approve too" description="Space admins may approve or deny a request without being listed. Their approval counts like an approver's: it completes “any one approver” and counts toward “at least N”; with “all approvers”, every listed approver is still needed. Admins are not mentioned on each request.">
+                <Toggle
+                  label="Space admins can approve too"
+                  checked={settings.approval.adminsCanApprove !== false}
+                  onChange={(e) => setSettings((p) => ({ ...p, approval: { ...p.approval, adminsCanApprove: e.target.checked } }))}
+                />
+              </SettingsRow>
               <SettingsRow label="Decision rule" description="How many of the approvers must approve before the page moves.">
                 <MiniSelect
                   ariaLabel="Approval decision rule"

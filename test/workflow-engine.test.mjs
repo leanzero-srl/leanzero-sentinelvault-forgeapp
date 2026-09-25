@@ -334,4 +334,13 @@ eq("inboxKey is per approver then page", inboxKey("712020:abc", "123"), "workflo
 
   ok("B3: a decision with a signature is marked signed", buildApprovalRecord({ pending: { toStateId: "approved", mode: "any", min: 1 }, records: [{ approverAccountId: "712020:s", approverName: "Sam", status: "approved", decidedAt: "2026-09-05T11:00:00.000Z", signature: { method: "totp", verifiedAt: "2026-09-05T11:00:00.000Z" } }], outcome: "approved", completedBy: "712020:s", completedByName: "Sam", nowIso: "2026-09-05T11:00:01.000Z" }).decisions[0].signed === true);
 
+// Space admins decide without being listed (owner, 2026-09-25) — the 4th argument.
+eq("admin: any — an admin approval completes it", evaluateApproval("any", 1, ["pending"], ["approved"]), "approved");
+eq("admin: any — an admin denial alone does not close it", evaluateApproval("any", 1, ["pending"], ["denied"]), "pending");
+eq("admin: min 2 — one listed + one admin approval", evaluateApproval("min", 2, ["approved", "pending"], ["approved"]), "approved");
+eq("admin: min 2 — admin approvals keep it reachable", evaluateApproval("min", 2, ["denied", "denied"], ["approved", "approved"]), "approved");
+eq("admin: all — admin approval does not replace a listed one", evaluateApproval("all", 1, ["approved", "pending"], ["approved"]), "pending");
+eq("admin: all — an admin denial closes it", evaluateApproval("all", 1, ["approved", "pending"], ["denied"]), "denied");
+eq("admin: default argument keeps the old behaviour", evaluateApproval("all", 1, ["approved", "approved"]), "approved");
+
 report("workflow-engine");
