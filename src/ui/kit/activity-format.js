@@ -236,14 +236,14 @@ export function formatActivity(entry) {
     case "editreq.requested":
       return { ...base, label: "Edit access requested", glyph: "key", tone: "info",
         sentence: `${who} asked for edit access to ${scopeWord(entry)} ${entry?.target?.kind === "section" ? section() : file()}`,
-        detail: d.reason ? String(d.reason) : "" };
+        detail: d.reason ? `Reason: “${String(d.reason)}”` : "" };
     case "editreq.approved":
       return { ...base, label: "Edit access approved", glyph: "check", tone: "positive",
         sentence: `${who} approved edit access to ${scopeWord(entry)} ${entry?.target?.kind === "section" ? section() : file()}${d.requesterName ? ` for ${d.requesterName}` : ""}` };
     case "editreq.denied":
       return { ...base, label: "Edit access denied", glyph: "cross", tone: "critical",
         sentence: `${who} denied edit access to ${scopeWord(entry)} ${entry?.target?.kind === "section" ? section() : file()}${d.requesterName ? ` for ${d.requesterName}` : ""}`,
-        detail: d.reason ? String(d.reason) : "" };
+        detail: d.reason ? `Reason: “${String(d.reason)}”` : "" };
     case "editreq.granted":
       return { ...base, label: "Edit access given", glyph: "key", tone: "positive",
         sentence: `${who} gave ${d.editorName || "someone"} edit access to ${scopeWord(entry)} ${entry?.target?.kind === "section" ? section() : file()}` };
