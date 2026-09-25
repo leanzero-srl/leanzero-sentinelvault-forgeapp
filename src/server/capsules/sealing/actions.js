@@ -589,6 +589,8 @@ const unsealArtifact = async (req) => {
           sealRecord.attachmentName || "Unknown Attachment",
           sealRecord.contentId,
           unsealDate,
+          sealRecord.spaceKey || null,
+          forcedReason,
         );
       } catch (noticeError) {
         console.error(
