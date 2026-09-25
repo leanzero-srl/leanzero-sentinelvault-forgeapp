@@ -1758,3 +1758,9 @@ html[data-color-mode="dark"] .sv-section-block.status-expired { border-color: #F
 .action-btn.sv-section-pick-cancel { background: none; color: var(--sv-interactive-primary); border-color: var(--sv-interactive-primary); }
 .action-btn.sv-section-pick-cancel:hover:not(:disabled) { background: var(--sv-bg-hover); }
 .sv-panel-crash-detail { display: block; margin-top: 8px; font-size: 11px; color: var(--sv-text-primary); word-break: break-word; }
+
+/* Decline with a reason (kit/DeclineReason.jsx, tester 2026-09-25). */
+.sv-decline-label { display: block; font-size: 13px; font-weight: 600; color: var(--sv-text-primary); margin-bottom: 6px; }
+.sv-decline-reason { width: 100%; box-sizing: border-box; font: inherit; font-size: 13px; padding: 8px 10px; border: 1px solid var(--sv-border-primary); border-radius: 8px; background: var(--sv-bg-primary); color: var(--sv-text-primary); resize: vertical; }
+.sv-decline-reason:focus { outline: 2px solid var(--sv-interactive-primary); outline-offset: 1px; }
+.sv-decline-hint { display: block; margin-top: 6px; font-size: 11px; color: var(--sv-text-secondary); }

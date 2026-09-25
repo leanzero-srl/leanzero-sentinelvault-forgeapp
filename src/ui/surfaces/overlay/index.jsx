@@ -12,6 +12,7 @@ import GiveAccessDialog from "../../kit/GiveAccessDialog";
 import { useSignedInvoke } from "../../kit/SignedInvoke";
 import { listenOutside } from "../../kit/outside-close.js";
 import RovingList from "../../kit/RovingList";
+import { useDeclineReason } from "../../kit/DeclineReason";
 import useEditStatuses from "../../kit/useEditStatuses";
 import CappedGroup from "../../kit/CappedGroup";
 import { SEALED_GROUPS, groupSealedFiles } from "../../kit/sealed-groups.js";
@@ -290,6 +291,7 @@ const OverlayArtifactCard = ({ artifact, editInfo, visibleColumns, run, signedIn
   const [pendingConfirm, setPendingConfirm] = useState(null); // "delete" | "purge" | null → kit ConfirmDialog
   const [expanded, setExpanded] = useState(false);
   const [cachedPreview, setCachedPreview] = useState(null);
+  const { askDeclineReason, declineDialog } = useDeclineReason(); // Decline asks for an optional reason
   // Seeded by the list (useEditStatuses) when it already asked — the card then skips its own call.
   const [editStatus, setEditStatus] = useState(editInfo?.status || null); // none|pending|granted|denied (others' seals)
   const [editExpiresAt, setEditExpiresAt] = useState(editInfo?.expiresAt || null);
@@ -355,8 +357,15 @@ const OverlayArtifactCard = ({ artifact, editInfo, visibleColumns, run, signedIn
   };
 
   const resolveEditReq = async (requesterAccountId, action) => {
+    let reason;
+    if (action !== "approve") {
+      const who = (myRequests || []).find((x) => x.requesterAccountId === requesterAccountId)?.requesterName;
+      const a = await askDeclineReason(who);
+      if (!a.ok) return;
+      reason = a.reason;
+    }
     setReqBusy(`${requesterAccountId}:${action}`);
-    const ok = await run(action, action === "approve" ? "approve-edit-request" : "deny-edit-request", { attachmentId: artifact.id, requesterAccountId }, { refresh: false });
+    const ok = await run(action, action === "approve" ? "approve-edit-request" : "deny-edit-request", { attachmentId: artifact.id, requesterAccountId, ...(reason ? { reason } : {}) }, { refresh: false });
     if (ok) setMyRequests((p) => (p || []).filter((x) => x.requesterAccountId !== requesterAccountId));
     if (ok && action === "approve") reloadGrants();
     setReqBusy(null);
@@ -527,6 +536,7 @@ const OverlayArtifactCard = ({ artifact, editInfo, visibleColumns, run, signedIn
 
       <CopiedNote shown={copied} />
       <ErrorRow message={errorMessage} onDismiss={onClearError} />
+      {declineDialog}
 
       {pendingConfirm === "delete" && (
         <ConfirmDialog
