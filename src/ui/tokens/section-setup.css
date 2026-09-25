@@ -264,3 +264,10 @@ body {
 .sec-undone-btn:hover, .sec-undone-btn:focus-visible { background: #FFFFFF; color: #1B1300; outline: none; }
 .sec-undone-hint { flex: 1 1 100%; font-weight: 500; }
 .sec-body-reload { margin-left: 10px; }
+
+/* Close the "was undone" notice (owner, 2026-09-25) — solid, on the amber band. */
+.sec-undone-close {
+  width: 32px; height: 32px; border-radius: 9999px; border: 2px solid #1B1300; background: transparent;
+  color: #1B1300; font-size: 18px; font-weight: 700; line-height: 1; cursor: pointer; flex: 0 0 auto;
+}
+.sec-undone-close:hover, .sec-undone-close:focus-visible { background: #1B1300; color: #FFFFFF; outline: none; }
