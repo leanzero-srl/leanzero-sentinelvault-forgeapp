@@ -1,3 +1,4 @@
+import BusyVeil from "./BusyVeil";
 import React, { useState, useEffect, useCallback } from "react";
 import { invoke, view, router } from "@forge/bridge";
 
@@ -30,8 +31,9 @@ export default function WorkflowInbox({ emptyText = null, onDecided = null } = {
     })();
   }, [load]);
 
+  const [busyKind, setBusyKind] = useState(null);
   const decide = useCallback(async (pageId, decision) => {
-    setBusy(pageId); setMsg(null);
+    setBusy(pageId); setBusyKind(decision); setMsg(null);
     try {
       const r = await invoke("decide-approval", { pageId, decision });
       // WF-1: `success` is "recorded"; only a completed outcome is good news. A stale close / AI
@@ -72,6 +74,7 @@ export default function WorkflowInbox({ emptyText = null, onDecided = null } = {
       <ul className="wf-inbox-list">
         {items.map((it) => (
           <li key={it.pageId} className="wf-inbox-row">
+            {busy === it.pageId && <BusyVeil text={busyKind === "denied" ? "Recording your decision…" : `Recording your approval — moving to ${it.toStateName}…`} />}
             <div className="wf-inbox-info">
               <a className="wf-inbox-page" href={siteUrl ? `${siteUrl}/wiki/pages/viewpage.action?pageId=${it.pageId}` : "#"} onClick={(e) => open(e, it.pageId)} data-testid="wf-inbox-page">{it.pageTitle}</a>
               <span className="wf-inbox-meta">Move to <strong>{it.toStateName}</strong>{it.requestedByName ? ` · requested by ${it.requestedByName}` : ""}{it.pinnedVersion != null ? ` · v${it.pinnedVersion}` : ""}</span>
