@@ -19,7 +19,7 @@ export default function useEditStatuses(source) {
     setReady(false);
     Promise.all(others.map((a) =>
       invoke("check-edit-request", { attachmentId: a.id })
-        .then((r) => [a.id, { status: r?.status || "none", expiresAt: r?.expiresAt || null, retryAt: r?.retryAt || null }])
+        .then((r) => [a.id, { status: r?.status || "none", expiresAt: r?.expiresAt || null, retryAt: r?.retryAt || null, deniedReason: r?.deniedReason || null }])
         .catch(() => [a.id, { status: "none", expiresAt: null, retryAt: null }]),
     )).then((pairs) => {
       if (cancelled) return;

@@ -154,3 +154,12 @@ export const GrantInbox = ({ grants, name, grantBusy, onRevoke, testId = "sv-gra
     </div>
   );
 };
+
+/**
+ * SEC-8 made visible (tester 2026-09-25): the decider's reason used to live only in the declined
+ * state's tooltip. Shown as a line on the requester's card while the decline stands.
+ */
+export function DeclinedReason({ primary, owner }) {
+  if (!primary || primary.kind !== "declined" || !primary.reason) return null;
+  return <div className="sv-declined-reason" data-testid="sv-declined-reason">{owner || "The owner"} said: “{primary.reason}”</div>;
+}
