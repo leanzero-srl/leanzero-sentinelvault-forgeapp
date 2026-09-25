@@ -387,12 +387,13 @@ export async function mailStewardOverrideNotice(
   pageId,
   unlockDate,
   spaceKey = null,
+  reason = null, // the admin's typed reason — the owner is told WHY (tester 2026-09-25)
 ) {
   return dispatchNotice(ALERT_CATEGORIES.STEWARD_OVERRIDE_RELEASE, {
     recipientAccountId: sealOwnerAccountId,
     pageId,
     artifactName,
-    extra: { stewardAccountId, stewardDisplayName, unlockDate },
+    extra: { stewardAccountId, stewardDisplayName, unlockDate, reason },
     spaceKey,
   });
 }
