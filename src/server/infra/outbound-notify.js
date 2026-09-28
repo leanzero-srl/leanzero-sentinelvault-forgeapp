@@ -11,7 +11,7 @@
  * may email". Qualifies for the "Runs on Atlassian" badge.
  */
 
-import { asApp, route } from "@forge/api";
+import { asApp, asUser, route } from "@forge/api";
 import { resolveBulletinToggles, resolveSpaceNotificationsMode } from "../shared/bulletin-flags.js";
 import { shouldPostComment } from "../shared/notice-policy.js";
 import { resolvePageSpaceKey } from "../shared/content-access.js";
@@ -90,7 +90,12 @@ const isRetryableStatus = (status) => status === 429 || (status >= 500 && status
  *   transport failure — callers that count notices (the lapse sweep) advance on it; callers that
  *   claim a dedup marker (postDedupedFootnote) release it, so a later un-quiet gets its comment.
  */
-export async function postCommentWithMention({ pageId, storageBody, spaceKey = null, noticeType = null }) {
+// `postAsUser` (owner, 2026-09-28): Confluence rings the bell only for a mention written by a
+// real person — never for one in an app-authored comment (ADF or storage alike, proven live).
+// A notice a person triggers is therefore posted AS that person (asUser, the resolver's own
+// caller) when it can be; with no user context (triggers, sweeps) or a refusal it falls back to
+// the app so the notice is never lost.
+export async function postCommentWithMention({ pageId, storageBody, spaceKey = null, noticeType = null, postAsUser = false }) {
   if (!pageId) {
     return { success: false, reason: "Missing pageId" };
   }
@@ -125,7 +130,7 @@ export async function postCommentWithMention({ pageId, storageBody, spaceKey = n
 
   for (let attempt = 1; attempt <= RETRY_CONFIG.maxRetries; attempt++) {
     try {
-      const response = await asApp().requestConfluence(
+      const request = [
         route`/wiki/api/v2/footer-comments`,
         {
           method: "POST",
@@ -138,7 +143,19 @@ export async function postCommentWithMention({ pageId, storageBody, spaceKey = n
             body,
           }),
         },
-      );
+      ];
+      let response = null;
+      if (postAsUser) {
+        try {
+          response = await asUser().requestConfluence(...request);
+          if (response.ok) console.info(`[NOTIFY] ${noticeType || "comment"} on page ${pageId} posted AS THE USER (bell-capable mention)`);
+          else { console.warn(`[NOTIFY] posting as the user refused (HTTP ${response.status}) — posting as the app`); response = null; }
+        } catch (e) {
+          console.warn(`[NOTIFY] no user context to post as (${e?.message || e}) — posting as the app`);
+          response = null;
+        }
+      }
+      if (!response) response = await asApp().requestConfluence(...request);
 
       if (response.ok) {
         const data = await response.json().catch(() => ({}));
