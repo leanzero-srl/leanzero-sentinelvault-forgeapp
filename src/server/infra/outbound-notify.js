@@ -15,6 +15,48 @@ import { asApp, route } from "@forge/api";
 import { resolveBulletinToggles, resolveSpaceNotificationsMode } from "../shared/bulletin-flags.js";
 import { shouldPostComment } from "../shared/notice-policy.js";
 import { resolvePageSpaceKey } from "../shared/content-access.js";
+import { tokenizeMentions, injectMentions } from "./mention-adf.js";
+
+// Display names for the ADF mention's `text` attribute ("@Name"). Best effort — the id is what
+// Confluence resolves; a missing name still posts as "@user".
+async function displayNames(ids) {
+  const out = {};
+  await Promise.all([...new Set(ids)].map(async (id) => {
+    try {
+      const res = await asApp().requestConfluence(route`/wiki/rest/api/user?accountId=${id}`, { headers: { Accept: "application/json" } });
+      if (res.ok) { const u = await res.json(); out[id] = u?.displayName || u?.publicName || null; }
+    } catch (_) { /* name stays unknown */ }
+  }));
+  return out;
+}
+
+/**
+ * The comment body to POST: ADF with real `mention` nodes when the storage names people (see
+ * mention-adf.js — a storage user link reached nobody's bell), else the storage as before. Falls
+ * back to storage on ANY conversion problem, so a notice is never lost to this step.
+ */
+async function commentBody(storageBody) {
+  const { storage, ids } = tokenizeMentions(storageBody);
+  if (!ids.length) return { representation: "storage", value: storageBody };
+  try {
+    const res = await asApp().requestConfluence(route`/wiki/rest/api/contentbody/convert/atlas_doc_format`, {
+      method: "POST",
+      headers: { Accept: "application/json", "Content-Type": "application/json" },
+      body: JSON.stringify({ value: storage, representation: "storage" }),
+    });
+    if (!res.ok) throw new Error(`convert HTTP ${res.status}`);
+    const data = await res.json();
+    const adf = typeof data?.value === "string" ? JSON.parse(data.value) : data?.value;
+    if (!adf || adf.type !== "doc") throw new Error("convert returned no ADF document");
+    const { doc, placed } = injectMentions(adf, ids, await displayNames(ids));
+    if (placed !== ids.length) throw new Error(`placed ${placed} of ${ids.length} mentions`);
+    console.info(`[NOTIFY] comment posted as ADF with ${placed} mention node(s): ${ids.join(", ")}`);
+    return { representation: "atlas_doc_format", value: JSON.stringify(doc) };
+  } catch (e) {
+    console.warn(`[NOTIFY] ADF mention conversion failed — posting storage instead: ${e?.message || e}`);
+    return { representation: "storage", value: storageBody };
+  }
+}
 
 
 const RETRY_CONFIG = {
@@ -79,6 +121,7 @@ export async function postCommentWithMention({ pageId, storageBody, spaceKey = n
   }
 
   let lastReason = null;
+  const body = await commentBody(storageBody);
 
   for (let attempt = 1; attempt <= RETRY_CONFIG.maxRetries; attempt++) {
     try {
@@ -92,10 +135,7 @@ export async function postCommentWithMention({ pageId, storageBody, spaceKey = n
           },
           body: JSON.stringify({
             pageId,
-            body: {
-              representation: "storage",
-              value: storageBody,
-            },
+            body,
           }),
         },
       );
