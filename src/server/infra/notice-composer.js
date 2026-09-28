@@ -164,7 +164,7 @@ function buildBlueprint(type, data) {
  * @returns {Promise<{success: boolean, commentId?: string, reason?: string, suppressed?: boolean}>}
  */
 export async function dispatchNotice(type, data) {
-  const { recipientAccountId, pageId, artifactName, spaceKey = null, extra = {} } = data;
+  const { recipientAccountId, pageId, artifactName, spaceKey = null, extra = {}, postAsUser = false } = data;
 
   if (!recipientAccountId) {
     return { success: false, reason: "Missing recipientAccountId" };
@@ -206,6 +206,7 @@ export async function dispatchNotice(type, data) {
       storageBody: blueprint.storageBody,
       spaceKey,
       noticeType: type,
+      postAsUser,
     });
 
     if (result.success) {
@@ -420,6 +421,7 @@ export async function mailEditRequest(
     artifactName,
     extra: { requesterAccountId, requesterName, reason, targetKind },
     spaceKey,
+    postAsUser: true, // written BY the requester → the owner's bell rings (step 1 proof, 2026-09-28)
   });
 }
 
