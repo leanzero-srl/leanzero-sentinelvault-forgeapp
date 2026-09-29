@@ -23,10 +23,11 @@ import { createPortal } from "react-dom";
 // clicked button — Safari). Surfaces with a real viewport (overlay, modal, consoles) centre.
 let anchorMode = false;
 let lastPointerY = null;
+let lastPointerAt = 0;
 export function anchorDialogsToOpener() {
   if (anchorMode) return;
   anchorMode = true;
-  document.addEventListener("pointerdown", (e) => { lastPointerY = e.clientY; }, true);
+  document.addEventListener("pointerdown", (e) => { lastPointerY = e.clientY; lastPointerAt = Date.now(); }, true);
 }
 
 const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
@@ -39,8 +40,12 @@ export default function Dialog({ title, children, onClose, busy = false, danger 
 
   useLayoutEffect(() => {
     if (!anchorMode || !ref.current) return;
+    // A recent click wins (tester 2026-09-29: Revoke opens the signature step only AFTER the server
+    // answers — the clicked button is disabled meanwhile, focus moves elsewhere, and anchoring to
+    // "whatever has focus" put the dialog far from the click). Keyboard use falls back to focus.
+    const recentClick = lastPointerY != null && Date.now() - lastPointerAt < 15000;
     const opener = document.activeElement && document.activeElement !== document.body ? document.activeElement : null;
-    const y = opener ? opener.getBoundingClientRect().top : lastPointerY;
+    const y = recentClick ? lastPointerY : opener ? opener.getBoundingClientRect().top : lastPointerY;
     if (y == null) return;
     const h = ref.current.getBoundingClientRect().height || 240;
     const max = Math.max(16, window.innerHeight - h - 16);
