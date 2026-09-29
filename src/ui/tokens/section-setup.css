@@ -271,3 +271,7 @@ body {
   color: #1B1300; font-size: 18px; font-weight: 700; line-height: 1; cursor: pointer; flex: 0 0 auto;
 }
 .sec-undone-close:hover, .sec-undone-close:focus-visible { background: #1B1300; color: #FFFFFF; outline: none; }
+
+/* A section that arrived with a page copy (tester 2026-09-29) — solid neutral band, no tint. */
+.sec-copied { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 10px 14px; background: #334155; color: #FFFFFF; font-size: 13px; font-weight: 600; }
+.sec-copied .sec-undone-btn { background: #FFFFFF; color: #0F172A; }

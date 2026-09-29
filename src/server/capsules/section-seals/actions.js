@@ -30,7 +30,7 @@ import { mailStewardOverrideNotice } from "../../infra/notice-composer.js";
 import { validateReleaseReason } from "../../shared/release-reason.js";
 import { refreshByline } from "../page-details/byline.js"; // 5.0 byline chip
 import { heldRefusal, isWorkflowHeld, heldLabel } from "../../shared/seal-authority.js"; // SEC-2
-import { releaseSectionSeal } from "./release.js"; // SEC-7 (d): one teardown with the expiry sweep
+import { releaseSectionSeal, unwrapSectionOnPage } from "./release.js"; // SEC-7 (d): one teardown with the expiry sweep
 import { insertIntentKey, INSERT_INTENT_TTL_MS } from "./adopt.js"; // SEC-4 (a): seal on insert
 import { setWithTtl } from "../../shared/kvs-ttl.js";
 
@@ -407,6 +407,26 @@ const refreshSectionSnapshot = async (req) => {
  * returned to a caller who can READ that page (SV-SEC-1 disclosure side; fails closed to
  * { sealed: false } — the same answer an unsealed id gets, so the refusal says nothing).
  */
+/**
+ * Remove a sealed-section WRAPPER that arrived on this page by a page copy (tester 2026-09-29).
+ * The seal (record, snapshot, grants) belongs to the ORIGINAL page and is untouched; only this
+ * page's leftover wrapper is unwrapped, its content kept in place. The page is the resolver
+ * context's (authentic — never a payload page), the caller must be able to edit it, and the
+ * record must name ANOTHER page — a wrapper of this page's own seal is never touched here.
+ */
+const releaseCopiedSection = async (req) => {
+  const { sectionId } = req.payload || {};
+  const pageId = req.context.extension?.content?.id;
+  const accountId = req.context.accountId;
+  if (!sectionId || !pageId) return { success: false, reason: "Missing section or page" };
+  const record = await kvs.get(`section-protection-${sectionId}`);
+  if (!record?.pageId || String(record.pageId) === String(pageId)) return { success: false, reason: "This section's seal belongs to this page" };
+  if (!(await canEditPage(accountId, pageId))) return { success: false, reason: "Only someone who can edit this page can remove the copied wrapper" };
+  const unwrapped = await unwrapSectionOnPage(pageId, sectionId, "(Sentinel Vault removed a sealed-section wrapper copied from another page)").catch(() => false);
+  if (unwrapped) console.info(`[SECTION] removed copied wrapper ${sectionId} from page ${pageId} (seal belongs to page ${record.pageId})`);
+  return { success: !!unwrapped, unwrapped: !!unwrapped };
+};
+
 const sectionSealStatus = async (req) => {
   const { sectionId } = req.payload || {};
   const operatorAccountId = req.context.accountId;
@@ -415,6 +435,11 @@ const sectionSealStatus = async (req) => {
   try {
     const record = await kvs.get(`section-protection-${sectionId}`);
     if (!record?.lockedBy || !record.pageId) return closed;
+    // A page COPIED from the sealed one carries the wrapper — and its section id — but the seal
+    // belongs to the ORIGINAL page (tester 2026-09-29: a copy showed "Locked by the approval of
+    // this page"). The context page is authentic; a different page means "copied, not sealed here".
+    const ctxPageId = req.context.extension?.content?.id;
+    if (ctxPageId && String(ctxPageId) !== String(record.pageId)) return { sealed: false, copied: true };
     if (!(await canReadPage(operatorAccountId, record.pageId))) return closed;
     const isMine = record.lockedBy === operatorAccountId;
     const hasGrant = !isMine && !!(await getActiveSectionEditGrant(sectionId, operatorAccountId));
@@ -570,6 +595,7 @@ export const actions = [
   ["extend-section", extendSection],
   ["refresh-section-snapshot", refreshSectionSnapshot],
   ["section-seal-status", sectionSealStatus],
+  ["release-copied-section", releaseCopiedSection],
   ["guard-page-now", guardPageNowAction],
   ["section-insert-intent", sectionInsertIntent], // SEC-4 (a)
 ];
