@@ -108,6 +108,7 @@ const SectionMacro = () => {
   const [contextSectionId, setContextSectionId] = useState(null); // the id the macro context carries, if any
   const [undone, setUndone] = useState(null); // { mine, revertedVersion, pageId } — THIS section was just put back
   const [pageLocation, setPageLocation] = useState(null); // the page URL — the reload fallback
+  const [copiedRemoved, setCopiedRemoved] = useState(null); // copied wrapper: null = trying, true = removed, false = could not
 
   useEffect(() => {
     (async () => {
@@ -136,7 +137,16 @@ const SectionMacro = () => {
         // The seal status drives the lock banner in the dialog AND the badge in view mode —
         // "Sealed by …" is only claimed when the resolver says so (P1-6). One call per render;
         // without a section id the fetch short-circuits to { sealed: false }.
-        fetchSealStatus(sectionId).then(setSeal);
+        fetchSealStatus(sectionId).then((st) => {
+          setSeal(st);
+          // Copied from another page (the seal belongs to the original): ask the server to remove
+          // this leftover wrapper — it does so only for someone who can edit this page.
+          if (st?.copied && !isEditing && sectionId) {
+            invoke("release-copied-section", { sectionId })
+              .then((r) => setCopiedRemoved(r?.success === true))
+              .catch(() => setCopiedRemoved(false));
+          }
+        });
         // View mode only: have the server judge the page's live version NOW. The page event that
         // drives the restore can arrive 20+ minutes late (tester report 2026-09-17); the person
         // who just published lands on this view, so the restore happens while they are still
@@ -301,14 +311,19 @@ const SectionMacro = () => {
 
   // The badge claims exactly what the resolver answered (P1-6): pending until it has, then
   // sealed / expired / unsealed. The frame border follows the same state (brand / amber / grey).
-  const viewState = seal === null ? "pending" : seal.sealed && seal.isExpired ? "expired" : seal.sealed ? "sealed" : "unsealed";
+  const viewState = seal === null ? "pending" : seal.copied ? "copied" : seal.sealed && seal.isExpired ? "expired" : seal.sealed ? "sealed" : "unsealed";
   // SEC-3: the badge says what the rows say — "Sealed by you · until W" / "Locked by {name} ·
   // until W" / "Locked by the approval of this page · expiry paused" / "Expired".
-  const badgeText = viewState === "pending" ? "Checking the seal…"
+  const badgeText = viewState === "copied" ? "Not sealed here — copied from another page"
+    : viewState === "pending" ? "Checking the seal…"
     : viewState === "sealed" || viewState === "expired"
       ? sealSentence({ isMine: seal.isMine === true, ownerName: seal.ownerName || "the seal owner", workflowHeld: seal.workflowHeld === true, isExpired: viewState === "expired", expiresAt: seal.expiresAt || null })
       : adopted ? "Sealed to you on publish — reload the page to see the seal" : "Not sealed yet — publish the page to seal it, or seal it from Sentinel Vault under the page title (Seal a section…)";
-  const fallbackText = viewState === "sealed" ? "This section is sealed. Edits by anyone else are undone automatically."
+  const fallbackText = viewState === "copied"
+    ? (copiedRemoved === true ? "This section came with a page copy; its seal belongs to the original page. The leftover wrapper was removed — reload to see the plain content."
+      : copiedRemoved === false ? "This section came with a page copy; its seal belongs to the original page and nothing here is sealed. Someone who can edit this page removes the leftover wrapper by opening it."
+        : "This section came with a page copy — removing the leftover wrapper…")
+    : viewState === "sealed" ? "This section is sealed. Edits by anyone else are undone automatically."
     : viewState === "expired" ? "The seal on this section has expired. Edits are no longer reverted; the owner can seal it again from the Sentinel Vault panel."
       : viewState === "unsealed" ? (adopted ? "This section was sealed to you when the page was published. Reload the page to see the seal." : "This section is not sealed yet. Publishing the page seals it to you; or open Sentinel Vault under the page title and use Seal a section….")
         : "Checking the seal…";
@@ -322,6 +337,12 @@ const SectionMacro = () => {
         <span className="sec-badge" data-testid="sec-view-badge" data-state={viewState}><ShieldGlyph /> {badgeText}</span>
       </div>
       {editing && lockNotice}
+      {viewState === "copied" && (
+        <div className="sec-copied" role="status" data-testid="sec-copied">
+          <span>{fallbackText}</span>
+          {copiedRemoved === true && <button type="button" className="sec-undone-btn" onClick={() => reloadPage(pageLocation)}>Reload the page</button>}
+        </div>
+      )}
       {undone && (
         <div className="sec-undone" role="alert" data-testid="sec-undone">
           <span className="sec-undone-text">
