@@ -26,7 +26,7 @@ export const ACTIVITY_CATEGORIES = Object.freeze([
     "editreq.requested", "editreq.approved", "editreq.denied", "editreq.revoked", "editreq.granted",
   ]) },
   { id: "workflow", label: "Workflow", types: Object.freeze([
-    "workflow.transition", "workflow.approval-requested", "workflow.approval-rerequested", "workflow.approval-decided",
+    "workflow.transition", "workflow.removed", "workflow.approval-requested", "workflow.approval-rerequested", "workflow.approval-decided",
     "workflow.enforced", "workflow.expired", "workflow.review-due", "workflow.read-confirmed", "workflow.seals-held", "workflow.seals-released",
   ]) },
   { id: "validation", label: "Validation", types: Object.freeze([
@@ -252,6 +252,9 @@ export function formatActivity(entry) {
         sentence: `${who} revoked edit access to ${scopeWord(entry)} ${entry?.target?.kind === "section" ? section() : file()}${d.editorName ? ` from ${d.editorName}` : ""}` };
 
     // ── Workflow ──
+    case "workflow.removed":
+      return { ...base, label: "Workflow removed", glyph: "undo", tone: "neutral",
+        sentence: `${who} took the page out of the workflow${d.from ? ` (it was ${d.from})` : ""}` };
     case "workflow.transition": {
       const from = d.fromName || d.from;
       const to = d.toName || d.to || "a new state";

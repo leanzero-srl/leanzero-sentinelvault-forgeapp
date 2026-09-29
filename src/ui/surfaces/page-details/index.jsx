@@ -335,6 +335,7 @@ const MoveMenu = ({ available, onPick, disabled }) => {
 
 const WorkflowBlock = ({ wf, pageId, onChanged }) => {
   const [busy, setBusy] = useState(false);
+  const [confirmRemove, setConfirmRemove] = useState(false);
   const [notice, setNotice] = useState(null); // { text, tone: "ok" | "error" }
   if (!wf?.assigned && wf?.canStart) {
     const start = async () => {
@@ -358,6 +359,15 @@ const WorkflowBlock = ({ wf, pageId, onChanged }) => {
     );
   }
   if (!wf?.assigned) return null;
+  const remove = async () => {
+    setBusy(true); setNotice(null);
+    try {
+      const r = await invoke("remove-workflow", { pageId });
+      if (r?.success) { setConfirmRemove(false); await onChanged(); }
+      else setNotice({ text: r?.reason || "Could not take the page out of the workflow.", tone: "error" });
+    } catch (_) { setNotice({ text: "Could not take the page out of the workflow.", tone: "error" }); }
+    finally { setBusy(false); }
+  };
   const status = wf.status || { text: wf.state?.name || "Workflow", tone: wf.state?.color || "neutral" };
   const move = async (target) => {
     setBusy(true); setNotice(null);
@@ -389,7 +399,17 @@ const WorkflowBlock = ({ wf, pageId, onChanged }) => {
         <span className="pd-pill" style={{ background: TONE_BG[status.tone] || TONE_BG.neutral }} data-testid="pd-wf-state">{status.text}</span>
         <span className="pd-desc" data-testid="pd-wf-line">{line}</span>
         {wf.canMove && wf.available?.length > 0 && <MoveMenu available={wf.available} onPick={move} disabled={busy} />}
+        {wf.canRemove && !confirmRemove && (
+          <button type="button" className="pd-btn quiet" disabled={busy} onClick={() => setConfirmRemove(true)} data-testid="pd-wf-remove">Remove from workflow</button>
+        )}
       </div>
+      {confirmRemove && (
+        <div className="pd-wf-confirm" role="group" aria-label="Confirm removing the workflow" data-testid="pd-wf-remove-confirm">
+          <span className="pd-desc">Take this page out of the workflow? Its state is removed; its history is kept. You can start it again at any time.</span>
+          <button type="button" className="pd-btn primary" disabled={busy} onClick={remove} data-testid="pd-wf-remove-yes">{busy ? "Removing…" : "Remove"}</button>
+          <button type="button" className="pd-btn quiet" disabled={busy} onClick={() => setConfirmRemove(false)}>Cancel</button>
+        </div>
+      )}
       {meta.length > 0 && (
         <div className="pd-wf-meta" data-testid="pd-wf-meta">
           {meta.map((m) => <span key={m.id} className="pd-wf-meta-item" data-testid={`pd-wf-${m.id}`}>{m.text}</span>)}

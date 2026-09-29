@@ -213,6 +213,9 @@ export const pageDetailsSummary = async (req) => {
         state: wf.state ? { id: wf.state.id, name: wf.state.name, color: wf.state.color || "neutral" } : { id: record.stateId, name: record.stateId, color: "neutral" },
         status: wf.status,
         enforced: !!record.enforce && record.approvedVersion != null,
+        // A space admin may take the page out — not while Approved/enforced or an approval waits
+        // (the server refuses those too: workflow/logic.js removeRefusal).
+        canRemove: isSpaceAdmin && !record.enforce && !wf.pending,
         enforceMode: settings?.enforceMode === "revert" ? "revert" : "demote",
         reviewedVersion,
         baselineVersion: record.approvedVersion ?? null,

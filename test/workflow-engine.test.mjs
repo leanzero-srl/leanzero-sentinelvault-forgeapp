@@ -17,6 +17,7 @@ import {
   validateReviewDueAt,
   computeReviewDueAt,
   lastDecisionFrom,
+  removeRefusal,
 } from "../src/server/capsules/workflow/logic.js";
 import { evaluateApproval, resolveApprovers, inboxKey, isOrphanApproval, ORPHAN_APPROVAL_MIN_AGE_MS, buildApprovalRecord } from "../src/server/capsules/workflow/approvals.js";
 import { eq, ok, report } from "./_assert.mjs";
@@ -342,5 +343,11 @@ eq("admin: min 2 — admin approvals keep it reachable", evaluateApproval("min",
 eq("admin: all — admin approval does not replace a listed one", evaluateApproval("all", 1, ["approved", "pending"], ["approved"]), "pending");
 eq("admin: all — an admin denial closes it", evaluateApproval("all", 1, ["approved", "pending"], ["denied"]), "denied");
 eq("admin: default argument keeps the old behaviour", evaluateApproval("all", 1, ["approved", "approved"]), "approved");
+
+// Remove from workflow (owner, 2026-09-29).
+eq("remove: allowed in a normal state", removeRefusal({ record: { stateId: "draft" }, stateEnforced: false, hasPending: false }), null);
+ok("remove: refused while Approved/enforced", /Approved/.test(removeRefusal({ record: { stateId: "approved" }, stateEnforced: true, hasPending: false })));
+ok("remove: refused while an approval waits", /approval is waiting/.test(removeRefusal({ record: { stateId: "in_review" }, stateEnforced: false, hasPending: true })));
+ok("remove: nothing to remove", /not in a workflow/.test(removeRefusal({ record: null })));
 
 report("workflow-engine");
