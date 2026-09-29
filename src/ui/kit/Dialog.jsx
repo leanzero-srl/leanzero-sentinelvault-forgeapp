@@ -21,14 +21,18 @@ import { createPortal } from "react-dom";
 // surface in that situation calls `anchorDialogsToOpener()` once; its dialogs then open level
 // with the control that opened them (or the last click, for browsers that do not focus a
 // clicked button — Safari). Surfaces with a real viewport (overlay, modal, consoles) centre.
+// Every surface anchors (tester 2026-09-29: "check all the popups" — the overlay, the details
+// modal, My work and both consoles are content-tall frames too, so a centred dialog could land
+// out of view there as well). Kept as a function for the callers that already switch it on.
 let anchorMode = false;
 let lastPointerY = null;
 let lastPointerAt = 0;
 export function anchorDialogsToOpener() {
-  if (anchorMode) return;
+  if (anchorMode || typeof document === "undefined") return;
   anchorMode = true;
   document.addEventListener("pointerdown", (e) => { lastPointerY = e.clientY; lastPointerAt = Date.now(); }, true);
 }
+anchorDialogsToOpener();
 
 const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 

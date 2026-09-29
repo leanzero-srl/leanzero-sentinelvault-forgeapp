@@ -537,7 +537,10 @@ const WorkflowControl = ({ workflow, approvals, operatorId, pageId, spaceKey, si
       || (rawTarget ? rawTarget.charAt(0).toUpperCase() + rawTarget.slice(1).replace(/_/g, " ") : "the next state");
     const mine = approverList.find((a) => a.accountId === operatorId);
     // Listed approver with no decision yet — or a space admin (not listed) the server says may decide.
-    const iCanDecide = (mine && mine.status === "pending") || (!mine && pendingApproval.adminCanDecide === true);
+    // The requester never decides their own request (segregation of duties — the server refuses
+    // it); the card used to offer Approve and only then say so (tester 2026-09-29).
+    const iAmRequester = !!operatorId && pendingApproval.requestedBy === operatorId;
+    const iCanDecide = !iAmRequester && ((mine && mine.status === "pending") || (!mine && pendingApproval.adminCanDecide === true));
     const others = approverList.filter((a) => a.accountId !== operatorId);
     // Mirrors evaluateApproval: admin approvals count toward "min"; "all" needs every LISTED approver.
     const approvedAny = approverList.filter((a) => a.status === "approved").length;
@@ -651,7 +654,9 @@ const WorkflowControl = ({ workflow, approvals, operatorId, pageId, spaceKey, si
                 </div>
               </div>
             ) : (
-              <div className="wf-appr-note">{mine ? "You have already responded." : "Waiting on the approvers above."}</div>
+              <div className="wf-appr-note" data-testid="wf-appr-note">{iAmRequester
+                ? "You asked for this move, so you can't approve it yourself — another approver or a space admin decides."
+                : mine && mine.status !== "pending" ? "You have already responded." : "Waiting on the approvers above."}</div>
             )}
             {decideMsg && <div className="wf-error" role="alert">{decideMsg}</div>}
           </div>
