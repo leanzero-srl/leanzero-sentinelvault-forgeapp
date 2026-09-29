@@ -631,7 +631,13 @@ export async function listMyApprovals(accountId) {
     for (const { key, value: row } of results || []) {
       if (!row?.pageId || !row?.stateId) { await kvs.delete(key).catch(() => {}); continue; }
       const record = await kvs.get(approvalKey(row.pageId, row.stateId, accountId));
-      if (record?.status === "pending") { out.push(record); continue; }
+      if (record?.status === "pending") {
+        // Your OWN request is not waiting on you — you cannot decide it (segregation of duties);
+        // it counted as "Waiting for you" on the ribbon and in My work (tester 2026-09-29).
+        const pending = await kvs.get(pendingKey(row.pageId));
+        if (pending?.requestedBy === accountId) continue;
+        out.push(record); continue;
+      }
       if (!record) await kvs.delete(key).catch(() => {});
     }
     if (!nextCursor || ++iterations >= 15) break;
