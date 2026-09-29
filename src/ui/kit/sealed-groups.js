@@ -55,8 +55,25 @@ export function groupSealedSections(sections, statusById = {}) {
   return out;
 }
 
-/** How many items a group shows before "Show N more" — 15, the same as the Available list (owner, 2026-09-24). */
-export const GROUP_LIMIT = 15;
+/** How many items a group shows before "Show more" — 5 (owner, 2026-09-29: 15 made the macro massive). */
+export const GROUP_LIMIT = 5;
+
+/**
+ * PURE. A group's window: the first `shown` items, plus what the footer offers next —
+ * "Show {more} more", "Show all {total}" (only when more than one step remains) and "Show fewer".
+ */
+export function groupWindow(items, shown, step = GROUP_LIMIT) {
+  const list = Array.isArray(items) ? items : [];
+  const n = Math.max(step, Math.min(list.length, shown || step));
+  const hidden = Math.max(0, list.length - n);
+  return {
+    visible: list.slice(0, n),
+    hidden,
+    more: Math.min(step, hidden),
+    canAll: hidden > step,
+    canFewer: n > step,
+  };
+}
 
 /** PURE. The items a group shows, and how many are folded away. */
 export function capItems(items, expanded, limit = GROUP_LIMIT) {

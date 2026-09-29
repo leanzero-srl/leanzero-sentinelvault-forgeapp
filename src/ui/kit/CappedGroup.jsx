@@ -1,24 +1,36 @@
 import React, { useState } from "react";
-import { capItems, GROUP_LIMIT } from "./sealed-groups.js";
+import { groupWindow, GROUP_LIMIT } from "./sealed-groups.js";
 
 /**
- * One group's list, folded to GROUP_LIMIT items with a toggle under it: "Show N more files" opens
- * the rest, "Show fewer files" folds it back (owner, 2026-09-24). Each group folds on its own.
- * `children` renders the visible items: (visible) => node.
+ * One group's list, shown `limit` at a time (owner, 2026-09-29: 5, so the macro stays small).
+ * The footer is the group's "breadcrumb": "Showing 5 of 16 · Show 5 more · Show all 16 · Show
+ * fewer". Each group pages on its own. `children` renders the visible items: (visible) => node.
  */
 export default function CappedGroup({ items, noun = "files", limit = GROUP_LIMIT, children }) {
-  const [expanded, setExpanded] = useState(false);
-  const { visible, hidden } = capItems(items, expanded, limit);
+  const [shown, setShown] = useState(limit);
+  const w = groupWindow(items, shown, limit);
+  const total = Array.isArray(items) ? items.length : 0;
   return (
     <>
-      {children(visible)}
-      {hidden > 0 && (
-        // Same footer as the laptop's GroupFooter (2026-09-22, shipped in 6.3.0): "Showing N of M".
+      {children(w.visible)}
+      {(w.hidden > 0 || w.canFewer) && (
         <div className="sv-group-footer" data-testid="sv-group-more">
-          <span className="sv-group-footer-count">Showing {visible.length} of {items.length}</span>
-          <button type="button" className="load-more-btn" aria-expanded={expanded} onClick={() => setExpanded(!expanded)} data-testid={expanded ? "sv-group-more-fewer" : "sv-group-more-more"}>
-            {expanded ? "Show fewer" : `Show ${hidden} more ${noun}`}
-          </button>
+          <span className="sv-group-footer-count">Showing {w.visible.length} of {total}</span>
+          {w.hidden > 0 && (
+            <button type="button" className="load-more-btn" onClick={() => setShown(w.visible.length + limit)} data-testid="sv-group-more-more">
+              Show {w.more} more {noun}
+            </button>
+          )}
+          {w.canAll && (
+            <button type="button" className="load-more-btn" onClick={() => setShown(total)} data-testid="sv-group-more-all">
+              Show all {total}
+            </button>
+          )}
+          {w.canFewer && (
+            <button type="button" className="load-more-btn" onClick={() => setShown(limit)} data-testid="sv-group-more-fewer">
+              Show fewer
+            </button>
+          )}
         </div>
       )}
     </>

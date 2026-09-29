@@ -1,4 +1,4 @@
-import { groupSealedFiles, groupSealedSections, SEALED_GROUPS, capItems, GROUP_LIMIT } from "../src/ui/kit/sealed-groups.js";
+import { groupSealedFiles, groupSealedSections, SEALED_GROUPS, groupWindow, GROUP_LIMIT } from "../src/ui/kit/sealed-groups.js";
 import { eq, report } from "./_assert.mjs";
 
 const now = Date.parse("2026-09-24T12:00:00Z");
@@ -29,18 +29,20 @@ eq("sections: edit now", sg.editNow.map((x) => x.sectionId), ["s2"]);
 eq("sections: others (pending, expired)", sg.others.map((x) => x.sectionId), ["s3", "s4"]);
 eq("sections: bad input", groupSealedSections(undefined), { mine: [], editNow: [], others: [] });
 
-// Folding a group at 12 (owner, 2026-09-24).
-const many = Array.from({ length: 29 }, (_, i) => i);
-eq("limit is 15", GROUP_LIMIT, 15);
-eq("folded: first 15", capItems(many, false).visible, many.slice(0, 15));
-eq("folded: 14 hidden", capItems(many, false).hidden, 14);
-eq("expanded: all 29", capItems(many, true).visible.length, 29);
-eq("expanded still reports what folding hides", capItems(many, true).hidden, 14);
-eq("15 exactly: no toggle", capItems(many.slice(0, 15), false).hidden, 0);
-eq("a custom limit (the panel's files-per-page)", capItems(many, false, 10).visible.length, 10);
-eq("bad input", capItems(null, false), { visible: [], hidden: 0 });
-
-eq("held file with a grant → others (grants frozen on an Approved page)", ids(groupSealedFiles([f("h", "HELD", { workflowHeld: true })], { h: { status: "granted" } }, now).others), ["h"]);
-eq("held section with a grant → others", groupSealedSections([{ sectionId: "z", workflowHeld: true }], { z: { status: "granted" } }).others.length, 1);
+// A group pages 5 at a time (owner, 2026-09-29).
+const many = Array.from({ length: 16 }, (_, i) => i);
+eq("limit is 5", GROUP_LIMIT, 5);
+const w0 = groupWindow(many, 5);
+eq("first window: 5 shown", w0.visible, many.slice(0, 5));
+eq("first window: 11 hidden, next step 5", [w0.hidden, w0.more], [11, 5]);
+eq("first window: Show all offered, Show fewer not", [w0.canAll, w0.canFewer], [true, false]);
+const w1 = groupWindow(many, 15);
+eq("third window: 15 shown, last step 1", [w1.visible.length, w1.more], [15, 1]);
+eq("one step left: no Show all", w1.canAll, false);
+const wAll = groupWindow(many, 16);
+eq("all shown: nothing hidden, Show fewer", [wAll.hidden, wAll.canFewer], [0, true]);
+eq("5 exactly: no footer actions", (({ hidden, canFewer }) => [hidden, canFewer])(groupWindow(many.slice(0, 5), 5)), [0, false]);
+eq("custom step (the panel's items per page)", groupWindow(many, 10, 10).visible.length, 10);
+eq("bad input", groupWindow(null, 5).visible, []);
 
 report("sealed-groups");
