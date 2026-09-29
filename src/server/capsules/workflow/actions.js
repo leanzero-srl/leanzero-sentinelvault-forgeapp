@@ -3,6 +3,7 @@
  * Thin adapters: pull pageId / spaceKey / accountId from `req`, apply authz,
  * delegate to logic.js. Enforcement (#44) and the approver model (#43) land later.
  */
+import { recordActivity } from "../../infra/activity-log.js";
 import { asApp, asUser, route } from "@forge/api";
 import { currentUserProfile } from "../../shared/user-or-app.js";
 import { kvs, WhereConditions } from "@forge/kvs";
@@ -18,6 +19,7 @@ import {
   getWorkflowLog,
   lastDecisionFrom,
   assignPageWorkflow,
+  unassignPageWorkflow,
   transitionPageWorkflow,
   findState,
   getSpaceWorkflowSettings,
@@ -184,6 +186,29 @@ const assignWorkflow = async (req) => {
     actorName: await actorName(req.context?.accountId),
     workflowId: req.payload?.workflowId,
   });
+};
+
+// Take one page out of the workflow (owner, 2026-09-29). Steward of the PAGE's space, like assign.
+const removeWorkflow = async (req) => {
+  const pageId = pageIdOf(req);
+  const actorAccountId = req.context?.accountId;
+  if (!pageId) return { success: false, reason: "No page context" };
+  const spaceKey = (await readPageWorkflow(pageId))?.spaceKey || await resolvePageSpaceKey(pageId);
+  if (!spaceKey) return { success: false, reason: "Could not resolve this page's space" };
+  if (!(await authorizeSteward(actorAccountId, spaceKey))) {
+    return { success: false, reason: "Only a space admin can take a page out of the workflow" };
+  }
+  const name = await actorName(actorAccountId);
+  const r = await unassignPageWorkflow({ pageId, actorAccountId, actorName: name });
+  if (r.success) {
+    await recordActivity({
+      type: "workflow.removed", pageId, spaceKey,
+      actor: { accountId: actorAccountId, name }, target: { kind: "page", id: pageId, name: null },
+      details: { from: r.removedFrom }, version: null,
+    }).catch(() => {});
+    try { const { touchByline } = await import("../page-details/byline-touch.js"); await touchByline(pageId); } catch (_) { /* chip refreshes on next read */ }
+  }
+  return r;
 };
 
 export const requestTransition = async (req) => {
@@ -745,6 +770,7 @@ export const actions = [
   ["get-workflow-dashboard", getWorkflowDashboard],
   ["get-workflow-log", getLog],
   ["assign-workflow", assignWorkflow],
+  ["remove-workflow", removeWorkflow],
   ["request-transition", requestTransition],
   ["load-workflow-config", loadConfig],
   ["store-workflow-config", storeConfig],
