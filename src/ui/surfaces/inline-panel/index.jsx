@@ -1162,7 +1162,7 @@ const SealedSectionsGroup = ({ pageId, onChanged, viewer, siteUrl }) => {
     let cancelled = false;
     const others = sections.filter((x) => !x.isMine && !x.isExpired);
     if (!others.length) { setSectionStatus({}); setSectionStatusReady(true); return undefined; }
-    setSectionStatusReady(false);
+    // Background refresh after the first answer — no "Checking…" flip, no panel jump (2026-09-29).
     Promise.all(others.map((x) =>
       invoke("check-section-edit", { sectionId: x.sectionId })
         .then((r) => [x.sectionId, { status: r?.status || "none", retryAt: r?.retryAt || null, deniedReason: r?.deniedReason || null }])
