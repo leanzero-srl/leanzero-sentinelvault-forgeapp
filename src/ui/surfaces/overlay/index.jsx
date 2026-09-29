@@ -404,6 +404,10 @@ const OverlayArtifactCard = ({ artifact, editInfo, visibleColumns, run, signedIn
     release: () => run("unseal", "unseal-artifact", { attachmentId: artifact.id }, { flash: "unsealed" }),
     decide: resolveEditReq,
     request: () => { setReasonText(""); setBar("request"); },
+    // SEC-2 (e): on an Approved page the held file's primary is "Propose a change" — the same
+    // request-edit-access, which the server turns into a proposal to the approvers. It had no
+    // handler here, so the button did nothing in Manage Attachments (tester 2026-09-29).
+    propose: () => { setReasonText("Proposed change to an approved page"); setBar("propose"); },
     restore: () => run("restore", "restore-sealed-artifact", { attachmentId: artifact.id }),
     purge: () => setPendingConfirm("purge"),
   };
@@ -411,7 +415,7 @@ const OverlayArtifactCard = ({ artifact, editInfo, visibleColumns, run, signedIn
     const ok = bar === "force"
       ? await run("unseal", "unseal-artifact", { attachmentId: artifact.id, adminOverride: true, reason: reasonText.trim() }, { flash: "unsealed" })
       : await run("editreq", "request-edit-access", { attachmentId: artifact.id, reason: reasonText.trim() }, { refresh: false });
-    if (ok) { if (bar === "request") setEditStatus("pending"); setBar(null); setReasonText(""); }
+    if (ok) { if (bar === "request" || bar === "propose") setEditStatus("pending"); setBar(null); setReasonText(""); }
   };
 
   // Meta items gated by visibleColumns
