@@ -557,6 +557,46 @@ export async function purgePageWorkflow(pageId, { clearApprovals } = {}) {
   return { purged: true, stateId: record?.stateId || null, spaceKey: record?.spaceKey || null };
 }
 
+/**
+ * Take ONE page out of its workflow (owner, 2026-09-29: "Apply to existing pages" or a mistaken
+ * start put pages in that should not be). Unlike purgePageWorkflow (a DELETED page's clean-up)
+ * the history is kept and gains a "removed" entry. Refused while the page is in an enforced state
+ * (Approved — its protection is the point; move it back first) or while an approval is pending.
+ * PURE decision first — `removeRefusal` — so the rule is unit-tested.
+ */
+export function removeRefusal({ record, stateEnforced, hasPending }) {
+  if (!record) return "This page is not in a workflow.";
+  if (hasPending) return "An approval is waiting on this page — decide or cancel it first.";
+  if (stateEnforced) return "This page is Approved and protected by the workflow — move it back to an earlier state first.";
+  return null;
+}
+
+export async function unassignPageWorkflow({ pageId, actorAccountId = null, actorName = null }) {
+  const record = await readPageWorkflow(pageId);
+  const def = record ? await resolveWorkflowDef(record.spaceKey, record.workflowId) : null;
+  const refusal = removeRefusal({
+    record,
+    stateEnforced: !!(record && findState(def, record.stateId)?.enforce),
+    hasPending: !!(await kvs.get(`workflow-pending-${pageId}`)),
+  });
+  if (refusal) return { success: false, reason: refusal };
+  const sk = sanitize(record.spaceKey || "_");
+  for (const k of [
+    `workflow-state-${pageId}`, `workflow-idx-${sk}-${record.stateId}-${pageId}`, `workflow-integrity-notified-${pageId}`,
+    `workflow-review-notified-${pageId}`, `workflow-completing-${pageId}`, `workflow-label-${pageId}`,
+  ]) await kvs.delete(k).catch(() => {});
+  // The page property the trigger's enforcement probe and CQL read — gone with the workflow.
+  try {
+    const res = await asApp().requestConfluence(route`/wiki/api/v2/pages/${pageId}/properties?key=${WORKFLOW_STATE_PROP}`);
+    const existing = res.ok ? (await res.json())?.results?.[0] : null;
+    if (existing?.id) await asApp().requestConfluence(route`/wiki/api/v2/pages/${pageId}/properties/${existing.id}`, { method: "DELETE" });
+  } catch (e) { console.warn(`[WORKFLOW] remove: property cleanup failed for ${pageId}:`, e?.message || e); }
+  // A state label (label sync on) no longer describes the page.
+  try { const { syncStateLabel } = await import("./label-sync.js"); await syncStateLabel(pageId, null); } catch (_) { /* best effort */ }
+  await appendWorkflowLog(pageId, { kind: "removed", from: record.stateId, to: null, by: actorAccountId, byName: actorName, reason: "removed from the workflow" });
+  return { success: true, removedFrom: record.stateId, spaceKey: record.spaceKey };
+}
+
 export async function appendWorkflowLog(pageId, entry) {
   const ts = Date.now();
   await kvs.set(`workflow-log-${pageId}-${ts}`, { ts, ...entry }); // NO TTL — compliance history
