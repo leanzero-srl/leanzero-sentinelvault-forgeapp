@@ -645,7 +645,7 @@ const INITIAL_COLUMNS = {
 
 const INITIAL_CONFIG = {
   columns: INITIAL_COLUMNS,
-  rowsPerPage: 15,
+  rowsPerPage: 5, // owner 2026-09-29: 15 made the macro massive — each group shows 5, then Show more
   showUploadZone: true,
   cardsPerRow: 2,
 };
@@ -670,14 +670,14 @@ const renderLapseDate = (dateStr) => (dateStr ? when(dateStr) || "—" : "—");
 // many it holds, and offers Show more / Show fewer — the Sealed group used to render ALL its cards
 // (the KVS phase is never paged), and Available could show its empty line while its cards were
 // still on a later server page.
-const GroupFooter = ({ shown, total, canMore, onMore, canFewer, onFewer, busy, testId }) => {
+const GroupFooter = ({ shown, total, canMore, onMore, canFewer, onFewer, busy, testId, step }) => {
   if (!canMore && !canFewer) return null;
   return (
     <div className="sv-group-footer" data-testid={testId}>
       <span className="sv-group-footer-count">Showing {shown} of {total}</span>
       {canMore && (
         <button type="button" className={`load-more-btn ${busy ? "is-busy" : ""}`} onClick={onMore} disabled={busy} data-testid={`${testId}-more`}>
-          {busy ? <>Fetching<span className="btn-busy-bar" /></> : "Show more files"}
+          {busy ? <>Fetching<span className="btn-busy-bar" /></> : step ? `Show ${step} more files` : "Show more files"}
         </button>
       )}
       {canFewer && <button type="button" className="load-more-btn" onClick={onFewer} data-testid={`${testId}-fewer`}>Show fewer</button>}
@@ -1541,7 +1541,8 @@ const ArtifactGridView = () => {
       if (savedConfig) {
         setPanelConfig({
           columns: { ...INITIAL_COLUMNS, ...(savedConfig.columns || {}) },
-          rowsPerPage: savedConfig.rowsPerPage ?? INITIAL_CONFIG.rowsPerPage,
+          // A saved 15 was the OLD default, not a choice most people made — read it as the new 5.
+          rowsPerPage: savedConfig.rowsPerPage == null || savedConfig.rowsPerPage === 15 ? INITIAL_CONFIG.rowsPerPage : savedConfig.rowsPerPage,
           showUploadZone: savedConfig.showUploadZone ?? INITIAL_CONFIG.showUploadZone,
           cardsPerRow: savedConfig.cardsPerRow ?? INITIAL_CONFIG.cardsPerRow,
         });
@@ -1758,7 +1759,7 @@ const ArtifactGridView = () => {
               </div>
               {availableFiles.length === 0 && <p className="sv-card-section-empty" data-testid="sv-available-empty">{enriching || hasMore || loadingMore ? "Checking for unsealed files…" : "No unsealed files on this page — everything attached here is sealed."}</p>}
               <RovingList {...gridProps} label="Available attachments">{renderCards(availableFiles.slice(0, availShown))}</RovingList>
-              <GroupFooter shown={availShown} total={availTotal} canMore={availCanMore} onMore={() => setAvailExtra((e) => e + WINDOW)} canFewer={availExtra > 0} onFewer={() => setAvailExtra(0)} busy={loadingMore} testId="sv-available-footer" />
+              <GroupFooter shown={availShown} total={availTotal} canMore={availCanMore} onMore={() => setAvailExtra((e) => e + WINDOW)} canFewer={availExtra > 0} onFewer={() => setAvailExtra(0)} busy={loadingMore} testId="sv-available-footer" step={WINDOW} />
             </div>
           )}
           {enriching && (

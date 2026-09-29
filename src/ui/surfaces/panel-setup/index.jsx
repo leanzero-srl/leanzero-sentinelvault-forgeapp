@@ -38,7 +38,7 @@ const COLUMN_OPTIONS = [
 ];
 
 const PAGE_SIZE_OPTIONS = [
-  { value: 5, label: "5 items" },
+  { value: 5, label: "5 items (default)" },
   { value: 10, label: "10 items" },
   { value: 15, label: "15 items" },
   { value: 25, label: "25 items" },
@@ -64,7 +64,7 @@ const bridgeClose = () => {
 
 const INITIAL_CONFIG = {
   columns: COLUMN_OPTIONS.reduce((acc, col) => ({ ...acc, [col.key]: col.defaultOn }), {}),
-  rowsPerPage: 15,
+  rowsPerPage: 5, // owner 2026-09-29: 15 made the macro massive
   showUploadZone: true,
   cardsPerRow: 2,
 };
