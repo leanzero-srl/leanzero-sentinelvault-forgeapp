@@ -85,25 +85,24 @@ Files: `marketplace-screenshots/01..05-*.png`, 1840×1020, product shot matted o
 
 ---
 
-## What's new / Release notes
+## What's new / Release notes (6.4.0 — production 2026-09-30)
 
 **Release summary (≤80 chars):**
-> Sealed images keep their size and layout, unified restores, paid via Atlassian
+> Always-visible classification, honest Force release, clearer sealed-files panel
 
-*(78 chars.)*
+*(79 chars.)*
 
-**Release notes body:** *(970 chars — under the 1000 limit)*
+**Release notes body:** *(848 chars — under the 1000 limit)*
 
-Protection gets sharper teeth, and the app moves to paid licensing.
+Classification and day-to-day sealing get clearer.
 
-- New: sealing an image now also seals its presentation — a resize or layout change by a non-owner reverts to the sealed appearance (seals created from this release on).
-- Improved: one restore path for removed sealed files — the attachment is un-trashed first, then its page embed re-inserted; unrecoverable files produce an honest notice, not silence.
-- Fixed: repeated violations of the same kind post one page comment, not a stream of duplicates.
-- Improved: the space console shows when a sealed file is in the trash, missing, or overdue.
-- Security: site-wide workflow configuration now requires a site admin.
-- Licensing: now Paid via Atlassian. A lapsed license never stops protection — admin consoles show a renewal banner with a Manage subscription link.
+- New: every page shows its classification level. Raising it is one action; lowering it asks for a reason and shows an amber callout. The level menu opens where it can be seen.
+- Improved: Force release is offered only to space admins when "Allow space admins to force-unseal" is on, so the menu never offers an action the server will refuse.
+- Improved: Sealed and Available files page separately, counts match the cards, and a file you just sealed or released moves to the top of its new group.
+- New: a declined edit request can be retried after a site-configurable cooldown (default 1 hour).
+- Seal actions can require a 6-digit authenticator code (site setting).
 
-Also in this line: workflow states, multi-approver approvals, enforced Approved, review dates, and the space dashboard with CSV export.
+Also in this line: sealed page sections, image presentation seals, unified restores and per-user authorization on every action.
 
 ---
 
