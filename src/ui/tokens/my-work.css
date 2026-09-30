@@ -310,3 +310,7 @@ html[data-color-mode="dark"] .sv-busy-veil { background: var(--sv-frosted-bg, rg
 .sv-busy-text { font-size: 13px; font-weight: 600; color: var(--sv-text-primary, #0F172A); text-align: center; padding: 0 12px; }
 @media (prefers-reduced-motion: reduce) { .sv-busy-bar { animation: none; opacity: 1; } }
 .wf-appr-panel, .wf-inbox-row { position: relative; }
+
+/* Anchored dialogs (kit/Dialog: every surface opens a dialog level with the click) sit at the
+   computed marginTop from the top edge — without this the flex centring moved them (tester 2026-09-30). */
+.sv-dialog-backdrop.is-anchored { align-items: flex-start; }

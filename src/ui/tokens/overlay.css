@@ -1437,3 +1437,7 @@ html[data-color-mode="dark"] .sv-state.trashed { background: #94A3B8; color: #0F
 .sv-decline-reason:focus { outline: 2px solid var(--sv-interactive-primary); outline-offset: 1px; }
 .sv-decline-hint { display: block; margin-top: 6px; font-size: 11px; color: var(--sv-text-secondary); }
 .sv-declined-reason { margin-top: 6px; font-size: 12px; font-style: italic; color: var(--sv-text-secondary); }
+
+/* Anchored dialogs (kit/Dialog: every surface opens a dialog level with the click) sit at the
+   computed marginTop from the top edge — without this the flex centring moved them (tester 2026-09-30). */
+.sv-dialog-backdrop.is-anchored { align-items: flex-start; }

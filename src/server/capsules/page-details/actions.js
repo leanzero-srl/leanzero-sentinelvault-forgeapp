@@ -38,7 +38,7 @@
 import { asApp, route } from "@forge/api";
 import { kvs, WhereConditions } from "@forge/kvs";
 import { canEditPage, canReadPage, mustVerify } from "../../shared/content-access.js";
-import { authorizeSteward } from "../../shared/steward-checks.js";
+import { authorizeSteward, isAccountStewardAsApp } from "../../shared/steward-checks.js";
 import { getClassificationProvider, resolveClassificationActive } from "../classification/provider.js";
 import { getActiveEditGrant, getActiveSectionEditGrant, resolveEditCooldownMs } from "../editreq/logic.js";
 // WF-6: the Workflow block reads through the same helper the byline uses.
@@ -81,13 +81,17 @@ async function myEditStatusFor({ grant, requestKey }) {
   return { status: "none", expiresAt: null };
 }
 
-/** Pending requests on ONE seal (owner only — the caller is the owner when this is invoked). */
-async function pendingRequestsFor(prefix) {
+/**
+ * Pending requests on ONE seal. Owner: every request on their seal. Held seal (SEC-2 (e)): only the
+ * proposals `decider` may decide — never their own (tester 2026-09-30).
+ */
+async function pendingRequestsFor(prefix, decider = null) {
   try {
     const { results } = await kvs.query().where("key", WhereConditions.beginsWith(prefix)).limit(50).getMany();
     return (results || [])
       .map(({ value }) => value)
-      .filter((v) => v?.status === "pending")
+      .filter((v) => v?.status === "pending" && (!decider || (v.requesterAccountId !== decider.accountId && v.proposal === true)))
+      .filter((v) => !decider || decider.may(v))
       .map((v) => ({
         requesterAccountId: v.requesterAccountId || null,
         requesterName: v.requesterName || null,
@@ -141,6 +145,10 @@ export const pageDetailsSummary = async (req) => {
   // ── seals ───────────────────────────────────────────────────────────────────────────────────
   const seals = [];
   let attachmentsAll = [];
+  // SEC-2 (e): who may decide a proposal on this page — listed on it, or a space admin (the same
+  // rule approve-edit-request applies, so the window never offers a button the server refuses).
+  const proposalAdmin = spaceKey ? await isAccountStewardAsApp(accountId, spaceKey).catch(() => false) : false;
+  const decider = { accountId, may: (v) => (v.approvers || []).includes(accountId) || proposalAdmin === true };
   let sealError = null;
   try {
     const { attachments, sections, all } = await collectPageSeals(pageId, meta.type);
@@ -152,8 +160,11 @@ export const pageDetailsSummary = async (req) => {
           isMine ? null : getActiveEditGrant(id, accountId),
           isMine ? null : kvs.get(`notify-request-${id}-${accountId}`).catch(() => null),
         ]);
-        const mine = isMine ? { status: "none", expiresAt: null } : await myEditStatusFor({ grant, requestKey: `edit-request-${id}-${accountId}` });
-        const pendingRequests = isMine ? await pendingRequestsFor(`edit-request-${id}-`) : [];
+        const held = isWorkflowHeld(record);
+        // SEC-2 (e): on a held seal the owner can propose too (their own state is read), and the rows
+        // carry the proposals THIS viewer may decide — never the owner's personal inbox.
+        const mine = isMine && !held ? { status: "none", expiresAt: null } : await myEditStatusFor({ grant, requestKey: `edit-request-${id}-${accountId}` });
+        const pendingRequests = held ? await pendingRequestsFor(`edit-request-${id}-`, decider) : isMine ? await pendingRequestsFor(`edit-request-${id}-`) : [];
         return {
           kind: "attachment", id, name: record.attachmentName || "Unknown file",
           ownerAccountId: record.lockedBy, ownerName: record.lockedByName || null,
@@ -167,8 +178,9 @@ export const pageDetailsSummary = async (req) => {
         const id = record.sectionId;
         const isMine = record.lockedBy === accountId;
         const grant = isMine ? null : await getActiveSectionEditGrant(id, accountId);
-        const mine = isMine ? { status: "none", expiresAt: null } : await myEditStatusFor({ grant, requestKey: `section-edit-request-${id}-${accountId}` });
-        const pendingRequests = isMine ? await pendingRequestsFor(`section-edit-request-${id}-`) : [];
+        const held = isWorkflowHeld(record);
+        const mine = isMine && !held ? { status: "none", expiresAt: null } : await myEditStatusFor({ grant, requestKey: `section-edit-request-${id}-${accountId}` });
+        const pendingRequests = held ? await pendingRequestsFor(`section-edit-request-${id}-`, decider) : isMine ? await pendingRequestsFor(`section-edit-request-${id}-`) : [];
         return {
           kind: "section", id, name: record.sectionTitle || "Sealed section",
           ownerAccountId: record.lockedBy, ownerName: record.lockedByName || null,

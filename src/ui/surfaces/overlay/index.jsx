@@ -326,17 +326,17 @@ const OverlayArtifactCard = ({ artifact, editInfo, visibleColumns, run, signedIn
 
   useEffect(() => {
     let cancelled = false;
-    if (isSealedByOther && !isStale && editStatus === null) {
+    if ((isSealedByOther || (isSealedByMe && artifact.workflowHeld)) && !isStale && editStatus === null) { // SEC-2 (e): the owner's own proposal
       invoke("check-edit-request", { attachmentId: artifact.id })
         .then((r) => { if (!cancelled) { setEditStatus(r?.status || "none"); setEditExpiresAt(r?.expiresAt || null); setEditRetryAt(r?.retryAt || null); setEditDeniedReason(r?.deniedReason || null); } })
         .catch(() => { if (!cancelled) setEditStatus("none"); });
     }
     return () => { cancelled = true; };
-  }, [isSealedByOther, isStale, artifact.id, editStatus]);
+  }, [isSealedByOther, isSealedByMe, artifact.workflowHeld, isStale, artifact.id, editStatus]);
 
   useEffect(() => {
     let cancelled = false;
-    if (isSealedByMe && !isStale) {
+    if ((isSealedByMe || artifact.workflowHeld) && !isStale) { // SEC-2 (e): approvers / admins see the proposals they may decide
       invoke("list-edit-requests", { attachmentId: artifact.id })
         .then((r) => { if (!cancelled) setMyRequests(r?.requests || []); })
         .catch(() => { if (!cancelled) setMyRequests([]); });
@@ -347,7 +347,7 @@ const OverlayArtifactCard = ({ artifact, editInfo, visibleColumns, run, signedIn
         .catch(() => { if (!cancelled) setMyGrants([]); });
     }
     return () => { cancelled = true; };
-  }, [isSealedByMe, isSealedByOther, viewer?.isSpaceAdmin, isStale, artifact.id]);
+  }, [isSealedByMe, isSealedByOther, viewer?.isSpaceAdmin, isStale, artifact.id, artifact.workflowHeld]);
 
   const reloadGrants = () => invoke("list-edit-grants", { attachmentId: artifact.id }).then((g) => setMyGrants(g?.grants || [])).catch(() => {});
   const revokeGrant = async (editorAccountId) => {
@@ -366,7 +366,7 @@ const OverlayArtifactCard = ({ artifact, editInfo, visibleColumns, run, signedIn
       reason = a.reason;
     }
     setReqBusy(`${requesterAccountId}:${action}`);
-    const ok = await run(action, action === "approve" ? "approve-edit-request" : "deny-edit-request", { attachmentId: artifact.id, requesterAccountId, ...(reason ? { reason } : {}) }, { refresh: false });
+    const ok = await run(action, action === "approve" ? "approve-edit-request" : "deny-edit-request", { attachmentId: artifact.id, requesterAccountId, ...(reason ? { reason } : {}) }, { refresh: action === "approve" && artifact.workflowHeld === true }); // an approved proposal moves the page back
     if (ok) setMyRequests((p) => (p || []).filter((x) => x.requesterAccountId !== requesterAccountId));
     if (ok && action === "approve") reloadGrants();
     setReqBusy(null);
@@ -566,7 +566,7 @@ const OverlayArtifactCard = ({ artifact, editInfo, visibleColumns, run, signedIn
       )}
 
       {bar && <ReasonBar mode={bar} value={reasonText} onChange={setReasonText} onSubmit={submitBar} onCancel={() => { setBar(null); setReasonText(""); }} busy={busyAction === "unseal" || busyAction === "editreq"} />}
-      {isSealedByMe && <RequestInbox requests={myRequests} name={artifact.title} reqBusy={reqBusy} onDecide={resolveEditReq} firstDecidedAbove={primary.kind === "decide"} />}
+      {(isSealedByMe || artifact.workflowHeld) && <RequestInbox requests={myRequests} name={artifact.title} reqBusy={reqBusy} onDecide={resolveEditReq} firstDecidedAbove={primary.kind === "decide"} proposals={artifact.workflowHeld === true} />}
       {giving && <GiveAccessDialog invoker={signedInvoke} target={{ attachmentId: artifact.id }} name={artifact.title} onClose={() => setGiving(false)} onGranted={reloadGrants} />}
       {(isSealedByMe || (myGrants || []).length > 0) && <GrantInbox grants={myGrants} name={artifact.title} grantBusy={grantBusy} onRevoke={revokeGrant} />}
 

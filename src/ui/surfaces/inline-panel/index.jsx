@@ -315,18 +315,25 @@ const ArtifactCard = ({ att, onRefresh, columns, siteUrl, spaceKey, pageId, page
   // Lazily resolve this user's edit-access status for files sealed by others.
   useEffect(() => {
     let cancelled = false;
-    if (isSealedByOther && editStatus === null) {
+    // SEC-2 (e): the owner of a HELD seal can propose too — read their own proposal's state.
+    if ((isSealedByOther || (isSealedByMe && att.workflowHeld)) && editStatus === null) {
       invoke("check-edit-request", { attachmentId: att.id })
         .then((r) => { if (!cancelled) { setEditStatus(r?.status || "none"); setEditExpiresAt(r?.expiresAt || null); setEditRetryAt(r?.retryAt || null); setEditDeniedReason(r?.deniedReason || null); } })
         .catch(() => { if (!cancelled) setEditStatus("none"); });
     }
     return () => { cancelled = true; };
-  }, [isSealedByOther, att.id, editStatus]);
+  }, [isSealedByOther, isSealedByMe, att.workflowHeld, att.id, editStatus]);
 
   // Owner: pending edit requests (Approve/Decline is the row's primary while one waits) and the
   // ACTIVE granted editors so the owner can REVOKE access (audit D5).
   useEffect(() => {
     let cancelled = false;
+    // SEC-2 (e): on a held seal the server lists the proposals THIS viewer may decide (approvers, admins).
+    if (att.workflowHeld && !isSealedByMe && !(isSealedByOther && viewer?.isSpaceAdmin === true)) {
+      invoke("list-edit-requests", { attachmentId: att.id })
+        .then((r) => { if (!cancelled) setMyRequests(r?.requests || []); })
+        .catch(() => { if (!cancelled) setMyRequests([]); });
+    }
     if (isSealedByMe || (isSealedByOther && viewer?.isSpaceAdmin === true)) {
       invoke("list-edit-requests", { attachmentId: att.id })
         .then((r) => { if (!cancelled) setMyRequests(r?.requests || []); })
@@ -336,7 +343,7 @@ const ArtifactCard = ({ att, onRefresh, columns, siteUrl, spaceKey, pageId, page
         .catch(() => { if (!cancelled) setMyGrants([]); });
     }
     return () => { cancelled = true; };
-  }, [isSealedByMe, isSealedByOther, viewer?.isSpaceAdmin, att.id]);
+  }, [isSealedByMe, isSealedByOther, viewer?.isSpaceAdmin, att.id, att.workflowHeld]);
 
   // ONE call path for every resolver action: a refusal (`success:false`) shows the resolver's
   // reason in the card's error row and never reads as success (review: ~20 silent click failures).
@@ -391,6 +398,7 @@ const ArtifactCard = ({ att, onRefresh, columns, siteUrl, spaceKey, pageId, page
       if (r?.success) {
         setMyRequests((p) => (p || []).filter((x) => x.requesterAccountId !== requesterAccountId));
         if (action === "approve") invoke("list-edit-grants", { attachmentId: att.id }).then((g) => setMyGrants(g?.grants || [])).catch(() => {});
+        if (action === "approve" && att.workflowHeld) onRefresh(); // the page moved back — every row changes
       } else {
         // F1: a refusal must say so — an overdue seal refused approve, every time, silently.
         setActionError(r?.reason || (action === "approve" ? "Could not grant edit access" : "Could not decline the request"));
@@ -598,7 +606,7 @@ const ArtifactCard = ({ att, onRefresh, columns, siteUrl, spaceKey, pageId, page
 
       {bar && <ReasonBar mode={bar} value={reasonText} onChange={setReasonText} onSubmit={submitBar} onCancel={() => { setBar(null); setReasonText(""); }} busy={actionBusy === "unseal" || actionBusy === "editreq"} />}
 
-      {isSealedByMe && <RequestInbox requests={myRequests} name={att.title} reqBusy={reqBusy} onDecide={resolveEditReq} firstDecidedAbove={primary.kind === "decide"} />}
+      {(isSealedByMe || att.workflowHeld) && <RequestInbox requests={myRequests} name={att.title} reqBusy={reqBusy} onDecide={resolveEditReq} firstDecidedAbove={primary.kind === "decide"} proposals={att.workflowHeld} />}
       {signatureDialog}
       {declineDialog}
       {giving && (
@@ -992,6 +1000,18 @@ const SectionRow = ({ section: s, onUnseal, unsealing, viewer, siteUrl, pageId, 
 
   useEffect(() => {
     let cancelled = false;
+    // SEC-2 (e): the owner of a HELD section can propose too — read their own proposal's state.
+    if (s.isMine && s.workflowHeld && !editInfo) {
+      invoke("check-section-edit", { sectionId: s.sectionId })
+        .then((r) => { if (!cancelled) { setEditStatus(r?.status || "none"); setEditRetryAt(r?.retryAt || null); setEditDeniedReason(r?.deniedReason || null); } })
+        .catch(() => { if (!cancelled) setEditStatus("none"); });
+    }
+    // …and an approver / space admin reads the proposals they may decide (the server filters).
+    if (!s.isMine && s.workflowHeld) {
+      invoke("list-section-edit-requests", { sectionId: s.sectionId })
+        .then((r) => { if (!cancelled) setRequests(r?.requests || []); })
+        .catch(() => { if (!cancelled) setRequests([]); });
+    }
     if (s.isMine) {
       invoke("list-section-edit-requests", { sectionId: s.sectionId })
         .then((r) => { if (!cancelled) setRequests(r?.requests || []); })
@@ -1013,7 +1033,7 @@ const SectionRow = ({ section: s, onUnseal, unsealing, viewer, siteUrl, pageId, 
       }
     }
     return () => { cancelled = true; };
-  }, [s.sectionId, s.isMine, s.isExpired, viewer?.isSpaceAdmin]);
+  }, [s.sectionId, s.isMine, s.isExpired, s.workflowHeld, viewer?.isSpaceAdmin]);
 
   const submitReq = async () => {
     setBusy(true); setError(null);
@@ -1039,6 +1059,7 @@ const SectionRow = ({ section: s, onUnseal, unsealing, viewer, siteUrl, pageId, 
       if (r?.success) {
         setRequests((p) => (p || []).filter((x) => x.requesterAccountId !== requesterAccountId));
         if (action === "approve") invoke("list-section-edit-grants", { sectionId: s.sectionId }).then((g) => setGrants(g?.grants || [])).catch(() => {});
+        if (action === "approve" && s.workflowHeld) onChanged?.(); // the page moved back — every row changes
       }
       else setError(r?.reason || (action === "approve" ? "Could not grant edit access." : "Could not decline the request."));
     } catch (e) { console.error("Resolve section request failed:", e); setError("Could not reach Sentinel Vault. Try again."); }
@@ -1117,7 +1138,7 @@ const SectionRow = ({ section: s, onUnseal, unsealing, viewer, siteUrl, pageId, 
       <DeclinedReason primary={primary} owner={row.ownerName} />
       <ErrorRow message={error} onDismiss={() => setError(null)} testId="sv-section-error" />
       {bar && <ReasonBar mode={bar} kind="section" value={reasonText} onChange={setReasonText} onSubmit={submitBar} onCancel={() => { setBar(null); setReasonText(""); }} busy={busy || unsealing} testId="sv-section-reason-bar" />}
-      {s.isMine && <RequestInbox requests={requests} name={`section ${s.sectionTitle}`} reqBusy={reqBusy} onDecide={resolve} firstDecidedAbove={primary.kind === "decide"} testId="sv-section-inbox" />}
+      {(s.isMine || s.workflowHeld) && <RequestInbox requests={requests} name={`section ${s.sectionTitle}`} reqBusy={reqBusy} onDecide={resolve} firstDecidedAbove={primary.kind === "decide"} testId="sv-section-inbox" proposals={s.workflowHeld === true} />}
       {signatureDialog}
       {declineDialog}
       {giving && (
