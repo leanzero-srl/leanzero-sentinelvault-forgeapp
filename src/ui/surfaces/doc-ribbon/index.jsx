@@ -466,6 +466,18 @@ const WorkflowControl = ({ workflow, approvals, operatorId, pageId, spaceKey, si
     }
   }, [pageId, reason, sigCode, onTransitioned, say, pendingApproval?.requestedByName]); // B3: the code is read at click time, not from the first render
 
+  // The requester takes the request back — nothing is decided, the page stays where it is.
+  const [withdrawBusy, setWithdrawBusy] = useState(false);
+  const doWithdraw = useCallback(async () => {
+    setWithdrawBusy(true); setDecideMsg(null);
+    try {
+      const r = await invoke("withdraw-approval", { pageId });
+      if (r?.success) { setPanelOpen(false); say("Request withdrawn — the page stays where it is."); await onTransitioned(); }
+      else setDecideMsg(r?.reason || "Could not withdraw this request.");
+    } catch (_) { setDecideMsg("Could not withdraw this request."); }
+    finally { setWithdrawBusy(false); }
+  }, [pageId, onTransitioned, say]);
+
   // WF-1: bring the open request up to the live version (the requester stays who they were).
   const doRerequest = useCallback(async () => {
     setRerequestBusy(true); setDecideMsg(null);
@@ -655,8 +667,16 @@ const WorkflowControl = ({ workflow, approvals, operatorId, pageId, spaceKey, si
               </div>
             ) : (
               <div className="wf-appr-note" data-testid="wf-appr-note">{iAmRequester
-                ? "You asked for this move, so you can't approve it yourself — another approver or a space admin decides."
-                : mine && mine.status !== "pending" ? "You have already responded." : "Waiting on the approvers above."}</div>
+                ? "You asked for this move, so you can't approve it yourself — another approver or a space admin decides. You can withdraw the request."
+                : mine && mine.status !== "pending" ? "You have already responded." : "Waiting on the approvers above."}
+                {iAmRequester && (
+                  <div className="wf-appr-withdraw-row">
+                    <button type="button" className="wf-appr-rerequest" onClick={doWithdraw} disabled={withdrawBusy} data-testid="wf-appr-withdraw">
+                      {withdrawBusy ? "Withdrawing…" : "Withdraw request"}
+                    </button>
+                  </div>
+                )}
+              </div>
             )}
             {decideMsg && <div className="wf-error" role="alert">{decideMsg}</div>}
           </div>

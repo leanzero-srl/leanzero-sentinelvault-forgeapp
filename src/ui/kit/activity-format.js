@@ -26,7 +26,7 @@ export const ACTIVITY_CATEGORIES = Object.freeze([
     "editreq.requested", "editreq.approved", "editreq.denied", "editreq.revoked", "editreq.granted",
   ]) },
   { id: "workflow", label: "Workflow", types: Object.freeze([
-    "workflow.transition", "workflow.removed", "workflow.approval-requested", "workflow.approval-rerequested", "workflow.approval-decided",
+    "workflow.transition", "workflow.removed", "workflow.approval-requested", "workflow.approval-rerequested", "workflow.approval-decided", "workflow.approval-withdrawn",
     "workflow.enforced", "workflow.expired", "workflow.review-due", "workflow.read-confirmed", "workflow.seals-held", "workflow.seals-released",
   ]) },
   { id: "validation", label: "Validation", types: Object.freeze([
@@ -274,6 +274,9 @@ export function formatActivity(entry) {
         sentence: `${who} re-requested approval to move the page to ${d.toName || d.to || "the next state"} for the current version`,
         detail: [d.fromVersion != null && d.pinnedVersion != null ? `v${d.fromVersion} → v${d.pinnedVersion}` : d.pinnedVersion != null ? `v${d.pinnedVersion}` : ""].filter(Boolean).join(" · ") };
     }
+    case "workflow.approval-withdrawn":
+      return { ...base, label: "Approval withdrawn", glyph: "undo", tone: "neutral",
+        sentence: `${who} withdrew the request to move the page to ${d.toName || d.to || "the next state"}${d.byRequester === false ? " (as a space admin)" : ""}` };
     case "workflow.approval-decided": {
       const approved = d.decision === "approved" || d.decision === "approve";
       const v = d.versionAtDecision != null ? ` (v${d.versionAtDecision})` : "";
