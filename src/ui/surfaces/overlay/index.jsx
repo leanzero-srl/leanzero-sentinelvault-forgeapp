@@ -705,7 +705,7 @@ const ArtifactControlPanel = () => {
         setSiteUrl(ctx.siteUrl || null);
         const sk = ctx.extension?.content?.space?.key || ctx.extension?.space?.key || null;
         setSpaceKey(sk);
-        if (sk) invoke("check-user-role", { spaceKey: sk }).then((r) => setViewer((v) => ({ ...v, isSpaceAdmin: r?.role === "steward" }))).catch(() => {});
+        if (sk) invoke("check-user-role", { spaceKey: sk }).then((r) => setViewer((v) => ({ ...v, isSpaceAdmin: r?.role === "steward", canForceRelease: r?.canForceRelease === true }))).catch(() => {});
         setPageId(ctx.extension?.content?.id || null);
         setPageLocation(ctx.extension?.location || null);
       } catch (e) {
