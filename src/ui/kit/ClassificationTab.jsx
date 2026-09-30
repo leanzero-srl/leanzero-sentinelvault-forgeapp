@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from "react";
+import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { invoke } from "@forge/bridge";
 import Dialog from "./Dialog";
 import { isDowngrade, findLevel, REASON_MAX } from "../../server/capsules/classification/logic.js"; // P5: the one downgrade rule
@@ -40,13 +40,27 @@ export const LevelChip = ({ level, testId }) => (
 // "UX pass, part 3" picker shape). `value` is a level id, NONE, or null for a mixed/unset prompt.
 export const LevelPicker = ({ value, levels, onChange, placeholder = "Choose a level…", ariaLabel, testId, allowNone = true, disabled = false }) => {
   const [open, setOpen] = useState(false);
+  const [openUp, setOpenUp] = useState(false);
   const [q, setQ] = useState("");
+  const rootRef = useRef(null);
   const current = levels.find((l) => l.id === value);
   const shown = useMemo(() => levels.filter((l) => !q.trim() || l.name.toLowerCase().includes(q.trim().toLowerCase())), [levels, q]);
   const pick = (id) => { onChange(id); setOpen(false); setQ(""); };
+  // The app frame is only as tall as its content, so a menu opened on the last rows runs past the
+  // frame's bottom edge and is cut off. Open upwards when the room below is short of the menu
+  // (max-height 320px + the 4px gap) and there is more room above.
+  const toggle = () => {
+    if (disabled) return;
+    if (!open && rootRef.current) {
+      const r = rootRef.current.getBoundingClientRect();
+      const below = window.innerHeight - r.bottom;
+      setOpenUp(below < 330 && r.top > below);
+    }
+    setOpen(!open);
+  };
   return (
-    <div className={`mini-select cls-picker ${disabled ? "disabled" : ""}`} tabIndex={disabled ? -1 : 0} onBlur={closeOnLeave(setOpen)} data-testid={testId}>
-      <div className="mini-select-value" onClick={() => !disabled && setOpen(!open)} role="button" aria-haspopup="listbox" aria-expanded={open} aria-label={ariaLabel}>
+    <div ref={rootRef} className={`mini-select cls-picker ${disabled ? "disabled" : ""}${openUp ? " open-up" : ""}`} tabIndex={disabled ? -1 : 0} onBlur={closeOnLeave(setOpen)} data-testid={testId}>
+      <div className="mini-select-value" onClick={toggle} role="button" aria-haspopup="listbox" aria-expanded={open} aria-label={ariaLabel}>
         {current ? <LevelChip level={current} /> : <span className={value === NONE ? "" : "cls-picker-placeholder"}>{value === NONE ? "Not set" : placeholder}</span>}
         <span className={`mini-select-arrow ${open ? "open" : ""}`}>▼</span>
       </div>
