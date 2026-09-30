@@ -566,7 +566,7 @@ export async function purgePageWorkflow(pageId, { clearApprovals } = {}) {
  */
 export function removeRefusal({ record, stateEnforced, hasPending }) {
   if (!record) return "This page is not in a workflow.";
-  if (hasPending) return "An approval is waiting on this page — decide or cancel it first.";
+  if (hasPending) return "An approval is waiting on this page — an approver decides it, or the requester withdraws it, first.";
   if (stateEnforced) return "This page is Approved and protected by the workflow — move it back to an earlier state first.";
   return null;
 }

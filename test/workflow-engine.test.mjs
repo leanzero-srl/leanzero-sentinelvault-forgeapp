@@ -19,7 +19,7 @@ import {
   lastDecisionFrom,
   removeRefusal,
 } from "../src/server/capsules/workflow/logic.js";
-import { evaluateApproval, resolveApprovers, inboxKey, isOrphanApproval, ORPHAN_APPROVAL_MIN_AGE_MS, buildApprovalRecord } from "../src/server/capsules/workflow/approvals.js";
+import { evaluateApproval, listedDecisionsFor, resolveApprovers, inboxKey, isOrphanApproval, ORPHAN_APPROVAL_MIN_AGE_MS, buildApprovalRecord } from "../src/server/capsules/workflow/approvals.js";
 import { eq, ok, report } from "./_assert.mjs";
 
 // --- findState / getInitialState ---
@@ -103,6 +103,24 @@ eq("min2: one approved -> pending", evaluateApproval("min", 2, ["approved", "pen
 eq("min2: two approved -> approved", evaluateApproval("min", 2, ["approved", "approved", "pending"]), "approved");
 eq("min2: unreachable -> denied", evaluateApproval("min", 2, ["approved", "denied", "denied"]), "denied");
 eq("min2: reached despite a denial -> approved", evaluateApproval("min", 2, ["approved", "approved", "denied"]), "approved");
+
+// Tester 2026-09-30: the requester's own slot can never be decided.
+{
+  const recs = (...xs) => xs.map(([id, status]) => ({ approverAccountId: id, status }));
+  const only = listedDecisionsFor({ mode: "any", requestedBy: "g" }, recs(["g", "pending"]));
+  eq("requester is the only approver -> adminOnly", only, { decisions: [], adminOnly: true });
+  eq("adminOnly: admin denial closes", evaluateApproval("any", 1, only.decisions, ["denied"], { adminOnly: true }), "denied");
+  eq("adminOnly: admin approval completes", evaluateApproval("any", 1, only.decisions, ["approved"], { adminOnly: true }), "approved");
+  eq("adminOnly: no admin vote -> pending (never auto-approve)", evaluateApproval("any", 1, only.decisions, [], { adminOnly: true }), "pending");
+  const any2 = listedDecisionsFor({ mode: "any", requestedBy: "g" }, recs(["g", "pending"], ["b", "denied"]));
+  eq("any: requester slot dropped, the other denied -> denied", evaluateApproval("any", 1, any2.decisions, []), "denied");
+  const all2 = listedDecisionsFor({ mode: "all", requestedBy: "g" }, recs(["g", "pending"], ["b", "approved"]));
+  eq("all: requester slot dropped, the other approved -> approved", evaluateApproval("all", 1, all2.decisions, []), "approved");
+  const min2 = listedDecisionsFor({ mode: "min", min: 2, requestedBy: "g" }, recs(["g", "pending"], ["b", "approved"]));
+  eq("min keeps the requester slot (reachable by an admin)", evaluateApproval("min", 2, min2.decisions, []), "pending");
+  eq("min: an admin approval fills it", evaluateApproval("min", 2, min2.decisions, ["approved"]), "approved");
+  eq("no requester recorded -> unchanged", listedDecisionsFor({ mode: "any" }, recs(["a", "pending"])), { decisions: ["pending"], adminOnly: false });
+}
 
 // --- resolveApprovers ---
 eq("resolveApprovers null -> null", resolveApprovers(null), null);

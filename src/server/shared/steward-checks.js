@@ -11,6 +11,9 @@ import { kvs } from "@forge/kvs";
 // asUser() context, so isOperatorSteward (which relies on asUser) can't evaluate an
 // arbitrary EDITOR. This uses asApp() + the explicit steward list, and is account-specific
 // (the space ADMINISTER check names the subject), so it works in triggers and the sweep.
+/** PURE. Confluence Cloud's built-in admin groups (site-admins, confluence-admins-<site>, …). */
+export const isAdminGroupName = (name) => /^(site-admins|administrators|system-administrators|confluence-admins(-.+)?)$/i.test(String(name || ""));
+
 export async function isAccountStewardAsApp(accountId, realmKey) {
   if (!accountId) return false;
   let realmConfig = null;
@@ -38,6 +41,18 @@ export async function isAccountStewardAsApp(accountId, realmKey) {
       }
       const ops = data.operations || [];
       if (ops.some((op) => op.operation === "administer" && op.targetType === "application")) return true;
+      // Asked as the app, `operations` can describe the APP's rights, not this account's, so a site
+      // admin read as "no" (tester 2026-09-30: an admin got no Approve/Deny in a personal space).
+      // Confluence's own admin groups name the account itself.
+      if ((data.groups?.results || []).some((g) => isAdminGroupName(g.name))) return true;
+    }
+  } catch (_) { /* fall through */ }
+  // 2b. The user's group list read on its own (the expand above can come back empty for an app).
+  try {
+    const res = await asApp().requestConfluence(route`/wiki/rest/api/user/memberof?accountId=${accountId}&limit=200`);
+    if (res.ok) {
+      const names = ((await res.json())?.results || []).map((g) => g.name);
+      if (names.some(isAdminGroupName)) return true;
     }
   } catch (_) { /* fall through */ }
   // 3. Space ADMINISTER permission (as app; a site/space admin holds this on the space).

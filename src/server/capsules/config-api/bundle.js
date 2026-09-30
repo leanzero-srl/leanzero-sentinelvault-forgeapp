@@ -53,6 +53,7 @@ export const CONTENT_OPS = Object.freeze({
   "assign-workflow": { allow: ["pageId", "workflowId"], required: ["pageId"], resolverKey: "assign-workflow", role: "editor" },
   // 2026-09-29: take one page out of its workflow (refused while Approved or awaiting approval).
   "remove-workflow": { allow: ["pageId"], required: ["pageId"], resolverKey: "remove-workflow", role: "editor" },
+  "withdraw-approval": { allow: ["pageId"], required: ["pageId"], resolverKey: "withdraw-approval", role: "editor" },
   "transition": { allow: ["pageId", "toStateId", "reason"], required: ["pageId", "toStateId"], resolverKey: "request-transition", role: "editor" },
   // 2026-09-23: judge a page against its validation rules now and store the verdict (where
   // pass/fail status is on and the token's minter can edit the page) — e.g. after a script
@@ -294,6 +295,7 @@ export function planBundle(bundle) {
       case "recheck-validation":
       case "approve-validation":
       case "remove-workflow":
+      case "withdraw-approval":
         step(p, spec.resolverKey, { pageId: String(c.pageId) });
         break;
       default:
