@@ -1,0 +1,196 @@
+- generic [ref=f198e3]:
+  - generic [ref=f198e4]:
+    - paragraph [ref=f198e5]: "Skip to:"
+    - button "Skip to Main content" [ref=f198e6] [cursor=pointer]
+  - generic "Header" [ref=f198e7]:
+    - generic [ref=f198e11]:
+      - generic [ref=f198e12]:
+        - generic [ref=f198e13]:
+          - link "Atlassian home" [ref=f198e14] [cursor=pointer]:
+            - /url: https://www.atlassian.com
+            - img "Atlassian" [ref=f198e16]
+          - link "Atlassian Marketplace home" [ref=f198e21] [cursor=pointer]:
+            - /url: /
+            - text: Marketplace
+        - navigation "Primary" [ref=f198e22]:
+          - button "Apps for products" [ref=f198e24] [cursor=pointer]:
+            - generic [ref=f198e25]: Works with
+          - button "App categories" [ref=f198e29] [cursor=pointer]:
+            - generic [ref=f198e30]: Categories
+          - button "Marketplace resources" [ref=f198e34] [cursor=pointer]:
+            - generic [ref=f198e35]: Resources
+          - button "Regulated sectors" [ref=f198e39] [cursor=pointer]
+      - navigation "Secondary" [ref=f198e43]:
+        - button "Support" [ref=f198e44] [cursor=pointer]
+        - button "Sign in" [ref=f198e48] [cursor=pointer]
+  - main [ref=f198e49]:
+    - generic [ref=f198e56]:
+      - heading "Discover apps for your team" [level=1] [ref=f198e57]
+      - paragraph [ref=f198e58]: Enhance your Atlassian experience with Marketplace apps
+      - search [ref=f198e63]:
+        - searchbox "Search for apps within Marketplace" [ref=f198e64]
+    - generic [ref=f198e71]:
+      - generic [ref=f198e72]:
+        - generic [ref=f198e73]:
+          - heading "Featured" [level=2] [ref=f198e74]
+          - paragraph [ref=f198e75]: Experience and engage with our curated assortment of apps
+        - generic [ref=f198e76]:
+          - button [ref=f198e77] [cursor=pointer]:
+            - img "Previous section" [ref=f198e78]
+          - button [ref=f198e79] [cursor=pointer]:
+            - img "Next section" [ref=f198e80]
+      - list [ref=f198e82]:
+        - listitem [ref=f198e83]:
+          - link "Item 1 of 11 Atlassian Enterprise Certified Explore apps that are verified to meet common enterprise needs for compliance, security, reliability, privacy, accessibility, and responsible AI use." [ref=f198e84] [cursor=pointer]:
+            - /url: /collections/atlassian-enterprise-certified
+            - generic [ref=f198e87]:
+              - heading "Atlassian Enterprise Certified" [level=3] [ref=f198e88]
+              - paragraph [ref=f198e89]: Explore apps that are verified to meet common enterprise needs for compliance, security, reliability, privacy, accessibility, and responsible AI use.
+        - listitem [ref=f198e90]:
+          - link "Item 2 of 11 Agents Unlock a new way of working in Jira. Automate your routine tasks and scale your team's impact." [ref=f198e91] [cursor=pointer]:
+            - /url: /collections/jira-agents
+            - generic [ref=f198e94]:
+              - heading "Agents" [level=3] [ref=f198e95]
+              - paragraph [ref=f198e96]: Unlock a new way of working in Jira. Automate your routine tasks and scale your team's impact.
+        - listitem [ref=f198e97]:
+          - link "Item 3 of 11 Project Management Streamline, manage, and track project phases." [ref=f198e98] [cursor=pointer]:
+            - /url: /categories/project-management
+            - generic [ref=f198e101]:
+              - heading "Project Management" [level=3] [ref=f198e102]
+              - paragraph [ref=f198e103]: Streamline, manage, and track project phases.
+        - listitem [ref=f198e104]:
+          - link "Item 4 of 11 Software Development Code, collaborate, and plan across every stage of the DevOps cycle." [ref=f198e105] [cursor=pointer]:
+            - /url: /categories/software-development
+            - generic [ref=f198e108]:
+              - heading "Software Development" [level=3] [ref=f198e109]
+              - paragraph [ref=f198e110]: Code, collaborate, and plan across every stage of the DevOps cycle.
+        - listitem [ref=f198e111]:
+          - link "Item 5 of 11 Artificial intelligence Elevate productivity with AI-powered apps to revolutionize your workflows." [ref=f198e112] [cursor=pointer]:
+            - /url: /collections/artificial-intelligence
+            - generic [ref=f198e115]:
+              - heading "Artificial intelligence" [level=3] [ref=f198e116]
+              - paragraph [ref=f198e117]: Elevate productivity with AI-powered apps to revolutionize your workflows.
+        - listitem [ref=f198e118]:
+          - link "Item 6 of 11 Admin Tools Manage users, security, and settings with apps for admins." [ref=f198e119] [cursor=pointer]:
+            - /url: /categories/admin-tools
+            - generic [ref=f198e122]:
+              - heading "Admin Tools" [level=3] [ref=f198e123]
+              - paragraph [ref=f198e124]: Manage users, security, and settings with apps for admins.
+        - listitem [ref=f198e125]:
+          - link "Item 7 of 11 Data & Analytics Unlock valuable insights with data visualization and analytics tools." [ref=f198e126] [cursor=pointer]:
+            - /url: /categories/data-analytics
+            - generic [ref=f198e129]:
+              - heading "Data & Analytics" [level=3] [ref=f198e130]
+              - paragraph [ref=f198e131]: Unlock valuable insights with data visualization and analytics tools.
+        - listitem [ref=f198e132]:
+          - link "Item 8 of 11 Atlassian Rovo Dive into an innovative app experience with apps enhanced by Rovo Agents." [ref=f198e133] [cursor=pointer]:
+            - /url: /collections/atlassian-rovo
+            - generic [ref=f198e136]:
+              - heading "Atlassian Rovo" [level=3] [ref=f198e137]
+              - paragraph [ref=f198e138]: Dive into an innovative app experience with apps enhanced by Rovo Agents.
+        - listitem [ref=f198e139]:
+          - link "Item 9 of 11 Runs on Atlassian Explore apps that run on Atlassian infrastructure, with data securely stored in-platform." [ref=f198e140] [cursor=pointer]:
+            - /url: /collections/runs-on-atlassian
+            - generic [ref=f198e143]:
+              - heading "Runs on Atlassian" [level=3] [ref=f198e144]
+              - paragraph [ref=f198e145]: Explore apps that run on Atlassian infrastructure, with data securely stored in-platform.
+        - listitem [ref=f198e146]:
+          - link "Item 10 of 11 Content & Communication Enhance communication with tools designed to efficiently share information and documentation among teams." [ref=f198e147] [cursor=pointer]:
+            - /url: /categories/content-communication
+            - generic [ref=f198e150]:
+              - heading "Content & Communication" [level=3] [ref=f198e151]
+              - paragraph [ref=f198e152]: Enhance communication with tools designed to efficiently share information and documentation among teams.
+        - listitem [ref=f198e153]:
+          - link "Item 11 of 11 Solutions Hub Discover curated solutions to streamline teamwork and boost productivity." [ref=f198e154] [cursor=pointer]:
+            - /url: /collections/solutions-hub
+            - generic [ref=f198e157]:
+              - heading "Solutions Hub" [level=3] [ref=f198e158]
+              - paragraph [ref=f198e159]: Discover curated solutions to streamline teamwork and boost productivity.
+      - button "Tap to move through the collections" [ref=f198e160] [cursor=pointer]:
+        - paragraph [ref=f198e161]: Tap to navigate
+      - generic [ref=f198e162]:
+        - button [ref=f198e163] [cursor=pointer]
+        - button [ref=f198e164] [cursor=pointer]
+    - generic [ref=f198e165]:
+      - list [ref=f198e168]:
+        - listitem [ref=f198e169]
+      - list [ref=f198e196]
+  - region "Footer" [ref=f198e203]:
+    - generic [ref=f198e204]:
+      - link "Atlassian home page" [ref=f198e206] [cursor=pointer]:
+        - /url: https://www.atlassian.com/
+      - generic [ref=f198e219]:
+        - generic [ref=f198e220]:
+          - heading "Learn and explore" [level=3] [ref=f198e221]
+          - list [ref=f198e222]:
+            - listitem [ref=f198e223]:
+              - link "What’s Marketplace open in new window" [ref=f198e224] [cursor=pointer]:
+                - /url: https://developer.atlassian.com/platform/marketplace
+                - text: What’s Marketplace
+            - listitem [ref=f198e225]:
+              - link "App installation open in new window" [ref=f198e226] [cursor=pointer]:
+                - /url: https://confluence.atlassian.com/upm/installing-add-ons-273875715.html
+                - text: App installation
+            - listitem [ref=f198e227]:
+              - link "About Atlassian open in new window" [ref=f198e228] [cursor=pointer]:
+                - /url: https://www.atlassian.com
+                - text: About Atlassian
+            - listitem [ref=f198e229]:
+              - link "Atlassian resources open in new window" [ref=f198e230] [cursor=pointer]:
+                - /url: https://www.atlassian.com/resources
+                - text: Atlassian resources
+            - listitem [ref=f198e231]:
+              - link "Search and ranking open in new window" [ref=f198e232] [cursor=pointer]:
+                - /url: https://developer.atlassian.com/platform/marketplace/marketplace-search-results-and-rankings
+                - text: Search and ranking
+            - listitem [ref=f198e233]:
+              - link "Atlassian events open in new window" [ref=f198e234] [cursor=pointer]:
+                - /url: https://www.atlassian.com/company/events
+                - text: Atlassian events
+            - listitem [ref=f198e235]:
+              - link "Atlassian foundation open in new window" [ref=f198e236] [cursor=pointer]:
+                - /url: https://www.atlassianfoundation.org/
+                - text: Atlassian foundation
+        - generic [ref=f198e237]:
+          - heading "Connect" [level=3] [ref=f198e238]
+          - list [ref=f198e239]:
+            - listitem [ref=f198e240]:
+              - link "Get support open in new window" [ref=f198e241] [cursor=pointer]:
+                - /url: https://support.atlassian.com/
+                - text: Get support
+            - listitem [ref=f198e242]:
+              - link "Partner connect open in new window" [ref=f198e243] [cursor=pointer]:
+                - /url: https://atlassianpartners.atlassian.net/wiki/spaces/resources/overview?mode=global
+                - text: Partner connect
+            - listitem [ref=f198e244]:
+              - link "Developer resources open in new window" [ref=f198e245] [cursor=pointer]:
+                - /url: https://developer.atlassian.com/
+                - text: Developer resources
+            - listitem [ref=f198e246]:
+              - link "Solution partner directory open in new window" [ref=f198e247] [cursor=pointer]:
+                - /url: https://partnerdirectory.atlassian.com/?page=1&expertise=Custom%20Development
+                - text: Solution partner directory
+            - listitem [ref=f198e248]:
+              - link "Atlassian communication channels open in new window" [ref=f198e249] [cursor=pointer]:
+                - /url: https://developer.atlassian.com/developer-guide/communication-channels/
+                - text: Atlassian communication channels
+        - generic [ref=f198e250]:
+          - heading "Follow" [level=3] [ref=f198e251]
+          - list [ref=f198e252]:
+            - listitem [ref=f198e253]:
+              - link "Atlassian on Youtube open in new window" [ref=f198e254] [cursor=pointer]:
+                - /url: https://www.youtube.com/@Atlassian
+            - listitem [ref=f198e258]:
+              - link "Atlassian on Linkedin open in new window" [ref=f198e259] [cursor=pointer]:
+                - /url: https://www.linkedin.com/showcase/atlassian-marketplace
+    - list [ref=f198e265]:
+      - listitem [ref=f198e266]:
+        - link "Privacy Policy open in new window" [ref=f198e267] [cursor=pointer]:
+          - /url: https://www.atlassian.com/legal/privacy-policy
+          - text: Privacy Policy
+      - listitem [ref=f198e268]:
+        - link "Terms of Use open in new window" [ref=f198e269] [cursor=pointer]:
+          - /url: https://www.atlassian.com/licensing/marketplace/termsofuse
+          - text: Terms of Use
+      - listitem [ref=f198e270]:
+        - paragraph [ref=f198e271]: Copyright © 2026 Atlassian
