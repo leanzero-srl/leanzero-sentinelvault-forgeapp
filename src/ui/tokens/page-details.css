@@ -334,3 +334,7 @@ html[data-color-mode="dark"] .sv-activity-chip-validation.is-active { background
 .sv-activity-chip-hint { flex-basis: 100%; font-size: 12px; color: var(--sv-text-secondary); }
 .pd-note.is-error { color: var(--sv-interactive-danger); }
 .pd-wf-confirm { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 10px; }
+
+/* Anchored dialogs (kit/Dialog: every surface opens a dialog level with the click) sit at the
+   computed marginTop from the top edge — without this the flex centring moved them (tester 2026-09-30). */
+.sv-dialog-backdrop.is-anchored { align-items: flex-start; }

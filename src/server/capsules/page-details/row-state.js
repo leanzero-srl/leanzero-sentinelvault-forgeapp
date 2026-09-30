@@ -34,6 +34,10 @@ export function primaryActionFor(row, viewer = {}, now = Date.now()) {
   // proposer gets edit access. A proposal already made shows as waiting / declined like any request.
   if (row.workflowHeld) {
     if (row.myEditStatus === "pending") return { kind: "waiting", label: "Waiting", owner: "the approvers" };
+    // An approver or a space admin sees the proposals THEY may decide (the server lists only those,
+    // never the viewer's own) — Approve moves the page back for review, then grants (tester 2026-09-30:
+    // the approver was offered "Propose a change" too, and nobody could answer the proposal).
+    if (pending.length > 0) return { kind: "decide", label: "Approve", request: pending[0], proposal: true, hint: "Approving moves this page back for review so the change can be made." };
     // A grant is FROZEN while the page is Approved (the server refuses the grantee's change, as for
     // sections) — so the row never offers "Edit now" here (tester 2026-09-25).
     if (row.myEditStatus === "denied") {

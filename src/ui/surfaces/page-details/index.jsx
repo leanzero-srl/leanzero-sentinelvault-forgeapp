@@ -209,7 +209,10 @@ const SealRow = ({ row, viewer, pageId, siteUrl, onChanged }) => {
   // The sentence under the name (mockup §4) — SEC-3: the shared `sealSentence`, the same words the
   // panel row, the macro badge and the ribbon use.
   const sentence = sealSentence(row);
-  const extra = row.isMine
+  // SEC-2 (e): a proposal on a held seal is named on the row for whoever may decide it.
+  const extra = primary.kind === "decide" && primary.proposal
+    ? ` · ${primary.request?.requesterName || "Someone"} proposes a change${primary.request?.reason ? `: “${primary.request.reason}”` : ""} — approving moves the page back for review`
+    : row.isMine && !row.workflowHeld
     ? (row.pendingRequests.length > 0
       ? ` · ${row.pendingRequests[0].requesterName || "Someone"} is waiting${row.pendingRequests[0].reason ? `: “${row.pendingRequests[0].reason}”` : ""}${row.pendingRequests.length > 1 ? ` (+${row.pendingRequests.length - 1} more)` : ""}`
       : "")
