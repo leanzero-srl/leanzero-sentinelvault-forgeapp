@@ -92,3 +92,29 @@ Upload recipe that works (Playwright MCP, owner signs in once in the Playwright 
    Scripts are generated as files and run with browser_run_code_unsafe `filename` (no `require` in that sandbox).
 4. Verify from OUTSIDE: oembed (404 = not public) + the watch page contains the description hook. One of eleven
    (validations) silently stayed Draft on the first pass — re-run the publish half.
+
+## 2026-09-30 — Marketplace listing updated for 6.4.0 (done by Playwright, owner signs in once)
+App id **1034857304**, key `com.leanzero.confluence.sentinelvault`, vendor LeanZero SRL 443065240.
+Account: office@leanzero.net; opening `/manage/apps/...` triggers an Atlassian **step-up 8-digit email code** —
+the owner types it in the Playwright window.
+**URLs that work** (the old `/manage/plugins/...`, `/manage/vendors`, `/manage` return **410 API_DEPRECATED** —
+that is a dead URL, not a login failure):
+- App-level: `https://marketplace.atlassian.com/manage/apps/1034857304/details` → `input[name=tagLine]` (≤130),
+  `textarea[name=summary]` (≤250), `button[type=submit]` Save.
+- Version list: `/manage/apps/1034857304/versions` → each version `/versions/<build>/details` (6.4.0 = build 2002180;
+  builds go up by 10 per release). Tabs: details · highlights · media · compatibility · links.
+  - details: `input[name=releaseSummary]` (≤80); two Atlassian editors `#ak-editor-textarea` — nth(0) = More
+    details (250–1000 chars), nth(1) = Release notes. Type with the keyboard: select-all + Backspace, type the
+    intro, Enter, type `* ` to start a bullet list, Enter after each item, Enter twice to leave the list. Save = `Save` button.
+  - highlights: layout Hero & highlights; hero = Video id `input[name=youtubeId]` (now the compilation
+    `IGCvPP9RxZo`; was the old 4.0.0 video); per highlight `input[name^=title_]`, the editor inside the same card,
+    `textarea[name^=explanation_]`; images via `input[type=file]` nth(i) (1840×900 — the cropped 580×330 is NOT
+    asked for here any more). Expand collapsed cards by clicking the "Highlight N" text. Save = `button[type=submit]`.
+  - media: 5 screenshots, `input[type=file]` nth(i) + `textarea[name^=caption_]`, expand "Image N" first.
+  - links: documentationUrl = https://leanzero.net/portfolio/sentinel-vault.
+- Cookie banner: click "Reject all".
+**Verify from outside** (no auth): `https://marketplace.atlassian.com/rest/2/addons/com.leanzero.confluence.sentinelvault`
+(tagLine/summary) and `.../versions/latest` (grep for the YouTube id and a highlight title).
+Each NEW version created by `forge deploy -e production` gets "Minor version update" as summary and empty
+highlights/media unless edited — do this per release; texts live in static/submission-material/LISTING-COPY.md
+(`count-blocks.py` checks the limits).
