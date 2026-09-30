@@ -57,7 +57,8 @@ eq("count: lapse limit agrees with resolveLapsePolicy", readEffective("lapseNoti
 eq("hours: lapse interval agrees with resolveLapsePolicy", readEffective("lapseNoticeIntervalHours", 12) * 3600000, resolveLapsePolicy({ lapseNoticeIntervalHours: 12 }).intervalMs);
 eq("hours: a malformed lapse interval falls back like the engine", readEffective("lapseNoticeIntervalHours", "soon") * 3600000, resolveLapsePolicy({ lapseNoticeIntervalHours: "soon" }).intervalMs);
 eq("days: reminder frequency floor", readEffective("reminderIntervalDays", 0), 7);
-eq("choice: ribbonMode coerces", readEffective("ribbonMode", "bogus"), "exceptions");
+// 2026-09-30: the ribbon-mode / threshold rows are gone — the keys are no controls any more.
+eq("ribbonMode is no longer a control", [control("ribbonMode"), control("ribbonThresholdLevel"), control("ribbonThresholdRank")], [null, null, null]);
 eq("choice: macroInsertPosition coerces like doc-surgery (=== 'top')", readEffective("macroInsertPosition", "TOP"), "bottom");
 eq("choice: notificationsMode coerces like notice-policy", readEffective("notificationsMode", "Quiet"), "normal");
 eq("nullable hours: null stays null (site default)", readEffective("autoUnlockTimeoutHours", null), null);
@@ -72,7 +73,6 @@ eq("hours < a day", formatValue("autoUnlockTimeoutHours", 6), "6 hours");
 eq("hours = a week", formatValue("autoUnlockTimeoutHours", 168), "168 hours (7 days)");
 eq("hours null → Site default", formatValue("autoUnlockTimeoutHours", null), "Site default");
 eq("days singular", formatValue("reminderIntervalDays", 1), "1 day");
-eq("ribbon default", formatDefault("ribbonMode"), "Exceptions only");
 eq("position default", formatDefault("macroInsertPosition"), "Bottom of the page");
 
 // --- the dependency table, whole ---
@@ -85,9 +85,6 @@ eq("global dependency table", dependencyTable("global").sort((a, b) => a.child.l
   { child: "lapseNoticeLimit", parent: "autoUnlockEnabled", parentValue: true },
   { child: "reminderIntervalDays", parent: "enablePeriodicReminderEmail", parentValue: true },
   { child: "replaceAttachmentsMacro", parent: "globalAutoInsertMacro", parentValue: true },
-  { child: "ribbonMode", parent: "enableDocRibbons", parentValue: true },
-  { child: "ribbonThresholdLevel", parent: "enableDocRibbons", parentValue: true },
-  { child: "ribbonThresholdRank", parent: "enableDocRibbons", parentValue: true },
 ]);
 eq("space dependency table", dependencyTable("space").sort((a, b) => a.child.localeCompare(b.child)), [
   { child: "autoInsertMacro", parent: "globalAutoInsertMacro", parentValue: true },
@@ -150,9 +147,8 @@ eq("CLS-1: the space choice reads inherit unless exactly off", [readEffective("c
 eq("CLS-1: the space choice is locked with the site-admin reason while the site is off",
   dependencyState("classification", { classification: "inherit" }, { classificationEnabled: false }), { enabled: false, reason: "Off site-wide by a site admin (Classification levels)." });
 eq("CLS-1: …and free when the site is on", dependencyState("classification", { classification: "inherit" }, { classificationEnabled: true }).enabled, true);
-eq("CLS-1: the two ribbon controls are HIDDEN while classification is off", [controlVisible("ribbonMode", { classificationEnabled: false }), controlVisible("ribbonThresholdLevel", {}), controlVisible("ribbonMode", { classificationEnabled: true })], [false, false, true]);
-eq("CLS-10: the rank fallback never has a row of its own", controlVisible("ribbonThresholdRank", { classificationEnabled: true }), false);
-eq("CLS-10: the level control reads a trimmed id or null", [readEffective("ribbonThresholdLevel", " confidential "), readEffective("ribbonThresholdLevel", ""), readEffective("ribbonThresholdLevel", 4)], ["confidential", null, null]);
+eq("2026-09-30: no Alerts row mentions the ribbon mode or a threshold any more", CONTROLS.filter((c) => /^ribbon/.test(c.key)).length, 0);
+eq("2026-09-30: the site switch says where the level shows", /under its title and in the banner/.test(control("classificationEnabled").text), true);
 eq("CLS-1: a control without hiddenUnless is always visible", controlVisible("enableDocRibbons", { classificationEnabled: false }), true);
 eq("CLS-1: space write refuses a bad mode", validatePolicyWrite("space", { classification: "on" }).ok, false);
 eq("CLS-1: space write accepts off / inherit / null", [validatePolicyWrite("space", { classification: "off" }).ok, validatePolicyWrite("space", { classification: "inherit" }).ok, validatePolicyWrite("space", { classification: null }).ok], [true, true, true]);

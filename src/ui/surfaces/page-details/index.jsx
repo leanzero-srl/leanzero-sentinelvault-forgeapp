@@ -10,6 +10,7 @@ import { approvalSummary } from "../../../server/capsules/workflow/status.js"; /
 import GiveAccessDialog from "../../kit/GiveAccessDialog";
 import { useSignedInvoke } from "../../kit/SignedInvoke";
 import { listenOutside } from "../../kit/outside-close.js";
+import { isDowngrade, findLevel } from "../../../server/capsules/classification/logic.js"; // P5: the one downgrade rule
 
 // 5.0 — the page-details modal (mockup §4), the page-level hub behind the byline chip. ONE
 // resource serves two modules: the byline item (`sentinel-vault-byline`, mode "details") and
@@ -67,43 +68,85 @@ const LevelPicker = ({ levels, value, onPick, disabled }) => {
   );
 };
 
+// P3/P4/P5 (2026-09-30): the sentence says where the level comes from; a pick that raises (or sets)
+// saves at once and says "Saved"; a pick that lowers what readers see — a lower level, or "Use
+// space default" onto a lower default — asks for one reason inline first. `isDowngrade` is the same
+// rule classification-set-page enforces, so the bar never offers a save the server would refuse.
 const ClassificationBlock = ({ c, sealed, pageId, onChanged }) => {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
+  const [lowering, setLowering] = useState(null); // { levelId } waiting on a reason
+  const [saved, setSaved] = useState(null); // { undoTo } after a save; undoTo = the previous page level when undoing is not a lowering
   const level = c?.effective?.level || null;
   const source = c?.effective?.source || "none";
   const canChange = !!c?.canChange;
-  const setLevel = async (levelId) => {
-    setBusy(true); setError(null);
+  const levels = c?.levels || [];
+  const fromId = level?.id ?? null;
+  const landsOn = (levelId) => (levelId != null ? levelId : c?.spaceDefault?.id ?? null); // what readers see after
+  const save = async (levelId, reason) => {
+    setBusy(true); setError(null); setSaved(null);
+    const previous = c?.pageLevelId ?? null;
     try {
-      const r = await invoke("classification-set-page", { pageId, levelId });
-      if (r?.ok) await onChanged();
+      const r = await invoke("classification-set-page", { pageId, levelId, reason });
+      if (r?.ok) {
+        setLowering(null);
+        // Undo is offered only where undoing needs no reason (it would not lower anything).
+        const undoLowers = isDowngrade(landsOn(levelId), landsOn(previous), levels);
+        setSaved({ undoTo: undoLowers ? undefined : previous });
+        await onChanged();
+      } else if (r?.needsReason) setLowering({ levelId });
       else setError(r?.reason || "Could not change the classification.");
     } catch (_) { setError("Could not change the classification."); }
     finally { setBusy(false); }
+  };
+  const pick = (levelId) => {
+    if (String(levelId ?? "") === String(c?.pageLevelId ?? "")) return;
+    setSaved(null); setError(null);
+    if (isDowngrade(fromId, landsOn(levelId), levels)) { setLowering({ levelId }); return; }
+    setLowering(null);
+    save(levelId);
   };
   let desc;
   if (c?.error) desc = c.error;
   else if (!level) desc = canChange ? "No classification level on this page. Choose one, or ask a space admin to set a space default." : "No classification level on this page. Ask a space admin to set a space default.";
   else {
-    const src = source === "page"
-      ? `Set on this page.${c.spaceDefault ? ` The space default is ${c.spaceDefault.name}.` : " The space has no default."}`
-      : "Space default.";
+    let src;
+    if (source === "page") {
+      const d = c.spaceDefault;
+      src = !d ? "Set on this page. The space has no default."
+        : isDowngrade(d.id, level.id, levels) ? `Set on this page — lower than the space default (${d.name}).`
+          : `Set on this page. The space default is ${d.name}.`;
+    } else src = "From the space default.";
     desc = `${src}${level.description ? ` ${level.description}` : ""}${canChange ? "" : " Only space admins and page editors can change it."}`;
   }
+  const lowerTo = lowering ? findLevel(levels, landsOn(lowering.levelId)) : null;
   return (
     <section className="pd-sec" data-testid="pd-classification">
       <h4>Classification</h4>
       <div className="pd-cls-row">
         <LevelPill level={level} sealed={sealed} testId="pd-level-pill" />
         <span className="pd-desc" data-testid="pd-level-desc">{desc}</span>
-        {canChange && c?.levels?.length > 0 && (
+        {canChange && levels.length > 0 && (
           <span className="pd-override">
-            <LevelPicker levels={c.levels} value={c.pageLevelId} onPick={setLevel} disabled={busy} />
-            <button type="button" className="pd-btn quiet" disabled={busy || c.pageLevelId == null} onClick={() => setLevel(null)} data-testid="pd-use-space-default">Use space default</button>
+            <LevelPicker levels={levels} value={c.pageLevelId} onPick={pick} disabled={busy} />
+            <button type="button" className="pd-btn quiet" disabled={busy || c.pageLevelId == null} onClick={() => pick(null)} data-testid="pd-use-space-default">Use space default</button>
           </span>
         )}
       </div>
+      {lowering && (
+        <ReasonBar
+          label={`Lowering this page from ${level?.name || "its level"} to ${lowerTo?.name || "Unclassified"} needs a reason. It is kept in the page's activity.`}
+          placeholder="Why is this page less sensitive now?"
+          confirm={lowering.levelId != null ? `Lower to ${lowerTo?.name || "this level"}` : lowerTo ? `Use space default (${lowerTo.name})` : "Remove the level"}
+          required busy={busy}
+          onConfirm={(reason) => save(lowering.levelId, reason)}
+          onCancel={() => setLowering(null)} />
+      )}
+      {saved && !busy && (
+        <p className="pd-note" role="status" data-testid="pd-level-saved">
+          Saved.{saved.undoTo !== undefined && <> <button type="button" className="pd-link" onClick={() => save(saved.undoTo)} data-testid="pd-level-undo">Undo</button></>}
+        </p>
+      )}
       {error && <p className="pd-error" role="alert">{error}</p>}
     </section>
   );

@@ -1,40 +1,33 @@
-// 5.0 ribbon — the pure show rule (mockup §2 "Exceptions only" / §3 "Always show classification"),
-// the one-state-pill choice and the steward-setting normalisation, branch by branch. Zero Forge
-// imports: src/ui/kit/ribbon-rules.js loads in plain node like activity-format.js.
+// 5.0 ribbon — the pure show rule, the one-state-pill choice and the write-gate validation, branch
+// by branch. Zero Forge imports: src/ui/kit/ribbon-rules.js loads in plain node like activity-format.js.
+//
+// 2026-09-30 (classification review): with classification ACTIVE the row shows on every page and
+// the level block cannot be dismissed; with it OFF only seal / workflow / validation / alert states
+// open it. The old ribbonMode / threshold settings are accepted by the write gate and read by nothing.
 import {
-  decideRibbon, pickUrgent, meetsThreshold, normalizeRibbonSettings, validateRibbonSettings, untilLabel,
+  decideRibbon, pickUrgent, validateRibbonSettings, untilLabel,
   DEFAULT_RIBBON_MODE, DEFAULT_RIBBON_THRESHOLD_RANK, RIBBON_MODES,
 } from "../src/ui/kit/ribbon-rules.js";
+import * as ribbonRules from "../src/ui/kit/ribbon-rules.js";
 import { eq, ok, report } from "./_assert.mjs";
 
 const lvl = (id, rank) => ({ id, name: id[0].toUpperCase() + id.slice(1), color: "#000000", rank });
-const PUBLIC = { level: lvl("public", 1), source: "space" };
-const INTERNAL = { level: lvl("internal", 2), source: "space" };
-const RESTRICTED = { level: lvl("restricted", 4), source: "page" };
-const NONE = { level: null, source: "none" };
+const ON = (level, source = "space") => ({ level, source: level ? source : "none", enabled: true });
+const PUBLIC = ON(lvl("public", 1));
+const INTERNAL = ON(lvl("internal", 2));
+const RESTRICTED = ON(lvl("restricted", 4), "page");
+const UNCLASSIFIED = ON(null);
+const OFF = { level: null, source: "none", enabled: false };
 const quiet = { requests: 0, approvals: 0, grantsActive: [] };
-const T4 = { rank: 4 };
 const locked = { name: "contract-v3.pdf", owner: "Mihai Perdum", until: "2026-09-21T09:00:00.000Z", kind: "attachment", id: "att1", myRequest: "none" };
 
-// ── settings ────────────────────────────────────────────────────────────────────────────────
-eq("defaults", [DEFAULT_RIBBON_MODE, DEFAULT_RIBBON_THRESHOLD_RANK, RIBBON_MODES], ["exceptions", 4, ["exceptions", "always"]]);
-eq("no stored settings → defaults", normalizeRibbonSettings(null), { ribbonMode: "exceptions", ribbonThresholdRank: 4, ribbonThresholdLevel: null, thresholdFrom: "rank" });
-eq("stored always + 3", normalizeRibbonSettings({ ribbonMode: "always", ribbonThresholdRank: 3 }), { ribbonMode: "always", ribbonThresholdRank: 3, ribbonThresholdLevel: null, thresholdFrom: "rank" });
-// CLS-10: the threshold is a LEVEL; its rank is resolved against the scheme at read time.
-const LV = [{ id: "public", rank: 1 }, { id: "internal", rank: 2 }, { id: "confidential", rank: 3 }, { id: "restricted", rank: 4 }];
-eq("a known level wins over the stored rank", normalizeRibbonSettings({ ribbonThresholdRank: 4, ribbonThresholdLevel: "confidential" }, LV).ribbonThresholdRank, 3);
-eq("…and says so", normalizeRibbonSettings({ ribbonThresholdLevel: "confidential" }, LV).thresholdFrom, "level");
-eq("re-ranked level → the new rank, same level", normalizeRibbonSettings({ ribbonThresholdLevel: "confidential" }, [{ id: "confidential", rank: 2 }]).ribbonThresholdRank, 2);
-eq("an unknown level → the stored rank", normalizeRibbonSettings({ ribbonThresholdRank: 2, ribbonThresholdLevel: "gone" }, LV).ribbonThresholdRank, 2);
-eq("a level with no scheme handed in → the stored rank", normalizeRibbonSettings({ ribbonThresholdRank: 2, ribbonThresholdLevel: "confidential" }).ribbonThresholdRank, 2);
+// ── the old settings: accepted when well-formed, read by nothing ─────────────────────────────
+eq("constants kept for the write gate", [DEFAULT_RIBBON_MODE, DEFAULT_RIBBON_THRESHOLD_RANK, RIBBON_MODES], ["exceptions", 4, ["exceptions", "always"]]);
+eq("normalizeRibbonSettings is gone (nothing reads the settings)", typeof ribbonRules.normalizeRibbonSettings, "undefined");
+eq("meetsThreshold is gone (no threshold opens the row)", typeof ribbonRules.meetsThreshold, "undefined");
 eq("level validation: a string id passes", validateRibbonSettings({ ribbonThresholdLevel: "confidential" }).ok, true);
 eq("level validation: null clears", validateRibbonSettings({ ribbonThresholdLevel: null }).ok, true);
 eq("level validation: a number is refused", validateRibbonSettings({ ribbonThresholdLevel: 3 }).ok, false);
-eq("unknown mode → default", normalizeRibbonSettings({ ribbonMode: "sometimes" }).ribbonMode, "exceptions");
-eq("rank as a numeric string", normalizeRibbonSettings({ ribbonThresholdRank: "2" }).ribbonThresholdRank, 2);
-eq("rank 0 → default", normalizeRibbonSettings({ ribbonThresholdRank: 0 }).ribbonThresholdRank, 4);
-eq("rank 100 → default", normalizeRibbonSettings({ ribbonThresholdRank: 100 }).ribbonThresholdRank, 4);
-eq("rank 2.5 → default", normalizeRibbonSettings({ ribbonThresholdRank: 2.5 }).ribbonThresholdRank, 4);
 eq("validate: omitted keys pass", validateRibbonSettings({ defaultLockDuration: 3600 }).ok, true);
 eq("validate: undefined data passes", validateRibbonSettings(undefined).ok, true);
 eq("validate: good pair", validateRibbonSettings({ ribbonMode: "always", ribbonThresholdRank: 1 }).ok, true);
@@ -43,14 +36,6 @@ eq("validate: rank 0 refused", validateRibbonSettings({ ribbonThresholdRank: 0 }
 eq("validate: rank 99 ok", validateRibbonSettings({ ribbonThresholdRank: 99 }).ok, true);
 eq("validate: rank 'abc' refused", validateRibbonSettings({ ribbonThresholdRank: "abc" }).ok, false);
 eq("validate: null values are 'unset' and pass", validateRibbonSettings({ ribbonMode: null, ribbonThresholdRank: null }).ok, true);
-
-// ── threshold ───────────────────────────────────────────────────────────────────────────────
-eq("restricted(4) ≥ 4", meetsThreshold(RESTRICTED, T4), true);
-eq("internal(2) < 4", meetsThreshold(INTERNAL, T4), false);
-eq("no level never meets", meetsThreshold(NONE, T4), false);
-eq("threshold as a bare number", meetsThreshold(RESTRICTED, 4), true);
-eq("threshold 2 admits internal", meetsThreshold(INTERNAL, { rank: 2 }), true);
-eq("missing threshold → false", meetsThreshold(RESTRICTED, undefined), false);
 
 // ── the one pill ─────────────────────────────────────────────────────────────────────────────
 eq("nothing → null", pickUrgent({ waitingOnMe: quiet, lockedFor: null, alerts: [] }), null);
@@ -68,51 +53,46 @@ eq("string counts are tolerated", pickUrgent({ waitingOnMe: { requests: "2", app
 eq("negative / NaN counts are zero", pickUrgent({ waitingOnMe: { requests: -1, approvals: NaN } }), null);
 eq("null grants entries are ignored", pickUrgent({ waitingOnMe: { grantsActive: [null] } }), null);
 
-// ── exceptions mode ─────────────────────────────────────────────────────────────────────────
-const exc = (over) => decideRibbon({ mode: "exceptions", classification: INTERNAL, threshold: T4, waitingOnMe: quiet, lockedFor: null, alerts: [], workflow: null, validation: null, ...over });
-eq("internal, nothing urgent → closed", exc({}).show, false);
-eq("…reasons empty", exc({}).reasons, []);
-eq("(a) restricted meets threshold → open", exc({ classification: RESTRICTED }).show, true);
-eq("…reason threshold", exc({ classification: RESTRICTED }).reasons, ["threshold"]);
-eq("…overThreshold flag", exc({ classification: RESTRICTED }).overThreshold, true);
-eq("(a) threshold lowered to 2 opens an Internal page", exc({ threshold: { rank: 2 } }).show, true);
-eq("(a) thresholdRank shorthand", decideRibbon({ mode: "exceptions", classification: INTERNAL, thresholdRank: 2 }).show, true);
-eq("(b) requests waiting → open", exc({ waitingOnMe: { requests: 1, approvals: 0, grantsActive: [] } }).show, true);
-eq("…urgent kind", exc({ waitingOnMe: { requests: 1, approvals: 0, grantsActive: [] } }).urgent.kind, "waiting-for-you");
-eq("(b) approvals waiting → open", exc({ waitingOnMe: { requests: 0, approvals: 2, grantsActive: [] } }).show, true);
-eq("(b) an active grant → open (Edit now)", exc({ waitingOnMe: { requests: 0, approvals: 0, grantsActive: [{ name: "b", until: null }] } }).urgent.kind, "edit-now");
-eq("(b) a seal the viewer does not own → open (Locked)", exc({ lockedFor: locked }).urgent.kind, "locked");
-eq("(b) own request pending → open (Waiting for owner)", exc({ lockedFor: { ...locked, myRequest: "pending" } }).urgent.kind, "waiting-for-owner");
-eq("(c) an active alert → open (Restored)", exc({ alerts: [{ id: "a", type: "edit-reverted" }] }).urgent.kind, "restored");
-eq("workflow keeps showing", exc({ workflow: { assigned: true, state: { id: "draft" } } }).show, true);
-eq("…reason workflow", exc({ workflow: { assigned: true } }).reasons, ["workflow"]);
-eq("validation keeps showing", exc({ validation: "failed" }).show, true);
-eq("…reason validation", exc({ validation: "failed" }).reasons, ["validation"]);
-eq("unclassified page, nothing urgent → closed", exc({ classification: NONE }).show, false);
-eq("unclassified page, locked → open", exc({ classification: NONE, lockedFor: locked }).show, true);
-eq("public page, nothing urgent → closed", exc({ classification: PUBLIC }).show, false);
-eq("threshold + urgent: reasons list both, threshold first", exc({ classification: RESTRICTED, lockedFor: locked }).reasons, ["threshold", "locked"]);
-eq("a viewer-OWNED seal with nothing waiting is not a trigger (no lockedFor, no waiting)", exc({}).show, false);
-eq("mode defaults to exceptions", decideRibbon({ classification: INTERNAL, threshold: T4 }).mode, "exceptions");
-eq("unknown mode → exceptions", decideRibbon({ mode: "sometimes", classification: RESTRICTED, threshold: T4 }).reasons, ["threshold"]);
-eq("empty input → closed", decideRibbon().show, false);
-eq("threshold defaults to 4 when absent", decideRibbon({ mode: "exceptions", classification: RESTRICTED }).show, true);
+// ── P1: classification ACTIVE → the row shows on every page, whatever else is going on ───────
+const on = (over) => decideRibbon({ classification: INTERNAL, waitingOnMe: quiet, lockedFor: null, alerts: [], workflow: null, validation: null, ...over });
+eq("active + nothing else (no attachment, no seal, no workflow) → open", on({}).show, true);
+eq("…active flag", on({}).active, true);
+eq("…reason classification", on({}).reasons, ["classification"]);
+eq("…right half empty (urgent null)", on({}).urgent, null);
+eq("…and nothing to dismiss (the marking is not dismissable)", on({}).dismissable, false);
+eq("public → open", on({ classification: PUBLIC }).show, true);
+eq("restricted → open", on({ classification: RESTRICTED }).show, true);
+eq("unclassified page in an active space → open as Unclassified", on({ classification: UNCLASSIFIED }).show, true);
+eq("…reason unclassified", on({ classification: UNCLASSIFIED }).reasons, ["unclassified"]);
+eq("…level null, source none", [on({ classification: UNCLASSIFIED }).classification.level, on({ classification: UNCLASSIFIED }).classification.source], [null, "none"]);
+eq("the decision echoes the level and where it comes from", on({}).classification, { level: INTERNAL.level, source: "space", enabled: true });
+eq("a page override keeps source page", on({ classification: RESTRICTED }).classification.source, "page");
+eq("active + waiting → the same urgent right half", on({ waitingOnMe: { requests: 3, approvals: 0, grantsActive: [] } }).urgent, { kind: "waiting-for-you", count: 3, requests: 3, approvals: 0 });
+eq("…and it is dismissable (the right half, not the level)", on({ waitingOnMe: { requests: 3, approvals: 0, grantsActive: [] } }).dismissable, true);
+eq("active + locked", on({ lockedFor: locked }).urgent.kind, "locked");
+eq("active + alert", on({ alerts: [{ id: "a" }] }).urgent.kind, "restored");
+eq("active + workflow reasons, classification first", on({ workflow: { assigned: true } }).reasons, ["classification", "workflow"]);
+eq("active + validation dismissable", on({ validation: "failed" }).dismissable, true);
+eq("threshold / mode inputs are ignored (old callers)", decideRibbon({ mode: "exceptions", threshold: { rank: 4 }, classification: PUBLIC }).show, true);
 
-// ── always mode ─────────────────────────────────────────────────────────────────────────────
-const alw = (over) => decideRibbon({ mode: "always", classification: INTERNAL, threshold: T4, waitingOnMe: quiet, lockedFor: null, alerts: [], workflow: null, validation: null, ...over });
-eq("internal, nothing urgent → open", alw({}).show, true);
-eq("…right half empty (urgent null)", alw({}).urgent, null);
-eq("…reason always", alw({}).reasons, ["always"]);
-eq("public → open", alw({ classification: PUBLIC }).show, true);
-eq("unclassified → open as Unclassified", alw({ classification: NONE }).show, true);
-eq("…reason always-unclassified", alw({ classification: NONE }).reasons, ["always-unclassified"]);
-eq("always + waiting → the same urgent right half", alw({ waitingOnMe: { requests: 3, approvals: 0, grantsActive: [] } }).urgent, { kind: "waiting-for-you", count: 3, requests: 3, approvals: 0 });
-eq("always + locked", alw({ lockedFor: locked }).urgent.kind, "locked");
-eq("always + alert", alw({ alerts: [{ id: "a" }] }).urgent.kind, "restored");
-eq("always + workflow reasons", alw({ workflow: { assigned: true } }).reasons, ["always", "workflow"]);
-eq("always: overThreshold still reported (restricted)", alw({ classification: RESTRICTED }).overThreshold, true);
-eq("always: overThreshold false for internal", alw({}).overThreshold, false);
-eq("decision echoes the classification", alw({}).classification, INTERNAL);
+// ── classification OFF → only seal / workflow / validation / alert states open the row ────────
+const off = (over) => decideRibbon({ classification: OFF, waitingOnMe: quiet, lockedFor: null, alerts: [], workflow: null, validation: null, ...over });
+eq("off, nothing → closed", off({}).show, false);
+eq("off: reasons empty", off({}).reasons, []);
+eq("off: active false", off({}).active, false);
+eq("off: the decision carries enabled:false for the surface", off({}).classification, OFF);
+eq("off: a level sent anyway is ignored and not echoed", decideRibbon({ classification: { ...RESTRICTED, enabled: false } }).classification.level, null);
+eq("off: …and does not open the row", decideRibbon({ classification: { ...RESTRICTED, enabled: false } }).show, false);
+eq("off: requests waiting → open", off({ waitingOnMe: { requests: 1, approvals: 0, grantsActive: [] } }).show, true);
+eq("off: an active grant → open (Edit now)", off({ waitingOnMe: { requests: 0, approvals: 0, grantsActive: [{ name: "b", until: null }] } }).urgent.kind, "edit-now");
+eq("off: a seal the viewer does not own → open (Locked)", off({ lockedFor: locked }).urgent.kind, "locked");
+eq("off: own request pending → open (Waiting for owner)", off({ lockedFor: { ...locked, myRequest: "pending" } }).urgent.kind, "waiting-for-owner");
+eq("off: an active alert → open (Restored)", off({ alerts: [{ id: "a", type: "edit-reverted" }] }).urgent.kind, "restored");
+eq("off: workflow keeps showing", off({ workflow: { assigned: true, state: { id: "draft" } } }).reasons, ["workflow"]);
+eq("off: validation keeps showing", off({ validation: "failed" }).reasons, ["validation"]);
+eq("off: the row is dismissable when open", off({ lockedFor: locked }).dismissable, true);
+eq("enabled undefined (no summary) reads as off", decideRibbon({ classification: { level: INTERNAL.level, source: "space" } }).active, false);
+eq("empty input → closed", decideRibbon().show, false);
 
 // ── untilLabel ───────────────────────────────────────────────────────────────────────────────
 const now = Date.UTC(2026, 8, 15, 12, 0, 0); // Tue 15 Sep 2026
@@ -120,21 +100,5 @@ eq("no expiry → empty", untilLabel(null, now), "");
 eq("garbage → empty", untilLabel("nope", now), "");
 ok("inside the week → weekday + time", /^[A-Za-z]{3} \d{2}:\d{2}$/.test(untilLabel("2026-09-18T17:00:00.000Z", now, "en-GB")));
 ok("beyond the week → day month + time", /^\d{1,2} [A-Za-z]{3} \d{2}:\d{2}$/.test(untilLabel("2026-10-05T09:00:00.000Z", now, "en-GB")));
-
-// ── CLS-1: classification off ───────────────────────────────────────────────────────────────
-{
-  const OFF = { level: null, source: "none", enabled: false };
-  const off = (over) => decideRibbon({ mode: "always", classification: OFF, threshold: T4, waitingOnMe: quiet, lockedFor: null, alerts: [], workflow: null, validation: null, ...over });
-  eq("off: 'always' no longer opens the row on its own", off({}).show, false);
-  eq("off: the mode collapses to exceptions", off({}).mode, "exceptions");
-  eq("off: no always-unclassified reason", off({}).reasons, []);
-  eq("off: the decision carries enabled:false for the surface", off({}).classification, OFF);
-  eq("off: a level sent anyway is ignored (never over threshold)", decideRibbon({ mode: "exceptions", classification: { ...RESTRICTED, enabled: false }, threshold: T4 }).show, false);
-  eq("off: …and not echoed", decideRibbon({ mode: "exceptions", classification: { ...RESTRICTED, enabled: false }, threshold: T4 }).classification.level, null);
-  eq("off: urgent still opens the row", off({ lockedFor: locked }).show, true);
-  eq("off: workflow still opens the row", off({ workflow: { state: { id: "approved" } } }).reasons, ["workflow"]);
-  eq("on (enabled:true) behaves as before", decideRibbon({ mode: "always", classification: { ...INTERNAL, enabled: true }, threshold: T4 }).reasons, ["always"]);
-  eq("enabled undefined behaves as before", decideRibbon({ mode: "always", classification: NONE, threshold: T4 }).reasons, ["always-unclassified"]);
-}
 
 report("ribbon-rules");

@@ -338,3 +338,5 @@ html[data-color-mode="dark"] .sv-activity-chip-validation.is-active { background
 /* Anchored dialogs (kit/Dialog: every surface opens a dialog level with the click) sit at the
    computed marginTop from the top edge — without this the flex centring moved them (tester 2026-09-30). */
 .sv-dialog-backdrop.is-anchored { align-items: flex-start; }
+/* 2026-09-30 (classification P4): "Saved · Undo" after a level change — a plain link button. */
+.pd-link { background: transparent; border: 0; padding: 0; font: inherit; font-weight: 700; color: var(--sv-interactive-primary); cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }

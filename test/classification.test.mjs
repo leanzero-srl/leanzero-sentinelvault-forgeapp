@@ -2,6 +2,7 @@ import {
   DEFAULT_LEVELS, PROPERTY_KEY, decideEffective, validateLevels, nativeUnavailable,
   createNativeProvider, createAppProvider, selectProvider, mirrorProperty, isContentId,
   spaceKvsKey, pageKvsKey, LEVELS_KVS_KEY, classificationActive, classificationOffReason, CLASSIFICATION_OFF_REASON,
+  isDowngrade, sourcePhrase, cleanReason, downgradeRefusal, findLevel, REASON_MAX,
 } from "../src/server/capsules/classification/logic.js";
 import { eq, ok, report } from "./_assert.mjs";
 
@@ -280,5 +281,39 @@ eq("400 is NOT unavailable (a real error, not a missing feature)", nativeUnavail
   eq("the refusal sentence names the switch", [classificationOffReason({ active: false, reason: "site" }), classificationOffReason({ active: false, reason: "space" }), classificationOffReason(null)], [CLASSIFICATION_OFF_REASON.site, CLASSIFICATION_OFF_REASON.space, CLASSIFICATION_OFF_REASON.site]);
   eq("the sentences", CLASSIFICATION_OFF_REASON, { site: "Classification is off on this site", space: "Classification is off in this space" });
 }
+
+// ── P5 (2026-09-30): the ONE downgrade rule — server and the three UIs ask this ────────────
+{
+  const L = DEFAULT_LEVELS; // public 1 · internal 2 · confidential 3 · restricted 4 (1 = least sensitive)
+  eq("raise: internal → restricted is not a downgrade", isDowngrade("internal", "restricted", L), false);
+  eq("lower: restricted → internal is a downgrade", isDowngrade("restricted", "internal", L), true);
+  eq("one step down counts", isDowngrade("confidential", "internal", L), true);
+  eq("same level is not a downgrade", isDowngrade("confidential", "confidential", L), false);
+  eq("nothing → anything is a raise", isDowngrade(null, "public", L), false);
+  eq("nothing → nothing is no change", isDowngrade(null, null, L), false);
+  eq("clearing a level is a downgrade", isDowngrade("public", null, L), true);
+  eq("…even from the lowest level (a marking is taken away)", isDowngrade("public", "", L), true);
+  eq("a deleted FROM level reads as none → never needs a reason", isDowngrade("gone", "public", L), false);
+  eq("a deleted TO level reads as none → a downgrade from a known level", isDowngrade("internal", "gone", L), true);
+  eq("the rank decides, not the list order", isDowngrade("b", "a", [{ id: "a", rank: 9 }, { id: "b", rank: 2 }]), false);
+  eq("numeric-string ids compare as strings (native ids)", isDowngrade(7, "3", [{ id: "7", rank: 3 }, { id: "3", rank: 1 }]), true);
+  eq("no level list → nothing is known → no downgrade", isDowngrade("restricted", "public", null), false);
+  // "Use space default": the page's own Restricted onto a Confidential default lowers what readers see.
+  eq("reset onto a lower space default is a downgrade", isDowngrade("restricted", "confidential", L), true);
+  eq("reset onto a higher space default is not", isDowngrade("internal", "confidential", L), false);
+}
+// ── P3: where the level comes from — one phrase ────────────────────────────────────────────
+eq("source page", sourcePhrase("page"), "set on this page");
+eq("source space", sourcePhrase("space"), "from space default");
+eq("no source", sourcePhrase("none"), null);
+// ── reasons ─────────────────────────────────────────────────────────────────────────────────
+eq("reason trimmed", cleanReason("  moved to the public site  "), "moved to the public site");
+eq("reason clipped", cleanReason("x".repeat(400)).length, REASON_MAX);
+eq("non-string reason is empty", [cleanReason(null), cleanReason(42), cleanReason({})], ["", "", ""]);
+eq("whitespace-only reason is empty (a refusal)", cleanReason("   "), "");
+eq("refusal names both levels", downgradeRefusal({ name: "Confidential" }, { name: "Internal" }), "Lowering the classification from Confidential to Internal needs a reason.");
+eq("refusal for a clear", downgradeRefusal({ name: "Public" }, null), "Lowering the classification from Public to no level needs a reason.");
+eq("findLevel by id", findLevel(DEFAULT_LEVELS, "internal").name, "Internal");
+eq("findLevel null id / unknown id", [findLevel(DEFAULT_LEVELS, null), findLevel(DEFAULT_LEVELS, "nope")], [null, null]);
 
 report("classification");

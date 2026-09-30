@@ -4,10 +4,13 @@
  * ONE row: the left block is the page's classification (solid level colour, lock glyph when the
  * page holds a seal, level name, source); the right half holds exactly ONE urgent thing for the
  * viewer — a state pill, one sentence, and the buttons (Request edit · Open · ×). Whether the row
- * opens at all is the pure rule in kit/ribbon-rules.js (decideRibbon), fed by the steward's
- * `ribbonMode` ("exceptions" | "always") and `ribbonThresholdRank`, the `ribbon-summary` answer
- * (classification, waiting-on-me, lockedFor), the viewer's alerts and the page's workflow /
+ * opens at all is the pure rule in kit/ribbon-rules.js (decideRibbon), fed by the `ribbon-summary`
+ * answer (classification, waiting-on-me, lockedFor), the viewer's alerts and the page's workflow /
  * validation state. Hidden = view.close() (Confluence drops the banner row), shown = view.open().
+ *
+ * 2026-09-30 (classification review): with classification active the row shows on EVERY page view
+ * and the level block cannot be dismissed — × hides the right half only (and acknowledges an
+ * alert). A failed attachments read keeps the level and says what could not be checked.
  */
 
 import React, { useState, useEffect, useCallback, useRef } from "react";
@@ -20,6 +23,7 @@ import { useActionMenu } from "../../kit/ActionMenu";
 import DatePicker, { toYmd, fromYmd } from "../../kit/DatePicker";
 import { decideRibbon, untilLabel } from "../../kit/ribbon-rules";
 import { alertWord, refusalText, when } from "../../kit/status-language.js"; // SEC-3: one vocabulary, one clock
+import { sourcePhrase } from "../../../server/capsules/classification/logic.js"; // P3: "from space default" / "set on this page"
 import BusyVeil from "../../kit/BusyVeil";
 
 /**
@@ -759,16 +763,14 @@ const stateKeyOf = ({ summary, workflow, alerts, validationState }) => hashKey(J
   w: workflow?.state?.id || workflow?.state?.name || null, al: (alerts || []).map((x) => x.id).sort(), v: validationState || null,
   // 5.0: a new request, an approval, a grant, a different locked seal or a re-classification is a
   // NEW state — a dismissed "Locked" row comes back when the state changes (mockup §2 note).
-  m: summary?.ribbonMode || null, l: summary?.classification?.level?.id || null, src: summary?.classification?.source || null,
+  l: summary?.classification?.level?.id || null, src: summary?.classification?.source || null,
   r: summary?.waitingOnMe?.requests || 0, ap: summary?.waitingOnMe?.approvals || 0,
   g: (summary?.waitingOnMe?.grantsActive || []).map((x) => x.id).sort(),
   lf: summary?.lockedFor ? [summary.lockedFor.kind, summary.lockedFor.id, summary.lockedFor.myRequest] : null,
 }));
 // The decision input, built ONCE from the same four reads the evaluation made.
 const ribbonInput = ({ summary, workflow, alerts, validationState }) => ({
-  mode: summary?.ribbonMode,
   classification: summary?.classification || { level: null, source: "none" },
-  threshold: summary?.threshold || { rank: summary?.ribbonThresholdRank },
   waitingOnMe: summary?.waitingOnMe || { requests: 0, approvals: 0, grantsActive: [] },
   lockedFor: summary?.lockedFor || null,
   alerts: alerts || [],
@@ -912,8 +914,11 @@ const DocumentRibbon = () => {
       }
       console.info("[ribbon] summary", res);
       const failed = !res || typeof res !== "object" || (res.ok !== true && res.reason !== "none");
-      setSummary(failed ? null : res);
-      return failed ? { res: null, error: res?.reason || "no-summary" } : { res, error: null };
+      // B (2026-09-30): an answer that could not list the attachments still carries the level —
+      // keep it, so the row shows the classification and names what could not be checked.
+      const partial = failed && res?.classification?.enabled === true ? res : null;
+      setSummary(failed ? partial : res);
+      return failed ? { res: partial, error: res?.reason || "no-summary" } : { res, error: null };
     } catch (err) {
       console.error("[ribbon] ribbon-summary failed:", err);
       setSummary(null);
@@ -1006,9 +1011,10 @@ const DocumentRibbon = () => {
       }
 
       if (sumRes?.error) {
-        // Not a confirmed "nothing to show": say so in the row instead of vanishing (P1-7).
+        // Not a confirmed "nothing to show": say so in the row instead of vanishing (P1-7). With an
+        // active classification the row is the level block plus that sentence, never an error row.
         setSummaryError(sumRes.error);
-        console.info("[ribbon] decision", `error row (summary: ${sumRes.error})`);
+        console.info("[ribbon] decision", `${sum ? "level + error sentence" : "error row"} (summary: ${sumRes.error})`);
         applyVisibility(true, `summary failed: ${sumRes.error}`);
         return;
       }
@@ -1020,13 +1026,14 @@ const DocumentRibbon = () => {
       const key = dismissKey(ctxPageId, stateKeyOf({ summary: sum, workflow: wfVal, alerts: al, validationState: vsVal }));
       // An explicit Retry (the error row's button) is a request to see the result — it overrides
       // a dismissal of that same state made earlier in the session; every other evaluation honours it.
+      // C: with classification active a dismissal hides the right half only — the row stays open.
       const dismissed = show && why !== "retry" && isDismissed(key);
       const branch = !show
-        ? `nothing to show (mode=${decision.mode} level=${sum?.classification?.level?.id || "-"} sealedAttachments=${sum?.sealedAttachments || 0} sectionSeals=${sum?.sectionSeals || 0} reason=${sum?.reason || "no-summary"})`
-        : dismissed ? `dismissed for this state (${key})`
-          : `show: ${decision.reasons.join("+")} (mode=${decision.mode} level=${sum?.classification?.level?.id || "-"} urgent=${decision.urgent?.kind || "-"} workflow=${!!wfVal} alerts=${al.length} validation=${vsVal || "-"})`;
+        ? `nothing to show (classification off, level=${sum?.classification?.level?.id || "-"} sealedAttachments=${sum?.sealedAttachments || 0} sectionSeals=${sum?.sectionSeals || 0} reason=${sum?.reason || "no-summary"})`
+        : dismissed ? `dismissed for this state (${key})${decision.active ? " — level block stays" : ""}`
+          : `show: ${decision.reasons.join("+")} (level=${sum?.classification?.level?.id || "-"} urgent=${decision.urgent?.kind || "-"} workflow=${!!wfVal} alerts=${al.length} validation=${vsVal || "-"})`;
       console.info("[ribbon] decision", branch);
-      applyVisibility(show && !dismissed, branch);
+      applyVisibility(show && (!dismissed || decision.active), branch);
     } catch (err) {
       console.error("[ribbon] evaluate error:", err);
       if (!stale()) {
@@ -1117,10 +1124,14 @@ const DocumentRibbon = () => {
     }
   }, []);
 
+  const [, setDismissTick] = useState(0); // re-render after a right-half-only dismissal
   const dismissRibbon = useCallback(() => {
     const key = dismissKey(pageIdRef.current, stateKeyOf({ summary, workflow, alerts, validationState }));
     rememberDismissed(key);
-    applyVisibility(false, `dismissed by the viewer (${key})`);
+    // C: the classification marking is not dismissable — with it active the row stays open and
+    // falls back to the level block; otherwise × closes the row as before.
+    if (summary?.classification?.enabled === true) { setDismissTick((n) => n + 1); console.info("[ribbon] right half dismissed", key); }
+    else applyVisibility(false, `dismissed by the viewer (${key})`);
     // The "Restored" row IS the alert (there is no alert popover any more): dismissing it
     // acknowledges the dispatch it showed, so the same reverted edit does not come back tomorrow.
     if (alerts.length > 0) dismissAlert(alerts[0].id);
@@ -1159,8 +1170,9 @@ const DocumentRibbon = () => {
   }
   if (!visible) return null;
 
-  // Error row (P1-7): the summary threw or refused — one row, same height, with Retry.
-  if (summaryError) {
+  // Error row (P1-7): the summary threw or refused — one row, same height, with Retry. With an
+  // active classification (B) the normal row renders instead, with the error as its sentence.
+  if (summaryError && summary?.classification?.enabled !== true) {
     return (
       <div className="ribbon-bar ribbon-bar--error" data-testid="ribbon-bar" data-state="error">
         <div className="ribbon-icon ribbon-icon--error">
@@ -1188,11 +1200,13 @@ const DocumentRibbon = () => {
   const level = decision.classification?.level || null;
   const source = decision.classification?.source || "none";
   // CLS-1: classification off → the left block is the app's name, never a level or "Unclassified".
-  const classificationOff = decision.classification?.enabled === false;
+  const classificationOff = !decision.active;
+  // C: a dismissed state with classification active keeps the level block and drops the rest.
+  const rightHidden = decision.active && !summaryError && isDismissed(dismissKey(pageId, stateKeyOf({ summary, workflow, alerts, validationState })));
   const hasSeal = (summary?.sealedAttachments || 0) > 0 || (summary?.sectionSeals || 0) > 0 || (summary?.trashedSeals || 0) > 0;
-  const urgent = decision.urgent;
+  const urgent = rightHidden ? null : decision.urgent;
   const lockedSeal = summary?.lockedFor || null;
-  const sourceText = source === "page" ? "set on this page" : source === "space" ? "space default" : null;
+  const sourceText = sourcePhrase(source);
   const untilOf = (iso) => untilLabel(iso);
 
   // ONE state pill + ONE sentence, by the urgent kind (mockup §2). `pill` is null when nothing is
@@ -1241,9 +1255,14 @@ const DocumentRibbon = () => {
         : <><b>{urgent.seal.name}</b> is sealed by <b>{urgent.seal.owner}</b>{urgent.seal.until ? <> until <b>{untilOf(urgent.seal.until)}</b></> : <> with no expiry</>}</>;
       break;
     default:
-      sentence = decision.mode === "exceptions" && decision.overThreshold && level?.description ? <>{level.description}</> : null;
+      // Nothing urgent: the level's own handling guidance is the sentence (quiet, persistent).
+      sentence = summaryError
+        ? <>Sentinel Vault could not check the seals on this page. <button type="button" className="ribbon-inline-link" onClick={() => { setLoading(true); evaluate("retry"); }} data-testid="ribbon-retry">Retry</button></>
+        : level?.description ? <span className="rb-msg-quiet">{level.description}</span> : null;
   }
   const canRequest = urgent?.kind === "locked" && !!lockedSeal && !lockedSeal.held; // SEC-2: no personal request on a held seal
+  const showWorkflow = !rightHidden && !!workflow;
+  const showValidation = !rightHidden && !!validationState;
   const levelColor = level?.color || null;
   const glyph = hasSeal
     ? <svg viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2" /><path d="M8 11V7a4 4 0 0 1 8 0v4" /></svg>
@@ -1252,21 +1271,21 @@ const DocumentRibbon = () => {
   return (
     <div>
       {/* Main ribbon bar — ONE row, 44px inside the 48px cap (mockup decision 2) */}
-      <div className="ribbon-bar" data-testid="ribbon-bar" data-state={urgent?.kind || "none"} data-mode={decision.mode} data-level={classificationOff ? "off" : level?.id || "none"} data-source={source}>
+      <div className="ribbon-bar" data-testid="ribbon-bar" data-state={urgent?.kind || "none"} data-classification={decision.active ? "on" : "off"} data-level={classificationOff ? "off" : level?.id || "none"} data-source={source}>
         {classificationOff ? (
           <div className="rb-class rb-class--brand" data-testid="ribbon-brand" title="Sentinel Vault">
             <span className="rb-glyph" data-glyph={hasSeal ? "lock" : "dot"}>{glyph}</span>
             <span className="rb-lvname">Sentinel Vault</span>
           </div>
         ) : (
-          <div className={`rb-class${level ? "" : " rb-class--none"}`} style={levelColor ? { background: levelColor } : undefined} data-testid="ribbon-class" title={level ? `${level.name}${sourceText ? ` · ${sourceText}` : ""}` : "This page has no classification"}>
+          <div className={`rb-class${level ? "" : " rb-class--none"}`} style={levelColor ? { background: levelColor } : undefined} data-testid="ribbon-class" title={level ? `Classification: ${level.name}${sourceText ? ` · ${sourceText}` : ""}` : "This page has no classification level"}>
             <span className="rb-glyph" data-glyph={hasSeal ? "lock" : "dot"}>{glyph}</span>
             <span className="rb-lvname" data-testid="ribbon-level">{level ? level.name : "Unclassified"}</span>
             {level && sourceText && <span className="rb-lvsrc" data-testid="ribbon-source">· {sourceText}</span>}
           </div>
         )}
 
-        <div className={`rb-body${pill || sentence || workflow || validationState ? "" : " rb-body--empty"}`} data-testid="ribbon-body">
+        <div className={`rb-body${pill || sentence || showWorkflow || showValidation ? "" : " rb-body--empty"}`} data-testid="ribbon-body">
           {loading && <span className="ribbon-loading-bar" />}
           {!loading && pill && (
             <span className={`rb-state rb-state--${pill.tone}`} data-testid="ribbon-pill">
@@ -1294,7 +1313,7 @@ const DocumentRibbon = () => {
             !loading && sentence && <span className="rb-msg" data-testid="ribbon-status">{sentence}</span>
           )}
 
-          {!loading && workflow && (
+          {!loading && showWorkflow && (
             <WorkflowControl
               workflow={workflow}
               approvals={approvals}
@@ -1307,12 +1326,12 @@ const DocumentRibbon = () => {
               onTransitioned={afterWorkflowChange}
             />
           )}
-          {!loading && validationState && (
+          {!loading && showValidation && (
             <span className={`ribbon-chip ribbon-chip-${validationState}`} title="Page content validation status">
               {validationState === "passed" ? "Validation: passed" : "Validation: issues"}
             </span>
           )}
-          {!loading && aiCount !== null && aiCount > 0 && (
+          {!loading && !rightHidden && aiCount !== null && aiCount > 0 && (
             <span className="ribbon-chip ribbon-chip-ai" title="AI content review findings">
               AI check: {aiCount} finding{aiCount !== 1 ? "s" : ""}
             </span>
@@ -1324,11 +1343,14 @@ const DocumentRibbon = () => {
             <button type="button" className="rb-btn rb-btn--quiet" onClick={() => setAsking(true)} data-testid="ribbon-request-edit">Request edit</button>
           )}
           <button type="button" className="rb-btn rb-btn--primary" onClick={openDetails} data-testid="ribbon-open">Open</button>
-          <button type="button" className="ribbon-dismiss" onClick={dismissRibbon} aria-label="Dismiss" title="Dismiss" data-testid="ribbon-dismiss">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" aria-hidden="true">
-              <path d="M6 6l12 12M18 6L6 18" />
-            </svg>
-          </button>
+          {/* C: × only when there is something beside the level block to hide. */}
+          {(!decision.active || (decision.dismissable && !rightHidden)) && (
+            <button type="button" className="ribbon-dismiss" onClick={dismissRibbon} aria-label={decision.active ? "Hide this notice" : "Dismiss"} title={decision.active ? "Hide this notice (the classification stays)" : "Dismiss"} data-testid="ribbon-dismiss">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" aria-hidden="true">
+                <path d="M6 6l12 12M18 6L6 18" />
+              </svg>
+            </button>
+          )}
         </div>
       </div>
 

@@ -236,6 +236,13 @@ const memStorage = () => { const m = new Map(); return { m, get: async (k) => (m
   eq("touched spaces", touchedSpaceKeys(plan), ["WFH"]);
   eq("no $replace → no prune step", planBundle({ version: 1, spaces: { A: { workflows: [{ workflowId: "x", def: {} }] } } }).map((s) => s.resolverKey), ["store-space-workflow"]);
   eq("classificationDefault null is a reset step", planBundle({ version: 1, spaces: { A: { classificationDefault: null } } })[0].payload.levelId, null);
+  // P5 (2026-09-30): a lowering needs a reason — the API carries it to the same resolvers.
+  eq("classify-page carries a reason", planBundle({ version: 1, content: [{ op: "classify-page", pageId: "9", levelId: "public", reason: "handbook" }] })[0].payload, { pageId: "9", levelId: "public", reason: "handbook" });
+  ok("classify-page accepts reason", validateBundle({ version: 1, content: [{ op: "classify-page", pageId: "9", levelId: "public", reason: "handbook" }] }).ok);
+  eq("classificationDefaultReason rides the default step", planBundle({ version: 1, spaces: { A: { classificationDefault: "internal", classificationDefaultReason: "audit closed" } } })[0].payload, { spaceKey: "A", levelId: "internal", reason: "audit closed" });
+  ok("classificationDefaultReason alone plans nothing", planBundle({ version: 1, spaces: { A: { classificationDefaultReason: "x" } } }).length === 0);
+  ok("classificationDefaultReason must be a string", !validateBundle({ version: 1, spaces: { A: { classificationDefault: "internal", classificationDefaultReason: 5 } } }).ok);
+  ok("classificationDefaultReason ≤ 300", !validateBundle({ version: 1, spaces: { A: { classificationDefault: "internal", classificationDefaultReason: "x".repeat(301) } } }).ok);
   eq("empty bundle → empty plan", planBundle({ version: 1 }), []);
 }
 

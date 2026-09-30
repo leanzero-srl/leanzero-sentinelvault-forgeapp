@@ -73,7 +73,7 @@ writes the receipt.
 {
   "version": 1,
   "site": {
-    "policy": { "defaultLockDuration": 172800, "allowAdminOverride": true, "ribbonMode": "exceptions" },
+    "policy": { "defaultLockDuration": 172800, "allowAdminOverride": true },
     "validation": { "enabled": true, "modes": { "advisory": true, "gate": true, "revert": false }, "rules": [] },
     "classification": { "enabled": true, "levels": [ { "id": "public", "name": "Public", "color": "#15803D", "rank": 1 } ] },
     "notifications": { "enableEmailDispatches": false }
@@ -85,6 +85,7 @@ writes the receipt.
       "workflows": [ { "workflowId": "review", "def": { ... }, "labels": ["policy"], "priority": 1 } ],
       "workflowSettings": { "approval": { ... } },
       "classificationDefault": "confidential",
+      "classificationDefaultReason": "only needed when this LOWERS the space's current default",
       "classification": "inherit",
       "spaceAdmins": { "users": ["712020:…"], "groups": ["confluence-admins"] }
     }
@@ -103,6 +104,7 @@ writes the receipt.
     { "op": "decline-attachment-edit", "attachmentId": "att…", "requesterAccountId": "712020:…", "reason": "not during the freeze" },
     { "op": "decline-section-edit", "sectionId": "…", "requesterAccountId": "712020:…", "reason": "…" },
     { "op": "classify-page", "pageId": "…", "levelId": "restricted" },
+    { "op": "classify-page", "pageId": "…", "levelId": "internal", "reason": "published in the handbook" },
     { "op": "assign-workflow", "pageId": "…", "workflowId": "review" },
     { "op": "remove-workflow", "pageId": "…" },
     { "op": "withdraw-approval", "pageId": "…" },
@@ -156,6 +158,18 @@ app's own resolvers withhold from non-stewards lands there. The mirror holds:
   for when it is turned on). Per space, `classification: "inherit" | "off"` is the opt-out (a space cannot
   opt IN while the site is off); a `classify-page` on an opted-out space is refused with
   `Classification is off in this space`;
+- **Lowering needs a reason (2026-09-30, P5).** A `classify-page` that lowers what readers of the page
+  see — a lower-ranked level, `levelId: null` onto a lower space default, or clearing the only level —
+  must carry `reason` (≤ 300 characters); a `classificationDefault` that lowers the space's current
+  default (or clears it) must carry `classificationDefaultReason`. Without one the step is `refused`
+  with `Lowering the classification from X to Y needs a reason.` Raising or setting never needs one.
+  Rank order is the app's: 1 = least sensitive. The reason is recorded in the activity log
+  (`classification.page-set` / `classification.space-default-set`, with `from`, `to`, `lowered`, `reason`).
+  A write that changes nothing (same level) is `applied` and records nothing;
+- **Ribbon settings are ignored (2026-09-30).** `policy.ribbonMode`, `ribbonThresholdLevel` and
+  `ribbonThresholdRank` are still accepted in `site.policy` when well-formed (so older bundles keep
+  validating) but nothing reads them: with classification on the banner shows on every page, with it
+  off only seal / workflow / validation / alert states open it;
 - site: `classification.levels` (the public level list);
 - site: `classification.assetsLink` — the JSM Assets source of the levels, when linked:
   `{ schemaId, objectTypeId, schemaName, objectTypeName, mapping: { rank, color, description }, importedAt }`.

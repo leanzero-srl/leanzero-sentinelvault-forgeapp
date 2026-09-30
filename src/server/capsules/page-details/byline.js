@@ -9,9 +9,10 @@
  * app (create-or-update with a version bump, v2 page properties).
  *
  * States (title):
- *   "{Level} · set on this page"   the page carries its own override
- *   "{Level} · space default"      the level comes from the space default
- *   "Unclassified"                 no provider level for this page
+ *   "{Level} · set on this page"     the page carries its own override
+ *   "{Level} · from space default"   the level comes from the space default (P3, 2026-09-30:
+ *                                    one phrase shared with the banner and the modal — sourcePhrase)
+ *   "Unclassified"                   no provider level for this page
  * Icon: a data: SVG — a disc in the level colour (neutral slate when unclassified) carrying a
  * white LOCK when the page holds at least one live seal, a white dot otherwise. PROVEN LIVE
  * (wolfaenpak, 2026-09-15): Confluence renders the byline as button[data-testid=
@@ -20,11 +21,13 @@
  * keeps the static-PNG fallback path selectable should a host build ever reject it.
  *
  * Refresh policy: every seal / section / page-classification write calls `refreshByline` (one
- * line each, never awaited into the caller's failure path). A SPACE default change is NOT
- * fanned out to every page: `page-details-summary` compares the stored stamp
- * (`byline-stamp-{pageId}`) with what the page should show and rewrites lazily on open, and
- * the page-content trigger refreshes on every save. The stamp is written only after the property
- * write succeeded, so a failed write is retried by the next caller.
+ * line each, never awaited into the caller's failure path). What changes MANY chips at once — a
+ * space default, a space opting out, the site switch — reaches them two ways (2026-09-30, E):
+ * lazily, because `ribbon-summary` (every page view) and `page-details-summary` compare the stored
+ * stamp (`byline-stamp-{pageId}`) with what the page should show and rewrite on a difference; and
+ * eagerly, through a bounded per-space walk (byline-fanout.js). The page-content trigger refreshes
+ * on every save. The stamp is written only after the property write succeeded, so a failed write
+ * is retried by the next caller.
  *
  * Per-viewer data (mockup §1's "waiting-on-you" counter, decision 4) CANNOT live here: a content
  * property is one value for every viewer. The modal header carries that count instead.
@@ -32,6 +35,7 @@
 import { asApp, route } from "@forge/api";
 import { kvs } from "@forge/kvs";
 import { getClassificationProvider, classificationActiveForPage } from "../classification/provider.js";
+import { sourcePhrase } from "../classification/logic.js"; // P3: one "where it comes from" phrase
 import { describeWorkflowForPage } from "../workflow/approvals.js"; // WF-6: the status the chip carries
 import { collectPageSeals, readPageMeta } from "./logic.js";
 import { sealCountLabel } from "../../../ui/kit/status-language.js"; // SEC-3: "Sealed (2)"
@@ -85,7 +89,7 @@ export function composeByline({ level, source, sealCount, classificationEnabled,
   if (workflow && workflow.text) {
     const off = classificationEnabled === false;
     const levelName = off ? null : level?.name ? level.name : "Unclassified";
-    const src = !off && level?.name ? (source === "page" ? "set on this page" : "space default") : null;
+    const src = !off && level?.name ? sourcePhrase(source === "page" ? "page" : "space") : null;
     const levelTip = off ? null : level?.name ? `${level.name} (${src})` : "No classification level";
     return {
       title: [levelName, workflow.text, sealsTitle].filter(Boolean).join(" · "),
@@ -107,7 +111,7 @@ export function composeByline({ level, source, sealCount, classificationEnabled,
       tooltip: `No classification level · ${sealsText} · Open Sentinel Vault`,
     };
   }
-  const src = source === "page" ? "set on this page" : "space default";
+  const src = sourcePhrase(source === "page" ? "page" : "space"); // an unknown source reads as the space default
   return {
     title: sealed ? `${level.name} · ${sealsTitle}` : `${level.name} · ${src}`,
     icon: bylineIcon({ color: level.color, sealed }),
@@ -146,13 +150,17 @@ async function writeProperty(pageId, value) {
  * the stored stamp already matches, unless `force`. Never throws.
  * @returns {Promise<{ byline: object, wrote: boolean }>}
  */
-export async function writeBylineFor(pageId, { level, source, sealCount, classificationEnabled, workflow }, { force = false } = {}) {
+export async function writeBylineFor(pageId, { level, source, sealCount, classificationEnabled, workflow }, { force = false, lazy = false } = {}) {
   const byline = composeByline({ level, source, sealCount, classificationEnabled, workflow });
   const stamp = bylineStamp(byline);
   try {
     if (!force) {
       const stored = await kvs.get(stampKey(pageId)).catch(() => null);
       if (stored?.stamp === stamp) return { byline, wrote: false };
+      // `lazy` (the per-view refresh in ribbon-summary): a page that never had the property already
+      // shows the manifest's "Sentinel Vault" — writing the same words to every page anyone opens on
+      // a site without classification would be a write per page for nothing.
+      if (lazy && !stored && byline.title === "Sentinel Vault") return { byline, wrote: false };
     }
     const ok = await writeProperty(pageId, byline);
     if (ok) await kvs.set(stampKey(pageId), { stamp, updatedAt: new Date().toISOString() }).catch(() => {});

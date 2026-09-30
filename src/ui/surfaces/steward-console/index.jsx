@@ -5,7 +5,7 @@ import { enablePaletteSync } from "../../kit/palette-sync";
 import UnsavedFloat from "../../kit/UnsavedFloat";
 import ValidationsEditor from "../../kit/ValidationsEditor";
 import LicenseBanner from "../../kit/LicenseBanner";
-import ClassificationTab, { LevelPicker } from "../../kit/ClassificationTab";
+import ClassificationTab from "../../kit/ClassificationTab";
 import Dialog, { ConfirmDialog } from "../../kit/Dialog";
 import { formatDurationHours } from "../../kit/format-duration";
 import logo from "../../assets/icons/icon.png";
@@ -24,12 +24,8 @@ const Toggle = ({ checked, onChange, disabled, label }) => (
   </label>
 );
 
-// 5.0 ribbon mode — a two-option choice drawn by the app (never a native <select>): each option is
-// a solid block when chosen, an outlined one otherwise, with its one-line description under the name.
-const RIBBON_MODE_OPTIONS = [
-  { id: "exceptions", name: "Exceptions only", text: "The ribbon opens only when the page is classified at or above the threshold, something is waiting on the viewer, the viewer hits a seal they do not own, or a change was reverted." },
-  { id: "always", name: "Always show classification", text: "The classification block is always visible on every page; the right half stays empty until something is urgent." },
-];
+// A choice drawn by the app (never a native <select>): each option is a solid block when chosen, an
+// outlined one otherwise, with its one-line description under the name.
 const ChoiceBlocks = ({ value, onChange, options, ariaLabel, testPrefix, disabled, minWidth = 320 }) => (
   <div role="radiogroup" aria-label={ariaLabel} className="sv-choice-blocks" style={{ minWidth, maxWidth: 420 }} data-testid={`${testPrefix}-choice`}>
     {options.map((o) => {
@@ -72,7 +68,7 @@ const depthOf = (key) => {
  * a parent is indented under it and DISABLED with the reason while the parent is off — visibly
  * dependent, never silently inert.
  */
-export const ControlRow = ({ desc, values, siteValues, onChange, children, siteDefaultText, levels = [] }) => {
+export const ControlRow = ({ desc, values, siteValues, onChange, children, siteDefaultText }) => {
   const dep = dependencyState(desc.key, values, siteValues);
   const depth = depthOf(desc.key);
   const val = values[desc.key];
@@ -101,11 +97,10 @@ export const ControlRow = ({ desc, values, siteValues, onChange, children, siteD
       case "hours":
       case "days":
       case "count": {
-        const unit = desc.kind === "hours" ? "hrs" : desc.kind === "days" ? "days" : desc.key === "ribbonThresholdRank" ? "rank" : "";
+        const unit = desc.kind === "hours" ? "hrs" : desc.kind === "days" ? "days" : "";
         input = (
           <div className="input-with-unit">
             <input className="form-input" type="number" min={desc.min ?? 0} max={desc.max} value={val ?? ""} disabled={disabled} aria-label={desc.label}
-              data-testid={desc.key === "ribbonThresholdRank" ? "ribbon-threshold-rank" : undefined}
               onChange={(e) => {
                 const n = parseInt(e.target.value, 10);
                 if (isNaN(n)) return;
@@ -119,12 +114,6 @@ export const ControlRow = ({ desc, values, siteValues, onChange, children, siteD
         );
         break;
       }
-      case "choice":
-        if (desc.key === "ribbonMode") input = <ChoiceBlocks value={val} onChange={set} options={RIBBON_MODE_OPTIONS} ariaLabel="Ribbon mode" testPrefix="ribbon-mode" disabled={disabled} />;
-        break;
-      case "level": // CLS-10: a level chip picker, never a rank number
-        input = <LevelPicker value={val || "__none__"} levels={levels} onChange={(id) => set(id === "__none__" ? null : id)} allowNone ariaLabel={desc.label} testId={`sv-level-${desc.key}`} disabled={disabled} placeholder="Choose a level…" />;
-        break;
       default:
         input = null;
     }
@@ -255,11 +244,11 @@ const SetupWizard = ({ onFinished, onSkipped, initialHours }) => {
       {step === 3 && (
         <div className="sv-setup-panel" data-testid="sv-setup-panel-3">
           <h2 className="sv-setup-title">Should pages carry a classification level?</h2>
-          <p className="sv-setup-text">Off by default. On: every page shows a level (Public, Internal, Confidential, Restricted…) in its byline chip, the ribbon and the page details, and a space can set a default level. Off: nothing about classification is shown anywhere; it can be turned on later in Settings → Classification.</p>
+          <p className="sv-setup-text">Off by default. On: every page shows a level (Public, Internal, Confidential, Restricted…) under its title and in the banner at the top, and each space can set a default level. Off: nothing about classification is shown anywhere; it can be turned on later from the Classification tab.</p>
           <ChoiceBlocks value={classification ? "on" : "off"} onChange={(v) => setClassification(v === "on")} ariaLabel="Classification levels" testPrefix="sv-setup-classification" minWidth={0}
             options={[
               { id: "off", name: "Off", text: "Sentinel Vault seals attachments and sections and runs the document workflow; pages carry no classification level." },
-              { id: "on", name: "On", text: "Pages carry a classification level, shown on the page and used by the ribbon threshold." },
+              { id: "on", name: "On", text: "Every page shows its level — “Unclassified” until a space default or the page itself sets one." },
             ]} />
           {classification && (
             <>
@@ -778,14 +767,19 @@ const GlobalPolicyEditor = () => {
     }
     return false;
   };
+  // P8 (2026-09-30): the Classification tab flips the site switch by itself (store-policy, one
+  // key, both directions). Fold that write into BOTH the live values and the applied snapshot, so
+  // the Settings toggle shows the same state and a later "Apply Configuration" cannot write the
+  // old value back over it.
+  const onClassificationEnabledChange = (on) => {
+    setValues((prev) => ({ ...prev, classificationEnabled: on === true }));
+    setSaved((prev) => { try { return prev == null ? prev : JSON.stringify({ ...JSON.parse(prev), classificationEnabled: on === true }); } catch (_) { return prev; } });
+  };
   const dirty = saved !== null && snapshotOf(values) !== saved;
   const discard = () => { try { setValues((prev) => ({ ...prev, ...JSON.parse(saved) })); } catch (_) { /* keep */ } setMessage(null); setMessageType(null); };
   const switchTab = (tab) => { if (dirty && activeTab === "settings" && tab !== "settings") setLeaveTo(() => () => setActiveTab(tab)); else setActiveTab(tab); };
 
   const groupRows = useMemo(() => Object.fromEntries(GROUPS.map((g) => [g.id, controlsFor("global", g.id)])), []);
-  // CLS-10: the level list for the "Show the banner from" picker (the scheme in use).
-  const [levelList, setLevelList] = useState([]);
-  useEffect(() => { invoke("classification-provider", {}).then((r) => setLevelList(Array.isArray(r?.levels) ? r.levels : [])).catch(() => {}); }, []);
 
   if (loading) {
     return (
@@ -890,7 +884,7 @@ const GlobalPolicyEditor = () => {
                     )}
                   >
                     {groupRows[g.id].map((desc) => (
-                      <ControlRow key={desc.key} desc={desc} values={values} onChange={onChange} levels={levelList} />
+                      <ControlRow key={desc.key} desc={desc} values={values} onChange={onChange} />
                     ))}
                     {g.id === "alerts" && (
                       <p className="sv-group-note" data-testid="sv-quiet-note">
@@ -902,7 +896,7 @@ const GlobalPolicyEditor = () => {
               </div>
             )}
             {activeTab === "validations" && <ValidationsEditor scope="global" />}
-            {activeTab === "classification" && <ClassificationTab onOpenSettings={() => setActiveTab("settings")} />}
+            {activeTab === "classification" && <ClassificationTab onEnabledChange={onClassificationEnabledChange} />}
             {activeTab === "api" && <ApiAccessTab />}
           </div>
 

@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { invoke } from "@forge/bridge";
+import Dialog from "./Dialog";
+import { isDowngrade, findLevel, REASON_MAX } from "../../server/capsules/classification/logic.js"; // P5: the one downgrade rule
 
 // Classification tab (Part 3.1 + 3.2) for the steward console. Shows which provider is in use
 // (Confluence's native scheme or the app's own), the levels — editable only on the App scheme and
@@ -67,28 +69,6 @@ export const LevelPicker = ({ value, levels, onChange, placeholder = "Choose a l
         </div>
       )}
     </div>
-  );
-};
-
-// Modal (no window.confirm): the bulk apply asks once, with the count and the chip, before writing.
-const Dialog = ({ title, children, onCancel, onConfirm, confirmLabel = "Apply", busy = false }) => {
-  // Escape dismisses too (tester report 2026-09-21); the backdrop click below already did.
-  useEffect(() => {
-    const onKey = (e) => { if (e.key === "Escape" && !busy) { e.preventDefault(); e.stopPropagation(); onCancel(); } };
-    document.addEventListener("keydown", onKey, true);
-    return () => document.removeEventListener("keydown", onKey, true);
-  }, [busy, onCancel]);
-  return (
-  <div className="cls-dialog-backdrop" role="presentation" onMouseDown={(e) => { if (e.target === e.currentTarget && !busy) onCancel(); }}>
-    <div className="cls-dialog" role="dialog" aria-modal="true" aria-label={title}>
-      <h3 className="cls-dialog-title">{title}</h3>
-      <div className="cls-dialog-body">{children}</div>
-      <div className="cls-dialog-actions">
-        <button type="button" className="btn-secondary" onClick={onCancel} disabled={busy}>Cancel</button>
-        <button type="button" className="btn-primary" onClick={onConfirm} disabled={busy}>{busy ? "Working…" : confirmLabel}</button>
-      </div>
-    </div>
-  </div>
   );
 };
 
@@ -272,15 +252,45 @@ function AssetsLink({ onImported }) {
   );
 }
 
-// `onOpenSettings`: CLS-1 — the site switch lives on the Settings tab (one write path, the Apply
-// bar); this tab only says whether it is off and offers the way there.
-export default function ClassificationTab({ onOpenSettings } = {}) {
+// Lowering a space default asks for ONE thing — the reason — inline, under the row it belongs to
+// (P5). Raising or setting saves on the pick (P4). The same shape serves the space console's card.
+export const LowerReason = ({ fromLevel, toLevel, subject, busy, onConfirm, onCancel, testId = "cls-lower" }) => {
+  const [text, setText] = useState("");
+  const ready = text.trim().length > 0 && !busy;
+  return (
+    <div className="cls-lower" data-testid={testId}>
+      <label className="cls-lower-label" htmlFor={`${testId}-input`}>
+        {toLevel
+          ? <>Lowering {subject} from {fromLevel?.name || "its level"} to {toLevel.name} needs a reason.</>
+          : <>Removing {subject} ({fromLevel?.name || "its level"}) needs a reason — its pages will show Unclassified.</>}
+        {" "}It is kept in the activity log.
+      </label>
+      <input id={`${testId}-input`} className="form-input cls-lower-input" autoFocus maxLength={REASON_MAX} value={text}
+        placeholder="Why is this less sensitive now?" onChange={(e) => setText(e.target.value)}
+        onKeyDown={(e) => { if (e.key === "Enter" && ready) onConfirm(text.trim()); if (e.key === "Escape") onCancel(); }} data-testid={`${testId}-input`} />
+      <button type="button" className="btn-primary" disabled={!ready} onClick={() => onConfirm(text.trim())} data-testid={`${testId}-confirm`}>
+        {busy ? "Saving…" : toLevel ? `Lower to ${toLevel.name}` : "Remove the default"}
+      </button>
+      <button type="button" className="btn-secondary" disabled={busy} onClick={onCancel}>Cancel</button>
+    </div>
+  );
+};
+
+// `onEnabledChange(on)`: P8 — the switch at the top of this tab saves the site switch from HERE
+// (store-policy, the same write the Settings toggle makes, so the config mirror refreshes too) in
+// BOTH directions, and tells the console, which folds it into its Settings snapshot so the two
+// controls never disagree. On needs no confirmation; off asks once and says what it does.
+export default function ClassificationTab({ onEnabledChange } = {}) {
   const [state, setState] = useState({ loading: true, error: null, provider: null, levels: [], canManageLevels: false, spaces: [], siteAdmin: false, enabled: false });
   const [selected, setSelected] = useState(() => new Set());
-  const [bulkLevel, setBulkLevel] = useState(null);
-  const [confirmBulk, setConfirmBulk] = useState(false);
+  const [bulkLevel, setBulkLevel] = useState(null); // the level picked in the bulk bar — opens the ONE confirm
+  const [bulkReason, setBulkReason] = useState("");
   const [busyRows, setBusyRows] = useState(() => new Set());
+  const [savedRow, setSavedRow] = useState(null); // space id that just saved ("Saved" next to its picker)
+  const [lowering, setLowering] = useState(null); // { space, levelId } waiting on a reason
   const [bulkBusy, setBulkBusy] = useState(false);
+  const [enabling, setEnabling] = useState(false);
+  const [confirmOff, setConfirmOff] = useState(false);
   const [notice, setNotice] = useState(null); // { type: "success" | "error", text }
   const [filter, setFilter] = useState("");
   // Personal spaces (~accountId keys) are noise for a site-wide default policy; hidden by default (UAT defect 9).
@@ -302,6 +312,7 @@ export default function ClassificationTab({ onOpenSettings } = {}) {
     }
   }, []);
   useEffect(() => { load(); }, [load]);
+  useEffect(() => { if (!savedRow) return undefined; const t = setTimeout(() => setSavedRow(null), 4000); return () => clearTimeout(t); }, [savedRow]);
 
   const levelById = useMemo(() => new Map(state.levels.map((l) => [l.id, l])), [state.levels]);
   const visible = useMemo(() => {
@@ -310,35 +321,64 @@ export default function ClassificationTab({ onOpenSettings } = {}) {
     return q ? pool.filter((s) => s.name.toLowerCase().includes(q) || s.key.toLowerCase().includes(q)) : pool;
   }, [state.spaces, filter, hidePersonal]);
 
+  const setSwitch = async (on) => {
+    setEnabling(true);
+    try {
+      const r = await invoke("store-policy", { scope: "global", data: { classificationEnabled: on } });
+      if (!r?.success) { setNotice({ type: "error", text: r?.reason || `Could not turn classification ${on ? "on" : "off"}.` }); return; }
+      setState((s) => ({ ...s, enabled: on }));
+      setConfirmOff(false);
+      setNotice(null); // the status line below IS the confirmation (role=status announces it)
+      onEnabledChange?.(on);
+    } catch (e) {
+      setNotice({ type: "error", text: e?.message || `Could not turn classification ${on ? "on" : "off"}.` });
+    } finally { setEnabling(false); }
+  };
+
   const applyResults = (results, levelId) => {
     const okIds = new Set(results.filter((r) => r.ok).map((r) => String(r.spaceId)));
     setState((s) => ({ ...s, spaces: s.spaces.map((sp) => (okIds.has(String(sp.id)) ? { ...sp, defaultLevelId: levelId } : sp)) }));
     const failed = results.filter((r) => !r.ok);
-    if (failed.length === 0) setNotice({ type: "success", text: `${okIds.size} space${okIds.size === 1 ? "" : "s"} updated.` });
-    else setNotice({ type: "error", text: `${okIds.size} updated, ${failed.length} refused: ${failed.map((f) => f.reason).filter((v, i, a) => a.indexOf(v) === i).join("; ")}` });
+    if (failed.length) setNotice({ type: "error", text: `${okIds.size} updated, ${failed.length} refused: ${failed.map((f) => f.reason).filter((v, i, a) => a.indexOf(v) === i).join("; ")}` });
+    return { ok: okIds.size, failed: failed.length };
   };
 
-  const setOne = async (space, value) => {
-    const levelId = value === NONE ? null : value;
+  const writeOne = async (space, levelId, reason) => {
     setBusyRows((b) => new Set(b).add(space.id));
     try {
-      const r = await invoke("classification-set-space-default", { spaceIds: [space.id], levelId });
-      applyResults(r?.results || [{ spaceId: space.id, ok: false, reason: r?.reason || "No answer" }], levelId);
+      const r = await invoke("classification-set-space-default", { spaceIds: [space.id], levelId, reason });
+      const res = r?.results || [{ spaceId: space.id, ok: false, reason: r?.reason || "No answer" }];
+      if (applyResults(res, levelId).ok) { setSavedRow(space.id); setLowering(null); setNotice(null); }
     } catch (e) {
       setNotice({ type: "error", text: e?.message || "Could not set the default" });
     } finally {
       setBusyRows((b) => { const n = new Set(b); n.delete(space.id); return n; });
     }
   };
+  // P4/P5: a pick saves at once — unless it lowers the default, then the row asks for the reason.
+  const pickOne = (space, value) => {
+    const levelId = value === NONE ? null : value;
+    if (String(levelId ?? "") === String(space.defaultLevelId ?? "")) return;
+    if (isDowngrade(space.defaultLevelId, levelId, state.levels)) { setLowering({ space, levelId }); return; }
+    setLowering(null);
+    writeOne(space, levelId);
+  };
 
+  const selectedSpaces = state.spaces.filter((s) => selected.has(s.id));
+  const pickBulk = (value) => {
+    if (selectedSpaces.length === 1) { pickOne(selectedSpaces[0], value); setSelected(new Set()); return; }
+    setBulkReason(""); setBulkLevel(value);
+  };
+  const bulkLevelId = bulkLevel === NONE ? null : bulkLevel;
+  const bulkLowered = bulkLevel == null ? [] : selectedSpaces.filter((s) => isDowngrade(s.defaultLevelId, bulkLevelId, state.levels));
   const runBulk = async () => {
-    const levelId = bulkLevel === NONE ? null : bulkLevel;
     setBulkBusy(true);
     try {
-      const r = await invoke("classification-set-space-default", { spaceIds: [...selected], levelId });
-      applyResults(r?.results || [], levelId);
+      const r = await invoke("classification-set-space-default", { spaceIds: selectedSpaces.map((s) => s.id), levelId: bulkLevelId, reason: bulkReason.trim() || undefined });
+      const { ok, failed } = applyResults(r?.results || [], bulkLevelId);
+      if (!failed) setNotice({ type: "success", text: `${ok} space${ok === 1 ? "" : "s"} updated. Their pages without a level of their own now show ${findLevel(state.levels, bulkLevelId)?.name || "Unclassified"}.` });
       setSelected(new Set());
-      setConfirmBulk(false);
+      setBulkLevel(null);
     } catch (e) {
       setNotice({ type: "error", text: e?.message || "Could not apply the bulk change" });
     } finally { setBulkBusy(false); }
@@ -365,16 +405,34 @@ export default function ClassificationTab({ onOpenSettings } = {}) {
         <div className={`cls-notice-sticky ${notice.type === "success" ? "alert-success" : "alert-error"}`} role="status" data-testid="cls-notice" onClick={() => setNotice(null)}>{notice.text}</div>
       )}
 
-      {/* CLS-1: the switch is on the Settings tab; while it is off this tab says so first and
-          everything below is dimmed but kept — the levels and defaults come back exactly as
-          they were when it is turned on. */}
-      {!state.enabled && (
-        <div className="cls-off-banner" role="status" data-testid="cls-off-banner">
-          <div className="cls-off-banner-text">
-            <strong>Classification is off on this site.</strong> Pages show no level in the byline chip, the ribbon or the page details, and no level can be set. The levels and space defaults below are kept and apply again the moment it is turned on.
-          </div>
-          {onOpenSettings && <button type="button" className="btn-primary" onClick={onOpenSettings} data-testid="cls-off-open-settings">Turn it on in Settings</button>}
+      {/* CLS-1 + P8: the feature's state is ALWAYS the first thing on this tab, with ONE switch
+          that works both ways. Off: everything below is dimmed but kept — the levels and defaults
+          come back exactly as they were the moment it is on. */}
+      <div className={`cls-status ${state.enabled ? "is-on" : "is-off"}`} role="status" data-testid={state.enabled ? "cls-on-banner" : "cls-off-banner"}>
+        <div className="cls-status-text">
+          {state.enabled
+            ? <><strong>Classification is on.</strong> Every page shows its level under its title and in the banner at the top — “Unclassified” until its space or the page itself sets one.</>
+            : <><strong>Classification is off on this site.</strong> Pages show no level. Turn it on and every page shows its level under the title and in the banner at the top — the levels and space defaults below apply at once.</>}
         </div>
+        {state.siteAdmin ? (
+          <button type="button" role="switch" aria-checked={state.enabled} aria-label="Classification on this site" className={`cls-switch ${state.enabled ? "is-on" : ""}`}
+            disabled={enabling} onClick={() => (state.enabled ? setConfirmOff(true) : setSwitch(true))} data-testid="cls-switch">
+            <span className="cls-switch-track" aria-hidden="true"><span className="cls-switch-knob" /></span>
+            <span className="cls-switch-label">{enabling ? (state.enabled ? "Turning off…" : "Turning on…") : state.enabled ? "On" : "Off"}</span>
+          </button>
+        ) : <span data-testid="cls-switch-ask">Only a site admin can change this.</span>}
+      </div>
+      {confirmOff && (
+        <Dialog title="Turn classification off?" onClose={() => setConfirmOff(false)} busy={enabling} danger testId="cls-off-confirm">
+          <div className="sv-dialog-body">
+            <p>Pages stop showing a level — under the title, in the banner and in the page details — and no level can be set.</p>
+            <p>Every level, space default and page level is kept, and shows again when you turn classification back on.</p>
+          </div>
+          <div className="sv-dialog-actions">
+            <button type="button" className="btn-secondary" onClick={() => setConfirmOff(false)} disabled={enabling} data-testid="cls-off-confirm-no">Keep it on</button>
+            <button type="button" className="btn-danger" onClick={() => setSwitch(false)} disabled={enabling} data-testid="cls-off-confirm-yes">{enabling ? "Turning off…" : "Turn off"}</button>
+          </div>
+        </Dialog>
       )}
 
       <section className="cls-section">
@@ -422,9 +480,9 @@ export default function ClassificationTab({ onOpenSettings } = {}) {
         {selected.size > 0 && (
           <div className="cls-bulk-bar" data-testid="cls-bulk-bar">
             <strong>{selected.size} space{selected.size === 1 ? "" : "s"} selected</strong>
-            <span>Set to</span>
-            <LevelPicker value={bulkLevel} levels={state.levels} onChange={setBulkLevel} ariaLabel="Level for the selected spaces" testId="cls-bulk-picker" />
-            <button type="button" className="btn-primary" disabled={!bulkLevel} onClick={() => setConfirmBulk(true)} data-testid="cls-bulk-apply">Apply</button>
+            <span>Set {selected.size === 1 ? "its" : "their"} default to</span>
+            <LevelPicker value={null} levels={state.levels} onChange={pickBulk} ariaLabel="Default level for the selected spaces" testId="cls-bulk-picker" />
+            {selected.size > 1 && <span className="cls-bulk-hint">You confirm once before {selected.size} spaces change.</span>}
             <button type="button" className="btn-secondary" onClick={() => setSelected(new Set())}>Clear selection</button>
           </div>
         )}
@@ -446,16 +504,30 @@ export default function ClassificationTab({ onOpenSettings } = {}) {
               </thead>
               <tbody>
                 {visible.map((s) => (
-                  <tr key={s.id} data-testid={`cls-space-row-${s.key}`} className={selected.has(s.id) ? "sel" : ""}>
+                  <React.Fragment key={s.id}>
+                  <tr data-testid={`cls-space-row-${s.key}`} className={selected.has(s.id) ? "sel" : ""}>
                     <td className="cls-col-check"><label className="form-checkbox"><input type="checkbox" checked={selected.has(s.id)} onChange={(e) => setSelected((prev) => { const n = new Set(prev); if (e.target.checked) n.add(s.id); else n.delete(s.id); return n; })} aria-label={`Select ${s.name}`} /></label></td>
                     <td className="cls-key">{s.key}</td>
                     <td>{s.name}</td>
                     <td className="cls-type cls-col-type">{String(s.type || "").replace(/_/g, " ")}</td>
                     <td><LevelChip level={levelById.get(s.defaultLevelId) || null} testId={`cls-space-level-${s.key}`} /></td>
                     <td>
-                      <LevelPicker value={s.defaultLevelId || NONE} levels={state.levels} onChange={(v) => setOne(s, v)} ariaLabel={`Default level for ${s.name}`} testId={`cls-space-picker-${s.key}`} disabled={busyRows.has(s.id)} />
+                      <span className="cls-pick-cell">
+                        <LevelPicker value={s.defaultLevelId || NONE} levels={state.levels} onChange={(v) => pickOne(s, v)} ariaLabel={`Default level for ${s.name}`} testId={`cls-space-picker-${s.key}`} disabled={busyRows.has(s.id)} />
+                        {busyRows.has(s.id) && <span className="cls-saved" role="status">Saving…</span>}
+                        {savedRow === s.id && !busyRows.has(s.id) && <span className="cls-saved" role="status" data-testid={`cls-space-saved-${s.key}`}>Saved</span>}
+                      </span>
                     </td>
                   </tr>
+                  {lowering?.space.id === s.id && (
+                    <tr className="cls-lower-row">
+                      <td colSpan={6}>
+                        <LowerReason subject={`${s.name}'s default`} fromLevel={levelById.get(s.defaultLevelId)} toLevel={findLevel(state.levels, lowering.levelId)} busy={busyRows.has(s.id)}
+                          onConfirm={(reason) => writeOne(s, lowering.levelId, reason)} onCancel={() => setLowering(null)} testId={`cls-lower-${s.key}`} />
+                      </td>
+                    </tr>
+                  )}
+                  </React.Fragment>
                 ))}
                 {visible.length === 0 && <tr><td colSpan={6} className="cls-empty-row">No space matches "{filter}".</td></tr>}
               </tbody>
@@ -464,13 +536,29 @@ export default function ClassificationTab({ onOpenSettings } = {}) {
         )}
       </section>
 
-      {confirmBulk && (
-        <Dialog title="Set the default for selected spaces" onCancel={() => setConfirmBulk(false)} onConfirm={runBulk} busy={bulkBusy} confirmLabel={`Set ${selected.size} space${selected.size === 1 ? "" : "s"}`}>
-          <p>
-            Every page in {selected.size === 1 ? "this space" : `these ${selected.size} spaces`} without its own classification will show{" "}
-            {bulkChip ? <LevelChip level={bulkChip} /> : <strong>no classification</strong>}.
-          </p>
-          <p className="settings-row-description">Page-level overrides are not changed.</p>
+      {bulkLevel != null && (
+        <Dialog title={`Set the default for ${selectedSpaces.length} spaces?`} onClose={() => setBulkLevel(null)} busy={bulkBusy} testId="cls-bulk-dialog">
+          <div className="sv-dialog-body">
+            <p>
+              Every page in these {selectedSpaces.length} spaces without a level of its own will show{" "}
+              {bulkChip ? <LevelChip level={bulkChip} /> : <strong>Unclassified</strong>}. Pages with their own level keep it.
+            </p>
+            {bulkLowered.length > 0 && (
+              <>
+                <label className="cls-lower-label" htmlFor="cls-bulk-reason">
+                  This lowers the default of {bulkLowered.length === selectedSpaces.length ? "all of them" : `${bulkLowered.length} of them`} ({bulkLowered.slice(0, 3).map((s) => s.name).join(", ")}{bulkLowered.length > 3 ? "…" : ""}). Give the reason — it is kept in the activity log.
+                </label>
+                <textarea id="cls-bulk-reason" className="form-input cls-lower-input" rows={2} maxLength={REASON_MAX} value={bulkReason}
+                  placeholder="Why are these spaces less sensitive now?" onChange={(e) => setBulkReason(e.target.value)} data-testid="cls-bulk-reason" />
+              </>
+            )}
+          </div>
+          <div className="sv-dialog-actions">
+            <button type="button" className="btn-secondary" onClick={() => setBulkLevel(null)} disabled={bulkBusy}>Cancel</button>
+            <button type="button" className="btn-primary" onClick={runBulk} disabled={bulkBusy || (bulkLowered.length > 0 && !bulkReason.trim())} data-testid="cls-bulk-confirm">
+              {bulkBusy ? "Working…" : `Set ${selectedSpaces.length} spaces`}
+            </button>
+          </div>
         </Dialog>
       )}
     </div>

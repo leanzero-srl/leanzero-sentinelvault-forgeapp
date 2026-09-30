@@ -1,17 +1,18 @@
-// 5.0 ribbon (mockup docs/mockups/sv-status-surfaces.html §2 "Exceptions only" and §3 "Always show
-// classification") — the PURE show rule and the one-state-pill choice, shared by the banner surface,
-// the `ribbon-summary` resolver (which echoes the steward setting it read) and the policies write
-// gate (which validates the setting). Zero imports, node-importable (test/ribbon-rules.test.mjs), like
-// activity-format.js and page-details/row-state.js.
+// 5.0 ribbon — the PURE show rule and the one-state-pill choice, shared by the banner surface and
+// the policies write gate. Zero imports beyond status-language, node-importable
+// (test/ribbon-rules.test.mjs), like activity-format.js and page-details/row-state.js.
 //
-// The steward settings live on `admin-settings-global`:
-//   ribbonMode           "exceptions" (default) | "always"
-//   ribbonThresholdRank  whole number 1..99, default 4 (the rank of "Restricted" in the default scheme)
+// 2026-09-30 (classification review, owner: "the top banner should appear all the time for the
+// space and related pages"): classification is a persistent MARKING, not an alert. When it is
+// active for the page's space the row shows on EVERY view — level block always drawn ("Unclassified"
+// in neutral grey when nothing applies), whether or not the page has attachments, seals or a
+// workflow. When it is off, only seal / workflow / validation / alert states open the row. The old
+// steward settings `ribbonMode` ("exceptions" | "always") and `ribbonThreshold*` therefore have no
+// job: their controls are gone, the write gate still accepts well-formed values from old records and
+// API clients (validateRibbonSettings), and nothing reads them.
 //
-// decideRibbon(input) → { show, urgent, reasons }
-//   input.mode            "exceptions" | "always"
-//   input.classification  { level: { id, name, color, rank } | null, source: "page"|"space"|"none" }
-//   input.threshold       { rank }   (input.thresholdRank is accepted too)
+// decideRibbon(input) → { show, active, urgent, classification, reasons, dismissable }
+//   input.classification  { level: { id, name, color, rank } | null, source: "page"|"space"|"none", enabled: boolean }
 //   input.waitingOnMe     { requests, approvals, grantsActive: [{ name, until, kind }] }
 //   input.lockedFor       { name, owner, until, kind, myRequest: "none"|"pending" } | null
 //   input.alerts          the viewer-relevant dispatches (array)
@@ -21,30 +22,17 @@
 // The urgent state is exactly ONE pill (decision 3 of the mockup), chosen in this order: an active
 // violation alert ("Undone" / "Moved back"), work waiting on the viewer ("Waiting for you N"), an
 // active grant ("Edit now"), the viewer's own pending request ("Waiting for {owner}"), the viewer's
-// declined request ("Declined · ask again W", SEC-8), a seal the viewer does not own ("Locked"). Workflow and validation states are urgent too — they keep the row open as before —
-// but they render their own existing controls, not a pill from this list.
+// declined request ("Declined · ask again W", SEC-8), a seal the viewer does not own ("Locked").
+// Workflow and validation states open the row too but render their own controls, not a pill.
+//
+// `dismissable` (root cause C): × may hide the right half (and acknowledge an alert), never the
+// classification marking — it is true only when there IS something beside the level block.
 
 import { when } from "./status-language.js";
 
 export const RIBBON_MODES = Object.freeze(["exceptions", "always"]);
 export const DEFAULT_RIBBON_MODE = "exceptions";
 export const DEFAULT_RIBBON_THRESHOLD_RANK = 4;
-
-/**
- * PURE. The steward settings as stored → the values every reader uses. Unknown → defaults.
- * CLS-10: `ribbonThresholdLevel` (a level id) wins when `levels` knows it — its rank is resolved
- * HERE, at read time, so a renamed or re-ranked level keeps meaning the same level; otherwise the
- * stored rank (the API's and older installs' fallback), otherwise the default.
- */
-export function normalizeRibbonSettings(stored, levels = null) {
-  const mode = RIBBON_MODES.includes(stored?.ribbonMode) ? stored.ribbonMode : DEFAULT_RIBBON_MODE;
-  const levelId = typeof stored?.ribbonThresholdLevel === "string" && stored.ribbonThresholdLevel.trim() ? stored.ribbonThresholdLevel.trim() : null;
-  const known = levelId && Array.isArray(levels) ? levels.find((l) => String(l?.id) === levelId) : null;
-  const raw = Number(stored?.ribbonThresholdRank);
-  const storedRank = Number.isInteger(raw) && raw >= 1 && raw <= 99 ? raw : DEFAULT_RIBBON_THRESHOLD_RANK;
-  const levelRank = known && Number.isInteger(Number(known.rank)) && Number(known.rank) >= 1 ? Number(known.rank) : null;
-  return { ribbonMode: mode, ribbonThresholdRank: levelRank ?? storedRank, ribbonThresholdLevel: levelId, thresholdFrom: levelRank != null ? "level" : "rank" };
-}
 
 /**
  * PURE. Validate a partial settings write. Only the keys PRESENT are checked (a save that omits a
@@ -82,43 +70,23 @@ export function pickUrgent({ waitingOnMe, lockedFor, alerts } = {}) {
   return null;
 }
 
-/** PURE. Does the classification alone open the row in "exceptions" mode? */
-export function meetsThreshold(classification, threshold) {
-  const rank = Number(classification?.level?.rank);
-  const bar = Number(threshold?.rank ?? threshold);
-  if (!Number.isFinite(rank) || !Number.isFinite(bar)) return false;
-  return rank >= bar;
-}
-
 /**
- * PURE. The show rule (mockup §2/§3).
- *   exceptions: show iff level ≥ threshold, OR something is urgent for the viewer (waiting-on-me,
- *               an active grant, a seal the viewer does not own, an active alert), OR the page has
- *               a workflow / validation state (those keep showing as before).
- *   always:     show whenever a classification level exists (right half empty when nothing is
- *               urgent), plus the same urgent triggers on an unclassified page; an unclassified
- *               page with nothing urgent ALSO shows, as "Unclassified" in the neutral grey block.
+ * PURE. The show rule. Active classification (`classification.enabled === true`) always shows the
+ * row; otherwise the row opens only for an urgent state, a workflow or a validation state.
  */
 export function decideRibbon(input = {}) {
-  // CLS-1: classification OFF (`classification.enabled === false`) means the level cannot open
-  // the row and "always" (= "always show the classification block") collapses to "exceptions":
-  // the row is seal / workflow / validation only, and the surface draws no level block.
-  const off = input.classification?.enabled === false;
-  const mode = off ? "exceptions" : RIBBON_MODES.includes(input.mode) ? input.mode : DEFAULT_RIBBON_MODE;
-  const threshold = input.threshold != null ? input.threshold : { rank: input.thresholdRank ?? DEFAULT_RIBBON_THRESHOLD_RANK };
-  const classification = off ? { level: null, source: "none", enabled: false } : (input.classification || { level: null, source: "none" });
+  const active = input.classification?.enabled === true;
+  const classification = active
+    ? { level: input.classification.level || null, source: input.classification.level ? input.classification.source || "page" : "none", enabled: true }
+    : { level: null, source: "none", enabled: false };
   const urgent = pickUrgent(input);
   const reasons = [];
   if (urgent) reasons.push(urgent.kind);
   if (input.workflow) reasons.push("workflow");
   if (input.validation) reasons.push("validation");
-  const overThreshold = !off && meetsThreshold(classification, threshold);
-  if (mode === "always") {
-    reasons.unshift(classification.level ? "always" : "always-unclassified");
-    return { show: true, mode, urgent, classification, reasons, overThreshold };
-  }
-  if (overThreshold) reasons.unshift("threshold");
-  return { show: reasons.length > 0, mode, urgent, classification, reasons, overThreshold };
+  const dismissable = reasons.length > 0;
+  if (active) reasons.unshift(classification.level ? "classification" : "unclassified");
+  return { show: active || reasons.length > 0, active, urgent, classification, reasons, dismissable };
 }
 
 /** SEC-3: the ONE date formatter lives in status-language.js; this name stays for its callers. */
