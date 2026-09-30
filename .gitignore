@@ -12,7 +12,6 @@ static/*
 !static/submission-material/
 static/submission-material/video-src/clips/
 static/submission-material/video-src/.work/
-static/submission-material/video-src/remotion/
 
 # Compiled Java class files
 *.class
