@@ -2468,6 +2468,7 @@ html[data-color-mode="dark"] .sv-busy-veil { background: var(--sv-frosted-bg, rg
 .cls-picker.disabled { opacity: 0.6; pointer-events: none; }
 .cls-picker-placeholder { color: var(--sv-text-subtle); }
 .cls-picker-menu { min-width: 260px; max-height: 320px; overflow-y: auto; z-index: 30; }
+.cls-picker.open-up .mini-select-menu { top: auto; bottom: calc(100% + 4px); }
 .cls-picker-search { width: calc(100% - 16px); margin: 8px; box-sizing: border-box; }
 .cls-picker-opt { display: flex; align-items: center; gap: 10px; }
 .cls-picker-opt-hint { font-size: 12px; color: var(--sv-text-secondary); }
