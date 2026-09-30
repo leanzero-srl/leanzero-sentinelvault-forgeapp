@@ -40,8 +40,16 @@ const APPROVAL_ID = "approval"; // v1 single default round; schema carries the s
 // like an approver — an admin approval completes "any" and is one of N for "min"; "all" still
 // needs every LISTED approver, and an admin's denial closes it like any approver's. Admin
 // denials never make "any"/"min" unreachable on their own: the listed approvers still decide.
-export function evaluateApproval(mode, min, decisions, adminDecisions = []) {
+export function evaluateApproval(mode, min, decisions, adminDecisions = [], { adminOnly = false } = {}) {
   const extra = Array.isArray(adminDecisions) ? adminDecisions : [];
+  // Every listed approver is the requester (who never decides their own request): only a space
+  // admin can settle it — their approval completes it, their denial closes it (tester 2026-09-30:
+  // a request whose only approver was its requester stayed open after an admin denied it).
+  if (adminOnly) {
+    if (extra.includes("approved")) return "approved";
+    if (extra.includes("denied")) return "denied";
+    return "pending";
+  }
   const adminApproved = extra.filter((d) => d === "approved").length;
   const adminDenied = extra.filter((d) => d === "denied").length;
   const approved = decisions.filter((d) => d === "approved").length;
@@ -63,6 +71,19 @@ export function evaluateApproval(mode, min, decisions, adminDecisions = []) {
   if (approved + adminApproved >= 1) return "approved";
   if (denied === total) return "denied";
   return "pending";
+}
+
+/**
+ * PURE. The listed decisions that can still arrive: in "any" and "all" the requester's own slot is
+ * dropped (they can never decide it — "all" could never complete and "any" never close). "min"
+ * keeps it, so the count stays reachable for a space admin's approval. `adminOnly` when nobody
+ * else is listed. `records` are per-approver records ({ approverAccountId, status }).
+ */
+export function listedDecisionsFor(pending, records) {
+  const all = (records || []).map((r) => ({ id: r.approverAccountId, status: r.status || "pending" }));
+  if (pending?.mode === "min" || !pending?.requestedBy) return { decisions: all.map((d) => d.status), adminOnly: false };
+  const others = all.filter((d) => d.id !== pending.requestedBy);
+  return { decisions: others.map((d) => d.status), adminOnly: all.length > 0 && others.length === 0 };
 }
 
 /** Everyone whose decision record may exist for a pending request: listed approvers + admins who decided. */
@@ -102,7 +123,7 @@ export function buildApprovalRecord({ pending, records, outcome, completedBy, co
   const undecided = all.filter((d) => d.decision === "pending");
   const decisions = [...decided, ...undecided].slice(0, MAX_DECISION_ROWS);
   return {
-    outcome: outcome === "denied" ? "denied" : outcome === "stale" ? "stale" : "approved",
+    outcome: outcome === "denied" ? "denied" : outcome === "stale" ? "stale" : outcome === "withdrawn" ? "withdrawn" : "approved",
     approverCount: all.length,
     omitted: Math.max(0, all.length - decisions.length),
     mode: p.mode ?? null,
@@ -376,7 +397,8 @@ async function humanQuorumMet(pageId, pending, records) {
   // Admins who decided count like approvers here too (the AI verdict can land after their vote).
   const adminIds = deciderIds(pending).filter((id) => !pending.approvers.includes(id));
   const adminRecords = adminIds.length ? await readApprovalRecords(pageId, pending.toStateId, adminIds) : [];
-  return evaluateApproval(pending.mode, pending.min, records.map((r) => r.status || "pending"), adminRecords.map((r) => r.status || "pending")) === "approved";
+  const { decisions, adminOnly } = listedDecisionsFor(pending, records);
+  return evaluateApproval(pending.mode, pending.min, decisions, adminRecords.map((r) => r.status || "pending"), { adminOnly }) === "approved";
 }
 
 // #46 Part B: the AI review verdict lands here (from aiValidationConsumer's gate branch, or a
@@ -473,7 +495,8 @@ export async function decideApproval({ pageId, approverAccountId, decision, reas
   const adminIds = deciderIds(pending).filter((id) => !approvers.includes(id));
   const adminRecords = adminIds.length ? await readApprovalRecords(pageId, stateId, adminIds) : [];
   const records = [...listedRecords, ...adminRecords]; // evidence + vote summary name every decider
-  const outcome = evaluateApproval(pending.mode, pending.min, listedRecords.map((r) => r.status || "pending"), adminRecords.map((r) => r.status || "pending"));
+  const listed = listedDecisionsFor(pending, listedRecords);
+  const outcome = evaluateApproval(pending.mode, pending.min, listed.decisions, adminRecords.map((r) => r.status || "pending"), { adminOnly: listed.adminOnly });
 
   // A1: the vote is recorded (kvs.set above) — witness it with the outcome the vote produced.
   // `outcome` here is what the quorum says; the finalizer may still turn "approved" into
@@ -540,6 +563,39 @@ export async function decideApproval({ pageId, approverAccountId, decision, reas
     return decided({ success: true, outcome: "denied" });
   }
   return decided({ success: true, outcome: "pending" });
+}
+
+// The requester takes their request back (or a space admin closes it without a decision): no vote,
+// the page stays where it is, the approvers' inbox rows go, a "withdrawn" log entry + activity
+// remain (tester 2026-09-30: a requester had no way to cancel their own request).
+export async function withdrawApproval({ pageId, actorAccountId, actorName, isSteward = false }) {
+  const pending = await kvs.get(pendingKey(pageId));
+  if (!pending) return { success: false, reason: "No approval is waiting on this page." };
+  if (!(actorAccountId && (actorAccountId === pending.requestedBy || isSteward))) {
+    return { success: false, reason: "Only the person who asked, or a space admin, can withdraw this request." };
+  }
+  const records = await readApprovalRecords(pageId, pending.toStateId, deciderIds(pending));
+  const approvalRecord = buildApprovalRecord({ pending, records, outcome: "withdrawn", completedBy: actorAccountId, completedByName: actorName || null });
+  await appendWorkflowLog(pageId, {
+    kind: "approval-withdrawn",
+    from: (await readPageWorkflow(pageId))?.stateId ?? null,
+    to: pending.toStateId,
+    by: actorAccountId,
+    byName: actorName || null,
+    reason: "approval request withdrawn",
+    details: { approvalRecord },
+  }).catch(() => {});
+  await clearPageApprovals(pageId, pending.toStateId, deciderIds(pending));
+  await recordActivity({
+    type: "workflow.approval-withdrawn",
+    pageId,
+    spaceKey: pending.spaceKey || null,
+    actor: { accountId: actorAccountId, name: actorName || null },
+    target: { kind: "page", id: pageId, name: null },
+    details: { to: pending.toStateId, toName: pending.toStateName || pending.toStateId, requestedBy: pending.requestedBy || null, byRequester: actorAccountId === pending.requestedBy },
+    version: pending.pinnedVersion ?? null,
+  }).catch(() => {});
+  return { success: true, outcome: "withdrawn" };
 }
 
 // Read model for the page/panel: the pending transition + per-approver statuses + staleness.

@@ -43,6 +43,7 @@ import {
   listMyApprovals,
   listMyApprovalRequests, // WF-3 (c)
   rerequestApproval,
+  withdrawApproval,
   applyAiVerdict,
   buildApprovalRecord,
 } from "./approvals.js";
@@ -455,6 +456,17 @@ const rerequestApprovalAction = async (req) => {
   return r;
 };
 
+// The requester (or a space admin of the PAGE's space) withdraws the open request.
+const withdrawApprovalAction = async (req) => {
+  const pageId = pageIdOf(req);
+  const actorAccountId = req.context?.accountId;
+  if (!pageId) return { success: false, reason: "No page context" };
+  if (!(await callerMayReadPage(req, pageId))) return { success: false, reason: "You do not have access to this page" };
+  const spaceKey = (await readPageWorkflow(pageId))?.spaceKey || null;
+  const isSteward = spaceKey ? await isAccountStewardAsApp(actorAccountId, spaceKey).catch(() => false) : false;
+  return withdrawApproval({ pageId, actorAccountId, actorName: await actorName(actorAccountId), isSteward });
+};
+
 const getPageApprovals = async (req) => {
   const pageId = pageIdOf(req);
   if (!pageId) return { pending: false };
@@ -795,6 +807,7 @@ export const actions = [
   ["bulk-assign-workflow", bulkAssign],
   ["decide-approval", decideApprovalAction],
   ["rerequest-approval", rerequestApprovalAction],
+  ["withdraw-approval", withdrawApprovalAction],
   ["get-page-approvals", getPageApprovals],
   ["list-my-approvals", listMyApprovalsAction],
   ["list-my-approval-requests", listMyApprovalRequestsAction], // WF-3 (c)

@@ -704,6 +704,7 @@ html[data-color-mode="dark"] .wf-dot-neutral  { background: #64748b; }
   background: #1F2937; color: #fff; cursor: pointer;
 }
 .wf-appr-rerequest:hover { filter: brightness(1.15); }
+.wf-appr-withdraw-row { margin-top: 8px; }
 .wf-appr-rerequest:disabled { opacity: 0.6; cursor: default; }
 .wf-appr-rerequest:focus-visible { outline: 2px solid var(--sv-border-focus); outline-offset: 2px; }
 /* WF-3: the approver's reason, quoted in solid ink on a real block — the one thing the author came for. */
