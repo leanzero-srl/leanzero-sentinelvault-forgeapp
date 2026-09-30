@@ -76,3 +76,19 @@ Compilation = 8 chapters (no site-protection/expiry), `baseRate` 1.35.
 ## Changelog
 - 2026-09-30 — pipeline created from CogniRunner's; 10 tutorials + compilation rendered, thumbnails v2,
   UPLOAD-TEXT.md; finals in `~/Downloads/SentinelVault-YouTube/`. Old 6.4 promo/short deleted.
+
+## 2026-09-30 — published on YouTube (Leanzero SRL channel UC1JpYs3UmQZtOzbsAf8fYXw), all PUBLIC
+seal-file `BFDpA4Y1Tgk` · edit-requests `TyW_js0qXbs` · auto-restore `8YFcmh_-MJg` · sealed-sections `I7VR1Cih9rg` ·
+validations `aBFt6A9_8Oo` · approval `SoYsOGB3J5Q` · site-protection `XYvwHigjkFg` · authenticator `-eUE8Hsdiik` ·
+expiry-alerts `qHFShA4mu3E` · classification `taEynzBs3ew` · compilation `IGCvPP9RxZo`.
+Upload recipe that works (Playwright MCP, owner signs in once in the Playwright window):
+1. ONE upload dialog with ALL files: `input[type=file]`.setInputFiles([...]) on `/videos/upload?d=ud`. Uploading one
+   per page.goto triggers a `beforeunload` that CANCELS the in-flight upload — never navigate mid-upload.
+2. Read ids from the content list thumbnails (`i9.ytimg.com/vi/<id>/`), fill `<url:key>` watch-next links FIRST
+   (YouTube rejects `<`/`>` in descriptions).
+3. Per video on `/video/<id>/edit`: fill title + description textboxes, "No, it's not made for kids", thumbnail via
+   the first `input[type=file]` (#file-loader), "Show advanced settings" → `input[aria-label=Tags]` fill "a, b, c,",
+   Save; then "Edit draft" → `#next-button` ×3 → `tp-yt-paper-radio-button[name=PUBLIC]` → `#done-button`.
+   Scripts are generated as files and run with browser_run_code_unsafe `filename` (no `require` in that sandbox).
+4. Verify from OUTSIDE: oembed (404 = not public) + the watch page contains the description hook. One of eleven
+   (validations) silently stayed Draft on the first pass — re-run the publish half.
