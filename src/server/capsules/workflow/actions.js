@@ -8,7 +8,7 @@ import { asApp, asUser, route } from "@forge/api";
 import { currentUserProfile } from "../../shared/user-or-app.js";
 import { kvs, WhereConditions } from "@forge/kvs";
 
-import { authorizeSteward, isOperatorSiteAdmin } from "../../shared/steward-checks.js";
+import { authorizeSteward, isOperatorSiteAdmin, isAccountStewardAsApp } from "../../shared/steward-checks.js";
 import { canEditPage, canReadPage, mustVerify, resolvePageSpaceKey } from "../../shared/content-access.js";
 import { fetchPageStatuses } from "../../shared/page-status.js";
 import {
@@ -471,7 +471,11 @@ const getPageApprovals = async (req) => {
     const me = req.context?.accountId;
     const listed = (status.approvers || []).some((a) => a.accountId === me);
     if (me && !listed && me !== status.requestedBy && settings?.approval?.adminsCanApprove !== false) {
-      status.adminCanDecide = await authorizeSteward(me, spaceKey).catch(() => false);
+      // The SAME check decideApproval uses (isAccountStewardAsApp, asApp): the asUser steward check
+      // failed with NEEDS_AUTHENTICATION for an admin without user consent, and followed the
+      // force-release toggle — so the ribbon hid Approve/Deny from an admin the server would accept
+      // (tester 2026-09-30).
+      status.adminCanDecide = await isAccountStewardAsApp(me, spaceKey).catch(() => false);
     }
     if (status.requireSignature) status.signatureEnrolled = (await signatureStatus(req.context?.accountId)).enrolled;
   }
