@@ -1,6 +1,6 @@
 # Notifications
 
-Current as of production 6.4.0.
+Current as of production 6.5.0.
 
 Sentinel Vault tells people what happened in three ways: in-app pop-ups, the page ribbon (banner) and Confluence page comments that @mention the people involved. The app sends no email of its own and has no egress; when a comment mentions someone, Confluence's own notification engine may email them according to their personal preferences. That keeps the app eligible for **Runs on Atlassian**.
 

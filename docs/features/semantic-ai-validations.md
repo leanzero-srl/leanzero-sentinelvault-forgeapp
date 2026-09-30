@@ -1,6 +1,6 @@
 # Semantic AI Validations
 
-> Updated for production 6.4.0. The screenshots and videos below were recorded on 4.x and show older layouts.
+> Updated for production 6.5.0. The screenshots and videos below were recorded on 4.x and show older layouts.
 
 > AI-powered content review against your custom rules, style guide, tone, and compliance standards — using Atlassian-hosted Claude via the Forge LLM API (no BYOK).
 
@@ -8,7 +8,7 @@
 |---|---|
 | **Surfaces** | Site settings → *Validations → Semantic AI Validations* (config) · Inline panel → *AI Review* (run) |
 | **Who can use it** | Admins enable + configure; users run a review on demand |
-| **Status** | Shipped since 4.0.0; current in production 6.4.0 — **off by default** |
+| **Status** | Shipped since 4.0.0; current in production 6.5.0 — **off by default** |
 | **Runs on Atlassian** | **Yes** — Atlassian-hosted Claude via `@forge/llm`, no external API keys, no egress |
 
 ## What it does

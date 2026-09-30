@@ -1,6 +1,6 @@
 # Surgical Content Protection: Embed-Level Restoration
 
-> **Status (production 6.4.0): implemented.** This is the original design record; its "Problem" and "Current Flow" sections describe the behaviour before the change. Today `pageContentTrigger()` restores only the removed sealed embeds: `restoreMediaPass` uses `extractMediaSingleNodes()` and `spliceMediaNodes()` (`src/server/infra/doc-surgery.js`) and writes once with `writeDocBody()`, keeping every other edit. The whole-page revert that still exists is a different feature: the workflow's enforced-state pass, which reverts an Approved page edited by someone who may not change it.
+> **Status (production 6.5.0): implemented.** This is the original design record; its "Problem" and "Current Flow" sections describe the behaviour before the change. Today `pageContentTrigger()` restores only the removed sealed embeds: `restoreMediaPass` uses `extractMediaSingleNodes()` and `spliceMediaNodes()` (`src/server/infra/doc-surgery.js`) and writes once with `writeDocBody()`, keeping every other edit. The whole-page revert that still exists is a different feature: the workflow's enforced-state pass, which reverts an Approved page edited by someone who may not change it.
 
 ## Problem
 

@@ -113,7 +113,7 @@ writes the receipt.
 }
 ```
 
-> **Known issue in 6.4.0:** the six edit-access ops (`grant-attachment-edit`, `revoke-attachment-edit`, `grant-section-edit`, `revoke-section-edit`, `decline-attachment-edit`, `decline-section-edit`) pass validation and are accepted, but the job step fails with "No resolver" — the job runner (`config-api/resolvers.js`) does not look up the edit-request capsule. Give, revoke and decline edit access from the UI until this is fixed.
+> The six edit-access ops (`grant-attachment-edit`, `revoke-attachment-edit`, `grant-section-edit`, `revoke-section-edit`, `decline-attachment-edit`, `decline-section-edit`) work from 6.5.0. In 6.4.0 they were accepted but failed with "No resolver"; resubmit any such job with a new Idempotency-Key.
 
 Rules that make it safe to re-run:
 - Every key is **upsert** semantics; omitted keys are untouched (a bundle is not a full replace).

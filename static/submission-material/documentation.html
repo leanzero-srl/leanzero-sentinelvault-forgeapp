@@ -120,7 +120,7 @@
       </span>
       <span class="hero-badge license">Confluence Cloud</span>
       <span class="hero-badge license">Runs on Atlassian</span>
-      <span class="hero-badge license">Version 6.4.0</span>
+      <span class="hero-badge license">Version 6.5.0</span>
     </div>
   </div>
 
@@ -158,7 +158,7 @@
     <p>Everything runs inside Atlassian: the app declares no external hosts, stores its records in Forge storage, and its optional AI review uses Atlassian-hosted Claude through the Forge LLM API.</p>
     <div class="callout info">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
-      <div><strong>This guide describes production version 6.4.0.</strong> Several capabilities are off until an administrator turns them on: classification, signed actions, page comments that mention people, AI review, and attachment delete/restore/cleanup from the page.</div>
+      <div><strong>This guide describes production version 6.5.0.</strong> Several capabilities are off until an administrator turns them on: classification, signed actions, page comments that mention people, AI review, and attachment delete/restore/cleanup from the page.</div>
     </div>
   </section>
 
@@ -308,7 +308,7 @@
       <table>
         <thead><tr><th>Setting</th><th>Where</th><th>What it signs</th></tr></thead>
         <tbody>
-          <tr><td><em>Sign seal actions with an authenticator code</em> (off by default)</td><td>Site settings</td><td>Sealing a file or section, releasing, force releasing and extending a seal, approving or declining edit requests, and giving or revoking edit access. Not signed in 6.4.0: a section sealed by inserting the Sealed Section macro and publishing, and REST API jobs.</td></tr>
+          <tr><td><em>Sign seal actions with an authenticator code</em> (off by default)</td><td>Site settings</td><td>Sealing a file or section, releasing, force releasing and extending a seal, approving or declining edit requests, and giving or revoking edit access. Not signed in 6.5.0: a section sealed by inserting the Sealed Section macro and publishing, and REST API jobs.</td></tr>
           <tr><td><em>Require a signed decision</em></td><td>Space console → Workflow</td><td>Each approver's decision, a space admin's direct approval, and, with no named approvers, the space admin's direct approval (the requester signs only when an AI review step is involved).</td></tr>
         </tbody>
       </table>
@@ -391,7 +391,7 @@
         <thead><tr><th>Role</th><th>May submit</th></tr></thead>
         <tbody>
           <tr><td>Viewer</td><td>Nothing that writes (<code>whoami</code> only); for read-only integrations that may be widened later.</td></tr>
-          <tr><td>Editor</td><td>Content operations: seal, unseal and extend files and sections, classify a page, workflow assign, withdraw and transitions, validation re-checks and approvals. In 6.4.0 the give, revoke and decline edit-access operations are accepted but fail (a known issue); use the page instead.</td></tr>
+          <tr><td>Editor</td><td>Content operations: seal, unseal and extend files and sections, classify a page, workflow assign, withdraw and transitions, validation re-checks and approvals.  Giving, revoking and declining edit access are content operations too.</td></tr>
           <tr><td>Admin</td><td>Everything above plus site and space configuration.</td></tr>
         </tbody>
       </table>
@@ -428,7 +428,7 @@
 
   <!-- ═══════════ Footer ═══════════ -->
   <div class="footer">
-    <p>Copyright &copy; 2026 <a href="https://leanzero.net" target="_blank" rel="noopener">LeanZero SRL</a> · Sentinel Vault 6.4.0</p>
+    <p>Copyright &copy; 2026 <a href="https://leanzero.net" target="_blank" rel="noopener">LeanZero SRL</a> · Sentinel Vault 6.5.0</p>
     <p style="margin-top:6px">Part of the LeanZero ecosystem of Atlassian Forge apps.</p>
   </div>
 

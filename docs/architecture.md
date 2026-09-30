@@ -1,6 +1,6 @@
 # Architecture
 
-Current as of production 6.4.0 (tag `v6.4.0`).
+Current as of production 6.5.0 (tag `v6.5.0`).
 
 Sentinel Vault is an Atlassian Forge app with two layers: **server capsules** (business logic, storage, Confluence calls) and **UI surfaces** (Custom UI React apps). They talk through one Forge resolver (`action-router`).
 
@@ -25,7 +25,7 @@ static/                   # webpack output, one bundle per surface
 
 ## Capsules
 
-`actions.js` in each capsule exports `[key, handler]` pairs; `registry.js` concatenates them into one resolver. Counts are the entries in each `actions` array at v6.4.0.
+`actions.js` in each capsule exports `[key, handler]` pairs; `registry.js` concatenates them into one resolver. Counts are the entries in each `actions` array at v6.5.0.
 
 | Capsule | Actions | Responsibility |
 |---|---|---|

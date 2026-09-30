@@ -1,6 +1,6 @@
 # Settings Reference
 
-Every configurable setting in Sentinel Vault production **6.4.0**. The one source of truth for keys, labels, groups and defaults is `src/server/capsules/policies/settings-schema.js` (`CONTROLS`, `GROUPS`), with engine defaults in `src/server/shared/baseline.js` (`POLICY_DEFAULTS`, `SPACE_POLICY_DEFAULTS`, `DISPATCH_DEFAULTS`).
+Every configurable setting in Sentinel Vault production **6.5.0**. The one source of truth for keys, labels, groups and defaults is `src/server/capsules/policies/settings-schema.js` (`CONTROLS`, `GROUPS`), with engine defaults in `src/server/shared/baseline.js` (`POLICY_DEFAULTS`, `SPACE_POLICY_DEFAULTS`, `DISPATCH_DEFAULTS`).
 
 Settings are managed in two places: **Site settings** (global) and the **Space console** (per space).
 
@@ -21,7 +21,7 @@ Stored in Forge KVS under key: `admin-settings-global`
 | Allow Attachment Removal from Page | `allowArtifactDelete` | Boolean (opt-in) | Off | Users can send unsealed attachments to the trash from the panel. |
 | Allow Attachment Restore from Page | `allowSealRestore` | Boolean (opt-in) | Off | Trashed attachments that still carry a seal can be restored from the panel. |
 | Allow Seal Cleanup from Page | `allowSealPurge` | Boolean (opt-in) | Off | Seal records left behind by permanently deleted attachments can be removed from the panel. |
-| Sign seal actions with an authenticator code | `signSealActions` | Boolean (opt-in) | Off | Sealing a file or section, releasing, force release, extending, approving or declining an edit request, and giving or revoking edit access all ask for the current code from the authenticator set up on My work (`SIGNED_SEAL_ACTION_KEYS` in `shared/seal-signature.js`). A person without one set up is refused until they add one. Codes are single-use; 5 wrong codes lock that account's signatures for 15 minutes. Two paths are not signed in 6.4.0: a section sealed by inserting the Sealed Section macro in the editor and publishing, and REST API jobs (they call the actions directly, without the signing check). |
+| Sign seal actions with an authenticator code | `signSealActions` | Boolean (opt-in) | Off | Sealing a file or section, releasing, force release, extending, approving or declining an edit request, and giving or revoking edit access all ask for the current code from the authenticator set up on My work (`SIGNED_SEAL_ACTION_KEYS` in `shared/seal-signature.js`). A person without one set up is refused until they add one. Codes are single-use; 5 wrong codes lock that account's signatures for 15 minutes. Two paths are not signed in 6.5.0: a section sealed by inserting the Sealed Section macro in the editor and publishing, and REST API jobs (they call the actions directly, without the signing check). |
 | Hours before a declined edit request can be repeated | `editRequestCooldownHours` | Integer 0–168 | 1 | After an owner declines an edit request, the same person waits this long before asking again (0 = no wait). The requester sees `Declined · ask again {time}` on the row and the ribbon, with the owner's optional word, and on My work → Your edit requests. The owner or a space admin can give edit access directly at any time ("Give edit access…" under the row's ⋯ menu). An out-of-range stored value reads as the default. |
 
 ### Expiry
