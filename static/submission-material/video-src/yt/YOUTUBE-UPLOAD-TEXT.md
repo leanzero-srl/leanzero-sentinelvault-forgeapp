@@ -7,6 +7,8 @@ Watch-next links: replace `<url:key>` with the real YouTube URL once each video 
 Main link (all videos): https://marketplace.atlassian.com/apps/1034857304/sentinel-vault?hosting=cloud
 Docs: https://leanzero.net/portfolio/sentinel-vault  ·  Source: https://github.com/leanzero-srl/leanzero-sentinelvault-forgeapp
 
+**Published 2026-09-30 (public, Leanzero SRL):** seal-file `BFDpA4Y1Tgk` · approval `SoYsOGB3J5Q` · edit-requests `TyW_js0qXbs` · auto-restore `8YFcmh_-MJg` · sealed-sections `I7VR1Cih9rg` · validations `aBFt6A9_8Oo` · site-protection `XYvwHigjkFg` · authenticator `-eUE8Hsdiik` · expiry-alerts `qHFShA4mu3E` · classification `taEynzBs3ew` · compilation `IGCvPP9RxZo`
+
 ## sentinel-vault-seal-file.mp4 (00:51)
 
 Title (52 chars): Confluence Attachment Lock: Seal a File in One Click
@@ -33,9 +35,9 @@ Chapters
 00:31 Click Seal on image (4).png
 
 Watch next
-- Confluence Edit Requests: Approve or Decline Sealed Files: <url:edit-requests>
-- Confluence Attachment Overwritten? Sealed Files Revert: <url:auto-restore>
-- Sentinel Vault for Confluence: 8 Features in 5 Minutes: <url:compilation>
+- Confluence Edit Requests: Approve or Decline Sealed Files: https://youtu.be/TyW_js0qXbs
+- Confluence Attachment Overwritten? Sealed Files Revert: https://youtu.be/8YFcmh_-MJg
+- Sentinel Vault for Confluence: 8 Features in 5 Minutes: https://youtu.be/IGCvPP9RxZo
 
 Resources
 Product page and documentation: https://leanzero.net/portfolio/sentinel-vault
@@ -80,9 +82,9 @@ Chapters
 01:47 Released: File Now Accessible
 
 Watch next
-- Confluence Attachment Lock: Seal a File in One Click: <url:seal-file>
-- Confluence Section Lock: Seal One Heading, Edit the Rest: <url:sealed-sections>
-- Sentinel Vault for Confluence: 8 Features in 5 Minutes: <url:compilation>
+- Confluence Attachment Lock: Seal a File in One Click: https://youtu.be/BFDpA4Y1Tgk
+- Confluence Section Lock: Seal One Heading, Edit the Rest: https://youtu.be/I7VR1Cih9rg
+- Sentinel Vault for Confluence: 8 Features in 5 Minutes: https://youtu.be/IGCvPP9RxZo
 
 Resources
 Product page and documentation: https://leanzero.net/portfolio/sentinel-vault
@@ -123,9 +125,9 @@ Chapters
 00:47 The violation comment
 
 Watch next
-- Confluence Attachment Lock: Seal a File in One Click: <url:seal-file>
-- Confluence Section Lock: Seal One Heading, Edit the Rest: <url:sealed-sections>
-- Sentinel Vault for Confluence: 8 Features in 5 Minutes: <url:compilation>
+- Confluence Attachment Lock: Seal a File in One Click: https://youtu.be/BFDpA4Y1Tgk
+- Confluence Section Lock: Seal One Heading, Edit the Rest: https://youtu.be/I7VR1Cih9rg
+- Sentinel Vault for Confluence: 8 Features in 5 Minutes: https://youtu.be/IGCvPP9RxZo
 
 Resources
 Product page and documentation: https://leanzero.net/portfolio/sentinel-vault
@@ -170,9 +172,9 @@ Chapters
 01:58 The approved edit stays
 
 Watch next
-- Confluence Edit Requests: Approve or Decline Sealed Files: <url:edit-requests>
-- Confluence Page Approval: Draft to Approved, Enforced: <url:approval>
-- Sentinel Vault for Confluence: 8 Features in 5 Minutes: <url:compilation>
+- Confluence Edit Requests: Approve or Decline Sealed Files: https://youtu.be/TyW_js0qXbs
+- Confluence Page Approval: Draft to Approved, Enforced: https://youtu.be/SoYsOGB3J5Q
+- Sentinel Vault for Confluence: 8 Features in 5 Minutes: https://youtu.be/IGCvPP9RxZo
 
 Resources
 Product page and documentation: https://leanzero.net/portfolio/sentinel-vault
@@ -218,9 +220,9 @@ Chapters
 02:03 Re-check: passed
 
 Watch next
-- Confluence Page Approval: Draft to Approved, Enforced: <url:approval>
-- Confluence Admin: Force Release, Trash and Restore Settings: <url:site-protection>
-- Sentinel Vault for Confluence: 8 Features in 5 Minutes: <url:compilation>
+- Confluence Page Approval: Draft to Approved, Enforced: https://youtu.be/SoYsOGB3J5Q
+- Confluence Admin: Force Release, Trash and Restore Settings: https://youtu.be/XYvwHigjkFg
+- Sentinel Vault for Confluence: 8 Features in 5 Minutes: https://youtu.be/IGCvPP9RxZo
 
 Resources
 Product page and documentation: https://leanzero.net/portfolio/sentinel-vault
@@ -266,9 +268,9 @@ Chapters
 02:04 Waiting for the approvers
 
 Watch next
-- Confluence Content Rules: Require Headings and Labels: <url:validations>
-- Confluence Section Lock: Seal One Heading, Edit the Rest: <url:sealed-sections>
-- Sentinel Vault for Confluence: 8 Features in 5 Minutes: <url:compilation>
+- Confluence Content Rules: Require Headings and Labels: https://youtu.be/aBFt6A9_8Oo
+- Confluence Section Lock: Seal One Heading, Edit the Rest: https://youtu.be/I7VR1Cih9rg
+- Sentinel Vault for Confluence: 8 Features in 5 Minutes: https://youtu.be/IGCvPP9RxZo
 
 Resources
 Product page and documentation: https://leanzero.net/portfolio/sentinel-vault
@@ -312,9 +314,9 @@ Chapters
 01:59 Restore it from the panel
 
 Watch next
-- Confluence Seal Expiry, Reminders and Alerts: Set Up: <url:expiry-alerts>
-- Confluence Seal Actions Signed With an Authenticator Code: <url:authenticator>
-- Sentinel Vault for Confluence: 8 Features in 5 Minutes: <url:compilation>
+- Confluence Seal Expiry, Reminders and Alerts: Set Up: https://youtu.be/qHFShA4mu3E
+- Confluence Seal Actions Signed With an Authenticator Code: https://youtu.be/-eUE8Hsdiik
+- Sentinel Vault for Confluence: 8 Features in 5 Minutes: https://youtu.be/IGCvPP9RxZo
 
 Resources
 Product page and documentation: https://leanzero.net/portfolio/sentinel-vault
@@ -354,9 +356,9 @@ Chapters
 00:25 Code accepted
 
 Watch next
-- Confluence Admin: Force Release, Trash and Restore Settings: <url:site-protection>
-- Confluence Classification Levels: Set a Space Default: <url:classification>
-- Sentinel Vault for Confluence: 8 Features in 5 Minutes: <url:compilation>
+- Confluence Admin: Force Release, Trash and Restore Settings: https://youtu.be/XYvwHigjkFg
+- Confluence Classification Levels: Set a Space Default: https://youtu.be/taEynzBs3ew
+- Sentinel Vault for Confluence: 8 Features in 5 Minutes: https://youtu.be/IGCvPP9RxZo
 
 Resources
 Product page and documentation: https://leanzero.net/portfolio/sentinel-vault
@@ -398,9 +400,9 @@ Chapters
 00:59 Tell editors when a change is undone
 
 Watch next
-- Confluence Admin: Force Release, Trash and Restore Settings: <url:site-protection>
-- Confluence Seal Actions Signed With an Authenticator Code: <url:authenticator>
-- Sentinel Vault for Confluence: 8 Features in 5 Minutes: <url:compilation>
+- Confluence Admin: Force Release, Trash and Restore Settings: https://youtu.be/XYvwHigjkFg
+- Confluence Seal Actions Signed With an Authenticator Code: https://youtu.be/-eUE8Hsdiik
+- Sentinel Vault for Confluence: 8 Features in 5 Minutes: https://youtu.be/IGCvPP9RxZo
 
 Resources
 Product page and documentation: https://leanzero.net/portfolio/sentinel-vault
@@ -443,9 +445,9 @@ Chapters
 01:20 The page follows
 
 Watch next
-- Confluence Seal Actions Signed With an Authenticator Code: <url:authenticator>
-- Confluence Page Approval: Draft to Approved, Enforced: <url:approval>
-- Sentinel Vault for Confluence: 8 Features in 5 Minutes: <url:compilation>
+- Confluence Seal Actions Signed With an Authenticator Code: https://youtu.be/-eUE8Hsdiik
+- Confluence Page Approval: Draft to Approved, Enforced: https://youtu.be/SoYsOGB3J5Q
+- Sentinel Vault for Confluence: 8 Features in 5 Minutes: https://youtu.be/IGCvPP9RxZo
 
 Resources
 Product page and documentation: https://leanzero.net/portfolio/sentinel-vault
@@ -490,14 +492,14 @@ Chapters
 03:49 Classification
 
 Watch next
-- Confluence Attachment Lock: Seal a File in One Click: <url:seal-file>
-- Confluence Edit Requests: Approve or Decline Sealed Files: <url:edit-requests>
-- Confluence Attachment Overwritten? Sealed Files Revert: <url:auto-restore>
-- Confluence Section Lock: Seal One Heading, Edit the Rest: <url:sealed-sections>
-- Confluence Content Rules: Require Headings and Labels: <url:validations>
-- Confluence Page Approval: Draft to Approved, Enforced: <url:approval>
-- Confluence Seal Actions Signed With an Authenticator Code: <url:authenticator>
-- Confluence Classification Levels: Set a Space Default: <url:classification>
+- Confluence Attachment Lock: Seal a File in One Click: https://youtu.be/BFDpA4Y1Tgk
+- Confluence Edit Requests: Approve or Decline Sealed Files: https://youtu.be/TyW_js0qXbs
+- Confluence Attachment Overwritten? Sealed Files Revert: https://youtu.be/8YFcmh_-MJg
+- Confluence Section Lock: Seal One Heading, Edit the Rest: https://youtu.be/I7VR1Cih9rg
+- Confluence Content Rules: Require Headings and Labels: https://youtu.be/aBFt6A9_8Oo
+- Confluence Page Approval: Draft to Approved, Enforced: https://youtu.be/SoYsOGB3J5Q
+- Confluence Seal Actions Signed With an Authenticator Code: https://youtu.be/-eUE8Hsdiik
+- Confluence Classification Levels: Set a Space Default: https://youtu.be/taEynzBs3ew
 
 Resources
 Product page and documentation: https://leanzero.net/portfolio/sentinel-vault
