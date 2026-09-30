@@ -1,99 +1,127 @@
-# Sentinel Vault — Atlassian Marketplace Listing Copy
+# Sentinel Vault — Atlassian Marketplace Listing Copy (production 6.4.0)
 
-Paste-ready copy for the live listing. Character counts are stated per field and were
-verified with `len()` (code points) — the runnable verification block with the real
-measured output is at the bottom of this file. **Do not** add pricing rationale or any
-"cheaper than the alternatives" framing anywhere public. **Never** mention native
-Confluence status mirroring — it was removed before release and never existed publicly.
+Paste-ready copy for the live listing, refreshed 2026-09-30 for production 6.4.0 (tag `v6.4.0`).
+Every limited field sits between `<!-- block:name -->` markers; `python3 count-blocks.py` (next to
+this file) checks each one in code points and fails on an over-limit field or trailing punctuation
+where the Marketplace forbids it. Run it before every paste. **Do not** add pricing rationale or any
+"cheaper than the alternatives" framing anywhere public. **Never** mention native Confluence status
+mirroring — it was removed before release and never existed publicly.
+
+Everything claimed below was checked against the `v6.4.0` source (production is deployed from that
+tag via `scripts/deploy-prod.sh`, which strips only the dynamic harness webtrigger; the static
+`config-api` webtrigger ships). See "Verified against 6.4.0" at the bottom.
 
 ---
 
 ## App name (≤60)
 Sentinel Vault
 
-*(14 chars.)*
+## App tagline (≤130 · no ending punctuation)
+<!-- block:tagline -->
+Seal files and page sections, enforce approvals and classify every Confluence page — tampering is reverted automatically
+<!-- /block -->
 
-## App tagline (≤130 chars · no ending punctuation)
-> Sealed attachments, locked sections and enforced approvals for Confluence — tampering is detected and reverted automatically
-
-*(124 chars. Alternates:*
-- *"Everyone tracks approval status. Sentinel Vault enforces it — unauthorized changes to sealed content revert automatically" — 121*
-- *"File locking, sealed page sections and enforced approval workflows for Confluence — with automatic reversion on tampering" — 121)*
-
-## App summary (≤250 chars)
-> Confluence tracks who changed a document. Sentinel Vault decides whether the change stands: seal attachments and page sections, require multi-approver sign-off with an enforced Approved state, and let unauthorized edits revert automatically.
-
-*(241 chars.)*
+## App summary (≤250)
+<!-- block:summary -->
+Confluence tracks who changed a document. Sentinel Vault decides whether the change stands: seal files and page sections, enforce multi-approver sign-off, classify pages Public to Restricted, and revert unauthorized edits automatically.
+<!-- /block -->
 
 ---
 
-## More details (More about this app)
+## More details (≤1000)
+<!-- block:more -->
+Sentinel Vault is document control with teeth. Status chips record intent — Sentinel Vault enforces it.
 
-*(991 chars — under the 1000 limit)*
+- Seal an attachment: another user's overwrite is restored to the sealed version, a trashed file comes back, a sealed image keeps its size and layout.
+- Seal a page section: tampering is reverted from a snapshot while the rest of the page stays editable.
+- Edit requests: approve, deny or revoke edit access; a declined request can be retried after a cooldown.
+- Workflow: Draft → In Review → Approved → Expired with multi-approver sign-off. A non-approver's edit demotes or reverts an Approved page.
+- Classification: Public, Internal, Confidential, Restricted (or your own levels), space defaults, and a reason to lower a level.
+- Optional 6-digit authenticator code on seal actions and approvals.
+- Content validations, AI review on Atlassian-hosted Claude (off by default), REST API tokens, and a space dashboard with CSV export.
 
-**Sentinel Vault is document control with teeth.** Status chips record intent — Sentinel Vault enforces it.
-
-- Seal an attachment: any other user's overwrite is restored to the sealed version, a trashed file comes back, and a sealed image keeps its size and layout.
-- Seal a page section: tampering is restored from a snapshot while the rest of the page stays editable.
-- Edit requests: approve, deny or revoke edit access — approved editors work under the seal.
-- Workflow: Draft → In Review → Approved → Expired, with multi-approver sign-off. Approved is enforced — a non-approver's edit demotes or reverts the page; review dates expire stale approvals.
-- Content validations: required headings, tables, labels, length limits — advisory, gated or hard-revert.
-- AI content review on Atlassian-hosted Claude: no API keys, no data egress, off by default.
-- Space dashboard: pages by state, overdue reviews, CSV export.
-
-Runs entirely on Atlassian Forge — your content never leaves Atlassian.
+Runs on Atlassian — your content never leaves Atlassian.
+<!-- /block -->
 
 ---
 
 ## Highlights (exactly 3 — title ≤50 no ending punctuation · description ≤220 · caption ≤220)
-Each block matches its image. Image: `marketplace-highlight-{n}.png` (1840×900) + `-cropped.png` (580×330).
+Image: `marketplace-highlight-{n}.png` (1840×900) + `marketplace-highlight-{n}-cropped.png` (580×330).
 
-**Highlight 1 — image "Seal a file and the seal defends itself" (the inline panel: sealed cards, edit requests, editors with access)**
-- Title (39): Seal a file and the seal defends itself
-- Description (213): Seal an attachment and Sentinel Vault stands guard: an overwrite is restored to the sealed version with history preserved, a trashed file comes back, and a sealed image keeps its exact size and layout on the page.
-- Caption (215): The Sentinel Vault panel on a page: a sealed spreadsheet with two pending edit requests and its approved editors, a colleague's sealed contract you can watch or request to edit, and a Seal button on everything else.
+### Highlight 1 — "Seal it. It stays sealed" (the sealed-files panel)
+<!-- block:h1_title -->
+Seal a file and the seal defends itself
+<!-- /block -->
+<!-- block:h1_desc -->
+Seal an attachment or a page section and Sentinel Vault stands guard: an overwrite is restored to the sealed version, a trashed file comes back, and a tampered section is reverted from its snapshot.
+<!-- /block -->
+<!-- block:h1_cap -->
+The Sentinel Vault panel on a page: your sealed file with Release, every other attachment one Seal click away, and a short explainer of what the app protects on this page.
+<!-- /block -->
 
-**Highlight 2 — image "Approved means approved — enforced, not tracked" (the ribbon approval flag with the two-approver popover)**
-- Title (47): Approved means approved — enforced, not tracked
-- Description (218): Pages move Draft → In Review → Approved with the sign-off you require: named approvers, groups, any-of / all-of / minimum-N decision rules. After that, a non-approver's edit demotes or reverts the page — automatically.
-- Caption (195): The approval flag on the page ribbon: one of two approvers has signed off with a reason, and the deciding reviewer approves or denies right where they read — approving moves the page to Approved.
+### Highlight 2 — "Every page classified" (Classification tab + page banner)
+<!-- block:h2_title -->
+Classify every page, Public to Restricted
+<!-- /block -->
+<!-- block:h2_desc -->
+Turn classification on and every page shows its level under the title and in the page banner. Set space defaults, override per page, and lowering a level asks for a reason that lands in the activity log.
+<!-- /block -->
+<!-- block:h2_cap -->
+The Classification tab in site settings: four levels with rank and description, levels from JSM Assets, space defaults. In front, a page banner showing Confidential from the space default.
+<!-- /block -->
 
-**Highlight 3 — image "AI content review that runs on Atlassian" (the Semantic AI validations config with the Runs on Atlassian badge)**
-- Title (40): AI content review that runs on Atlassian
-- Description (207): Give the AI your rules, style guide, tone and compliance standards; a review returns severity-ranked findings with concrete suggestions. Atlassian-hosted Claude — no API keys, no data egress, off by default.
-- Caption (198): Semantic AI validation settings: custom rules, style guide, tone and compliance standards, author notification with a severity threshold, and a monthly token budget — all on Atlassian-hosted Claude.
+### Highlight 3 — "Signed with a code" (the Sign this action dialog)
+<!-- block:h3_title -->
+Sign seal actions and approvals with a code
+<!-- /block -->
+<!-- block:h3_desc -->
+Require a 6-digit code from an authenticator app before a seal is released or extended, an edit request is decided, or a page is approved. Off until an admin turns it on for the site or a space.
+<!-- /block -->
+<!-- block:h3_cap -->
+The Sign this action dialog on the sealed-files panel: the decision runs only after the current authenticator code verifies. Each person sets up their authenticator once on My work.
+<!-- /block -->
 
 ---
 
-## Additional screenshots (max 5 — caption ≤220 each)
-Files: `marketplace-screenshots/01..05-*.png`, 1840×1020, product shot matted on brand navy.
+## Additional screenshots (5 — caption ≤220 each)
+Files: `marketplace-screenshots/0N-*.png`, 1840×1020, real frames matted on brand sky-navy #0C4A6E.
 
-**01 — inline panel** (harness scenario `panel`) — caption (212):
-> The on-page panel: sealed and available attachments, pending edit requests with approve and deny, editors with access, validation results, AI review findings and sealed sections — the whole app where the work is.
+**01 — `01-sealed-files-panel.png`**
+<!-- block:s1_cap -->
+Sealed files, sealed by you or by others, and available files, each with one clear action: Release, Request edit or Seal. Counts match the cards, and long lists page separately.
+<!-- /block -->
 
-**02 — workflow dashboard** (scenario `realm-steward`, Workflow tab upper half) — caption (170):
-> The space Workflow tab: approvals waiting on you, live counts per state, and every page under workflow with its state, entry date and review-due date — exportable to CSV.
+**02 — `02-classification-levels.png`**
+<!-- block:s2_cap -->
+Site settings, Classification: one switch turns it on, the four default levels are yours to rename, recolour or extend, or import from JSM Assets, and every space can get a default level.
+<!-- /block -->
 
-**03 — workflow settings** (scenario `realm-steward`, Workflow tab lower half) — caption (180):
-> Workflow settings: define the states, name approvers and groups, pick a decision rule, choose what happens when a non-approver edits an Approved page, and set the re-review period.
+**03 — `03-signed-action.png`**
+<!-- block:s3_cap -->
+With signing on, releasing a seal or deciding an edit request asks for the current 6-digit code from the user's authenticator app before anything changes.
+<!-- /block -->
 
-**04 — global validations + AI** (scenario `steward`, Validations tab) — caption (204):
-> Global validation rules with three enforcement modes — advisory comment, pass/fail gate, or revert — plus Semantic AI review: Atlassian-hosted Claude, custom rules, style guide and a monthly token budget.
+**04 — `04-auto-restored-attachment.png`**
+<!-- block:s4_cap -->
+A sealed file was overwritten by someone else: Sentinel Vault put the sealed version back and says so in the attachment history — "Sentinel Vault automatically reversed modifications".
+<!-- /block -->
 
-**05 — page ribbon** (scenario `ribbon-approval`) — caption (178):
-> The page ribbon: sealed-attachment count, an awaiting-your-approval flag, validation and AI chips, and Manage Attachments — the always-visible status bar on every protected page.
+**05 — `05-rest-api-access.png`**
+<!-- block:s5_cap -->
+API access: one POST endpoint for configuration bundles and content operations, with named tokens scoped to Admin, Editor or Viewer. Only a hash of each token is stored.
+<!-- /block -->
 
 ---
 
 ## What's new / Release notes (6.4.0 — production 2026-09-30)
 
-**Release summary (≤80 chars):**
-> Always-visible classification, honest Force release, clearer sealed-files panel
+**Release summary (≤80):**
+<!-- block:rel_summary -->
+Always-visible classification, honest Force release, clearer sealed-files panel
+<!-- /block -->
 
-*(79 chars.)*
-
-**Release notes body:** *(848 chars — under the 1000 limit)*
-
+**Release notes body (≤1000):**
+<!-- block:rel_notes -->
 Classification and day-to-day sealing get clearer.
 
 - New: every page shows its classification level. Raising it is one action; lowering it asks for a reason and shows an amber callout. The level menu opens where it can be seen.
@@ -103,33 +131,49 @@ Classification and day-to-day sealing get clearer.
 - Seal actions can require a 6-digit authenticator code (site setting).
 
 Also in this line: sealed page sections, image presentation seals, unified restores and per-user authorization on every action.
+<!-- /block -->
 
 ---
 
-## Asset manifest (upload these)
+## Asset manifest — which file goes in which Marketplace field
 
-| Slot | File | Dimensions |
-|---|---|---|
-| App logo | `marketplace-logo-144.png` | 144×144 |
-| Banner (hi-res) | `marketplace-banner-1120x548.png` | 1120×548 |
-| Banner (standard) | `marketplace-banner-560x274.png` | 560×274 |
-| Highlight 1–3 | `marketplace-highlight-{n}.png` (+ `-cropped`) | 1840×900 (+ 580×330) |
-| Additional screenshots | `marketplace-screenshots/01..05-*.png` | 1840×1020 (max 5) |
-| Documentation | `documentation.html` | standalone page (STALE — see refresh notes below) |
-| Demo video | `sentinel-vault-demo.mp4` → upload to YouTube, link it | 1920×1080 |
+All paths relative to `static/submission-material/`. Regenerate with
+`node _marketing/render-v3.mjs` (never run the old `derive.mjs` after it — it would overwrite these
+from the 4.x masters).
 
-Every image is generated, not hand-made: the screenshot harness
-(`static/_screenshot-harness/` — mocked `@forge/bridge`, `window.__SHOT__` scenarios,
-`webpack.screenshot.js` builds all 6 surfaces) produces the product shots, and the
-`_marketing/` render + derive scripts compose logo, banner and highlights, then derive
-every downscale/crop from the full-size render. Run render **then** derive after any UI
-change — a hand-made derivative is how a listing ends up with a current hero image and a
-year-old thumbnail beside it. The demo video follows the same clips → plates → compose
-pipeline (see `video-src/VIDEO-README.md` once authored).
+| Marketplace field | File | Size | Status |
+|---|---|---|---|
+| App logo | `marketplace-logo-144.png` | 144×144 | unchanged, still accurate |
+| Hero banner (hi-res) | `marketplace-banner-1120x548.png` | 1120×548 | NEW 2026-09-30 |
+| Hero banner (standard) | `marketplace-banner-560x274.png` | 560×274 | NEW 2026-09-30 |
+| Highlight 1 screenshot / cropped | `marketplace-highlight-1.png` / `marketplace-highlight-1-cropped.png` | 1840×900 / 580×330 | NEW |
+| Highlight 2 screenshot / cropped | `marketplace-highlight-2.png` / `marketplace-highlight-2-cropped.png` | 1840×900 / 580×330 | NEW (was approvals; now classification) |
+| Highlight 3 screenshot / cropped | `marketplace-highlight-3.png` / `marketplace-highlight-3-cropped.png` | 1840×900 / 580×330 | NEW (was AI review; now signing) |
+| Additional screenshot 1 | `marketplace-screenshots/01-sealed-files-panel.png` | 1840×1020 | NEW, caption s1 |
+| Additional screenshot 2 | `marketplace-screenshots/02-classification-levels.png` | 1840×1020 | NEW, caption s2 |
+| Additional screenshot 3 | `marketplace-screenshots/03-signed-action.png` | 1840×1020 | NEW, caption s3 |
+| Additional screenshot 4 | `marketplace-screenshots/04-auto-restored-attachment.png` | 1840×1020 | NEW, caption s4 |
+| Additional screenshot 5 | `marketplace-screenshots/05-rest-api-access.png` | 1840×1020 | NEW, caption s5 |
+| Tagline / Summary / More details | blocks `tagline`, `summary`, `more` above | — | tagline + summary on the live listing are still the pre-August text |
+| Highlight title / description / caption ×3 | blocks `h{n}_title`, `h{n}_desc`, `h{n}_cap` | — | replace all three |
+| Version 6.4.0 release summary / notes | blocks `rel_summary`, `rel_notes` | — | live shows "Minor version update" |
+| Promo video | owned by the video agent (`sentinel-vault-promo-6.4.mp4` → YouTube) | — | live listing youtubeId `E8jAX58xcII` |
 
-Marketplace metadata: Forge app `c30bf71e-4287-4872-954d-db49cc68f0ff` (Confluence);
-suggested categories *Documents & files* + *Administrative tools* (confirm against the
-Partner portal's current category list); keywords *Locking · Approvals · Compliance*.
+Image sources: real frames from the owner's 2026-09-30 recordings
+(`~/Downloads/wetransfer_sentinel_2026-09-30_1318/*.mov`), cut to `_marketing/src-6.4/`. They were
+recorded on the wolfaenpak DEV install, so every crop excludes the "(Development)" suffix and the API
+endpoint URL is blurred. The old harness-mock screenshots (01-sentinel-panel … 05-global-preferences)
+were removed: they showed the 4.x panel layout on a near-black mat.
+
+Marketplace metadata: app key `com.leanzero.confluence.sentinelvault`, Forge app
+`c30bf71e-4287-4872-954d-db49cc68f0ff`; keywords *Locking · Approvals · Classification · Compliance*.
+
+## Live listing as of 2026-09-30 (from `rest/2/addons/com.leanzero.confluence.sentinelvault`)
+
+Version 6.4.0 is published. Tagline "Attachment protection and concurrent-edit prevention for
+Confluence Cloud" and the summary ("Seal any Confluence attachment before editing…") are the
+pre-August text; More details and the three highlight titles match the August (4.x) copy; the five
+additional screenshots have empty captions; release summary/notes read "Minor version update".
 
 ---
 
@@ -191,64 +235,22 @@ Partner portal's current category list); keywords *Locking · Approvals · Compl
 - Footer says "© 2025 LeanZero SRL".
 
 ---
+- **Classification is OFF by default** (site switch `classificationEnabled`, opt-in; a space may
+  opt out). Say "turn classification on", never imply it is always on. Levels can come from JSM
+  Assets only with the app's second (Jira) install on the site — do not headline Assets.
+- **Signing** is TOTP the app enrols itself on My work; it is not a 21 CFR Part 11 claim — never
+  call it a compliant e-signature.
 
-## Length verification (run before every upload — a shipped tagline once measured 136/130 while claiming 119)
+## Verified against 6.4.0 (source at tag `v6.4.0`)
 
-```python
-#!/usr/bin/env python3
-# python3 verify-lengths.py — counts are code points via len().
-fields = {
-    "app_name":        (60,  "Sentinel Vault"),
-    "tagline":         (130, "Sealed attachments, locked sections and enforced approvals for Confluence — tampering is detected and reverted automatically"),
-    "summary":         (250, "Confluence tracks who changed a document. Sentinel Vault decides whether the change stands: seal attachments and page sections, require multi-approver sign-off with an enforced Approved state, and let unauthorized edits revert automatically."),
-    "more_details":    (1000, open("more-details.txt").read().rstrip("\n")),   # the More details block above, verbatim
-    "h1_title":        (50,  "Seal a file and the seal defends itself"),
-    "h1_desc":         (220, "Seal an attachment and Sentinel Vault stands guard: an overwrite is restored to the sealed version with history preserved, a trashed file comes back, and a sealed image keeps its exact size and layout on the page."),
-    "h1_caption":      (220, "The Sentinel Vault panel on a page: a sealed spreadsheet with two pending edit requests and its approved editors, a colleague's sealed contract you can watch or request to edit, and a Seal button on everything else."),
-    "h2_title":        (50,  "Approved means approved — enforced, not tracked"),
-    "h2_desc":         (220, "Pages move Draft → In Review → Approved with the sign-off you require: named approvers, groups, any-of / all-of / minimum-N decision rules. After that, a non-approver's edit demotes or reverts the page — automatically."),
-    "h2_caption":      (220, "The approval flag on the page ribbon: one of two approvers has signed off with a reason, and the deciding reviewer approves or denies right where they read — approving moves the page to Approved."),
-    "h3_title":        (50,  "AI content review that runs on Atlassian"),
-    "h3_desc":         (220, "Give the AI your rules, style guide, tone and compliance standards; a review returns severity-ranked findings with concrete suggestions. Atlassian-hosted Claude — no API keys, no data egress, off by default."),
-    "h3_caption":      (220, "Semantic AI validation settings: custom rules, style guide, tone and compliance standards, author notification with a severity threshold, and a monthly token budget — all on Atlassian-hosted Claude."),
-    "shot1_caption":   (220, "The on-page panel: sealed and available attachments, pending edit requests with approve and deny, editors with access, validation results, AI review findings and sealed sections — the whole app where the work is."),
-    "shot2_caption":   (220, "The space Workflow tab: approvals waiting on you, live counts per state, and every page under workflow with its state, entry date and review-due date — exportable to CSV."),
-    "shot3_caption":   (220, "Workflow settings: define the states, name approvers and groups, pick a decision rule, choose what happens when a non-approver edits an Approved page, and set the re-review period."),
-    "shot4_caption":   (220, "Global validation rules with three enforcement modes — advisory comment, pass/fail gate, or revert — plus Semantic AI review: Atlassian-hosted Claude, custom rules, style guide and a monthly token budget."),
-    "shot5_caption":   (220, "The page ribbon: sealed-attachment count, an awaiting-your-approval flag, validation and AI chips, and Manage Attachments — the always-visible status bar on every protected page."),
-    "release_summary": (80,  "Sealed images keep their size and layout, unified restores, paid via Atlassian"),
-    "release_notes":   (1000, open("release-notes.txt").read().rstrip("\n")),  # the Release notes body above, verbatim
-}
-for name, (limit, text) in fields.items():
-    print(("OK " if len(text) <= limit else "OVER"), f"{name:16s} {len(text):4d} / {limit}")
-```
-
-**Measured output (2026-08-14, real run — every string above verbatim, multi-line blocks
-measured as full markdown including bullets and blank lines):**
-
-```
-OK  app_name                   14 / 60
-OK  tagline                   124 / 130
-OK  tagline_alt1              121 / 130
-OK  tagline_alt2              121 / 130
-OK  summary                   241 / 250
-OK  more_details              991 / 1000
-OK  h1_title                   39 / 50
-OK  h1_desc                   213 / 220
-OK  h1_caption                215 / 220
-OK  h2_title                   47 / 50
-OK  h2_desc                   218 / 220
-OK  h2_caption                195 / 220
-OK  h3_title                   40 / 50
-OK  h3_desc                   207 / 220
-OK  h3_caption                198 / 220
-OK  shot1_caption             212 / 220
-OK  shot2_caption             170 / 220
-OK  shot3_caption             180 / 220
-OK  shot4_caption             204 / 220
-OK  shot5_caption             178 / 220
-OK  release_summary            78 / 80
-OK  release_notes             970 / 1000
-ALL WITHIN LIMITS
-no-ending-punctuation checks passed (tagline + alternates + all 3 highlight titles)
-```
+- Classification: `src/server/capsules/classification/logic.js` (default levels Public/Internal/
+  Confidential/Restricted, `classificationActive` site switch + space opt-out, reason required to
+  lower, `REASON_MAX` 300); activity events `classification.page-set` / `space-default-set` in
+  `src/server/infra/activity-log.js`; JSM Assets import in the Classification tab.
+- Signing: `shared/totp.js`, `shared/seal-signature.js`, settings-schema "Sign seal actions with an
+  authenticator code" (release, extend, approve/decline/give/revoke edit access); approvals per
+  space via workflow `requireSignature`.
+- Edit-request cooldown: `editRequestCooldownHours` (0 disables).
+- REST API: `capsules/config-api/` (static webtrigger `config-api`, kept by
+  `scripts/strip-dev-modules.mjs`; tokens `svt_…`, hash-only storage, roles Admin/Editor/Viewer).
+- Sealed sections, workflow, validations, AI review: unchanged since 4.x and still in the tag.
