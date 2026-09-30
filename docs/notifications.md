@@ -1,177 +1,78 @@
 # Notifications
 
-Sentinel Vault uses four independent notification channels. Each can be enabled or disabled through the site settings console (global settings).
+Current as of production 6.4.0.
 
-## Channels
+Sentinel Vault tells people what happened in three ways: in-app pop-ups, the page ribbon (banner) and Confluence page comments that @mention the people involved. The app sends no email of its own and has no egress; when a comment mentions someone, Confluence's own notification engine may email them according to their personal preferences. That keeps the app eligible for **Runs on Atlassian**.
 
-| Channel | Delivery | When It Fires |
-|---|---|---|
-| **Toast** | In-app popup via `showFlag` API | Seal/unseal actions, immediate feedback, violation alerts |
-| **Page banner** | Persistent bar on the Confluence page | Seal violations, expiry warnings, status changes, seal counts |
-| **Confluence comment** | Footer comment with `@mention` of the recipient | Lifecycle events (seal/violation/expiry/release) — Confluence's notification engine emails the mentioned user |
-| **Watch** | Comment with `@mention` of each watcher | Seal released (manual, expiry, or space admin override) |
+## Defaults at a glance
 
-Toast and page banner notifications are handled in the frontend. Confluence comments and watch notifications are dispatched from the server.
+Page comments are **opt-in**. On a site that never saved its settings, pop-ups and the ribbon work, the editor whose change was undone is told, and no other comment is posted until a site admin turns on **Page comments that mention people**.
 
-There is no external email egress. The app qualifies for the **"Runs on Atlassian"** badge: every notification is either rendered in-product or routed through Confluence's own notification engine via comment mentions.
-
-## Feature Flags
-
-All notification toggles are managed through the site settings console UI (Alerts tab). When no configuration exists, defaults from `src/server/shared/baseline.js` apply (all enabled).
-
-At runtime, `src/server/shared/bulletin-flags.js` resolves the active configuration by reading the global settings from Forge KVS and falling back to defaults on error.
-
-### Flag Reference
-
-| UI Setting | Code Constant | Default | Scope |
+| Site setting (Settings tab → Alerts) | KVS key (`admin-settings-global`) | Code flag (`bulletin-flags.js`) | Default |
 |---|---|---|---|
-| Enable Pop-up Notifications | `ENABLE_TOAST_DISPATCHES` | On | All toast messages |
-| Enable Page Status Banners | `ENABLE_PAGE_BANNERS` | On | All page banner alerts |
-| Enable Page Comments | `ENABLE_CONFLUENCE_BULLETINS` | On | Footer comments authored by the app |
-| Enable Native Notifications | `ENABLE_NATIVE_NOTIFICATIONS` | On | Master toggle for comment-with-mention notices |
-| Seal Confirmation & Halfway Reminder Notices | `ENABLE_HALFWAY_REMINDER_NOTICE` | On | Seal-created comment, 50% reminder comment |
-| Seal Expiry Notices | `ENABLE_EXPIRY_NOTICE` | On | Auto-release / expiry comment |
-| Recurring Reminder Banners | `ENABLE_PERIODIC_REMINDER_BANNER` | On | Periodic banner for long-held seals (banner-only, no comment) |
+| Pop-up messages | `enableFlashMessages` | `ENABLE_TOAST_DISPATCHES` | On |
+| Page ribbon | `enableDocRibbons` | `ENABLE_PAGE_BANNERS` | On |
+| Tell editors when their change is undone | `notifyEditorOnRevert` | `NOTIFY_EDITOR_ON_REVERT` | On (independent of the master switch) |
+| Page comments that mention people (master) | `enableEmailDispatches` | `ENABLE_NATIVE_NOTIFICATIONS` | **Off** |
+| Violation comments (under the master) | `enableConfluenceDispatches` | `ENABLE_CONFLUENCE_BULLETINS` | **Off** |
+| Seal confirmation and halfway notice (under the master) | `enableSealExpiryReminderEmail` | `ENABLE_HALFWAY_REMINDER_NOTICE` | On |
+| Expiry and release notices (under the master) | `enableAutoUnsealDispatchEmail` | `ENABLE_EXPIRY_NOTICE` | On |
+| Recurring reminder banner (Expiry group; only when seals never expire) | `enablePeriodicReminderEmail` | `ENABLE_PERIODIC_REMINDER_BANNER` | On |
 
-The native-notifications master toggle (`ENABLE_NATIVE_NOTIFICATIONS`) must be on for any individual comment-mention notice to be posted. Individual flags only apply when the master toggle is enabled.
+Defaults live once in `DISPATCH_DEFAULTS` / `POLICY_DEFAULTS` (`src/server/shared/baseline.js`); labels in `src/server/capsules/policies/settings-schema.js`. The word "email" in some KVS keys is historical — the keys were kept so existing installs keep their values.
 
-### Settings-to-Code Mapping
+### One choke point for every comment
 
-The site settings console stores settings with camelCase keys under `admin-settings-global` in KVS. The KVS key names are unchanged from earlier versions (when the channel was email) so existing installations keep their values; `bulletin-flags.js` maps them to the current code constants:
+`shouldPostComment` in `src/server/shared/notice-policy.js` decides every comment:
 
-| KVS Setting Key | Code Constant |
-|---|---|
-| `enableFlashMessages` | `ENABLE_TOAST_DISPATCHES` |
-| `enableDocRibbons` | `ENABLE_PAGE_BANNERS` |
-| `enableConfluenceDispatches` | `ENABLE_CONFLUENCE_BULLETINS` |
-| `enableEmailDispatches` | `ENABLE_NATIVE_NOTIFICATIONS` |
-| `enableSealExpiryReminderEmail` | `ENABLE_HALFWAY_REMINDER_NOTICE` |
-| `enableAutoUnsealDispatchEmail` | `ENABLE_EXPIRY_NOTICE` |
-| `enablePeriodicReminderEmail` | `ENABLE_PERIODIC_REMINDER_BANNER` |
+1. A space in **Quiet** mode (space console → Access Control → Notifications, `notificationsMode: "quiet"`) posts no comment and mentions nobody — any type, including the editor notice. Pop-ups, the ribbon and the activity trail still work.
+2. The editor-revert notice follows `notifyEditorOnRevert` only.
+3. Every other comment needs the master switch `enableEmailDispatches` to be on.
 
-## Comment-with-Mention Notifications
+## Comment types
 
-### Types
+Built in `src/server/infra/notice-composer.js` (`ALERT_CATEGORIES`) and posted by `outbound-notify.js` to `/wiki/api/v2/footer-comments` as the app.
 
-All comments are posted through the centralized `dispatchNotice()` function in `src/server/infra/notice-composer.js`, which selects a body builder from `notice-blueprints.js` based on the alert category.
-
-| Notice Type | Category Constant | Trigger | Recipients |
+| Notice | Fires when | Mentions | Needs |
 |---|---|---|---|
-| **Seal confirmation** | `SEAL_CREATED` | User seals an attachment | Seal owner |
-| **Violation alert** | `SEAL_VIOLATION` | Unauthorized edit/trash/deletion detected and reverted | Seal owner (and editor mentioned) |
-| **Halfway reminder** | `FIFTY_PERCENT_REMINDER` | Seal reaches 50% of its duration | Seal owner |
-| **Expiry notification** | `EXPIRY_NOTIFICATION` | Seal has expired, action required | Seal owner |
-| **Auto-release notice** | `AUTO_RELEASE` | Seal expired and was automatically released | Seal owner |
-| **Release notification** | `RELEASE_NOTIFICATION` | Seal manually released by owner | Watchers |
-| **Space admin override** | `STEWARD_OVERRIDE_RELEASE` | Space admin force-unseals another user's attachment | Seal owner (space admin also mentioned) |
+| Seal confirmation | A seal is created | Owner | Master + confirmation/halfway |
+| Halfway notice | A seal reaches 50% of its duration | Owner | Master + confirmation/halfway |
+| Expiry / overdue reminder | A seal lapses, then each overdue reminder | Owner | Master + expiry/release |
+| Auto-release notice | The seal is released after the last overdue reminder | Owner | Master + expiry/release |
+| Violation comment | Someone tampers with a sealed attachment or section and it is undone (deduped per page and target) | Owner and editor | Master + violation comments |
+| Your change was undone | Same event, when the violation comment is not posted | The editor (with a link to the version holding their change) | `notifyEditorOnRevert` |
+| Release notice | A seal is released (by owner, expiry or force release) | Everyone watching it | Master |
+| Force release notice | A space admin force-releases someone's seal | Owner and the space admin | Master |
+| Edit request / approved / declined | Edit-request lifecycle on a sealed file or section | Owner or requester | Master |
+| Approval requested / resolved | Page workflow approvals | Approvers / requester | Master |
+| Validation advisory | A page fails a validation rule in advisory mode | Page author | Master (see validations) |
 
-`PERIODIC_REMINDER` exists as a category but is not used as a comment — periodic reminders are delivered via the page banner only (see `recurringNudgeTask` in `triggers.js`).
+`PERIODIC_REMINDER` is a banner, never a comment (`recurringNudgeTask`).
 
-### How Mentions Trigger Emails
+### Retry behaviour
 
-The body builders emit Confluence storage XML containing `<ac:link><ri:user ri:account-id="..."/></ac:link>` mention tags. When Confluence receives the comment, its built-in notification engine emails the mentioned user — subject to the user's personal notification preferences (Confluence settings → Personal settings → Email notifications). This means:
+`postCommentWithMention()` retries on 429, 5xx and network errors: at most 3 attempts in total (so up to 2 retries), exponential backoff from 600 ms, capped at 5 s.
 
-- Users who have disabled mention emails won't receive an email. The app's page banner still surfaces the alert in-product.
-- A watcher who lacks read access to the page won't receive the mention email (Confluence enforces page-level visibility on notifications).
+## Watching a seal
 
-### Module Layout
+1. **Watch** on a file sealed by someone else stores `notify-request-{attachmentId}-{accountId}` in KVS (7-day TTL).
+2. When the seal is released, `notifyWatchers()` (`bulletins/logic.js`) posts one release comment mentioning the watchers, then the watch keys are swept.
+3. Watch notices are comments, so they need the master switch; with it off, nothing is posted.
 
-The notification system lives in `src/server/infra/`:
-- **notice-composer.js** -- Centralized orchestration. `dispatchNotice(type, data)` resolves the recipient's display name, builds a storage-format comment body, and posts it.
-- **notice-blueprints.js** -- Storage XML body builders, one per notification type.
-- **outbound-notify.js** -- POSTs the comment to `/wiki/api/v2/footer-comments` via `asApp().requestConfluence()`. Includes retry/backoff for 429 / 5xx responses.
+## Seal expiry, reminders and release
 
-### Retry Behavior
+The hourly expiry sweep (`expirySweepTask`) handles attachment seals and section seals alike:
 
-The `postCommentWithMention()` function in `outbound-notify.js` retries on 429 and 5xx responses:
-- Maximum 3 retries
-- Exponential backoff: 600ms → 1.2s → 2.4s (capped at 5s)
+- At 50% of the duration: the halfway notice.
+- When "Seals expire" (`autoUnlockEnabled`, default on) is on and a seal lapses: an overdue reminder, repeated every **Hours between overdue reminders** (default 24) up to **Overdue reminders before release** (default 3), then the seal is released and the owner gets the auto-release notice. 0 reminders reminds once and holds the seal.
+- When "Seals expire" is off: seals never expire, and the daily recurring nudge shows the owner a ribbon banner every **Reminder Frequency** days (default 7). No comment.
 
-## Watch Notifications
+Dedup keys: `expiry-notified-{id}` and `fifty-percent-reminder-sent-{id}` (expiry sweep), `reminder-sent-{id}` (recurring nudge).
 
-Users can watch attachments sealed by other users to be notified when the seal is released.
+## Short-lived dispatch keys (pop-ups and ribbon)
 
-### How It Works
-
-1. User clicks **Watch** on a sealed attachment (available in inline panel, overlay, and space console)
-2. A watch request is stored in KVS as `notify-request-{artifactId}-{accountId}`
-3. When the seal is released (manually, by expiry, or by space admin override):
-   - The `notifyWatchers()` function in `bulletins/logic.js` queries all `notify-request-{artifactId}-*` keys
-   - Posts a release-notice comment that mentions each watcher
-   - Cleans up the watch request keys
-4. User can click **Watching** to unwatch and remove their notification request
-
-## Scheduled Tasks
-
-Three scheduled tasks generate notifications:
-
-| Task | Interval | Notifications Sent |
+| Key | TTL | Purpose |
 |---|---|---|
-| **Expiry sweep** | Hourly | Expiry comments, halfway reminder comments, page banners |
-| **Recurring nudge** | Daily | Periodic reminder banners (no comment) — fires only when auto-unseal is disabled |
-| **Seal index cron** | Hourly | None directly (indexes seals for space console queries) |
-
-The expiry sweep scans all active seals, posts expiry comments for expired seals, and posts halfway reminders for seals past 50% of their duration.
-
-### Deduplication
-
-To prevent duplicate notifications across scheduled task runs, the following KVS keys are used:
-
-| Key Pattern | Purpose | Set By |
-|---|---|---|
-| `expiry-notified-{artifactId}` | Prevents duplicate expiry comments | Expiry sweep |
-| `fifty-percent-reminder-sent-{artifactId}` | Prevents duplicate halfway reminder comments | Expiry sweep |
-| `reminder-sent-{artifactId}` | Tracks periodic nudge schedule (stores timestamp) | Recurring nudge |
-
-The recurring nudge checks the `reminder-sent-*` timestamp against the configured `reminderIntervalDays` (default 7) to determine if enough time has passed since the last reminder.
-
-## Notification Flow by Event
-
-### Attachment Sealed
-1. Toast notification (immediate, frontend)
-2. Seal confirmation comment with `@owner` mention
-
-### Unauthorized Edit Detected
-1. Automatic reversion of the file
-2. Footer comment with `@owner` and `@editor` mentions (Confluence emails the owner)
-3. Page banner alert stored for next page view
-
-### Sealed Attachment Trashed
-1. Automatic restoration from trash
-2. Footer comment with mentions
-3. Page banner alert stored
-
-### Sealed Attachment Permanently Deleted
-1. Seal records cleaned up (KVS, content property, space index)
-2. Footer comment with mentions
-
-### Sealed Media Embed Removed from Page
-1. Surgical re-insertion of the embed at its original position
-2. Footer comment with mentions
-
-### Seal Expired
-1. Expiry comment with `@owner` mention
-2. If auto-unseal enabled: seal released, banner updated
-
-### Seal Approaching Expiry
-1. Halfway reminder comment with `@owner` mention at 50% of seal duration
-
-### Seal Manually Released
-1. Release notification comment with `@watcher` mention(s)
-2. Toast notification (immediate, frontend)
-3. Page banner updated
-
-### Space admin force-unseal
-1. Space admin override comment mentioning both the original owner and the space admin
-2. Release notification comment to watchers
-3. Page banner updated
-
-## Notification Storage Keys
-
-Dispatch events for page banners and toasts use short-lived KVS keys:
-
-| Key Pattern | TTL | Purpose |
-|---|---|---|
-| `notification-{timestamp}-{random}` | 5 minutes | Individual toast dispatch events |
-| `recent-notifications` | 1 hour | Aggregated dispatch events for page banner display |
-| `violation-alert-{ownerAccountId}-{artifactId}-{timestamp}` | 1 hour | Violation toast notifications for seal owners |
+| `notification-{timestamp}-{random}` | 5 minutes | One pop-up dispatch |
+| `recent-notifications` | 1 hour | Recent dispatches for the ribbon |
+| `violation-alert-{ownerAccountId}-{attachmentId}-{timestamp}` | 1 hour | Violation pop-up for the seal owner |

@@ -1,35 +1,38 @@
 # Content Sealing (section-level)
 
+> Updated for production 6.4.0. The screenshots and videos below were recorded on 4.x and show older layouts.
+
 > Lock a specific section of a Confluence page — a heading and its content — against unauthorized edits, while the rest of the page stays editable.
 
 | | |
 |---|---|
-| **Surfaces** | Inline panel → *Sealed Sections* · the "Sentinel Vault Sealed Section" macro |
-| **Who can use it** | Any editor seals; the **section owner** or a **steward** releases |
-| **Status** | Shipped in v4.0.0 |
+| **Surfaces** | Page-details modal (Sentinel Vault chip under the title) → *Seal a section…* · inline panel → *Sealed Sections* · the "Sentinel Vault Sealed Section" macro |
+| **Who can use it** | Any editor seals; the **section owner** or a **space admin** releases |
+| **Status** | Shipped since 4.0.0; current in production 6.4.0 |
 | **Runs on Atlassian** | Yes (no external egress) |
 
 ## What it does
 
-Confluence has no native section-level edit lock, so Sentinel Vault wraps the chosen section in an app-owned **bodied macro** carrying a stable, app-issued `sectionId`, and snapshots its content. If anyone other than the owner edits the body or removes the macro, the page-update trigger detects the drift (via a canonical content hash) and **restores** the sealed content from the snapshot — the same detect-and-restore mechanism already used for sealed attachment embeds. The owner or a steward can release the section at any time, which unwraps it.
+Confluence has no native section-level edit lock, so Sentinel Vault wraps the chosen section in an app-owned **bodied macro** carrying a stable, app-issued `sectionId`, and snapshots its content. If anyone other than the owner edits the body or removes the macro, the page-update trigger detects the drift (via a canonical content hash) and **restores** the sealed content from the snapshot — the same detect-and-restore mechanism already used for sealed attachment embeds. The owner or a space admin can release the section at any time, which unwraps it.
 
 ## Where to find it
 
-- Open the Sentinel Vault panel → **Sealed Sections** group → **Seal a section** → pick a heading from the page.
+- Click the Sentinel Vault chip under the page title → **Seal a section…** → pick a heading (the row says what is frozen: the heading and everything under it up to the next heading of the same level), how long it holds and an optional note. The inline panel's **Sealed Sections** group offers the same picker.
+- Or insert the **Sentinel Vault Sealed Section** macro, put content inside it and publish: it is sealed to you for the space's default period.
 - Sealed sections render on the page inside the **"Sentinel Vault Sealed Section"** macro with a "Sealed by … · until …" header.
 
 ## How to test — step by step
 
-1. On a page with a few headings, open the panel → **Sealed Sections → Seal a section**.
+1. On a page with a few headings, open the Sentinel Vault chip → **Seal a section…**.
 2. Pick a heading (e.g. "Risks") → it’s wrapped and recorded; the section appears in the **Sealed Sections** list.
 3. As a **different** user, edit the text inside that sealed section and save → the change is **restored**.
 4. As that user, delete the whole macro and save → the section is **re-inserted**.
-5. As the **owner**, edit freely → changes are kept. Click **Unseal** → the section unwraps and becomes editable for everyone.
+5. As the **owner**, edit freely → changes are kept. Click **Release** → the section unwraps and becomes editable for everyone.
 
 ## What you should see
 
-- A **Sealed Sections** group listing each sealed section (title, expiry; **Unseal** for yours; for a section sealed by someone else, a **Request Edit** button so you can ask the owner for in-place edit access — approved editors’ changes are kept and the seal re-baselines).
-- Non-owner edits to the sealed body are reverted; a footer comment notifies the owner.
+- A **Sealed Sections** group listing each sealed section (title, expiry; **Unseal** for yours; for a section sealed by someone else, a **Request edit** button so you can ask the owner for in-place edit access — approved editors’ changes are kept and the seal re-baselines).
+- Non-owner edits to the sealed body are reverted. The editor gets a "your change was undone" comment (on by default); a violation comment to the owner is posted only when page comments and violation comments are turned on (both off by default).
 - A no-op editor save (open and re-save with no real change) does **not** trigger a false revert (canonical-hash comparison).
 
 ## Walkthrough — screenshots & video
@@ -51,14 +54,14 @@ The "Sealed Section" macro config card:
 ## Troubleshooting
 
 - **"No headings to seal"** — the page has no headings; add one and reopen the picker.
-- **A legitimate edit was reverted** — the page was edited by a non-owner; the owner can **Unseal**, edit, then re-seal, or use *refresh snapshot* after a sanctioned change. (Canonicalization is hardened against editor re-serialization; see confidence note.)
+- **A legitimate edit was reverted** — the page was edited by a non-owner; the owner can **Release**, edit, then re-seal, or use *refresh snapshot* after a sanctioned change. (Canonicalization is hardened against editor re-serialization; see confidence note.)
 - **The macro shows a placeholder instead of the body** — the standalone harness can’t reach the Confluence ADF renderer; inside Confluence the body renders normally.
 
 ## Under the hood — how it's proven
 
 - **Backend:** `src/server/capsules/section-seals/{logic.js,actions.js}` (seal / unseal / enumerate / snapshot); detect-and-restore pass in the unified `pageContentTrigger` (`src/server/triggers.js`); ADF helpers in `src/server/infra/doc-surgery.js`.
 - **Unit tests:** `test/doc-surgery.test.mjs` (19 assertions) covers `canonicalizeAdf` (strips volatile `localId`, key-order independent), `hashAdf` (stable; changes on edit), `computeSectionRange`, `buildSealedSectionNode`/`getSectionId` round-trip, `locateBodiedSectionNodes`, `replaceSectionBody`, `spliceSectionWrapper`.
-- **Static checks:** `forge lint` clean; build clean; the bodied macro module deploys (v4.0.0).
+- **Static checks:** `forge lint` clean; build clean; the bodied macro module has shipped since 4.0.0.
 - **Live verification:** matrix in [`test-harness/README.md`](../../test-harness/README.md) — seal → non-owner edit restored → macro deletion restored → **no-op save does not false-revert** → owner unseal.
 - **Confidence:** MEDIUM-HIGH for the macro-wrapper approach (it reduces section sealing to the already-solved media-restore problem). The flagged area is `canonicalizeAdf` correctness vs the editor’s on-save ADF rewrites — hardened in code and asserted in the unit tests, with a live no-op-save check in the matrix.
 

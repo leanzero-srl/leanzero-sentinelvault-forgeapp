@@ -1,34 +1,36 @@
 # Conditions & Validations
 
+> Updated for production 6.4.0. The screenshots and videos below were recorded on 4.x and show older layouts.
+
 > Define rules that Confluence pages are checked against on create and edit — required fields, formatting, approval gates — and enforce them.
 
 | | |
 |---|---|
-| **Surfaces** | Steward console → *Validations* tab (authoring) · Inline panel → *Validation* (reporting) |
-| **Who can use it** | Admins/stewards author rules; everyone is validated |
-| **Status** | Shipped in v4.0.0 |
+| **Surfaces** | Site settings → *Validations* tab and space console → *Validations* tab (authoring) · inline panel → *Validation* group and page ribbon (reporting) |
+| **Who can use it** | Site admins author site rules, space admins author space rules; everyone is validated |
+| **Status** | Shipped since 4.0.0; current in production 6.4.0 |
 | **Runs on Atlassian** | Yes (no external egress) |
 
 ## What it does
 
 Pages are validated against admin-configured rules — required headings, required tables, required labels, heading hierarchy, and length limits. Because Forge page events fire **after** a save (it cannot block a pre-publish save), enforcement is applied post-save in one of three selectable modes:
 
-- **Advisory** — post a footer comment listing the issues (no content change). *Highest confidence; recommended default.*
-- **Approval gate** — stamp a pass/fail/awaiting-approval status that the panel and ribbon display; a steward can approve.
+- **Advisory** — post a footer comment listing the issues (no content change). Like every app comment, it is posted only when the site's **Page comments that mention people** switch is on (off by default) and the space is not in Quiet mode.
+- **Approval gate** — stamp a pass/fail status that the panel and ribbon display; an admin of the page's space can **Approve anyway** (only while the site setting *Allow space admins to force-unseal* is on).
 - **Hard revert** — restore the last compliant version (opt-in, default off — can discard work).
 
 ## Where to find it
 
-- **Author rules (global):** Steward console → **Validations** tab → master toggle, enforcement modes, and a rule list (each rule: type, label, severity, and type-specific config).
-- **Author rules (per space):** Realm console → **Validations** tab → the same editor, scoped to that space (space rules override global; leave empty to inherit).
-- **See results:** the inline panel shows a **Validation** group (pass/fail badge + violations + **Re-check**) when a gate status exists; advisory issues arrive as a page comment; gate status also shows on the page ribbon.
+- **Author rules (global):** Site settings → **Validations** tab → master toggle, enforcement modes, and a rule list (each rule: type, label, severity, and type-specific config).
+- **Author rules (per space):** Space console → **Validations** tab → the same editor, scoped to that space (an empty space list inherits every site rule; a non-empty list replaces the site's non-blocking rules, while site rules of severity *block* always apply; enforcement modes combine, so a space can switch a mode on but never off; a disabled space config is ignored, and nothing runs while the site master switch is off).
+- **See results:** the inline panel shows a **Validation** group (pass/fail badge + violations + **Re-check**, and **Approve anyway** for space admins) once a gate status exists. Re-check reads the published version and, when the gate is on and you can edit the page, stores its verdict so the badge, ribbon and workflow gate follow it; advisory issues arrive as a page comment; gate status also shows on the page ribbon.
 
 ## How to test — step by step
 
-1. Steward console → **Validations** → enable, choose **Advisory** + **Gate**, add a rule like *Require a table* (severity **Required**), Save.
+1. Site settings → **Validations** → enable, choose **Advisory** + **Gate**, add a rule like *Require a table* (severity **Required**), Save.
 2. Save a page that has **no table** → an advisory comment lists the violation; the gate stamps **failed**.
 3. Open the panel on that page → the **Validation** group shows **Issues found** with the violation; click **Re-check** to re-run on demand.
-4. Add a table and save → the rule passes; the gate flips to **passed** (or a steward approves it).
+4. Add a table and save → the rule passes; the gate flips to **passed** (or a space admin clicks **Approve anyway**).
 5. (Optional) enable **Hard revert** on one rule → a non-compliant save on a page with a prior compliant version is reverted; brand-new (v1) pages fall back to advisory.
 
 ## What you should see
@@ -44,9 +46,9 @@ Authoring — the **Validations** tab (rule editor + enforcement modes), light +
 ![Validations authoring tab](../media/screenshots/steward-validations.png)
 ![Validations authoring tab (dark)](../media/screenshots/steward-validations-dark.png)
 
-The same editor, scoped **per space**, in the Realm console:
+The same editor, scoped **per space**, in the space console:
 
-![Per-space Validations editor in the realm console](../media/screenshots/realm-validations.png)
+![Per-space Validations editor in the space console](../media/screenshots/realm-validations.png)
 
 Reporting — the **Validation** group in the panel (the "Issues found" badge + violations):
 
@@ -64,14 +66,15 @@ Reporting — the **Validation** group in the panel (the "Issues found" badge + 
 ## Troubleshooting
 
 - **No Validation group on a page** — it only shows when a **gate** status exists; advisory-only setups report via comments.
-- **Nothing happens on save** — the master toggle is off, or no rules are configured, or the page is a draft (only `current` pages are enforced).
+- **Nothing happens on save** — the master toggle is off, or no rules are configured, or the page is a draft (only `current` pages are enforced). Page events can arrive late; the 5-minute page-guard sweep also judges pages edited in the last 20 minutes when the site validation switch is on and at least one site-level rule exists (spaces with only space rules are not swept), up to 50 pages per run; the whole sweep is skipped while content protection is off.
+- **No advisory comment** — page comments are off by default (Site settings → Settings → Alerts), or the space is in Quiet mode.
 - **Hard revert undid good work** — hard revert is post-save and opt-in; prefer Advisory/Gate unless you accept the trade-off.
 
 ## Under the hood — how it's proven
 
 - **Backend:** pure rules engine `src/server/infra/rules-engine.js`; config + state + page-property helpers in `src/server/capsules/validations/{logic.js,actions.js}`; the validation phase in `src/server/triggers.js` (`runValidationPhase`, advisory/gate/revert with a version-dedup + loop-guard); comment builder `src/server/infra/validation-blueprints.js`.
 - **Unit tests:** `test/rules-engine.test.mjs` (15 assertions — every rule type, severity → passed, disabled rules) and `test/validations-logic.test.mjs` (20 assertions — config merge, page-property state, last-good pointer).
-- **Static checks:** `forge lint` clean; build clean; new scope `read:label:confluence` deployed and consented (v4.0.0).
+- **Static checks:** `forge lint` clean; build clean; scope `read:label:confluence` added in 4.0.0.
 - **Confidence:** MEDIUM for advisory/gate; LOW (and opt-in, default off) for hard-revert — flagged because post-save revert can discard work and must avoid loops (handled by the `asApp()` loop-guard + last-known-good pointer).
 
 ---

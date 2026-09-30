@@ -1,12 +1,14 @@
 # Semantic AI Validations
 
+> Updated for production 6.4.0. The screenshots and videos below were recorded on 4.x and show older layouts.
+
 > AI-powered content review against your custom rules, style guide, tone, and compliance standards — using Atlassian-hosted Claude via the Forge LLM API (no BYOK).
 
 | | |
 |---|---|
-| **Surfaces** | Steward console → *Validations → Semantic AI Validations* (config) · Inline panel → *AI Review* (run) |
+| **Surfaces** | Site settings → *Validations → Semantic AI Validations* (config) · Inline panel → *AI Review* (run) |
 | **Who can use it** | Admins enable + configure; users run a review on demand |
-| **Status** | Shipped in v4.0.0 — **off by default** |
+| **Status** | Shipped since 4.0.0; current in production 6.4.0 — **off by default** |
 | **Runs on Atlassian** | **Yes** — Atlassian-hosted Claude via `@forge/llm`, no external API keys, no egress |
 
 ## What it does
@@ -15,21 +17,21 @@ Instead of bring-your-own-key, Semantic AI Validations call **Atlassian-hosted C
 
 ## Where to find it
 
-- **Configure:** Steward console → **Validations** tab → **Semantic AI Validations** section (enable, model, custom rules, style guide, tone, compliance, severity threshold, notify author, monthly token budget).
+- **Configure:** Site settings → **Validations** tab → **Semantic AI Validations** section (enable, model, custom rules, style guide, tone, compliance, severity threshold, notify author, monthly token budget).
 - **Run:** the inline panel’s **AI Review** group → **Run AI review** (appears once AI is enabled for the space).
 
 ## How to test — step by step
 
-1. Steward console → **Validations → Semantic AI Validations** → toggle **Enable AI review**, set a style guide / tone / compliance, choose the Haiku model, Save.
+1. Site settings → **Validations → Semantic AI Validations** → toggle **Enable AI review**, set a style guide / tone / compliance, choose the Haiku model, Save.
 2. Open the panel on a page → **AI Review → Run AI review**.
 3. Wait for the async job to finish (it polls) → findings render with severity chips and suggestions.
-4. (Optional) enable **Notify page author** + a severity threshold → a footer comment @mentions the author for qualifying findings.
-5. Check the monthly token usage in the space console (the audit accrues input/output tokens).
+4. (Optional) enable **Notify page author** + a severity threshold → a footer comment @mentions the author for qualifying findings (only when the site's page-comments master switch is on and the space is not in Quiet mode).
+5. Token usage accrues per space against the monthly budget; when it is used up, reviews are refused until the next month or until the budget is raised (0 = unlimited).
 
 ## What you should see
 
 - A **Semantic AI Validations** config block with a **"Runs on Atlassian"** badge, a Haiku-only model dropdown, the rules/style/tone/compliance fields, and a monthly token budget.
-- An **AI Review** group in the panel: **Run AI review** → **Reviewing…** → a findings list (HIGH/MEDIUM/LOW + excerpt + suggestion), or "No issues found." Each finding can be **Dismissed** or marked **False positive** (hidden from future runs, restorable); the group is collapsible.
+- An **AI Review** group in the panel: **Run AI review** → **Reviewing…** → a findings list (HIGH/MEDIUM/LOW + excerpt + suggestion), or "No open findings." Each finding can be **Dismissed** or marked **False positive** (hidden from future runs, restorable); the group is collapsible.
 - If the model returns unparseable output, no fabricated findings (fail-closed) — an audit row records the parse error instead.
 
 ## Walkthrough — screenshots & video
@@ -63,7 +65,7 @@ Results — the **AI Review** group in the panel (HIGH/MEDIUM/LOW findings + sug
 
 - **Backend:** ported Forge LLM adapter `src/server/infra/forge-llm.js` (+ pure salvage `src/server/infra/json-salvage.js`); async consumer `src/server/capsules/validations/ai-worker.js` on the `ai-validation-queue`; prompt/findings logic in `validations/logic.js`; comment builder in `validation-blueprints.js`. Manifest `llm` module + consumer.
 - **Unit tests:** `test/json-salvage.test.mjs` (11 — fenced/prose/truncated/unescaped-quote recovery) and `test/validations-logic.test.mjs` (20 — `normalizeFindings` clamping/cap, `buildValidationPrompt`, `severityRank`).
-- **Platform proof:** deployed as **v4.0.0**; Forge reports the build is **eligible for the Runs on Atlassian program** (confirming no egress). The `llm` module installed with admin re-consent.
+- **Platform proof:** the `llm` module first shipped in **4.0.0**; Forge reports the build is **eligible for the Runs on Atlassian program** (confirming no egress). The `llm` module installed with admin re-consent.
 - **Confidence:** HIGH on the LLM plumbing (proven in CogniRunner and ported); MEDIUM on finding quality (inherent to the model — mitigated by the strict JSON contract + tolerant parser + Haiku-only); MEDIUM on cost (mitigated by default-off, truncation, dedup, and the monthly budget).
 
 ---

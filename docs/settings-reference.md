@@ -1,137 +1,144 @@
 # Settings Reference
 
-Complete reference for all configurable settings in Sentinel Vault. Settings are managed through two admin interfaces: the **Site settings** (global) and the **Space console** (per-space).
+Every configurable setting in Sentinel Vault production **6.4.0**. The one source of truth for keys, labels, groups and defaults is `src/server/capsules/policies/settings-schema.js` (`CONTROLS`, `GROUPS`), with engine defaults in `src/server/shared/baseline.js` (`POLICY_DEFAULTS`, `SPACE_POLICY_DEFAULTS`, `DISPATCH_DEFAULTS`).
+
+Settings are managed in two places: **Site settings** (global) and the **Space console** (per space).
 
 ## Site settings (global)
 
-Accessible at **Confluence administration > Apps > Sentinel Vault Admin**. Changes here apply site-wide.
+Opened at **Confluence administration → Apps → Sentinel Vault — Site settings** (`confluence:globalSettings`). Tabs: **Settings**, **Validations**, **Classification**, **API access**. The Settings tab saves only on **Apply**; the Validations and Classification tabs save their own state.
 
 Stored in Forge KVS under key: `admin-settings-global`
 
-### General Tab
+"Opt-in" keys are read with `=== true` (absent = off); the others with `!== false` (absent = on).
 
-| Setting | Code Key | Type | Default | Description |
+### Protection
+
+| Setting | Code key | Type | Default | Description |
 |---------|----------|------|---------|-------------|
-| Default Seal Duration | `defaultSealDuration` | Integer (seconds, displayed as hours) | 24 hours | How long attachments stay sealed. Minimum 1 hour. Individual spaces can override this. |
-| Allow space admins to force-unseal | `allowStewardOverride` | Boolean | Off | Allow space admins to unseal attachments sealed by other users. |
-| Enable Seal Expiry Notifications | `autoUnsealEnabled` | Boolean | On | When on: users get expiry notifications and seals are released automatically. When off: seals persist past expiry (show "Overdue"), periodic reminders sent instead. |
-| Allow Attachment Removal from Page | `allowArtifactDelete` | Boolean | Off | Users can delete unsealed attachments from the panel (moves to trash). Sealed attachments cannot be deleted. |
-| Allow Attachment Restore from Page | `allowSealRestore` | Boolean | Off | Users and space admins can restore trashed attachments that still have seal data. |
-| Allow Seal Cleanup from Page | `allowSealPurge` | Boolean | Off | Users and space admins can purge leftover seal entries for permanently deleted attachments. |
-| Protect Sealed Attachments in Page Body | `enableContentProtection` | Boolean | On | Automatically undo page edits that remove sealed media embeds (images, file previews) from page content. |
-| Auto-Insert Macro on Seal | `globalAutoInsertMacro` | Boolean | Off | Automatically insert the Sentinel Vault panel macro into the page when an attachment is sealed. Individual spaces can disable this. |
-| Replace Attachments Macro | `replaceAttachmentsMacro` | Boolean | Off | When inserting the panel, replace the built-in Confluence Attachments macro. Only visible when auto-insert is enabled. |
-| Reminder Frequency | `reminderIntervalDays` | Integer (days) | 7 | How often to record a periodic reminder banner. Only visible when expiry notifications are disabled. |
+| Allow space admins to force-unseal | `allowAdminOverride` | Boolean | **On** | A space admin can release anyone's seal from the Sealed Files tab, with a recorded reason. Force release is offered only while this is on. **Despite its name it gates every space-admin override, not only Force release.** Off, space admins (and site admins, except where noted) can no longer release someone else's file or section seal, give or revoke edit access on someone else's seal, **Approve anyway** a failed validation gate, set a space's default classification level (site admins still can), or approve a workflow page directly / request approval where no approvers are named. Seal owners keep all of their own actions. |
+| Protect Sealed Attachments in Page Body | `enableContentProtection` | Boolean | On | An edit that removes a sealed image or file from the page body is undone and the editor is told why. **It also switches off the rest of the page-body guard:** sealed-section restore, adoption of Sealed Section macros inserted in the editor, Approved-page workflow enforcement, and the 5-minute page-guard sweep (which also runs the validation catch-up). |
+| Allow Attachment Removal from Page | `allowArtifactDelete` | Boolean (opt-in) | Off | Users can send unsealed attachments to the trash from the panel. |
+| Allow Attachment Restore from Page | `allowSealRestore` | Boolean (opt-in) | Off | Trashed attachments that still carry a seal can be restored from the panel. |
+| Allow Seal Cleanup from Page | `allowSealPurge` | Boolean (opt-in) | Off | Seal records left behind by permanently deleted attachments can be removed from the panel. |
+| Sign seal actions with an authenticator code | `signSealActions` | Boolean (opt-in) | Off | Sealing a file or section, releasing, force release, extending, approving or declining an edit request, and giving or revoking edit access all ask for the current code from the authenticator set up on My work (`SIGNED_SEAL_ACTION_KEYS` in `shared/seal-signature.js`). A person without one set up is refused until they add one. Codes are single-use; 5 wrong codes lock that account's signatures for 15 minutes. Two paths are not signed in 6.4.0: a section sealed by inserting the Sealed Section macro in the editor and publishing, and REST API jobs (they call the actions directly, without the signing check). |
+| Hours before a declined edit request can be repeated | `editRequestCooldownHours` | Integer 0–168 | 1 | After an owner declines an edit request, the same person waits this long before asking again (0 = no wait). The requester sees `Declined · ask again {time}` on the row and the ribbon, with the owner's optional word, and on My work → Your edit requests. The owner or a space admin can give edit access directly at any time ("Give edit access…" under the row's ⋯ menu). An out-of-range stored value reads as the default. |
 
-### Alerts Tab
+### Expiry
 
-| Setting | Code Key | Type | Default | Description |
+| Setting | Code key | Type | Default | Description |
 |---------|----------|------|---------|-------------|
-| Enable Pop-up Notifications | `enableFlashMessages` | Boolean | On | Show brief in-app popup notifications for seal/unseal actions and unauthorized access attempts. |
-| ~~Ribbon mode / Show the banner from~~ | `ribbonMode`, `ribbonThresholdLevel`, `ribbonThresholdRank` | — | — | **Removed 2026-09-30.** With classification on, the banner shows on every page of a space that uses it (level block always drawn, never dismissable); with it off, only seal / workflow / validation / alert states open it. There is no threshold any more. Stored values and API bundles that still send these keys are accepted when well-formed and read by nothing. |
-| Enable Page Status Banners | `enableDocRibbons` | Boolean | On | Display a status banner at the top of pages showing sealed attachment info and expiry countdowns. Note (2026-09-30): the banner itself does not read this key — it gates recording the alert rows (with pop-ups) and the recurring reminder. The classification marking is part of classification and shows whenever classification is on. |
-| Enable Page Comments | `enableConfluenceDispatches` | Boolean | On | Post Confluence comments when attachments are sealed, unsealed, or when unauthorized access is attempted. |
-| Tell editors when their change is undone | `notifyEditorOnRevert` | Boolean | On | When Sentinel Vault reverts someone's edit to sealed content, that person gets a page comment addressed to them, with a link to the page version that still holds their text. Independent of the comments master switch; a space in quiet mode stays quiet. |
-| Sign seal actions with an authenticator code | `signSealActions` | Boolean | Off | With this on, releasing or extending a seal and approving, declining, giving or revoking edit access all ask for the current code from the authenticator device set up on My work. A person without a device is refused until they set one up. The same registry gate covers every one of those actions. |
-| Hours before a declined edit request can be repeated | `editRequestCooldownHours` | Integer 0–168 | 1 | After an owner declines an edit request, the same person waits this long before asking again (0 = no wait). The requester sees the declined state as a state — `Declined · ask again {time}` on the row and the ribbon, with the owner's optional word — and on My work → Your edit requests; the server refusal carries `retryAt` (no clock in the sentence). The seal owner or a space admin can give edit access directly at any time ("Give edit access…" under the row's ⋯ menu). REST: `decline-attachment-edit` / `decline-section-edit` take an optional `reason`. |
+| Default Seal Duration | `defaultLockDuration` | Integer (seconds, edited as hours) | 48 hours (`BASELINE_HOLD_SPAN`) | How long a new seal lasts. A space can set its own duration. |
+| Seals expire | `autoUnlockEnabled` | Boolean | On | The owner gets a halfway notice, an expiry notice and the overdue reminders below, then the attachment is released. Off: seals never expire and owners see a recurring banner instead. |
+| Overdue reminders before release | `lapseNoticeLimit` | Integer ≥ 0 | 3 | How many overdue reminders the owner gets before release. 0 reminds once and holds the seal. Only when seals expire. |
+| Hours between overdue reminders | `lapseNoticeIntervalHours` | Integer ≥ 1 | 24 | Gap between overdue reminders. Only when seals expire. |
+| Recurring reminder banner | `enablePeriodicReminderEmail` | Boolean | On | Owners of never-expiring seals see a banner every few days (banner only, no comment). Only when seals do not expire. The key name is historical. |
+| Reminder Frequency | `reminderIntervalDays` | Integer (days) ≥ 1 | 7 | Days between recurring reminder banners. |
 
-### Classification group (CLS-1, 2026-09-20)
+### Alerts
 
-| Setting | Code Key | Type | Default | Description |
+| Setting | Code key | Type | Default | Description |
 |---------|----------|------|---------|-------------|
-| Classification levels | `classificationEnabled` | Boolean (opt-in: only `true` is on) | **Off** | The master switch for classification. On: pages carry a level in the byline chip, the ribbon's left block and the page-details modal; a space can set a default level; `classify-page` works. Off (the never-saved default): no surface mentions classification — the chip reads the seal count or "Sentinel Vault", the ribbon's left block is the app's name, the modal has no Classification section, `classification-set-page` / `classification-set-space-default` answer `Classification is off on this site`, and the Classification tab dims its sections under the "off" status line. Stored levels, space defaults and page overrides are **kept** and show again unchanged when turned on. Existing installs that never saved the key are OFF after the upgrade (owner decision 2026-09-19). Confluence's own classification, where the site has it, is untouched either way. Setup question 3 writes this key, and so does the switch at the top of the Classification tab (2026-09-30: both directions, saves at once; off asks one confirmation). On: every page shows its level on every view — `Unclassified` when neither the page nor its space sets one. |
-| Enable Native Notifications | `enableEmailDispatches` | Boolean | On | Master toggle for all comment-with-mention notices. Confluence's notification engine emails the mentioned user according to their personal preferences. The KVS key is preserved from the previous email-based release for backwards compatibility. Must be on for any sub-option below to work. |
-| Seal Confirmation & Halfway Reminder Notices | `enableSealExpiryReminderEmail` | Boolean | On | Post a comment that mentions the seal owner when a seal is created and at the seal's midpoint. KVS key preserved for backwards compatibility. Nested under master toggle. |
-| Seal Expiry Notices | `enableAutoUnsealDispatchEmail` | Boolean | On | Post a comment that mentions the seal owner when a seal has expired. KVS key preserved for backwards compatibility. Nested under master toggle. |
-| Recurring Reminder Banners | `enablePeriodicReminderEmail` | Boolean | On | Show recurring banners for long-held seals when auto-unseal is disabled. Banner-only — no comment is posted, to avoid page clutter. Frequency set by Reminder Frequency in General tab. KVS key preserved for backwards compatibility. Nested under master toggle. |
+| Pop-up messages | `enableFlashMessages` | Boolean | On | A brief message when you seal or release, or when an action is refused. |
+| Page ribbon | `enableDocRibbons` | Boolean | On | Gates recording the alert rows (with pop-ups) and the recurring reminder. The banner itself does not read this key; with classification on, the level shows on every page view regardless. |
+| Tell editors when their change is undone | `notifyEditorOnRevert` | Boolean | On | The person whose edit to sealed content was reverted gets a page comment with a link to the version that holds their text. Independent of the comments master switch; a Quiet space stays quiet. |
+| Page comments that mention people | `enableEmailDispatches` | Boolean (opt-in) | **Off** | Master switch: seal events, edit requests, approvals and violations post a page comment @mentioning the people involved; Confluence then notifies them. The app sends no email; the key name is historical. |
+| Violation comments | `enableConfluenceDispatches` | Boolean (opt-in) | **Off** | A comment when someone tampers with a sealed attachment or section. Needs the master switch. |
+| Seal confirmation and halfway notice | `enableSealExpiryReminderEmail` | Boolean | On | The owner is mentioned when a seal is created and at its midpoint. Needs the master switch. |
+| Expiry and release notices | `enableAutoUnsealDispatchEmail` | Boolean | On | The owner is mentioned at expiry, at each overdue reminder and at release. Needs the master switch. |
+| ~~Ribbon mode / threshold~~ | `ribbonMode`, `ribbonThresholdLevel`, `ribbonThresholdRank` | — | — | Removed. Stored values and API bundles that still send them are accepted when well-formed and read by nothing. |
 
-## Space console (space settings)
+### Classification
 
-Accessible at **Space settings > Apps > Sentinel Vault**. Changes apply to the specific space only. Space admin-only tabs require space admin role (space admin, delegated space admin, or group member).
+| Setting | Code key | Type | Default | Description |
+|---------|----------|------|---------|-------------|
+| Classification levels | `classificationEnabled` | Boolean (opt-in) | **Off** | Master switch. On: every page shows its level under the title and in the banner — `Unclassified` when neither page nor space sets one — and levels can be set. Off: nothing is shown or enforced, level writes answer `Classification is off on this site`, and stored levels, space defaults and page overrides are kept. Installs that never saved the key stay off. Also flipped by the switch at the top of the Classification tab (on saves at once, off asks one confirmation). Confluence's own classification is untouched. |
+
+The Classification tab also holds the levels themselves (KVS `classification-levels`; defaults Public 1, Internal 2, Confidential 3, Restricted 4 — rank 1 is least sensitive), the optional import from a JSM Assets object type (run as the signed-in admin, read-only), and a default level per space. Lowering or clearing a level needs a reason (≤ 300 characters), recorded as `classification.page-set` / `classification.space-default-set` in the activity log.
+
+### Advanced
+
+| Setting | Code key | Type | Default | Description |
+|---------|----------|------|---------|-------------|
+| Auto-Insert Macro on Seal | `globalAutoInsertMacro` | Boolean (opt-in) | Off | The first seal on a page adds the Sentinel Vault panel. Off: no space can auto-insert. |
+| Replace Attachments Macro | `replaceAttachmentsMacro` | Boolean (opt-in) | Off | The panel takes the place of Confluence's Attachments macro when the page has one. Only with auto-insert on. |
+
+### API access
+
+Site admins mint and revoke REST tokens here (roles Viewer / Editor / Admin; format `svt_` + 48 hex characters, shown once, stored only as a SHA-256 hash). See [REST-CONFIG-API.md](REST-CONFIG-API.md).
+
+## Space console
+
+A Confluence space page named **Sentinel Vault** (`confluence:spacePage`), opened from the space's apps. Space admin tabs require the Sentinel Vault space admin role (Confluence space admin, a configured admin user or group member, or site admin).
 
 Stored in Forge KVS under key: `admin-settings-space-{sanitizedRealmKey}`
 
-### Access Control Tab (space admins only)
+### Access Control tab
 
-| Setting | Code Key | Type | Default | Description |
+| Setting | Code key | Type | Default | Description |
 |---------|----------|------|---------|-------------|
-| Space Activation | `activation` | String | `"use-system-default"` | Toggle between "Active" and "Disabled". When disabled, Sentinel Vault features are inactive for the space. |
-| Admin users | `adminUsers` | Array | `[]` | Individual user accounts granted space admin privileges in this space. |
-| Admin groups | `adminGroups` | Array | `[]` | Confluence groups whose members receive space admin privileges in this space. |
+| Admin users | `adminUsers` | Array | `[]` | Users granted space admin rights in this space. |
+| Admin groups | `adminGroups` | Array | `[]` | Confluence groups whose members get space admin rights. |
+| Notifications | `notificationsMode` | `"normal"` \| `"quiet"` | `"normal"` | Quiet posts no comments and mentions nobody in this space; pop-ups, the ribbon and the activity trail still work. |
+| Classification in this space | `classification` | `"inherit"` \| `"off"` | `"inherit"` | `off` hides every level on this space's pages and refuses new ones (`Classification is off in this space`); stored levels are kept. A space cannot turn classification on while the site has it off. |
+| Default level for this space | KVS `classification-space-{spaceId}` | Level id or none | none | Shown while classification is on. Lowering it needs a reason. |
 
-| Classification in this space | `classification` | `"inherit"` \| `"off"` | `"inherit"` | `off` hides every classification level on this space's pages (chip, ribbon, modal) and refuses `classify-page` with `Classification is off in this space`; stored levels are kept. A space cannot turn classification ON while the site has `classificationEnabled` off — the card is locked with "Off site-wide by a site admin (Classification levels)." (the same AND rule as the auto-insert macro). |
+Pending space admin access requests are handled on this tab; a denied user can ask again after 48 hours.
 
-Pending space admin access requests are managed through the Access Control tab UI but are not stored as policy settings.
+### Seal Duration tab
 
-### Workflow tab (space admins only)
-
-The tab opens with the effective rule as one sentence (e.g. "Pages start in Draft. Mihai Perdum approves before a page is Approved. Approved pages are protected: an edit by anyone who is not an approver or a space admin moves the page back to Draft. Re-review after 150 days.") and ONE `Save workflow settings`. The states, their colours and the moves between them live on their own view (`Edit the states…` beside the state chips, `← Back to workflow settings` to return); each workflow there saves with its own `Save workflow`. The built-in lapsed state is named "Needs re-review" (id `expired`); a space with a saved copy keeps the name its copy carries.
-
-### Seal Duration Tab (space admins only)
-
-| Setting | Code Key | Type | Default | Description |
+| Setting | Code key | Type | Default | Description |
 |---------|----------|------|---------|-------------|
-| Seal Duration Override | `autoUnlockTimeoutHours` | Integer (hours) or null | `null` (use system default) | Custom seal duration for this space. When null, inherits the global default from the site settings console. |
+| Custom Seal Duration | `autoUnlockTimeoutHours` | Integer (hours ≥ 1) or null | `null` (site default) | Seals on attachments in this space last this long instead of the site default. |
 
-### Macro Tab (space admins only)
+### Macro tab
 
-| Setting | Code Key | Type | Default | Description |
+| Setting | Code key | Type | Default | Description |
 |---------|----------|------|---------|-------------|
-| Auto-Insert Macro | `autoInsertMacro` | Boolean | Inherits global | Enable auto-insertion of the Sentinel Vault panel macro when sealing. Only effective when the global `globalAutoInsertMacro` setting is also enabled. |
-| Macro Position | `macroInsertPosition` | String | `"bottom"` | Where to insert the macro: `"top"` or `"bottom"` of the page. |
+| Auto-Insert Macro | `autoInsertMacro` | Boolean | On | The first seal on a page in this space adds the panel. Effective only when the site's `globalAutoInsertMacro` is on. |
+| Macro Position | `macroInsertPosition` | `"top"` \| `"bottom"` | `"bottom"` | Where the panel is inserted. Ignored when the site replaces the Attachments macro. |
 
-## Setting Inheritance
+### Workflow tab
 
-Settings follow a cascade from global to space level:
+The tab opens with the effective rule as one sentence (e.g. "Pages start in Draft. Mihai Perdum approves before a page is Approved. Approved pages are protected: an edit by anyone who is not an approver or a space admin moves the page back to Draft. Re-review after 150 days.") and ONE `Save workflow settings`. The states, their colours and the moves between them live on their own view (`Edit the states…`, `← Back to workflow settings` to return); each workflow there saves with its own `Save workflow`. Built-in states: Draft, In Review, Approved, and the lapsed state "Needs re-review" (id `expired`). `requireSignature` makes each approver sign their decision with an authenticator code (a space admin's direct approval too; with no named approvers, the requester signs the request).
+
+## Setting inheritance
 
 ```
-Baseline defaults (src/server/shared/baseline.js)
-  → Global settings (site settings console)
+Engine defaults (src/server/shared/baseline.js)
+  → Global settings (Site settings)
     → Space settings (space console, where applicable)
 ```
 
-**What can be overridden at space level:**
-- Classification: a space can opt OUT (`classification: "off"`), never opt in while the site is off (Access Control tab)
-- Seal duration (Seal Duration tab)
-- Auto-insert macro behavior (Macro tab)
-- Macro insert position (Macro tab)
-- Space activation state (Access Control tab)
-- Admin delegation (Access Control tab)
+**Space level can set:** seal duration, auto-insert macro and position, notifications mode (Quiet), classification opt-out and default level, space admin users/groups, workflow.
 
-**What cannot be overridden at space level (global only):**
-- All notification toggles (toast, banner, comment, native notifications)
-- Content protection toggle
-- Delete/restore/purge permissions
-- Space admin force-unseal permission
-- Replace Attachments Macro setting
-- Reminder frequency
+**Global only:** every other alert toggle, content protection, delete/restore/cleanup, force-unseal, signing seal actions, edit-request cooldown, Replace Attachments Macro, expiry/reminder behaviour.
 
-### Seal Duration Resolution
+### Seal duration resolution
 
-When determining effective seal duration, the system checks in order:
-1. Space policy `autoUnlockTimeoutHours` (if set and not null)
-2. Global policy `defaultSealDuration`
-3. Baseline constant `BASELINE_HOLD_SPAN` (48 hours / 172800 seconds)
+1. Space `autoUnlockTimeoutHours` (if set)
+2. Global `defaultLockDuration`
+3. `BASELINE_HOLD_SPAN` (48 hours / 172800 seconds)
 
-### Auto-Insert Macro Resolution
+### Auto-insert resolution
 
-Auto-insertion only occurs when **both** conditions are met:
-1. Global `globalAutoInsertMacro` is enabled
-2. Space `autoInsertMacro` is not explicitly disabled
+Auto-insertion happens only when global `globalAutoInsertMacro` is on **and** the space's `autoInsertMacro` is not off.
 
-If the global toggle is off, no auto-insertion happens regardless of space settings.
+### Classification resolution
 
-## Inline Panel Configuration
+Active only when the site's `classificationEnabled` is `true` **and** the space's `classification` is not `"off"`. Effective level: the page's own level, else the space default, else none.
 
-The macro configuration (panel-setup surface) stores settings in the Forge macro extension config, not in KVS. These are per-macro-instance settings:
+## Inline panel configuration
+
+Stored in the macro's own config, per macro instance:
 
 | Setting | Type | Default | Options |
 |---------|------|---------|---------|
-| Column Visibility | Object | All visible | `name`, `status`, `sealOwner`, `labels`, `comment`, `actions`, `fileSize`, `fileType`, `expiresAt` |
-| Rows Per Page | Integer | 15 | 5, 10, 15, 25 |
-| Cards Per Row | Integer | 2 | 1, 2, 3 |
-| Show Upload Zone | Boolean | On | Show/hide the file upload area |
+| Column visibility | Object | name, status, sealOwner, labels, comment, actions on; fileSize, fileType, expiresAt off | `name`, `status`, `sealOwner`, `labels`, `comment`, `actions`, `fileSize`, `fileType`, `expiresAt` |
+| Rows per page | Integer | 5 | 5, 10, 15, 25 — each group (Sealed, Available) pages separately |
+| Cards per row | Integer | 2 | 1, 2, 3 |
+| Show upload zone | Boolean | On | |
 
-## Overlay Column Preferences
+## Overlay column preferences
 
-The overlay stores column visibility preferences in the browser's `localStorage`, not in KVS. These persist per-browser and are independent of the inline panel macro configuration.
+The attachments overlay stores column visibility in the browser's `localStorage`, per browser, independent of the panel macro config.
