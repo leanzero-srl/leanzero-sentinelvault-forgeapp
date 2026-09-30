@@ -68,7 +68,7 @@ eq("a refusal without retryAt is the reason alone", refusalText({ reason: "No." 
 const mine = { kind: "attachment", id: "a", name: "f", sealed: true, isMine: true, isExpired: false, isTrashed: false, myEditStatus: "none", pendingRequests: [{ requesterAccountId: "x", requesterName: "X" }] };
 const menu = rowActions(mine, {}).menu;
 eq("Release under ⋯ is not danger", menu.find((m) => m.id === "release")?.danger, false);
-eq("Force release stays danger", rowActions({ ...mine, isMine: false }, { isSpaceAdmin: true }).menu.find((m) => m.id === "force-release")?.danger, true);
+eq("Force release stays danger", rowActions({ ...mine, isMine: false }, { isSpaceAdmin: true, canForceRelease: true }).menu.find((m) => m.id === "force-release")?.danger, true);
 
 // ── words on chips / alerts / byline ─────────────────────────────────────────────────────────
 eq("alert: revert → Undone", alertWord("section-reverted"), "Undone");
