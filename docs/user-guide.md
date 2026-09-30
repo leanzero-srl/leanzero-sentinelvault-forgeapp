@@ -1,48 +1,50 @@
 # User Guide
 
+Applies to production **6.4.0**.
+
 ## What is Sentinel Vault?
 
-Sentinel Vault is a Confluence app that protects attachments from accidental overwrites. When you seal (lock) a file, no one else can modify it until you release it or the seal expires. If someone does edit a sealed file, the change is undone automatically and notifications are sent.
+Sentinel Vault is a Confluence app that protects attachments and page sections. When you seal a file or a section, no one else can change it until you release it or the seal expires. If someone does change it, the change is undone automatically and the people involved are told.
 
-Beyond locking, Sentinel Vault provides full attachment management -- upload, label, delete, restore -- and multi-channel notifications that keep everyone informed about file status changes.
+On top of sealing it offers edit requests, a page approval workflow, content validations, optional AI review, page classification levels, optional authenticator-code signing, an activity log and a REST configuration API.
 
 ---
 
 ## For Users
 
-### Accessing Sentinel Vault
+### Where Sentinel Vault appears
 
-Sentinel Vault appears on Confluence pages in three ways:
+- **Page chip (byline)** -- A chip under the page title. Clicking it opens the **page-details modal**, the page's hub: its classification level, the seals on the page (files and sections), requests and actions.
+- **Seal attachments… (page ⋯ menu)** -- Opens the same modal on the sealing view: every attachment as a row with a checkbox, one duration picker, an optional note, and an upload drop zone (4 MB per file).
+- **Page banner** -- A ribbon at the top of the page with the page's seals, requests waiting for you, workflow state, alerts and (when classification is on) the page's level.
+- **Inline panel** -- An optional macro placed in the page body, showing every attachment grouped as **Sealed** and **Available**, with Seal / Release / Request edit actions.
+- **Attachments overlay** -- A full-screen attachment view, opened from the page-details modal, with search, sort and a column picker.
+- **My work** -- A Confluence app page listing what Sentinel Vault is waiting on you for across all spaces (see below).
 
-- **Inline panel** -- A macro block inserted into page content showing the seal status of every attachment on that page. Includes seal/unseal controls, upload zone, labels, and expandable card rows with thumbnail previews.
-- **Page banner** -- A persistent notification bar at the top of the page displaying a summary of sealed attachments, conflict alerts, expiry warnings, and a **Manage Attachments** button that opens the overlay.
-- **Overlay** -- A full-screen modal for comprehensive attachment management with search, sort, column customization, and pagination.
+### Sealing an attachment
 
-### Sealing an Attachment
+1. Open the page's ⋯ menu and choose **Seal attachments…** (or click **Seal** on a row in the inline panel)
+2. Pick the file(s), the duration and, optionally, a note
+3. The attachment is now sealed under your account, with a countdown to its expiry
 
-1. Open a Confluence page that has attachments
-2. In the Sentinel Vault panel (or overlay), find the attachment you want to protect
-3. Click **Seal** next to the file name
-4. The attachment is now locked under your account with a countdown showing when the seal expires
+While sealed, only you (and anyone you give edit access to) can change the file. The default seal duration is **48 hours**; your administrator may set a different duration for the site or for a space.
 
-While sealed, only you can edit the file. The default seal duration is 24 hours, though your administrator may have configured a different duration at the global or space level.
+If the site's **Auto-Insert Macro on Seal** setting is on (it is off by default) and the space allows it, the first seal on a page adds the Sentinel Vault panel to that page.
 
-If the **auto-insert macro** setting is enabled, sealing an attachment on a page that doesn't already have the Sentinel Vault panel will automatically insert the panel macro into the page content.
+### Releasing a seal
 
-### Unsealing an Attachment
+Click **Release** on a file you have sealed. The file is immediately available to others. If comment notifications are on, people watching the file are @mentioned in a page comment.
 
-Click **Unseal** (or **Relinquish** in the space console) next to any attachment you have sealed. The file is immediately available for anyone to edit. All users who were watching the attachment receive a release notification.
-
-### What Happens When Someone Edits a Sealed File
+### What happens when someone edits a sealed file
 
 If another user uploads a new version of your sealed file:
 
-1. Sentinel Vault automatically reverts the file to the version before the unauthorized edit
-2. A Confluence comment is posted tagging both you and the editor
-3. A notification banner appears on the page
-4. If email notifications are enabled, both parties receive a violation alert email
+1. Sentinel Vault puts the sealed version back
+2. The editor is told with a page comment addressed to them (the "Tell editors when their change is undone" setting, on by default)
+3. An alert is recorded for the page banner and pop-ups
+4. If the site has turned on comment notifications and violation comments (both off by default), a comment on the page @mentions the people involved
 
-The unauthorized editor's changes are not lost permanently -- they exist as a version in the attachment history -- but the active version is restored to what it was before their edit.
+The editor's upload is not lost -- it stays in the attachment's version history.
 
 ### Sealing a section of a page
 
@@ -50,208 +52,189 @@ Click the Sentinel Vault chip under the page title to open the page's details, t
 
 ### Asking to edit someone else's sealed content
 
-On a file or section someone else holds sealed, the row (page-details modal, inline panel) and the page ribbon offer **Request edit**. The owner sees the request on the row, on the ribbon ("Waiting for you") and on My work, and answers **Approve** or **Decline** — Decline can carry a short word for you (optional; from the page-details modal). What you see afterwards uses one set of words everywhere: **Waiting for {owner}** while it is open, **Edit now · until {time}** once approved, **Declined · ask again {time}** when it was declined (the owner's word is on the row and in the ribbon sentence; the wait is the site's cooldown setting), and your own **My work → Your edit requests** card lists every request you made with the same states. The owner can also give you access directly at any time.
+On a file or section someone else holds sealed, the row (page-details modal, inline panel) and the page ribbon offer **Request edit**. The owner sees the request on the row, on the ribbon ("Waiting for you") and on My work, and answers **Approve** or **Decline** — Decline can carry a short word for you (optional; from the page-details modal). What you see afterwards uses one set of words everywhere: **Waiting for {owner}** while it is open, **Edit now · until {time}** once approved, **Declined · ask again {time}** when it was declined, and your own **My work → Your edit requests** card lists every request you made with the same states. The owner (or a space admin) can also give you edit access directly at any time with **Give edit access…** under the row's ⋯ menu.
 
-### What Happens When Someone Deletes a Sealed File
+**Cooldown after a decline.** After a decline, you wait before you can ask again for the same item. The wait is the site setting **Hours before a declined edit request can be repeated** — **1 hour** by default, 0 means you can ask again at once, the maximum is 168 hours (a week). A direct grant from the owner does not wait for the cooldown.
 
-If another user moves your sealed attachment to the trash:
+### What happens when someone trashes a sealed file
 
-1. Sentinel Vault automatically restores the attachment from the trash
-2. The seal remains active and the file continues to be protected
-3. Notifications are sent to the seal owner
+If another user moves your sealed attachment to the trash, Sentinel Vault restores it from the trash and the seal stays in force. If the attachment is permanently deleted, Sentinel Vault cleans up its seal records.
 
-If the attachment is permanently deleted (bypassing trash), Sentinel Vault cleans up all seal records, content properties, and space indexes associated with the file.
+### What happens when someone removes a sealed image from the page
 
-### What Happens When Someone Removes a Sealed Image from the Page
+If a sealed attachment is embedded in the page body (for example an inline image) and someone edits the page to remove it, Sentinel Vault re-inserts the embed at its original position and keeps the other changes of that edit. This is **content protection**; a site administrator can turn it off (**Protect Sealed Attachments in Page Body**, on by default). Turning it off also stops sealed-section restore, Sealed Section macro adoption, Approved-page workflow enforcement and the 5-minute page-guard sweep, so leave it on unless you mean all of that.
 
-If a sealed attachment is embedded in the page body (e.g., as an inline image) and someone edits the page to remove that embed:
+### Watching an attachment
 
-1. Sentinel Vault detects that the sealed media reference was removed from the page content
-2. The system retrieves the media block from the previous page version
-3. The sealed embed is surgically re-inserted at its original position in the page
-4. Other page changes made in the same edit are preserved -- only the sealed embed is restored
+Click **Watch** on a file someone else has sealed. When the seal is released -- manually, by expiry or by a space admin's Force release -- watchers are @mentioned in a page comment, and Confluence notifies them according to their own preferences. Watch notices are comments, so they only go out when the site's **Page comments that mention people** switch is on (off by default).
 
-This feature is called **content protection** and can be toggled on or off by a site administrator.
+### Managing attachments
 
-### Watching Attachments
+Depending on site settings:
 
-When a file is sealed by another user and you need to edit it next:
+- **Upload** -- Drop files onto the upload zone (panel or Seal attachments…). Maximum size is 4 MB per file.
+- **Labels** -- Add or remove labels on an attachment.
+- **Delete** -- Send an unsealed attachment to the trash. Needs **Allow Attachment Removal from Page** (off by default).
+- **Restore** -- Restore a trashed attachment that still carries a seal. Needs **Allow Attachment Restore from Page** (off by default).
+- **Cleanup** -- Remove seal records left behind by permanently deleted attachments. Needs **Allow Seal Cleanup from Page** (off by default).
 
-1. Click **Watch** on the sealed attachment (available in the inline panel, overlay, and space console)
-2. When the seal is released -- whether manually, by expiry, or by space admin override -- you receive an email notification
-3. Click **Watching** to stop watching the attachment
+### The inline panel
 
-This eliminates the need to repeatedly check whether a file has become available.
+- Files are grouped as **Sealed** and **Available**. Each group pages on its own: it shows a window of cards, then **Show N more files** / **Show fewer**, with "Showing N of M" beside it.
+- The macro's settings (gear) let you choose the columns, the items per group page (5 by default; 5, 10, 15 or 25), the cards per row (1, 2 or 3) and whether to show the upload zone.
 
-### Managing Attachments
+### Classification
 
-Depending on administrator settings, additional management actions may be available:
+When a site administrator turns classification on, every page shows a classification level under its title and in the page banner — **Unclassified** when neither the page nor its space sets one. Classification is **off** until a site admin turns it on.
 
-- **Upload** -- Drag and drop files onto the upload zone in the inline panel, or click to browse. Maximum file size is 4 MB.
-- **Labels** -- Click the label area on any attachment to add or remove labels for organization.
-- **Delete** -- Remove unsealed attachments from the page (moves to Confluence trash). Sealed attachments cannot be deleted. Requires the "Allow Attachment Removal" setting to be enabled.
-- **Restore** -- Recover trashed attachments that still have seal data in Sentinel Vault. Requires the "Allow Attachment Restore" setting to be enabled.
-- **Purge** -- Clean up leftover seal records for attachments that have been permanently deleted from Confluence. Requires the "Allow Seal Cleanup" setting to be enabled.
+- **Levels.** The built-in levels are **Public** (rank 1), **Internal** (2), **Confidential** (3) and **Restricted** (4); rank 1 is the least sensitive. Site admins can rename, recolour, add or remove levels, or import them from a Jira Service Management Assets object type.
+- **Where a level comes from.** The page's own level wins, then the space's default level, then none. Every surface says which: "set on this page" or "from space default".
+- **Changing a page's level.** Open the page-details modal (the chip under the title) and pick a level in its Classification section. You need edit permission on the page.
+- **Lowering asks for a reason.** Raising a level is one pick. Lowering it, clearing it, or switching to a space default that is lower needs a reason (up to 300 characters); the change is refused without one. The change and the reason are recorded in the activity log (`classification.page-set`, `classification.space-default-set`).
 
-### Overlay View
+### Signing actions with an authenticator code
 
-Click **Manage Attachments** in the page banner or inline panel to open the full overlay. The overlay provides:
+A site or a space can require a 6-digit code from an authenticator app before certain actions run. The **Sign this action** dialog asks for the current code.
 
-- **Search and filter** across all attachments on the page
-- **Sort** by name, status, lapses (time remaining), or creation date -- ascending or descending
-- **Column picker** -- Toggle which columns are visible. Your preferences are saved in your browser's localStorage and persist across sessions.
-- **Pagination** -- Load more attachments with the "Show more files" button
-- **Panel visibility toggle** -- Show or hide the inline panel macro on the page
-- **Full actions** -- Seal, unseal, upload, label, watch, delete, restore, and purge
+- **Seal actions (site setting, off by default).** With **Sign seal actions with an authenticator code** on, these ask for a code: sealing a file or section, releasing, Force release, extending, approving or declining an edit request, and giving or revoking edit access. Someone who has not set up an authenticator is refused until they do. Two paths are not signed in 6.4.0: a section sealed by inserting the Sealed Section macro in the editor and publishing, and REST API jobs (they call the actions directly, without the signing check).
+- **Approvals (per space).** A space's workflow can require signed decisions: each approver signs their own decision; a space admin's direct approval is signed too; when a workflow has no named approvers, only a space admin can move the page and signs that direct approval (the requester signs the request only when the state also needs an AI review).
+- Each code works once. After 5 wrong codes, signatures for that account are refused for 15 minutes.
 
-Attachments are grouped into sections: **Sealed**, **Trash** (if any), and **Available**.
+To set up your authenticator, open **My work → Your approval signature**, scan the QR code (or type the key) into any authenticator app and confirm with the first code. Replacing a device asks for the current device's code.
 
-### Inline Panel Features
+### My work
 
-The inline panel embedded in page content provides:
+A Confluence app page ("Sentinel Vault — My work") with, across every space:
 
-- **Expandable card rows** -- Click the expand arrow on any attachment to reveal a thumbnail preview (for images), a download link, and a properties link
-- **Grouped sections** -- Attachments are organized into Sealed, Missing (trashed), and Available groups
-- **Two-phase loading** -- The panel loads instantly with seal data from KVS, then enriches with full attachment metadata from the Confluence API for a fast initial render
-- **Configurable via macro settings** -- Click the macro config icon to customize:
-  - Which columns to show (name, status, seal owner, labels, comment, actions, file size, file type, expiry)
-  - Items per page (5, 10, 15, or 25)
-  - Cards per row (1, 2, or 3)
-  - Whether to show the upload zone
+- Workflow approvals waiting on you (Approve / Deny)
+- Edit requests on your sealed files, and on your sealed sections
+- Requests to become a space admin (for spaces you administer)
+- Your edit requests and their states
+- Approvals you asked for
+- Files you hold sealed
+- Your approval signature (authenticator set-up)
 
 ---
 
 ## For Space Administrators
 
-Space administrators have access to the **Space console** under space settings.
-
 ### Space console
 
-Navigate to **Space settings > Apps > Sentinel Vault** to access the space console. The tabs you see depend on your role:
+Open the space and choose **Sentinel Vault** among the space's apps (it is a Confluence space page, "Sentinel Vault"). The tabs depend on your role.
 
-#### My Sealed Files (all users)
+#### My Sealed Files (users who are not space admins)
 
-View all attachments you have sealed in this space. Each card shows the file name, page location, space name, seal date, and time remaining. Click **Relinquish** to release any of your seals.
+The attachments you have sealed in this space, and your edit requests. A banner offers **Request admin access**.
 
-If you are not a space admin, a banner offers the option to **Request admin access** to gain elevated permissions in this space.
+#### Sealed Files (space admins)
 
-#### Sealed Files (space admins only)
+Every sealed attachment in the space, with a column picker, sort, Watch and, when allowed, **Force release**.
 
-View all sealed attachments across the entire space. Features include:
+**Force release** releases someone else's seal and requires a typed reason, which is recorded. It is offered only to space admins, and only while the site setting **Allow space admins to force-unseal** is on (it is on by default). When that setting is off, the action is not shown at all.
 
-- **Column picker** -- Toggle visibility of: Name, Status, Sealed by, Location, File Size, Sealed on, Lapses, Actions
-- **Sort** -- By name, sealed by, location, sealed on, or lapses
-- **Force Unseal** -- Override any user's seal (requires the "Allow space admins to force-unseal" global setting to be enabled)
-- **Watch** -- Watch any sealed attachment to be notified when it is released
-- **Expandable cards** -- Click to reveal thumbnails, download links, and properties links
-- **Pagination** -- Load more sealed files with "Show more"
+Note that this switch is broader than its name: while it is off, space admins also cannot give or revoke edit access on other people's seals, release other people's section seals, **Approve anyway** a validation gate, set their space's default classification level, or approve workflow pages directly. Seal owners keep their own actions.
 
-#### Access Control (space admins only)
+#### Access Control (space admins)
 
-Manage who has space admin privileges in this space:
+- **Space admins** -- add or remove individual users as Sentinel Vault space admins for this space
+- **Groups** -- add Confluence groups; every member gets space admin rights here
+- **Pending requests** -- approve or deny requests for space admin access (a badge shows the count). A denied user can ask again after **48 hours**.
+- **Notifications** -- Normal, or **Quiet**: the space posts no comments and mentions nobody; pop-ups, the ribbon and the activity trail still work
+- **Classification in this space** -- leave it on (inherit the site) or turn it off for this space; a space cannot turn classification on while the site has it off
+- **Default level for this space** -- shown while classification is on; lowering it asks for a reason
 
-- **Space Activation** -- Toggle the space between "Active" and "Disabled" states. When disabled, Sentinel Vault features are inactive for the space.
-- **Space admins** -- Search for and add individual users as space admins. Remove existing space admins.
-- **Groups** -- Add Confluence groups as space admin teams. All members of a group automatically receive space admin privileges.
-- **Pending Requests** -- Review space admin access requests from regular users. Approve to grant space admin status, or deny (the user can re-request after 48 hours). A badge on the tab shows the count of pending requests.
+#### Seal Duration (space admins)
 
-#### Seal Duration (space admins only)
+Use the site default, or set a custom duration in hours for seals in this space.
 
-Configure how long seals last in this space:
+#### Macro (space admins)
 
-- **Use system default** -- Inherit the global seal duration set in the site settings console
-- **Custom duration** -- Set a space-specific seal duration (in hours) that overrides the global default
+- **Auto-Insert Macro** -- the first seal on a page in this space adds the panel (only when the site's Auto-Insert Macro on Seal is on)
+- **Macro Position** -- top or bottom of the page body
 
-#### Macro (space admins only)
+#### Validations (space admins)
 
-Configure macro auto-insertion behavior for this space:
+The space's content-validation rules.
 
-- **Auto-insert macro** -- When enabled and the global auto-insert setting is also enabled, the Sentinel Vault panel macro is automatically inserted into pages when an attachment is sealed
-- **Macro position** -- Choose whether the macro is inserted at the top or bottom of the page
+#### Workflow (space admins)
+
+The page approval workflow: states (built-in: Draft, In Review, Approved, Needs re-review), who approves, whether approvals must be signed with an authenticator code, and re-review timing. The tab opens with the effective rule as one sentence.
+
+#### Activity (space admins)
+
+The space's activity log, filterable by period (7, 30, 90 days or all time) and by category (Seals, Sections, Edit access, Workflow, Validation, Classification), with **Load more** and CSV export.
 
 ### Requesting admin access
 
-If you are a regular user and need elevated permissions:
-
-1. Open the Space console from space settings
-2. In the **My Sealed Files** tab, click **Request admin access**
-3. Your request is submitted to the space admins for review
-4. You'll see a confirmation banner while your request is pending
-5. If denied, you may submit a new request after 48 hours
+1. Open the space's Sentinel Vault page
+2. In **My Sealed Files**, click **Request admin access**
+3. A space admin approves or denies it
+4. If denied, you may submit a new request after 48 hours
 
 ---
 
 ## For Site Administrators
 
-Site administrators have access to the **Site settings** under global Confluence settings.
-
 ### Site settings
 
-Navigate to **Confluence administration > Apps > Sentinel Vault Admin** to configure global settings across two tabs:
+Open **Confluence administration → Apps → Sentinel Vault — Site settings**. Tabs:
 
-#### General Tab
+- **Settings** -- grouped as Protection, Expiry, Alerts, Classification and Advanced. Changes take effect only after **Apply**; see the [Settings Reference](settings-reference.md) for every key and default.
+- **Validations** -- content rules and the optional AI review.
+- **Classification** -- one on/off switch (on saves at once, off asks once and keeps every stored level, default and override), the levels, the JSM Assets import, and a default level per space.
+- **API access** -- the REST endpoint, its tokens, and recent jobs.
 
-| Setting | Description | Default |
-|---------|-------------|---------|
-| **Default Seal Duration** | How long attachments stay sealed (hours, minimum 1). Individual spaces can override this. | 24 hours |
-| **Allow space admins to force-unseal** | Allow space admins to unseal attachments sealed by other users | Off |
-| **Enable Seal Expiry Notifications** | When on, users receive notifications when seals expire and seals are released automatically. When off, seals persist past expiry (showing "Overdue") and periodic reminders are sent instead. | On |
-| **Allow Attachment Removal from Page** | Users can delete unsealed attachments from the panel. Deleted attachments go to trash. Sealed attachments cannot be deleted. | Off |
-| **Allow Attachment Restore from Page** | Users and space admins can restore trashed attachments that still have seal data. | Off |
-| **Allow Seal Cleanup from Page** | Users and space admins can purge leftover seal entries for permanently deleted attachments. | Off |
-| **Protect Sealed Attachments in Page Body** | Automatically undo page edits that remove sealed attachments embedded in page content (images, file previews). | On |
-| **Auto-Insert Macro on Seal** | Automatically insert the Sentinel Vault panel macro into the page when an attachment is sealed. Individual spaces can still disable this. | Off |
-| **Replace Attachments Macro** | When inserting the panel, replace the built-in Confluence Attachments macro instead of adding alongside it. If no Attachments macro exists, the panel is inserted at the space-configured position. Only appears when auto-insert is enabled. | Off |
-| **Reminder Frequency** | How often to send reminder emails about sealed attachments (days). Only appears when seal expiry notifications are disabled. | 7 days |
+Key defaults: seal duration 48 hours; force-unseal on; comment notifications off; classification off; signing seal actions off; edit-request cooldown 1 hour.
 
-#### Alerts Tab
+### Classification levels from JSM Assets
 
-| Setting | Description | Default |
-|---------|-------------|---------|
-| **Enable Pop-up Notifications** | Show brief pop-up notifications when attachments are sealed, unsealed, or when unauthorized access is attempted | On |
-| **Enable Page Status Banners** | Display a status banner at the top of pages showing sealed attachment information and expiry countdowns | On |
-| **Enable Page Comments** | Post Confluence comments when attachments are sealed, unsealed, or when unauthorized access is attempted | On |
-| **Enable Email Notifications** | Master toggle for all email notifications. Must be on for any email sub-options to work. | On |
-| **Seal Confirmation Emails** | Send confirmation email after sealing, with seal duration and expiry details | On |
-| **Seal Expiry Reminder Emails** | Send reminder when a seal has expired, prompting the user to unseal | On |
-| **Recurring Reminder Emails** | Send periodic reminders about sealed attachments when expiry notifications are off. Frequency controlled by Reminder Frequency in General tab. | On |
+On a site with a Jira Service Management Assets workspace, the Classification tab can import levels from an Assets object type. The Assets calls run as the signed-in admin, and nothing is written back to Assets.
+
+### REST API tokens
+
+Site admins mint tokens on the **API access** tab. A token looks like `svt_` followed by 48 hex characters and is shown **once**; only its SHA-256 hash is stored. Each token has a role:
+
+| Role | May do |
+|------|--------|
+| Viewer | Nothing that writes |
+| Editor | Content operations (sealing, classification, workflow, validation re-checks). The edit-access ops are accepted but fail in 6.4.0 (known issue, see the API reference) |
+| Admin | Everything, including site and space configuration |
+
+Every operation runs as the admin who minted the token, through the same permission checks as the UI. Full reference: [REST-CONFIG-API.md](REST-CONFIG-API.md).
 
 ---
 
 ## FAQ
 
 **My seal disappeared before I expected it to.**
-Seals expire automatically after the configured duration (default 24 hours). Check with your administrator if a different duration is set. An administrator may also have force-released your seal.
+Seals expire after the configured duration (48 hours unless your administrator changed it for the site or space). When seals expire, the owner gets overdue reminders (3 by default, 24 hours apart) before the file is released. A space admin may also have used Force release.
 
 **I need to edit a file sealed by a colleague who is unavailable.**
-Ask a space admin to force-release the seal from the space console (Sealed Files tab). This requires the "Allow space admins to force-unseal" setting to be enabled globally.
+Send a **Request edit**; the owner can approve it or give you access directly (a space admin can too while **Allow space admins to force-unseal** is on). Otherwise a space admin can **Force release** the seal from the space console's Sealed Files tab, if the site allows it.
+
+**Force release is not in the menu.**
+You are not a space admin in that space, or the site setting **Allow space admins to force-unseal** is off.
+
+**I was declined and cannot ask again yet.**
+The site's edit-request cooldown is running (1 hour by default). The row shows when you can ask again.
 
 **My edit was reverted unexpectedly.**
-You edited a file that was sealed by another user. Check the Confluence comments on the page for details about who sealed it and when. Your changes are preserved in the attachment version history.
+You changed a file or section someone else had sealed. Your version is kept in the version history; you are told with a comment that links to it.
 
 **My page edit was partially undone.**
-You removed a sealed attachment embed (such as an inline image) from the page body. Sentinel Vault's content protection feature detected the removal and re-inserted the embed at its original position. Your other page changes were preserved.
-
-**How do I know which files are sealed across the site?**
-Space admins can view sealed files per space in the space console (Sealed Files tab). There is no single cross-site view; check each space individually.
+You removed a sealed attachment embed from the page body; Sentinel Vault put it back and kept your other changes.
 
 **Can I seal a file indefinitely?**
-Only if your administrator has disabled seal expiry notifications. In that case, seals persist until manually released, showing "Expired" after the configured duration, and periodic reminder emails are sent to the seal owner.
+Only if a site admin has turned **Seals expire** off. Owners of such seals then see a recurring reminder banner (every 7 days by default).
 
-**How do I stop receiving email notifications?**
-Email notifications are controlled at the site level by administrators. Contact your Confluence administrator to adjust notification preferences in the site settings console Alerts tab.
+**Why did nobody get a comment or notification?**
+Comments that mention people are off by default; a site admin turns them on under Settings → Alerts. A space in Quiet mode never posts them.
 
-**How do I watch a sealed attachment?**
-Click **Watch** on any attachment sealed by another user (in the inline panel, overlay, or space console). You'll receive an email when the seal is released. Click **Watching** to stop.
+**Why does it ask me for a code?**
+Your site signs seal actions, or your space signs approvals. Set up your authenticator once on My work.
 
-**Can I customize which columns appear in the panel?**
-Yes. In the inline panel, click the macro config icon (gear) to choose which columns are visible, how many items per page, and how many cards per row. In the overlay, use the column picker in the toolbar -- your overlay preferences are saved in your browser.
-
-**What are groups?**
-Groups are Confluence groups assigned as space admin teams in a space's Access Control settings. All members of a group automatically have space admin privileges in that space.
+**The delete/restore/cleanup buttons are not visible.**
+They are off by default. A site admin turns them on individually under Settings → Protection.
 
 **How do I request space admin access?**
-Open the Space console from space settings. In the My Sealed Files tab, click "Request admin access." A space admin will review your request. If denied, you can re-request after 48 hours.
-
-**The delete/restore/purge buttons are not visible.**
-These actions are disabled by default. A site administrator must enable them individually in the site settings console General tab (Allow Attachment Removal, Allow Attachment Restore, Allow Seal Cleanup).
+In the space's Sentinel Vault page, My Sealed Files tab, click **Request admin access**. If denied, you can ask again after 48 hours.
