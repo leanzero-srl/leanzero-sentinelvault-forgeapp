@@ -1,0 +1,23 @@
+{
+  "name": "sentinel-vault-yt",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Sentinel Vault YouTube tutorials (Remotion).",
+  "scripts": {
+    "render90": "remotion render Demo90 out/cognirunner-demo-90s.mp4",
+    "render30": "remotion render Demo30 out/cognirunner-demo-30s.mp4",
+    "studio": "remotion studio"
+  },
+  "dependencies": {
+    "@remotion/cli": "^4.0.0",
+    "@remotion/google-fonts": "^4.0.481",
+    "@remotion/transitions": "^4.0.0",
+    "react": "^18.0.0",
+    "react-dom": "^18.0.0",
+    "remotion": "^4.0.0"
+  },
+  "devDependencies": {
+    "@types/react": "^18.0.0",
+    "typescript": "^5.0.0"
+  }
+}

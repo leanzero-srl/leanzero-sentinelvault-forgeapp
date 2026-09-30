@@ -1,0 +1,112 @@
+- generic [ref=f29e1]:
+  - generic:
+    - generic: Channel content
+    - generic [ref=f29e4]:
+      - banner [ref=f29e6]:
+        - button "Expand menu" [ref=f29e7] [cursor=pointer]
+        - link [ref=f29e12] [cursor=pointer]:
+          - /url: /channel/UC1JpYs3UmQZtOzbsAf8fYXw
+          - img "YouTube Studio dashboard" [ref=f29e13]
+        - button "Skip navigation" [ref=f29e17] [cursor=pointer]
+        - generic [ref=f29e23]:
+          - generic [ref=f29e24]:
+            - button "Search" [ref=f29e25] [cursor=pointer]
+            - button "Help" [ref=f29e30] [cursor=pointer]
+            - button "Notifications" [ref=f29e35] [cursor=pointer]
+          - button "Ask Studio" [ref=f29e47] [cursor=pointer]
+          - button "Create" [ref=f29e59] [cursor=pointer]
+          - generic "Account" [ref=f29e68]:
+            - button "Account" [ref=f29e69]:
+              - generic [ref=f29e70] [cursor=pointer]
+      - generic [ref=f29e71]:
+        - navigation [ref=f29e73]:
+          - generic [ref=f29e74]:
+            - generic:
+              - img "Leanzero SRL" [ref=f29e77]
+              - generic [ref=f29e78]:
+                - generic [ref=f29e79]: Your channel
+                - generic [ref=f29e80]: Leanzero SRL
+          - menu [ref=f29e83]:
+            - menuitem "Dashboard" [ref=f29e84] [cursor=pointer]
+            - menuitem "Content" [ref=f29e90] [cursor=pointer]
+            - menuitem "Analytics" [ref=f29e96] [cursor=pointer]
+            - menuitem "Community" [ref=f29e102] [cursor=pointer]
+            - menuitem "Languages" [ref=f29e108] [cursor=pointer]
+            - menuitem "Content detection" [ref=f29e114] [cursor=pointer]
+            - menuitem "Earn" [ref=f29e120] [cursor=pointer]
+            - menuitem "Customization" [ref=f29e126] [cursor=pointer]
+            - menuitem "Audio library" [ref=f29e132] [cursor=pointer]
+          - list [ref=f29e139]:
+            - listitem [ref=f29e140]:
+              - button [ref=f29e141] [cursor=pointer]
+            - listitem [ref=f29e146]:
+              - button [ref=f29e148] [cursor=pointer]
+        - main [ref=f29e153]:
+          - generic [ref=f29e157]:
+            - generic [ref=f29e160]:
+              - generic "Back" [ref=f29e161]:
+                - button "Back" [ref=f29e164] [cursor=pointer]
+              - generic [ref=f29e172]: Videos
+            - generic [ref=f29e173]:
+              - generic [ref=f29e174] [cursor=pointer]: Videos
+              - generic [ref=f29e176] [cursor=pointer]: Shorts
+              - generic [ref=f29e178] [cursor=pointer]: Live
+              - generic [ref=f29e180] [cursor=pointer]: Posts
+              - generic [ref=f29e182] [cursor=pointer]: Playlists
+            - generic [ref=f29e188]:
+              - table "Video list":
+                - rowgroup:
+                  - generic:
+                    - generic:
+                      - generic:
+                        - generic:
+                          - generic:
+                            - textbox "Filter"
+                  - row "Select all Video Notices Visibility Sort by Date Sort by Views Comments":
+                    - columnheader "Select all":
+                      - generic "Select all":
+                        - generic:
+                          - generic:
+                            - generic:
+                              - generic:
+                                - checkbox "Select all"
+                    - columnheader "Video":
+                      - heading "Video" [level=3]
+                    - columnheader "Notices":
+                      - heading "Notices" [level=3]
+                    - columnheader "Visibility":
+                      - heading "Visibility" [level=3]
+                    - columnheader "Sort by Date":
+                      - heading "Sort by Date" [level=3]:
+                        - button "Sort by Date":
+                          - generic: Date
+                    - columnheader "Sort by Views":
+                      - heading "Sort by Views" [level=3]:
+                        - button "Sort by Views":
+                          - generic: Views
+                    - columnheader "Comments":
+                      - heading "Comments" [level=3]
+  - dialog [active] [ref=f29e193]:
+    - generic [ref=f29e194]:
+      - generic [ref=f29e196]:
+        - generic [ref=f29e197]: Upload videos
+        - generic [ref=f29e199]:
+          - button "Send Feedback" [ref=f29e204] [cursor=pointer]
+          - button "Close" [ref=f29e215] [cursor=pointer]
+      - progressbar [ref=f29e223]
+      - generic [ref=f29e227]:
+        - generic [ref=f29e228] [cursor=pointer]
+        - paragraph [ref=f29e237]: Drag and drop video files to upload
+        - button "Select files" [ref=f29e241] [cursor=pointer]
+        - paragraph [ref=f29e246]:
+          - text: By submitting your videos to YouTube, you acknowledge that you agree to YouTube's
+          - link "Terms of Service" [ref=f29e247] [cursor=pointer]:
+            - /url: https://www.youtube.com/t/terms
+          - text: and
+          - link "Community Guidelines" [ref=f29e248] [cursor=pointer]:
+            - /url: https://www.youtube.com/yt/about/policies/
+          - text: .
+        - paragraph [ref=f29e249]:
+          - text: Please ensure your videos don’t violate anyone else’s privacy or copyright.
+          - link "Learn more" [ref=f29e250] [cursor=pointer]:
+            - /url: https://www.youtube.com/yt/copyright
