@@ -2484,6 +2484,7 @@ html[data-color-mode="dark"] .sv-busy-veil { background: var(--sv-frosted-bg, rg
 .cls-picker-search { width: calc(100% - 16px); margin: 8px; box-sizing: border-box; }
 .cls-picker-opt { display: flex; align-items: center; gap: 10px; }
 .cls-picker-opt-hint { font-size: 12px; color: var(--sv-text-secondary); }
+.cls-picker-opt.sel .cls-picker-opt-hint { color: inherit; } /* readable on the selected (solid) row */
 .cls-picker-empty { padding: 10px 12px; font-size: 13px; color: var(--sv-text-secondary); }
 .sv-space-default { padding: 0 0 14px; margin: 0 0 14px; border-bottom: 1px solid var(--sv-border-primary); }
 .sv-space-default-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
