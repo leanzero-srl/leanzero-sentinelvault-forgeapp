@@ -1,0 +1,60 @@
+{
+ "key": "auto-restore",
+ "source": "rec-a",
+ "from": 178,
+ "to": 230,
+ "title": "Confluence attachment overwritten? Sealed files revert",
+ "subtitle": "A colleague uploads over a sealed file and Sentinel Vault puts the sealed version back",
+ "feature": "Auto-restore",
+ "steps": [
+  {
+   "t": 178,
+   "label": "Open the page's Attachments list",
+   "detail": "Mihai does not own the sealed Regim caini.pdf"
+  },
+  {
+   "t": 186,
+   "label": "Upload a new version of the file",
+   "detail": "Choose file: Regim caini.pdf, then Attach"
+  },
+  {
+   "t": 194,
+   "label": "The upload lands",
+   "detail": "The row shows creator Mihai Perdum, 14:00"
+  },
+  {
+   "t": 202,
+   "label": "Sentinel Vault reverts it",
+   "detail": "Undone: your change was reverted, the file is sealed by its owner"
+  },
+  {
+   "t": 206,
+   "label": "Sealed version back on top",
+   "detail": "Creator Sentinel Vault: automatically reversed modifications"
+  },
+  {
+   "t": 210,
+   "label": "Both users are told",
+   "detail": "A Seal Violation notification names the owner and the editor"
+  },
+  {
+   "t": 222,
+   "label": "The violation comment",
+   "detail": "Your change was undone; your version is kept in the page history"
+  }
+ ],
+ "callouts": [
+  {
+   "t": 202,
+   "duration": 4,
+   "text": "Overwrite reverted automatically"
+  },
+  {
+   "t": 224,
+   "duration": 5,
+   "text": "Nothing lost: the edit stays in history"
+  }
+ ],
+ "deadZones": [],
+ "summary": ""
+}

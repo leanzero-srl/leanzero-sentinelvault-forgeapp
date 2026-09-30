@@ -1,0 +1,352 @@
+{
+ "seal-file": {
+  "chapters": [
+   [
+    "00:00",
+    "Intro"
+   ],
+   [
+    "00:19",
+    "Publish the page"
+   ],
+   [
+    "00:31",
+    "Click Seal on image (4).png"
+   ]
+  ],
+  "duration": "00:51",
+  "seconds": 51.57
+ },
+ "edit-requests": {
+  "chapters": [
+   [
+    "00:00",
+    "Intro"
+   ],
+   [
+    "00:15",
+    "The owner is notified"
+   ],
+   [
+    "00:27",
+    "Approve image (4).png"
+   ],
+   [
+    "00:39",
+    "The requester can edit now"
+   ],
+   [
+    "00:59",
+    "Declined · ask again later"
+   ],
+   [
+    "01:11",
+    "Mihai seals image (3).png"
+   ],
+   [
+    "01:31",
+    "Watch for release"
+   ],
+   [
+    "01:47",
+    "Released: File Now Accessible"
+   ]
+  ],
+  "duration": "01:59",
+  "seconds": 119.57
+ },
+ "auto-restore": {
+  "chapters": [
+   [
+    "00:00",
+    "Intro"
+   ],
+   [
+    "00:11",
+    "Upload a new version of the file"
+   ],
+   [
+    "00:27",
+    "Sentinel Vault reverts it"
+   ],
+   [
+    "00:47",
+    "The violation comment"
+   ]
+  ],
+  "duration": "00:59",
+  "seconds": 59.57
+ },
+ "sealed-sections": {
+  "chapters": [
+   [
+    "00:00",
+    "Intro"
+   ],
+   [
+    "00:15",
+    "Click Seal a section"
+   ],
+   [
+    "00:27",
+    "Section sealed until tomorrow"
+   ],
+   [
+    "00:55",
+    "The edit is reverted"
+   ],
+   [
+    "01:09",
+    "Request edit on the section"
+   ],
+   [
+    "01:25",
+    "The owner approves"
+   ],
+   [
+    "01:37",
+    "Edit under the seal"
+   ],
+   [
+    "01:58",
+    "The approved edit stays"
+   ]
+  ],
+  "duration": "02:05",
+  "seconds": 125.07
+ },
+ "validations": {
+  "chapters": [
+   [
+    "00:00",
+    "Intro"
+   ],
+   [
+    "00:11",
+    "Add a Require a heading rule"
+   ],
+   [
+    "00:31",
+    "The page is checked"
+   ],
+   [
+    "00:43",
+    "Add the heading in the editor"
+   ],
+   [
+    "01:03",
+    "Re-check the page"
+   ],
+   [
+    "01:19",
+    "Site settings: a site-wide rule"
+   ],
+   [
+    "01:31",
+    "Label test is required"
+   ],
+   [
+    "01:47",
+    "Add the label"
+   ],
+   [
+    "02:03",
+    "Re-check: passed"
+   ]
+  ],
+  "duration": "02:15",
+  "seconds": 135.57
+ },
+ "approval": {
+  "chapters": [
+   [
+    "00:00",
+    "Intro"
+   ],
+   [
+    "00:11",
+    "Move to In Review"
+   ],
+   [
+    "00:28",
+    "The approver is notified"
+   ],
+   [
+    "00:40",
+    "Approve"
+   ],
+   [
+    "00:56",
+    "Seals now belong to the approval"
+   ],
+   [
+    "01:16",
+    "The activity explains it"
+   ],
+   [
+    "01:32",
+    "Unsealed text stays editable"
+   ],
+   [
+    "01:52",
+    "Propose a change to a sealed file"
+   ],
+   [
+    "02:04",
+    "Waiting for the approvers"
+   ]
+  ],
+  "duration": "02:12",
+  "seconds": 132.57
+ },
+ "site-protection": {
+  "chapters": [
+   [
+    "00:00",
+    "Intro"
+   ],
+   [
+    "00:31",
+    "Allow space admins to force-unseal"
+   ],
+   [
+    "00:51",
+    "Force release in the card menu"
+   ],
+   [
+    "01:07",
+    "Allow attachment removal"
+   ],
+   [
+    "01:31",
+    "Delete an available file"
+   ],
+   [
+    "01:47",
+    "The file shows as missing"
+   ],
+   [
+    "01:59",
+    "Restore it from the panel"
+   ]
+  ],
+  "duration": "02:15",
+  "seconds": 135.57
+ },
+ "authenticator": {
+  "chapters": [
+   [
+    "00:00",
+    "Intro"
+   ],
+   [
+    "00:11",
+    "The action asks for a code"
+   ],
+   [
+    "00:25",
+    "Code accepted"
+   ]
+  ],
+  "duration": "00:37",
+  "seconds": 37.57
+ },
+ "expiry-alerts": {
+  "chapters": [
+   [
+    "00:00",
+    "Intro"
+   ],
+   [
+    "00:19",
+    "Changes wait for Apply"
+   ],
+   [
+    "00:31",
+    "Turn on Seals expire"
+   ],
+   [
+    "00:47",
+    "Alerts"
+   ],
+   [
+    "00:59",
+    "Tell editors when a change is undone"
+   ]
+  ],
+  "duration": "01:15",
+  "seconds": 75.57
+ },
+ "classification": {
+  "chapters": [
+   [
+    "00:00",
+    "Intro"
+   ],
+   [
+    "00:11",
+    "Every page shows its level"
+   ],
+   [
+    "00:23",
+    "Pick a default for a space"
+   ],
+   [
+    "00:47",
+    "The page shows it"
+   ],
+   [
+    "01:04",
+    "Lowering needs a reason"
+   ],
+   [
+    "01:20",
+    "The page follows"
+   ]
+  ],
+  "duration": "01:28",
+  "seconds": 88.57
+ },
+ "compilation": {
+  "chapters": [
+   [
+    "00:00",
+    "Intro"
+   ],
+   [
+    "00:06",
+    "Sealed files"
+   ],
+   [
+    "00:26",
+    "Edit requests"
+   ],
+   [
+    "01:09",
+    "Auto-restore"
+   ],
+   [
+    "01:46",
+    "Sealed sections"
+   ],
+   [
+    "02:27",
+    "Content validation"
+   ],
+   [
+    "02:53",
+    "Approval workflow"
+   ],
+   [
+    "03:27",
+    "Authenticator"
+   ],
+   [
+    "03:49",
+    "Classification"
+   ]
+  ],
+  "duration": "04:34",
+  "seconds": 274.17
+ }
+}
