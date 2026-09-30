@@ -1,6 +1,42 @@
 import { asApp, route } from "@forge/api";
 
 /**
+ * PURE. The name a trashed file comes back under when a NEWER file with its name is already on
+ * the page (Confluence refuses the restore with 409 "newer Content exists … with title X" —
+ * tester 2026-09-30). "Test sentinel.docx" → "Test sentinel (restored).docx", then "(restored 2)".
+ */
+export function restoredTitle(title, n = 1) {
+  const t = String(title || "Unknown");
+  const dot = t.lastIndexOf(".");
+  const hasExt = dot > 0 && dot >= t.length - 8;
+  const base = hasExt ? t.slice(0, dot) : t;
+  const ext = hasExt ? t.slice(dot) : "";
+  return `${base} (restored${n > 1 ? ` ${n}` : ""})${ext}`;
+}
+/** PURE. Is this restore refusal "a newer file already holds the name"? */
+export const isNameTakenConflict = (status, text) => status === 409 && /newer Content exists/i.test(String(text || ""));
+
+/**
+ * PUT a trashed attachment back to "current"; when a newer file holds its name, retry under
+ * restoredTitle() (up to 3 names). Returns { ok, status, title, renamed, text }.
+ */
+export async function putAttachmentCurrent(pageId, attachmentId, title, version) {
+  const putRoute = route`/wiki/rest/api/content/${pageId}/child/attachment/${attachmentId}`;
+  let name = title;
+  for (let n = 0; n <= 3; n++) {
+    const res = await asApp().requestConfluence(putRoute, {
+      method: "PUT", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: attachmentId, type: "attachment", status: "current", title: name, version: { number: version + 1 } }),
+    });
+    if (res.ok) return { ok: true, status: res.status, title: name, renamed: name !== title };
+    const text = await res.text().catch(() => "");
+    if (isNameTakenConflict(res.status, text) && n < 3) { name = restoredTitle(title, n + 1); continue; }
+    return { ok: false, status: res.status, text, title: name, renamed: false };
+  }
+  return { ok: false, status: 409, title: name, renamed: false };
+}
+
+/**
  * Attachment existence/status probing + trash restore, shared by the artifact
  * trash handler and the page-body media-restore pass (incident 2026-07-22: the
  * two layers were disconnected — the page pass re-spliced ADF nodes pointing at
@@ -102,23 +138,19 @@ export async function restoreAttachmentFromTrash({ attachmentId, pageId, title, 
   // v1 attachment PUT back to "current" (extracted verbatim from the trash
   // handler, audit C4: bounded 429/5xx retry — a transient blip must not be
   // treated as unrecoverable).
-  const restoreRoute = route`/wiki/rest/api/content/${effPageId}/child/attachment/${attachmentId}`;
-  const restoreBody = JSON.stringify({
-    id: attachmentId, type: "attachment", status: "current", title: effTitle,
-    version: { number: version + 1 },
-  });
   let lastStatus = 0;
   for (let attempt = 0; attempt < 3; attempt++) {
-    const res = await asApp().requestConfluence(restoreRoute, {
-      method: "PUT", headers: { "Content-Type": "application/json" }, body: restoreBody,
-    });
-    if (res.ok) return { ok: true, probe };
-    lastStatus = res.status;
-    if ((res.status === 429 || res.status >= 500) && attempt < 2) {
-      await new Promise((r) => setTimeout(r, Math.pow(2, attempt) * 500));
+    const r = await putAttachmentCurrent(effPageId, attachmentId, effTitle, version);
+    if (r.ok) {
+      if (r.renamed) console.warn(`[ATT-STATUS] restored ${attachmentId} as "${r.title}" — a newer file holds "${effTitle}"`);
+      return { ok: true, probe, renamedTo: r.renamed ? r.title : null };
+    }
+    lastStatus = r.status;
+    if ((r.status === 429 || r.status >= 500) && attempt < 2) {
+      await new Promise((res) => setTimeout(res, Math.pow(2, attempt) * 500));
       continue;
     }
-    console.error(`[ATT-STATUS] restore PUT failed for ${attachmentId}: ${res.status} — ${(await res.text()).slice(0, 200)}`);
+    console.error(`[ATT-STATUS] restore PUT failed for ${attachmentId}: ${r.status} — ${String(r.text || "").slice(0, 200)}`);
     break;
   }
   // Adversarial-vet F1: one UI delete fires trashed:attachment AND updated:page — the trash
