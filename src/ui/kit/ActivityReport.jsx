@@ -39,7 +39,7 @@ const typesFor = (activeIds) => {
 
 const pageUrl = (siteUrl, pageId) => (siteUrl && pageId ? `${siteUrl}/wiki/pages/viewpage.action?pageId=${encodeURIComponent(pageId)}` : null);
 
-const kindWord = (kind) => (kind === "attachment" ? "File" : kind === "section" ? "Section" : "Page");
+const kindWord = (kind) => (kind === "attachment" ? "File" : kind === "section" ? "Section" : kind === "space" ? "Space" : "Page");
 
 const fmtInt = (n) => Number(n || 0).toLocaleString();
 

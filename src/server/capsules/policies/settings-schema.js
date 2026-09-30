@@ -14,7 +14,6 @@
  *      they write.
  */
 import { POLICY_DEFAULTS, SPACE_POLICY_DEFAULTS, withinHoldBounds } from "../../shared/baseline.js";
-import { DEFAULT_RIBBON_MODE, DEFAULT_RIBBON_THRESHOLD_RANK } from "../../../ui/kit/ribbon-rules.js";
 import { NOTIFICATIONS_MODES } from "../../shared/notice-policy.js";
 import { EDIT_COOLDOWN_HOURS_MAX } from "../../shared/edit-cooldown.js";
 
@@ -22,7 +21,7 @@ export const GROUPS = Object.freeze([
   { id: "protection", name: "Protection", text: "What gets sealed and who may act on it." },
   { id: "expiry", name: "Expiry", text: "How long a seal lasts and what happens when it runs out." },
   { id: "alerts", name: "Alerts", text: "Who hears about it, and how." },
-  { id: "classification", name: "Classification", text: "Whether pages carry a classification level at all, and how the ribbon treats it." },
+  { id: "classification", name: "Classification", text: "Whether pages carry a classification level at all." },
   { id: "advanced", name: "Advanced", text: "Panel insertion, content rules, AI review and the rarely-used switches." },
 ]);
 
@@ -98,26 +97,10 @@ export const CONTROLS = Object.freeze([
     label: "Page ribbon",
     text: "The Sentinel Vault ribbon at the top of pages with sealed content, showing what is sealed and until when.",
     default: POLICY_DEFAULTS.enableDocRibbons },
-  // CLS-1: the two ribbon controls are about the classification block, so they are HIDDEN (not
-  // merely locked) while classification is off — a surface that mentions a feature the site did
-  // not turn on is the exact defect the critique filed. `hiddenUnless` names the key that must
-  // read true for the row to exist.
-  { key: "ribbonMode", scope: "global", group: "alerts", kind: "choice",
-    label: "Ribbon",
-    text: "What opens the ribbon: only exceptions, or the classification block on every page.",
-    default: DEFAULT_RIBBON_MODE, parent: "enableDocRibbons", parentValue: true, hiddenUnless: "classificationEnabled" },
-  // CLS-10: the admin thinks in LEVELS, not ranks — the control is a level picker that stores the
-  // level id; the rank is resolved at read time (ribbon-rules `normalizeRibbonSettings(stored,
-  // levels)`), so renaming or re-ranking a level never silently changes what the threshold means.
-  { key: "ribbonThresholdLevel", scope: "global", group: "alerts", kind: "level",
-    label: "Show the banner from",
-    text: "In “Exceptions only”, a page classified at this level or higher opens the ribbon on its own. Unset = the highest level of the scheme (Restricted in the default one).",
-    default: null, parent: "enableDocRibbons", parentValue: true, hiddenUnless: "classificationEnabled" },
-  // The stored rank stays as the fallback the config API and older records use; never drawn.
-  { key: "ribbonThresholdRank", scope: "global", group: "alerts", kind: "count", min: 1, max: 99, internal: true,
-    label: "Ribbon classification threshold (rank)",
-    text: "The rank fallback behind “Show the banner from” — set by the API or by installs older than CLS-10.",
-    default: DEFAULT_RIBBON_THRESHOLD_RANK, parent: "enableDocRibbons", parentValue: true, hiddenUnless: "classificationEnabled" },
+  // 2026-09-30 (classification review): the ribbon-mode and threshold rows are gone — with
+  // classification on, the banner shows on every page; with it off, only seal / workflow states
+  // open it. Stored `ribbonMode` / `ribbonThreshold*` values are accepted by the write gate
+  // (validateRibbonSettings) and read by nothing (docs/REST-CONFIG-API.md).
   { key: "notifyEditorOnRevert", scope: "global", group: "alerts", kind: "toggle",
     label: "Tell editors when their change is undone",
     text: "When Sentinel Vault reverts someone's edit to sealed content, that person gets a page comment saying so, with a link to the version that still holds their text. Works on its own — it does not need the comments switch below. Quiet spaces stay quiet.",
@@ -142,7 +125,7 @@ export const CONTROLS = Object.freeze([
   // ── Classification (CLS-1, owner decision 2026-09-19: OFF by default) ───────────────────
   { key: "classificationEnabled", scope: "global", group: "classification", kind: "toggle", optIn: true,
     label: "Classification levels",
-    text: "Pages carry a classification level (Public, Internal, Confidential, Restricted…) shown in the byline chip, the ribbon and the page details. Off: nothing is shown and nothing is enforced; stored levels and defaults are kept for when it is turned on again. Confluence's own classification, where the site has it, stays as Confluence shows it.",
+    text: "Every page carries a classification level (Public, Internal, Confidential, Restricted…), shown under its title and in the banner at the top of the page — “Unclassified” until a space default or the page itself sets one. Off: nothing is shown and nothing is enforced; stored levels and defaults are kept for when it is turned on again. Confluence's own classification, where the site has it, stays as Confluence shows it.",
     default: POLICY_DEFAULTS.classificationEnabled },
 
   // ── Advanced ──────────────────────────────────────────────────────────────────────────────
@@ -215,10 +198,7 @@ export function readEffective(key, stored) {
       if (c.max !== undefined && n > c.max) return c.default;
       return Math.floor(n);
     }
-    case "level":
-      return typeof stored === "string" && stored.trim() ? stored.trim().slice(0, 64) : null;
     case "choice":
-      if (key === "ribbonMode") return stored === "always" ? "always" : "exceptions";
       if (key === "macroInsertPosition") return stored === "top" ? "top" : "bottom";
       if (key === "notificationsMode") return stored === "quiet" ? "quiet" : "normal";
       if (key === "classification") return stored === "off" ? "off" : "inherit";
@@ -254,9 +234,7 @@ export function formatValue(key, value) {
     }
     case "days": return plural(Number(value), "day");
     case "count": return String(value);
-    case "level": return value ? String(value) : "The highest level (Restricted in the default scheme)";
     case "choice":
-      if (key === "ribbonMode") return value === "always" ? "Always show classification" : "Exceptions only";
       if (key === "macroInsertPosition") return value === "top" ? "Top of the page" : "Bottom of the page";
       if (key === "notificationsMode") return value === "quiet" ? "Quiet" : "Normal";
       if (key === "classification") return value === "off" ? "Off in this space" : "As the site";

@@ -667,14 +667,34 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .cls-state { color: var(--sv-text-secondary); font-size: 13px; }
 /* CLS-1: the off banner is a SOLID amber block (white ink, no tint, no left rail); the kept
    sections below sit at reduced opacity and take no input until the site switch is on. */
-.cls-off-banner {
+/* P8 (2026-09-30): the state is always the first line of the tab — solid amber when off, solid
+   green when on (white ink on both ≥ 4.5:1), with ONE switch that works both ways. */
+.cls-status {
   display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap;
   padding: 14px 18px; margin: 4px 0 12px; border-radius: 10px;
-  background: #B45309; color: #FFFFFF; font-size: 14px; line-height: 1.5;
+  color: #FFFFFF; font-size: 14px; line-height: 1.5;
 }
-.cls-off-banner-text { flex: 1 1 360px; }
-.cls-off-banner .btn-primary { background: #FFFFFF; color: #7C2D12; border-color: #FFFFFF; flex: none; }
-.cls-off-banner .btn-primary:hover { background: #FEF3C7; }
+.cls-status.is-off { background: #B45309; }
+.cls-status.is-on { background: #15803D; }
+.cls-status-text { flex: 1 1 360px; }
+.cls-switch {
+  display: inline-flex; align-items: center; gap: 10px; flex: none; cursor: pointer;
+  background: #FFFFFF; color: #0F172A; border: 0; border-radius: 9999px; padding: 6px 14px 6px 6px;
+  font-size: 14px; font-weight: 700; font-family: inherit;
+}
+.cls-switch:disabled { opacity: 0.7; cursor: progress; }
+.cls-switch:focus-visible { outline: 3px solid #FFFFFF; outline-offset: 2px; }
+.cls-switch-track { position: relative; width: 40px; height: 22px; border-radius: 9999px; background: #64748B; transition: background 150ms; }
+.cls-switch.is-on .cls-switch-track { background: #15803D; }
+.cls-switch-knob { position: absolute; top: 3px; left: 3px; width: 16px; height: 16px; border-radius: 50%; background: #FFFFFF; transition: transform 150ms; }
+.cls-switch.is-on .cls-switch-knob { transform: translateX(18px); }
+@media (prefers-reduced-motion: reduce) { .cls-switch-track, .cls-switch-knob { transition: none; } }
+.btn-danger {
+  background: #B91C1C; color: #FFFFFF; border: none; padding: 12px 32px; border-radius: 10px; /* fixed: white ink stays ≥ 4.5:1 in dark mode too */
+  font-weight: 600; font-size: 14px; cursor: pointer; font-family: inherit;
+}
+.btn-danger:hover:not(:disabled) { background: #991B1B; }
+.btn-danger:disabled { opacity: 0.6; cursor: not-allowed; }
 .cls-tab--off .cls-section { opacity: 0.5; pointer-events: none; user-select: none; }
 .cls-section { padding: 16px 0; border-bottom: 1px solid var(--sv-border-secondary); }
 .cls-section:last-of-type { border-bottom: none; }
@@ -1108,3 +1128,17 @@ html[data-color-mode="dark"] .sv-unsaved-float { background: #FBBF24; color: #0F
 /* Anchored dialogs (kit/Dialog: every surface opens a dialog level with the click) sit at the
    computed marginTop from the top edge — without this the flex centring moved them (tester 2026-09-30). */
 .sv-dialog-backdrop.is-anchored { align-items: flex-start; }
+
+/* ── Classification: save-on-pick + reason-on-lowering (2026-09-30, P4/P5/P9) ────────────────
+   "Saved" is plain solid-colour text next to the picker; the lowering reason is an inline row
+   (no dialog, no tint, no rail). Shared by the site console's space table and the space card. */
+.cls-pick-cell { display: inline-flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.cls-saved { font-size: 12px; font-weight: 700; color: var(--sv-status-success); white-space: nowrap; }
+.cls-saved-line { margin: 8px 0 0; font-size: 13px; font-weight: 600; color: var(--sv-status-success); }
+.cls-lower { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 8px 0 4px; }
+.cls-lower-label { flex-basis: 100%; font-size: 13px; font-weight: 600; color: var(--sv-text-primary); }
+.cls-lower-input { flex: 1 1 260px; min-width: 200px; box-sizing: border-box; }
+.cls-lower-row td { background: var(--sv-bg-secondary); }
+.cls-bulk-hint { font-size: 12px; opacity: 0.9; }
+.sv-dialog .cls-lower-label { display: block; margin: 8px 0 6px; }
+.sv-dialog .cls-lower-input { width: 100%; }

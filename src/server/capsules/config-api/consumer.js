@@ -47,7 +47,7 @@ async function runStep(step, accountId) {
     if (needs === "spaceId") {
       const spaceId = await spaceIdByKey(payload.spaceKey);
       if (!spaceId) return { status: "skipped", reason: `Space ${payload.spaceKey} not found` };
-      return interpretResult(await invoke(resolverKey, { spaceId, levelId: payload.levelId }, accountId));
+      return interpretResult(await invoke(resolverKey, { spaceId, levelId: payload.levelId, reason: payload.reason }, accountId));
     }
     if (needs === "headingIndex") {
       const h = await invoke("list-page-headings", { pageId: payload.pageId }, accountId);

@@ -6,9 +6,11 @@ import { MAX_HOLD_SECONDS, POLICY_DEFAULTS, SPACE_POLICY_DEFAULTS, withinHoldBou
 // setupCompletedAt, the space choices) and the two dead space keys the write path drops.
 import { validatePolicyWrite, stripDeadKeys } from "./settings-schema.js";
 import { isOperatorSteward, isOperatorSiteAdmin } from "../../shared/steward-checks.js";
-// 5.0 ribbon: the two steward settings behind the page ribbon's show rule (mockup §2/§3) —
-// validated here at the write boundary, read by ribbon-summary through normalizeRibbonSettings.
+// 5.0 ribbon: `ribbonMode` / `ribbonThreshold*` no longer drive anything (2026-09-30: with
+// classification on the banner shows on every page; off, only seal/workflow states open it). Old
+// records and API clients may still send them — accepted when well-formed, ignored by every reader.
 import { validateRibbonSettings, DEFAULT_RIBBON_MODE, DEFAULT_RIBBON_THRESHOLD_RANK } from "../../../ui/kit/ribbon-rules.js";
+import { queueBylineRefreshSiteWide, queueBylineRefreshForKey } from "../page-details/byline-fanout.js";
 
 // SECURITY (audit A1): these resolvers write admin-settings-* — including the steward list
 // (adminUsers) and the force-override toggle — so an UNGATED write is a full privilege
@@ -86,7 +88,10 @@ const storePolicy = async (req) => {
     const currentRuleset = await kvs.get("admin-settings-global");
     const currentAutoUnsealActive =
       currentRuleset?.autoUnlockEnabled !== false;
-    const newAutoUnsealActive = data.autoUnlockEnabled !== false;
+    // A PARTIAL write (the Classification tab's one switch, the setup's skip stamp) says nothing
+    // about auto-unseal: read an omitted key as "unchanged", never as "on" — otherwise a site with
+    // auto-unseal off would have every seal's timer "resumed" by an unrelated save.
+    const newAutoUnsealActive = "autoUnlockEnabled" in data ? data.autoUnlockEnabled !== false : currentAutoUnsealActive;
 
     // Handle auto-unseal disable (pause timers)
     if (currentAutoUnsealActive && !newAutoUnsealActive) {
@@ -132,12 +137,21 @@ const storePolicy = async (req) => {
     // drop keys it omits (notably the steward list `adminUsers`/`adminGroups`, or the
     // pause/resume `autoUnlockPausedAt`).
     await kvs.set("admin-settings-global", { ...(currentRuleset || {}), ...data });
+    // E2 (2026-09-30): the classification switch changes every byline chip — queue the eager
+    // refresh (spaces with a default); every other page converges on its next view.
+    if ("classificationEnabled" in data && (currentRuleset?.classificationEnabled === true) !== (data.classificationEnabled === true)) {
+      await queueBylineRefreshSiteWide(data.classificationEnabled === true ? "classification on" : "classification off");
+    }
     return { success: true };
   } else if (scope === "space" && key) {
     if (!(await canWriteSpace(caller, key))) return DENY;
     const sanitizedRealmKey = key.replace(/[^a-zA-Z0-9:._\s-#]/g, "_");
     const currentSpace = await kvs.get(`admin-settings-space-${sanitizedRealmKey}`);
     await kvs.set(`admin-settings-space-${sanitizedRealmKey}`, { ...(currentSpace || {}), ...stripDeadKeys(scope, data) });
+    // E2: a space opting out of (or back into) classification changes the chip on all its pages.
+    if ("classification" in data && (currentSpace?.classification === "off") !== (data.classification === "off")) {
+      await queueBylineRefreshForKey(key, data.classification === "off" ? "space opted out" : "space opted in");
+    }
     return { success: true };
   }
 

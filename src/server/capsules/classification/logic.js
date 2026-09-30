@@ -56,6 +56,49 @@ export function classificationActive({ site, space } = {}) {
 /** PURE. The sentence a refused write carries for an inactive state. */
 export const classificationOffReason = (state) => CLASSIFICATION_OFF_REASON[state?.reason] || CLASSIFICATION_OFF_REASON.site;
 
+// ── P3: where the level comes from — ONE phrase for the byline, the banner and the modal ─────
+/** PURE. "set on this page" | "from space default" | null (no level). */
+export function sourcePhrase(source) {
+  if (source === "page") return "set on this page";
+  if (source === "space") return "from space default";
+  return null;
+}
+
+// ── P5 (2026-09-30): lowering asks for ONE thing — a reason ────────────────────────────────
+// Our rank convention: 1 = least sensitive … higher = more sensitive (DEFAULT_LEVELS). A change is
+// a DOWNGRADE when the level a reader sees after it ranks lower than before, or when a level is
+// taken away (to "none"). From "none" to anything is a raise; same → same is no change. An id the
+// scheme no longer knows reads as "none" (decideEffective's rule), so a deleted level never makes
+// a change look like a downgrade that needs a reason nobody can explain.
+/** PURE. @returns {boolean} */
+export function isDowngrade(fromLevelId, toLevelId, levels) {
+  const rankOf = (id) => {
+    if (id == null || id === "") return null;
+    const l = (levels || []).find((x) => String(x?.id) === String(id));
+    const r = Number(l?.rank);
+    return l && Number.isFinite(r) ? r : null;
+  };
+  const from = rankOf(fromLevelId);
+  if (from == null) return false; // nothing (or nothing known) was shown: any change is a raise
+  const to = rankOf(toLevelId);
+  if (to == null) return true; // a level shown before, none after
+  return to < from;
+}
+
+export const REASON_MAX = 300;
+/** PURE. A reason as stored: trimmed, clipped, "" when absent. */
+export const cleanReason = (r) => (typeof r === "string" ? r.trim().slice(0, REASON_MAX) : "");
+
+/** PURE. The refusal a lowering without a reason gets (server) — and the words the UI asks with. */
+export function downgradeRefusal(fromLevel, toLevel) {
+  const from = fromLevel?.name || "the current level";
+  const to = toLevel?.name || "no level";
+  return `Lowering the classification from ${from} to ${to} needs a reason.`;
+}
+
+/** PURE. Level object by id from a list, or null. */
+export const findLevel = (levels, id) => (id == null ? null : (levels || []).find((l) => String(l?.id) === String(id)) || null);
+
 export const LEVELS_KVS_KEY = "classification-levels";
 export const PROPERTY_KEY = "sentinel-classification";
 export const spaceKvsKey = (spaceId) => `classification-space-${spaceId}`;

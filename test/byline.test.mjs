@@ -12,12 +12,13 @@ const custom = { id: "board", name: "Board only", color: "#7c3aed" };
 
 // ── titles ──────────────────────────────────────────────────────────────────────────────────
 eq("page override title", composeByline({ level: restricted, source: "page", sealCount: 0 }).title, "Restricted · set on this page");
-eq("space default title", composeByline({ level: restricted, source: "space", sealCount: 0 }).title, "Restricted · space default");
+// P3 (2026-09-30): ONE phrase for where the level comes from, shared with the banner and the modal.
+eq("space default title", composeByline({ level: restricted, source: "space", sealCount: 0 }).title, "Restricted · from space default");
 eq("unclassified title", composeByline({ level: null, source: "none", sealCount: 0 }).title, "Unclassified");
 // SEC-3: the seal count is in the TITLE (the byline is the one surface every page shows).
 eq("unclassified title carries the seal count", composeByline({ level: null, source: "none", sealCount: 3 }).title, "Unclassified · Sealed (3)");
 eq("custom level title with a seal: the count replaces the source (which moves to the tooltip)", composeByline({ level: custom, source: "page", sealCount: 1 }).title, "Board only · Sealed (1)");
-eq("an unknown source reads as the space default", composeByline({ level: restricted, source: "weird", sealCount: 0 }).title, "Restricted · space default");
+eq("an unknown source reads as the space default", composeByline({ level: restricted, source: "weird", sealCount: 0 }).title, "Restricted · from space default");
 
 // ── icons: colour ───────────────────────────────────────────────────────────────────────────
 ok("icon is a data: SVG URI", composeByline({ level: restricted, source: "page", sealCount: 0 }).icon.startsWith("data:image/svg+xml;utf8,"));
@@ -38,7 +39,7 @@ ok("a negative / NaN seal count is unsealed", !decode(composeByline({ level: res
 
 // ── tooltips ────────────────────────────────────────────────────────────────────────────────
 eq("tooltip, page override, no seals", composeByline({ level: restricted, source: "page", sealCount: 0 }).tooltip, "Restricted (set on this page) · No seals on this page · Open Sentinel Vault");
-eq("tooltip, space default, one seal", composeByline({ level: restricted, source: "space", sealCount: 1 }).tooltip, "Restricted (space default) · 1 seal on this page · Open Sentinel Vault");
+eq("tooltip, space default, one seal", composeByline({ level: restricted, source: "space", sealCount: 1 }).tooltip, "Restricted (from space default) · 1 seal on this page · Open Sentinel Vault");
 eq("tooltip, unclassified, many seals", composeByline({ level: null, source: "none", sealCount: 4 }).tooltip, "No classification level · 4 seals on this page · Open Sentinel Vault");
 
 // ── shape + stamp ───────────────────────────────────────────────────────────────────────────
@@ -70,6 +71,9 @@ eq("workflow + classification on + level → Level · Status", composeByline({ l
 eq("workflow + classification on + no level → Unclassified · Status", composeByline({ level: null, source: "none", sealCount: 0, classificationEnabled: true, workflow: wfDraft }).title, "Unclassified · Draft");
 eq("workflow + classification OFF → the status (+ the seal count), never the stored level", composeByline({ level: restricted, source: "page", sealCount: 2, classificationEnabled: false, workflow: wfApproved }).title, "Approved v3 · Sealed (2)");
 eq("workflow + switch undefined behaves as on", composeByline({ level: restricted, source: "space", sealCount: 0, workflow: wfDraft }).title, "Restricted · Draft");
+eq("workflow tooltip says the level comes from the space default", composeByline({ level: restricted, source: "space", sealCount: 0, workflow: wfDraft }).tooltip, "Restricted (from space default) · Workflow: Draft · No seals on this page · Open Sentinel Vault");
+// "Use space default" flips the wording (same level, different source → different chip, different stamp).
+ok("page → space flips the words and the stamp", bylineStamp(composeByline({ level: restricted, source: "page", sealCount: 0 })) !== bylineStamp(composeByline({ level: restricted, source: "space", sealCount: 0 })));
 ok("the disc takes the status tone, not the level colour", decode(composeByline({ level: restricted, source: "page", sealCount: 0, workflow: wfApproved }).icon).includes('fill="#15803D"'));
 ok("…and keeps the lock when sealed", decode(composeByline({ level: null, source: "none", sealCount: 1, workflow: wfDraft }).icon).includes("<rect"));
 eq("the classification source moves to the tooltip", composeByline({ level: restricted, source: "page", sealCount: 1, classificationEnabled: true, workflow: wfApproved }).tooltip, "Restricted (set on this page) · Workflow: Approved — v3 · 1 seal on this page · Open Sentinel Vault");
