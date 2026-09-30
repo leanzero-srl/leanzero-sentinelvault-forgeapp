@@ -2447,3 +2447,31 @@ html[data-color-mode="dark"] .sv-busy-veil { background: var(--sv-frosted-bg, rg
 /* Anchored dialogs (kit/Dialog: every surface opens a dialog level with the click) sit at the
    computed marginTop from the top edge — without this the flex centring moved them (tester 2026-09-30). */
 .sv-dialog-backdrop.is-anchored { align-items: flex-start; }
+
+/* ── Classification: save-on-pick + reason-on-lowering (2026-09-30, P4/P5/P9) ────────────────
+   "Saved" is plain solid-colour text next to the picker; the lowering reason is an inline row
+   (no dialog, no tint, no rail). Shared by the site console's space table and the space card. */
+.cls-pick-cell { display: inline-flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.cls-saved { font-size: 12px; font-weight: 700; color: var(--sv-status-success); white-space: nowrap; }
+.cls-saved-line { margin: 8px 0 0; font-size: 13px; font-weight: 600; color: var(--sv-status-success); }
+.cls-lower { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 8px 0 4px; }
+.cls-lower-label { flex-basis: 100%; font-size: 13px; font-weight: 600; color: var(--sv-text-primary); }
+.cls-lower-input { flex: 1 1 260px; min-width: 200px; box-sizing: border-box; }
+.cls-lower-row td { background: var(--sv-bg-secondary); }
+.cls-bulk-hint { font-size: 12px; opacity: 0.9; }
+.sv-dialog .cls-lower-label { display: block; margin: 8px 0 6px; }
+.sv-dialog .cls-lower-input { width: 100%; }
+/* The level picker and chips the space card borrows from the site console's Classification tab. */
+.cls-chip { display: inline-block; padding: 3px 10px; border-radius: 9999px; font-size: 12px; font-weight: 700; line-height: 1.4; white-space: nowrap; }
+.cls-chip-none { background: var(--sv-bg-tertiary); color: var(--sv-text-secondary); font-weight: 600; }
+.cls-picker { min-width: 200px; }
+.cls-picker.disabled { opacity: 0.6; pointer-events: none; }
+.cls-picker-placeholder { color: var(--sv-text-subtle); }
+.cls-picker-menu { min-width: 260px; max-height: 320px; overflow-y: auto; z-index: 30; }
+.cls-picker-search { width: calc(100% - 16px); margin: 8px; box-sizing: border-box; }
+.cls-picker-opt { display: flex; align-items: center; gap: 10px; }
+.cls-picker-opt-hint { font-size: 12px; color: var(--sv-text-secondary); }
+.cls-picker-empty { padding: 10px 12px; font-size: 13px; color: var(--sv-text-secondary); }
+.sv-space-default { padding: 0 0 14px; margin: 0 0 14px; border-bottom: 1px solid var(--sv-border-primary); }
+.sv-space-default-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+.sv-space-default-row > div:first-child { flex: 1 1 320px; }

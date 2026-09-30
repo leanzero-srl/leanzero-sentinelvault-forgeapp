@@ -32,6 +32,10 @@ export const ACTIVITY_CATEGORIES = Object.freeze([
   { id: "validation", label: "Validation", types: Object.freeze([
     "validation.reverted", "validation.gate",
   ]) },
+  // 2026-09-30 (classification review, H): who changed a level, from what, to what, and why.
+  { id: "classification", label: "Classification", types: Object.freeze([
+    "classification.page-set", "classification.space-default-set",
+  ]) },
 ]);
 
 /** Every known type, flat, in category order. */
@@ -326,6 +330,36 @@ export function formatActivity(entry) {
       return { ...base, label: "Read confirmed", glyph: "check", tone: "info",
         sentence: `${who} confirmed reading ${d.version != null ? `version ${d.version} of ` : ""}this page`,
         detail: "" };
+
+    // ── Classification (reason only when a level was lowered — P5) ──
+    case "classification.page-set": {
+      const to = d.toName || null, from = d.fromName || null;
+      const why = d.reason ? `reason: ${d.reason}` : "";
+      if (d.source === "space") {
+        return { ...base, label: d.lowered ? "Classification lowered" : "Classification reset", glyph: "shield", tone: d.lowered ? "caution" : "info",
+          sentence: `${who} returned the page to the space default${to ? ` (${to})` : " — no level"}`,
+          detail: [from ? `was ${from}` : "", why].filter(Boolean).join(" · ") };
+      }
+      return d.lowered
+        ? { ...base, label: "Classification lowered", glyph: "shield", tone: "caution",
+            sentence: `${who} lowered the classification${from ? ` from ${from}` : ""} to ${to || "another level"}`, detail: why }
+        : { ...base, label: "Classification set", glyph: "shield", tone: "info",
+            sentence: `${who} set the classification to ${to || "a new level"}`, detail: from ? `was ${from}` : "" };
+    }
+    case "classification.space-default-set": {
+      const to = d.toName || null, from = d.fromName || null;
+      const why = d.reason ? `reason: ${d.reason}` : "";
+      const space = entry?.target?.kind === "space" && entry?.target?.name ? ` of ${entry.target.name}` : "";
+      if (!to) {
+        return { ...base, label: "Space default cleared", glyph: "shield", tone: from ? "caution" : "info",
+          sentence: `${who} cleared the default level${space}`, detail: [from ? `was ${from}` : "", why].filter(Boolean).join(" · ") };
+      }
+      return d.lowered
+        ? { ...base, label: "Space default lowered", glyph: "shield", tone: "caution",
+            sentence: `${who} lowered the default level${space}${from ? ` from ${from}` : ""} to ${to}`, detail: why }
+        : { ...base, label: "Space default set", glyph: "shield", tone: "info",
+            sentence: `${who} set the default level${space} to ${to}`, detail: from ? `was ${from}` : "" };
+    }
 
     // ── Validation ──
     case "validation.reverted": {

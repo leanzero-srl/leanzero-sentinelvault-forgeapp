@@ -28,7 +28,7 @@ const ID_RE = /^[A-Za-z0-9:._-]{1,120}$/;
 
 const TOP_KEYS = ["version", "site", "spaces", "content"];
 const SITE_KEYS = ["policy", "validation", "classification", "notifications", "receiptPageId"];
-const SPACE_KEYS = ["policy", "validation", "workflows", "workflowSettings", "classificationDefault", "classification", "spaceAdmins"];
+const SPACE_KEYS = ["policy", "validation", "workflows", "workflowSettings", "classificationDefault", "classificationDefaultReason", "classification", "spaceAdmins"];
 const SPACE_ADMIN_KEYS = ["users", "groups"];
 
 /** Content op → allowed fields (besides `op`) and the ones that are required. */
@@ -49,7 +49,8 @@ export const CONTENT_OPS = Object.freeze({
   // SEC-8 (2026-09-20): a request can be declined over the API, with the optional word that reaches the requester.
   "decline-attachment-edit": { allow: ["attachmentId", "requesterAccountId", "reason"], required: ["attachmentId", "requesterAccountId"], resolverKey: "deny-edit-request", role: "editor" },
   "decline-section-edit": { allow: ["sectionId", "requesterAccountId", "reason"], required: ["sectionId", "requesterAccountId"], resolverKey: "deny-section-edit", role: "editor" },
-  "classify-page": { allow: ["pageId", "levelId"], required: ["pageId"], resolverKey: "classification-set-page", role: "editor" },
+  // 2026-09-30 (P5): lowering a page's level (or resetting it onto a lower space default) needs `reason`.
+  "classify-page": { allow: ["pageId", "levelId", "reason"], required: ["pageId"], resolverKey: "classification-set-page", role: "editor" },
   "assign-workflow": { allow: ["pageId", "workflowId"], required: ["pageId"], resolverKey: "assign-workflow", role: "editor" },
   // 2026-09-29: take one page out of its workflow (refused while Approved or awaiting approval).
   "remove-workflow": { allow: ["pageId"], required: ["pageId"], resolverKey: "remove-workflow", role: "editor" },
@@ -156,6 +157,7 @@ export function validateBundle(bundle, { rawBytes = null } = {}) {
         }
         if (sp.workflowSettings !== undefined && !isObj(sp.workflowSettings)) err(`${p}.workflowSettings`, "must be an object");
         if (sp.classificationDefault !== undefined && sp.classificationDefault !== null && !ID_RE.test(String(sp.classificationDefault))) err(`${p}.classificationDefault`, "must be a level id or null");
+        if (sp.classificationDefaultReason !== undefined && (typeof sp.classificationDefaultReason !== "string" || sp.classificationDefaultReason.length > 300)) err(`${p}.classificationDefaultReason`, "must be a string of up to 300 characters");
         if (sp.classification !== undefined && !["inherit", "off"].includes(sp.classification)) err(`${p}.classification`, 'must be "inherit" or "off"');
         if (sp.spaceAdmins !== undefined) {
           if (!isObj(sp.spaceAdmins)) err(`${p}.spaceAdmins`, "must be an object");
@@ -230,7 +232,8 @@ export function planBundle(bundle) {
       wf.items.forEach((w, i) => step(`${p}.workflows[${i}]`, "store-space-workflow", { spaceKey: key, workflowId: w.workflowId ?? null, def: w.def, labels: w.labels, priority: w.priority }));
     }
     if (isObj(sp.workflowSettings)) step(`${p}.workflowSettings`, "set-space-workflow-settings", { spaceKey: key, settings: sp.workflowSettings });
-    if (sp.classificationDefault !== undefined) step(`${p}.classificationDefault`, "classification-set-space-default", { spaceKey: key, levelId: sp.classificationDefault }, { needs: "spaceId" });
+    // P5: a default that LOWERS the space's level is refused without `classificationDefaultReason`.
+    if (sp.classificationDefault !== undefined) step(`${p}.classificationDefault`, "classification-set-space-default", { spaceKey: key, levelId: sp.classificationDefault, ...(sp.classificationDefaultReason ? { reason: sp.classificationDefaultReason } : {}) }, { needs: "spaceId" });
     // CLS-1: the per-space opt-out is a space policy key ("inherit" | "off").
     if (sp.classification !== undefined) step(`${p}.classification`, "store-policy", { scope: "space", key, data: { classification: sp.classification } });
     if (isObj(sp.spaceAdmins)) {
@@ -284,7 +287,7 @@ export function planBundle(bundle) {
         step(p, spec.resolverKey, { sectionId: String(c.sectionId), requesterAccountId: String(c.requesterAccountId), reason: c.reason });
         break;
       case "classify-page":
-        step(p, spec.resolverKey, { pageId: String(c.pageId), levelId: c.levelId ?? null });
+        step(p, spec.resolverKey, { pageId: String(c.pageId), levelId: c.levelId ?? null, ...(c.reason ? { reason: c.reason } : {}) });
         break;
       case "assign-workflow":
         step(p, spec.resolverKey, { pageId: String(c.pageId), workflowId: c.workflowId ?? null });

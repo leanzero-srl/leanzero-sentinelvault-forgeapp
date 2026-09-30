@@ -8,7 +8,7 @@ import {
 import { eq, ok, report } from "./_assert.mjs";
 
 eq("UI and server type lists agree", [...ACTIVITY_TYPES].sort(), [...SERVER_TYPES].sort());
-eq("five categories in display order", ACTIVITY_CATEGORIES.map((c) => c.label), ["Seals", "Sections", "Edit access", "Workflow", "Validation"]);
+eq("six categories in display order (2026-09-30: Classification)", ACTIVITY_CATEGORIES.map((c) => c.label), ["Seals", "Sections", "Edit access", "Workflow", "Validation", "Classification"]);
 eq("no type maps to two categories", new Set(ACTIVITY_TYPES).size, ACTIVITY_TYPES.length);
 
 const base = (type, extra = {}) => ({
@@ -93,5 +93,27 @@ const inj = activityToCsv([base("seal.created", { target: { kind: "attachment", 
 ok("formula-leading target name is neutralised", inj.includes(`"'=HYPERLINK(""http://evil"",""x"")"`));
 ok("formula-leading detail inside JSON is untouched (JSON cell starts with {)", inj.includes('"{""reason"":""-1+1""}"'));
 ok("a plain name is not prefixed", activityToCsv([base("seal.created", { target: { kind: "attachment", id: "a", name: "plan.png" } })]).includes('"plan.png"'));
+
+// H (2026-09-30): the classification audit trail — who, from what, to what, and why when lowered.
+{
+  const pg = (details) => formatActivity(base("classification.page-set", { target: { kind: "page", id: "100100", name: null }, details }));
+  eq("page raised", pg({ from: "internal", fromName: "Internal", to: "restricted", toName: "Restricted", source: "page", lowered: false }).sentence, "Alice Stone set the classification to Restricted");
+  eq("…detail names the old level", pg({ fromName: "Internal", toName: "Restricted", source: "page", lowered: false }).detail, "was Internal");
+  eq("page first set", pg({ from: null, fromName: null, toName: "Public", source: "page", lowered: false }).sentence, "Alice Stone set the classification to Public");
+  const low = pg({ fromName: "Confidential", toName: "Internal", source: "page", lowered: true, reason: "Published in the handbook" });
+  eq("page lowered", low.sentence, "Alice Stone lowered the classification from Confidential to Internal");
+  eq("…carries the reason", low.detail, "reason: Published in the handbook");
+  eq("…is a caution row", [low.label, low.tone, low.category], ["Classification lowered", "caution", "classification"]);
+  eq("back to the space default (raise)", pg({ fromName: "Internal", toName: "Confidential", source: "space", lowered: false }).sentence, "Alice Stone returned the page to the space default (Confidential)");
+  const resetLow = pg({ fromName: "Restricted", toName: "Internal", source: "space", lowered: true, reason: "Draft only" });
+  eq("back to a lower default names both and the reason", [resetLow.label, resetLow.detail], ["Classification lowered", "was Restricted · reason: Draft only"]);
+  eq("back to no default", pg({ fromName: "Public", toName: null, source: "space", lowered: true, reason: "x" }).sentence, "Alice Stone returned the page to the space default — no level");
+  const sp = (details) => formatActivity(base("classification.space-default-set", { pageId: null, target: { kind: "space", id: "42", name: "Finance" }, details }));
+  eq("space default set", sp({ fromName: null, toName: "Confidential", lowered: false }).sentence, "Alice Stone set the default level of Finance to Confidential");
+  eq("space default lowered + reason", [sp({ fromName: "Restricted", toName: "Internal", lowered: true, reason: "Audit closed" }).sentence, sp({ fromName: "Restricted", toName: "Internal", lowered: true, reason: "Audit closed" }).detail], ["Alice Stone lowered the default level of Finance from Restricted to Internal", "reason: Audit closed"]);
+  eq("space default cleared", sp({ fromName: "Public", toName: null, lowered: true, reason: "No longer needed" }).sentence, "Alice Stone cleared the default level of Finance");
+  eq("…detail", sp({ fromName: "Public", toName: null, lowered: true, reason: "No longer needed" }).detail, "was Public · reason: No longer needed");
+  eq("a space row never passes for a page title", pageTitleOf({ pageId: null, target: { kind: "space", name: "Finance" } }), "");
+}
 
 report("activity-format");

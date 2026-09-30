@@ -33,15 +33,14 @@ import { validateReleaseReason } from "../../shared/release-reason.js";
 import { notifyWatchers, sweepWatchers } from "../bulletins/logic.js";
 import { sweepEditAccess } from "../editreq/logic.js";
 import { triggerPanelEmbed, removePanelNode } from "../../infra/doc-surgery.js";
-import { refreshByline } from "../page-details/byline.js"; // 5.0 byline chip — one line per seal write, never awaited into the result
+import { refreshByline, writeBylineFor } from "../page-details/byline.js"; // 5.0 byline chip — one line per seal write, never awaited into the result
 // 5.0 ribbon (mockup §2/§3): the summary carries the classification, the steward's ribbon setting,
 // the viewer's waiting-on-me numbers for THIS page and the first seal the viewer does not own.
 import { getClassificationProvider, classificationActiveForPage } from "../classification/provider.js";
 import { heldRefusal, isWorkflowHeld } from "../../shared/seal-authority.js"; // SEC-2
 import { getActiveEditGrant, getActiveSectionEditGrant, listPendingRequestsForOwner, listPendingSectionRequestsForOwner, resolveEditCooldownMs } from "../editreq/logic.js";
 import { retryAtFor } from "../../shared/edit-cooldown.js"; // SEC-8: the ribbon's declined state
-import { listMyApprovals } from "../workflow/approvals.js";
-import { normalizeRibbonSettings } from "../../../ui/kit/ribbon-rules.js";
+import { listMyApprovals, describeWorkflowForPage } from "../workflow/approvals.js";
 
 /**
  * Get attachments for the current page with seal status
@@ -1364,6 +1363,8 @@ const ribbonSummary = async (req) => {
   }
   out.pageId = pageId;
   if (!pageId) return empty("no-context-id");
+  // The byline's workflow status, read alongside the attachments (lazy byline refresh, below).
+  const workflowRead = describeWorkflowForPage(pageId).catch((e) => { console.warn("[RIBBON] workflow for the byline:", e?.message || e); return undefined; });
 
   // Attachments as the app: the count is the page's, not the caller's (a viewer whose user
   // token gets a 403 on attachments still sees the seal exists). v2 has one collection per
@@ -1396,12 +1397,16 @@ const ribbonSummary = async (req) => {
     console.error("[RIBBON] attachments fetch threw:", e);
     status = 0;
   }
-  if (status !== 200) return empty(`attachments-http-${status}`);
+  // Classification review 2026-09-30 (B): a failed attachments read used to return HERE, before the
+  // classification was read — the level vanished and the row became an error. The seal counts are
+  // unknown in that case (the answer still says so: ok:false + reason), but the level, the viewer's
+  // requests and the section seals are read regardless.
+  const attachmentsOk = status === 200;
   out.attachments = ids.length;
 
   // A protection-* record is a seal unless it is the S7 trashedOnly TRACKING record (triggers.js).
   const liveSeals = []; // { id, record } — the page's live attachment seals, for the viewer's half below
-  for (let i = 0; i < ids.length; i += 25) {
+  for (let i = 0; attachmentsOk && i < ids.length; i += 25) {
     const batch = ids.slice(i, i + 25);
     const records = await Promise.all(batch.map((id) => kvs.get(`protection-${id}`).catch(() => null)));
     records.forEach((r, j) => {
@@ -1415,7 +1420,7 @@ const ribbonSummary = async (req) => {
   // A sealed file sitting in the trash is still something to show: the overlay's Trash card is
   // where its owner restores it, and the ribbon is the only door to that overlay. The default
   // listing excludes trashed attachments, so ask for them explicitly (best effort).
-  try {
+  if (attachmentsOk) try {
     const trashed = await asApp().requestConfluence(route`/wiki/api/v2/${collection}/${pageId}/attachments?status=trashed&limit=250`);
     if (trashed.ok) {
       const tdata = await trashed.json();
@@ -1439,6 +1444,25 @@ const ribbonSummary = async (req) => {
   // error row (the seal counts above are the truth the ribbon closes on).
   Object.assign(out, await ribbonViewerHalf({ pageId, accountId, liveSeals, sectionRecords }));
 
+  // Lazy byline refresh (E1): this runs on EVERY page view, so the chip converges on the first view
+  // after anything changed what it should say (a space default, the site switch, a space opt-out)
+  // — the same stamp-checked write the details modal does, so an unchanged chip costs one KVS read.
+  // Only with a known seal count; bounded so the banner never waits long on the property write.
+  if (attachmentsOk) {
+    const write = (async () => {
+      const wf = await workflowRead;
+      if (wf === undefined) return null; // the workflow read failed: do not write a chip without it
+      const c = out.classification || {};
+      return writeBylineFor(pageId, {
+        level: c.level || null, source: c.source || "none", classificationEnabled: c.enabled === true,
+        sealCount: liveSeals.filter(({ record }) => record?.lockedBy).length + sectionRecords.length,
+        workflow: wf?.status || null,
+      }, { lazy: true });
+    })().catch((e) => console.warn("[RIBBON] byline refresh failed:", e?.message || e));
+    await Promise.race([write, new Promise((r) => setTimeout(r, 1500))]);
+  }
+  if (!attachmentsOk) return empty(`attachments-http-${status}`);
+
   out.ok = true;
   if (out.sealedAttachments === 0 && out.sectionSeals === 0 && out.trashedSeals === 0) {
     console.info(`[RIBBON] nothing sealed on ${pageId}: attachments=${out.attachments} (type=${contentType})`);
@@ -1450,38 +1474,27 @@ const ribbonSummary = async (req) => {
 const isLapsed = (iso) => !!(iso && new Date(iso).getTime() <= Date.now());
 
 /**
- * The classification, the steward's ribbon setting, the viewer's waiting-on-me numbers scoped to
+ * The classification, the viewer's waiting-on-me numbers scoped to
  * this page, and `lockedFor`: the FIRST live seal on the page the viewer does not own (journey 2:
  * "Locked by {owner} until {time} · Request edit"), with the viewer's own request status on it.
  * `waitingOnMe.grantsActive` lists the viewer's active edit grants on this page's seals.
  */
 async function ribbonViewerHalf({ pageId, accountId, liveSeals, sectionRecords }) {
   const half = {
-    classification: { level: null, source: "none" },
-    ribbonMode: "exceptions", ribbonThresholdRank: 4, threshold: { rank: 4 },
+    classification: { level: null, source: "none", enabled: false },
     waitingOnMe: { requests: 0, approvals: 0, grantsActive: [] },
     lockedFor: null,
   };
   const settle = (label, p, fallback) => p.catch((e) => { console.warn(`[RIBBON] ${label} failed:`, e?.message || e); return fallback; });
 
   // CLS-1: the switch is read FIRST; off = the level is never read and the ribbon is told so
-  // (`classification.enabled:false` → decideRibbon treats "always" as "exceptions" and the surface
-  // draws the brand block instead of a level).
-  const [settings, sw] = await Promise.all([
-    settle("settings", kvs.get("admin-settings-global"), null),
-    settle("classification switch", classificationActiveForPage(pageId), { active: false, reason: "site" }),
-  ]);
-  const clsRead = sw.active
-    ? await settle("classification", (async () => { const { provider, levels } = await getClassificationProvider(); return { eff: await provider.effectiveLevel(pageId), levels: Array.isArray(levels) ? levels : [] }; })(), null)
+  // (`classification.enabled:false` → only seal / workflow / validation states open the row, and
+  // the surface draws the brand block instead of a level). On = the row shows on every view.
+  const sw = await settle("classification switch", classificationActiveForPage(pageId), { active: false, reason: "site" });
+  const cls = sw.active
+    ? await settle("classification", (async () => { const { provider } = await getClassificationProvider(); return provider.effectiveLevel(pageId); })(), null)
     : null;
-  const cls = clsRead?.eff || null;
   half.classification = { level: null, source: "none", enabled: sw.active };
-  // CLS-10: the threshold is a LEVEL; its rank is resolved against the scheme in use, here.
-  const norm = normalizeRibbonSettings(settings, clsRead?.levels || null);
-  half.ribbonMode = norm.ribbonMode;
-  half.ribbonThresholdRank = norm.ribbonThresholdRank;
-  half.ribbonThresholdLevel = norm.ribbonThresholdLevel;
-  half.threshold = { rank: norm.ribbonThresholdRank, levelId: norm.ribbonThresholdLevel, from: norm.thresholdFrom };
   if (cls?.level) {
     const l = cls.level;
     half.classification = { level: { id: String(l.id), name: l.name, color: l.color || null, rank: Number(l.rank) || 0, description: typeof l.description === "string" ? l.description.slice(0, 160) : "" }, source: cls.source || "page", enabled: true };

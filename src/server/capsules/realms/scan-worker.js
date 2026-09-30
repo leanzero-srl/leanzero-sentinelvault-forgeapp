@@ -13,6 +13,12 @@ import { Queue } from "@forge/events";
  * @param {Object} event - Queue event with body: { jobId, spaceKey, spaceId }
  */
 export async function realmScanConsumer(event) {
+  // Classification review 2026-09-30 (E2): the byline fan-out rides this consumer instead of a new
+  // manifest module — a different job kind, dispatched before anything scan-specific runs.
+  if (event?.body?.kind === "byline-refresh") {
+    const { runBylineRefreshJob } = await import("../page-details/byline-fanout.js");
+    return runBylineRefreshJob(event.body);
+  }
   const { jobId, spaceKey: realmKey, spaceId: realmId } = event.body;
 
   // Update status to processing

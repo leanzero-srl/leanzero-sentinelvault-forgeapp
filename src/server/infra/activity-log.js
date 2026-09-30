@@ -52,6 +52,7 @@ export const ACTIVITY_TYPES = Object.freeze([
   "workflow.transition", "workflow.removed", "workflow.approval-requested", "workflow.approval-rerequested", "workflow.approval-decided", "workflow.approval-withdrawn",
   "workflow.enforced", "workflow.expired", "workflow.review-due", "workflow.read-confirmed", "workflow.seals-held", "workflow.seals-released",
   "validation.reverted", "validation.gate",
+  "classification.page-set", "classification.space-default-set",
 ]);
 
 const PAGE_PREFIX = "activity-page-";
@@ -149,7 +150,7 @@ function boundDetails(details) {
  * @param {string|null} entry.pageId
  * @param {string|null} entry.spaceKey
  * @param {{accountId?:string|null,name?:string|null}|null} entry.actor   null = the app (sweep/trigger)
- * @param {{kind:"attachment"|"section"|"page",id?:string,name?:string}} entry.target
+ * @param {{kind:"attachment"|"section"|"page"|"space",id?:string,name?:string}} entry.target
  * @param {object} [entry.details]       small, type-specific; never a page body
  * @param {number|null} [entry.version]  page version the event refers to, when known
  * @returns {Promise<{id:string}|null>}   the stored id, or null when nothing was written

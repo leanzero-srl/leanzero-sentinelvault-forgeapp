@@ -230,6 +230,8 @@ button:focus-visible {
 .rb-body .rb-msg { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; color: var(--sv-text-primary); }
 .rb-body .rb-msg b, .rb-body .rb-msg strong { font-weight: 600; }
 .rb-msg--error { color: var(--sv-interactive-danger); font-weight: 600; }
+/* 2026-09-30: the level's handling guidance when nothing is urgent — present, never loud. */
+.rb-body .rb-msg .rb-msg-quiet { color: var(--sv-text-secondary); }
 .rb-state { display: inline-flex; align-items: center; gap: 6px; height: 24px; padding: 0 9px; border-radius: 12px; font-size: 12px; font-weight: 600; color: #ffffff; flex: none; }
 .rb-state--wait { background: #B45309; }
 .rb-state--ok { background: #15803D; }

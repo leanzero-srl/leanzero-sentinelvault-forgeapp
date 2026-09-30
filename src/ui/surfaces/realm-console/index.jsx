@@ -16,6 +16,8 @@ import { formatRemaining, formatDurationHours } from "../../kit/format-duration"
 import { WorkflowDashboard } from "../../kit/WorkflowDashboard";
 import ActivityReport from "../../kit/ActivityReport";
 import Dialog from "../../kit/Dialog";
+import { LevelPicker, LowerReason } from "../../kit/ClassificationTab";
+import { isDowngrade, findLevel } from "../../../server/capsules/classification/logic.js"; // P5: the one downgrade rule
 import logo from "../../assets/icons/icon.png";
 import { BUILD_INFO } from "../../../build-info.js";
 // P2 (UX review 2026-09-14 §3): the settings tabs render from the schema — one copy of the
@@ -474,6 +476,72 @@ const MyClaimedCard = ({ artifact, onRelease, onExtend, busyAction, siteUrl }) =
           )}
         </div>
       )}
+    </div>
+  );
+};
+
+// P9 (classification review 2026-09-30): the space admin sets THIS space's default level here —
+// saved on the pick (P4), with one inline reason when the pick lowers it (P5). The server derives
+// the space from the space ID and checks the caller administers it (classification-space-default /
+// classification-set-space-default); nothing here is trusted. Independent of the Apply bar below.
+const SpaceDefaultLevel = ({ spaceId, spaceName, spaceOff }) => {
+  const [st, setSt] = useState({ loading: true, levels: [], levelId: null, enabled: false, error: null });
+  const [busy, setBusy] = useState(false);
+  const [saved, setSaved] = useState(null); // the sentence after a save
+  const [lowering, setLowering] = useState(null); // level id (or null) waiting on a reason
+  const [error, setError] = useState(null);
+  useEffect(() => {
+    let live = true;
+    invoke("classification-space-default", { spaceId })
+      .then((r) => { if (live) setSt(r?.levels ? { loading: false, levels: r.levels, levelId: r.levelId ?? null, enabled: r.enabled === true, error: null } : { loading: false, levels: [], levelId: null, enabled: false, error: r?.error || r?.reason || "Could not load the levels" }); })
+      .catch(() => { if (live) setSt((p) => ({ ...p, loading: false, error: "Could not load the levels" })); });
+    return () => { live = false; };
+  }, [spaceId]);
+  const write = async (levelId, reason) => {
+    setBusy(true); setError(null); setSaved(null);
+    try {
+      const r = await invoke("classification-set-space-default", { spaceIds: [spaceId], levelId, reason });
+      const res = r?.results?.[0];
+      if (res?.ok) {
+        setSt((p) => ({ ...p, levelId }));
+        setLowering(null);
+        const name = findLevel(st.levels, levelId)?.name;
+        setSaved(name ? `Saved. Pages in this space without a level of their own now show ${name}.` : "Saved. Pages in this space without a level of their own now show Unclassified.");
+      } else setError(res?.reason || r?.reason || "Could not set the default.");
+    } catch (_) { setError("Could not set the default."); }
+    finally { setBusy(false); }
+  };
+  const pick = (value) => {
+    const levelId = value === "__none__" ? null : value;
+    if (String(levelId ?? "") === String(st.levelId ?? "")) return;
+    setSaved(null); setError(null);
+    if (isDowngrade(st.levelId, levelId, st.levels)) { setLowering({ levelId }); return; }
+    setLowering(null);
+    write(levelId);
+  };
+  if (st.loading) return <p className="settings-row-description" data-testid="sv-space-default-loading">Loading the levels…</p>;
+  if (st.error) return <p className="settings-row-description" data-testid="sv-space-default-error">{st.error}</p>;
+  return (
+    <div className="sv-space-default" data-testid="sv-space-default">
+      <div className="sv-space-default-row">
+        <div>
+          <p className="settings-row-label" style={{ margin: 0 }}>Default level for this space</p>
+          <p className="settings-row-description" style={{ margin: "2px 0 0" }}>
+            Every page here without a level of its own shows this one. Pages that set their own keep it. Saved as soon as you pick.
+            {spaceOff ? " Classification is off in this space right now, so nothing shows until it is back on." : ""}
+          </p>
+        </div>
+        <span className="cls-pick-cell">
+          <LevelPicker value={st.levelId || "__none__"} levels={st.levels} onChange={pick} ariaLabel={`Default level for ${spaceName}`} testId="sv-space-default-picker" disabled={busy} />
+          {busy && <span className="cls-saved" role="status">Saving…</span>}
+        </span>
+      </div>
+      {lowering && (
+        <LowerReason subject="this space's default" fromLevel={findLevel(st.levels, st.levelId)} toLevel={findLevel(st.levels, lowering.levelId)} busy={busy}
+          onConfirm={(reason) => write(lowering.levelId, reason)} onCancel={() => setLowering(null)} testId="sv-space-default-lower" />
+      )}
+      {saved && <p className="cls-saved-line" role="status" data-testid="sv-space-default-saved">{saved}</p>}
+      {error && <p className="settings-row-reason" role="alert" data-testid="sv-space-default-refused">{error}</p>}
     </div>
   );
 };
@@ -1943,11 +2011,13 @@ const RealmPolicyDashboard = () => {
               <h3>Classification</h3>
               <p className="settings-card-desc">
                 {siteValues.classificationEnabled
-                  ? "Pages in this space show a classification level in the byline chip, the ribbon and the page details, following the site. Off hides every level on this space's pages and refuses new ones; the stored levels are kept."
+                  ? "Every page in this space shows its classification level under the title and in the banner at the top. Set the level pages get by default, or turn classification off for this space."
                   : "Off site-wide by a site admin (Classification levels). Nothing about classification is shown on this space's pages until the site turns it on; the choice below applies then."}
               </p>
             </div>
             <div className="settings-card-body">
+              {siteValues.classificationEnabled && realmId && <SpaceDefaultLevel spaceId={realmId} spaceName={realmName} spaceOff={realmPrefs.classification === "off"} />}
+              <p className="settings-row-label" style={{ margin: "0 0 4px" }}>Classification in this space</p>
               <p className="settings-row-default" data-testid="sv-default-classification" style={{ margin: "0 0 12px" }}>
                 <span>Effective default:</span> {formatDefault("classification")}
                 <span className="settings-row-default-sep">·</span>

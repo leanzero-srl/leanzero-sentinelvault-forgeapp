@@ -4,10 +4,16 @@
  *   classification-provider            {}                                → { name, levels, canManageLevels }   any logged-in user
  *   classification-list-spaces         {}                                → { spaces: [{ id, key, name, type, defaultLevelId }] }
  *                                                                            site admin: every space; steward: the spaces they administer
- *   classification-set-space-default   { spaceId | spaceIds[], levelId } → { results: [{ spaceId, ok, reason? }] }
+ *   classification-set-space-default   { spaceId | spaceIds[], levelId, reason? } → { results: [{ spaceId, ok, reason?, needsReason? }] }
  *                                                                            per space: site admin OR steward of THAT space
+ *   classification-space-default       { spaceId }                       → { enabled, levels, levelId, spaceKey }   same bar as the write
  *   classification-get-page            { pageId }                        → { effective: { level, source }, pageLevelId }   canReadPage
- *   classification-set-page            { pageId, levelId|null }          → { ok, effective }   canEditPage, unconditional
+ *   classification-set-page            { pageId, levelId|null, reason? } → { ok, effective }   canEditPage, unconditional
+ *
+ * P5 (2026-09-30): a change that LOWERS what readers see (a lower rank, a level cleared, "use space
+ * default" onto a lower default) is refused without a `reason` — here, not only in the UI — and the
+ * reason is recorded in the activity log (`classification.page-set` / `classification.space-default-set`).
+ * The rule is `isDowngrade` in logic.js, the same function the three UIs ask before they save.
  *   classification-manage-levels       { levels }                        → { ok, levels }      site admin; App provider only
  *
  * Authorization (CLAUDE.md): every id in req.payload is attacker-controlled and every provider
@@ -16,12 +22,17 @@
  * canEditPage on that page. Everything fails closed: an id that does not resolve is a refusal.
  */
 import { asApp, asUser, assumeTrustedRoute, route } from "@forge/api";
-import { canEditPage, canReadPage, mustVerify } from "../../shared/content-access.js";
+import { canEditPage, canReadPage, mustVerify, resolvePageSpaceKey } from "../../shared/content-access.js";
 import { authorizeSteward, isAccountStewardAsApp, isOperatorSiteAdmin } from "../../shared/steward-checks.js";
-import { getAppProvider, getClassificationProvider, resetProviderCache, resolveClassificationActive, classificationActiveForPage } from "./provider.js";
-import { isContentId, validateLevels, levelsFromAssetsObjects, guessAssetsMapping, ASSETS_LINK_KVS_KEY, classificationOffReason } from "./logic.js";
+import { getAppProvider, getClassificationProvider, resetProviderCache, resolveClassificationActive, classificationActiveForPage, confluenceRequest } from "./provider.js";
+import {
+  isContentId, validateLevels, levelsFromAssetsObjects, guessAssetsMapping, ASSETS_LINK_KVS_KEY, classificationOffReason,
+  isDowngrade, cleanReason, downgradeRefusal, findLevel, resolveSpaceId,
+} from "./logic.js";
 import { kvs } from "@forge/kvs";
-import { refreshByline } from "../page-details/byline.js"; // 5.0 byline chip (page writes only; a space default refreshes lazily on open)
+import { refreshByline } from "../page-details/byline.js"; // 5.0 byline chip — the page write refreshes its own chip
+import { queueBylineRefresh } from "../page-details/byline-fanout.js"; // E2: a space default reaches every inheriting page's chip
+import { recordActivity } from "../../infra/activity-log.js"; // H: the audit trail
 
 const NOT_AUTHORIZED = "Not authorized";
 
@@ -111,11 +122,12 @@ export const setSpaceDefault = async (req) => {
   const accountId = req.context?.accountId;
   const payload = req.payload || {};
   const levelId = payload.levelId == null || payload.levelId === "" ? null : String(payload.levelId);
+  const reason = cleanReason(payload.reason);
   const ids = Array.isArray(payload.spaceIds) ? payload.spaceIds : payload.spaceId != null ? [payload.spaceId] : [];
   const unique = [...new Set(ids.map((x) => String(x)))].slice(0, 500);
   if (!accountId || unique.length === 0) return { results: [], reason: NOT_AUTHORIZED };
-  let provider;
-  try { ({ provider } = await getClassificationProvider()); } catch (e) {
+  let provider, levels;
+  try { ({ provider, levels } = await getClassificationProvider()); } catch (e) {
     console.error("[CLASSIFICATION] provider failed:", e);
     return { results: unique.map((spaceId) => ({ spaceId, ok: false, reason: "Could not load the classification scheme" })) };
   }
@@ -130,15 +142,50 @@ export const setSpaceDefault = async (req) => {
     if (!space) return { spaceId, ok: false, reason: NOT_AUTHORIZED };
     if (!siteAdmin && !(await authorizeSteward(accountId, space.key))) return { spaceId, ok: false, reason: NOT_AUTHORIZED };
     if (!siteSwitch.active) return { spaceId, ok: false, reason: classificationOffReason(siteSwitch) };
+    if (levelId != null && !findLevel(levels, levelId)) return { spaceId, ok: false, reason: `Unknown classification level "${levelId}"` };
     try {
+      const current = await provider.getSpaceDefault(space.id).catch(() => null);
+      if (String(current ?? "") === String(levelId ?? "")) return { spaceId, ok: true, key: space.key, defaultLevelId: levelId, unchanged: true };
+      // P5: lowering a default lowers every page that inherits it — one reason, or no change.
+      const lowered = isDowngrade(current, levelId, levels);
+      if (lowered && !reason) return { spaceId, ok: false, needsReason: true, key: space.key, reason: downgradeRefusal(findLevel(levels, current), findLevel(levels, levelId)) };
       await provider.setSpaceDefault(space.id, levelId);
-      return { spaceId, ok: true, key: space.key, defaultLevelId: levelId };
+      await recordActivity({
+        type: "classification.space-default-set", pageId: null, spaceKey: space.key,
+        actor: { accountId, name: null }, target: { kind: "space", id: space.id, name: space.name },
+        details: { from: current ?? null, fromName: findLevel(levels, current)?.name || null, to: levelId, toName: findLevel(levels, levelId)?.name || null, lowered, ...(reason ? { reason } : {}) },
+        version: null,
+      });
+      return { spaceId, ok: true, key: space.key, defaultLevelId: levelId, from: current ?? null };
     } catch (e) {
       console.error(`[CLASSIFICATION] set-space-default ${spaceId} failed:`, e);
       return { spaceId, ok: false, reason: e?.message || "Could not set the default" };
     }
   });
+  // E2: every page still inheriting the default shows the new level in its byline chip — a
+  // bounded background walk per changed space; the answer never waits on the walk itself.
+  const changed = results.filter((r) => r.ok && !r.unchanged).map((r) => r.spaceId);
+  if (changed.length) await queueBylineRefresh(changed, "space default");
   return { results };
+};
+
+// The space console's read (P9): the levels and this space's default, for a caller who could
+// change it — site admin or steward of the space the ID resolves to (never a payload spaceKey).
+export const getSpaceDefault = async (req) => {
+  const accountId = req.context?.accountId;
+  const spaceId = String(req.payload?.spaceId ?? "");
+  if (!accountId || !isContentId(spaceId)) return { reason: NOT_AUTHORIZED };
+  const space = await readSpace(spaceId);
+  if (!space) return { reason: NOT_AUTHORIZED };
+  if (!(await isOperatorSiteAdmin(accountId)) && !(await authorizeSteward(accountId, space.key))) return { reason: NOT_AUTHORIZED };
+  try {
+    const [{ provider, levels }, sw] = await Promise.all([getClassificationProvider(), resolveClassificationActive(space.key)]);
+    const levelId = await provider.getSpaceDefault(space.id).catch(() => null);
+    return { enabled: sw.active, offReason: sw.reason, levels, levelId: findLevel(levels, levelId) ? String(levelId) : null, spaceKey: space.key };
+  } catch (e) {
+    console.error("[CLASSIFICATION] space-default read failed:", e);
+    return { error: "Could not load the classification" };
+  }
 };
 
 export const getPage = async (req) => {
@@ -167,6 +214,7 @@ export const setPage = async (req) => {
   const pageId = req.payload?.pageId || ctxPageId;
   const accountId = req.context?.accountId;
   const levelId = req.payload?.levelId == null || req.payload?.levelId === "" ? null : String(req.payload.levelId);
+  const reason = cleanReason(req.payload?.reason);
   if (!pageId || !isContentId(pageId)) return { ok: false, reason: NOT_AUTHORIZED };
   // Write path: unconditional. A context id proves the caller can SEE the page, not change it.
   // The owner's bar is "stewards and page editors"; a steward of the space can edit its pages,
@@ -177,11 +225,30 @@ export const setPage = async (req) => {
   const sw = await classificationActiveForPage(pageId);
   if (!sw.active) return { ok: false, reason: classificationOffReason(sw) };
   try {
-    const { provider } = await getClassificationProvider();
+    const { provider, levels } = await getClassificationProvider();
+    if (levelId != null && !findLevel(levels, levelId)) return { ok: false, reason: `Unknown classification level "${levelId}"` };
+    const [before, pageBefore] = await Promise.all([provider.effectiveLevel(pageId), provider.getPageLevel(pageId)]);
+    if (String(pageBefore ?? "") === String(levelId ?? "")) return { ok: true, unchanged: true, effective: before, pageLevelId: levelId };
+    // P5: what a reader sees BEFORE vs AFTER — "use space default" lands on the space's default.
+    let toId = levelId;
+    if (toId == null) {
+      const spaceId = await resolveSpaceId(confluenceRequest, pageId);
+      toId = spaceId ? await provider.getSpaceDefault(spaceId).catch(() => null) : null;
+      if (!findLevel(levels, toId)) toId = null;
+    }
+    const fromId = before?.level?.id ?? null;
+    const lowered = isDowngrade(fromId, toId, levels);
+    if (lowered && !reason) return { ok: false, needsReason: true, reason: downgradeRefusal(findLevel(levels, fromId), findLevel(levels, toId)) };
     if (levelId == null) await provider.resetPage(pageId);
     else await provider.setPageLevel(pageId, levelId);
     await refreshByline(pageId).catch((e) => console.warn("[BYLINE] set-page refresh failed:", e?.message || e));
-    return { ok: true, effective: await provider.effectiveLevel(pageId), pageLevelId: levelId };
+    await recordActivity({
+      type: "classification.page-set", pageId: String(pageId), spaceKey: await resolvePageSpaceKey(pageId).catch(() => null),
+      actor: { accountId, name: null }, target: { kind: "page", id: String(pageId), name: null },
+      details: { from: fromId, fromName: findLevel(levels, fromId)?.name || null, to: toId, toName: findLevel(levels, toId)?.name || null, source: levelId == null ? "space" : "page", lowered, ...(reason ? { reason } : {}) },
+      version: null,
+    });
+    return { ok: true, effective: await provider.effectiveLevel(pageId), pageLevelId: levelId, previousPageLevelId: pageBefore ?? null, lowered };
   } catch (e) {
     console.error("[CLASSIFICATION] set-page failed:", e);
     return { ok: false, reason: e?.message || "Could not set the classification" };
@@ -335,6 +402,7 @@ export const actions = [
   ["classification-provider", getProvider],
   ["classification-list-spaces", listSpaces],
   ["classification-set-space-default", setSpaceDefault],
+  ["classification-space-default", getSpaceDefault],
   ["classification-get-page", getPage],
   ["classification-set-page", setPage],
   ["classification-manage-levels", manageLevels],
