@@ -50,10 +50,10 @@ export default function Dialog({ title, children, onClose, busy = false, danger 
     const recentClick = lastPointerY != null && Date.now() - lastPointerAt < 15000;
     const opener = document.activeElement && document.activeElement !== document.body ? document.activeElement : null;
     const y = recentClick ? lastPointerY : opener ? opener.getBoundingClientRect().top : lastPointerY;
-    if (y == null) return;
     const h = ref.current.getBoundingClientRect().height || 240;
     const max = Math.max(16, window.innerHeight - h - 16);
-    setTop(Math.min(max, Math.max(16, y - h / 2)));
+    // No click and no opener: centre in the frame (the dialog is hidden until placed, so it must be placed).
+    setTop(y == null ? Math.max(16, (window.innerHeight - h) / 2) : Math.min(max, Math.max(16, y - h / 2)));
   }, []);
 
   useEffect(() => {
@@ -62,7 +62,10 @@ export default function Dialog({ title, children, onClose, busy = false, danger 
     const focusIn = () => {
       const els = focusables();
       const target = initialFocus === "container" ? null : (initialFocus === "last" ? els[els.length - 1] : els[0]);
-      (target || ref.current)?.focus();
+      // preventScroll (tester 2026-09-30): the panel's frame is as tall as the panel, so focusing
+      // made the BROWSER scroll the Confluence page to the control — before the dialog had moved
+      // next to the click, i.e. to the frame's middle — and the dialog then opened out of view.
+      (target || ref.current)?.focus({ preventScroll: true });
     };
     focusIn(); // synchronously (see ActionMenu: rAF alone did not move focus inside the Forge Modal iframe)
     requestAnimationFrame(() => { if (!ref.current?.contains(document.activeElement)) focusIn(); });
@@ -70,23 +73,23 @@ export default function Dialog({ title, children, onClose, busy = false, danger 
       if (e.key === "Escape") { if (!busy) { e.preventDefault(); e.stopPropagation(); onClose(); } return; }
       if (e.key !== "Tab") return;
       const els = focusables();
-      if (els.length === 0) { e.preventDefault(); ref.current?.focus(); return; }
+      if (els.length === 0) { e.preventDefault(); ref.current?.focus({ preventScroll: true }); return; }
       const first = els[0], last = els[els.length - 1];
       const active = document.activeElement;
-      if (e.shiftKey && (active === first || !ref.current?.contains(active))) { e.preventDefault(); last.focus(); }
-      else if (!e.shiftKey && (active === last || !ref.current?.contains(active))) { e.preventDefault(); first.focus(); }
+      if (e.shiftKey && (active === first || !ref.current?.contains(active))) { e.preventDefault(); last.focus({ preventScroll: true }); }
+      else if (!e.shiftKey && (active === last || !ref.current?.contains(active))) { e.preventDefault(); first.focus({ preventScroll: true }); }
     };
     document.addEventListener("keydown", onKey, true);
     return () => {
       document.removeEventListener("keydown", onKey, true);
       const opener = openerRef.current;
-      if (opener && typeof opener.focus === "function" && document.contains(opener)) requestAnimationFrame(() => opener.focus());
+      if (opener && typeof opener.focus === "function" && document.contains(opener)) requestAnimationFrame(() => opener.focus({ preventScroll: true }));
     };
   }, [onClose, busy, initialFocus]);
 
   return createPortal(
     <div className={`sv-dialog-backdrop${top != null ? " is-anchored" : ""}`} role="presentation" onMouseDown={(e) => { if (e.target === e.currentTarget && !busy) onClose(); }} data-testid={`${testId}-backdrop`}>
-      <div ref={ref} style={top != null ? { marginTop: `${Math.round(top)}px` } : undefined} className={`sv-dialog${danger ? " danger" : ""} ${className}`.trim()} role="dialog" aria-modal="true" aria-labelledby={titleId} tabIndex={-1} data-testid={testId}>
+      <div ref={ref} style={top != null ? { marginTop: `${Math.round(top)}px` } : (anchorMode ? { visibility: "hidden" } : undefined)} className={`sv-dialog${danger ? " danger" : ""} ${className}`.trim()} role="dialog" aria-modal="true" aria-labelledby={titleId} tabIndex={-1} data-testid={testId}>
         <h3 className="sv-dialog-title" id={titleId}>{title}</h3>
         {children}
       </div>
