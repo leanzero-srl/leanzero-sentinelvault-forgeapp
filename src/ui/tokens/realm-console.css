@@ -2458,6 +2458,18 @@ html[data-color-mode="dark"] .sv-busy-veil { background: var(--sv-frosted-bg, rg
 .cls-lower-label { flex-basis: 100%; font-size: 13px; font-weight: 600; color: var(--sv-text-primary); }
 .cls-lower-input { flex: 1 1 260px; min-width: 200px; box-sizing: border-box; }
 .cls-lower-row td { background: var(--sv-bg-secondary); }
+/* Lowering is the one classification change that asks for something, so it reads as a caution,
+   not as another table row: a solid amber callout (white ink 5.0:1, same in dark), a white field
+   with left-aligned text, a dark confirm and an outlined Cancel. */
+.cls-lower { background: #B45309; color: #FFFFFF; padding: 12px 14px; border-radius: 10px; }
+.cls-lower .cls-lower-label { color: #FFFFFF; }
+.cls-lower-input { text-align: left; }
+.cls-lower .cls-lower-input { background: #FFFFFF; color: #0F172A; border: 0; border-radius: 6px; padding: 8px 10px; }
+.cls-lower .cls-lower-input::placeholder { color: #64748B; }
+.cls-lower .cls-lower-input:focus { outline: 2px solid #FFFFFF; outline-offset: 2px; }
+.cls-lower .btn-primary, .cls-lower .btn-primary:hover:not(:disabled) { background: #0F172A; color: #FFFFFF; border-color: #0F172A; }
+.cls-lower .btn-primary:disabled { opacity: 0.55; }
+.cls-lower .btn-secondary, .cls-lower .btn-secondary:hover:not(:disabled) { background: transparent; color: #FFFFFF; border: 1px solid #FFFFFF; }
 .cls-bulk-hint { font-size: 12px; opacity: 0.9; }
 .sv-dialog .cls-lower-label { display: block; margin: 8px 0 6px; }
 .sv-dialog .cls-lower-input { width: 100%; }
