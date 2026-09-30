@@ -1,4 +1,57 @@
-# Demo video — how it is built
+# 6.4 promo videos (real screen recordings → Remotion)
+
+Deliverables in `static/submission-material/`:
+
+| file | format | length |
+|---|---|---|
+| `sentinel-vault-promo-6.4.mp4` + `-thumbnail.png` | 1920×1080 30fps H.264 + AAC | 137.7 s |
+| `sentinel-vault-short-6.4.mp4` + `-thumbnail.png` | 1080×1920 YouTube Short | 49.0 s |
+
+Built from two REAL macOS screen recordings of wolfaenpak dev (2026-09-30, no audio):
+A = `Screen Recording 2026-09-30 at 13.56.51.mov` (4096×1526 — two browsers side by side:
+Gabriela = owner on the LEFT half, Mihai = colleague on the RIGHT half) and
+B = `Screen Recording 2026-09-30 at 16.09.55.mov` (3348×2502 — site admin). They are NOT in the
+repo (≈860 MB); the cut script defaults to `~/Downloads/wetransfer_sentinel_2026-09-30_1318`.
+
+```bash
+cd static/submission-material/video-src
+SRC_DIR=/path/to/recordings ./cut-clips.sh            # all 14 clips -> remotion/public/clips (untracked)
+./cut-clips.sh 03-decline                              # re-cut one
+cd remotion && npm install
+npx remotion render src/index.ts Promo out/promo.mp4
+npx remotion render src/index.ts Short out/short.mp4
+ffmpeg -ss 7.5 -i public/clips/04-restored.mp4 -frames:v 1 public/thumb-promo.png
+ffmpeg -ss 12.5 -i public/clips/06-sec-revert.mp4 -frames:v 1 public/thumb-short.png
+npx remotion still src/index.ts ThumbPromo out/ThumbPromo.png   # + ThumbShort
+# music to the EXACT duration, then mux (no -shortest, so the outro is never clipped)
+python3 -m venv /tmp/musenv && /tmp/musenv/bin/pip install numpy scipy
+/tmp/musenv/bin/python ../music-gen.py /tmp/m.wav 137.728
+ffmpeg -i out/promo.mp4 -i /tmp/m.wav -map 0:v -map 1:a -c:v copy -c:a aac -b:a 192k -t 137.728 ../../sentinel-vault-promo-6.4.mp4
+```
+
+- `cut-clips.sh` is the single source of every clip's source window, crop box, and speed-up.
+  `one` = crop a 16:9 region and scale to 1920×1080; `split` = owner|colleague side by side
+  (1000×1125 from each half of A). Crops were chosen by scrubbing contact sheets — the page
+  scroll position moves between moments, so re-check a clip's frames after changing its window.
+- `remotion/src/ClipDemo.tsx` holds the beat list (captions, accent, duration, `from` offset
+  into the clip) for BOTH videos; `ClipScene.tsx` = the 16:9 window + caption band (captions
+  never sit on the footage) and the 9:16 square-zoom scene (`focusX`, `zoom`); `brand.tsx` =
+  SV tokens + the Sealed Shield mark copied from `_marketing/mark.mjs`; `Thumbs.tsx` = 1280×720.
+- Promo beats: title → why → seal → edit request (split) → decline with reason (split) →
+  auto-restore of an overwritten file → sealed section picker → sealed-section auto-revert →
+  validation comments → "for site admins" → protection toggles → authenticator-signed action →
+  classification levels → space defaults → Confidential banner on the page → lowering a level
+  needs a reason → API access → outro. Short: title → hook → seal → restore → section revert →
+  request → sign → classify → banner → outro.
+- Every caption is visible on screen in its clip or documented in `docs/user-guide.md` /
+  `LISTING-COPY.md`. The recordings show `(Development)` labels — dev install, not production.
+- `npx remotion versions` must say all packages match (pin `@remotion/google-fonts` to the
+  `remotion` version if npm drifts).
+
+---
+
+# Earlier mock-harness demo (`sentinel-vault-demo.mp4`)
+
 
 `../sentinel-vault-demo.mp4` · 1920×1080 · 30fps · H.264 + AAC · ~90s
 

@@ -1,0 +1,23 @@
+{
+  "name": "sentinel-vault-promo-video",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Remotion project for the Sentinel Vault 6.4 promo videos (built from real screen recordings).",
+  "scripts": {
+    "studio": "remotion studio",
+    "render": "remotion render src/index.ts Promo out/promo.mp4",
+    "short": "remotion render src/index.ts Short out/short.mp4"
+  },
+  "dependencies": {
+    "@remotion/cli": "^4.0.0",
+    "@remotion/google-fonts": "^4.0.479",
+    "@remotion/transitions": "^4.0.0",
+    "react": "^18.0.0",
+    "react-dom": "^18.0.0",
+    "remotion": "^4.0.0"
+  },
+  "devDependencies": {
+    "@types/react": "^18.0.0",
+    "typescript": "^5.0.0"
+  }
+}
