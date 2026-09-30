@@ -40,4 +40,4 @@ echo "==> Deploying to production"
 forge deploy -e production "$@"
 
 echo "==> Verifying Runs-on-Atlassian eligibility"
-forge eligibility || true
+forge eligibility -e production || true   # -e: non-TTY
