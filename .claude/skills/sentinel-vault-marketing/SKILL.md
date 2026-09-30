@@ -58,9 +58,10 @@ thumbnail rules. **Never** use `video-src/remotion/` (the old "demo reel" style 
 Compilation = 8 chapters (no site-protection/expiry), `baseRate` 1.35.
 
 ## Traps (each cost time)
-- **Frame timestamps drift ±2–4 s** between the 1/4-fps contact frames (agents' logs) and `ffmpeg -ss` on the
-  .mov: a "payoff at 292 s" from the log was not on screen at 295 s. When cutting a thumbnail crop,
-  extract 2–3 candidate times and look.
+- **Contact frames from `-vf fps=1/4` are CENTRED: file NNN shows t = NNN*4 + 2 s, not NNN*4.** Measured by
+  pixel-matching (2026-09-30). The first render used NNN*4 and every caption landed ~2 s early (the last
+  step of sealed-sections showed a black reloading pane). All scripts were shifted +2 s. Either extract
+  with `-vf "select=not(mod(n\,120))"` or add 2 s when reading a log. Crops: still grab 2–3 candidates.
 - **Deliberately NOT used:** rec-b 376–392 (API access tab shows the live webtrigger URL, a minting accountId
   and ~30 revoked harness tokens); rec-a 392–424 (trash restore — frames do not show whether Restore or
   Delete permanently was clicked); rec-a 748–776 dead.
