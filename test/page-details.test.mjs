@@ -84,7 +84,11 @@ eq("garbage in → nothing", menuActionsFor(undefined), []);
   eq("SEC-2 (e): the owner's held row has no Release — it proposes", primaryActionFor(heldMine).kind, "propose");
   eq("SEC-2 (e): …with the one label", primaryActionFor(heldMine).label, "Propose a change");
   eq("SEC-2 (e): a stranger's held row proposes too (no Request edit to the owner)", primaryActionFor(heldTheirs).kind, "propose");
-  eq("SEC-2: a pending request on a held seal is not offered to the owner for decision", primaryActionFor({ ...heldMine, pendingRequests: [{}] }).kind, "propose");
+  // Tester 2026-09-30: a held row's pendingRequests are ONLY the proposals this viewer may decide
+  // (listEditRequests / page-details filter with mayDecideProposal — the owner gets none unless they
+  // are an approver or a space admin), so a non-empty list means "decide".
+  eq("SEC-2 (e): a held row with proposals the viewer may decide -> decide", primaryActionFor({ ...heldMine, pendingRequests: [{ requesterAccountId: "x" }] }).kind, "decide");
+  eq("SEC-2 (e): a held row with none -> propose", primaryActionFor({ ...heldMine, pendingRequests: [] }).kind, "propose");
   eq("SEC-2 (e): my proposal already made → waiting for the approvers", [primaryActionFor({ ...heldTheirs, myEditStatus: "pending" }).kind, primaryActionFor({ ...heldTheirs, myEditStatus: "pending" }).owner], ["waiting", "the approvers"]);
   eq("SEC-2 (e): my declined proposal → declined with the retry time", primaryActionFor({ ...heldTheirs, myEditStatus: "denied", myRetryAt: "2099-01-01T00:00:00.000Z" }).kind, "declined");
   eq("SEC-2 (e): a declined proposal past its retry time → propose again", primaryActionFor({ ...heldTheirs, myEditStatus: "denied", myRetryAt: "2000-01-01T00:00:00.000Z" }).kind, "propose");
@@ -94,5 +98,25 @@ eq("garbage in → nothing", menuActionsFor(undefined), []);
   eq("SEC-2 (e): a held attachment likewise — propose, and Copy link only under ⋯", [primaryActionFor({ ...base, isMine: true, workflowHeld: true }).kind, menuActionsFor({ ...base, isMine: true, workflowHeld: true })], ["propose", ["copy-link"]]);
   eq("SEC-2: an unsealed attachment is untouched by the flag", primaryActionFor({ ...base, sealed: false, workflowHeld: true }).kind, "seal");
   eq("SEC-2: no lapse warning while held (expiry is paused)", expiryWarning({ ...heldMine, expiresAt: null }), null);
+  // Tester 2026-09-30: an approver / space admin is offered the proposal, not "Propose a change".
+  const proposal = { requesterAccountId: "g", requesterName: "Gabriela", reason: "fix typo" };
+  const decide = primaryActionFor({ ...base, workflowHeld: true, pendingRequests: [proposal] });
+  eq("held + a proposal the viewer may decide -> decide", [decide.kind, decide.proposal, decide.request.requesterName], ["decide", true, "Gabriela"]);
+  eq("held + my own proposal pending -> waiting (even with others listed)", primaryActionFor({ ...base, workflowHeld: true, myEditStatus: "pending", pendingRequests: [proposal] }).kind, "waiting");
+  eq("held, owner, own proposal pending -> waiting for the approvers", [primaryActionFor({ ...base, isMine: true, workflowHeld: true, myEditStatus: "pending" }).kind, primaryActionFor({ ...base, isMine: true, workflowHeld: true, myEditStatus: "pending" }).owner], ["waiting", "the approvers"]);
+}
+{
+  const { proposalAskees, proposalNotifyTargets, mayDecideProposal } = await import("../src/server/capsules/editreq/proposal-rules.js");
+  eq("askees drop the proposer and duplicates", proposalAskees(["g", "m", "m", null], "g"), ["m"]);
+  eq("proposer as the only approver -> nobody asked", proposalAskees(["g"], "g"), []);
+  eq("no askees -> nobody notified (admins see it on the row)", proposalNotifyTargets([]), []);
+  const req = { proposal: true, requesterAccountId: "g", approvers: ["m"] };
+  const no = async () => false, yes = async () => true;
+  eq("listed approver may decide", await mayDecideProposal(req, "m", no), true);
+  eq("the proposer never decides, even as admin", await mayDecideProposal(req, "g", yes), false);
+  eq("the seal owner who is neither approver nor admin may not", await mayDecideProposal(req, "owner", no), false);
+  eq("a space admin may", await mayDecideProposal(req, "a", yes), true);
+  eq("not a proposal -> false", await mayDecideProposal({ requesterAccountId: "g" }, "m", yes), false);
+  eq("an admin check that throws denies", await mayDecideProposal(req, "a", async () => { throw new Error("x"); }), false);
 }
 report("page-details");

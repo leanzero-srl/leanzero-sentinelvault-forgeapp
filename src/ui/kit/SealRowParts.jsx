@@ -109,11 +109,11 @@ export const ReasonBar = ({ mode, kind = "attachment", value, onChange, onSubmit
  * The owner's inbox. When the row's primary is Approve/Decline for the FIRST request, that row
  * only names the requester (the buttons sit in the primary slot); later requests decide here.
  */
-export const RequestInbox = ({ requests, name, reqBusy, onDecide, firstDecidedAbove, testId = "sv-editreq-inbox" }) => {
+export const RequestInbox = ({ requests, name, reqBusy, onDecide, firstDecidedAbove, testId = "sv-editreq-inbox", proposals = false }) => {
   if (!requests || requests.length === 0) return null;
   return (
     <div className="card-row card-editreq-inbox" data-testid={testId}>
-      <span className="card-editreq-title">Edit requests ({requests.length})</span>
+      <span className="card-editreq-title">{proposals ? `Proposed changes (${requests.length}) — approving moves the page back for review` : `Edit requests (${requests.length})`}</span>
       {requests.map((r, i) => {
         const who = r.requesterName || "Unknown user";
         const above = firstDecidedAbove && i === 0;
