@@ -1577,7 +1577,7 @@ const ArtifactGridView = () => {
       setIsEditing(editing);
       if (sk) {
         invoke("check-user-role", { spaceKey: sk })
-          .then((r) => setViewer((v) => ({ ...v, isSpaceAdmin: r?.role === "steward" })))
+          .then((r) => setViewer((v) => ({ ...v, isSpaceAdmin: r?.role === "steward", canForceRelease: r?.canForceRelease === true })))
           .catch(() => {});
       }
 
