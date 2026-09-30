@@ -449,7 +449,10 @@ export const checkUserRole = async (req) => {
     // independent of the allowAdminOverride toggle.  Stewards should always
     // see the steward tabs even when force-unseal is globally disabled.
     const isSteward = await isOperatorSteward(accountId, spaceKey);
-    return { role: isSteward ? "steward" : "user" };
+    // canForceRelease: the same answer unseal-artifact / unseal-section give (authorizeSteward =
+    // steward AND allowAdminOverride), so the ⋯ menu never offers a release the server refuses.
+    const site = isSteward ? await kvs.get("admin-settings-global").catch(() => null) : null;
+    return { role: isSteward ? "steward" : "user", canForceRelease: isSteward && site?.allowAdminOverride !== false };
   } catch (e) {
     console.warn("[CHECK-USER-ROLE] Error:", e);
     return { role: "user" };

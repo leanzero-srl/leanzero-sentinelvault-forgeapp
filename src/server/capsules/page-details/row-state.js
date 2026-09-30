@@ -105,7 +105,7 @@ export function menuActionsFor(row, viewer = {}) {
   if (row.kind === "attachment" && row.sealed === false) return ["copy-link"];
   // SEC-2: a held seal offers no Extend / Give access / Release / Watch; a space admin keeps the
   // break-glass Force release (typed reason) — the one door out.
-  if (row.workflowHeld) return viewer.isSpaceAdmin === true && !row.isTrashed ? ["copy-link", "force-release"] : ["copy-link"];
+  if (row.workflowHeld) return viewer.canForceRelease === true && !row.isTrashed ? ["copy-link", "force-release"] : ["copy-link"];
   if (row.isMine) {
     // SEC-7: sections extend too (extend-section mirrors extend-seal, grants carried forward).
     if (!row.isTrashed) out.push("extend");
@@ -118,7 +118,10 @@ export function menuActionsFor(row, viewer = {}) {
   }
   out.push("copy-link");
   if (!row.isMine && viewer.isSpaceAdmin === true && !row.isTrashed && !row.isExpired) out.push("give-access");
-  if (!row.isMine && viewer.isSpaceAdmin === true && !row.isTrashed) out.push("force-release");
+  // Force release is offered only when the server would do it: a space admin AND the site switch
+  // "Allow space admins to force-unseal" on (tester 2026-09-30: the item showed with the switch
+  // off and the click was refused). `canForceRelease` comes from the server, never computed here.
+  if (!row.isMine && viewer.canForceRelease === true && !row.isTrashed) out.push("force-release");
   return out;
 }
 
