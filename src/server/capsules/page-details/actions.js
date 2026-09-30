@@ -277,7 +277,7 @@ export const pageDetailsSummary = async (req) => {
 
   return {
     ok: true, pageId, title: meta.title, contentType: meta.type, spaceKey,
-    viewer: { accountId, canEditPage: canEdit, isSpaceAdmin },
+    viewer: { accountId, canEditPage: canEdit, isSpaceAdmin, canForceRelease: isSpaceAdmin }, // isSpaceAdmin = authorizeSteward: the force-unseal switch is in it
     classification, workflow, seals, sealError, waitingOnMe, activity, attachments, sealDefaults,
   };
 };
