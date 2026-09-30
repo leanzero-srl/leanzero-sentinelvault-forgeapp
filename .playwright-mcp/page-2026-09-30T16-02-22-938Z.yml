@@ -1,0 +1,189 @@
+- generic [ref=f29e1]:
+  - generic:
+    - generic: Channel content
+    - generic [ref=f29e4]:
+      - banner [ref=f29e6]:
+        - button "Expand menu" [ref=f29e7] [cursor=pointer]
+        - link [ref=f29e12] [cursor=pointer]:
+          - /url: /channel/UC1JpYs3UmQZtOzbsAf8fYXw
+          - img "YouTube Studio dashboard" [ref=f29e13]
+        - button "Skip navigation" [ref=f29e17] [cursor=pointer]
+        - generic [ref=f29e23]:
+          - generic [ref=f29e24]:
+            - button "Search" [ref=f29e25] [cursor=pointer]
+            - button "Help" [ref=f29e30] [cursor=pointer]
+            - button "Notifications" [ref=f29e35] [cursor=pointer]
+          - button "Ask Studio" [ref=f29e47] [cursor=pointer]
+          - button "Create" [ref=f29e59] [cursor=pointer]
+          - generic "Account" [ref=f29e68]:
+            - button "Account" [ref=f29e69]:
+              - generic [ref=f29e70] [cursor=pointer]
+      - generic [ref=f29e71]:
+        - navigation [ref=f29e73]:
+          - generic [ref=f29e74]:
+            - generic:
+              - img "Leanzero SRL" [ref=f29e77]
+              - generic [ref=f29e78]:
+                - generic [ref=f29e79]: Your channel
+                - generic [ref=f29e80]: Leanzero SRL
+          - menu [ref=f29e83]:
+            - menuitem "Dashboard" [ref=f29e84] [cursor=pointer]
+            - menuitem "Content" [ref=f29e90] [cursor=pointer]
+            - menuitem "Analytics" [ref=f29e96] [cursor=pointer]
+            - menuitem "Community" [ref=f29e102] [cursor=pointer]
+            - menuitem "Languages" [ref=f29e108] [cursor=pointer]
+            - menuitem "Content detection" [ref=f29e114] [cursor=pointer]
+            - menuitem "Earn" [ref=f29e120] [cursor=pointer]
+            - menuitem "Customization" [ref=f29e126] [cursor=pointer]
+            - menuitem "Audio library" [ref=f29e132] [cursor=pointer]
+          - list [ref=f29e139]:
+            - listitem [ref=f29e140]:
+              - button [ref=f29e141] [cursor=pointer]
+            - listitem [ref=f29e146]:
+              - button [ref=f29e148] [cursor=pointer]
+        - main [ref=f29e153]:
+          - generic [ref=f29e157]:
+            - generic [ref=f29e160]:
+              - generic "Back" [ref=f29e161]:
+                - button "Back" [ref=f29e164] [cursor=pointer]
+              - generic [ref=f29e172]: Videos
+            - generic [ref=f29e173]:
+              - generic [ref=f29e174] [cursor=pointer]: Videos
+              - generic [ref=f29e176] [cursor=pointer]: Shorts
+              - generic [ref=f29e178] [cursor=pointer]: Live
+              - generic [ref=f29e180] [cursor=pointer]: Posts
+              - generic [ref=f29e182] [cursor=pointer]: Playlists
+            - generic [ref=f29e188]:
+              - table "Video list":
+                - rowgroup:
+                  - generic:
+                    - generic:
+                      - generic:
+                        - generic:
+                          - generic:
+                            - textbox "Filter"
+                  - row "Select all Video Notices Visibility Sort by Date Sort by Views Comments":
+                    - columnheader "Select all":
+                      - generic "Select all":
+                        - generic:
+                          - generic:
+                            - generic:
+                              - generic:
+                                - checkbox "Select all"
+                    - columnheader "Video":
+                      - heading "Video" [level=3]
+                    - columnheader "Notices":
+                      - heading "Notices" [level=3]
+                    - columnheader "Visibility":
+                      - heading "Visibility" [level=3]
+                    - columnheader "Sort by Date":
+                      - heading "Sort by Date" [level=3]:
+                        - button "Sort by Date":
+                          - generic: Date
+                    - columnheader "Sort by Views":
+                      - heading "Sort by Views" [level=3]:
+                        - button "Sort by Views":
+                          - generic: Views
+                    - columnheader "Comments":
+                      - heading "Comments" [level=3]
+  - dialog [ref=f29e193]:
+    - generic [ref=f29e194]:
+      - generic [ref=f29e195]:
+        - generic [ref=f29e196]:
+          - generic [ref=f29e197]: "Tamper with a sealed Confluence file? It's reverted. #Confluence #Atlassian"
+          - generic [ref=f29e199]:
+            - generic [ref=f29e253]: Saving...
+            - button "Send Feedback" [ref=f29e204] [cursor=pointer]
+            - button "Close" [ref=f29e215] [cursor=pointer]
+        - tablist [ref=f29e259]:
+          - tab "Details" [selected] [ref=f29e260] [cursor=pointer]
+          - tab "Video elements" [ref=f29e263] [cursor=pointer]
+          - tab "Initial check" [ref=f29e266] [cursor=pointer]
+          - tab "Visibility" [ref=f29e269] [cursor=pointer]
+      - generic [ref=f29e272]:
+        - generic [ref=f29e273]:
+          - heading "Details" [level=1] [ref=f29e274]
+          - button "Reuse details" [ref=f29e278] [cursor=pointer]
+        - generic [ref=f29e283]:
+          - generic [ref=f29e284]:
+            - generic [ref=f29e285]:
+              - generic [ref=f29e291]:
+                - generic [ref=f29e292]:
+                  - text: Title (required)
+                  - generic "A catchy title can help you hook viewers. When you create video titles, it’s a good idea to include keywords your audience is likely to use when looking for videos like yours. Learn more" [ref=f29e294]
+                - generic [ref=f29e297]:
+                  - textbox "Add a title that describes your video (type @ to mention a channel)" [ref=f29e300]
+                  - generic [ref=f29e303]: Suggested hashtags
+              - generic [ref=f29e343]:
+                - generic [ref=f29e344]:
+                  - text: Description
+                  - generic "Writing descriptions with keywords can help viewers find your videos more easily through search. You can give an overview of your video and place keywords in the beginning of the description. Learn more" [ref=f29e346]
+                - textbox "Tell viewers about your video (type @ to mention a channel)" [ref=f29e352]
+              - generic [ref=f29e355]:
+                - generic [ref=f29e356]: Thumbnail
+                - generic [ref=f29e357]:
+                  - text: Set a thumbnail that stands out and draws viewers' attention.
+                  - link "Learn more about thumbnails" [ref=f29e358] [cursor=pointer]:
+                    - /url: https://support.google.com/youtube/answer/72431?hl=en
+                    - text: Learn more
+                - generic [ref=f29e359]:
+                  - button "Upload file" [ref=f29e365] [cursor=pointer]
+                  - button "Select from video" [ref=f29e370] [cursor=pointer]
+              - generic [ref=f29e373]:
+                - generic [ref=f29e374]: Playlists
+                - generic [ref=f29e375]:
+                  - text: Add your video to one or more playlists to organize your content for viewers.
+                  - link "Learn more about playlists" [ref=f29e376] [cursor=pointer]:
+                    - /url: https://support.google.com/youtube/answer/57792
+                    - text: Learn more
+                - generic "Add to playlist" [ref=f29e379]:
+                  - button "Select playlists" [ref=f29e381]:
+                    - button "Select" [ref=f29e382] [cursor=pointer]
+              - generic [ref=f29e392]:
+                - generic [ref=f29e393]: Audience
+                - generic [ref=f29e394]:
+                  - generic [ref=f29e395]:
+                    - text: This video is set to not made for kids
+                    - generic [ref=f29e480]: Set by you
+                  - generic [ref=f29e396]:
+                    - text: Regardless of your location, you're legally required to comply with the Children's Online Privacy Protection Act (COPPA) and/or other laws. You're required to tell us whether your videos are made for kids.
+                    - link "What's content made for kids?" [ref=f29e397] [cursor=pointer]:
+                      - /url: https://support.google.com/youtube/answer/9528076?hl=en
+                  - generic [ref=f29e403]:
+                    - text: Features like personalized ads and notifications won’t be available on videos made for kids. Videos that are set as made for kids by you are more likely to be recommended alongside other kids’ videos.
+                    - link "Learn more about video's audience settings" [ref=f29e404] [cursor=pointer]:
+                      - /url: https://support.google.com/youtube/answer/9527654?hl=en
+                      - text: Learn more
+                  - radiogroup [ref=f29e406]:
+                    - radio "Yes, it's made for kids . Features like personalized ads and notifications won’t be available on videos made for kids. Videos that are set as made for kids by you are more likely to be recommended alongside other kids’ videos. Learn more" [ref=f29e407] [cursor=pointer]:
+                      - generic [ref=f29e410]:
+                        - text: Yes, it's made for kids
+                        - generic [ref=f29e411]: .
+                        - generic [ref=f29e412]:
+                          - text: Features like personalized ads and notifications won’t be available on videos made for kids. Videos that are set as made for kids by you are more likely to be recommended alongside other kids’ videos.
+                          - link "Learn more" [ref=f29e413]:
+                            - /url: https://support.google.com/youtube/answer/9527654?hl=en
+                    - radio "No, it's not made for kids" [checked] [active] [ref=f29e414] [cursor=pointer]
+                - button [ref=f29e418]:
+                  - heading "Age restriction" [level=3] [ref=f29e422]
+            - generic [ref=f29e423]:
+              - generic "Show advanced settings" [ref=f29e424]:
+                - button "Show advanced settings" [ref=f29e427] [cursor=pointer]:
+                  - generic [ref=f29e428]: Show more
+              - generic [ref=f29e432]: Paid promotion, collaboration, and more
+          - generic [ref=f29e434]:
+            - generic [ref=f29e435]: Processing will begin shortly
+            - generic [ref=f29e437]:
+              - generic [ref=f29e439]:
+                - generic [ref=f29e440]:
+                  - generic [ref=f29e441]: Video link
+                  - link "https://youtube.com/shorts/P1QFj2Mxy1o" [ref=f29e444] [cursor=pointer]:
+                    - /url: https://youtube.com/shorts/P1QFj2Mxy1o
+                - button "Copy video link" [ref=f29e447] [cursor=pointer]
+              - generic [ref=f29e451]: Filename
+              - generic [ref=f29e452]: sentinel-vault-short-6.4.mp4
+      - generic [ref=f29e454]:
+        - generic [ref=f29e456]:
+          - generic "Checks will begin when SD processing completes" [ref=f29e463]
+          - generic [ref=f29e466]: Upload complete ... Processing will begin shortly
+        - button "Next" [ref=f29e471] [cursor=pointer]

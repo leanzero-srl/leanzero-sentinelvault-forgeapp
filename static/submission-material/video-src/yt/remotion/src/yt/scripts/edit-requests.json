@@ -1,0 +1,85 @@
+{
+ "key": "edit-requests",
+ "source": "rec-a",
+ "from": 42,
+ "to": 154,
+ "title": "Confluence edit requests: approve or decline a sealed file",
+ "subtitle": "Ask the owner of a sealed file for edit access, then approve, decline or watch for release",
+ "feature": "Edit requests",
+ "steps": [
+  {
+   "t": 42,
+   "label": "The file is sealed by someone else",
+   "detail": "Mihai sees Sealed by Gabriela Perdum, with Request edit"
+  },
+  {
+   "t": 46,
+   "label": "Request edit, say why",
+   "detail": "Mihai asks to edit image (4).png and Regim caini.pdf"
+  },
+  {
+   "t": 54,
+   "label": "The owner is notified",
+   "detail": "An Edit Access Requested comment and toast reach Gabriela"
+  },
+  {
+   "t": 62,
+   "label": "Approve or Decline on the card",
+   "detail": "Edit requests (1) Mihai Perdum: answer with Approve / Decline"
+  },
+  {
+   "t": 66,
+   "label": "Approve image (4).png",
+   "detail": "Mihai is added under Editors with access, with Revoke"
+  },
+  {
+   "t": 78,
+   "label": "The requester can edit now",
+   "detail": "Mihai's panel: Edit now \u00b7 until Wed 14:57"
+  },
+  {
+   "t": 82,
+   "label": "Decline the other, with a word",
+   "detail": "The reason is shown next to the decline"
+  },
+  {
+   "t": 98,
+   "label": "Declined \u00b7 ask again later",
+   "detail": "Mihai sees Declined \u00b7 ask again Wed 14:58, Gabriela said: No"
+  },
+  {
+   "t": 110,
+   "label": "Mihai seals image (3).png",
+   "detail": "Now Gabriela sees it under Sealed by others"
+  },
+  {
+   "t": 130,
+   "label": "Watch for release",
+   "detail": "Gabriela's card shows Watching for release"
+  },
+  {
+   "t": 146,
+   "label": "Released: File Now Accessible",
+   "detail": "The watcher is told the file is free again"
+  }
+ ],
+ "callouts": [
+  {
+   "t": 70,
+   "duration": 5,
+   "text": "Approved: Mihai can edit under the seal"
+  },
+  {
+   "t": 98,
+   "duration": 5,
+   "text": "Declined, with the owner's reason"
+  },
+  {
+   "t": 146,
+   "duration": 5,
+   "text": "Released, and the watcher is told"
+  }
+ ],
+ "deadZones": [],
+ "summary": ""
+}
