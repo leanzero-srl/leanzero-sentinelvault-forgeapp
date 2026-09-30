@@ -1,0 +1,94 @@
+{
+ "key": "classification",
+ "source": "rec-b",
+ "from": 264,
+ "to": 372,
+ "title": "Confluence classification levels: set a space default",
+ "subtitle": "Turn classification on, pick a space default and see it on every page",
+ "feature": "Classification",
+ "steps": [
+  {
+   "t": 264,
+   "label": "Open the Classification tab",
+   "detail": "Public, Internal, Confidential, Restricted"
+  },
+  {
+   "t": 268,
+   "label": "Turn classification on",
+   "detail": "The switch reads Turning on, then On"
+  },
+  {
+   "t": 272,
+   "label": "Every page shows its level",
+   "detail": "Under the title and in the ribbon at the top"
+  },
+  {
+   "t": 276,
+   "label": "Space defaults",
+   "detail": "Every space starts as Not set"
+  },
+  {
+   "t": 284,
+   "label": "Pick a default for a space",
+   "detail": "WORK FOR HIRE \u2192 Confidential"
+  },
+  {
+   "t": 308,
+   "label": "The page shows it",
+   "detail": "Confidential \u00b7 from space default"
+  },
+  {
+   "t": 320,
+   "label": "Raise it to Restricted",
+   "detail": "Raising is one action"
+  },
+  {
+   "t": 340,
+   "label": "Lowering needs a reason",
+   "detail": "Kept in the activity log"
+  },
+  {
+   "t": 344,
+   "label": "Lower to Internal",
+   "detail": "Reason typed, Lower to Internal"
+  },
+  {
+   "t": 368,
+   "label": "The page follows",
+   "detail": "Internal \u00b7 from space default"
+  }
+ ],
+ "callouts": [
+  {
+   "t": 272,
+   "duration": 4,
+   "text": "Classification is on"
+  },
+  {
+   "t": 310,
+   "duration": 4,
+   "text": "Confidential \u00b7 from space default"
+  },
+  {
+   "t": 340,
+   "duration": 5,
+   "text": "Lowering asks for a reason"
+  },
+  {
+   "t": 368,
+   "duration": 3.5,
+   "text": "Internal \u00b7 from space default"
+  }
+ ],
+ "deadZones": [
+  {
+   "from": 314,
+   "to": 334
+  },
+  {
+   "from": 350,
+   "to": 366
+  }
+ ],
+ "summary": ""
+}
