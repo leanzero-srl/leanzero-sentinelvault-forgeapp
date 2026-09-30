@@ -1,6 +1,6 @@
 # Content Sealing (section-level)
 
-> Updated for production 6.4.0. The screenshots and videos below were recorded on 4.x and show older layouts.
+> Updated for production 6.5.0. The screenshots and videos below were recorded on 4.x and show older layouts.
 
 > Lock a specific section of a Confluence page — a heading and its content — against unauthorized edits, while the rest of the page stays editable.
 
@@ -8,7 +8,7 @@
 |---|---|
 | **Surfaces** | Page-details modal (Sentinel Vault chip under the title) → *Seal a section…* · inline panel → *Sealed Sections* · the "Sentinel Vault Sealed Section" macro |
 | **Who can use it** | Any editor seals; the **section owner** or a **space admin** releases |
-| **Status** | Shipped since 4.0.0; current in production 6.4.0 |
+| **Status** | Shipped since 4.0.0; current in production 6.5.0 |
 | **Runs on Atlassian** | Yes (no external egress) |
 
 ## What it does

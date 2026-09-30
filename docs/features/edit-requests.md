@@ -1,6 +1,6 @@
 # Edit Requests
 
-> Updated for production 6.4.0. The screenshots and videos below were recorded on 4.x and show older layouts.
+> Updated for production 6.5.0. The screenshots and videos below were recorded on 4.x and show older layouts.
 
 > Let approved users edit a sealed attachment without granting them full steward rights — the seal owner approves who can edit.
 
@@ -8,7 +8,7 @@
 |---|---|
 | **Surfaces** | Request: page ribbon, page-details modal (Sentinel Vault chip under the title), inline panel · Answer: page-details modal, inline panel, My work, space console |
 | **Who can use it** | Any user can request; the **seal owner** answers; the owner, or a space admin while *Allow space admins to force-unseal* is on, can also give access directly |
-| **Status** | Shipped since 4.0.0; current in production 6.4.0. Works for sealed files and sealed sections |
+| **Status** | Shipped since 4.0.0; current in production 6.5.0. Works for sealed files and sealed sections |
 | **Runs on Atlassian** | Yes (no external egress) |
 
 ## What it does

@@ -1,6 +1,6 @@
 # Sentinel Vault — Documentation
 
-Index of the product, feature, and verification docs, current to production 6.4.0. Each feature doc explains the feature and **embeds the screenshots and links the walkthrough videos** produced by the screenshot/video harness.
+Index of the product, feature, and verification docs, current to production 6.5.0. Each feature doc explains the feature and **embeds the screenshots and links the walkthrough videos** produced by the screenshot/video harness.
 
 ## Feature guides
 
