@@ -16,7 +16,7 @@ verbatim. The design splits the channel:
 
 | Direction | Mechanism | Why it keeps the badge |
 |---|---|---|
-| **Write** (deploy config, apply content ops) | A **static** web trigger `config-api`. The handler reads the request (method, headers, query, body) and returns one of a fixed set of outputs: `202 accepted`, `400 invalid`, `401 unauthorized`, `403 forbidden`, `409 conflict`, `429 busy`. No response body ever carries data. | A static trigger cannot egress anything the manifest did not already spell out. |
+| **Write** (deploy config, apply content ops) | A **static** web trigger `config-api`. The handler reads the request (method, headers, query, body) and returns one of a fixed set of outputs: `202 accepted`, `400 invalid`, `401 unauthorized`, `403 forbidden`, `405 not-allowed` (any method but POST), `409 conflict`, `429 busy`. No response body ever carries data. | A static trigger cannot egress anything the manifest did not already spell out. |
 | **Read** (what is configured, what a job did) | Confluence's own REST API, with **the caller's** credentials, on properties Sentinel Vault writes: a **space property** `sentinel-vault-config` on every space it configures (the effective space config), a **content property** `sentinel-vault-config` on a designated site page for the global config, and a space property `sentinel-vault-receipt` holding the last job receipts for that space. | Confluence already exposes properties over REST; the app writes them with scopes it already holds (content properties) or the 7.0 batch (space properties). Confluence's own permission model governs who can read them. |
 
 This is exactly the shape CogniRunner recommends for its *workflow* rules ("you are calling Jira's
@@ -54,10 +54,8 @@ A token minted without a role is `admin` (CogniRunner's compatibility rule).
 | `whoami` | — | Nothing is written; the receipt records the token identity. |
 | `dry-run` | same as `bundle` | Validates and plans, writes only the receipt with `plan[]`. |
 
-Every accepted request gets a **job id** (`job_<base36>`) which is returned in the `Location`
-header of the static `202` output — the only per-request datum a static trigger can carry, because
-headers on static outputs are fixed… so the job id is instead **derived from the request**: the
-caller sends `Idempotency-Key: <their id>` and that IS the job id. Same key twice = same job, the
+Headers and bodies on static outputs are fixed, so a static trigger cannot hand back a job id.
+The job id is instead **derived from the request**: the caller sends `Idempotency-Key: <their id>` and that IS the job id. Same key twice = same job, the
 second submission is `409 conflict` while the first is running and `202` (no-op, receipt already
 there) once it is done. Callers without the header get `400 invalid`.
 
