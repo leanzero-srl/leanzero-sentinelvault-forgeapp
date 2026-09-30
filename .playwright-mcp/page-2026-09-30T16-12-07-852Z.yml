@@ -1,0 +1,442 @@
+- generic [active] [ref=e1]:
+  - generic:
+    - generic: Channel content
+    - generic [ref=e4]:
+      - banner [ref=e6]:
+        - button "Expand menu" [ref=e7] [cursor=pointer]
+        - link [ref=e12] [cursor=pointer]:
+          - /url: /channel/UC1JpYs3UmQZtOzbsAf8fYXw
+          - img "YouTube Studio dashboard" [ref=e13]
+        - button "Skip navigation" [ref=e17] [cursor=pointer]
+        - generic [ref=e23]:
+          - generic [ref=e24]:
+            - button "Search" [ref=e25] [cursor=pointer]
+            - button "Help" [ref=e30] [cursor=pointer]
+            - button "Notifications" [ref=e35] [cursor=pointer]
+          - button "Ask Studio" [ref=e47] [cursor=pointer]
+          - button "Create" [ref=e59] [cursor=pointer]
+          - generic "Account" [ref=e68]:
+            - button "Account" [ref=e69]:
+              - generic [ref=e70] [cursor=pointer]
+      - generic [ref=e71]:
+        - navigation [ref=e73]:
+          - generic [ref=e74]:
+            - generic:
+              - img "Leanzero SRL" [ref=e77]
+              - generic [ref=e78]:
+                - generic [ref=e79]: Your channel
+                - generic [ref=e80]: Leanzero SRL
+          - menu [ref=e83]:
+            - menuitem "Dashboard" [ref=e84] [cursor=pointer]
+            - menuitem "Content" [ref=e90] [cursor=pointer]
+            - menuitem "Analytics" [ref=e96] [cursor=pointer]
+            - menuitem "Community" [ref=e102] [cursor=pointer]
+            - menuitem "Languages" [ref=e108] [cursor=pointer]
+            - menuitem "Content detection" [ref=e114] [cursor=pointer]
+            - menuitem "Earn" [ref=e120] [cursor=pointer]
+            - menuitem "Customization" [ref=e126] [cursor=pointer]
+            - menuitem "Audio library" [ref=e132] [cursor=pointer]
+          - list [ref=e139]:
+            - listitem [ref=e140]:
+              - button [ref=e141] [cursor=pointer]
+            - listitem [ref=e146]:
+              - button [ref=e148] [cursor=pointer]
+        - main [ref=e153]:
+          - generic [ref=e157]:
+            - generic [ref=e160]:
+              - generic "Back" [ref=e161]:
+                - button "Back" [ref=e164] [cursor=pointer]
+              - generic [ref=e172]: Videos
+            - generic [ref=e173]:
+              - generic [ref=e174] [cursor=pointer]: Videos
+              - generic [ref=e176] [cursor=pointer]: Shorts
+              - generic [ref=e178] [cursor=pointer]: Live
+              - generic [ref=e180] [cursor=pointer]: Posts
+              - generic [ref=e182] [cursor=pointer]: Playlists
+            - table "Video list" [ref=e189]:
+              - rowgroup [ref=e190]:
+                - generic [ref=e193]:
+                  - generic [ref=e194] [cursor=pointer]
+                  - textbox "Filter" [ref=e199]
+                - row [ref=e200]:
+                  - columnheader [ref=e201]:
+                    - generic "Select all" [ref=e202] [cursor=pointer]:
+                      - generic [ref=e206]:
+                        - checkbox "Select all"
+                  - columnheader [ref=e207]:
+                    - heading "Video" [level=3] [ref=e208]
+                  - columnheader [ref=e210]:
+                    - heading "Notices" [level=3] [ref=e211]
+                  - columnheader [ref=e213]:
+                    - heading "Visibility" [level=3] [ref=e214]
+                  - columnheader [ref=e216]:
+                    - heading [level=3] [ref=e217]:
+                      - button "Sort by Date" [ref=e218] [cursor=pointer]:
+                        - generic [ref=e219]: Date
+                  - columnheader [ref=e223]:
+                    - heading [level=3] [ref=e224]:
+                      - button "Sort by Views" [ref=e225] [cursor=pointer]:
+                        - generic [ref=e226]: Views
+                  - columnheader [ref=e227]:
+                    - heading "Comments" [level=3] [ref=e228]
+              - row [ref=e230]:
+                - generic [ref=e231]:
+                  - cell [ref=e232]:
+                    - 'generic "Select Jira Post-Function: Generate a PDF From an Issue With AI" [ref=e233] [cursor=pointer]':
+                      - generic [ref=e237]:
+                        - 'checkbox "Select Jira Post-Function: Generate a PDF From an Issue With AI"'
+                  - 'cell "Video thumbnail: Jira Post-Function: Generate a PDF From an Issue With AI 1:13 Jira Post-Function: Generate a PDF From an Issue With AI An AI post-function reads a Jira issue''s Description on transition, writes an executive summary and attaches it as a PDF. Set up in under a minute. Get CogniRunner on the Atlassian Marketplace: https://marketplace.atlassian.com/apps/298437877/cognirunner?hosting=cloud This is the Generate Document post-function end to end. In the CogniRunner admin panel we pick the project, the story workflow and the In Review transition, choose Generate Document, point it at the Description field, and ask for" [ref=e238]':
+                    - generic [ref=e239]:
+                      - 'link "Video thumbnail: Jira Post-Function: Generate a PDF From an Issue With AI 1:13" [ref=e241] [cursor=pointer]':
+                        - /url: /video/8kJeXSGUQHk/edit
+                        - generic [ref=e244]:
+                          - 'img "Video thumbnail: Jira Post-Function: Generate a PDF From an Issue With AI" [ref=e247]'
+                          - generic [ref=e248]: 1:13
+                      - generic [ref=e251]:
+                        - 'link "Jira Post-Function: Generate a PDF From an Issue With AI" [ref=e253] [cursor=pointer]':
+                          - /url: /video/8kJeXSGUQHk/edit
+                        - generic [ref=e255]: "An AI post-function reads a Jira issue's Description on transition, writes an executive summary and attaches it as a PDF. Set up in under a minute. Get CogniRunner on the Atlassian Marketplace: https://marketplace.atlassian.com/apps/298437877/cognirunner?hosting=cloud This is the Generate Document post-function end to end. In the CogniRunner admin panel we pick the project, the story workflow and the In Review transition, choose Generate Document, point it at the Description field, and ask for"
+                  - cell "—" [ref=e257]
+                  - cell "Public" [ref=e263]
+                  - cell "Sep 7, 2026 Published" [ref=e270]:
+                    - text: Sep 7, 2026
+                    - generic [ref=e271]: Published
+                  - cell "2" [ref=e272]
+                  - cell [ref=e273]:
+                    - link "Video has 0 comments. Video comments page" [ref=e274] [cursor=pointer]:
+                      - /url: /video/8kJeXSGUQHk/comments
+                      - text: "0"
+              - row [ref=e275]:
+                - generic [ref=e276]:
+                  - cell [ref=e277]:
+                    - 'generic "Select Jira Validator: Enforce Given-When-Then Acceptance Criteria" [ref=e278] [cursor=pointer]':
+                      - generic [ref=e282]:
+                        - 'checkbox "Select Jira Validator: Enforce Given-When-Then Acceptance Criteria"'
+                  - 'cell "Video thumbnail: Jira Validator: Enforce Given-When-Then Acceptance Criteria 2:05 Jira Validator: Enforce Given-When-Then Acceptance Criteria Block a Jira transition until the Acceptance Criteria follow Given-When-Then. The AI validator explains what is missing and passes once it is fixed. Get CogniRunner on the Atlassian Marketplace: https://marketplace.atlassian.com/apps/298437877/cognirunner?hosting=cloud A rule like \"acceptance criteria must be structured\" cannot be expressed with a regex. This tutorial adds a CogniRunner Field Validator directly in the Jira workflow editor, on the In Progress to In Review transition, targeting" [ref=e283]':
+                    - generic [ref=e284]:
+                      - 'link "Video thumbnail: Jira Validator: Enforce Given-When-Then Acceptance Criteria 2:05" [ref=e286] [cursor=pointer]':
+                        - /url: /video/FB1uED9Ih18/edit
+                        - generic [ref=e289]:
+                          - 'img "Video thumbnail: Jira Validator: Enforce Given-When-Then Acceptance Criteria" [ref=e292]'
+                          - generic [ref=e293]: 2:05
+                      - generic [ref=e296]:
+                        - 'link "Jira Validator: Enforce Given-When-Then Acceptance Criteria" [ref=e298] [cursor=pointer]':
+                          - /url: /video/FB1uED9Ih18/edit
+                        - generic [ref=e300]: "Block a Jira transition until the Acceptance Criteria follow Given-When-Then. The AI validator explains what is missing and passes once it is fixed. Get CogniRunner on the Atlassian Marketplace: https://marketplace.atlassian.com/apps/298437877/cognirunner?hosting=cloud A rule like \"acceptance criteria must be structured\" cannot be expressed with a regex. This tutorial adds a CogniRunner Field Validator directly in the Jira workflow editor, on the In Progress to In Review transition, targeting"
+                  - cell "—" [ref=e302]
+                  - cell "Public" [ref=e308]
+                  - cell "Sep 7, 2026 Published" [ref=e315]:
+                    - text: Sep 7, 2026
+                    - generic [ref=e316]: Published
+                  - cell "7" [ref=e317]
+                  - cell [ref=e318]:
+                    - link "Video has 0 comments. Video comments page" [ref=e319] [cursor=pointer]:
+                      - /url: /video/FB1uED9Ih18/comments
+                      - text: "0"
+              - row [ref=e320]:
+                - generic [ref=e321]:
+                  - cell [ref=e322]:
+                    - 'generic "Select Jira AI Validator: Require Any Field in 60 Seconds" [ref=e323] [cursor=pointer]':
+                      - generic [ref=e327]:
+                        - 'checkbox "Select Jira AI Validator: Require Any Field in 60 Seconds"'
+                  - 'cell "Video thumbnail: Jira AI Validator: Require Any Field in 60 Seconds 1:23 Jira AI Validator: Require Any Field in 60 Seconds Add an AI validator to a Jira workflow in about a minute and watch it block a transition until the Assignee is set, with the reason shown to the user. Get CogniRunner on the Atlassian Marketplace: https://marketplace.atlassian.com/apps/298437877/cognirunner?hosting=cloud Jira''s built-in validators check structure. CogniRunner reads meaning. In this tutorial we build a validator from the CogniRunner admin panel, without opening the workflow editor, and attach it to the In Progress transition of" [ref=e328]':
+                    - generic [ref=e329]:
+                      - 'link "Video thumbnail: Jira AI Validator: Require Any Field in 60 Seconds 1:23" [ref=e331] [cursor=pointer]':
+                        - /url: /video/aEhHZvUd1ms/edit
+                        - generic [ref=e334]:
+                          - 'img "Video thumbnail: Jira AI Validator: Require Any Field in 60 Seconds" [ref=e337]'
+                          - generic [ref=e338]: 1:23
+                      - generic [ref=e341]:
+                        - 'link "Jira AI Validator: Require Any Field in 60 Seconds" [ref=e343] [cursor=pointer]':
+                          - /url: /video/aEhHZvUd1ms/edit
+                        - generic [ref=e345]: "Add an AI validator to a Jira workflow in about a minute and watch it block a transition until the Assignee is set, with the reason shown to the user. Get CogniRunner on the Atlassian Marketplace: https://marketplace.atlassian.com/apps/298437877/cognirunner?hosting=cloud Jira's built-in validators check structure. CogniRunner reads meaning. In this tutorial we build a validator from the CogniRunner admin panel, without opening the workflow editor, and attach it to the In Progress transition of"
+                  - cell "—" [ref=e347]
+                  - cell "Public" [ref=e353]
+                  - cell "Sep 7, 2026 Published" [ref=e360]:
+                    - text: Sep 7, 2026
+                    - generic [ref=e361]: Published
+                  - cell "1" [ref=e362]
+                  - cell [ref=e363]:
+                    - link "Video has 0 comments. Video comments page" [ref=e364] [cursor=pointer]:
+                      - /url: /video/aEhHZvUd1ms/comments
+                      - text: "0"
+              - row [ref=e365]:
+                - generic [ref=e366]:
+                  - cell [ref=e367]:
+                    - 'generic "Select Jira Listener: Auto-Triage New Issues, AI Writes the Code" [ref=e368] [cursor=pointer]':
+                      - generic [ref=e372]:
+                        - 'checkbox "Select Jira Listener: Auto-Triage New Issues, AI Writes the Code"'
+                  - 'cell "Video thumbnail: Jira Listener: Auto-Triage New Issues, AI Writes the Code 2:32 Jira Listener: Auto-Triage New Issues, AI Writes the Code React to Issue created in Jira: an AI condition spots vague stories, then generated code adds a Needs-details label and asks the reporter for details. Get CogniRunner on the Atlassian Marketplace: https://marketplace.atlassian.com/apps/298437877/cognirunner?hosting=cloud CogniRunner listeners react to Jira product events instead of workflow transitions. This tutorial builds one from scratch in the Listeners tab: name it, tick the Issue created event, scope it to one project, and write the AI c" [ref=e373]':
+                    - generic [ref=e374]:
+                      - 'link "Video thumbnail: Jira Listener: Auto-Triage New Issues, AI Writes the Code 2:32" [ref=e376] [cursor=pointer]':
+                        - /url: /video/heK5P7EaQMg/edit
+                        - generic [ref=e379]:
+                          - 'img "Video thumbnail: Jira Listener: Auto-Triage New Issues, AI Writes the Code" [ref=e382]'
+                          - generic [ref=e383]: 2:32
+                      - generic [ref=e386]:
+                        - 'link "Jira Listener: Auto-Triage New Issues, AI Writes the Code" [ref=e388] [cursor=pointer]':
+                          - /url: /video/heK5P7EaQMg/edit
+                        - generic [ref=e390]: "React to Issue created in Jira: an AI condition spots vague stories, then generated code adds a Needs-details label and asks the reporter for details. Get CogniRunner on the Atlassian Marketplace: https://marketplace.atlassian.com/apps/298437877/cognirunner?hosting=cloud CogniRunner listeners react to Jira product events instead of workflow transitions. This tutorial builds one from scratch in the Listeners tab: name it, tick the Issue created event, scope it to one project, and write the AI c"
+                  - cell "—" [ref=e392]
+                  - cell "Public" [ref=e398]
+                  - cell "Sep 7, 2026 Published" [ref=e405]:
+                    - text: Sep 7, 2026
+                    - generic [ref=e406]: Published
+                  - cell "15" [ref=e407]
+                  - cell [ref=e408]:
+                    - link "Video has 0 comments. Video comments page" [ref=e409] [cursor=pointer]:
+                      - /url: /video/heK5P7EaQMg/comments
+                      - text: "0"
+              - row [ref=e410]:
+                - generic [ref=e411]:
+                  - cell [ref=e412]:
+                    - 'generic "Select Jira Scheduled Job: Flag Unassigned Tickets Automatically" [ref=e413] [cursor=pointer]':
+                      - generic [ref=e417]:
+                        - 'checkbox "Select Jira Scheduled Job: Flag Unassigned Tickets Automatically"'
+                  - 'cell "Video thumbnail: Jira Scheduled Job: Flag Unassigned Tickets Automatically 3:01 Jira Scheduled Job: Flag Unassigned Tickets Automatically A cron job for Jira with a JQL scope: every weekday at 10:00 it finds unassigned open tickets, sets priority High, adds a label and comments. Get CogniRunner on the Atlassian Marketplace: https://marketplace.atlassian.com/apps/298437877/cognirunner?hosting=cloud Scheduled jobs are CogniRunner''s answer to escalation-style automation. In the Scheduled Jobs tab we create \"Alert unassigned open tickets\": weekdays at 10:00 in a chosen time zone, with a live preview of the next five runs, scoped by" [ref=e418]':
+                    - generic [ref=e419]:
+                      - 'link "Video thumbnail: Jira Scheduled Job: Flag Unassigned Tickets Automatically 3:01" [ref=e421] [cursor=pointer]':
+                        - /url: /video/nmqIE56EM_k/edit
+                        - generic [ref=e424]:
+                          - 'img "Video thumbnail: Jira Scheduled Job: Flag Unassigned Tickets Automatically" [ref=e427]'
+                          - generic [ref=e428]: 3:01
+                      - generic [ref=e431]:
+                        - 'link "Jira Scheduled Job: Flag Unassigned Tickets Automatically" [ref=e433] [cursor=pointer]':
+                          - /url: /video/nmqIE56EM_k/edit
+                        - generic [ref=e435]: "A cron job for Jira with a JQL scope: every weekday at 10:00 it finds unassigned open tickets, sets priority High, adds a label and comments. Get CogniRunner on the Atlassian Marketplace: https://marketplace.atlassian.com/apps/298437877/cognirunner?hosting=cloud Scheduled jobs are CogniRunner's answer to escalation-style automation. In the Scheduled Jobs tab we create \"Alert unassigned open tickets\": weekdays at 10:00 in a chosen time zone, with a live preview of the next five runs, scoped by"
+                  - cell "—" [ref=e437]
+                  - cell "Public" [ref=e443]
+                  - cell "Sep 7, 2026 Published" [ref=e450]:
+                    - text: Sep 7, 2026
+                    - generic [ref=e451]: Published
+                  - cell "18" [ref=e452]
+                  - cell [ref=e453]:
+                    - link "Video has 0 comments. Video comments page" [ref=e454] [cursor=pointer]:
+                      - /url: /video/nmqIE56EM_k/comments
+                      - text: "0"
+              - row [ref=e455]:
+                - generic [ref=e456]:
+                  - cell [ref=e457]:
+                    - generic "Select Jira Condition + PDF Post-Function on One Transition" [ref=e458] [cursor=pointer]:
+                      - generic [ref=e462]:
+                        - checkbox "Select Jira Condition + PDF Post-Function on One Transition"
+                  - 'cell "Video thumbnail: Jira Condition + PDF Post-Function on One Transition 1:33 Jira Condition + PDF Post-Function on One Transition A zero-AI condition and an AI document post-function on one Jira transition: the gate opens when Case type is filled, then a PDF is generated. Get CogniRunner on the Atlassian Marketplace: https://marketplace.atlassian.com/apps/298437877/cognirunner?hosting=cloud Rules combine. This tutorial sets up a Generate Document post-function from the CogniRunner admin panel: read the Description, author a stakeholder summary, attach it as a PDF, with a built-in reference doc from the Documentation Libr" [ref=e463]':
+                    - generic [ref=e464]:
+                      - 'link "Video thumbnail: Jira Condition + PDF Post-Function on One Transition 1:33" [ref=e466] [cursor=pointer]':
+                        - /url: /video/ZWIyl4D8KeA/edit
+                        - generic [ref=e469]:
+                          - 'img "Video thumbnail: Jira Condition + PDF Post-Function on One Transition" [ref=e472]'
+                          - generic [ref=e473]: 1:33
+                      - generic [ref=e476]:
+                        - link "Jira Condition + PDF Post-Function on One Transition" [ref=e478] [cursor=pointer]:
+                          - /url: /video/ZWIyl4D8KeA/edit
+                        - generic [ref=e480]: "A zero-AI condition and an AI document post-function on one Jira transition: the gate opens when Case type is filled, then a PDF is generated. Get CogniRunner on the Atlassian Marketplace: https://marketplace.atlassian.com/apps/298437877/cognirunner?hosting=cloud Rules combine. This tutorial sets up a Generate Document post-function from the CogniRunner admin panel: read the Description, author a stakeholder summary, attach it as a PDF, with a built-in reference doc from the Documentation Libr"
+                  - cell "—" [ref=e482]
+                  - cell "Public" [ref=e488]
+                  - cell "Sep 7, 2026 Published" [ref=e495]:
+                    - text: Sep 7, 2026
+                    - generic [ref=e496]: Published
+                  - cell "3" [ref=e497]
+                  - cell [ref=e498]:
+                    - link "Video has 0 comments. Video comments page" [ref=e499] [cursor=pointer]:
+                      - /url: /video/ZWIyl4D8KeA/comments
+                      - text: "0"
+              - row [ref=e500]:
+                - generic [ref=e501]:
+                  - cell [ref=e502]:
+                    - 'generic "Select Jira Condition: Hide a Transition Until a Field Is Set" [ref=e503] [cursor=pointer]':
+                      - generic [ref=e507]:
+                        - 'checkbox "Select Jira Condition: Hide a Transition Until a Field Is Set"'
+                  - 'cell "Video thumbnail: Jira Condition: Hide a Transition Until a Field Is Set 1:03 Jira Condition: Hide a Transition Until a Field Is Set ide the In Review transition in Jira until a custom field has a value. A deterministic CogniRunner condition, evaluated by Jira, at zero AI cost. Get CogniRunner on the Atlassian Marketplace: https://marketplace.atlassian.com/apps/298437877/cognirunner?hosting=cloud Not everything needs AI. CogniRunner conditions are deterministic: Jira evaluates them on every surface (UI, REST, automation, bulk edit) and they cost nothing per run. In this tutorial we add a CogniRunner Field Condition to the I" [ref=e508]':
+                    - generic [ref=e509]:
+                      - 'link "Video thumbnail: Jira Condition: Hide a Transition Until a Field Is Set 1:03" [ref=e511] [cursor=pointer]':
+                        - /url: /video/qU_JHctH8xk/edit
+                        - generic [ref=e514]:
+                          - 'img "Video thumbnail: Jira Condition: Hide a Transition Until a Field Is Set" [ref=e517]'
+                          - generic [ref=e518]: 1:03
+                      - generic [ref=e521]:
+                        - 'link "Jira Condition: Hide a Transition Until a Field Is Set" [ref=e523] [cursor=pointer]':
+                          - /url: /video/qU_JHctH8xk/edit
+                        - generic [ref=e525]: "ide the In Review transition in Jira until a custom field has a value. A deterministic CogniRunner condition, evaluated by Jira, at zero AI cost. Get CogniRunner on the Atlassian Marketplace: https://marketplace.atlassian.com/apps/298437877/cognirunner?hosting=cloud Not everything needs AI. CogniRunner conditions are deterministic: Jira evaluates them on every surface (UI, REST, automation, bulk edit) and they cost nothing per run. In this tutorial we add a CogniRunner Field Condition to the I"
+                  - cell "—" [ref=e527]
+                  - cell "Public" [ref=e533]
+                  - cell "Sep 7, 2026 Published" [ref=e540]:
+                    - text: Sep 7, 2026
+                    - generic [ref=e541]: Published
+                  - cell "5" [ref=e542]
+                  - cell [ref=e543]:
+                    - link "Video has 0 comments. Video comments page" [ref=e544] [cursor=pointer]:
+                      - /url: /video/qU_JHctH8xk/comments
+                      - text: "0"
+              - row [ref=e545]:
+                - generic [ref=e546]:
+                  - cell [ref=e547]:
+                    - 'generic "Select CogniRunner for Jira: 7 AI Workflow Features in 5 Minutes" [ref=e548] [cursor=pointer]':
+                      - generic [ref=e552]:
+                        - 'checkbox "Select CogniRunner for Jira: 7 AI Workflow Features in 5 Minutes"'
+                  - 'cell "Video thumbnail: CogniRunner for Jira: 7 AI Workflow Features in 5 Minutes 5:20 CogniRunner for Jira: 7 AI Workflow Features in 5 Minutes Validators, deterministic conditions, PDF post-functions, listeners and scheduled jobs for Jira, built in plain English. Seven real recordings. Get CogniRunner on the Atlassian Marketplace: https://marketplace.atlassian.com/apps/298437877/cognirunner?hosting=cloud CogniRunner is the workflow AI agent for Jira: it reads the meaning of fields, attachments and issues, then validates, decides and acts. This compilation walks through every feature in seven short chapters, each cut from a real end-t" [ref=e553]':
+                    - generic [ref=e554]:
+                      - 'link "Video thumbnail: CogniRunner for Jira: 7 AI Workflow Features in 5 Minutes 5:20" [ref=e556] [cursor=pointer]':
+                        - /url: /video/oxtNm9gNKYQ/edit
+                        - generic [ref=e559]:
+                          - 'img "Video thumbnail: CogniRunner for Jira: 7 AI Workflow Features in 5 Minutes" [ref=e562]'
+                          - generic [ref=e563]: 5:20
+                      - generic [ref=e566]:
+                        - 'link "CogniRunner for Jira: 7 AI Workflow Features in 5 Minutes" [ref=e568] [cursor=pointer]':
+                          - /url: /video/oxtNm9gNKYQ/edit
+                        - generic [ref=e570]: "Validators, deterministic conditions, PDF post-functions, listeners and scheduled jobs for Jira, built in plain English. Seven real recordings. Get CogniRunner on the Atlassian Marketplace: https://marketplace.atlassian.com/apps/298437877/cognirunner?hosting=cloud CogniRunner is the workflow AI agent for Jira: it reads the meaning of fields, attachments and issues, then validates, decides and acts. This compilation walks through every feature in seven short chapters, each cut from a real end-t"
+                  - cell "—" [ref=e572]
+                  - cell "Public" [ref=e578]
+                  - cell "Sep 7, 2026 Published" [ref=e585]:
+                    - text: Sep 7, 2026
+                    - generic [ref=e586]: Published
+                  - cell "25" [ref=e587]
+                  - cell [ref=e588]:
+                    - link "Video has 0 comments. Video comments page" [ref=e589] [cursor=pointer]:
+                      - /url: /video/oxtNm9gNKYQ/comments
+                      - text: "0"
+              - row [ref=e590]:
+                - generic [ref=e591]:
+                  - cell [ref=e592]:
+                    - 'generic "Select CogniRunner for Jira: The Complete Walkthrough (7 Tutorials)" [ref=e593] [cursor=pointer]':
+                      - generic [ref=e597]:
+                        - 'checkbox "Select CogniRunner for Jira: The Complete Walkthrough (7 Tutorials)"'
+                  - 'cell "Video thumbnail: CogniRunner for Jira: The Complete Walkthrough (7 Tutorials) 12:46 CogniRunner for Jira: The Complete Walkthrough (7 Tutorials) Get CogniRunner on the Atlassian Marketplace: https://marketplace.atlassian.com/apps/298437877/cognirunner?hosting=cloud The full set, in one video, for anyone who would rather watch straight through. Each chapter is a complete tutorial: creating an AI validator from the admin panel and watching it block a transition; enforcing Given-When-Then acceptance criteria from the workflow editor; hiding a transition until a custom field is set, deterministically and at zero AI cost; pairing a condition" [ref=e598]':
+                    - generic [ref=e599]:
+                      - 'link "Video thumbnail: CogniRunner for Jira: The Complete Walkthrough (7 Tutorials) 12:46" [ref=e601] [cursor=pointer]':
+                        - /url: /video/CNvAvb-f5f4/edit
+                        - generic [ref=e604]:
+                          - 'img "Video thumbnail: CogniRunner for Jira: The Complete Walkthrough (7 Tutorials)" [ref=e607]'
+                          - generic [ref=e608]: 12:46
+                      - generic [ref=e611]:
+                        - 'link "CogniRunner for Jira: The Complete Walkthrough (7 Tutorials)" [ref=e613] [cursor=pointer]':
+                          - /url: /video/CNvAvb-f5f4/edit
+                        - generic [ref=e615]: "Get CogniRunner on the Atlassian Marketplace: https://marketplace.atlassian.com/apps/298437877/cognirunner?hosting=cloud The full set, in one video, for anyone who would rather watch straight through. Each chapter is a complete tutorial: creating an AI validator from the admin panel and watching it block a transition; enforcing Given-When-Then acceptance criteria from the workflow editor; hiding a transition until a custom field is set, deterministically and at zero AI cost; pairing a condition"
+                  - cell "—" [ref=e617]
+                  - cell "Public" [ref=e623]
+                  - cell "Sep 7, 2026 Published" [ref=e630]:
+                    - text: Sep 7, 2026
+                    - generic [ref=e631]: Published
+                  - cell "31" [ref=e632]
+                  - cell [ref=e633]:
+                    - link "Video has 0 comments. Video comments page" [ref=e634] [cursor=pointer]:
+                      - /url: /video/CNvAvb-f5f4/comments
+                      - text: "0"
+              - row [ref=e635]:
+                - generic [ref=e636]:
+                  - cell [ref=e637]:
+                    - generic "Select Sentinel Vault 4.0.0" [ref=e638] [cursor=pointer]:
+                      - generic [ref=e642]:
+                        - checkbox "Select Sentinel Vault 4.0.0"
+                  - 'cell "Video thumbnail: Sentinel Vault 4.0.0 1:29 Sentinel Vault 4.0.0 https://leanzero.net/portfolio/sentinel-vault Protection gets sharper teeth, and the app moves to paid licensing. - New: sealing an image now also seals its presentation — a resize or layout change by a non-owner reverts to the sealed appearance (seals created from this release on). - Improved: one restore path for removed sealed files — the attachment is un-trashed first, then its page embed re-inserted; unrecoverable files produce an honest notice, not silence. - Fixed: repeated violations of" [ref=e643]':
+                    - generic [ref=e644]:
+                      - 'link "Video thumbnail: Sentinel Vault 4.0.0 1:29" [ref=e646] [cursor=pointer]':
+                        - /url: /video/E8jAX58xcII/edit
+                        - generic [ref=e649]:
+                          - 'img "Video thumbnail: Sentinel Vault 4.0.0" [ref=e652]'
+                          - generic [ref=e653]: 1:29
+                      - generic [ref=e656]:
+                        - link "Sentinel Vault 4.0.0" [ref=e658] [cursor=pointer]:
+                          - /url: /video/E8jAX58xcII/edit
+                        - generic [ref=e660]: "https://leanzero.net/portfolio/sentinel-vault Protection gets sharper teeth, and the app moves to paid licensing. - New: sealing an image now also seals its presentation — a resize or layout change by a non-owner reverts to the sealed appearance (seals created from this release on). - Improved: one restore path for removed sealed files — the attachment is un-trashed first, then its page embed re-inserted; unrecoverable files produce an honest notice, not silence. - Fixed: repeated violations of"
+                  - cell "—" [ref=e662]
+                  - cell "Public" [ref=e668]
+                  - cell "Aug 16, 2026 Published" [ref=e675]:
+                    - text: Aug 16, 2026
+                    - generic [ref=e676]: Published
+                  - cell "11" [ref=e677]
+                  - cell [ref=e678]:
+                    - link "Video has 0 comments. Video comments page" [ref=e679] [cursor=pointer]:
+                      - /url: /video/E8jAX58xcII/comments
+                      - text: "0"
+              - row [ref=e680]:
+                - generic [ref=e681]:
+                  - cell [ref=e682]:
+                    - generic "Select Cognirunner 3.1.0 Release" [ref=e683] [cursor=pointer]:
+                      - generic [ref=e687]:
+                        - checkbox "Select Cognirunner 3.1.0 Release"
+                  - 'cell "Video thumbnail: Cognirunner 3.1.0 Release 2:16 Cognirunner 3.1.0 Release https://leanzero.net/portfolio/cognirunner" [ref=e688]':
+                    - generic [ref=e689]:
+                      - 'link "Video thumbnail: Cognirunner 3.1.0 Release 2:16" [ref=e691] [cursor=pointer]':
+                        - /url: /video/4EpoG_ZXn_Q/edit
+                        - generic [ref=e694]:
+                          - 'img "Video thumbnail: Cognirunner 3.1.0 Release" [ref=e697]'
+                          - generic [ref=e698]: 2:16
+                      - generic [ref=e701]:
+                        - link "Cognirunner 3.1.0 Release" [ref=e703] [cursor=pointer]:
+                          - /url: /video/4EpoG_ZXn_Q/edit
+                        - generic [ref=e705]: https://leanzero.net/portfolio/cognirunner
+                  - cell "—" [ref=e707]
+                  - cell "Public" [ref=e713]
+                  - cell "Aug 13, 2026 Published" [ref=e720]:
+                    - text: Aug 13, 2026
+                    - generic [ref=e721]: Published
+                  - cell "0" [ref=e722]
+                  - cell [ref=e723]:
+                    - link "Video has 0 comments. Video comments page" [ref=e724] [cursor=pointer]:
+                      - /url: /video/4EpoG_ZXn_Q/comments
+                      - text: "0"
+              - row [ref=e725]:
+                - generic [ref=e726]:
+                  - cell [ref=e727]:
+                    - generic "Select LeanZero Management Release video" [ref=e728] [cursor=pointer]:
+                      - generic [ref=e732]:
+                        - checkbox "Select LeanZero Management Release video"
+                  - 'cell "Video thumbnail: LeanZero Management Release video 2:09 LeanZero Management Release video https://leanzero.net/portfolio/leanzero-management A Microsoft Project-style Gantt for Jira. Move one task and every dependent task re-schedules on your working calendar, buffers absorb the slip, and the critical path updates live. Review every date before it is written back to Jira." [ref=e733]':
+                    - generic [ref=e734]:
+                      - 'link "Video thumbnail: LeanZero Management Release video 2:09" [ref=e736] [cursor=pointer]':
+                        - /url: /video/PS3ci3y1YOg/edit
+                        - generic [ref=e739]:
+                          - 'img "Video thumbnail: LeanZero Management Release video" [ref=e742]'
+                          - generic [ref=e743]: 2:09
+                      - generic [ref=e746]:
+                        - link "LeanZero Management Release video" [ref=e748] [cursor=pointer]:
+                          - /url: /video/PS3ci3y1YOg/edit
+                        - generic [ref=e750]: https://leanzero.net/portfolio/leanzero-management A Microsoft Project-style Gantt for Jira. Move one task and every dependent task re-schedules on your working calendar, buffers absorb the slip, and the critical path updates live. Review every date before it is written back to Jira.
+                  - cell "—" [ref=e752]
+                  - cell "Public" [ref=e758]
+                  - cell "Aug 13, 2026 Published" [ref=e765]:
+                    - text: Aug 13, 2026
+                    - generic [ref=e766]: Published
+                  - cell "3" [ref=e767]
+                  - cell [ref=e768]:
+                    - link "Video has 0 comments. Video comments page" [ref=e769] [cursor=pointer]:
+                      - /url: /video/PS3ci3y1YOg/comments
+                      - text: "0"
+              - row [ref=e770]:
+                - generic [ref=e771]:
+                  - cell [ref=e772]:
+                    - generic "Select Cognirunner version 3.0.0" [ref=e773] [cursor=pointer]:
+                      - generic [ref=e777]:
+                        - checkbox "Select Cognirunner version 3.0.0"
+                  - 'cell "Video thumbnail: Cognirunner version 3.0.0 1:54 Cognirunner version 3.0.0 https://leanzero.net/portfolio/cognirunner The new version of CogniRunner and also Leanzero''s first video on youtube." [ref=e778]':
+                    - generic [ref=e779]:
+                      - 'link "Video thumbnail: Cognirunner version 3.0.0 1:54" [ref=e781] [cursor=pointer]':
+                        - /url: /video/i-Clui-Zelk/edit
+                        - generic [ref=e784]:
+                          - 'img "Video thumbnail: Cognirunner version 3.0.0" [ref=e787]'
+                          - generic [ref=e788]: 1:54
+                      - generic [ref=e791]:
+                        - link "Cognirunner version 3.0.0" [ref=e793] [cursor=pointer]:
+                          - /url: /video/i-Clui-Zelk/edit
+                        - generic [ref=e795]: https://leanzero.net/portfolio/cognirunner The new version of CogniRunner and also Leanzero's first video on youtube.
+                  - cell "—" [ref=e797]
+                  - cell "Public" [ref=e803]
+                  - cell "Jun 18, 2026 Published" [ref=e810]:
+                    - text: Jun 18, 2026
+                    - generic [ref=e811]: Published
+                  - cell "11" [ref=e812]
+                  - cell [ref=e813]:
+                    - link "Video has 0 comments. Video comments page" [ref=e814] [cursor=pointer]:
+                      - /url: /video/i-Clui-Zelk/comments
+                      - text: "0"
+              - generic [ref=e817]:
+                - generic [ref=e818]: "Rows per page:"
+                - generic "Menu for selecting the number of rows per page." [ref=e819]:
+                  - button [ref=e821]:
+                    - button "30" [ref=e822] [cursor=pointer]
+                - generic [ref=e831]: 1–13 of 13
+                - button "Navigate to the first page" [disabled] [ref=e832]
+                - button "Navigate to the previous page" [disabled] [ref=e836]
+                - button "Navigate to the next page" [disabled] [ref=e840]
+                - button "Navigate to the last page" [disabled] [ref=e844]
