@@ -1,0 +1,58 @@
+<!doctype html>
+<!-- Sentinel Vault YouTube thumbnail template, built to the 2026 CTR research:
+     ≤3 words, two/three colours (deep saturated bg + white + yellow), one dominant subject (a tight
+     crop of the payoff element), 120px type, legible at 168x94. Rendered at DSF 2 → 1280x720.
+     Query: key, feature, title (|word| = yellow), bg (deep saturated hex), bg2 (slightly lighter shade) -->
+<html><head><meta charset="utf-8">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@800;900&display=swap" rel="stylesheet">
+<style>
+  html,body{margin:0;width:1280px;height:720px;overflow:hidden;background:var(--bg);font-family:Inter,'Helvetica Neue',sans-serif;-webkit-font-smoothing:antialiased;position:relative}
+  .wedge{position:absolute;right:-140px;top:-80px;width:760px;height:900px;background:var(--bg2);transform:skewX(-12deg);border-radius:40px}
+  .brand{position:absolute;left:52px;top:44px;display:flex;align-items:center;gap:12px}
+  .brand .name{color:#fff;font-weight:900;font-size:30px;letter-spacing:-.6px}
+  .pill{position:absolute;left:52px;top:118px;padding:9px 18px;border-radius:10px;background:#FDE047;color:#111827;font-weight:900;font-size:22px;letter-spacing:2.5px;text-transform:uppercase}
+  h1{position:absolute;left:48px;top:50%;transform:translateY(-38%);margin:0;width:590px;color:#fff;font-weight:900;font-size:124px;line-height:.94;letter-spacing:-5.5px;text-shadow:0 8px 0 rgba(0,0,0,.35)}
+  h1 em{font-style:normal;color:#FDE047}
+  .lz{position:absolute;left:52px;bottom:44px;display:flex;align-items:center;gap:10px;color:#fff;font-weight:800;font-size:24px}
+  .lz span{opacity:.85;font-weight:700;font-size:20px}
+  .win{position:absolute;right:48px;top:50%;transform:translateY(-50%) rotate(-4deg);width:560px;border-radius:20px;overflow:hidden;background:#fff;border:10px solid #FDE047;box-sizing:border-box;box-shadow:0 40px 80px rgba(0,0,0,.55)}
+  .win img{display:block;width:100%;height:100%;object-fit:cover;object-position:left top}
+</style></head><body>
+<div class="wedge"></div>
+<div class="brand"><img id="logo" width="50" height="50" alt=""><span class="name">Sentinel Vault</span></div>
+<div class="pill" id="feature"></div>
+<h1 id="title"></h1>
+<div class="lz"><span>by</span><img id="lzimg" height="26" alt="">LeanZero</div>
+<div class="win" id="win"><img id="shot" alt=""></div>
+<script>
+  const q = new URLSearchParams(location.search);
+  document.documentElement.style.setProperty('--bg', q.get('bg') || '#0B2A8A');
+  document.documentElement.style.setProperty('--bg2', q.get('bg2') || '#1740B8');
+  document.getElementById('feature').textContent = q.get('feature') || '';
+  document.getElementById('title').innerHTML = (q.get('title') || '').replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])).replace(/\|([^|]+)\|/g, '<em>$1</em>').split(' ').map(w => w.startsWith('<em>') ? w : '<span>' + w + '</span>').join(' ');
+  document.getElementById('lzimg').src = 'leanzero.png';
+  document.getElementById('logo').src = 'sv-logo.svg';
+  const img = document.getElementById('shot');
+  img.onload = () => {
+    const win = document.getElementById('win');
+    const ar = img.naturalWidth / img.naturalHeight;
+    let w = 560, h = Math.round(w / ar);
+    if (h > 520) { h = 520; w = Math.round(h * ar); }
+    if (h < 250) { h = 250; }
+    win.style.width = w + 'px'; win.style.height = h + 'px';
+    // fit the title AFTER the web font is in: shrink until no word overflows the column
+    document.fonts.ready.then(() => {
+      const h1 = document.getElementById('title');
+      const limit = 1280 - 48 - w - 48 - 24; // stop before the window's left edge
+      let fs = 124;
+      h1.style.width = (limit - 48) + 'px';
+      const apply = () => { h1.style.fontSize = fs + 'px'; h1.style.letterSpacing = (-fs * 0.044) + 'px'; };
+      apply();
+      const wide = () => Math.max(...[...h1.querySelectorAll('span,em')].map(e => e.getBoundingClientRect().right)) > limit;
+      while (fs > 64 && (wide() || h1.getBoundingClientRect().height > 470)) { fs -= 4; apply(); }
+      document.body.dataset.ready = '1';
+    });
+  };
+  img.src = 'crops/' + q.get('key') + '.png';
+</script>
+</body></html>
