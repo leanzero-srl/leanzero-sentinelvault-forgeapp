@@ -1,21 +1,23 @@
 # Sentinel Vault — Documentation
 
-Index of the product, feature, and verification docs. Each feature doc explains the feature and **embeds the screenshots and links the walkthrough videos** produced by the screenshot/video harness.
+Index of the product, feature, and verification docs, current to production 6.4.0. Each feature doc explains the feature and **embeds the screenshots and links the walkthrough videos** produced by the screenshot/video harness.
 
-## Feature guides (v4.0.0 roadmap)
+## Feature guides
+
+These four were written when the features shipped in 4.0; their screenshots and videos show that release's UI. The user guide and README describe the current behaviour.
 
 Each guide follows the same template: *What it does · Where to find it · How to test (step by step) · What you should see · Walkthrough (screenshots + video) · Troubleshooting · Under the hood — how it's proven.*
 
 | Feature | Guide | Demo |
 |---|---|---|
 | **Edit Requests** | [edit-requests.md](features/edit-requests.md) | [video](media/videos/03-realm-edit-requests.mp4) |
-| **Content Sealing** (sections) | [content-sealing.md](features/content-sealing.md) | [video](media/videos/01-inline-panel-features.mp4) |
+| **Content Sealing** (sections) | [content-sealing.md](features/content-sealing.md) | [video](media/videos/04-sealed-section-macro.mp4) |
 | **Conditions & Validations** | [conditions-validations.md](features/conditions-validations.md) | [video](media/videos/02-steward-validations-ai.mp4) |
 | **Semantic AI Validations** | [semantic-ai-validations.md](features/semantic-ai-validations.md) | [video](media/videos/01-inline-panel-features.mp4) |
 
 ## Testing & verification
 
-- [TESTING.md](TESTING.md) — unit results (65/65), `forge lint`, build, deploy/install (v4.0.0, Runs on Atlassian), frontend render verification, and the per-feature proof matrix.
+- [TESTING.md](TESTING.md) — how the app is tested; run the unit suites with `npm test`.
 - [`../test-harness/README.md`](../test-harness/README.md) — the black-box E2E harness (REST + forge-logs) and the full manual matrix.
 
 ## Media
@@ -35,10 +37,13 @@ THEME=dark node capture.mjs        # dark stills
 
 ## Reference docs
 
+- [user-guide.md](user-guide.md) — end users, space admins and site admins: sealing, edit requests, workflow, classification, signing, activity.
+- [REST-CONFIG-API.md](REST-CONFIG-API.md) — API tokens (Admin / Editor / Viewer), bundles and content operations.
 - [architecture.md](architecture.md) — backend capsules, the unified page-content pipeline, KVS schema, surfaces.
 - [settings-reference.md](settings-reference.md) — every admin setting.
 - [notifications.md](notifications.md) — native footer-comment notifications.
-- [deployment.md](deployment.md) · [troubleshooting.md](troubleshooting.md) · [user-guide.md](user-guide.md) · [contributing.md](contributing.md)
+- [deployment.md](deployment.md) · [troubleshooting.md](troubleshooting.md) · [contributing.md](contributing.md)
+- Design records: [CLASSIFICATION-UX.md](CLASSIFICATION-UX.md), [CLASSIFICATION-ASSETS-DESIGN.md](CLASSIFICATION-ASSETS-DESIGN.md), [PRODUCT-DEFINITION.md](PRODUCT-DEFINITION.md)
 - [api/](api) — Confluence event + content-surgery notes, OpenAPI specs.
 
 ---
