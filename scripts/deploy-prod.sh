@@ -3,7 +3,9 @@
 # is eligible for the "Runs on Atlassian" program and ships no state-mutation backdoor.
 # The dev/development deploys keep manifest.yml as-is (harness needs the webtrigger).
 set -euo pipefail
-REPO="/Users/mihaiperdum/Projects/Sentinel Vault"
+# The repo this script lives in (it moved from "~/Projects/Sentinel Vault"; a hardcoded path
+# made the script abort on `cd`).
+REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO"
 
 # Licensing guard: manifest.yml carries `licensing.enabled: true`. Deploying that to PROD
@@ -32,7 +34,7 @@ cleanup() { cp manifest.yml.dev.bak manifest.yml; rm -f manifest.yml.dev.bak man
 trap cleanup EXIT
 
 echo "==> forge lint (production manifest)"
-forge lint
+forge lint -e production   # -e: a non-TTY shell cannot answer the environment prompt
 
 echo "==> Deploying to production"
 forge deploy -e production "$@"
