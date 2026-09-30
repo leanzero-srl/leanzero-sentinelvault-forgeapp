@@ -35,7 +35,7 @@ Sentinel Vault is document control with teeth. Status chips record intent — Se
 - Seal an attachment: another user's overwrite is restored to the sealed version, a trashed file comes back, a sealed image keeps its size and layout.
 - Seal a page section: tampering is reverted from a snapshot while the rest of the page stays editable.
 - Edit requests: approve, deny or revoke edit access; a declined request can be retried after a cooldown.
-- Workflow: Draft → In Review → Approved → Expired with multi-approver sign-off. A non-approver's edit demotes or reverts an Approved page.
+- Workflow: Draft → In Review → Approved → Needs re-review, multi-approver sign-off. A non-approver's edit demotes or reverts an Approved page.
 - Classification: Public, Internal, Confidential, Restricted (or your own levels), space defaults, and a reason to lower a level.
 - Optional 6-digit authenticator code on seal actions and approvals.
 - Content validations, AI review on Atlassian-hosted Claude (off by default), REST API tokens, and a space dashboard with CSV export.
