@@ -1,6 +1,6 @@
 # User Guide
 
-Applies to production **6.4.0**.
+Applies to production **6.5.0**.
 
 ## What is Sentinel Vault?
 
@@ -96,7 +96,7 @@ When a site administrator turns classification on, every page shows a classifica
 
 A site or a space can require a 6-digit code from an authenticator app before certain actions run. The **Sign this action** dialog asks for the current code.
 
-- **Seal actions (site setting, off by default).** With **Sign seal actions with an authenticator code** on, these ask for a code: sealing a file or section, releasing, Force release, extending, approving or declining an edit request, and giving or revoking edit access. Someone who has not set up an authenticator is refused until they do. Two paths are not signed in 6.4.0: a section sealed by inserting the Sealed Section macro in the editor and publishing, and REST API jobs (they call the actions directly, without the signing check).
+- **Seal actions (site setting, off by default).** With **Sign seal actions with an authenticator code** on, these ask for a code: sealing a file or section, releasing, Force release, extending, approving or declining an edit request, and giving or revoking edit access. Someone who has not set up an authenticator is refused until they do. Two paths are not signed in 6.5.0: a section sealed by inserting the Sealed Section macro in the editor and publishing, and REST API jobs (they call the actions directly, without the signing check).
 - **Approvals (per space).** A space's workflow can require signed decisions: each approver signs their own decision; a space admin's direct approval is signed too; when a workflow has no named approvers, only a space admin can move the page and signs that direct approval (the requester signs the request only when the state also needs an AI review).
 - Each code works once. After 5 wrong codes, signatures for that account are refused for 15 minutes.
 
@@ -197,7 +197,7 @@ Site admins mint tokens on the **API access** tab. A token looks like `svt_` fol
 | Role | May do |
 |------|--------|
 | Viewer | Nothing that writes |
-| Editor | Content operations (sealing, classification, workflow, validation re-checks). The edit-access ops are accepted but fail in 6.4.0 (known issue, see the API reference) |
+| Editor | Content operations (sealing, giving, revoking and declining edit access, classification, workflow, validation re-checks) |
 | Admin | Everything, including site and space configuration |
 
 Every operation runs as the admin who minted the token, through the same permission checks as the UI. Full reference: [REST-CONFIG-API.md](REST-CONFIG-API.md).

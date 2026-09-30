@@ -1,6 +1,6 @@
 # Sentinel Vault
 
-**Attachment and page-section sealing, approvals and page classification for Confluence.** Production release: 6.4.0.
+**Attachment and page-section sealing, approvals and page classification for Confluence.** Production release: 6.5.0.
 
 Part of the [LeanZero](https://leanzero.net) ecosystem.
 
@@ -89,7 +89,7 @@ Every page can carry a sensitivity level. Classification is **off until a site a
 
 ### Signing actions with an authenticator code
 
-- **Seal actions (site setting, off by default):** with **Sign seal actions with an authenticator code** on, sealing and releasing files or sections, extending a seal, force release, and approving, declining, giving or revoking edit access all ask for the current 6-digit code. People without an authenticator set up are refused until they add one. Two paths are not signed in 6.4.0: a section sealed by inserting the Sealed Section macro in the editor and publishing, and REST API jobs (they call the actions directly, without the signing check).
+- **Seal actions (site setting, off by default):** with **Sign seal actions with an authenticator code** on, sealing and releasing files or sections, extending a seal, force release, and approving, declining, giving or revoking edit access all ask for the current 6-digit code. People without an authenticator set up are refused until they add one. Two paths are not signed in 6.5.0: a section sealed by inserting the Sealed Section macro in the editor and publishing, and REST API jobs (they call the actions directly, without the signing check).
 - **Approvals (per space):** the Workflow tab's signature setting makes each approver sign their own decision (a space admin's direct approval too; with no named approvers only a space admin can approve, and the requester signs only when an AI review step is involved).
 - Each person sets up their authenticator app once on **My work**. Codes are single-use; 5 wrong codes lock that person's signing for 15 minutes.
 
@@ -99,7 +99,7 @@ Seals, releases, forced releases, reverts and restores, edit requests, workflow 
 
 ### REST API
 
-Site admins mint named tokens in **Site settings → API access** with a role of **Admin** (site and space configuration plus content operations), **Editor** (content operations; in 6.4.0 the give/revoke/decline edit-access ops are accepted but fail — a known issue) or **Viewer** (no writes). The plaintext (`svt_…`) is shown once; only its SHA-256 hash is stored. A token acts as the admin who minted it, so it can do nothing that person cannot, and it stops working if they are no longer a site admin. One `POST` endpoint accepts configuration bundles and content operations and answers with a status only; results are read back from Confluence properties. See [docs/REST-CONFIG-API.md](docs/REST-CONFIG-API.md).
+Site admins mint named tokens in **Site settings → API access** with a role of **Admin** (site and space configuration plus content operations), **Editor** (content operations, including giving, revoking and declining edit access) or **Viewer** (no writes). The plaintext (`svt_…`) is shown once; only its SHA-256 hash is stored. A token acts as the admin who minted it, so it can do nothing that person cannot, and it stops working if they are no longer a site admin. One `POST` endpoint accepts configuration bundles and content operations and answers with a status only; results are read back from Confluence properties. See [docs/REST-CONFIG-API.md](docs/REST-CONFIG-API.md).
 
 ### Administration
 

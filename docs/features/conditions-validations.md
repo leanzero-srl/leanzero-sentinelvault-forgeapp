@@ -1,6 +1,6 @@
 # Conditions & Validations
 
-> Updated for production 6.4.0. The screenshots and videos below were recorded on 4.x and show older layouts.
+> Updated for production 6.5.0. The screenshots and videos below were recorded on 4.x and show older layouts.
 
 > Define rules that Confluence pages are checked against on create and edit — required fields, formatting, approval gates — and enforce them.
 
@@ -8,7 +8,7 @@
 |---|---|
 | **Surfaces** | Site settings → *Validations* tab and space console → *Validations* tab (authoring) · inline panel → *Validation* group and page ribbon (reporting) |
 | **Who can use it** | Site admins author site rules, space admins author space rules; everyone is validated |
-| **Status** | Shipped since 4.0.0; current in production 6.4.0 |
+| **Status** | Shipped since 4.0.0; current in production 6.5.0 |
 | **Runs on Atlassian** | Yes (no external egress) |
 
 ## What it does

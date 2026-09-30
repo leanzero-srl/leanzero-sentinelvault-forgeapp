@@ -53,7 +53,7 @@ Each surface produces an `index.html`, `index.js`, and `styles.css` bundle.
 forge deploy
 ```
 
-Production is deployed from a release tag (production 6.4.0 = git tag `v6.4.0`) with `scripts/deploy-prod.sh`. The script builds a production manifest without the dev-only `harness-test-state` webtrigger (`scripts/strip-dev-modules.mjs`), runs `forge lint -e production`, deploys, runs `forge eligibility -e production` and restores the dev manifest. Because `manifest.yml` has `licensing.enabled: true`, the script refuses to run unless you pass `--licensing-live` (confirming the paid plan is live in the Partner portal). The static `config-api` webtrigger (REST API) ships to production.
+Production is deployed from a release tag (production 6.5.0 = git tag `v6.5.0`) with `scripts/deploy-prod.sh`. The script builds a production manifest without the dev-only `harness-test-state` webtrigger (`scripts/strip-dev-modules.mjs`), runs `forge lint -e production`, deploys, runs `forge eligibility -e production` and restores the dev manifest. Because `manifest.yml` has `licensing.enabled: true`, the script refuses to run unless you pass `--licensing-live` (confirming the paid plan is live in the Partner portal). The static `config-api` webtrigger (REST API) ships to production.
 
 A release that adds a scope or module is a major version: every site admin must accept the update in Manage apps before the new version runs on their site.
 
