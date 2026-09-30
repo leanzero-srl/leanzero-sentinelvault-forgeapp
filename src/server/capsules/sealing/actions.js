@@ -21,7 +21,7 @@ import {
 // Import from capsule logic
 import { countPageAttachments, writeSealContentProp, removeSealContentProp, touchSealTimestamp, resolveSealHoldPeriod } from "./logic.js";
 import { readDocBody } from "../../infra/doc-surgery.js";
-import { confirmAttachmentPurged } from "../../infra/attachment-status.js";
+import { confirmAttachmentPurged, putAttachmentCurrent } from "../../infra/attachment-status.js";
 import { findSealedMediaSingle, capturePresentation } from "../../infra/media-presentation.js";
 import { purgeAllSealState } from "./confluence-sync.js";
 import { releaseSeal } from "./release.js";
@@ -1192,24 +1192,15 @@ export const restoreSealedArtifact = async (req) => {
     return { success: false, reason: "Cannot determine attachment version" };
   }
 
-  const restoreRoute = route`/wiki/rest/api/content/${pageId}/child/attachment/${attachmentId}`;
-  const restoreRes = await asApp().requestConfluence(restoreRoute, {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      id: attachmentId,
-      type: "attachment",
-      status: "current",
-      title: probeData.title || sealRecord?.attachmentName || "Unknown",
-      version: { number: currentVersion + 1 },
-    }),
-  });
-
-  if (!restoreRes.ok) {
-    const errorText = await restoreRes.text();
-    console.error(`[RESTORE] Failed ${attachmentId}: ${restoreRes.status} — ${errorText}`);
-    return { success: false, reason: `Restore failed: ${restoreRes.status}` };
+  // A newer file with the same name on the page makes Confluence refuse the restore (409); the
+  // file then comes back as "<name> (restored).<ext>" and the caller is told (tester 2026-09-30).
+  const originalTitle = probeData.title || sealRecord?.attachmentName || "Unknown";
+  const put = await putAttachmentCurrent(pageId, attachmentId, originalTitle, currentVersion);
+  if (!put.ok) {
+    console.error(`[RESTORE] Failed ${attachmentId}: ${put.status} — ${put.text || ""}`);
+    return { success: false, reason: put.status === 409 ? "Could not restore: a file with this name is already on the page and no free name was found." : `Restore failed: ${put.status}` };
   }
+  if (put.renamed) console.warn(`[RESTORE] ${attachmentId} restored as "${put.title}" — a newer "${originalTitle}" is on the page`);
 
   // Clean up tracking-only records (not real seals) after restore
   if (sealRecord?.trashedOnly) {
@@ -1221,7 +1212,9 @@ export const restoreSealedArtifact = async (req) => {
 
   await touchSealTimestamp();
   console.warn(`[RESTORE] Restored attachment ${attachmentId}`);
-  return { success: true };
+  return put.renamed
+    ? { success: true, renamedTo: put.title, notice: `Restored as "${put.title}" — a newer file named "${originalTitle}" is already on the page.` }
+    : { success: true };
 };
 
 /**
