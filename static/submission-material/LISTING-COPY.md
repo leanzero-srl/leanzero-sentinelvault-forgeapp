@@ -113,7 +113,12 @@ API access: one POST endpoint for configuration bundles and content operations, 
 
 ---
 
-## What's new / Release notes (6.4.0 — production 2026-09-30)
+## What's new / Release notes (6.5.0 — production 2026-09-30; pasted live)
+
+6.5.0 summary: REST API: give, revoke and decline edit access now work
+6.5.0 notes: Fixed: the REST API operations that give, revoke and decline edit access to sealed files and sections now run. In 6.4.0 they were accepted but every job failed with "No resolver". They go through the same permission checks as the UI; resubmit any failed job with a new Idempotency-Key. Everything else is unchanged from 6.4.0.
+
+### 6.4.0
 
 **Release summary (≤80):**
 <!-- block:rel_summary -->
