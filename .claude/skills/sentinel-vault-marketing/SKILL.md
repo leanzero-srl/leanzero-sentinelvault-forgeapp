@@ -118,3 +118,9 @@ that is a dead URL, not a login failure):
 Each NEW version created by `forge deploy -e production` gets "Minor version update" as summary and empty
 highlights/media unless edited — do this per release; texts live in static/submission-material/LISTING-COPY.md
 (`count-blocks.py` checks the limits).
+- TRAP (cost a redo 2026-09-30): never "edit one line" in the Marketplace Atlassian editor with Shift+End —
+  it selected to the end of the DOCUMENT and the save dropped every later bullet. Always select-all and
+  retype the whole field, then reload and read it back.
+- Naming: the fourth workflow state is "Needs re-review" (state id `expired`) — never write "Expired" in copy.
+- Known 6.4.0 bug (docs record it): REST give/revoke/decline edit-access operations are accepted but the job
+  fails "No resolver" (config-api dispatcher lacks the edit-request actions) — do not advertise them until fixed.
