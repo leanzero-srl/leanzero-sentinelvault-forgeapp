@@ -23,7 +23,7 @@ one   01-seal        "$A" 24  8   1440 810  560  230  1.4
 split 02-request          42  30  400 300 2.5
 split 03-decline          74  22  0   500 2.0
 one   04-restored    "$A" 196 24  1640 922  2440 40   2.0
-one   05-sec-pick    "$A" 247 14  1280 720  580  740  2.0
+one   05-sec-pick    "$A" 246.5 2.6 1280 720  580  740  0.8
 one   06-sec-revert  "$A" 283 20  1400 788  2560 120  1.5
 one   07-comments    "$A" 296 6   1400 788  520  380  1.0
 one   08-site-toggles "$B" 52 20  2620 1474 660  120  2.0

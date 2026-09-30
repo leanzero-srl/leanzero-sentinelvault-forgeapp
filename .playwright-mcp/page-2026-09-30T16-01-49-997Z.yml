@@ -1,0 +1,45 @@
+- generic [active] [ref=f20e1]:
+  - generic:
+    - generic: Channel content
+    - generic [ref=f20e4]:
+      - banner [ref=f20e6]:
+        - button "Expand menu" [ref=f20e7] [cursor=pointer]
+        - link [ref=f20e10] [cursor=pointer]:
+          - /url: /channel/UC1JpYs3UmQZtOzbsAf8fYXw
+          - img "YouTube Studio dashboard" [ref=f20e11]
+        - button "Skip navigation" [ref=f20e15] [cursor=pointer]
+        - textbox "Search across your channel" [ref=f20e24]
+        - generic [ref=f20e26]:
+          - generic [ref=f20e27]:
+            - button "Search" [ref=f20e28] [cursor=pointer]
+            - button "Help" [ref=f20e31] [cursor=pointer]
+            - button "Notifications" [ref=f20e34] [cursor=pointer]
+          - button "Ask Studio" [ref=f20e44] [cursor=pointer]
+          - button "Create" [ref=f20e54] [cursor=pointer]
+          - generic "Account" [ref=f20e61]:
+            - button "Account" [ref=f20e62]:
+              - generic [ref=f20e63] [cursor=pointer]
+      - generic [ref=f20e64]:
+        - navigation [ref=f20e66]:
+          - generic [ref=f20e67]:
+            - generic:
+              - img "Leanzero SRL" [ref=f20e70]
+              - generic [ref=f20e71]:
+                - generic [ref=f20e72]: Your channel
+                - generic [ref=f20e73]: Leanzero SRL
+          - menu [ref=f20e76]:
+            - menuitem "Dashboard" [ref=f20e77] [cursor=pointer]
+            - menuitem "Content" [ref=f20e81] [cursor=pointer]
+            - menuitem "Analytics" [ref=f20e85] [cursor=pointer]
+            - menuitem "Community" [ref=f20e89] [cursor=pointer]
+            - menuitem "Languages" [ref=f20e93] [cursor=pointer]
+            - menuitem "Content detection" [ref=f20e97] [cursor=pointer]
+            - menuitem "Earn" [ref=f20e101] [cursor=pointer]
+            - menuitem "Customization" [ref=f20e105] [cursor=pointer]
+            - menuitem "Audio library" [ref=f20e109] [cursor=pointer]
+          - list [ref=f20e114]:
+            - listitem [ref=f20e115]:
+              - button [ref=f20e116] [cursor=pointer]
+            - listitem [ref=f20e119]:
+              - button [ref=f20e121] [cursor=pointer]
+        - main [ref=f20e124]
