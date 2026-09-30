@@ -1,0 +1,94 @@
+<!doctype html>
+<!-- Sentinel Vault brand composition v3 (2026-09-30, listing refresh for 6.4.0).
+     The CogniRunner 1.2.0 "thumbnail language" in Sentinel Vault's colours: solid saturated sky-navy
+     (#0C4A6E, never black) + a lighter skewed teal wedge, the Sealed Shield mark top-left, a yellow pill,
+     an Inter 900 headline one word per line with ONE |yellow| word (a~b keeps two words on a line),
+     tilted white windows with a yellow border holding REAL frames from the 2026-09-30 recordings,
+     "by LeanZero" bottom-left. No left rails, no washes.
+     Query: w, h, pill, title, sub, mode=banner|highlight, img (+ww,right) and optional img2 (+ww2,x2,y2).
+     Rendered by render-v3.mjs at DSF 2, then Lanczos-downscaled to exact px. body[data-clipped] counts
+     windows whose rotated box leaves the canvas where that is not allowed (banner: any edge). -->
+<html><head><meta charset="utf-8">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@600;700;800;900&display=swap" rel="stylesheet">
+<style>
+  :root{--bg:#0C4A6E;--bg2:#0E7490;--y:#FACC15;--w:1120px;--h:548px;--s:1}
+  html,body{margin:0;width:var(--w);height:var(--h);overflow:hidden;background:var(--bg);font-family:Inter,'Helvetica Neue',sans-serif;-webkit-font-smoothing:antialiased;position:relative;color:#fff}
+  .wedge{position:absolute;right:calc(-140px*var(--s));top:calc(-120px*var(--s));width:56%;height:140%;background:var(--bg2);transform:skewX(-12deg);border-radius:calc(40px*var(--s))}
+  .brand{position:absolute;left:calc(44px*var(--s));top:calc(36px*var(--s));display:flex;align-items:center;gap:calc(12px*var(--s))}
+  .brand .mk{width:calc(46px*var(--s));height:calc(46px*var(--s));line-height:0}
+  .brand .mk svg{width:100%;height:100%}
+  .brand .name{font-weight:900;font-size:calc(27px*var(--s));letter-spacing:-.5px}
+  .pill{position:absolute;left:calc(44px*var(--s));top:calc(104px*var(--s));padding:calc(8px*var(--s)) calc(16px*var(--s));border-radius:calc(9px*var(--s));background:var(--y);color:#0F172A;font-weight:900;font-size:calc(18px*var(--s));letter-spacing:2px;text-transform:uppercase;white-space:nowrap}
+  h1{position:absolute;left:calc(42px*var(--s));top:calc(158px*var(--s));bottom:calc(var(--hb)*var(--s));margin:0;display:flex;flex-direction:column;justify-content:center;font-weight:900;line-height:.95;text-shadow:0 7px 0 rgba(0,0,0,.30)}
+  h1 em{font-style:normal;color:var(--y)}
+  h1 span,h1 em{display:block;white-space:nowrap}
+  .sub{position:absolute;left:calc(44px*var(--s));bottom:calc(96px*var(--s));font-weight:700;font-size:calc(24px*var(--s));line-height:1.35;color:#fff}
+  .lz{position:absolute;left:calc(44px*var(--s));bottom:calc(36px*var(--s));display:flex;align-items:center;gap:calc(9px*var(--s));font-weight:800;font-size:calc(22px*var(--s))}
+  .lz b{font-weight:700;font-size:calc(19px*var(--s))}
+  .lz img{height:calc(24px*var(--s));background:#fff;border-radius:calc(7px*var(--s));padding:calc(5px*var(--s))}
+  .win{position:absolute;border-radius:calc(16px*var(--s));overflow:hidden;background:#fff;border:calc(9px*var(--s)) solid var(--y);box-sizing:border-box;box-shadow:0 36px 70px rgba(0,0,0,.45)}
+  .win img{display:block;width:100%;height:auto}
+</style></head><body>
+<div class="wedge"></div>
+<div class="brand"><div class="mk" id="mk"></div><span class="name">Sentinel Vault</span></div>
+<div class="pill" id="pill"></div>
+<h1 id="title"></h1>
+<div class="sub" id="sub"></div>
+<div class="lz"><b>by</b><img id="lzimg" alt="">LeanZero</div>
+<div id="wins"></div>
+<script type="module">
+  import { MARK_TILE_SVG } from './mark.mjs';
+  document.getElementById('mk').innerHTML = MARK_TILE_SVG;
+  const q = new URLSearchParams(location.search);
+  const W = +q.get('w') || 1120, H = +q.get('h') || 548, mode = q.get('mode') || 'banner';
+  const S = +q.get('s') || 1;
+  const R = document.documentElement.style;
+  R.setProperty('--w', W + 'px'); R.setProperty('--h', H + 'px'); R.setProperty('--s', S);
+  const sub = q.get('sub') || '';
+  document.getElementById('sub').innerHTML = sub.replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])).replace(/\|/g, '<br>');
+  R.setProperty('--hb', sub ? (96 + 34 * (sub.split('|').length) + 18) + 'px' : '92px');
+  document.getElementById('pill').textContent = q.get('pill') || '';
+  const esc = s => s.replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+  document.getElementById('title').innerHTML = esc(q.get('title') || '').split(' ').map(w => {
+    const m = w.match(/^\|(.+)\|$/); const t = (m ? m[1] : w).replace(/~/g, ' ');
+    return m ? '<em>' + t + '</em>' : '<span>' + t + '</span>';
+  }).join('');
+  document.getElementById('lzimg').src = 'src-6.4/leanzero.png';
+
+  const wins = document.getElementById('wins');
+  const spec = [{ src: q.get('img'), right: +q.get('right') || 44, width: +q.get('ww') || 540, rot: +(q.get('rot') ?? -3), center: true }];
+  if (q.get('img2')) spec.push({ src: q.get('img2'), left: +q.get('x2'), top: +q.get('y2'), width: +q.get('ww2'), rot: +(q.get('rot2') ?? 2) });
+  let pending = spec.length;
+  for (const s of spec) {
+    const d = document.createElement('div'); d.className = 'win'; d.style.width = s.width + 'px';
+    if (s.center) { d.style.right = s.right + 'px'; d.style.top = '50%'; d.style.transform = `translateY(-50%) rotate(${s.rot}deg)`; }
+    else { d.style.left = s.left + 'px'; d.style.top = s.top + 'px'; d.style.transform = `rotate(${s.rot}deg)`; d.style.zIndex = 2; }
+    const im = document.createElement('img'); im.src = s.src; d.appendChild(im); wins.appendChild(d);
+    im.onload = () => { if (--pending === 0) fit(); };
+  }
+  function fit() {
+    // the headline column stops before the left-most window edge (after rotation)
+    let leftLimit = W;
+    for (const d of wins.children) leftLimit = Math.min(leftLimit, d.getBoundingClientRect().left);
+    const limit = Math.min(leftLimit - 28 * S, +q.get('maxx') || W);
+    document.fonts.ready.then(() => {
+      const h1 = document.getElementById('title');
+      const avail = h1.getBoundingClientRect().height;
+      let fs = +q.get('fs') || 150;
+      const apply = () => { h1.style.fontSize = fs + 'px'; h1.style.letterSpacing = (-fs * 0.042) + 'px'; };
+      apply();
+      const kids = () => [...h1.querySelectorAll('span,em')];
+      const wide = () => Math.max(...kids().map(e => e.getBoundingClientRect().right)) > limit;
+      const tall = () => kids().reduce((a, e) => a + e.getBoundingClientRect().height, 0) > avail;
+      while (fs > 40 && (wide() || tall())) { fs -= 2; apply(); }
+      const subR = document.getElementById('sub').getBoundingClientRect();
+      const subWide = sub && subR.right > limit ? 1 : 0;
+      // banner: nothing may leave the canvas. highlight: windows may bleed right only.
+      const clipped = [...wins.children].map(d => d.getBoundingClientRect())
+        .filter(r => r.left < 0 || r.top < 0 || r.bottom > H || (mode === 'banner' && r.right > W)).length;
+      document.body.dataset.clipped = clipped + subWide;
+      document.body.dataset.fs = fs; document.body.dataset.ready = '1';
+    });
+  }
+</script>
+</body></html>
