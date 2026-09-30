@@ -127,7 +127,7 @@ Classification and day-to-day sealing get clearer.
 - New: every page shows its classification level. Raising it is one action; lowering it asks for a reason and shows an amber callout. The level menu opens where it can be seen.
 - Improved: Force release is offered only to space admins when "Allow space admins to force-unseal" is on, so the menu never offers an action the server will refuse.
 - Improved: Sealed and Available files page separately, counts match the cards, and a file you just sealed or released moves to the top of its new group.
-- New: a declined edit request can be retried after a site-configurable cooldown (default 1 hour).
+- A declined edit request can be retried after a site-configurable cooldown (default 1 hour).
 - Seal actions can require a 6-digit authenticator code (site setting).
 
 Also in this line: sealed page sections, image presentation seals, unified restores and per-user authorization on every action.
@@ -154,6 +154,7 @@ from the 4.x masters).
 | Additional screenshot 3 | `marketplace-screenshots/03-signed-action.png` | 1840×1020 | NEW, caption s3 |
 | Additional screenshot 4 | `marketplace-screenshots/04-auto-restored-attachment.png` | 1840×1020 | NEW, caption s4 |
 | Additional screenshot 5 | `marketplace-screenshots/05-rest-api-access.png` | 1840×1020 | NEW, caption s5 |
+| Demo video (YouTube URL) | https://youtu.be/IGCvPP9RxZo (the 8-feature compilation, public) | — | NEW 2026-09-30 |
 | Tagline / Summary / More details | blocks `tagline`, `summary`, `more` above | — | tagline + summary on the live listing are still the pre-August text |
 | Highlight title / description / caption ×3 | blocks `h{n}_title`, `h{n}_desc`, `h{n}_cap` | — | replace all three |
 | Version 6.4.0 release summary / notes | blocks `rel_summary`, `rel_notes` | — | live shows "Minor version update" |
