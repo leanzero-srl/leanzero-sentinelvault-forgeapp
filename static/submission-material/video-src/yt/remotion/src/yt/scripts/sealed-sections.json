@@ -1,0 +1,104 @@
+{
+ "key": "sealed-sections",
+ "source": "rec-a",
+ "from": 228,
+ "to": 388,
+ "title": "Lock a section of a Confluence page, keep the rest editable",
+ "subtitle": "Seal one heading and what sits under it; edits by others are undone until you approve them",
+ "feature": "Sealed sections",
+ "steps": [
+  {
+   "t": 228,
+   "label": "Open the Sentinel Vault panel",
+   "detail": "Gabriela owns the page section 1. Introduction"
+  },
+  {
+   "t": 240,
+   "label": "Click Seal a section",
+   "detail": "The picker reads the page's headings"
+  },
+  {
+   "t": 244,
+   "label": "Pick the heading and how long",
+   "detail": "1. Introduction for 1 day: the heading plus the blocks under it"
+  },
+  {
+   "t": 260,
+   "label": "Section sealed until tomorrow",
+   "detail": "1. Introduction \u00b7 Sealed by you \u00b7 until Thu 14:01"
+  },
+  {
+   "t": 264,
+   "label": "A colleague edits the section",
+   "detail": "Mihai types test under 1. Introduction and publishes"
+  },
+  {
+   "t": 288,
+   "label": "The edit is reverted",
+   "detail": "The page goes back to the sealed version (v48)"
+  },
+  {
+   "t": 292,
+   "label": "The editor is told why",
+   "detail": "Your edit was undone; your text is kept in the page history"
+  },
+  {
+   "t": 320,
+   "label": "Request edit on the section",
+   "detail": "Mihai asks Gabriela from the panel"
+  },
+  {
+   "t": 336,
+   "label": "The owner approves",
+   "detail": "Mihai appears under Editors with access"
+  },
+  {
+   "t": 348,
+   "label": "Edit under the seal",
+   "detail": "Mihai types test 2 and publishes"
+  },
+  {
+   "t": 384,
+   "label": "The approved edit stays",
+   "detail": "1. Introduction now reads test 2"
+  }
+ ],
+ "callouts": [
+  {
+   "t": 260,
+   "duration": 4,
+   "text": "Section sealed \u00b7 expires tomorrow"
+  },
+  {
+   "t": 292,
+   "duration": 5,
+   "text": "Unapproved edit undone automatically"
+  },
+  {
+   "t": 340,
+   "duration": 4,
+   "text": "Approved: Mihai may edit this section"
+  },
+  {
+   "t": 384,
+   "duration": 3.5,
+   "text": "Approved edit kept"
+  }
+ ],
+ "deadZones": [
+  {
+   "from": 244,
+   "to": 256
+  },
+  {
+   "from": 296,
+   "to": 320
+  },
+  {
+   "from": 364,
+   "to": 382,
+   "rate": 8
+  }
+ ],
+ "summary": ""
+}

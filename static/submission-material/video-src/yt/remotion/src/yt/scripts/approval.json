@@ -1,0 +1,104 @@
+{
+ "key": "approval",
+ "source": "rec-a",
+ "from": 564,
+ "to": 716,
+ "title": "Confluence page approval: Draft to Approved, enforced",
+ "subtitle": "Move a page through review; once Approved, its seals belong to the approval",
+ "feature": "Approval workflow",
+ "steps": [
+  {
+   "t": 564,
+   "label": "Open the page details",
+   "detail": "The Sentinel Vault chip under the title"
+  },
+  {
+   "t": 568,
+   "label": "Workflow state: Draft",
+   "detail": "Document approval, the seals on this page, recent activity"
+  },
+  {
+   "t": 572,
+   "label": "Move to In Review",
+   "detail": "Moved to In Review"
+  },
+  {
+   "t": 596,
+   "label": "Request approval",
+   "detail": "In Review \u00b7 Validation: passed, Request approval \u2192 Approved"
+  },
+  {
+   "t": 604,
+   "label": "The approver is notified",
+   "detail": "Approval requested comment and toast for Mihai"
+  },
+  {
+   "t": 612,
+   "label": "Decide from the ribbon",
+   "detail": "Any one approver can approve \u00b7 0 of 1 \u00b7 Approve or Deny"
+  },
+  {
+   "t": 616,
+   "label": "Approve",
+   "detail": "Recording your approval, moving the page to Approved"
+  },
+  {
+   "t": 624,
+   "label": "The page is Approved",
+   "detail": "Approved v50 \u00b7 review due Feb 27"
+  },
+  {
+   "t": 632,
+   "label": "Seals now belong to the approval",
+   "detail": "Locked by the approval of this page \u00b7 expiry paused"
+  },
+  {
+   "t": 652,
+   "label": "The activity explains it",
+   "detail": "Its sealed section and sealed file now belong to the approval"
+  },
+  {
+   "t": 668,
+   "label": "Unsealed text stays editable",
+   "detail": "A normal edit under Demo publishes as usual"
+  },
+  {
+   "t": 700,
+   "label": "Propose a change to a sealed file",
+   "detail": "Release is replaced by Propose a change, with a reason"
+  },
+  {
+   "t": 712,
+   "label": "Waiting for the approvers",
+   "detail": "The request reaches Mihai as a comment"
+  }
+ ],
+ "callouts": [
+  {
+   "t": 612,
+   "duration": 5,
+   "text": "Approve right where you read"
+  },
+  {
+   "t": 632,
+   "duration": 5,
+   "text": "Approved: seals held by the approval"
+  },
+  {
+   "t": 712,
+   "duration": 4,
+   "text": "Changes go through the approvers"
+  }
+ ],
+ "deadZones": [
+  {
+   "from": 576,
+   "to": 596
+  },
+  {
+   "from": 684,
+   "to": 700
+  }
+ ],
+ "summary": ""
+}

@@ -1,0 +1,55 @@
+{
+ "key": "authenticator",
+ "source": "rec-b",
+ "from": 124,
+ "to": 160,
+ "title": "Sign Confluence seal actions with an authenticator code",
+ "subtitle": "Turn on signing and every seal action asks for the current 6-digit code",
+ "feature": "Authenticator",
+ "steps": [
+  {
+   "t": 124,
+   "label": "Site settings: Protection",
+   "detail": "The switches for sealed files"
+  },
+  {
+   "t": 132,
+   "label": "The action asks for a code",
+   "detail": "Sign this action: enter the current code from your authenticator"
+  },
+  {
+   "t": 144,
+   "label": "Type the 6-digit code",
+   "detail": "Sign and continue unlocks once six digits are in"
+  },
+  {
+   "t": 152,
+   "label": "Code accepted",
+   "detail": "The panel refreshes with the action done"
+  },
+  {
+   "t": 156,
+   "label": "The switch behind it",
+   "detail": "Sign seal actions with an authenticator code: on"
+  }
+ ],
+ "callouts": [
+  {
+   "t": 133,
+   "duration": 5,
+   "text": "Seal actions signed with a 6-digit code"
+  },
+  {
+   "t": 156,
+   "duration": 3.5,
+   "text": "One site switch"
+  }
+ ],
+ "deadZones": [
+  {
+   "from": 134,
+   "to": 144
+  }
+ ],
+ "summary": ""
+}

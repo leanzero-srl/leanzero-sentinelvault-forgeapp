@@ -1,0 +1,120 @@
+{
+ "key": "validations",
+ "source": "rec-a",
+ "from": 428,
+ "to": 560,
+ "title": "Confluence content rules: require headings and labels",
+ "subtitle": "Set space and site rules; Sentinel Vault checks the page and shows what is missing",
+ "feature": "Content validation",
+ "steps": [
+  {
+   "t": 428,
+   "label": "Open the space settings",
+   "detail": "Space Preferences: Sealed Files, Validations, Workflow and more"
+  },
+  {
+   "t": 432,
+   "label": "Validations: pick the enforcement",
+   "detail": "Flag with a comment, mark pass/fail status, or revert edits"
+  },
+  {
+   "t": 436,
+   "label": "Add a Require a heading rule",
+   "detail": "A rule with no heading text is refused until you give one"
+  },
+  {
+   "t": 440,
+   "label": "Required, named Demo",
+   "detail": "Heading text must contain: Demo"
+  },
+  {
+   "t": 444,
+   "label": "Apply and save",
+   "detail": "Validation rules saved"
+  },
+  {
+   "t": 456,
+   "label": "The page is checked",
+   "detail": "The panel's Validation row starts Checking"
+  },
+  {
+   "t": 464,
+   "label": "Issues found",
+   "detail": "Demo: Missing required a heading containing Demo"
+  },
+  {
+   "t": 468,
+   "label": "Add the heading in the editor",
+   "detail": "A new heading Demo under Security, then Update"
+  },
+  {
+   "t": 492,
+   "label": "Re-check the page",
+   "detail": "The panel re-runs the rules on the new version"
+  },
+  {
+   "t": 500,
+   "label": "Validation passed",
+   "detail": "All checks passed"
+  },
+  {
+   "t": 508,
+   "label": "Site settings: a site-wide rule",
+   "detail": "Validations tab in Sentinel Vault Site settings"
+  },
+  {
+   "t": 512,
+   "label": "Choose Require labels",
+   "detail": "Also: table, macro, skipped heading levels, length limits"
+  },
+  {
+   "t": 520,
+   "label": "Label test is required",
+   "detail": "Name in reports: test"
+  },
+  {
+   "t": 528,
+   "label": "Re-check: Issues found",
+   "detail": "test: Missing required label: test"
+  },
+  {
+   "t": 536,
+   "label": "Add the label",
+   "detail": "Confluence Add labels dialog"
+  },
+  {
+   "t": 552,
+   "label": "Re-check: passed",
+   "detail": "All checks passed again"
+  }
+ ],
+ "callouts": [
+  {
+   "t": 464,
+   "duration": 4,
+   "text": "Issues found: required heading missing"
+  },
+  {
+   "t": 500,
+   "duration": 4,
+   "text": "All checks passed"
+  },
+  {
+   "t": 532,
+   "duration": 4,
+   "text": "Missing required label: test"
+  },
+  {
+   "t": 556,
+   "duration": 4,
+   "text": "Passed again"
+  }
+ ],
+ "deadZones": [
+  {
+   "from": 484,
+   "to": 492
+  }
+ ],
+ "summary": ""
+}

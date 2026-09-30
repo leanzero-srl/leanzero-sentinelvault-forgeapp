@@ -1,0 +1,85 @@
+{
+ "key": "expiry-alerts",
+ "source": "rec-b",
+ "from": 160,
+ "to": 236,
+ "title": "Confluence seal expiry, reminders and alerts: set up",
+ "subtitle": "How long seals last, overdue reminders, and who is told what, with one Apply",
+ "feature": "Expiry and alerts",
+ "steps": [
+  {
+   "t": 160,
+   "label": "Declined-request cooldown",
+   "detail": "Hours before a declined edit request can be repeated"
+  },
+  {
+   "t": 164,
+   "label": "Default seal duration",
+   "detail": "Change the hours; the value is shown in days too"
+  },
+  {
+   "t": 176,
+   "label": "Changes wait for Apply",
+   "detail": "Not applied yet: nothing changes until you apply"
+  },
+  {
+   "t": 184,
+   "label": "24 hours = 1 day",
+   "detail": "The default every space inherits"
+  },
+  {
+   "t": 188,
+   "label": "Turn on Seals expire",
+   "detail": "Overdue reminders become available"
+  },
+  {
+   "t": 196,
+   "label": "Overdue reminders",
+   "detail": "Set to 3, with the hours between reminders"
+  },
+  {
+   "t": 212,
+   "label": "Alerts",
+   "detail": "Pop-up messages, page ribbon, comments that mention people"
+  },
+  {
+   "t": 220,
+   "label": "Pop-ups and the page ribbon on",
+   "detail": "Toggles light up as you go"
+  },
+  {
+   "t": 224,
+   "label": "Tell editors when a change is undone",
+   "detail": "The editor learns why their edit was reverted"
+  },
+  {
+   "t": 228,
+   "label": "Comments that mention people",
+   "detail": "Violation, confirmation and expiry notices"
+  },
+  {
+   "t": 232,
+   "label": "Apply",
+   "detail": "All changes applied"
+  }
+ ],
+ "callouts": [
+  {
+   "t": 176,
+   "duration": 4,
+   "text": "Nothing changes until you Apply"
+  },
+  {
+   "t": 232,
+   "duration": 4,
+   "text": "All changes applied"
+  }
+ ],
+ "deadZones": [
+  {
+   "from": 200,
+   "to": 212
+  }
+ ],
+ "summary": ""
+}
