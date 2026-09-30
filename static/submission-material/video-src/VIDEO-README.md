@@ -1,3 +1,5 @@
+> **2026-09-30: the 6.4 promo and Short below were REJECTED by the owner (old "demo reel" style) and deleted.** The YouTube videos now come from `yt/` (CogniRunner's tutorial pipeline); see `.claude/skills/sentinel-vault-marketing/SKILL.md`. The notes below are history only.
+
 # 6.4 promo videos (real screen recordings → Remotion)
 
 Deliverables in `static/submission-material/`:

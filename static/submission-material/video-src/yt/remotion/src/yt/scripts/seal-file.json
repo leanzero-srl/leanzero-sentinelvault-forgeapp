@@ -1,0 +1,55 @@
+{
+ "key": "seal-file",
+ "source": "rec-a",
+ "from": 2,
+ "to": 46,
+ "title": "Seal a Confluence attachment in one click",
+ "subtitle": "Add the Sentinel Vault panel to a page and seal a file so only you can change it",
+ "feature": "Sealed files",
+ "steps": [
+  {
+   "t": 2,
+   "label": "Two users on the same page",
+   "detail": "Gabriela (left) owns the files, Mihai (right) is a colleague"
+  },
+  {
+   "t": 6,
+   "label": "Edit the page and type /senti",
+   "detail": "Insert Sentinel Vault: shows seal status of every file on the page"
+  },
+  {
+   "t": 18,
+   "label": "Publish the page",
+   "detail": "The macro sits under the Security heading"
+  },
+  {
+   "t": 26,
+   "label": "The inline panel appears",
+   "detail": "Sealed and available files, sealed sections and activity"
+  },
+  {
+   "t": 30,
+   "label": "Click Seal on image (4).png",
+   "detail": "The card shows Sealing, then Sealed by you"
+  },
+  {
+   "t": 38,
+   "label": "The colleague sees it locked",
+   "detail": "Mihai's panel: Sealed by others, with Request edit"
+  }
+ ],
+ "callouts": [
+  {
+   "t": 26,
+   "duration": 4,
+   "text": "Every file on the page, in one panel"
+  },
+  {
+   "t": 39,
+   "duration": 5,
+   "text": "Sealed: others see Request edit"
+  }
+ ],
+ "deadZones": [],
+ "summary": ""
+}
