@@ -137,6 +137,7 @@ const ClassificationBlock = ({ c, sealed, pageId, onChanged }) => {
         <ReasonBar
           label={`Lowering this page from ${level?.name || "its level"} to ${lowerTo?.name || "Unclassified"} needs a reason. It is kept in the page's activity.`}
           placeholder="Why is this page less sensitive now?"
+          caution
           confirm={lowering.levelId != null ? `Lower to ${lowerTo?.name || "this level"}` : lowerTo ? `Use space default (${lowerTo.name})` : "Remove the level"}
           required busy={busy}
           onConfirm={(reason) => save(lowering.levelId, reason)}
@@ -186,12 +187,12 @@ const Kebab = ({ items, onPick, name }) => {
 };
 
 // One inline bar for anything that needs typed input: an edit request's reason, a force release's reason.
-const ReasonBar = ({ label, placeholder, confirm, danger, required, onConfirm, onCancel, busy, initial = "" }) => {
+const ReasonBar = ({ label, placeholder, confirm, danger, caution, required, onConfirm, onCancel, busy, initial = "" }) => {
   const [text, setText] = useState(initial);
   const ref = useRef(null);
   useEffect(() => { ref.current?.focus(); }, []);
   return (
-    <div className="pd-reason" data-testid="pd-reason-bar">
+    <div className={`pd-reason${caution ? " caution" : ""}`} data-testid="pd-reason-bar">
       <label className="pd-reason-label">{label}</label>
       <input ref={ref} className="pd-input" value={text} placeholder={placeholder} maxLength={300} onChange={(e) => setText(e.target.value)}
         onKeyDown={(e) => { if (e.key === "Enter" && (!required || text.trim())) onConfirm(text.trim()); if (e.key === "Escape") onCancel(); }} data-testid="pd-reason-input" />

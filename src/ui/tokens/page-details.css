@@ -160,6 +160,14 @@ html[data-color-mode="dark"] .pd-state.declined { background: #F87171; color: #0
 .pd-reason-label { font-size: 12px; font-weight: 600; color: var(--sv-text-secondary); flex-basis: 100%; }
 .pd-input { flex: 1; min-width: 200px; height: 30px; padding: 0 10px; border-radius: 6px; border: 1px solid var(--sv-border-primary); background: var(--sv-bg-primary); color: var(--sv-text-primary); font-size: 12.5px; }
 .pd-input:focus { border-color: var(--sv-interactive-primary); outline: none; }
+/* Lowering a page's classification: the same solid amber caution as the consoles' lowering row. */
+.pd-reason.caution { background: #B45309; color: #FFFFFF; padding: 12px 14px; border: 0; border-radius: 10px; }
+.pd-reason.caution .pd-reason-label { color: #FFFFFF; font-size: 12.5px; }
+.pd-reason.caution .pd-input { background: #FFFFFF; color: #0F172A; border: 0; }
+.pd-reason.caution .pd-input::placeholder { color: #64748B; }
+.pd-reason.caution .pd-input:focus { outline: 2px solid #FFFFFF; outline-offset: 2px; }
+.pd-reason.caution .pd-btn.primary { background: #0F172A; color: #FFFFFF; }
+.pd-reason.caution .pd-btn.quiet { color: #FFFFFF; border-color: #FFFFFF; }
 
 /* ── seal action (content action) ────────────────────────────────────────────────────────── */
 .pd-seal { display: grid; gap: 12px; }
