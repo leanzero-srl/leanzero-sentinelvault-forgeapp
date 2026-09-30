@@ -1,35 +1,39 @@
 # Edit Requests
 
+> Updated for production 6.4.0. The screenshots and videos below were recorded on 4.x and show older layouts.
+
 > Let approved users edit a sealed attachment without granting them full steward rights — the seal owner approves who can edit.
 
 | | |
 |---|---|
-| **Surfaces** | Inline panel (request) · Realm console → *My Sealed Files → Edit Requests* (approve) |
-| **Who can use it** | Any user can request; the **seal owner** (or a steward) approves |
-| **Status** | Shipped in v4.0.0 |
+| **Surfaces** | Request: page ribbon, page-details modal (Sentinel Vault chip under the title), inline panel · Answer: page-details modal, inline panel, My work, space console |
+| **Who can use it** | Any user can request; the **seal owner** answers; the owner or a space admin can also give access directly |
+| **Status** | Shipped since 4.0.0; current in production 6.4.0. Works for sealed files and sealed sections |
 | **Runs on Atlassian** | Yes (no external egress) |
 
 ## What it does
 
-When a file is sealed by someone else, a user can **request edit access** instead of asking for full steward permissions. The seal **owner** approves or denies the request. Approved editors can replace/version the file until the seal expires; everyone else is still blocked and auto-reverted. Approvals are scoped to that one attachment and are swept automatically when the seal is released, expires, or the file is deleted.
+When a file or section is sealed by someone else, a user can **request edit access** instead of asking for full steward permissions. The seal **owner** approves or denies the request. Approved editors can replace/version the file until the seal expires; everyone else is still blocked and auto-reverted. Approvals are scoped to that one attachment and are swept automatically when the seal is released, expires, or the file is deleted.
 
 ## Where to find it
 
-- **Request:** open the Sentinel Vault panel on a page → on a file sealed by another user, click **Request Edit** → add an optional **reason** → **Send request**.
-- **Approve/deny:** the owner approves in two places — **in the panel itself**, in-place on their sealed file (an "Edit requests (N)" inbox showing each requester’s reason), **or** in **Realm console → My Sealed Files → Edit Requests**.
+- **Request:** on a file or section sealed by another user, click **Request edit** in the page ribbon, in the page-details modal (Sentinel Vault chip under the page title) or in the inline panel, with an optional reason.
+- **Answer:** the owner sees "Waiting for you" on the ribbon and answers **Approve** or **Decline** on the row (page-details modal or panel), on **My work**, or in the space console. Decline can carry a short optional reason for the requester.
+- **Give access directly:** the owner or a space admin can use **Give edit access…** under the row's ⋯ menu at any time, without a request.
+- **Signing:** with the site setting "Sign seal actions with an authenticator code" on, approving, declining, giving and revoking access ask for the current authenticator code.
 
 ## How to test — step by step
 
 1. As **User A**, seal an attachment on a page.
-2. As **User B**, open the panel → on that file, click **Request Edit** → the button becomes **Requested**.
-3. As **User A**, open the space’s Sentinel Vault console → **My Sealed Files → Edit Requests** → click **Approve** on User B’s request.
+2. As **User B**, open the page → click **Request edit** on that file → it shows **Waiting for {owner}**.
+3. As **User A**, open the page-details modal or **My work** → **Approve** User B’s request.
 4. As **User B**, edit/replace the attachment → the change is **kept** (not reverted).
 5. As any other user, edit the same file → it is **reverted** (only approved editors are allowed).
 
 ## What you should see
 
-- The requester’s button cycles **Request Edit → Requested → Can Edit** (or **Declined**).
-- The owner sees an **Edit Requests** card per request with **Approve / Deny**.
+- The requester sees one set of states everywhere: **Waiting for {owner}**, **Edit now · until {time}** once approved, or **Declined · ask again {time}** (with the owner's reason, if given). **My work → Your edit requests** lists them.
+- The owner sees each request with **Approve / Decline**.
 - Approved edits persist; the seal silently re-baselines to the new version so later edits by non-editors still revert to the approved content (not the original).
 - On unseal/expiry/delete, all grants and requests for that file are cleared.
 
@@ -46,7 +50,7 @@ Owner side — approve **in the panel**, in-place on your sealed file (each requ
 
 …or in the space console:
 
-![Realm console Edit Requests inbox](../media/screenshots/realm-console.png)
+![Space console Edit Requests inbox](../media/screenshots/realm-console.png)
 
 ▶ **Video (owner approves a request):** [03-realm-edit-requests.mp4](../media/videos/03-realm-edit-requests.mp4)
 ▶ **Video (requester clicks Request Edit, in context):** [01-inline-panel-features.mp4](../media/videos/01-inline-panel-features.mp4)
@@ -55,9 +59,9 @@ Owner side — approve **in the panel**, in-place on your sealed file (each requ
 
 ## Troubleshooting
 
-- **No "Request Edit" button** — the file isn’t sealed, or you sealed it yourself (owners already edit freely).
-- **"Request already pending" / "declined; try again later"** — one pending request per file; a denied request has a 48-hour cooldown.
-- **An approved editor’s change was reverted** — the grant expired with the seal, or it was revoked by the owner/steward.
+- **No "Request edit" button** — the file isn’t sealed, or you sealed it yourself (owners already edit freely).
+- **"Request already pending" / Declined · ask again {time}** — one pending request per file or section. After a decline the same person waits the site's **Hours before a declined edit request can be repeated** (`editRequestCooldownHours`, default 1 hour, 0 = no wait, maximum 168). The owner can still give access directly.
+- **An approved editor’s change was reverted** — the grant expired with the seal, or it was revoked by the owner or a space admin.
 
 ## Under the hood — how it's proven
 

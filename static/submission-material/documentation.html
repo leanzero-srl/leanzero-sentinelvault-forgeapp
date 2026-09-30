@@ -92,14 +92,6 @@
   .screenshot{display:block;max-width:100%;border-radius:10px;border:1px solid var(--border-light);box-shadow:0 4px 16px rgba(0,0,0,.08);margin:20px 0}
   .screenshot-caption{font-size:12px;color:var(--text-muted);text-align:center;margin:-12px 0 20px;font-style:italic}
 
-  /* Coming Soon */
-  .coming-soon-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin:20px 0}
-  .coming-soon-card{background:var(--surface);border:1px solid var(--border-light);border-radius:var(--radius);padding:20px;position:relative;overflow:hidden}
-  .coming-soon-card::before{content:'';position:absolute;top:0;left:0;width:4px;height:100%;background:var(--primary)}
-  .coming-soon-card h4{margin:0 0 6px;font-size:15px;font-weight:600;color:var(--text)}
-  .coming-soon-card p{margin:0;font-size:13px;color:var(--text-secondary);line-height:1.5}
-  .coming-soon-badge{display:inline-flex;align-items:center;gap:4px;padding:3px 10px;border-radius:12px;font-size:10px;font-weight:700;background:linear-gradient(135deg,#E9F2FF,#F3E8FF);color:#0055CC;border:1px solid #B3D4FF;margin-bottom:16px;text-transform:uppercase;letter-spacing:.5px}
-
   /* Footer */
   .footer{text-align:center;padding:32px 0;border-top:1px solid var(--border-light);margin-top:48px;font-size:13px;color:var(--text-muted)}
   .footer a{color:var(--primary);text-decoration:none}
@@ -120,13 +112,15 @@
       </svg>
     </div>
     <h1>Sentinel Vault</h1>
-    <p class="tagline">Attachment protection &amp; concurrent-edit prevention for Confluence Cloud</p>
+    <p class="tagline">Sealed files and sections, enforced approvals and page classification for Confluence Cloud</p>
     <div class="hero-badges">
       <span class="hero-badge forge">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
         Built on Atlassian Forge
       </span>
       <span class="hero-badge license">Confluence Cloud</span>
+      <span class="hero-badge license">Runs on Atlassian</span>
+      <span class="hero-badge license">Version 6.4.0</span>
     </div>
   </div>
 
@@ -136,23 +130,23 @@
     <ol>
       <li><a href="#overview">Overview</a></li>
       <li><a href="#getting-started">Getting Started</a></li>
-      <li><a href="#inline-panel">The Inline Panel</a></li>
-      <li><a href="#overlay">The Overlay</a></li>
-      <li><a href="#page-banner">The Page Banner</a></li>
+      <li><a href="#surfaces">Where Sentinel Vault Appears</a></li>
       <li><a href="#sealing">Sealing Attachments</a></li>
-      <li><a href="#violations">Violation Detection &amp; Auto-Revert</a></li>
-      <li><a href="#watch">Watch / Notify Me</a></li>
-      <li><a href="#attachment-mgmt">Attachment Management</a></li>
-      <li><a href="#notifications">Notification Channels</a></li>
-      <li><a href="#steward-console">Steward Console</a></li>
-      <li><a href="#realm-console">Realm Console</a></li>
-      <li><a href="#roles">Roles &amp; Permissions</a></li>
-      <li><a href="#seal-duration">Seal Duration &amp; Expiry</a></li>
-      <li><a href="#automated-tasks">Automated Maintenance</a></li>
-      <li><a href="#macro-config">Macro Configuration</a></li>
-      <li><a href="#email-config">Email Configuration</a></li>
-      <li><a href="#limits">Limits &amp; Constraints</a></li>
-      <li><a href="#coming-soon">Coming Soon</a></li>
+      <li><a href="#sections">Sealing Page Sections</a></li>
+      <li><a href="#protection">Automatic Reversion &amp; Restore</a></li>
+      <li><a href="#edit-requests">Edit Requests &amp; Cooldown</a></li>
+      <li><a href="#force-release">Force Release</a></li>
+      <li><a href="#watch">Watching a Seal</a></li>
+      <li><a href="#workflow">Workflow &amp; Approvals</a></li>
+      <li><a href="#validations">Validations &amp; AI Review</a></li>
+      <li><a href="#classification">Classification</a></li>
+      <li><a href="#signing">Signing with an Authenticator</a></li>
+      <li><a href="#my-work">My Work</a></li>
+      <li><a href="#space-console">Space Console</a></li>
+      <li><a href="#site-settings">Site Settings</a></li>
+      <li><a href="#notifications">Notifications</a></li>
+      <li><a href="#rest-api">REST API Tokens</a></li>
+      <li><a href="#data">Data, Licensing &amp; Uninstall</a></li>
       <li><a href="#faq">FAQ</a></li>
     </ol>
   </nav>
@@ -160,477 +154,281 @@
   <!-- ═══════════ 1. Overview ═══════════ -->
   <section id="overview">
     <h2>1. Overview</h2>
-    <p>Sentinel Vault is an Atlassian Forge app that adds <strong>file locking (sealing), real-time violation detection, and automatic reversion</strong> to Confluence Cloud attachments.</p>
-    <p>Confluence has no native file-locking mechanism. Any user with edit access can upload a new version of any attachment at any time. This leads to concurrent edit conflicts, accidental overwrites, and no way to know who was supposed to be editing a file. Sentinel Vault solves these problems by adding a <strong>seal (lock) layer</strong> on top of Confluence attachments.</p>
-
-    <h3>What it protects against</h3>
-    <ul>
-      <li><strong>Attachment overwrites</strong> &mdash; If someone modifies a sealed attachment, the previous version is automatically restored within seconds.</li>
-      <li><strong>Attachment deletion</strong> &mdash; If someone trashes a sealed attachment, it is automatically restored from the trash.</li>
-      <li><strong>Page content tampering</strong> &mdash; If a sealed attachment is embedded in the page body (e.g., as an inline image) and someone edits the page to remove it, the embed is surgically re-inserted at its original position without reverting other page changes.</li>
-    </ul>
-    <p>Beyond protection, Sentinel Vault provides full attachment management &mdash; upload, label, delete, restore &mdash; and multi-channel notifications that keep everyone informed about file status changes.</p>
+    <p>Confluence records who changed a document. Sentinel Vault decides whether the change stands. It is an Atlassian Forge app for Confluence Cloud that lets you <strong>seal attachments and page sections</strong>, <strong>enforce approval workflows</strong>, <strong>check pages against content rules</strong> and <strong>classify every page</strong> from Public to Restricted. An edit that breaks a seal is undone automatically.</p>
+    <p>Everything runs inside Atlassian: the app declares no external hosts, stores its records in Forge storage, and its optional AI review uses Atlassian-hosted Claude through the Forge LLM API.</p>
+    <div class="callout info">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+      <div><strong>This guide describes production version 6.4.0.</strong> Several capabilities are off until an administrator turns them on: classification, signed actions, page comments that mention people, AI review, and attachment delete/restore/cleanup from the page.</div>
+    </div>
   </section>
 
   <!-- ═══════════ 2. Getting Started ═══════════ -->
   <section id="getting-started">
     <h2>2. Getting Started</h2>
-    <p>After your Confluence site administrator installs Sentinel Vault, you can start using it immediately:</p>
     <ol class="steps">
-      <li>Navigate to any Confluence page that has attachments.</li>
-      <li>Open the page editor and insert the <strong>Sentinel Vault</strong> macro from the macro browser. It appears under the <em>Admin</em> category.</li>
-      <li>Publish the page. The inline Sentinel Vault panel now displays all attachments and their seal status.</li>
-      <li>Click <strong>Seal</strong> next to any attachment you want to protect before editing.</li>
-      <li>Edit the file with confidence &mdash; no one else can overwrite it while your seal is active.</li>
-      <li>When you're done, click <strong>Unseal</strong> to release the lock. Anyone who was watching the file will be notified.</li>
+      <li>Install Sentinel Vault from the Atlassian Marketplace. A site admin opens <strong>Sentinel Vault — Site settings</strong> from Confluence's app administration and reviews the defaults.</li>
+      <li>Open any page with attachments, choose <strong>⋯ → Seal attachments…</strong> and pick the files to protect.</li>
+      <li>Optionally insert the <strong>Sentinel Vault</strong> macro on the page for a panel that lists every file with its seal state.</li>
+      <li>Space admins open the <strong>Sentinel Vault</strong> space page to see every seal in the space, set a space seal duration, configure the workflow and read the activity log.</li>
     </ol>
-    <div class="callout info">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
-      <div><strong>Tip:</strong> If your administrator has enabled <em>Auto-Insert Macro on Seal</em>, you don't need to manually add the macro. The panel will be automatically inserted into the page the first time you seal an attachment.</div>
+  </section>
+
+  <!-- ═══════════ 3. Surfaces ═══════════ -->
+  <section id="surfaces">
+    <h2>3. Where Sentinel Vault Appears</h2>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Surface</th><th>Where</th><th>What it does</th></tr></thead>
+        <tbody>
+          <tr><td><strong>Byline chip</strong></td><td>Under the page title</td><td>Shows the page's classification level (when classification is on) and seal state. Click it to open the page-details window: seals on the page, sections, attachments, workflow and classification.</td></tr>
+          <tr><td><strong>Seal attachments…</strong></td><td>Page <strong>⋯</strong> menu</td><td>Opens the same page-details window, ready to seal files.</td></tr>
+          <tr><td><strong>Page banner</strong></td><td>Top of the page</td><td>Seal, workflow, validation and alert states, requests waiting for you, and the classification level.</td></tr>
+          <tr><td><strong>Inline panel</strong></td><td>The <strong>Sentinel Vault</strong> macro</td><td>Sealed and available files in separate groups. Each group shows 5 files by default (configurable to 10, 15 or 25 in the macro settings) and pages on its own with <strong>Show more files</strong>.</td></tr>
+          <tr><td><strong>Sealed Section</strong></td><td>Bodied macro</td><td>Wraps a sealed part of the page.</td></tr>
+          <tr><td><strong>My work</strong></td><td>Confluence apps menu</td><td>Everything waiting on you across every space.</td></tr>
+          <tr><td><strong>Space console</strong></td><td>The space's <strong>Sentinel Vault</strong> page</td><td>Your seals, or for space admins the whole space's seals and settings.</td></tr>
+          <tr><td><strong>Site settings</strong></td><td>Confluence app administration</td><td>Site-wide defaults, validations, classification and API access.</td></tr>
+        </tbody>
+      </table>
     </div>
   </section>
 
-  <!-- ═══════════ 3. The Inline Panel ═══════════ -->
-  <section id="inline-panel">
-    <h2>3. The Inline Panel</h2>
-    <p>The inline panel is the primary interface for Sentinel Vault. It's a macro block embedded directly in your Confluence page content, showing every attachment on the page with its current seal status.</p>
-
-    <img src="screenshots/macro.jpg" alt="Sentinel Vault inline panel showing sealed and available attachments" class="screenshot">
-    <p class="screenshot-caption">The inline panel with grouped Sealed and Available sections, seal/unseal controls, and upload zone</p>
-
-    <h3>Features</h3>
-    <ul>
-      <li><strong>Grouped sections</strong> &mdash; Attachments are organized into Sealed, Missing (trashed), and Available groups for quick scanning.</li>
-      <li><strong>Seal / Unseal</strong> &mdash; One-click seal and unseal directly from the panel. Sealed files show a countdown timer and the seal owner's name.</li>
-      <li><strong>Watch</strong> &mdash; Click Watch on files sealed by others to get notified when the seal is released.</li>
-      <li><strong>Labels</strong> &mdash; Add and remove labels on any attachment for organization.</li>
-      <li><strong>Delete / Restore / Purge</strong> &mdash; Manage the attachment lifecycle (when enabled by your administrator).</li>
-      <li><strong>Upload zone</strong> &mdash; Drag and drop files or click to browse. Maximum 4 MB per file.</li>
-    </ul>
-
-    <h3>Expandable card rows</h3>
-    <p>Click the expand arrow on any attachment to reveal additional details:</p>
-
-    <img src="screenshots/expanded-artifact-card.jpg" alt="Expanded card rows showing thumbnail previews and metadata" class="screenshot">
-    <p class="screenshot-caption">Expanded cards with thumbnail previews, View and Properties links, and full metadata</p>
-
-    <ul>
-      <li><strong>Thumbnail previews</strong> &mdash; Image attachments show a lazy-loaded preview for quick visual identification.</li>
-      <li><strong>View link</strong> &mdash; Opens the attachment preview directly in Confluence.</li>
-      <li><strong>Properties link</strong> &mdash; Opens the Confluence attachment properties page.</li>
-      <li><strong>Full metadata</strong> &mdash; Sealed by, time remaining, file size, file type, date, and version number.</li>
-    </ul>
-  </section>
-
-  <!-- ═══════════ 4. The Overlay ═══════════ -->
-  <section id="overlay">
-    <h2>4. The Overlay</h2>
-    <p>The overlay is a full-screen modal for comprehensive attachment management. Open it by clicking <strong>Manage Attachments</strong> in the page banner or from within the inline panel.</p>
-
-    <img src="screenshots/overlay-pop-up.jpg" alt="Sentinel Vault overlay showing attachment management interface" class="screenshot">
-    <p class="screenshot-caption">The overlay with toolbar, sealed/available grouping, and expanded card details</p>
-
-    <h3>Features</h3>
-    <ul>
-      <li><strong>Column picker</strong> &mdash; Toggle which columns are visible. Your preferences are saved in your browser and persist across sessions.</li>
-      <li><strong>Sort controls</strong> &mdash; Sort attachments by name, status, lapses (time remaining), or creation date in ascending or descending order.</li>
-      <li><strong>Pagination</strong> &mdash; Load more attachments with the "Show more files" button for pages with many attachments.</li>
-      <li><strong>Panel visibility toggle</strong> &mdash; Show or hide the inline panel macro on the page directly from the overlay.</li>
-      <li><strong>Full actions</strong> &mdash; Seal, unseal, upload, label, watch, delete, restore, and purge &mdash; all available from one interface.</li>
-    </ul>
-  </section>
-
-  <!-- ═══════════ 5. The Page Banner ═══════════ -->
-  <section id="page-banner">
-    <h2>5. The Page Banner</h2>
-    <p>The page banner (doc ribbon) is a persistent notification bar that appears at the top of every Confluence page. It provides at-a-glance seal status and quick access to the overlay.</p>
-
-    <img src="screenshots/banner.jpg" alt="Sentinel Vault page banner showing sealed attachment count" class="screenshot">
-    <p class="screenshot-caption">The page banner showing "1 attachment sealed on this page" with the Manage Attachments button</p>
-
-    <ul>
-      <li><strong>Seal count</strong> &mdash; Shows how many attachments are currently sealed on this page.</li>
-      <li><strong>Conflict alerts</strong> &mdash; Displays alerts when someone attempts to modify a sealed file (with automatic rollback confirmation).</li>
-      <li><strong>Expiry warnings</strong> &mdash; Alerts when your seals are overdue.</li>
-      <li><strong>Manage Attachments button</strong> &mdash; Opens the overlay for full attachment management.</li>
-    </ul>
-    <p>The banner automatically refreshes every 5 seconds to reflect changes made in other surfaces (overlay, inline panel) without requiring a full page reload.</p>
-  </section>
-
-  <!-- ═══════════ 6. Sealing Attachments ═══════════ -->
+  <!-- ═══════════ 4. Sealing ═══════════ -->
   <section id="sealing">
-    <h2>6. Sealing Attachments</h2>
-    <p>A <strong>seal</strong> is a platform-enforced lock on a specific attachment. When you seal an attachment:</p>
+    <h2>4. Sealing Attachments</h2>
+    <p>Seal a file and only you (and anyone you give edit access to) can change it until you release it or the seal expires. Seal from <strong>⋯ → Seal attachments…</strong>, from the byline chip's page-details window, or with <strong>Seal</strong> in the inline panel.</p>
     <ul>
-      <li>A seal record is stored containing the operator (you), timestamp, expiry time, attachment version, and download link.</li>
-      <li>A content property is set on the parent page, making the seal discoverable via CQL queries.</li>
-      <li>A realm index entry is written for space-level seal queries.</li>
-      <li>The inline panel, overlay, and page banner all update to show the sealed status and your identity.</li>
-      <li>A seal confirmation email is sent (if enabled).</li>
+      <li><strong>Duration.</strong> A new seal lasts the site's Default Seal Duration (48 hours unless changed). A space admin can set a different duration for the space. <strong>Extend</strong> adds time to your own seal.</li>
+      <li><strong>Release.</strong> Release ends the seal at once.</li>
+      <li><strong>Expiry.</strong> With <em>Seals expire</em> on (the default) a seal runs out, the owner is reminded up to three times a day apart (as page comments, when those are switched on), and then the file is released. With it off, seals never expire and owners see a recurring banner instead.</li>
+      <li><strong>Auto-insert.</strong> If a site admin turns on <em>Auto-Insert Macro on Seal</em>, the first seal on a page adds the panel to the page.</li>
     </ul>
-    <p>Other users see the seal status and who holds it. Seals are enforced at the platform level &mdash; not just a visual indicator. If another user attempts to modify the sealed attachment, Sentinel Vault intervenes automatically.</p>
+  </section>
 
-    <h3>Seal ownership</h3>
-    <p>Only the seal holder can unseal their own attachment. Space stewards can force-release seals when the <em>Allow Steward Force-Unseal</em> setting is enabled.</p>
+  <!-- ═══════════ 5. Sections ═══════════ -->
+  <section id="sections">
+    <h2>5. Sealing Page Sections</h2>
+    <p>Open the page-details window from the byline chip and choose <strong>Seal a section…</strong>. Pick a heading: the seal covers the heading and everything under it up to the next heading of the same level. The section is wrapped in a <em>Sentinel Vault Sealed Section</em> macro and shows a badge with the owner and the end time.</p>
+    <p>If anyone other than the owner, or someone the owner approved, changes the section or removes it, Sentinel Vault puts the sealed content back from its snapshot. The rest of the page stays editable.</p>
+  </section>
 
+  <!-- ═══════════ 6. Protection ═══════════ -->
+  <section id="protection">
+    <h2>6. Automatic Reversion &amp; Restore</h2>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>What someone does</th><th>What Sentinel Vault does</th></tr></thead>
+        <tbody>
+          <tr><td>Uploads a new version of a sealed file</td><td>Restores the sealed version. The overwrite stays in the attachment history.</td></tr>
+          <tr><td>Moves a sealed file to the trash</td><td>Restores it from the trash; the seal stays.</td></tr>
+          <tr><td>Permanently deletes a sealed file</td><td>Cleans up the seal records.</td></tr>
+          <tr><td>Removes a sealed image or file from the page body</td><td>Puts the embed back where it was, keeping the rest of the edit (<em>Protect Sealed Attachments in Page Body</em>, on by default).</td></tr>
+          <tr><td>Resizes or re-lays-out a sealed image</td><td>Restores its size and layout.</td></tr>
+          <tr><td>Edits inside a sealed section</td><td>Restores the section from its snapshot.</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p>The person whose change was undone gets a page comment that says so, with a link to the page version that still holds their text (<em>Tell editors when their change is undone</em>, on by default).</p>
+  </section>
+
+  <!-- ═══════════ 7. Edit requests ═══════════ -->
+  <section id="edit-requests">
+    <h2>7. Edit Requests &amp; Cooldown</h2>
+    <p>On a file or section someone else has sealed, choose <strong>Request edit</strong>. The owner sees the request on the row, in the page banner and on My work, and answers <strong>Approve</strong> or <strong>Decline</strong>, optionally with a short reason.</p>
+    <p>The requester sees one set of states everywhere: <em>Waiting for {owner}</em>, <em>Edit now · until {time}</em> once approved, and <em>Declined · ask again {time}</em> when declined. Approved access ends with the seal.</p>
+    <div class="callout info">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+      <div><strong>Cooldown.</strong> After a decline the same person waits before asking again. The site setting <em>Hours before a declined edit request can be repeated</em> (<code>editRequestCooldownHours</code>) defaults to <strong>1 hour</strong>, accepts 0 to 168, and 0 means no wait. The owner or a space admin can still give edit access directly at any time with <strong>Give edit access…</strong>.</div>
+    </div>
+  </section>
+
+  <!-- ═══════════ 8. Force release ═══════════ -->
+  <section id="force-release">
+    <h2>8. Force Release</h2>
+    <p>A space admin can release someone else's seal with <strong>Force release…</strong>, which asks for a reason that is recorded. It is offered only while the site setting <em>Allow space admins to force-unseal</em> is on (it is on by default), so the menu never offers an action the server would refuse.</p>
+  </section>
+
+  <!-- ═══════════ 9. Watch ═══════════ -->
+  <section id="watch">
+    <h2>9. Watching a Seal</h2>
+    <p>Choose <strong>Watch for release</strong> on a file someone else has sealed. When the seal ends, Sentinel Vault posts a page comment that @mentions every watcher, and Confluence notifies them under their own notification preferences. This needs the site's <em>Page comments that mention people</em> switch, which is off by default.</p>
+  </section>
+
+  <!-- ═══════════ 10. Workflow ═══════════ -->
+  <section id="workflow">
+    <h2>10. Workflow &amp; Approvals</h2>
+    <p>Each space can run a page workflow. The built-in one is <strong>Draft → In Review → Approved</strong>, with <strong>Needs re-review</strong> when an approval lapses (after 150 days by default). A space admin configures approvers, how many must agree, the states and the moves between them in the space console's <strong>Workflow</strong> tab.</p>
+    <ul>
+      <li>An Approved page is protected: an edit by someone who is not an approver or a space admin either moves the page back (demote) or is reverted, depending on the space's setting.</li>
+      <li>Approvers see what waits for them on My work and in the page banner.</li>
+      <li>The Workflow tab has a dashboard of page states with <strong>Export CSV</strong>.</li>
+      <li>A space can require a signed decision from approvers with an authenticator code (see <a href="#signing">Signing</a>).</li>
+    </ul>
+  </section>
+
+  <!-- ═══════════ 11. Validations ═══════════ -->
+  <section id="validations">
+    <h2>11. Validations &amp; AI Review</h2>
+    <p>Site admins define content rules in <strong>Site settings → Validations</strong>: required headings, tables and labels, heading hierarchy and length limits. Confluence publishes a page before an app can react, so rules apply after the save in three modes: <strong>advisory</strong> (a comment listing the issues, on by default), <strong>gate</strong> (a pass/fail state shown in the panel and banner) and <strong>revert</strong> (restore the last compliant version, opt-in). A space can switch a mode on, never off.</p>
+    <p><strong>AI review</strong> is off by default. It uses Claude Haiku hosted by Atlassian through the Forge LLM API, with no API keys and no data leaving Atlassian, and can be capped with a monthly token budget.</p>
+  </section>
+
+  <!-- ═══════════ 12. Classification ═══════════ -->
+  <section id="classification">
+    <h2>12. Classification</h2>
+    <p>Classification is <strong>off until a site admin turns it on</strong> with the switch in <strong>Site settings → Classification</strong>. Turning it off asks one confirmation and keeps every stored level, space default and page level.</p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Level</th><th>Rank</th><th>Meaning as shipped</th></tr></thead>
+        <tbody>
+          <tr><td><span class="badge green">Public</span></td><td>1</td><td>Safe to share outside the organisation.</td></tr>
+          <tr><td><span class="badge blue">Internal</span></td><td>2</td><td>For people inside the organisation only.</td></tr>
+          <tr><td><span class="badge amber">Confidential</span></td><td>3</td><td>Limited to a named audience; handle with care.</td></tr>
+          <tr><td><span class="badge red">Restricted</span></td><td>4</td><td>Highest sensitivity; strictly need-to-know.</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <ul>
+      <li><strong>Your own levels.</strong> Rename, recolour, add or remove levels, or import them from a Jira Service Management Assets object type. The Assets calls run as the signed-in admin and nothing is written back to Assets.</li>
+      <li><strong>Space defaults.</strong> Site admins set a default per space; space admins can set their own space's default from the space console. A space can also opt out.</li>
+      <li><strong>Per page.</strong> Anyone who can edit a page can set its level in the page-details window. The page's own level wins over the space default.</li>
+      <li><strong>Visible everywhere.</strong> With classification on, every page shows its level under the title and in the banner, and says where it comes from: "set on this page" or "from space default". A page with neither shows "Unclassified".</li>
+    </ul>
     <div class="callout warning">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-      <div><strong>Note:</strong> Sealing prevents <em>modification</em> (uploading a new version), not viewing. All users with page access can still download and view sealed attachments.</div>
+      <div><strong>Lowering asks for a reason.</strong> Raising a level is one pick. Lowering it, or clearing it, needs a reason of up to 300 characters, and the server refuses the change without one. Every change is recorded in the activity log with the old level, the new level and the reason.</div>
     </div>
   </section>
 
-  <!-- ═══════════ 7. Violation Detection ═══════════ -->
-  <section id="violations">
-    <h2>7. Violation Detection &amp; Auto-Revert</h2>
-    <p>Sentinel Vault monitors three types of violations in real time and responds automatically to each.</p>
-
-    <h3>Attachment edit violation</h3>
-    <p>When someone uploads a new version of a sealed attachment:</p>
-    <ol class="steps">
-      <li>The Forge event trigger detects the attachment update.</li>
-      <li>Sentinel Vault verifies the attachment has an active seal and the uploader is not the seal holder.</li>
-      <li>The previous version is downloaded via the Confluence API.</li>
-      <li>The previous version is re-uploaded, restoring the original file.</li>
-      <li>A Confluence comment is posted tagging both the seal owner and the editor.</li>
-      <li>Violation alert emails are sent. A page banner alert is stored for the next page view.</li>
-    </ol>
-
-    <h3>Trash protection</h3>
-    <p>If someone moves a sealed attachment to the trash, Sentinel Vault automatically restores it. If the file has been permanently deleted (bypassing trash), all seal records are cleaned up and the seal owner is notified.</p>
-
-    <h3>Content protection</h3>
-    <p>If a sealed attachment is embedded in the page body (e.g., as an inline image or file preview) and someone edits the page to remove that embed:</p>
-    <ul>
-      <li>Sentinel Vault compares the current page content against the previous version.</li>
-      <li>Identifies sealed media references that were removed.</li>
-      <li>Surgically re-inserts the missing embeds at their original positions.</li>
-      <li>Other page changes made in the same edit are preserved &mdash; only the sealed embeds are restored.</li>
-    </ul>
-
-    <div class="callout success">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M20 6L9 17l-5-5"/></svg>
-      <div><strong>Result:</strong> All three violation types are handled automatically within seconds, with zero manual intervention. The seal holder's files and embeds are fully restored.</div>
-    </div>
-  </section>
-
-  <!-- ═══════════ 8. Watch / Notify Me ═══════════ -->
-  <section id="watch">
-    <h2>8. Watch / Notify Me</h2>
-    <p>When you need to edit a file that's currently sealed by someone else, you don't have to keep checking back. Click <strong>Watch</strong> on any sealed attachment and you'll receive an email notification the moment the seal is released &mdash; whether manually, by expiry, or by steward override.</p>
-    <ul>
-      <li>The Watch button appears on attachments sealed by other users in the inline panel, overlay, and realm console.</li>
-      <li>Click <strong>Watching</strong> to stop watching an attachment.</li>
-      <li>Watch requests are automatically cleaned up when the seal is released.</li>
-    </ul>
-  </section>
-
-  <!-- ═══════════ 9. Attachment Management ═══════════ -->
-  <section id="attachment-mgmt">
-    <h2>9. Attachment Management</h2>
-    <p>Sentinel Vault extends beyond sealing to provide full attachment lifecycle management. Each capability is controlled by a separate administrator toggle, so your team only sees the actions that are appropriate for your workflow.</p>
-
+  <!-- ═══════════ 13. Signing ═══════════ -->
+  <section id="signing">
+    <h2>13. Signing with an Authenticator</h2>
+    <p>Sentinel Vault can ask for the current 6-digit code from an authenticator app before an action runs.</p>
     <div class="table-wrap">
       <table>
-        <thead><tr><th>Action</th><th>What It Does</th><th>Admin Setting</th></tr></thead>
+        <thead><tr><th>Setting</th><th>Where</th><th>What it signs</th></tr></thead>
         <tbody>
-          <tr><td><strong>Upload</strong></td><td>Drag and drop or click to upload new attachments (up to 4 MB per file)</td><td>Always available</td></tr>
-          <tr><td><strong>Labels</strong></td><td>Add and remove labels on any attachment for organization and filtering</td><td>Always available</td></tr>
-          <tr><td><strong>Delete</strong></td><td>Remove unsealed attachments from the page (moves to Confluence trash). Sealed attachments cannot be deleted.</td><td>Allow Attachment Removal</td></tr>
-          <tr><td><strong>Restore</strong></td><td>Recover trashed attachments that still have seal data in Sentinel Vault</td><td>Allow Attachment Restore</td></tr>
-          <tr><td><strong>Purge</strong></td><td>Clean up leftover seal records for attachments that have been permanently deleted from Confluence</td><td>Allow Seal Cleanup</td></tr>
+          <tr><td><em>Sign seal actions with an authenticator code</em> (off by default)</td><td>Site settings</td><td>Sealing a file or section, releasing, force releasing and extending a seal, approving or declining edit requests, and giving or revoking edit access.</td></tr>
+          <tr><td><em>Require a signed decision</em></td><td>Space console → Workflow</td><td>Each approver's decision, a space admin's direct approval, and the request itself when the workflow has no named approvers.</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <ol class="steps">
+      <li>Each person sets up an authenticator app once on <strong>My work → Your approval signature</strong>: scan the QR code and confirm with the first code.</li>
+      <li>A site admin turns on the site setting, and/or a space admin turns on signed approvals for the space.</li>
+      <li>From then on the <strong>Sign this action</strong> dialog asks for the current code. Someone who has not set up an authenticator is refused until they do.</li>
+    </ol>
+    <p>Each code works once. After 5 wrong codes, that person's signatures are refused for 15 minutes.</p>
+  </section>
+
+  <!-- ═══════════ 14. My work ═══════════ -->
+  <section id="my-work">
+    <h2>14. My Work</h2>
+    <p>One page, every space: edit requests on your sealed files and sections, requests to become a space admin, your own edit requests and their states, approvals you asked for, the files you hold sealed, and your approval signature.</p>
+  </section>
+
+  <!-- ═══════════ 15. Space console ═══════════ -->
+  <section id="space-console">
+    <h2>15. Space Console</h2>
+    <p>Open the space's <strong>Sentinel Vault</strong> page. Users who are not space admins see <strong>My Sealed Files</strong> and can ask for space admin access; after a decline they can ask again after 48 hours.</p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Tab (space admins)</th><th>What it holds</th></tr></thead>
+        <tbody>
+          <tr><td>Sealed Files</td><td>Every seal in the space, with Force release and Watch.</td></tr>
+          <tr><td>Access Control</td><td>Extra space admins (people and groups), pending access requests, the space's notification mode (Normal or Quiet), and classification for the space.</td></tr>
+          <tr><td>Seal Duration</td><td>A duration for this space instead of the site default.</td></tr>
+          <tr><td>Macro</td><td>Auto-insert and its position (top or bottom).</td></tr>
+          <tr><td>Validations</td><td>Space rules on top of the site rules.</td></tr>
+          <tr><td>Workflow</td><td>States, approvers, enforcement, signed approvals and the dashboard.</td></tr>
+          <tr><td>Activity</td><td>The space's activity log, filterable, with Export CSV.</td></tr>
         </tbody>
       </table>
     </div>
   </section>
 
-  <!-- ═══════════ 10. Notification Channels ═══════════ -->
+  <!-- ═══════════ 16. Site settings ═══════════ -->
+  <section id="site-settings">
+    <h2>16. Site Settings</h2>
+    <p>Four tabs: <strong>Settings</strong>, <strong>Validations</strong>, <strong>Classification</strong> and <strong>API access</strong>. The Settings tab is grouped as follows.</p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Group</th><th>Setting</th><th>Default</th></tr></thead>
+        <tbody>
+          <tr><td>Protection</td><td>Allow space admins to force-unseal</td><td>On</td></tr>
+          <tr><td>Protection</td><td>Protect Sealed Attachments in Page Body</td><td>On</td></tr>
+          <tr><td>Protection</td><td>Allow Attachment Removal / Restore / Seal Cleanup from Page</td><td>Off</td></tr>
+          <tr><td>Protection</td><td>Sign seal actions with an authenticator code</td><td>Off</td></tr>
+          <tr><td>Protection</td><td>Hours before a declined edit request can be repeated</td><td>1 (0–168)</td></tr>
+          <tr><td>Expiry</td><td>Default Seal Duration</td><td>48 hours</td></tr>
+          <tr><td>Expiry</td><td>Seals expire</td><td>On</td></tr>
+          <tr><td>Expiry</td><td>Overdue reminders before release / hours between them</td><td>3 / 24</td></tr>
+          <tr><td>Expiry</td><td>Recurring reminder banner / Reminder Frequency (when seals never expire)</td><td>On / 7 days</td></tr>
+          <tr><td>Alerts</td><td>Pop-up messages, Page ribbon</td><td>On</td></tr>
+          <tr><td>Alerts</td><td>Tell editors when their change is undone</td><td>On</td></tr>
+          <tr><td>Alerts</td><td>Page comments that mention people (master switch)</td><td>Off</td></tr>
+          <tr><td>Alerts</td><td>Violation comments</td><td>Off</td></tr>
+          <tr><td>Alerts</td><td>Seal confirmation and halfway notice; Expiry and release notices</td><td>On (need the master switch)</td></tr>
+          <tr><td>Classification</td><td>Classification levels</td><td>Off</td></tr>
+          <tr><td>Advanced</td><td>Auto-Insert Macro on Seal; Replace Attachments Macro</td><td>Off</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ═══════════ 17. Notifications ═══════════ -->
   <section id="notifications">
-    <h2>10. Notification Channels</h2>
-    <p>Sentinel Vault dispatches notifications through five independent channels. Each can be enabled or disabled globally in the Steward Console.</p>
+    <h2>17. Notifications</h2>
+    <p>Sentinel Vault sends no email itself. It tells people through pop-up messages, the page banner and, when the site turns them on, page comments that @mention the people involved; Confluence then notifies those people according to their own preferences. The comment master switch is <strong>off by default</strong>. A space admin can put one space in <strong>Quiet</strong> mode: no comments and no mentions there, while pop-ups, the banner and the activity log keep working.</p>
+  </section>
 
+  <!-- ═══════════ 18. REST API ═══════════ -->
+  <section id="rest-api">
+    <h2>18. REST API Tokens</h2>
+    <p>Site admins mint named tokens in <strong>Site settings → API access</strong>. A token looks like <code>svt_</code> followed by 48 hex characters and is shown once; only its SHA-256 hash is stored. Send it as <code>Authorization: Bearer …</code> or <code>X-Api-Key</code>.</p>
     <div class="table-wrap">
       <table>
-        <thead><tr><th>Channel</th><th>Description</th><th>Visibility</th></tr></thead>
+        <thead><tr><th>Role</th><th>May submit</th></tr></thead>
         <tbody>
-          <tr><td><strong>Toast Messages</strong></td><td>In-app popup notifications for immediate feedback on seal/unseal actions</td><td>Current user session</td></tr>
-          <tr><td><strong>Page Banners</strong></td><td>Persistent ribbon alerts at the top of the affected Confluence page</td><td>All page visitors</td></tr>
-          <tr><td><strong>Page Comments</strong></td><td>Automated comments posted to the page footer, tagging involved users with @mentions</td><td>All page viewers</td></tr>
-          <tr><td><strong>Email Alerts</strong></td><td>Templated HTML emails for seal confirmations, violations, reminders, and releases (8 email types)</td><td>Email recipients</td></tr>
-          <tr><td><strong>Watch Notifications</strong></td><td>Release emails sent to users who are watching a sealed attachment</td><td>Watchers only</td></tr>
+          <tr><td>Viewer</td><td>Nothing that writes (<code>whoami</code> only); for read-only integrations that may be widened later.</td></tr>
+          <tr><td>Editor</td><td>Content operations: seal, unseal and extend files and sections, give or revoke edit access, decline requests, classify a page, workflow assign, withdraw and transitions, validation re-checks and approvals.</td></tr>
+          <tr><td>Admin</td><td>Everything above plus site and space configuration.</td></tr>
         </tbody>
       </table>
     </div>
+    <p>One endpoint, <code>POST ?op=bundle</code>, <code>?op=dry-run</code> or <code>?op=whoami</code>, with an <code>Idempotency-Key</code> header that becomes the job id. Bundles run asynchronously, site → spaces → content, with upsert semantics. Every operation runs as the admin who minted the token through the same checks as the UI, so a token can do nothing its minter cannot. The endpoint only ever answers with a fixed status and never returns data; results are written to Confluence properties you read with Confluence's own REST API.</p>
+  </section>
 
-    <h3>Email types</h3>
-    <p>Sentinel Vault sends eight distinct email types, each with its own professionally designed HTML template:</p>
+  <!-- ═══════════ 19. Data ═══════════ -->
+  <section id="data">
+    <h2>19. Data, Licensing &amp; Uninstall</h2>
     <ul>
-      <li><strong>Seal confirmation</strong> &mdash; Sent when you seal an attachment, confirming the duration and expiry.</li>
-      <li><strong>Violation alert</strong> &mdash; Sent when an unauthorized edit, trash, or deletion is detected and reverted.</li>
-      <li><strong>Halfway reminder</strong> &mdash; Sent when a seal reaches 50% of its configured duration.</li>
-      <li><strong>Expiry notification</strong> &mdash; Sent when a seal has expired and action is required.</li>
-      <li><strong>Auto-release notice</strong> &mdash; Sent when a seal is automatically released after expiry.</li>
-      <li><strong>Periodic reminder</strong> &mdash; Sent on a recurring schedule when expiry notifications are disabled.</li>
-      <li><strong>Release notification</strong> &mdash; Sent to watchers when a seal is manually released.</li>
-      <li><strong>Steward override</strong> &mdash; Sent to the seal owner when a steward force-unseals their attachment.</li>
+      <li><strong>Data residency.</strong> Seal records and settings live in Forge storage inside Atlassian Cloud; seal and classification markers are also written as Confluence content properties. The app declares no external hosts.</li>
+      <li><strong>Licensing.</strong> Sentinel Vault is paid via Atlassian. If the app is unlicensed, sealed content stays protected and the admin consoles show a banner with <strong>Manage subscription</strong>.</li>
+      <li><strong>Uninstall.</strong> Uninstalling deletes the app's stored records.</li>
     </ul>
-  </section>
-
-  <!-- ═══════════ 11. Steward Console ═══════════ -->
-  <section id="steward-console">
-    <h2>11. Steward Console (Global Admin)</h2>
-    <p>The Steward Console is accessible via <strong>Confluence Administration &rarr; Apps &rarr; Sentinel Vault Admin</strong>. Only site administrators can access this panel. It controls system-wide behavior across two tabs.</p>
-
-    <img src="screenshots/global-admin.jpg" alt="Steward Console showing global settings" class="screenshot">
-    <p class="screenshot-caption">The Steward Console General tab with all global settings</p>
-
-    <h3>General tab</h3>
-    <div class="table-wrap">
-      <table>
-        <thead><tr><th>Setting</th><th>Description</th><th>Default</th></tr></thead>
-        <tbody>
-          <tr><td><strong>Default Seal Duration</strong></td><td>How long attachments stay sealed (hours, minimum 1). Individual spaces can override this.</td><td>24 hours</td></tr>
-          <tr><td><strong>Allow Steward Force-Unseal</strong></td><td>Allow stewards to unseal attachments sealed by other users</td><td>Off</td></tr>
-          <tr><td><strong>Enable Seal Expiry Notifications</strong></td><td>When on, users get expiry notifications and seals are released automatically. When off, seals persist past expiry with periodic reminders.</td><td>On</td></tr>
-          <tr><td><strong>Allow Attachment Removal</strong></td><td>Users can delete unsealed attachments from the panel (moves to trash)</td><td>Off</td></tr>
-          <tr><td><strong>Allow Attachment Restore</strong></td><td>Users and stewards can restore trashed attachments with seal data</td><td>Off</td></tr>
-          <tr><td><strong>Allow Seal Cleanup</strong></td><td>Users and stewards can purge leftover seal entries for deleted attachments</td><td>Off</td></tr>
-          <tr><td><strong>Protect Sealed Attachments in Page Body</strong></td><td>Automatically undo page edits that remove sealed media embeds</td><td>On</td></tr>
-          <tr><td><strong>Auto-Insert Macro on Seal</strong></td><td>Automatically insert the Sentinel Vault panel when an attachment is sealed</td><td>Off</td></tr>
-          <tr><td><strong>Replace Attachments Macro</strong></td><td>When inserting the panel, replace the built-in Confluence Attachments macro (only visible when auto-insert is on)</td><td>Off</td></tr>
-          <tr><td><strong>Reminder Frequency</strong></td><td>How often to send periodic reminder emails, in days (only visible when expiry notifications are off)</td><td>7 days</td></tr>
-        </tbody>
-      </table>
-    </div>
-
-    <h3>Alerts tab</h3>
-    <div class="table-wrap">
-      <table>
-        <thead><tr><th>Setting</th><th>Description</th><th>Default</th></tr></thead>
-        <tbody>
-          <tr><td><strong>Pop-up Notifications</strong></td><td>In-app toast popups for seal/unseal actions and violations</td><td>On</td></tr>
-          <tr><td><strong>Page Status Banners</strong></td><td>Persistent banner at the top of pages with sealed attachments</td><td>On</td></tr>
-          <tr><td><strong>Page Comments</strong></td><td>Confluence comments posted on seal events with @mentions</td><td>On</td></tr>
-          <tr><td><strong>Email Notifications</strong></td><td>Master toggle for all email types (must be on for sub-options to work)</td><td>On</td></tr>
-          <tr><td><strong>Seal Confirmation Emails</strong></td><td>Confirmation email after sealing (nested under email toggle)</td><td>On</td></tr>
-          <tr><td><strong>Seal Expiry Reminder Emails</strong></td><td>Reminder when a seal has expired (nested under email toggle)</td><td>On</td></tr>
-          <tr><td><strong>Recurring Reminder Emails</strong></td><td>Periodic reminders when expiry notifications are off (nested under email toggle)</td><td>On</td></tr>
-        </tbody>
-      </table>
-    </div>
-  </section>
-
-  <!-- ═══════════ 12. Realm Console ═══════════ -->
-  <section id="realm-console">
-    <h2>12. Realm Console (Space Admin)</h2>
-    <p>The Realm Console is accessible via <strong>Space Settings &rarr; Apps &rarr; Sentinel Vault</strong>. The tabs you see depend on your role in the space.</p>
-
-    <img src="screenshots/space-settings.jpg" alt="Realm Console showing Access Control settings" class="screenshot">
-    <p class="screenshot-caption">The Realm Console Access Control tab with realm activation, stewards, guilds, and pending requests</p>
-
-    <h4>My Sealed Files (all users)</h4>
-    <p>View all attachments you have sealed in this space. Each card shows the file name, page location, seal date, and time remaining. Click <strong>Relinquish</strong> to release any of your seals. Regular users also see a banner to <em>Request Steward Access</em> if they want elevated permissions.</p>
-
-    <h4>Realm Sealed Files (stewards only)</h4>
-    <p>View all sealed attachments across the entire space with column picker, sort controls, force-unseal, and watch. Supports pagination for spaces with many sealed files.</p>
-
-    <h4>Access Control (stewards only)</h4>
-    <ul>
-      <li><strong>Realm Activation</strong> &mdash; Toggle the space between Active and Disabled. When disabled, Sentinel Vault features are inactive for the space.</li>
-      <li><strong>Stewards</strong> &mdash; Search for and add individual users as stewards. Remove existing stewards.</li>
-      <li><strong>Guilds</strong> &mdash; Add Confluence groups as steward teams. All members of a guild automatically receive steward privileges.</li>
-      <li><strong>Pending Requests</strong> &mdash; Review steward access requests from regular users. Approve or deny (denied users can re-request after 48 hours).</li>
-    </ul>
-
-    <h4>Reservation Duration (stewards only)</h4>
-    <p>Use the system default seal duration or set a custom per-space duration (in hours) that overrides the global default.</p>
-
-    <h4>Macro (stewards only)</h4>
-    <p>Configure auto-insertion of the Sentinel Vault panel macro for this space and choose whether the macro is inserted at the top or bottom of the page.</p>
-  </section>
-
-  <!-- ═══════════ 13. Roles & Permissions ═══════════ -->
-  <section id="roles">
-    <h2>13. Roles &amp; Permissions</h2>
-    <div class="table-wrap">
-      <table>
-        <thead><tr><th>Role</th><th>Who</th><th>Capabilities</th></tr></thead>
-        <tbody>
-          <tr><td><span class="badge blue">Operator</span></td><td>Any Confluence user with page edit access</td><td>Seal/unseal their own attachments, view seal status, watch others' seals, upload, label, request steward access</td></tr>
-          <tr><td><span class="badge green">Realm Steward</span></td><td>Space administrators &amp; delegated users</td><td>All operator capabilities + force-unseal, access control, realm policy, seal audit, approve/deny access requests</td></tr>
-          <tr><td><span class="badge purple">Guild Member</span></td><td>Members of designated Confluence groups</td><td>Same as Realm Steward &mdash; all guild members automatically receive steward privileges in the configured space</td></tr>
-          <tr><td><span class="badge red">Site Administrator</span></td><td>Confluence site/org admins</td><td>Full access: global settings via Steward Console, steward capabilities in all spaces</td></tr>
-        </tbody>
-      </table>
-    </div>
-    <p>Steward status is determined by any of: Confluence space ADMINISTER permission, membership in a configured guild, explicit steward delegation, or site/org admin status.</p>
-
-    <h3>Steward access requests</h3>
-    <p>Regular users who need steward capabilities can request access from the Realm Console. The request appears in the Access Control tab for stewards to review. If denied, the user may re-request after 48 hours.</p>
-  </section>
-
-  <!-- ═══════════ 14. Seal Duration & Expiry ═══════════ -->
-  <section id="seal-duration">
-    <h2>14. Seal Duration &amp; Expiry</h2>
-    <p>Every seal has a duration, after which it is eligible for automatic release. The effective duration is resolved in order:</p>
-    <ol>
-      <li><strong>Space override</strong> &mdash; Custom duration set in the Realm Console (if configured).</li>
-      <li><strong>Global default</strong> &mdash; Duration set in the Steward Console (default: 24 hours).</li>
-      <li><strong>Baseline fallback</strong> &mdash; 48 hours (hardcoded, used only when no admin configuration exists).</li>
-    </ol>
-
-    <h3>Expiry behavior</h3>
-    <ul>
-      <li><strong>Expiry notifications enabled (default):</strong> The hourly Expiry Sweep automatically releases expired seals and sends expiry notification emails.</li>
-      <li><strong>Expiry notifications disabled:</strong> Expired seals persist (showing "Overdue") and the system sends periodic reminder emails on a configurable schedule (default every 7 days).</li>
-    </ul>
-
-    <h3>Reminder emails</h3>
-    <ul>
-      <li><strong>Halfway reminder:</strong> When a seal reaches 50% of its configured duration, the holder receives a reminder email.</li>
-      <li><strong>Periodic nudge:</strong> When expiry notifications are disabled, recurring reminders are sent at the configured interval.</li>
-    </ul>
-  </section>
-
-  <!-- ═══════════ 15. Automated Maintenance ═══════════ -->
-  <section id="automated-tasks">
-    <h2>15. Automated Maintenance</h2>
-    <div class="table-wrap">
-      <table>
-        <thead><tr><th>Task</th><th>Frequency</th><th>Purpose</th></tr></thead>
-        <tbody>
-          <tr><td><strong>Expiry Sweep</strong></td><td>Hourly</td><td>Releases expired seals (when expiry notifications enabled), sends halfway reminder emails at 50% duration, sends expiry notification emails</td></tr>
-          <tr><td><strong>Seal Index Cron</strong></td><td>Hourly</td><td>Rebuilds performance indexes for realm seal lookups, using timestamp optimization to skip unnecessary scans</td></tr>
-          <tr><td><strong>Recurring Nudge</strong></td><td>Daily</td><td>Sends periodic reminder emails about sealed attachments (only when expiry notifications are disabled)</td></tr>
-          <tr><td><strong>Realm Scan Consumer</strong></td><td>On demand</td><td>Background queue processor for space-level seal auditing, triggered by stewards from the Realm Console</td></tr>
-          <tr><td><strong>Attachment Trigger</strong></td><td>Real-time</td><td>Detects and responds to attachment updated, trashed, and deleted events</td></tr>
-          <tr><td><strong>Page Content Trigger</strong></td><td>Real-time</td><td>Detects removal of sealed media embeds from page content and surgically re-inserts them</td></tr>
-        </tbody>
-      </table>
-    </div>
-    <p>All scheduled tasks are managed by the Forge platform and require no manual intervention.</p>
-  </section>
-
-  <!-- ═══════════ 16. Macro Configuration ═══════════ -->
-  <section id="macro-config">
-    <h2>16. Macro Configuration</h2>
-    <p>The inline panel macro can be customized per instance. Click the macro settings icon to configure:</p>
-    <div class="table-wrap">
-      <table>
-        <thead><tr><th>Setting</th><th>Options</th><th>Default</th></tr></thead>
-        <tbody>
-          <tr><td><strong>Column Visibility</strong></td><td>Toggle: name, status, seal owner, labels, comment, actions, file size, file type, expiry</td><td>All visible</td></tr>
-          <tr><td><strong>Items Per Page</strong></td><td>5, 10, 15, or 25</td><td>15</td></tr>
-          <tr><td><strong>Cards Per Row</strong></td><td>1, 2, or 3</td><td>2</td></tr>
-          <tr><td><strong>Show Upload Zone</strong></td><td>On / Off</td><td>On</td></tr>
-        </tbody>
-      </table>
-    </div>
-    <p>These settings are stored per macro instance, so different pages can have different configurations.</p>
-  </section>
-
-  <!-- ═══════════ 17. Email Configuration ═══════════ -->
-  <section id="email-config">
-    <h2>17. Email Configuration</h2>
-    <p>Email notifications are powered by the <a href="https://resend.com" target="_blank" rel="noopener">Resend</a> email delivery service. To enable email alerts:</p>
-    <ol class="steps">
-      <li>Create a Resend account and generate an API key.</li>
-      <li>Set the environment variable via the Forge CLI:
-        <pre><code>forge variables set RESEND_API_KEY your-resend-api-key</code></pre>
-      </li>
-      <li>Enable the email channel in the Steward Console Alerts tab.</li>
-    </ol>
-    <div class="callout info">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
-      <div><strong>Optional:</strong> Email notifications are optional. All other notification channels (toast, banner, comment) work without any external configuration. If the API key is not set, emails are silently skipped.</div>
-    </div>
-  </section>
-
-  <!-- ═══════════ 18. Limits & Constraints ═══════════ -->
-  <section id="limits">
-    <h2>18. Limits &amp; Constraints</h2>
-    <div class="table-wrap">
-      <table>
-        <thead><tr><th>Constraint</th><th>Limit</th><th>Notes</th></tr></thead>
-        <tbody>
-          <tr><td>Upload file size</td><td>4 MB</td><td>Per file, via the inline panel or overlay upload zone</td></tr>
-          <tr><td>Forge function timeout</td><td>25 seconds</td><td>Realm scan consumer has extended 900-second timeout for large space audits</td></tr>
-          <tr><td>Seal duration</td><td>Configurable</td><td>Minimum 1 hour. Set via Steward Console or Realm Console.</td></tr>
-          <tr><td>Content protection retries</td><td>3 attempts</td><td>Exponential backoff for version conflicts during page restoration</td></tr>
-          <tr><td>Email delivery</td><td>Per Resend plan</td><td>Free tier: 100 emails/day. 3 retries with exponential backoff on rate limits.</td></tr>
-          <tr><td>Steward re-request cooldown</td><td>48 hours</td><td>After a denied steward access request</td></tr>
-        </tbody>
-      </table>
-    </div>
-    <p>All data is stored in Forge KVS within the Atlassian Cloud platform. The only external service is Resend for email delivery (optional), which receives only the notification content, not your file data.</p>
-  </section>
-
-  <!-- ═══════════ 19. Coming Soon ═══════════ -->
-  <section id="coming-soon">
-    <h2>19. Coming Soon</h2>
-    <p>Sentinel Vault is actively developed. Here's what's on the roadmap:</p>
-
-    <div class="coming-soon-grid">
-      <div class="coming-soon-card">
-        <span class="coming-soon-badge">Coming Soon</span>
-        <h4>Edit Requests</h4>
-        <p>Allow one or multiple users to edit a sealed attachment without granting full steward permissions. Collaborative editing with controlled access &mdash; the seal owner approves who can edit.</p>
-      </div>
-      <div class="coming-soon-card">
-        <span class="coming-soon-badge">Coming Soon</span>
-        <h4>Content Sealing</h4>
-        <p>Go beyond attachments. Lock specific sections of a Confluence page to prevent unauthorized edits to critical content areas &mdash; headings, tables, decision logs &mdash; while leaving the rest of the page editable.</p>
-      </div>
-      <div class="coming-soon-card">
-        <span class="coming-soon-badge">Coming Soon</span>
-        <h4>Conditions &amp; Validations</h4>
-        <p>Add rules and validations to Confluence pages that are enforced on create and edit. Ensure content meets standards &mdash; required fields, formatting rules, approval gates &mdash; before publishing.</p>
-      </div>
-      <div class="coming-soon-card">
-        <span class="coming-soon-badge">Coming Soon</span>
-        <h4>Semantic AI Validations</h4>
-        <p>AI-powered content validation using your own API keys (BYOK). Validate page content against custom rules, style guides, tone requirements, and compliance standards automatically.</p>
-      </div>
-    </div>
   </section>
 
   <!-- ═══════════ 20. FAQ ═══════════ -->
   <section id="faq">
     <h2>20. FAQ</h2>
-
-    <h3>Can I seal multiple attachments on the same page?</h3>
-    <p>Yes. Each attachment has its own independent seal. Multiple users can hold seals on different attachments on the same page simultaneously.</p>
-
-    <h3>What happens if I seal a file and forget about it?</h3>
-    <p>If expiry notifications are enabled (default), the seal will automatically expire after the configured duration. You'll receive a reminder email at the halfway mark. If expiry notifications are disabled, the seal persists and you'll receive periodic reminders.</p>
-
-    <h3>Can someone still view a sealed attachment?</h3>
-    <p>Yes. Sealing prevents <em>modification</em> (uploading a new version), not viewing. All users with page access can still download and view sealed attachments.</p>
-
-    <h3>What happens when I remove a sealed image from a page?</h3>
-    <p>If content protection is enabled (default), Sentinel Vault detects the removal and surgically re-inserts the sealed embed at its original position. Your other page changes are preserved &mdash; only the sealed media is restored.</p>
-
-    <h3>How do I know when a sealed file becomes available?</h3>
-    <p>Click <strong>Watch</strong> on any sealed attachment. You'll receive an email notification the moment the seal is released.</p>
-
-    <h3>What are guilds?</h3>
-    <p>Guilds are Confluence groups assigned as steward teams in a space's Access Control settings. All members of a guild automatically have steward privileges in that space, without needing individual delegation.</p>
-
-    <h3>How do I request steward access?</h3>
-    <p>Open the Realm Console from space settings. In the My Sealed Files tab, click "Request Steward Access." A steward will review your request. If denied, you can re-request after 48 hours.</p>
-
-    <h3>The delete/restore/purge buttons aren't visible.</h3>
-    <p>These actions are disabled by default. A site administrator must enable them individually in the Steward Console General tab.</p>
-
-    <h3>Is my data stored outside of Atlassian?</h3>
-    <p>No. All seal records and configuration are stored in Forge KVS, which is hosted within the Atlassian Cloud platform. The only external service is Resend for email delivery (optional), which receives only the notification content, not your file data.</p>
-
-    <h3>What if the Resend API key is not configured?</h3>
-    <p>Email notifications will be silently skipped. All other channels (toast, banner, comment) continue to work normally. No errors are raised.</p>
+    <h3>My edit was undone. Is my work lost?</h3>
+    <p>No. A file upload stays in the attachment's version history, and a page edit stays in the page history. The comment Sentinel Vault leaves you links to it.</p>
+    <h3>I was declined. When can I ask again?</h3>
+    <p>After the site's cooldown, 1 hour unless your admin changed it. The owner can also give you access directly at any time.</p>
+    <h3>Why is there no Force release in my menu?</h3>
+    <p>You need to be a space admin, and the site must have <em>Allow space admins to force-unseal</em> on.</p>
+    <h3>I see no classification level.</h3>
+    <p>Classification is off by default, or your space has opted out. A site admin turns it on in Site settings → Classification.</p>
+    <h3>Nobody got a comment when a seal was released.</h3>
+    <p>Page comments that mention people are off by default. A site admin turns them on in Site settings → Alerts, and a space in Quiet mode stays quiet.</p>
+    <h3>Is my data stored outside Atlassian?</h3>
+    <p>No.</p>
   </section>
 
   <!-- ═══════════ Footer ═══════════ -->
   <div class="footer">
-    <p>Copyright &copy; 2025 <a href="https://leanzero.atlascrafted.com" target="_blank" rel="noopener">LeanZero SRL</a></p>
+    <p>Copyright &copy; 2026 <a href="https://leanzero.net" target="_blank" rel="noopener">LeanZero SRL</a> · Sentinel Vault 6.4.0</p>
     <p style="margin-top:6px">Part of the LeanZero ecosystem of Atlassian Forge apps.</p>
   </div>
 

@@ -1,0 +1,17 @@
+- contentinfo [ref=f193e5]:
+  - generic [ref=f193e6]:
+    - link "atlassian logo":
+      - /url: https://www.atlassian.com
+    - navigation [ref=f193e7]:
+      - list [ref=f193e8]:
+        - listitem [ref=f193e9]:
+          - link "Archived apps" [ref=f193e10] [cursor=pointer]:
+            - /url: /archive
+        - listitem [ref=f193e11]: Notice at Collection
+        - listitem [ref=f193e12]:
+          - link "Privacy" [ref=f193e13] [cursor=pointer]:
+            - /url: https://www.atlassian.com/legal/privacy-policy
+        - listitem [ref=f193e14]:
+          - link "Terms of use" [ref=f193e15] [cursor=pointer]:
+            - /url: https://www.atlassian.com/licensing/marketplace/termsofuse
+        - listitem [ref=f193e16]: © 2026 Atlassian
