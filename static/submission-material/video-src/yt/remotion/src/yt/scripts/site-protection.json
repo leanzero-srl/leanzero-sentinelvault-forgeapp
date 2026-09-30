@@ -1,0 +1,85 @@
+{
+ "key": "site-protection",
+ "source": "rec-b",
+ "from": 2,
+ "to": 130,
+ "title": "Confluence admin: force release, trash and restore switches",
+ "subtitle": "Site settings that decide what space admins and users may do with sealed files",
+ "feature": "Site settings",
+ "steps": [
+  {
+   "t": 2,
+   "label": "A page with sealed files",
+   "detail": "The panel groups Sealed by you, Sealed by others, Available"
+  },
+  {
+   "t": 6,
+   "label": "Open Sentinel Vault Site settings",
+   "detail": "Tabs: Settings, Validations, Classification, API access"
+  },
+  {
+   "t": 30,
+   "label": "Allow space admins to force-unseal",
+   "detail": "Preferences updated successfully"
+  },
+  {
+   "t": 50,
+   "label": "Force release in the card menu",
+   "detail": "Shown on a file sealed by someone else"
+  },
+  {
+   "t": 54,
+   "label": "Protect sealed files in the page body",
+   "detail": "Protect Sealed Attachments in Page Body: on"
+  },
+  {
+   "t": 66,
+   "label": "Allow attachment removal",
+   "detail": "Unsealed files can be sent to the trash from the panel"
+  },
+  {
+   "t": 90,
+   "label": "Delete an available file",
+   "detail": "Card menu: Delete (send to trash)"
+  },
+  {
+   "t": 98,
+   "label": "Allow restore and seal cleanup",
+   "detail": "Two more switches under Protection"
+  },
+  {
+   "t": 106,
+   "label": "The file shows as missing",
+   "detail": "In the trash \u00b7 deleted by Gabriela Perdum"
+  },
+  {
+   "t": 118,
+   "label": "Restore it from the panel",
+   "detail": "The card shows Restoring"
+  },
+  {
+   "t": 126,
+   "label": "All protection switches on",
+   "detail": "Force-unseal, page body, removal, restore, cleanup"
+  }
+ ],
+ "callouts": [
+  {
+   "t": 54,
+   "duration": 4,
+   "text": "Preferences updated successfully"
+  },
+  {
+   "t": 106,
+   "duration": 4,
+   "text": "Trashed files stay visible"
+  },
+  {
+   "t": 118,
+   "duration": 4,
+   "text": "Restore from the panel"
+  }
+ ],
+ "deadZones": [],
+ "summary": ""
+}
