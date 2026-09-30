@@ -22,18 +22,34 @@ export const isNameTakenConflict = (status, text) => status === 409 && /newer Co
  */
 export async function putAttachmentCurrent(pageId, attachmentId, title, version) {
   const putRoute = route`/wiki/rest/api/content/${pageId}/child/attachment/${attachmentId}`;
-  let name = title;
-  for (let n = 0; n <= 3; n++) {
-    const res = await asApp().requestConfluence(putRoute, {
-      method: "PUT", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id: attachmentId, type: "attachment", status: "current", title: name, version: { number: version + 1 } }),
-    });
-    if (res.ok) return { ok: true, status: res.status, title: name, renamed: name !== title };
-    const text = await res.text().catch(() => "");
-    if (isNameTakenConflict(res.status, text) && n < 3) { name = restoredTitle(title, n + 1); continue; }
-    return { ok: false, status: res.status, text, title: name, renamed: false };
+  const put = (status, name, ver) => asApp().requestConfluence(putRoute, {
+    method: "PUT", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ id: attachmentId, type: "attachment", status, title: name, version: { number: ver + 1 } }),
+  });
+  const res = await put("current", title, version);
+  if (res.ok) return { ok: true, status: res.status, title, renamed: false };
+  const text = await res.text().catch(() => "");
+  if (!isNameTakenConflict(res.status, text)) return { ok: false, status: res.status, text, title, renamed: false };
+  // Confluence checks the TRASHED title before applying one sent with the restore, so the file is
+  // renamed while still in the trash (its own version), then restored under the new name.
+  let ver = version;
+  let last = { status: res.status, text };
+  for (let n = 1; n <= 3; n++) {
+    const name = restoredTitle(title, n);
+    const ren = await put("trashed", name, ver);
+    if (!ren.ok) {
+      last = { status: ren.status, text: await ren.text().catch(() => "") };
+      console.warn(`[RESTORE] rename-in-trash to "${name}" refused: ${last.status} — ${String(last.text).slice(0, 300)}`);
+      continue;
+    }
+    ver += 1;
+    const back = await put("current", name, ver);
+    if (back.ok) return { ok: true, status: back.status, title: name, renamed: true };
+    last = { status: back.status, text: await back.text().catch(() => "") };
+    console.warn(`[RESTORE] restore as "${name}" refused: ${last.status} — ${String(last.text).slice(0, 300)}`);
+    if (!isNameTakenConflict(last.status, last.text)) break;
   }
-  return { ok: false, status: 409, title: name, renamed: false };
+  return { ok: false, status: last.status, text: last.text, title, renamed: false };
 }
 
 /**
