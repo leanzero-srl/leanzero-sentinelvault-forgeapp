@@ -110,14 +110,15 @@ export function RestoreDialog({ pageId, generationId, onClose, onRestored }) {
         {(state.phase === "preview" || busy) && p && (
           <>
             <p className="bk-lead" data-testid="bk-preview-lead">
-              Backup of <strong>{when(p.createdAt)}</strong>{p.reason === "import" && p.importedFrom ? ` (an imported file, taken ${when(p.importedFrom.createdAt)})` : ""}: {p.keys} items, {fmtBytes(p.bytes)}.
+              Backup of <strong>{when(p.createdAt)}</strong>{p.reason === "import" && p.importedFrom ? ` (an imported file, taken ${when(p.importedFrom.createdAt)})` : ""}: {p.keys.toLocaleString()} items, {fmtBytes(p.bytes)}.
             </p>
             <ul className="bk-groups" data-testid="bk-preview-groups">
               {p.groups.map((g) => (
-                <li key={g.group}><span className="bk-count">{g.keys}</span> <span className="bk-group-name">{g.label}</span>
-                  <span className="bk-group-parts">{g.families.map((f) => `${f.label} ${f.keys}`).join(" · ")}</span></li>
+                <li key={g.group}><span className="bk-count">{g.keys.toLocaleString()}</span> <span className="bk-group-name">{g.label}</span>
+                  <span className="bk-group-parts">{g.families.map((f) => `${f.label} ${f.keys.toLocaleString()}`).join(" · ")}</span></li>
               ))}
             </ul>
+            {p.indexKeys > 0 && <p className="bk-small" data-testid="bk-preview-index">Plus {p.indexKeys.toLocaleString()} lookup entries the app keeps to find these quickly.</p>}
             <div className="bk-integrity" data-testid="bk-preview-integrity">Index verified. Every data file is checked again before anything is written; if one does not match, nothing is restored.</div>
             {p.paused?.length > 0 && (
               <div className="bk-block" data-testid="bk-preview-paused">
