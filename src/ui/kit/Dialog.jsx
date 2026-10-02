@@ -14,6 +14,7 @@
  */
 import React, { useEffect, useLayoutEffect, useRef, useId, useState } from "react";
 import { createPortal } from "react-dom";
+import { measureVisibleBand, placeInBand } from "./visible-placement";
 
 // ANCHORED mode (owner, 2026-09-24). The page panel's iframe is as tall as its content and the
 // Confluence page scrolls AROUND it, so the iframe's "viewport centre" can be a thousand pixels
@@ -41,6 +42,9 @@ export default function Dialog({ title, children, onClose, busy = false, danger 
   const openerRef = useRef(null);
   const titleId = useId();
   const [top, setTop] = useState(null); // anchored mode: the dialog's top edge, px
+  const [maxH, setMaxH] = useState(null); // anchored mode: cap when the visible band is shorter than the dialog
+  const desiredRef = useRef(null);
+  const bandRef = useRef(undefined); // undefined = not measured yet; null = cannot be told
 
   useLayoutEffect(() => {
     if (!anchorMode || !ref.current) return;
@@ -53,7 +57,31 @@ export default function Dialog({ title, children, onClose, busy = false, danger 
     const h = ref.current.getBoundingClientRect().height || 240;
     const max = Math.max(16, window.innerHeight - h - 16);
     // No click and no opener: centre in the frame (the dialog is hidden until placed, so it must be placed).
-    setTop(y == null ? Math.max(16, (window.innerHeight - h) / 2) : Math.min(max, Math.max(16, y - h / 2)));
+    const desired = y == null ? Math.max(16, (window.innerHeight - h) / 2) : Math.min(max, Math.max(16, y - h / 2));
+    desiredRef.current = desired;
+    // Then keep ALL of it inside the part of the frame that is on screen (a content-tall frame can
+    // be far taller than the window). Hidden until this answers (≤ 300 ms).
+    let live = true;
+    measureVisibleBand().then((band) => {
+      if (!live || !ref.current) return;
+      bandRef.current = band;
+      const p = placeInBand({ desiredTop: desired, h: ref.current.getBoundingClientRect().height || h, band });
+      setMaxH(p.maxHeight); setTop(p.top);
+    });
+    return () => { live = false; };
+  }, []);
+
+  // The content can grow after placement (a preview that loads): re-fit to the measured band.
+  useEffect(() => {
+    if (!anchorMode || !ref.current || typeof ResizeObserver === "undefined") return undefined;
+    const ro = new ResizeObserver(() => {
+      if (bandRef.current === undefined || desiredRef.current == null || !ref.current) return;
+      const p = placeInBand({ desiredTop: desiredRef.current, h: ref.current.scrollHeight, band: bandRef.current });
+      setMaxH((m) => (m === p.maxHeight ? m : p.maxHeight));
+      setTop((t) => (t === p.top ? t : p.top));
+    });
+    ro.observe(ref.current);
+    return () => ro.disconnect();
   }, []);
 
   useEffect(() => {
@@ -89,7 +117,7 @@ export default function Dialog({ title, children, onClose, busy = false, danger 
 
   return createPortal(
     <div className={`sv-dialog-backdrop${top != null ? " is-anchored" : ""}`} role="presentation" onMouseDown={(e) => { if (e.target === e.currentTarget && !busy) onClose(); }} data-testid={`${testId}-backdrop`}>
-      <div ref={ref} style={top != null ? { marginTop: `${Math.round(top)}px` } : (anchorMode ? { visibility: "hidden" } : undefined)} className={`sv-dialog${danger ? " danger" : ""} ${className}`.trim()} role="dialog" aria-modal="true" aria-labelledby={titleId} tabIndex={-1} data-testid={testId}>
+      <div ref={ref} style={top != null ? { marginTop: `${Math.round(top)}px`, ...(maxH ? { maxHeight: `${maxH}px`, overflowY: "auto" } : {}) } : (anchorMode ? { visibility: "hidden" } : undefined)} className={`sv-dialog${danger ? " danger" : ""} ${className}`.trim()} role="dialog" aria-modal="true" aria-labelledby={titleId} tabIndex={-1} data-testid={testId}>
         <h3 className="sv-dialog-title" id={titleId}>{title}</h3>
         {children}
       </div>

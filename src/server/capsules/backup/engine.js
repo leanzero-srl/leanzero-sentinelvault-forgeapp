@@ -150,7 +150,7 @@ export async function runBackup({ reason = "manual", actor = null } = {}) {
     const fingerprint = contentFingerprint(chunks);
     const index = (await store.readIndex(where.pageId))?.value || { generations: [], installations: [] };
     const newest = index.generations?.[0];
-    const installations = mergeInstallations(index.installations, info, startedAt);
+    const installations = pruneInstallations(mergeInstallations(index.installations, info, startedAt), index.generations, info.installationId);
     // Found live 2026-10-02: on a freshly reinstalled site the hourly check wrote a 0-item generation
     // before the admin had restored anything. An AUTOMATIC run records no generation while a restore
     // is pending (a backup from an earlier installation, no decision yet, under 14 days), nor an
@@ -188,8 +188,9 @@ export async function runBackup({ reason = "manual", actor = null } = {}) {
 
     const row = { generationId, createdAt: startedAt, reason, keys, bytes, chunks: chunks.length, fingerprint,
       manifest: mName, manifestAttachmentId, environmentType: info.environmentType, installationId: info.installationId, appVersion: info.appVersion };
-    const generations = retainGenerations([row, ...(index.generations || []).filter((g) => g.generationId !== generationId)], store.KEEP_GENERATIONS);
-    await store.writeIndex(where.pageId, { ...index, format: FORMAT, generations, installations, lastCheckAt: startedAt });
+    const allGenerations = [row, ...(index.generations || []).filter((g) => g.generationId !== generationId)];
+    const generations = retainGenerations(allGenerations, store.KEEP_GENERATIONS);
+    await store.writeIndex(where.pageId, { ...index, format: FORMAT, generations, installations: pruneInstallations(installations, allGenerations, info.installationId), lastCheckAt: startedAt });
     await collectGarbage(where.pageId, generations, existing).catch((e) => console.warn(`[BACKUP] gc: ${errText(e)}`));
 
     const status = { ...((await kvs.get(STATUS_KEY)) || {}), lastBackup: { ...row, pageId: where.pageId, spaceKey: where.spaceKey, spaceName: where.spaceName, uploaded }, lastCheckAt: startedAt, lastError: null };
@@ -217,7 +218,7 @@ export function retainGenerations(all, keep) {
   let pins = 0;
   for (const g of sorted.slice(keep)) {
     const inst = g.installationId || "";
-    if (seen.has(inst) || pins >= 5) continue;
+    if (!g.keys || seen.has(inst) || pins >= 5) continue; // an empty generation protects nothing
     seen.add(inst); pins += 1;
     out.push({ ...g, pinned: true });
   }
@@ -239,6 +240,24 @@ export function skipAutomaticGeneration({ keys, index, info, decision, nowMs = D
   if (!newest.keys) return null;
   const age = nowMs - Date.parse(newest.createdAt || 0);
   return age < 14 * 86400000 ? "restore-pending" : null;
+}
+
+/**
+ * PURE. Drop installations that never backed anything up. Found live 2026-10-02: the app's JIRA
+ * installation (JSM Assets) ran the hourly check, wrote empty generations and was then listed as an
+ * "earlier installation" on the re-link card. Kept: this installation; any that wrote a generation
+ * with data (remembered as `hadData`, so rotating its generations off later does not lose it); and
+ * legacy entries with no generation left to judge by. Dropped: entries whose every generation is empty.
+ */
+export function pruneInstallations(list, generations, currentId) {
+  const gens = Array.isArray(generations) ? generations : [];
+  const out = [];
+  for (const r of Array.isArray(list) ? list : []) {
+    const mine = gens.filter((g) => g.installationId === r.installationId);
+    const hadData = !!r.hadData || mine.some((g) => g.keys > 0);
+    if (r.installationId === currentId || hadData || mine.length === 0) out.push(hadData ? { ...r, hadData: true } : r);
+  }
+  return out;
 }
 
 /** PURE. Keep every installation id that ever wrote here (the re-link ticket needs the previous one). */
@@ -459,12 +478,17 @@ async function resumeOne(item, invoke) {
     }
     case "workflow-auto-assign":
     case "workflow-review-due": {
-      const cur = await invoke("get-space-workflow-settings", { spaceKey: item.spaceKey });
-      if (!cur || cur.success === false || cur.error) return { success: false, reason: cur?.reason || cur?.error || "Could not read the workflow settings" };
-      const settings = { ...(cur.settings || {}) };
-      if (item.rule === "workflow-auto-assign") settings.autoAssignNew = o.autoAssignNew === true;
-      else settings.reviewAfterDaysByState = o.reviewAfterDaysByState || {};
-      return invoke("set-space-workflow-settings", { spaceKey: item.spaceKey, settings });
+      // Not through set-space-workflow-settings: with "Allow space admins to override" off that
+      // resolver refuses EVERYONE (authorizeSteward), so a workflow automation a restore paused
+      // could never come back. The resume door is site-admin only and this puts back exactly the
+      // fields the restore itself switched off, on the record it wrote — nothing else changes.
+      const cur = await kvs.get(item.key);
+      if (!cur || typeof cur !== "object") return { success: false, reason: "The workflow settings are gone" };
+      const next = item.rule === "workflow-auto-assign"
+        ? { ...cur, autoAssignNew: o.autoAssignNew === true }
+        : { ...cur, reviewAfterDaysByState: o.reviewAfterDaysByState || {} };
+      await kvs.set(item.key, next);
+      return { success: true };
     }
     default:
       return { success: false, reason: `Unknown automation ${item.rule}` };

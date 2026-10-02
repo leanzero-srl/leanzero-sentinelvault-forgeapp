@@ -60,3 +60,43 @@ export function useVisiblePlacement(open, menuRef) {
 
   return { up: place.up, maxHeight: place.maxHeight, ready: place.ready };
 }
+
+// ── Dialogs: keep the WHOLE dialog inside the band of the frame that is on screen ─────────────
+// Found 2026-10-02 (pillar 12 live proof): the site console's frame is 3,466 px tall inside a
+// 900 px window; a dialog anchored near the click opened with its footer at y=946, below the
+// window — the buttons could not be seen, and a real mouse click there never reached the frame.
+
+/**
+ * The part of this frame's document that is on screen, in the frame's own coordinates
+ * ({ top, bottom }), or null when it cannot be told (no IntersectionObserver, no answer in 300 ms).
+ */
+export function measureVisibleBand(target = typeof document !== "undefined" ? document.documentElement : null) {
+  return new Promise((resolve) => {
+    if (!target || typeof IntersectionObserver === "undefined") { resolve(null); return; }
+    let done = false;
+    const finish = (v) => { if (!done) { done = true; io.disconnect(); clearTimeout(t); resolve(v); } };
+    const io = new IntersectionObserver((entries) => {
+      const e = entries[entries.length - 1];
+      if (!e || !e.isIntersecting) { finish(null); return; }
+      const r = e.intersectionRect;
+      finish(r.bottom - r.top > 0 ? { top: r.top, bottom: r.bottom } : null);
+    });
+    io.observe(target);
+    const t = setTimeout(() => finish(null), 300);
+  });
+}
+
+/**
+ * PURE. Where a dialog of height `h` goes so all of it is on screen: as close to `desiredTop` as the
+ * visible `band` allows, 16 px from its edges. Taller than the band → it starts at the band's top
+ * and gets `maxHeight` (its body scrolls). No band → `desiredTop`, unchanged.
+ */
+export function placeInBand({ desiredTop, h, band, margin = 16 }) {
+  if (!band) return { top: desiredTop, maxHeight: null };
+  const room = band.bottom - band.top - 2 * margin;
+  if (room <= 0) return { top: desiredTop, maxHeight: null };
+  if (h > room) return { top: Math.round(band.top + margin), maxHeight: Math.floor(room) };
+  const lo = band.top + margin;
+  const hi = band.bottom - margin - h;
+  return { top: Math.round(Math.min(hi, Math.max(lo, desiredTop))), maxHeight: null };
+}
