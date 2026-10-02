@@ -67,7 +67,7 @@ Every action is callable by any logged-in user with any payload; authorization i
 |---|---|---|---|
 | trigger | attachment-events | `artifactEventTrigger` | attachment updated / trashed / deleted |
 | trigger | page-content-events | `pageContentTrigger` | page created / updated |
-| trigger | app-lifecycle-events | `lifecycleTrigger` | installed / uninstalled (uninstall deletes every KVS key) |
+| trigger | app-lifecycle-events | `lifecycleTrigger` | installed / uninstalled (logs only since 6.6.0 — the KVS wipe broke Atlassian's re-link path; see BACKUP-AND-RESTORE.md) |
 | scheduled | expiry-sweep-scheduled | `expirySweepTask` | hourly |
 | scheduled | recurring-nudge-scheduled | `recurringNudgeTask` | daily |
 | scheduled | seal-index-cron | `sealIndexCron` | hourly |

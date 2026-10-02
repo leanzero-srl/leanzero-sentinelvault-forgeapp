@@ -63,3 +63,11 @@ re-arms the comment only when a USER authored the version read (the app's own re
 does), and a claim is write → settle → re-read → announce only if this run's token still stands.
 If you touch the marker code, keep both; the design and the timelines are in
 `.claude/skills/sentinel-vault-quality-loop/state/DEDUP-RACES-DESIGN.md`.
+
+## Backup families — read before adding a KVS key family (pillar 12, 2026-10-02)
+
+Every KVS key family must be classified in `src/server/capsules/backup/families.js` as config (backed up), secret
+(never) or runtime (rebuilt); `test/backup-families.test.mjs` fails the build otherwise. Every new resolver action
+must be listed in `WRITE_ACTIONS` or `READ_ACTIONS` in `capsules/backup/hook.js` (`test/backup-hook.test.mjs`). The
+uninstall handler must NEVER wipe KVS again — that silently killed Atlassian's 21-day re-link path. Design and proof:
+docs/BACKUP-AND-RESTORE.md.
