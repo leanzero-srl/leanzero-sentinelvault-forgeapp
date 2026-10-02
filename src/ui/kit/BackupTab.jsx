@@ -188,7 +188,7 @@ export function RestoreBanner({ onChanged }) {
     <div className="bk-banner" role="region" aria-label="Restore your setup" data-testid="bk-banner">
       <div className="bk-banner-text">
         <strong>Restore your setup from {when(g.createdAt)}</strong>
-        <span>Sentinel Vault found the backup an earlier installation kept on this site: {g.keys} items — settings, seals, workflows, rules and history.</span>
+        <span>Sentinel Vault found the backup an earlier installation kept on this site: {Number(g.keys).toLocaleString()} items — settings, seals, workflows, rules and history.</span>
       </div>
       <div className="bk-banner-actions">
         <button type="button" className="bk-banner-go" onClick={() => setOpen(true)} data-testid="bk-banner-restore">Preview and restore</button>
@@ -318,7 +318,7 @@ export default function BackupTab() {
         {last ? (
           <div className="bk-status-band" data-testid="bk-last">
             <span className="bk-status-when"><strong>Last backup {ago(last.createdAt)}</strong> · {when(last.createdAt)}</span>
-            <span className="bk-status-size">{last.keys} items · {fmtBytes(last.bytes)}{last.reason ? ` · ${REASON[last.reason] || last.reason}` : ""}</span>
+            <span className="bk-status-size">{Number(last.keys).toLocaleString()} items · {fmtBytes(last.bytes)}{last.reason ? ` · ${REASON[last.reason] || last.reason}` : ""}</span>
           </div>
         ) : <p className="api-empty" data-testid="bk-none">No backup yet. The first one is taken after the next change, within the hour, or now.</p>}
         {st.waiting === "restore-pending" && <p className="api-explain" data-testid="bk-waiting">Automatic backups wait until you restore the earlier setup or choose to start fresh, so they cannot crowd out the backup you came back for.</p>}
@@ -357,7 +357,7 @@ export default function BackupTab() {
                 {generations.map((g) => (
                   <tr key={`${g.pageId}-${g.generationId}`} data-testid="bk-generation">
                     <td>{when(g.createdAt)}<span className="api-by">{REASON[g.reason] || g.reason}{g.pinned ? " · kept from an earlier installation" : ""}</span></td>
-                    <td className="api-count">{g.keys}</td>
+                    <td className="api-count">{Number(g.keys).toLocaleString()}</td>
                     <td>{fmtBytes(g.bytes)}</td>
                     <td>{g.installationId === install.installationId ? "This installation" : "An earlier installation"}{!g.sameEnvironment ? ` · ${String(g.environmentType || "").toLowerCase()}` : ""}</td>
                     <td className="api-row-actions"><button type="button" className="btn-secondary" onClick={() => setRestoreOf({ pageId: g.pageId, generationId: g.generationId })} disabled={!g.restricted || !!job} data-testid="bk-preview">Preview</button></td>
