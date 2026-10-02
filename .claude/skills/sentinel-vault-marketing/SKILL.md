@@ -124,3 +124,18 @@ build 2002190) — so per release only the summary + notes must be written, the 
   retype the whole field, then reload and read it back.
 - Naming: the fourth workflow state is "Needs re-review" (state id `expired`) — never write "Expired" in copy.
 - The 6.4.0 REST bug (give/revoke/decline edit access failed "No resolver") is FIXED in 6.5.0 — the ops may be advertised.
+
+## 2026-10-02 — 6.6.0 version page (build 2002200) notes posted
+Summary "Your setup survives an uninstall: backup, restore, export and import"; 5 bullets + a closing
+"Do this after updating" paragraph (953 chars). The editor recipe above worked unchanged (select-all, Backspace,
+`* `, Enter per item, Enter twice); More details/highlights/media carried over from 6.5.0. Verified from outside via
+`/rest/2/addons/com.leanzero.confluence.sentinelvault/versions/name/6.6.0`.
+An adversarial review before posting killed five overclaims — keep them out of future copy:
+- "after every change" → "after each change in the app or REST API, and once a day" (page edits and seal expiry
+  only reach the backup on the daily run).
+- "import it on another site" → "import it back later" (cross-site import is untested).
+- "only the app can open it" → "restricted to the app" (Confluence admins can recover page permissions).
+- the 21-day re-link is something LeanZero ASKS Atlassian for, not a self-serve path.
+- write `[date]`, never `<date>`, in Marketplace copy (angle brackets get eaten).
+The same wording was fixed in the app (release-notes.js, BackupTab.jsx, the backup page body) — production 6.6.0
+still shows the old in-app text until the next production deploy.
