@@ -5,7 +5,7 @@ import {
   pauseAutomations, restoreDecision, secretsInventory, previewGroups, indexKeyCount, tallyFamily, contentFingerprint,
   chunkName, isChunkName, isManifestName, manifestName, newGenerationId, FORMAT, FORMAT_VERSION, MIN_CHUNK, MAX_CHUNK,
 } from "../src/server/capsules/backup/snapshot.js";
-import { retainGenerations, mergeInstallations, choosePage, verifyExport, skipAutomaticGeneration } from "../src/server/capsules/backup/engine.js";
+import { retainGenerations, mergeInstallations, pruneInstallations, choosePage, verifyExport, skipAutomaticGeneration } from "../src/server/capsules/backup/engine.js";
 import { backupPageTitle } from "../src/server/capsules/backup/store.js";
 
 // ── stable JSON ──
@@ -98,10 +98,18 @@ eq("lookup tables are summed apart", indexKeyCount({ counts }), 2);
 // ── generations kept: newest N + the last one of every earlier installation ──
 const gens = [];
 for (let i = 0; i < 12; i++) gens.push({ generationId: `g${i}`, createdAt: `2026-10-${String(10 + i).padStart(2, "0")}`, installationId: "new" });
-gens.push({ generationId: "old-last", createdAt: "2026-09-30", installationId: "old" }, { generationId: "old-first", createdAt: "2026-09-01", installationId: "old" });
+gens.push({ generationId: "old-last", createdAt: "2026-09-30", installationId: "old", keys: 3 }, { generationId: "old-first", createdAt: "2026-09-01", installationId: "old", keys: 3 });
 const kept = retainGenerations(gens, 10);
 eq("ten newest kept", kept.slice(0, 10).map((x) => x.generationId), ["g11", "g10", "g9", "g8", "g7", "g6", "g5", "g4", "g3", "g2"]);
 eq("the previous installation's LAST backup is pinned", kept.slice(10).map((x) => [x.generationId, x.pinned]), [["old-last", true]]);
+
+// ── an empty generation is never pinned; installations that only ever backed up nothing are dropped ──
+const withEmpty = [...gens, { generationId: "jira-empty", createdAt: "2026-09-29", installationId: "jira", keys: 0 }];
+ok("an empty generation from another installation is not pinned", !retainGenerations(withEmpty.map((g) => ({ keys: 5, ...g })), 10).some((g) => g.generationId === "jira-empty"));
+const insts = [{ installationId: "cur" }, { installationId: "jira" }, { installationId: "old" }, { installationId: "legacy" }, { installationId: "gone", hadData: true }];
+const gensP = [{ installationId: "jira", keys: 0 }, { installationId: "jira", keys: 0 }, { installationId: "old", keys: 12 }, { installationId: "cur", keys: 0 }];
+eq("prune: keep current, data-bearing, legacy and remembered; drop empty-only", pruneInstallations(insts, gensP, "cur").map((r) => r.installationId), ["cur", "old", "legacy", "gone"]);
+eq("prune remembers who had data", pruneInstallations(insts, gensP, "cur").find((r) => r.installationId === "old").hadData, true);
 
 // ── installations and the page title ──
 const inst = mergeInstallations([{ installationId: "old", firstSeen: "a", lastSeen: "b" }], { installationId: "new", environmentType: "DEVELOPMENT" }, "c");
