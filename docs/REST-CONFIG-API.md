@@ -207,9 +207,32 @@ i.e. the Export button in the console.
 - Token minting/revocation and the endpoint URL (Site settings → API access), with the recipe.
 - A "Recent API jobs" list in the same tab (last 50 receipts site-wide, from KVS).
 
+## Backup and restore ops (6.6.0, docs/BACKUP-AND-RESTORE.md)
+
+Same door, same headers, `admin` role only (a backup holds every roster and rule; a restore rewrites them). The body
+is a small JSON object; every op also takes `receiptPageId` (a page the minter can edit) to get the receipt mirrored
+there as `sentinel-vault-receipt`, with the op's details under `backup`.
+
+| `op` | Body | What runs |
+|---|---|---|
+| `backup` | `{}` | Takes a backup now. Receipt: `generationId`, `keys`, `bytes`, `unchanged`. |
+| `rediscover` | `{}` | Lists every backup page the app can open on the site, its generations and installation ids. |
+| `restore` | `{ "preview": true }` or `{ "pageId": "…", "generationId": "…" }` | Preview (what comes back, what is paused, which secrets to re-enter) or restore (default: the newest generation of this environment). |
+| `export` | `{ "pageId": "…" }` | Attaches `sentinel-vault-export-<generation>.json` to that page — refused unless the minter can edit it. Every reader of that page can download the file. |
+| `import` | `{ "pageId": "…", "attachmentId": "att…", "restore": false }` | Reads an export file attached to a page the minter can read, registers it as a generation; `restore: true` restores it right away. |
+| `resume-automations` | `{ "ids": ["seal-expiry:admin-settings-global"] }` (omit for all) | Turns paused automations back on through the same resolvers the console uses. |
+| `backup-location` | `{ "spaceKey": "ADMIN" }` | Moves the backup page to that space. |
+
+```bash
+curl -i -X POST "$URL?op=backup" -H "Authorization: Bearer svt_…" -H "Idempotency-Key: bk-$(date +%s)" -d '{"receiptPageId":"12345"}'
+curl -u "$EMAIL:$ATLASSIAN_TOKEN" "$SITE/wiki/api/v2/pages/12345/properties?key=sentinel-vault-receipt"
+```
+
+After a reinstall there are no tokens (they are never backed up): mint a new one in API access first.
+
 ## Limits and failure modes
 
-- One job at a time per token (`429 busy` when a job by the same token is still running).
+- One job at a time per token (`429 busy` when a job by the same token is still running). Jobs run in a 900 s consumer (was 300 s) so a backup or restore of a large site fits.
 - The static trigger cannot say *why* a request was refused beyond the status; the reason is in the
   receipt (for `403`/`409` a receipt is still written with `status: "refused"` when the token is
   valid). `401` writes nothing.
