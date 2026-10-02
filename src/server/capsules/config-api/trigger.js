@@ -31,7 +31,8 @@ import { setWithTtl } from "../../shared/kvs-ttl.js";
 import { isOperatorSiteAdmin } from "../../shared/steward-checks.js";
 import { authenticate, extractBearer, tokenRoleAtLeast, tokenRole } from "./tokens.js";
 import { validateBundle, bundleRoleFloor } from "./bundle.js";
-import { OUTPUT, OPS, JOB_TTL_MS, decideAdmission, opRoleFloor, jobId, jobKvsKey, activeJobKvsKey, isActiveJob, validIdempotencyKey } from "./admission.js";
+import { OUTPUT, OPS, BACKUP_OPS, JOB_TTL_MS, decideAdmission, opRoleFloor, jobId, jobKvsKey, activeJobKvsKey, isActiveJob, validIdempotencyKey } from "./admission.js";
+import { validateBackupOp } from "../backup/rest-validate.js";
 import { staleFailureReceipt } from "./pure.js";
 
 export const CONFIG_API_QUEUE_KEY = "config-api-queue";
@@ -108,15 +109,23 @@ export async function configApiTrigger(req) {
 
     // Role floor BEFORE validation: the parsed shape decides the floor; its validity is judged
     // only for a token that may submit it at all.
-    const { bundle, bytes } = readBody(req);
-    const floor = opRoleFloor(op, bundleRoleFloor(bundle));
+    const parsed = readBody(req);
+    const isBackupOp = BACKUP_OPS.includes(op);
+    // A backup op may come with no body at all (`backup`, `rediscover`): that is `{}`.
+    const bundle = isBackupOp && (parsed.bundle === null) ? {} : parsed.bundle;
+    const { bytes } = parsed;
+    const floor = opRoleFloor(op, isBackupOp ? "admin" : bundleRoleFloor(bundle));
     if (!tokenRoleAtLeast(token, floor)) {
       await writeRefusedReceipt(id, key, token, op, `Token role "${tokenRole(token)}" may not submit this (needs ${floor})`);
       return out(OUTPUT.forbidden);
     }
 
     let validation = { ok: true, errors: [], plan: [] };
-    if (op !== "whoami") {
+    if (isBackupOp) {
+      if (bundle === undefined) return out(OUTPUT.invalid);
+      validation = { ...validateBackupOp(op, bundle), plan: [] };
+      if (!validation.ok) { console.warn(`[CONFIG-API] invalid ${op} key=${key}: ${validation.errors.join(" | ")}`); return out(OUTPUT.invalid); }
+    } else if (op !== "whoami") {
       if (bundle === undefined || bundle === null) return out(OUTPUT.invalid);
       validation = validateBundle(bundle, { rawBytes: bytes });
       if (!validation.ok) { console.warn(`[CONFIG-API] invalid bundle key=${key}: ${validation.errors.slice(0, 5).join(" | ")}`); return out(OUTPUT.invalid); }

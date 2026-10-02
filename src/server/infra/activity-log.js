@@ -53,10 +53,16 @@ export const ACTIVITY_TYPES = Object.freeze([
   "workflow.enforced", "workflow.expired", "workflow.review-due", "workflow.read-confirmed", "workflow.seals-held", "workflow.seals-released",
   "validation.reverted", "validation.gate",
   "classification.page-set", "classification.space-default-set",
+  // Pillar 12 (backup and restore) — site-level, written to the `activity-site-` leg.
+  "backup.taken", "backup.failed", "backup.restored", "backup.restore-failed", "backup.exported", "backup.imported",
+  "backup.location-set", "backup.deleted", "backup.automations-resumed",
 ]);
 
 const PAGE_PREFIX = "activity-page-";
 const SPACE_PREFIX = "activity-space-";
+// Site-level events (backup and restore) belong to no page or space: their own leg, read by the
+// site console's history. Same inverted-timestamp ordering.
+export const SITE_PREFIX = "activity-site-";
 const TS_CEILING = 9999999999999; // 13 digits — every ms timestamp until the year 2286 fits under it
 const MAX_DETAILS_BYTES = 1024;
 
@@ -91,13 +97,14 @@ const randomSuffix = () => {
  * its scope is unknown — an event with no page (a seal record that never recorded a contentId)
  * still lands on the space report, and vice versa.
  */
-export function buildActivityKeys({ pageId, spaceKey, tsMs, rand }) {
+export function buildActivityKeys({ pageId, spaceKey, tsMs, rand, site = false }) {
   const inv = invertedTs(tsMs);
   const suffix = `${inv}-${rand}`;
   return {
     id: suffix,
     pageKey: pageId != null && pageId !== "" ? `${activityPagePrefix(pageId)}${suffix}` : null,
     spaceKey: spaceKey != null && spaceKey !== "" ? `${activitySpacePrefix(spaceKey)}${suffix}` : null,
+    siteKey: site ? `${SITE_PREFIX}${suffix}` : null,
   };
 }
 
@@ -153,6 +160,7 @@ function boundDetails(details) {
  * @param {{kind:"attachment"|"section"|"page"|"space",id?:string,name?:string}} entry.target
  * @param {object} [entry.details]       small, type-specific; never a page body
  * @param {number|null} [entry.version]  page version the event refers to, when known
+ * @param {boolean} [entry.site]         also (or only) record it on the site leg `activity-site-`
  * @returns {Promise<{id:string}|null>}   the stored id, or null when nothing was written
  */
 export async function recordActivity(entry) {
@@ -166,8 +174,8 @@ export async function recordActivity(entry) {
     const tsMs = Date.now();
     const pageId = entry.pageId != null && entry.pageId !== "" ? String(entry.pageId) : null;
     const spaceKey = entry.spaceKey != null && entry.spaceKey !== "" ? String(entry.spaceKey) : null;
-    const { id, pageKey, spaceKey: spaceStoreKey } = buildActivityKeys({ pageId, spaceKey, tsMs, rand: randomSuffix() });
-    if (!pageKey && !spaceStoreKey) {
+    const { id, pageKey, spaceKey: spaceStoreKey, siteKey } = buildActivityKeys({ pageId, spaceKey, tsMs, rand: randomSuffix(), site: entry.site === true });
+    if (!pageKey && !spaceStoreKey && !siteKey) {
       console.warn(`[ACTIVITY] ${type} has neither pageId nor spaceKey — nothing to index it under`);
       return null;
     }
@@ -198,6 +206,9 @@ export async function recordActivity(entry) {
     }
     if (spaceStoreKey) {
       await kvs.set(spaceStoreKey, value).catch((e) => console.warn(`[ACTIVITY] space key write failed (${type}):`, e));
+    }
+    if (siteKey) {
+      await kvs.set(siteKey, value).catch((e) => console.warn(`[ACTIVITY] site key write failed (${type}):`, e));
     }
     return { id };
   } catch (e) {

@@ -2272,23 +2272,19 @@ async function sendViolationNotifications(sealRecord, artifactId, contentId, atl
 }
 
 // --- Lifecycle Trigger (Forge Trigger) ---
+// Pillar 12 (2026-10-02, docs/BACKUP-AND-RESTORE.md): the uninstall handler NO LONGER wipes KVS.
+// Forge already soft-deletes an uninstalled app's storage and purges it after 28 days; wiping it
+// here made Atlassian's 21-day "re-link data to a reinstalled app" path restore an EMPTY store
+// for every Sentinel Vault customer. The setup itself survives in the backup page (capsules/
+// backup); the KVS is left for the platform's own retention, which is the privacy guarantee.
+// On install, nothing is written either: the site console finds a backup on its own (rediscovery).
 export async function lifecycleTrigger(event) {
   try {
-    if (event.eventType === "avi:forge:uninstalled:app") {
-      // audit B3: cursor-paginate to exhaustion — a single limit(1000) getMany() left every
-      // key past the first 1000 behind (incl. never-TTL'd workflow-log-* compliance history
-      // and page snapshots) — a data-retention leak on any mature tenant.
-      let query = kvs.query().limit(250);
-      let iterations = 0;
-      do {
-        const { results, nextCursor } = await query.getMany();
-        for (const { key } of results || []) await kvs.delete(key).catch(() => {});
-        if (!nextCursor || ++iterations >= 400) break; // 400×250 = 100k keys, a runaway backstop
-        query = kvs.query().limit(250).cursor(nextCursor);
-      } while (true);
+    if (event?.eventType === "avi:forge:uninstalled:app" || event?.eventType === "avi:forge:installed:app") {
+      console.log(`[LIFECYCLE] ${event.eventType} — storage left to Forge's own retention; the backup page survives in Confluence`);
     }
   } catch (error) {
-    console.error("Error cleaning up storage:", error);
+    console.error("Lifecycle trigger error:", error);
   }
 }
 
