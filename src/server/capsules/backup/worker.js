@@ -97,14 +97,15 @@ export async function backupConsumer(event) {
   if (body.kind !== "job" || !body.jobId) { console.warn("[BACKUP] consumer: unknown event", JSON.stringify(body).slice(0, 200)); return; }
   const job = await readJob(body.jobId);
   if (!job || job.status !== "queued") { console.warn(`[BACKUP] job ${body.jobId} is ${job?.status || "missing"}; not running`); return; }
-  await writeJob({ ...job, status: "running", startedAt: nowIso() });
+  const startedAt = nowIso();
+  await writeJob({ ...job, status: "running", startedAt });
   try {
     const result = await executeJob(job);
     const ok = result?.ok !== false;
-    await writeJob({ ...job, status: ok ? "done" : "failed", startedAt: job.startedAt || null, finishedAt: nowIso(), result: slim(result), ...(ok ? {} : { error: result?.reason || "failed" }) });
+    await writeJob({ ...job, status: ok ? "done" : "failed", startedAt, finishedAt: nowIso(), result: slim(result), ...(ok ? {} : { error: result?.reason || "failed" }) });
   } catch (e) {
     console.error(`[BACKUP] job ${job.id} (${job.kind}) failed:`, e);
-    await writeJob({ ...job, status: "failed", finishedAt: nowIso(), error: errText(e) });
+    await writeJob({ ...job, status: "failed", startedAt, finishedAt: nowIso(), error: errText(e) });
   }
 }
 
