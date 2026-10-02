@@ -321,6 +321,7 @@ export default function BackupTab() {
             <span className="bk-status-size">{last.keys} items · {fmtBytes(last.bytes)}{last.reason ? ` · ${REASON[last.reason] || last.reason}` : ""}</span>
           </div>
         ) : <p className="api-empty" data-testid="bk-none">No backup yet. The first one is taken after the next change, within the hour, or now.</p>}
+        {st.waiting === "restore-pending" && <p className="api-explain" data-testid="bk-waiting">Automatic backups wait until you restore the earlier setup or choose to start fresh, so they cannot crowd out the backup you came back for.</p>}
         {st.lastError && (!last || String(st.lastError.at) > String(st.lastCheckAt || "")) && <div className="api-inline-error" role="alert" data-testid="bk-last-error">The last backup failed ({when(st.lastError.at)}): {st.lastError.message}</div>}
         {status.settings?.spaceKey && (
           <p className="api-explain" data-testid="bk-where">Kept on the page "{status.settings.title}" in space <strong>{status.settings.spaceName || status.settings.spaceKey}</strong> ({status.settings.spaceKey}). The page is restricted to the app: no person can open it, and it does not appear in the page tree. Deleting it deletes the backup.</p>
