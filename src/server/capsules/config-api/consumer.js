@@ -20,6 +20,9 @@ import { JOB_TTL_MS, CONSUMER_TIMEOUT_MS, jobKvsKey, activeJobKvsKey } from "./a
 import { mirrorReceipt, mirrorSpaceConfig, mirrorSiteConfig, spaceIdByKey } from "./mirror.js";
 import { exportSpaceConfig, exportSiteConfig } from "./export.js";
 import { canEditPage } from "../../shared/content-access.js";
+import { BACKUP_OPS } from "./admission.js";
+import { runBackupOp } from "../backup/rest.js";
+import { scheduleBackup } from "../backup/hook.js";
 
 const nowIso = () => new Date().toISOString();
 
@@ -95,7 +98,8 @@ export async function runJob(jobId) {
   const accountId = job.submittedBy;
   const receipt = { id: job.id, op: job.op, status: "running", submittedBy: accountId, tokenId: job.tokenId || null, tokenName: job.tokenName || null, role: job.role, submittedAt: job.submittedAt, startedAt, finishedAt: null, summary: { applied: 0, refused: 0, failed: 0, skipped: 0 }, results: [] };
   let spaceKeys = [];
-  let receiptPageId = job.bundle?.site?.receiptPageId ? String(job.bundle.site.receiptPageId) : null;
+  const namedReceiptPage = BACKUP_OPS.includes(job.op) ? job.bundle?.receiptPageId : job.bundle?.site?.receiptPageId;
+  let receiptPageId = namedReceiptPage ? String(namedReceiptPage) : null;
   // The receipt page is payload-named and everything mirrored onto it is written asApp: the
   // minter must be able to edit it themselves, or nothing lands there (red-team MEDIUM).
   if (receiptPageId && !(await canEditPage(accountId, receiptPageId))) {
@@ -103,7 +107,7 @@ export async function runJob(jobId) {
     receiptPageId = null;
   }
   // Remember the receipt page so UI config writes can keep the site mirror current too.
-  if (receiptPageId) {
+  if (receiptPageId && !BACKUP_OPS.includes(job.op)) {
     try { const g = (await kvs.get("admin-settings-global")) || {}; if (g.apiReceiptPageId !== receiptPageId) await kvs.set("admin-settings-global", { ...g, apiReceiptPageId: receiptPageId }); }
     catch (e) { console.warn("[CONFIG-API] could not remember receiptPageId:", e?.message || e); }
   }
@@ -111,6 +115,14 @@ export async function runJob(jobId) {
     if (job.op === "whoami") {
       receipt.status = "done";
       receipt.identity = { accountId, role: job.role, tokenId: job.tokenId || null, tokenName: job.tokenName || null };
+    } else if (BACKUP_OPS.includes(job.op)) {
+      // Pillar 12: one op, one result; the details ride on `receipt.backup`.
+      const r = await runBackupOp(job.op, job.bundle || {}, accountId);
+      const { status, reason, ...details } = r || {};
+      receipt.results.push({ path: `op.${job.op}`, status: status === "done" ? "applied" : status === "partial" ? "failed" : (status || "failed"), ...(reason ? { reason } : {}) });
+      receipt.backup = details;
+      const s = summarize(receipt.results);
+      receipt.summary = s.summary; receipt.status = status === "done" ? "done" : s.status;
     } else {
       const plan = planBundle(job.bundle);
       spaceKeys = touchedSpaceKeys(plan);
@@ -126,6 +138,8 @@ export async function runJob(jobId) {
         }
         const s = summarize(receipt.results);
         receipt.summary = s.summary; receipt.status = s.status;
+        // Pillar 12: an applied bundle is a save like any UI save — one debounced backup.
+        if (s.summary.applied > 0) await scheduleBackup("rest-bundle");
         // Effective-config mirror for every scope the bundle configured.
         const configured = new Set(receipt.results.filter((r) => r.status === "applied").map((r) => r.path));
         const siteTouched = [...configured].some((p) => p.startsWith("site."));
@@ -152,7 +166,7 @@ export async function runJob(jobId) {
   await kvs.delete(activeJobKvsKey(job.tokenId)).catch(() => {});
   try {
     receipt.receiptMirror = await mirrorReceipt(
-      { id: receipt.id, op: receipt.op, status: receipt.status, submittedBy: receipt.submittedBy, role: receipt.role, submittedAt: receipt.submittedAt, finishedAt: receipt.finishedAt, summary: receipt.summary, results: receipt.results },
+      { id: receipt.id, op: receipt.op, status: receipt.status, submittedBy: receipt.submittedBy, role: receipt.role, submittedAt: receipt.submittedAt, finishedAt: receipt.finishedAt, summary: receipt.summary, results: receipt.results, ...(receipt.backup ? { backup: receipt.backup } : {}) },
       { spaceKeys, receiptPageId },
     );
     await setWithTtl(key, receipt, JOB_TTL_MS);
