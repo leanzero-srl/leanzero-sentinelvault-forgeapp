@@ -327,7 +327,7 @@ export default function BackupTab() {
       {msg && <div className={msg.kind === "ok" ? "alert-success" : "alert-error"} role={msg.kind === "ok" ? "status" : "alert"} data-testid="bk-msg">{msg.text}</div>}
       {job && <Busy text={`${job.label} — ${job.text}`} testId="bk-job" />}
 
-      <Card id="status" title="Your backup" text="Sentinel Vault backs up your setup after every change and once a day, to a Confluence page only the app can open. It is what brings your setup back after an uninstall.">
+      <Card id="status" title="Your backup" text="Sentinel Vault backs up your setup after each change you make here or over REST, and once a day, to a Confluence page restricted to the app. It is what brings your setup back after an uninstall.">
         {last ? (
           <div className="bk-status-band" data-testid="bk-last">
             <span className="bk-status-when"><strong>Last backup {ago(last.createdAt)}</strong> · {when(last.createdAt)}</span>
@@ -382,7 +382,7 @@ export default function BackupTab() {
         )}
       </Card>
 
-      <Card id="file" title="Export and import" text="One JSON file holds the whole setup. Keep a copy anywhere, or import it on another site.">
+      <Card id="file" title="Export and import" text="One JSON file holds the whole setup. Keep a copy somewhere safe and import it back when you need it.">
         <div className="bk-actions">
           <button type="button" className="btn-primary" onClick={exportFile} disabled={!!job} data-testid="bk-export">Download export</button>
           <button type="button" className="btn-secondary" onClick={() => fileRef.current?.click()} disabled={!!job} data-testid="bk-import">Import a file</button>

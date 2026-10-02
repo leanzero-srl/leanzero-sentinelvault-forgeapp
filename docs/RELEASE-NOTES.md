@@ -6,11 +6,11 @@ GENERATED from `src/server/shared/release-notes.js` by `scripts/render-release-n
 
 **Your setup survives an uninstall: automatic backup, restore, export and import**
 
-- New: Backup and restore in Site settings. Sentinel Vault backs up your settings, seals, sealed sections, workflows, validation rules, classification and history after every change and once a day, to a Confluence page that only the app can open.
-- New: after a reinstall, or when the app comes back after a lapsed subscription, Site settings offer "Restore your setup from <date>" with a preview of what comes back. Things that act on their own (seals expiring, validation revert, AI review, workflow auto-assign and review timers) come back paused until you turn them on.
-- New: download the whole setup as one JSON file, and import it on this site or another one.
+- New: Backup and restore in Site settings. Sentinel Vault backs up your settings, seals, sealed sections, workflows, validation rules, classification and history after each change in the app or REST API and once a day, to a Confluence page restricted to the app.
+- New: after a reinstall, or when the app comes back after a lapsed subscription, Site settings offer "Restore your setup from [date]" with a preview of what comes back. Things that act on their own (seals expiring, validation revert, AI review, workflow auto-assign and review timers) come back paused until you turn them on.
+- New: download the whole setup as one JSON file and import it back later.
 - New: REST operations backup, restore, export, import, rediscover, resume-automations and backup-location, for admin tokens.
-- Changed: uninstalling no longer erases the app's stored data on the spot. Atlassian keeps it for 28 days, so the 21-day re-link path stays open.
+- Changed: uninstalling no longer erases the app's stored data on the spot. Atlassian keeps it for 28 days, so LeanZero can still ask Atlassian to re-link it within 21 days.
 
 Fixed:
 - Dialogs opened from low on a long page (Site settings, space settings, page panels) now open fully on screen, with their buttons in view.
