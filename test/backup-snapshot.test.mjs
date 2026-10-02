@@ -2,7 +2,7 @@
 import { eq, ok, report } from "./_assert.mjs";
 import {
   ChunkBuilder, parseChunk, sealManifest, verifyManifest, verifyChunk, manifestHash, stableStringify, isBoundaryKey,
-  pauseAutomations, restoreDecision, secretsInventory, previewGroups, tallyFamily, contentFingerprint,
+  pauseAutomations, restoreDecision, secretsInventory, previewGroups, indexKeyCount, tallyFamily, contentFingerprint,
   chunkName, isChunkName, isManifestName, manifestName, newGenerationId, FORMAT, FORMAT_VERSION, MIN_CHUNK, MAX_CHUNK,
 } from "../src/server/capsules/backup/snapshot.js";
 import { retainGenerations, mergeInstallations, choosePage, verifyExport } from "../src/server/capsules/backup/engine.js";
@@ -86,10 +86,11 @@ eq("authenticator enrolments are counted per person", inv.authenticatorAccounts,
 
 // ── preview grouping ──
 const counts = {};
-for (const k of ["protection-1", "protection-2", "section-protection-1", "workflow-def-global", "admin-settings-global", "zz-unknown"]) tallyFamily(counts, k);
+for (const k of ["protection-1", "protection-2", "section-protection-1", "workflow-def-global", "admin-settings-global", "zz-unknown", "space-protection-1-att1", "workflow-idx-WFH-approved-1"]) tallyFamily(counts, k);
 const groups = previewGroups({ counts });
 eq("groups in the admin's order", groups.map((x) => x.group), ["settings", "seals", "workflow", "other"]);
-eq("seal group totals", groups.find((x) => x.group === "seals").keys, 3);
+eq("seal group totals count records, not lookup tables", groups.find((x) => x.group === "seals").keys, 3);
+eq("lookup tables are summed apart", indexKeyCount({ counts }), 2);
 
 // ── generations kept: newest N + the last one of every earlier installation ──
 const gens = [];

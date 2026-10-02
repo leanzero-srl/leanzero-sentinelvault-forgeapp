@@ -113,7 +113,7 @@ export const contentFingerprint = (chunks) => sha256((chunks || []).map((c) => c
 export function tallyFamily(counts, key) {
   const f = familyOf(key);
   const id = f.prefix || "other";
-  const row = counts[id] || (counts[id] = { prefix: f.prefix, group: f.group, label: f.label, keys: 0 });
+  const row = counts[id] || (counts[id] = { prefix: f.prefix, group: f.group, label: f.label, keys: 0, ...(f.index ? { index: true } : {}) });
   row.keys += 1;
   return counts;
 }
@@ -129,10 +129,14 @@ export function secretsInventory({ apiTokens, authenticatorAccounts }) {
   return { apiTokens: tokens, authenticatorAccounts: [...new Set((authenticatorAccounts || []).filter(Boolean))] };
 }
 
-/** PURE. Preview rows grouped the way the admin thinks about them. */
+/**
+ * PURE. Preview rows grouped the way the admin thinks about them. Lookup tables (`index`) are
+ * left out of the groups and summed into `indexKeys` — the admin restores seals, not indexes.
+ */
 export function previewGroups(manifest) {
   const byGroup = {};
   for (const row of Object.values(manifest?.counts || {})) {
+    if (row.index || familyOf(row.prefix || "").index) continue;
     const g = row.group || "other";
     const entry = byGroup[g] || (byGroup[g] = { group: g, label: GROUP_LABELS[g] || g, keys: 0, families: [] });
     entry.keys += row.keys;
@@ -140,6 +144,11 @@ export function previewGroups(manifest) {
   }
   const order = Object.keys(GROUP_LABELS);
   return Object.values(byGroup).sort((a, b) => order.indexOf(a.group) - order.indexOf(b.group));
+}
+
+/** PURE. How many of a manifest's keys are lookup tables (shown as one line in the preview). */
+export function indexKeyCount(manifest) {
+  return Object.values(manifest?.counts || {}).filter((r) => r.index || familyOf(r.prefix || "").index).reduce((n, r) => n + r.keys, 0);
 }
 
 // ── Automations: what comes back PAUSED after a restore ─────────────────────────────────────

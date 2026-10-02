@@ -17,7 +17,7 @@ import { familyOf, isBackedUp } from "./families.js";
 import {
   FORMAT, FORMAT_VERSION, EXPORT_FORMAT, ChunkBuilder, sealManifest, verifyManifest, verifyChunk, parseChunk,
   manifestName, isManifestName, isChunkName, newGenerationId, contentFingerprint, tallyFamily, secretsInventory,
-  pauseAutomations, restoreDecision, previewGroups, sha256, stableStringify,
+  pauseAutomations, restoreDecision, previewGroups, indexKeyCount, sha256, stableStringify,
 } from "./snapshot.js";
 import * as store from "./store.js";
 
@@ -315,7 +315,7 @@ export async function previewGeneration(pageId, generationId) {
     generationId: manifest.generationId, createdAt: manifest.createdAt, reason: manifest.reason,
     importedFrom: manifest.importedFrom || null, app: manifest.app, keys: manifest.keys, bytes: manifest.bytes,
     chunks: manifest.chunks.length, integrity: "index verified", pinned: !!row?.pinned,
-    groups: previewGroups(manifest), secrets: manifest.secrets, paused: manifest.pauseOnRestore || [],
+    groups: previewGroups(manifest), indexKeys: indexKeyCount(manifest), secrets: manifest.secrets, paused: manifest.pauseOnRestore || [],
   };
 }
 
