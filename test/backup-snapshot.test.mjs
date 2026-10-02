@@ -5,7 +5,7 @@ import {
   pauseAutomations, restoreDecision, secretsInventory, previewGroups, indexKeyCount, tallyFamily, contentFingerprint,
   chunkName, isChunkName, isManifestName, manifestName, newGenerationId, FORMAT, FORMAT_VERSION, MIN_CHUNK, MAX_CHUNK,
 } from "../src/server/capsules/backup/snapshot.js";
-import { retainGenerations, mergeInstallations, choosePage, verifyExport } from "../src/server/capsules/backup/engine.js";
+import { retainGenerations, mergeInstallations, choosePage, verifyExport, skipAutomaticGeneration } from "../src/server/capsules/backup/engine.js";
 import { backupPageTitle } from "../src/server/capsules/backup/store.js";
 
 // ── stable JSON ──
@@ -106,4 +106,13 @@ eq("a new installation is recorded first, the old one kept", inst.map((r) => r.i
 eq("production page title", backupPageTitle("PRODUCTION"), "Sentinel Vault backup");
 eq("development page title", backupPageTitle("DEVELOPMENT"), "Sentinel Vault backup (development)");
 eq("an install picks its own environment's page", choosePage([{ title: "Sentinel Vault backup" }, { title: "Sentinel Vault backup (development)", pageId: "2" }], "DEVELOPMENT")?.pageId, "2");
+// ── automatic backups on a reinstalled site (found live: a 0-item generation before the restore) ──
+const idx = { generations: [{ generationId: "old", createdAt: "2026-10-01T00:00:00Z", keys: 12463, installationId: "old-inst" }] };
+const me = { installationId: "new-inst" };
+const t0 = Date.parse("2026-10-02T00:00:00Z");
+eq("an empty store never records an automatic generation", skipAutomaticGeneration({ keys: 0, index: idx, info: me, decision: null, nowMs: t0 }), "empty");
+eq("a pending restore holds automatic generations", skipAutomaticGeneration({ keys: 3, index: idx, info: me, decision: null, nowMs: t0 }), "restore-pending");
+eq("after the admin decides, backups resume", skipAutomaticGeneration({ keys: 3, index: idx, info: me, decision: { decision: "declined" }, nowMs: t0 }), null);
+eq("after 14 days undecided, backups resume (the earlier one stays pinned)", skipAutomaticGeneration({ keys: 3, index: idx, info: me, decision: null, nowMs: t0 + 15 * 86400000 }), null);
+eq("the same installation is never held", skipAutomaticGeneration({ keys: 3, index: idx, info: { installationId: "old-inst" }, decision: null, nowMs: t0 }), null);
 report("backup-snapshot");
