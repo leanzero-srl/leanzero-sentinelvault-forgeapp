@@ -123,8 +123,12 @@ export function slim(r) {
  * when the last check is older than a day. A backup with nothing new records no generation. The
  * sweep only QUEUES the run — the backup itself always runs in the 900 s consumer.
  */
-export async function backupSweep() {
+export async function backupSweep(context) {
   try {
+    // Found live 2026-10-02: the app is ALSO installed in Jira (JSM Assets scopes), and the hourly
+    // cron runs in that installation too — it took empty backups of the Jira install's own (empty)
+    // store and registered the Jira installation on the Confluence backup page. Confluence only.
+    if (!isConfluenceInstall(context)) { console.log(`[BACKUP] sweep skipped in ${context?.installContext}`); return; }
     const status = (await kvs.get(STATUS_KEY)) || {};
     const dirty = await kvs.get(DIRTY_KEY);
     const last = Date.parse(status.lastCheckAt || status.lastBackup?.createdAt || 0) || 0;
@@ -134,5 +138,11 @@ export async function backupSweep() {
     console.error("[BACKUP] sweep failed:", e);
   }
 }
+
+/** PURE. Does this invocation belong to the Confluence installation? Unknown context → yes. */
+export const isConfluenceInstall = (context) => {
+  const ic = String(context?.installContext || "");
+  return !ic || ic.includes(":confluence::");
+};
 
 export { appInfo };
