@@ -43,7 +43,7 @@ export async function runBackupOp(op, body, accountId) {
         const d = await discoverBackups();
         pageId = d.backups.find((b) => b.sameEnvironment && b.restricted)?.pageId || null;
         if (!pageId) return { status: "refused", reason: "No backup found on this site." };
-      } else if (!(await store.isRestrictedToApp(pageId))) return { status: "refused", reason: "That page is not a Sentinel Vault backup page." };
+      } else if (!(await store.isBackupPage(pageId))) return { status: "refused", reason: "That page is not a Sentinel Vault backup page." };
       const generationId = v.generationId ? String(v.generationId) : (await loadManifest(pageId, null)).manifest.generationId;
       if (v.preview === true) {
         return { status: "done", preview: await previewGeneration(pageId, generationId) };

@@ -56,6 +56,9 @@ eq("a whole export verifies", verifyExport(doc).ok, true);
 eq("a missing part is refused", verifyExport({ ...doc, chunks: doc.chunks.slice(1) }).ok, false);
 eq("a corrupted part is refused", verifyExport({ ...doc, chunks: [{ ...doc.chunks[0], text: doc.chunks[0].text + " " }, ...doc.chunks.slice(1)] }).ok, false);
 eq("a non-export file is refused", verifyExport({ hello: 1 }).reason, "This file is not a Sentinel Vault export.");
+// A part's NAME is its content address: a crafted file cannot smuggle data under another part's name.
+const renamed = sealManifest({ ...m, manifestSha256: undefined, chunks: m.chunks.map((c, i) => (i === 0 ? { ...c, name: "sv-chunk-" + "0".repeat(40) + ".json" } : c)) });
+eq("a part not named after its content is refused", verifyExport({ ...doc, manifest: renamed, chunks: doc.chunks.map((c, i) => (i === 0 ? { ...c, name: renamed.chunks[0].name } : c)) }).ok, false);
 
 // ── restore decisions ──
 const now = Date.parse("2026-10-02T08:00:00Z");

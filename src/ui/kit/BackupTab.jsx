@@ -12,7 +12,11 @@ import { formatActivity, fmtBytes } from "./activity-format";
 const UNAVAILABLE = "Backup and restore is not available on this version";
 const call = async (name, payload = {}) => {
   let r;
-  try { r = await invoke(name, payload); } catch (e) { return { ok: false, reason: UNAVAILABLE }; }
+  // Only an unknown resolver means "older server"; a timeout or a platform error says what it is.
+  try { r = await invoke(name, payload); } catch (e) {
+    const m = String(e?.message || e || "");
+    return { ok: false, reason: /resolver|not found|no function/i.test(m) ? UNAVAILABLE : `The request failed: ${m.slice(0, 200) || "no answer"}. Try again.` };
+  }
   if (!r || typeof r !== "object") return { ok: false, reason: UNAVAILABLE };
   if (r.success === false) return { ok: false, reason: r.reason || "Refused." };
   return { ok: true, data: r };
@@ -119,7 +123,7 @@ export function RestoreDialog({ pageId, generationId, onClose, onRestored }) {
               ))}
             </ul>
             {p.indexKeys > 0 && <p className="bk-small" data-testid="bk-preview-index">Plus {p.indexKeys.toLocaleString()} lookup entries the app keeps to find these quickly.</p>}
-            <div className="bk-integrity" data-testid="bk-preview-integrity">Index verified. Every data file is checked again before anything is written; if one does not match, nothing is restored.</div>
+            <div className="bk-integrity" data-testid="bk-preview-integrity">{p.reason === "import" ? "Imported file: every part matched its fingerprint, and these counts were taken from the data itself." : "Index verified."} Every data file is checked again before anything is written; if one does not match, nothing is restored.</div>
             {p.paused?.length > 0 && (
               <div className="bk-block" data-testid="bk-preview-paused">
                 <h4>Comes back paused</h4>
@@ -134,7 +138,7 @@ export function RestoreDialog({ pageId, generationId, onClose, onRestored }) {
                 <li>{p.secrets?.authenticatorAccounts?.length ? `Authenticator codes for signed actions: ${p.secrets.authenticatorAccounts.length} ${p.secrets.authenticatorAccounts.length === 1 ? "person enrolls" : "people enroll"} again.` : "Authenticator codes: nobody had enrolled."}</li>
               </ul>
             </div>
-            <p className="bk-small">Anything already set up on this site that is not in the backup stays as it is; a backup of the current state is taken first.</p>
+            <p className="bk-small" data-testid="bk-preview-live-note">On a site already in use, every item in the backup goes back to how it was on that date — settings, seals and their saved section content, approvals — and items created since stay. A backup of the current state is taken first, so you can go back.</p>
             {state.error && <div className="api-inline-error" role="alert" data-testid="bk-restore-error">{state.error}</div>}
             {busy && <Busy text={state.progress} testId="bk-restore-progress" />}
           </>
@@ -277,7 +281,7 @@ export default function BackupTab() {
     try { doc = JSON.parse(text); } catch (_) { setMsg({ kind: "error", text: "That file is not JSON." }); return; }
     if (doc?.format !== "sentinel-vault-export") { setMsg({ kind: "error", text: "That file is not a Sentinel Vault export." }); return; }
     const importId = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
-    const size = 200000;
+    const size = 50000; // re-escaped inside a KVS value: 200,000 overran the 240 KiB limit live
     const total = Math.max(1, Math.ceil(text.length / size));
     for (let i = 0; i < total; i++) {
       setJob({ label: "Importing", text: `Uploading part ${i + 1} of ${total}…` });
@@ -288,11 +292,20 @@ export default function BackupTab() {
     if (res?.generationId) { setMsg({ kind: "ok", text: `Imported as a backup of ${res.keys} items. Review it and restore below.` }); setRestoreOf({ pageId: res.pageId, generationId: res.generationId }); }
   };
 
+  // One call per automation: turning seal expiry back on extends every seal, which can take a
+  // while on a big site; one item per call keeps each well inside the 25 s resolver limit.
   const resume = async (ids) => {
     setMsg(null);
-    const r = await call("backup-resume-automations", ids ? { ids } : {});
-    if (!r.ok) { setMsg({ kind: "error", text: r.reason }); return; }
-    setMsg(r.data.failed?.length ? { kind: "error", text: `Could not turn back on: ${r.data.failed.map((f) => f.reason).join("; ")}` } : { kind: "ok", text: "Turned back on." });
+    const list = ids || paused.map((x) => x.id);
+    const failedReasons = [];
+    for (let i = 0; i < list.length; i++) {
+      setJob({ label: "Turning back on", text: `${i + 1} of ${list.length}…` });
+      const r = await call("backup-resume-automations", { ids: [list[i]] });
+      if (!r.ok) failedReasons.push(r.reason);
+      else for (const f of r.data.failed || []) failedReasons.push(f.reason);
+    }
+    setJob(null);
+    setMsg(failedReasons.length ? { kind: "error", text: `Could not turn back on: ${failedReasons.join("; ")}` } : { kind: "ok", text: "Turned back on." });
     load();
   };
 
@@ -377,6 +390,7 @@ export default function BackupTab() {
             onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ""; importFile(f); }} />
         </div>
         <p className="api-explain">An import becomes a backup on this site; nothing changes until you preview and restore it. REST API tokens and authenticator codes are never in an export.</p>
+        <p className="api-explain" data-testid="bk-export-warning">The file is a full copy of the setup, like a Confluence site export: it holds the content of sealed sections, approval records and the activity history, including from pages you may not be able to open. Keep it where only admins can reach it. An import is trusted the same way: whatever the file holds is written back as the app.</p>
       </Card>
 
       <Card id="survives" title="What survives an uninstall" text="Removing Sentinel Vault, or losing it to a lapsed subscription, does not lose your setup.">
