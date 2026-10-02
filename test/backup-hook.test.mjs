@@ -48,6 +48,6 @@ eq("a non-object body is refused", validateBackupOp("backup", [1]).ok, false);
 eq("receiptPageId must be a page id", validateBackupOp("backup", { receiptPageId: "x" }).ok, false);
 // The hourly check runs only in the Confluence installation (the app is also installed in Jira).
 const worker = readFileSync(resolve(capsules, "backup/worker.js"), "utf8");
-ok("the sweep refuses a non-Confluence installation", /if \(!isConfluenceInstall\(context\)\) \{[^}]*return; \}/.test(worker));
+ok("the sweep refuses a non-Confluence installation", /if \(!isConfluenceInstall\(context\)\) \{[^\n]*return; \}/.test(worker));
 ok("boot passes the cron's context to the sweep", /backupSweep\(context \|\| event\?\.context\)/.test(readFileSync(resolve(here, "../src/boot.js"), "utf8")));
 report("backup-hook");
