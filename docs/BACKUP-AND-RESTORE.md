@@ -152,5 +152,11 @@ Evidence: ~/Projects/forge-live-harness/evidence/sentinel-vault/backup/ (1-banne
   items created since stay. A safety backup is taken first.
 - The backup page outlives an uninstall (that is the point). To leave nothing behind, use "Delete the backup" before
   uninstalling.
-- The site console's frame is as tall as its content, so a dialog can open below the window: scroll the page to
-  reach its buttons (measured in headless Chromium; the specs scroll like a person would).
+- (Fixed the same day) Dialogs could open below the window in a content-tall frame; every dialog now fits the part
+  of the frame that is on screen (IntersectionObserver band, kit/visible-placement.js). The headless clicks that
+  were lost there were a harness artifact (emulated viewport; forge-live-harness RUNBOOK "Clicking inside a Forge
+  frame reliably").
+- (Fixed the same day) The Jira installation's empty backups and id are pruned from the index; empty generations
+  are never pinned.
+- Workflow automations paused by a restore are turned back on by restoring exactly the paused fields (the workflow
+  settings resolver refuses everyone when "Allow space admins to override" is off).
