@@ -10,6 +10,8 @@
  *
  * Classes:
  *   config   backed up and restored. `label` is what the admin reads in the preview.
+ *            `index: true` marks a lookup table the app keeps beside a primary record: it is backed up
+ *            (several have no rebuild path) but the preview counts it apart, not as user data.
  *   secret   NEVER backed up. The restore names what must be re-entered (`secretNote`).
  *   runtime  not backed up: caches, markers, cursors, job rows, dedup windows — the app rebuilds
  *            them, and restoring a stale one is worse than starting clean (a stale "processing"
@@ -36,25 +38,25 @@ export const FAMILIES = Object.freeze([
   { prefix: "protection-", cls: "config", group: "seals", label: "Sealed files" },
   { prefix: "section-protection-", cls: "config", group: "seals", label: "Sealed sections" },
   { prefix: "section-snapshot-", cls: "config", group: "seals", label: "Sealed section baselines" },
-  { prefix: "space-protection-", cls: "config", group: "seals", label: "Sealed-file index per space" },
-  { prefix: "space-section-protection-", cls: "config", group: "seals", label: "Sealed-section index per space" },
+  { prefix: "space-protection-", cls: "config", group: "seals", index: true, label: "Sealed-file index per space" },
+  { prefix: "space-section-protection-", cls: "config", group: "seals", index: true, label: "Sealed-section index per space" },
   { prefix: "edit-grant-", cls: "config", group: "access", label: "Edit access granted on sealed files" },
   { prefix: "section-edit-grant-", cls: "config", group: "access", label: "Edit access granted on sealed sections" },
   { prefix: "edit-request-", cls: "config", group: "access", label: "Edit requests on sealed files" },
   { prefix: "section-edit-request-", cls: "config", group: "access", label: "Edit requests on sealed sections" },
-  { prefix: "editreq-owner-", cls: "config", group: "access", label: "Edit-request inbox index" },
-  { prefix: "sectionreq-owner-", cls: "config", group: "access", label: "Section edit-request inbox index" },
-  { prefix: "editreq-mine-", cls: "config", group: "access", label: "\"My requests\" index" },
+  { prefix: "editreq-owner-", cls: "config", group: "access", index: true, label: "Edit-request inbox index" },
+  { prefix: "sectionreq-owner-", cls: "config", group: "access", index: true, label: "Section edit-request inbox index" },
+  { prefix: "editreq-mine-", cls: "config", group: "access", index: true, label: "\"My requests\" index" },
   { prefix: "steward-request-", cls: "config", group: "access", label: "Space-admin access requests" },
-  { prefix: "stewardreq-space-", cls: "config", group: "access", label: "Space-admin request index" },
+  { prefix: "stewardreq-space-", cls: "config", group: "access", index: true, label: "Space-admin request index" },
   { prefix: "notify-request-", cls: "config", group: "access", label: "\"Tell me when it is released\" watches" },
   // ── document workflow ───────────────────────────────────────────────────────────────────
   { prefix: "workflow-state-", cls: "config", group: "workflow", label: "Page workflow states" },
   { prefix: "workflow-pending-", cls: "config", group: "workflow", label: "Open approval requests" },
   { prefix: "workflow-approval-", cls: "config", group: "workflow", label: "Approval decisions" },
-  { prefix: "workflow-idx-", cls: "config", group: "workflow", label: "Workflow dashboard index" },
-  { prefix: "workflow-inbox-", cls: "config", group: "workflow", label: "Approver inbox index" },
-  { prefix: "wfreq-mine-", cls: "config", group: "workflow", label: "\"Approvals you asked for\" index" },
+  { prefix: "workflow-idx-", cls: "config", group: "workflow", index: true, label: "Workflow dashboard index" },
+  { prefix: "workflow-inbox-", cls: "config", group: "workflow", index: true, label: "Approver inbox index" },
+  { prefix: "wfreq-mine-", cls: "config", group: "workflow", index: true, label: "\"Approvals you asked for\" index" },
   { prefix: "workflow-log-", cls: "config", group: "history", label: "Workflow history" },
   { prefix: "read-ack-", cls: "config", group: "workflow", label: "Read confirmations" },
   // ── validation state ────────────────────────────────────────────────────────────────────
