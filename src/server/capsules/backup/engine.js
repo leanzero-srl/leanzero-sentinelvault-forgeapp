@@ -152,6 +152,19 @@ export async function runBackup({ reason = "manual", actor = null } = {}) {
     const index = (await store.readIndex(where.pageId))?.value || { generations: [], installations: [] };
     const newest = index.generations?.[0];
     const installations = mergeInstallations(index.installations, info, startedAt);
+    // Found live 2026-10-02: on a freshly reinstalled site the hourly check wrote a 0-item generation
+    // before the admin had restored anything. An AUTOMATIC run records no generation while a restore
+    // is pending (a backup from an earlier installation, no decision yet, under 14 days), nor an
+    // empty one ever — there is nothing to protect, and it would read as "last backup: 0 items".
+    const automatic = reason === "save" || reason === "schedule";
+    const decision = automatic ? await kvs.get("backup-decision").catch(() => null) : null;
+    const skip = automatic ? skipAutomaticGeneration({ keys, index, info, decision, nowMs: Date.parse(startedAt) }) : null;
+    if (skip) {
+      await store.writeIndex(where.pageId, { ...index, installations, lastCheckAt: startedAt });
+      const prev = (await kvs.get(STATUS_KEY)) || {};
+      await kvs.set(STATUS_KEY, { ...prev, lastCheckAt: startedAt, lastError: null, waiting: skip });
+      return { ok: true, unchanged: true, skipped: skip, keys };
+    }
     if (newest && newest.fingerprint === fingerprint && newest.environmentType === info.environmentType) {
       await store.writeIndex(where.pageId, { ...index, installations, lastCheckAt: startedAt });
       // A fresh install (after a restore) has no status row yet: the newest generation IS its last backup.
@@ -210,6 +223,23 @@ export function retainGenerations(all, keep) {
     out.push({ ...g, pinned: true });
   }
   return out;
+}
+
+/**
+ * PURE. Why an automatic backup must not record a generation now, or null.
+ *   "empty"           nothing backed-up exists in KVS
+ *   "restore-pending" the newest generation on the page was written by an EARLIER installation,
+ *                     this install has not decided (restore / start fresh), and it is < 14 days old
+ */
+export function skipAutomaticGeneration({ keys, index, info, decision, nowMs = Date.now() }) {
+  if (!keys) return "empty";
+  if (decision?.decision) return null;
+  const gens = Array.isArray(index?.generations) ? index.generations : [];
+  const newest = [...gens].sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)))[0];
+  if (!newest || !info?.installationId || newest.installationId === info.installationId) return null;
+  if (!newest.keys) return null;
+  const age = nowMs - Date.parse(newest.createdAt || 0);
+  return age < 14 * 86400000 ? "restore-pending" : null;
 }
 
 /** PURE. Keep every installation id that ever wrote here (the re-link ticket needs the previous one). */
