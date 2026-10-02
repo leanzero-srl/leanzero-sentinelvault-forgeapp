@@ -6,6 +6,8 @@ import UnsavedFloat from "../../kit/UnsavedFloat";
 import ValidationsEditor from "../../kit/ValidationsEditor";
 import LicenseBanner from "../../kit/LicenseBanner";
 import ClassificationTab from "../../kit/ClassificationTab";
+import BackupTab, { RestoreBanner } from "../../kit/BackupTab";
+import WhatsNew from "../../kit/WhatsNew";
 import Dialog, { ConfirmDialog } from "../../kit/Dialog";
 import { formatDurationHours } from "../../kit/format-duration";
 import logo from "../../assets/icons/icon.png";
@@ -738,6 +740,8 @@ const GlobalPolicyEditor = () => {
   }, []);
 
   const onChange = (key, v) => setValues((prev) => ({ ...prev, [key]: v }));
+  // Pillar 12: after a restore (banner or tab) the settings on screen are the restored ones.
+  const reloadSettings = async () => { try { applyRecord(await invoke("load-policy", { scope: "global" })); } catch (_) { /* keep what is shown */ } };
 
   const onSavePreferences = async () => {
     try {
@@ -801,7 +805,7 @@ const GlobalPolicyEditor = () => {
         <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
           <img src={logo} alt="Sentinel Vault Logo" style={{ height: "32px", width: "auto" }} />
           <div>
-            <h1 className="admin-title">Sentinel Vault — Site settings</h1>
+            <h1 className="admin-title">Sentinel Vault — Site settings <WhatsNew /></h1>
             <p className="admin-subtitle">
               {showSetup ? "Three questions to get started. Everything can be changed later." : "Manage global preferences for Sentinel Vault across every space"}
             </p>
@@ -810,6 +814,7 @@ const GlobalPolicyEditor = () => {
       </div>
 
       <LicenseBanner />
+      <RestoreBanner onChanged={reloadSettings} />
 
       {message && (
         <div className={messageType === "success" ? "alert-success" : "alert-error"}>{message}</div>
@@ -840,6 +845,9 @@ const GlobalPolicyEditor = () => {
             </button>
             <button className={`tab-button ${activeTab === "api" ? "active" : ""}`} onClick={() => switchTab("api")} data-testid="tab-api-access">
               API access
+            </button>
+            <button className={`tab-button ${activeTab === "backup" ? "active" : ""}`} onClick={() => switchTab("backup")} data-testid="tab-backup">
+              Backup and restore
             </button>
           </div>
 
@@ -898,6 +906,7 @@ const GlobalPolicyEditor = () => {
             {activeTab === "validations" && <ValidationsEditor scope="global" />}
             {activeTab === "classification" && <ClassificationTab onEnabledChange={onClassificationEnabledChange} />}
             {activeTab === "api" && <ApiAccessTab />}
+            {activeTab === "backup" && <BackupTab />}
           </div>
 
           {/* The Validations and Classification tabs save their own state; the policy Apply bar is
