@@ -154,7 +154,7 @@ Sentinel Vault runs several scheduled tasks and event triggers to keep the syste
 | **Queues** | On demand | Space scan (900 s), AI validation (120 s) and REST API job (300 s) consumers |
 | **Attachment Event Trigger** | Real-time | Fires on attachment updated/trashed/deleted -- detects violations, restores files, cleans up seals |
 | **Page Content Trigger** | Real-time | Fires on page created/updated -- sealed embeds and sections, workflow enforcement and validations |
-| **Lifecycle Trigger** | On install/uninstall | Deletes the app's stored records on uninstall |
+| **Lifecycle Trigger** | On install/uninstall | Logs only. Uninstall no longer erases stored records: Forge keeps them 28 days (re-link path) and the setup survives in the backup page (docs/BACKUP-AND-RESTORE.md) |
 
 ### Role-Based Access
 
