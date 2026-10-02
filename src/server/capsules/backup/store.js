@@ -126,7 +126,7 @@ export async function createBackupPage(spaceId, environmentType) {
   const title = backupPageTitle(environmentType);
   const body = [
     "<p>This page holds the backup of Sentinel Vault's setup on this site: settings, seals, workflows, validation rules,",
-    " classification and history. Only the Sentinel Vault app can open it. It is what lets the app bring your setup back",
+    " classification and history. It is restricted to the Sentinel Vault app. It is what lets the app bring your setup back",
     " after an uninstall and reinstall.</p>",
     "<p>Manage it in Confluence settings, Sentinel Vault — Site settings, Backup and restore. Deleting this page deletes the backup.</p>",
   ].join("");
