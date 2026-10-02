@@ -38,22 +38,35 @@ export const ACTIVITY_CATEGORIES = Object.freeze([
   ]) },
 ]);
 
+/**
+ * Site-level categories (the `activity-site-` leg, read only by the site console's Backup and
+ * restore tab). Kept apart from ACTIVITY_CATEGORIES so the page and space reports never offer a
+ * filter chip for events that can never appear there.
+ */
+export const SITE_ACTIVITY_CATEGORIES = Object.freeze([
+  { id: "backup", label: "Backup and restore", types: Object.freeze([
+    "backup.taken", "backup.failed", "backup.restored", "backup.restore-failed", "backup.exported", "backup.imported",
+    "backup.location-set", "backup.deleted", "backup.automations-resumed",
+  ]) },
+]);
+const ALL_CATEGORIES = [...ACTIVITY_CATEGORIES, ...SITE_ACTIVITY_CATEGORIES];
+
 /** Every known type, flat, in category order. */
-export const ACTIVITY_TYPES = Object.freeze(ACTIVITY_CATEGORIES.flatMap((c) => c.types));
+export const ACTIVITY_TYPES = Object.freeze(ALL_CATEGORIES.flatMap((c) => c.types));
 
 const CATEGORY_BY_TYPE = Object.freeze(Object.fromEntries(
-  ACTIVITY_CATEGORIES.flatMap((c) => c.types.map((t) => [t, c.id])),
+  ALL_CATEGORIES.flatMap((c) => c.types.map((t) => [t, c.id])),
 ));
 
 /** Category id for a type; a type nobody registered lands in the nearest prefix or "other". */
 export function categoryOf(type) {
   if (CATEGORY_BY_TYPE[type]) return CATEGORY_BY_TYPE[type];
   const prefix = String(type || "").split(".")[0];
-  const hit = ACTIVITY_CATEGORIES.find((c) => c.types.some((t) => t.startsWith(`${prefix}.`)));
+  const hit = ALL_CATEGORIES.find((c) => c.types.some((t) => t.startsWith(`${prefix}.`)));
   return hit ? hit.id : "other";
 }
 
-export const categoryLabel = (id) => ACTIVITY_CATEGORIES.find((c) => c.id === id)?.label || "Other";
+export const categoryLabel = (id) => ALL_CATEGORIES.find((c) => c.id === id)?.label || "Other";
 
 // ── Small helpers ────────────────────────────────────
 
@@ -140,6 +153,15 @@ const q = (s) => `“${s}”`; // curly quotes around a section title
  *   category — one of ACTIVITY_CATEGORIES ids
  *   detail   — the type-specific extra ("until Sep 12, 2026", "Draft → Approved"), may be ""
  */
+/** "12.4 MB" style size for the backup rows; "" for an unknown size. */
+export function fmtBytes(n) {
+  const b = Number(n);
+  if (!Number.isFinite(b) || b < 0) return "";
+  if (b < 1024) return `${b} B`;
+  if (b < 1024 * 1024) return `${(b / 1024).toFixed(1)} KB`;
+  return `${(b / (1024 * 1024)).toFixed(1)} MB`;
+}
+
 export function formatActivity(entry) {
   const type = entry?.type || "";
   const d = entry?.details || {};
@@ -360,6 +382,33 @@ export function formatActivity(entry) {
         : { ...base, label: "Space default set", glyph: "shield", tone: "info",
             sentence: `${who} set the default level${space} to ${to}`, detail: from ? `was ${from}` : "" };
     }
+
+    // ── Backup and restore (pillar 12; the site leg) ──
+    case "backup.taken": {
+      const size = fmtBytes(d.bytes);
+      const why = { manual: "on request", schedule: "on the daily schedule", save: "after a change", rest: "over REST", "before-restore": "before a restore", "after-restore": "right after a restore", moved: "in its new space" }[d.reason] || "";
+      return { ...base, label: d.unchanged ? "Backup checked" : "Backup taken", glyph: "check", tone: "positive",
+        sentence: d.unchanged ? `${who} checked the backup — nothing had changed` : `${who} backed up the setup${why ? ` ${why}` : ""}`,
+        detail: [d.keys != null ? `${d.keys} items` : "", size].filter(Boolean).join(" · ") };
+    }
+    case "backup.failed":
+      return { ...base, label: "Backup failed", glyph: "hourglass", tone: "critical", sentence: "The backup could not be written", detail: d.error ? String(d.error) : "" };
+    case "backup.restored":
+      return { ...base, label: "Setup restored", glyph: "undo", tone: "positive",
+        sentence: `${who} restored the setup from the backup of ${d.createdAt ? formatAbsolute(d.createdAt) : "an earlier date"}`,
+        detail: [d.written != null ? `${d.written} items written` : "", d.paused ? `${d.paused} automation${d.paused === 1 ? "" : "s"} paused` : "", d.failed ? `${d.failed} failed` : ""].filter(Boolean).join(" · ") };
+    case "backup.restore-failed":
+      return { ...base, label: "Restore failed", glyph: "hourglass", tone: "critical", sentence: `${who} tried to restore a backup — nothing was written`, detail: d.error ? String(d.error) : "" };
+    case "backup.exported":
+      return { ...base, label: "Setup exported", glyph: "arrow", tone: "info", sentence: `${who} exported the setup${d.door === "rest" ? " over REST" : ""}`, detail: [d.keys != null ? `${d.keys} items` : "", fmtBytes(d.bytes)].filter(Boolean).join(" · ") };
+    case "backup.imported":
+      return { ...base, label: "Setup imported", glyph: "arrow", tone: "info", sentence: `${who} imported a setup file as a new backup`, detail: d.keys != null ? `${d.keys} items` : "" };
+    case "backup.location-set":
+      return { ...base, label: "Backup moved", glyph: "arrow", tone: "info", sentence: `${who} moved the backup to space ${d.to || "?"}`, detail: d.from ? `was in ${d.from}` : "" };
+    case "backup.deleted":
+      return { ...base, label: "Backup deleted", glyph: "unlock", tone: "caution", sentence: `${who} deleted the backup`, detail: "" };
+    case "backup.automations-resumed":
+      return { ...base, label: "Automations back on", glyph: "clock", tone: "info", sentence: `${who} turned ${Array.isArray(d.resumed) ? d.resumed.length : "the"} paused automation${Array.isArray(d.resumed) && d.resumed.length === 1 ? "" : "s"} back on`, detail: d.failed ? `${d.failed} could not be turned on` : "" };
 
     // ── Validation ──
     case "validation.reverted": {

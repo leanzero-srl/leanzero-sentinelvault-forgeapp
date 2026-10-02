@@ -186,6 +186,21 @@ export async function testStateTrigger(req) {
       const { results } = await kvs.query().where("key", WhereConditions.beginsWith(prefix)).limit(100).getMany();
       return json(200, { prefix, keys: (results || []).map((r) => r.key) });
     }
+    // Pillar 12 proof (DEV-ONLY): one page of EVERY key with its value and expiry, in key order,
+    // so a spec can take a full before/after picture of the store across an uninstall. `cursor`
+    // pages on; `backedUp=1` keeps only the families the backup carries (backup/families.js).
+    if (what === "dump") {
+      const { MetadataField } = await import("@forge/kvs");
+      const { isBackedUp, familyOf } = await import("./server/capsules/backup/families.js");
+      let query = kvs.query({ metadataFields: [MetadataField.EXPIRE_TIME] }).limit(Math.min(Number(q(req, "limit")) || 100, 100));
+      const cur = q(req, "cursor");
+      if (cur) query = query.cursor(cur);
+      const { results, nextCursor } = await query.getMany();
+      const onlyBackedUp = q(req, "backedUp") === "1";
+      const rows = (results || []).filter((r) => !onlyBackedUp || isBackedUp(r.key))
+        .map((r) => ({ key: r.key, value: r.value, expireTime: r.expireTime || null, family: familyOf(r.key).prefix || "other", cls: familyOf(r.key).cls }));
+      return json(200, { rows, nextCursor: nextCursor || null, scanned: (results || []).length });
+    }
     // DEV-ONLY: invoke a scheduled task on demand so the harness can assert the scheduled tier
     // deterministically (no waiting for the daily/hourly cron).
     if (what === "invoke") {
@@ -202,6 +217,17 @@ export async function testStateTrigger(req) {
       if (fn === "revokeApiToken") {
         const { revokeApiToken } = await import("./server/capsules/config-api/tokens.js");
         return json(200, { invoked: fn, result: await revokeApiToken(q(req, "id")) });
+      }
+      // Pillar 12: run a queued backup job NOW (dev queues can lag), or the hourly sweep.
+      if (fn === "backupJob") {
+        const { backupConsumer } = await import("./server/capsules/backup/worker.js");
+        await backupConsumer({ body: { kind: "job", jobId: q(req, "id") } });
+        const { readJob } = await import("./server/capsules/backup/engine.js");
+        return json(200, { invoked: fn, result: await readJob(q(req, "id")) });
+      }
+      if (fn === "backupSweep") {
+        const { backupSweep } = await import("./server/capsules/backup/worker.js");
+        return json(200, { invoked: fn, result: await backupSweep() });
       }
       if (fn === "runApiJob") {
         // Drive the consumer synchronously when the queue is slow (dev queues can lag minutes).

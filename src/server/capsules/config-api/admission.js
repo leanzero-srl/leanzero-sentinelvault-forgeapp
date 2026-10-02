@@ -21,11 +21,13 @@ export const OUTPUT = Object.freeze({
   notAllowed: "not-allowed",
 });
 
-export const OPS = Object.freeze(["bundle", "dry-run", "whoami"]);
+// Pillar 12: the backup ops (capsules/backup/rest.js) ride the same door, admin role only.
+export const BACKUP_OPS = Object.freeze(["backup", "rediscover", "restore", "export", "import", "resume-automations", "backup-location"]);
+export const OPS = Object.freeze(["bundle", "dry-run", "whoami", ...BACKUP_OPS]);
 export const ACTIVE_STATUSES = Object.freeze(["queued", "running"]);
 export const JOB_TTL_MS = 7 * 86400000;
-/** A `running` row older than this is reclaimable (Forge async-event consumers are cut off at 300 s). */
-export const CONSUMER_TIMEOUT_MS = 300000;
+/** A `running` row older than this is reclaimable (the consumer's timeoutSeconds is 900 since pillar 12). */
+export const CONSUMER_TIMEOUT_MS = 900000;
 const KEY_RE = /^[A-Za-z0-9][A-Za-z0-9:._-]{0,119}$/;
 
 export const JOB_PREFIX = "api-job-";
@@ -63,5 +65,6 @@ export function decideAdmission({ existingJob, runningForToken, key, nowMs = Dat
 /** PURE. Role floor of an op + bundle. whoami is open to any live token. */
 export function opRoleFloor(op, bundleFloor) {
   if (op === "whoami") return "viewer";
+  if (BACKUP_OPS.includes(op)) return "admin"; // a backup holds every roster and rule; a restore rewrites them all
   return bundleFloor; // bundle / dry-run: what the bundle contains decides
 }
