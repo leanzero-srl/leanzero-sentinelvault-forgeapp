@@ -76,7 +76,9 @@ export default function Dialog({ title, children, onClose, busy = false, danger 
     if (!anchorMode || !ref.current || typeof ResizeObserver === "undefined") return undefined;
     const ro = new ResizeObserver(() => {
       if (bandRef.current === undefined || desiredRef.current == null || !ref.current) return;
-      const p = placeInBand({ desiredTop: desiredRef.current, h: ref.current.scrollHeight, band: bandRef.current });
+      // The FULL height: content (scrollHeight, which a cap would hide) plus the borders around it.
+      const el = ref.current;
+      const p = placeInBand({ desiredTop: desiredRef.current, h: el.scrollHeight + (el.offsetHeight - el.clientHeight), band: bandRef.current });
       setMaxH((m) => (m === p.maxHeight ? m : p.maxHeight));
       setTop((t) => (t === p.top ? t : p.top));
     });
