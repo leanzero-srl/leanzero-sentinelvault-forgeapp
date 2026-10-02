@@ -14,6 +14,29 @@ import * as store from "./store.js";
 import { BACKUP_QUEUE_KEY, DIRTY_KEY } from "./hook.js";
 
 const STALE_MS = 24 * 3600000;
+const LEASE_KEY = "backup-lease";
+const LEASE_MS = 16 * 60000; // > the 900 s consumer timeout: a killed run frees it on its own
+
+/**
+ * One backup / restore / import / move at a time (review 2026-10-02: overlapping runs raced on the
+ * index and one run's cleanup deleted another's fresh files). Atomic acquire with FAIL_IF_EXISTS;
+ * a run that cannot get the lease waits up to `waitMs`, then gives up with a plain reason.
+ */
+export async function withLease(fn, { waitMs = 120000 } = {}) {
+  const token = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const until = Date.now() + waitMs;
+  for (;;) {
+    try {
+      await kvs.set(LEASE_KEY, { token, at: nowIso() }, { ttl: { value: Math.ceil(LEASE_MS / 1000), unit: "SECONDS" }, keyPolicy: "FAIL_IF_EXISTS" });
+      break;
+    } catch (e) {
+      if (Date.now() > until) throw new Error("Another backup or restore is running — try again in a few minutes.");
+      await new Promise((r) => setTimeout(r, 5000));
+    }
+  }
+  try { return await fn(); }
+  finally { const cur = await kvs.get(LEASE_KEY).catch(() => null); if (cur?.token === token) await kvs.delete(LEASE_KEY).catch(() => {}); }
+}
 const nowIso = () => new Date().toISOString();
 const errText = (e) => String(e?.message || e).slice(0, 300);
 
@@ -38,8 +61,12 @@ async function runBackupAndAudit({ reason, actor }) {
   return r;
 }
 
-/** Execute one job by kind. Returns the result stored on the job row. */
+/** Execute one job by kind, under the lease. Returns the result stored on the job row. */
 export async function executeJob(job) {
+  return withLease(() => executeJobUnleased(job));
+}
+
+async function executeJobUnleased(job) {
   const p = job.payload || {};
   switch (job.kind) {
     case "backup":
@@ -93,7 +120,12 @@ async function copyGenerations(fromPageId, toPageId) {
 
 export async function backupConsumer(event) {
   const body = event?.body || event?.payload || {};
-  if (body.kind === "backup") { await runBackupAndAudit({ reason: body.reason || "save", actor: null }); return; }
+  if (body.kind === "backup") {
+    // An automatic run that finds another run going simply skips: the dirty flag / next hour retries.
+    try { await withLease(() => runBackupAndAudit({ reason: body.reason || "save", actor: null }), { waitMs: 0 }); }
+    catch (e) { console.log(`[BACKUP] automatic run skipped: ${errText(e)}`); }
+    return;
+  }
   if (body.kind !== "job" || !body.jobId) { console.warn("[BACKUP] consumer: unknown event", JSON.stringify(body).slice(0, 200)); return; }
   const job = await readJob(body.jobId);
   if (!job || job.status !== "queued") { console.warn(`[BACKUP] job ${body.jobId} is ${job?.status || "missing"}; not running`); return; }

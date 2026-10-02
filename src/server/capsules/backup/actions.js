@@ -39,15 +39,8 @@ const siteAdmin = async (req) => { const a = req?.context?.accountId; return !!a
 const fail = (e) => ({ success: false, reason: String(e?.message || e).slice(0, 300) });
 const str = (v) => (v == null ? "" : String(v));
 
-/** The backup page this install may read from: one discovery found (app-restricted) or its own. */
-async function readablePage(pageId) {
-  const id = str(pageId).replace(/[^0-9]/g, "");
-  if (!id) throw new Error("pageId required");
-  if (!(await store.isRestrictedToApp(id))) throw new Error("That page is not a Sentinel Vault backup page.");
-  const p = await store.readPage(id);
-  if (!p || !/^Sentinel Vault backup/.test(p.title)) throw new Error("That page is not a Sentinel Vault backup page.");
-  return id;
-}
+/** The backup page this install may read from (app-created, app-restricted; store.assertBackupPage). */
+const readablePage = (pageId) => store.assertBackupPage(pageId);
 
 const status = async (req) => {
   if (!(await siteAdmin(req))) return DENY;
