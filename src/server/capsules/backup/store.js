@@ -63,7 +63,26 @@ export async function readPage(pageId) {
   const res = await conf(route`/wiki/api/v2/pages/${pageId}`);
   if (!res.ok) return null;
   const p = await readJson(res);
-  return p?.status === "current" ? { pageId: String(p.id), title: p.title, spaceId: String(p.spaceId) } : null;
+  return p?.status === "current" ? { pageId: String(p.id), title: p.title, spaceId: String(p.spaceId), authorId: p.authorId || null } : null;
+}
+
+/**
+ * Is this page one of OUR backup pages? Created by the app's own account (review 2026-10-02: a
+ * person cannot plant a look-alike page for a reinstalled app to adopt), titled as one, and
+ * restricted to the app alone. Every door that reads or writes a backup page goes through this.
+ */
+export async function isBackupPage(pageId) {
+  const p = await readPage(pageId);
+  if (!p || !/^Sentinel Vault backup/.test(p.title)) return false;
+  if (p.authorId !== (await appAccountId())) return false;
+  return isRestrictedToApp(p.pageId);
+}
+
+/** Throwing form for the doors. Returns the page id. */
+export async function assertBackupPage(pageId) {
+  const id = String(pageId ?? "").replace(/[^0-9]/g, "");
+  if (!id || !(await isBackupPage(id))) throw new Error("That page is not a Sentinel Vault backup page.");
+  return id;
 }
 
 export async function spaceById(spaceId) {

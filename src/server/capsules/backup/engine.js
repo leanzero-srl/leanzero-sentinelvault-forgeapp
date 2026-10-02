@@ -16,7 +16,7 @@ import { setWithTtl } from "../../shared/kvs-ttl.js";
 import { familyOf, isBackedUp } from "./families.js";
 import {
   FORMAT, FORMAT_VERSION, EXPORT_FORMAT, ChunkBuilder, sealManifest, verifyManifest, verifyChunk, parseChunk,
-  manifestName, isManifestName, isChunkName, newGenerationId, contentFingerprint, tallyFamily, secretsInventory,
+  manifestName, isManifestName, isChunkName, chunkName, newGenerationId, contentFingerprint, tallyFamily, secretsInventory,
   pauseAutomations, restoreDecision, previewGroups, indexKeyCount, sha256, stableStringify,
 } from "./snapshot.js";
 import * as store from "./store.js";
@@ -66,12 +66,11 @@ export async function ensureBackupPage({ preferSpaceKey = null } = {}) {
   const env = appInfo().environmentType;
   const settings = (await kvs.get(SETTINGS_KEY)) || {};
   if (settings.pageId && !preferSpaceKey) {
-    const p = await store.readPage(settings.pageId);
-    if (p && (await store.isRestrictedToApp(p.pageId))) return settings;
+    if (await store.isBackupPage(settings.pageId)) return settings;
   }
   if (!preferSpaceKey) {
     const found = choosePage(await store.findBackupPages().catch(() => []), env);
-    if (found && (await store.isRestrictedToApp(found.pageId))) {
+    if (found && (await store.isBackupPage(found.pageId))) {
       const next = { pageId: found.pageId, spaceId: found.spaceId, spaceKey: found.spaceKey, spaceName: found.spaceName, title: found.title };
       await kvs.set(SETTINGS_KEY, next);
       return next;
@@ -283,7 +282,8 @@ export async function discoverBackups() {
   }
   const out = [];
   for (const p of pages) {
-    const restricted = await store.isRestrictedToApp(p.pageId).catch(() => false);
+    // `restricted` = a genuine backup page: created by the app AND restricted to it alone.
+    const restricted = await store.isBackupPage(p.pageId).catch(() => false);
     const index = (await store.readIndex(p.pageId).catch(() => null))?.value || null;
     out.push({
       pageId: p.pageId, title: p.title, spaceKey: p.spaceKey, spaceName: p.spaceName, restricted,
@@ -382,11 +382,14 @@ export async function runRestore({ pageId, generationId, actor = null, source = 
   const { manifest } = await loadManifest(pageId, generationId);
   const texts = await fetchChunks(pageId, manifest);
   let safety = null;
-  if (!(await looksFresh())) {
+  const fresh = await looksFresh();
+  if (!fresh) {
     safety = await runBackup({ reason: "before-restore", actor });
     if (!safety.ok) throw new Error(`Could not take the safety backup before restoring: ${safety.reason}`);
   }
-  const pausedAt = Date.parse(manifest.createdAt) || Date.now();
+  // Seal timers: on a reinstalled site they stopped when the backup was taken (the app was gone
+  // since); on a site in use they stop now — never credit a live site with time it was running.
+  const pausedAt = fresh ? (Date.parse(manifest.createdAt) || Date.now()) : Date.now();
   const toWrite = [];
   const paused = [];
   let expired = 0;
@@ -399,13 +402,16 @@ export async function runRestore({ pageId, generationId, actor = null, source = 
       toWrite.push({ ...d, value: p.value });
     }
   }
-  const { written, failed } = await writeEntries(toWrite);
+  // The "Turn back on" list is written BEFORE the paused values: a restore cut off half way must
+  // never leave automations off with no way back in the UI.
   const at = nowIso();
   if (paused.length) await kvs.set(PAUSED_KEY, { restoredAt: at, generationId: manifest.generationId, items: paused });
+  const { written, failed } = await writeEntries(toWrite);
   const lastRestore = { at, generationId: manifest.generationId, createdAt: manifest.createdAt, source, pageId, written, failed: failed.length, expired, paused: paused.length, actor, fromInstallation: manifest.app?.installationId || null };
   await kvs.set(STATUS_KEY, { ...((await kvs.get(STATUS_KEY)) || {}), lastRestore });
   console.log(`[BACKUP] restored generation ${manifest.generationId} written=${written} failed=${failed.length} expired=${expired} paused=${paused.length}`);
-  return { ok: failed.length === 0, generationId: manifest.generationId, createdAt: manifest.createdAt, written, failed: failed.slice(0, 20), expired, paused, secrets: manifest.secrets, safetyGeneration: safety?.generationId || null };
+  // A partial restore is still a restore: the job settles "done" and the result names what failed.
+  return { ok: written > 0 || failed.length === 0, partial: failed.length > 0, generationId: manifest.generationId, createdAt: manifest.createdAt, written, failed: failed.slice(0, 20), expired, paused, secrets: manifest.secrets, safetyGeneration: safety?.generationId || null };
 }
 
 // ── automations paused by a restore ───────────────────────────────────────────────────────
@@ -481,6 +487,7 @@ export function verifyExport(doc) {
   if (!v.ok) return v;
   const byName = new Map((doc.chunks || []).map((c) => [c.name, c]));
   for (const c of doc.manifest.chunks) {
+    if (c.name !== chunkName(String(c.sha256 || ""))) return { ok: false, reason: `Part ${c.name} is not named after its content.` };
     const got = byName.get(c.name);
     if (!got || typeof got.text !== "string") return { ok: false, reason: `The file is missing part ${c.name}.` };
     if (!verifyChunk(got.text, c)) return { ok: false, reason: `Part ${c.name} failed its integrity check.` };
@@ -495,10 +502,14 @@ export function verifyExport(doc) {
 export async function importExport(doc, { actor = null } = {}) {
   const v = verifyExport(doc);
   if (!v.ok) throw new Error(v.reason);
+  // The preview must describe the DATA, not what the file's index claims: recount from the entries.
+  const counts = {};
+  let keys = 0;
+  for (const c of doc.chunks) for (const [key] of parseChunk(c.text)) { if (familyOf(key).cls !== "config") continue; keys += 1; tallyFamily(counts, key); }
   const where = await ensureBackupPage();
   const files = new Map((await store.listAttachments(where.pageId)).map((a) => [a.title, a]));
   for (const c of doc.chunks) if (!files.has(c.name)) await store.putFile(where.pageId, c.name, c.text);
-  return registerImportedManifest(where, doc.manifest, actor);
+  return registerImportedManifest(where, { ...doc.manifest, counts, keys }, actor);
 }
 
 async function registerImportedManifest(where, srcManifest, actor) {
@@ -512,7 +523,9 @@ async function registerImportedManifest(where, srcManifest, actor) {
   const mName = manifestName(generationId);
   const manifestAttachmentId = await store.putFile(where.pageId, mName, JSON.stringify(sealed));
   const index = (await store.readIndex(where.pageId))?.value || { generations: [], installations: [] };
-  const row = { generationId, createdAt: sealed.createdAt, reason: "import", importedAt: sealed.importedAt, keys: sealed.keys, bytes: sealed.bytes, chunks: sealed.chunks.length, fingerprint: `import-${sealed.fingerprint}`, manifest: mName, manifestAttachmentId, environmentType: info.environmentType, installationId: info.installationId, appVersion: srcManifest.app?.appVersion || null };
+  // Dated by the IMPORT (review 2026-10-02): retention keeps the newest by createdAt, so a row dated
+  // by an old source backup could be cut the moment it was registered.
+  const row = { generationId, createdAt: sealed.importedAt, sourceCreatedAt: sealed.createdAt, reason: "import", importedAt: sealed.importedAt, keys: sealed.keys, bytes: sealed.bytes, chunks: sealed.chunks.length, fingerprint: `import-${sealed.fingerprint}`, manifest: mName, manifestAttachmentId, environmentType: info.environmentType, installationId: info.installationId, appVersion: srcManifest.app?.appVersion || null };
   // An import is never the "newest unchanged" baseline of a later backup: its fingerprint is tagged.
   const generations = retainGenerations([row, ...(index.generations || [])], store.KEEP_GENERATIONS);
   await store.writeIndex(where.pageId, { ...index, format: FORMAT, generations, installations: mergeInstallations(index.installations, info, nowIso()) });
@@ -523,8 +536,10 @@ async function registerImportedManifest(where, srcManifest, actor) {
 // A part is ≤ 200 KB of the export file's text; the whole file is reassembled only chunk by chunk.
 export async function stageImportPart(importId, index, total, text) {
   if (!/^[A-Za-z0-9-]{8,64}$/.test(String(importId || ""))) throw new Error("Bad import id");
-  if (!(Number.isInteger(index) && index >= 0 && Number.isInteger(total) && total > 0 && index < total && total <= 2000)) throw new Error("Bad part number");
-  if (typeof text !== "string" || text.length > 220000) throw new Error("Part too large");
+  if (!(Number.isInteger(index) && index >= 0 && Number.isInteger(total) && total > 0 && index < total && total <= 5000)) throw new Error("Bad part number");
+  // ≤ 50,000 characters: the part is JSON-escaped again inside the KVS value (export text is full of
+  // quotes), and multi-byte text grows further; 200,000 overran the 240 KiB value limit live.
+  if (typeof text !== "string" || text.length > 50000) throw new Error("Part too large");
   await setWithTtl(`${STAGE_PREFIX}${importId}-${index}`, { t: text }, 3600000);
   return { ok: true };
 }
