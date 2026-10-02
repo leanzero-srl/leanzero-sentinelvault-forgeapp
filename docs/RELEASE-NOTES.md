@@ -2,7 +2,7 @@
 
 GENERATED from `src/server/shared/release-notes.js` by `scripts/render-release-notes.mjs`. Do not edit.
 
-## 6.6.0 — 2026-10-02 (in testing, not yet on the Marketplace)
+## 6.6.0 — 2026-10-02
 
 **Your setup survives an uninstall: automatic backup, restore, export and import**
 
@@ -11,6 +11,9 @@ GENERATED from `src/server/shared/release-notes.js` by `scripts/render-release-n
 - New: download the whole setup as one JSON file, and import it on this site or another one.
 - New: REST operations backup, restore, export, import, rediscover, resume-automations and backup-location, for admin tokens.
 - Changed: uninstalling no longer erases the app's stored data on the spot. Atlassian keeps it for 28 days, so the 21-day re-link path stays open.
+
+Fixed:
+- Dialogs opened from low on a long page (Site settings, space settings, page panels) now open fully on screen, with their buttons in view.
 
 **Do this:** Open Site settings, Backup and restore, once after the update and check that the first backup is there. REST API tokens and authenticator codes are never backed up; after a restore, create new tokens and ask people who sign actions to enroll again.
 

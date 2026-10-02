@@ -14,7 +14,6 @@ export const RELEASE_NOTES = Object.freeze([
   note({
     version: "6.6.0",
     date: "2026-10-02",
-    status: "testing",
     headline: "Your setup survives an uninstall: automatic backup, restore, export and import",
     changes: [
       "New: Backup and restore in Site settings. Sentinel Vault backs up your settings, seals, sealed sections, workflows, validation rules, classification and history after every change and once a day, to a Confluence page that only the app can open.",
@@ -22,6 +21,9 @@ export const RELEASE_NOTES = Object.freeze([
       "New: download the whole setup as one JSON file, and import it on this site or another one.",
       "New: REST operations backup, restore, export, import, rediscover, resume-automations and backup-location, for admin tokens.",
       "Changed: uninstalling no longer erases the app's stored data on the spot. Atlassian keeps it for 28 days, so the 21-day re-link path stays open.",
+    ],
+    fixes: [
+      "Dialogs opened from low on a long page (Site settings, space settings, page panels) now open fully on screen, with their buttons in view.",
     ],
     action: "Open Site settings, Backup and restore, once after the update and check that the first backup is there. REST API tokens and authenticator codes are never backed up; after a restore, create new tokens and ask people who sign actions to enroll again.",
   }),
