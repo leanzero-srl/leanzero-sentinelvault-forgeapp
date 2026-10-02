@@ -1,7 +1,7 @@
 /*
  * Backup — the queue consumer (`backup-queue`, 900 s) and the hourly sweep. Everything slow runs
  * here: a backup, a restore (verify every file, then write), an import, a move to another space.
- * The UI and REST start a JOB (jobs.js) and poll it; a save just raises the dirty flag (hook.js).
+ * The UI and REST start a JOB (startJob) and poll it; a save just raises the dirty flag (hook.js); the hourly check (backupSweep) runs at the end of the hourly index cron (boot.js).
  */
 import { kvs } from "@forge/kvs";
 import { Queue } from "@forge/events";

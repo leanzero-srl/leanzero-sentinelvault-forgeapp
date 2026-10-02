@@ -163,12 +163,11 @@ modules:
       # 900 s: the REST backup / restore / import / export ops run here (pillar 12).
       timeoutSeconds: 900
     # Pillar 12 — backup and restore (docs/BACKUP-AND-RESTORE.md). The consumer runs every backup,
-    # restore, import and move; the hourly sweep only queues one when something changed.
+    # restore, import and move. The hourly check rides seal-index-cron (Forge allows 5 scheduled
+    # triggers and this app has 5): it only queues a backup when something changed or a day passed.
     - key: backup-fn
       handler: boot.backupConsumer
       timeoutSeconds: 900
-    - key: backup-sweep-fn
-      handler: boot.backupSweep
 
   # Queue consumer for async realm admin scanning
   consumer:
@@ -225,10 +224,6 @@ modules:
     - key: page-guard-sweep-scheduled
       function: page-guard-sweep-fn
       interval: fiveMinute
-    # Pillar 12: back up what changed since the last run (or once a day).
-    - key: backup-sweep-scheduled
-      function: backup-sweep-fn
-      interval: hour
 
   # Sentinel Vault admin configuration module (Custom UI)
   confluence:globalSettings:
