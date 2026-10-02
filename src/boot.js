@@ -11,7 +11,7 @@ export { configApiConsumer } from "./server/capsules/config-api/consumer.js";
 // index cron (the manifest is at Forge's limit of 5 scheduled triggers). backupSweep never throws.
 export { backupConsumer } from "./server/capsules/backup/worker.js";
 export async function sealIndexCron(event, context) {
-  try { return await sealIndexCronCore(event, context); } finally { await backupSweep(); }
+  try { return await sealIndexCronCore(event, context); } finally { await backupSweep(context || event?.context); }
 }
 // DEV-ONLY harness test-state web trigger (gated by HARNESS_SECRET; 404 in prod)
 export { testStateTrigger } from "./test-hook.js";
