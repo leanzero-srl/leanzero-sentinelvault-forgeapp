@@ -15,6 +15,8 @@ import { actions as activityActions } from "./capsules/activity/actions.js";
 import { actions as classificationActions } from "./capsules/classification/actions.js";
 import { actions as pageDetailsActions } from "./capsules/page-details/actions.js";
 import { actions as configApiActions } from "./capsules/config-api/actions.js";
+import { actions as backupActions } from "./capsules/backup/actions.js";
+import { WRITE_ACTIONS, withBackupHook } from "./capsules/backup/hook.js";
 import { CONFIG_WRITER_KEYS, scopeOfConfigWrite, refreshConfigMirror } from "./capsules/config-api/mirror.js";
 import { SIGNED_SEAL_ACTION_KEYS, signSealActionsOn } from "./shared/seal-signature.js";
 import { verifySignature } from "./capsules/workflow/signature.js";
@@ -38,6 +40,7 @@ export const allActions = [
   ...classificationActions,
   ...pageDetailsActions,
   ...configApiActions,
+  ...backupActions,
 ];
 
 // One home for "a config write refreshes the Confluence-side mirror": every UI save of site or
@@ -69,8 +72,11 @@ const withSealSignature = (key, fn) => async (req) => {
 };
 // `wrappedActions` is what the router actually runs (mirror hook included); the dev hook's generic
 // seam drives THIS map, not the raw list, so a seam-driven write behaves exactly like a UI write.
+// Pillar 12: every write path schedules ONE debounced backup (capsules/backup/hook.js); the
+// classification of each action key is pinned by test/backup-hook.test.mjs.
 export const wrappedActions = allActions.map(([key, fn]) => {
   let wrapped = CONFIG_WRITER_KEYS.includes(key) ? withConfigMirror(key, fn) : fn;
+  if (WRITE_ACTIONS.includes(key)) wrapped = withBackupHook(key, wrapped);
   if (SIGNED_SEAL_ACTION_KEYS.includes(key)) wrapped = withSealSignature(key, wrapped);
   return [key, wrapped];
 });

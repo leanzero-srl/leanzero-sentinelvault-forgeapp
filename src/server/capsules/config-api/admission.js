@@ -24,8 +24,8 @@ export const OUTPUT = Object.freeze({
 export const OPS = Object.freeze(["bundle", "dry-run", "whoami"]);
 export const ACTIVE_STATUSES = Object.freeze(["queued", "running"]);
 export const JOB_TTL_MS = 7 * 86400000;
-/** A `running` row older than this is reclaimable (Forge async-event consumers are cut off at 300 s). */
-export const CONSUMER_TIMEOUT_MS = 300000;
+/** A `running` row older than this is reclaimable (the consumer's timeoutSeconds is 900 since pillar 12). */
+export const CONSUMER_TIMEOUT_MS = 900000;
 const KEY_RE = /^[A-Za-z0-9][A-Za-z0-9:._-]{0,119}$/;
 
 export const JOB_PREFIX = "api-job-";
