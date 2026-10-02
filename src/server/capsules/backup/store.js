@@ -1,5 +1,5 @@
 /*
- * Backup — the store: ONE Confluence page per site and environment that only the app can open.
+ * Backup — the store: ONE Confluence page per site and environment, restricted to the app.
  *
  * Why this store (measured 2026-10-02 with a throwaway app holding Sentinel Vault's exact scopes,
  * ~/Projects/forge-uninstall-probe-confluence/RESULTS.md): after an uninstall + reinstall, KVS and

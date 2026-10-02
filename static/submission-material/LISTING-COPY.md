@@ -116,14 +116,14 @@ API access: one POST endpoint for configuration bundles and content operations, 
 ## What survives an uninstall (6.6.0 — draft, same words as Site settings → Backup and restore)
 
 <!-- block:survives -->
-Uninstalling Sentinel Vault, or losing it to a lapsed subscription, does not lose your setup. The app backs up your settings, seals and sealed sections, workflows and approvals, validation rules, classification and history after every change and once a day, to a Confluence page in your site that only the app can open. Reinstall it and Site settings offer "Restore your setup from <date>" with a preview first; things that act on their own (seals expiring, validation revert, AI review, workflow auto-assign and review timers) come back paused until you turn them on. REST API tokens and authenticator codes are never backed up: create new tokens and enroll again. You can also download the whole setup as one JSON file and import it on this or another site. If the app was removed before it had a backup, contact LeanZero within 21 days: Atlassian keeps the app's data for 28 days and can re-link it with your consent.
+Uninstalling Sentinel Vault, or losing it to a lapsed subscription, does not lose your setup. The app backs up your settings, seals and sealed sections, workflows and approvals, validation rules, classification and history after each change in the app or REST API and once a day, to a Confluence page in your site restricted to the app. Reinstall it and Site settings offer "Restore your setup from [date]" with a preview first; things that act on their own (seals expiring, validation revert, AI review, workflow auto-assign and review timers) come back paused until you turn them on. REST API tokens and authenticator codes are never backed up: create new tokens and enroll again. You can also download the whole setup as one JSON file and import it back later. If the app was removed before it had a backup, contact LeanZero within 21 days: Atlassian keeps the app's data for 28 days, and LeanZero can ask Atlassian to re-link it with your consent.
 <!-- /block -->
 
 Accuracy guardrails for this block: no "never lose anything" claims (secrets are named as lost); "a Confluence page only
 the app can open" (measured: a site admin gets 404); the 21-day / 28-day numbers are Atlassian's; nothing leaves
 Atlassian (no egress) — do not claim Runs on Atlassian until `forge eligibility -e production` says so for 6.6.0.
 
-### 6.6.0 (draft — not yet on the Marketplace)
+### 6.6.0 (POSTED 2026-10-02 on the version page, build 2002200 — after an adversarial review; five overclaims fixed)
 
 **Release summary (≤80):**
 <!-- block:rel_summary_660 -->
@@ -132,11 +132,12 @@ Your setup survives an uninstall: backup, restore, export and import
 
 **Release notes body (≤1000):**
 <!-- block:rel_notes_660 -->
-New: Backup and restore in Site settings. Sentinel Vault backs up your settings, seals, sealed sections, workflows, validation rules, classification and history after every change and once a day, to a Confluence page only the app can open.
-New: after a reinstall, Site settings offer "Restore your setup from <date>" with a preview. Seals expiring, validation revert, AI review and workflow timers come back paused until you turn them on.
-New: download the whole setup as one JSON file and import it on this or another site; REST operations for backup, restore, export and import.
-Changed: uninstalling no longer erases the app's stored data on the spot, so Atlassian's 21-day re-link path stays open.
-Do this after updating: open Backup and restore once and check the first backup. API tokens and authenticator codes are never backed up.
+New: Backup and restore in Site settings. Sentinel Vault backs up your settings, seals, sealed sections, workflows, validation rules, classification and history after each change in the app or REST API, and once a day, to a Confluence page restricted to the app.
+New: after a reinstall, Site settings offer "Restore your setup from [date]" with a preview. Seals expiring, validation revert, AI review, workflow auto-assign and review timers come back paused until you turn them on.
+New: download the whole setup as one JSON file and import it back later; REST operations for backup, restore, export and import.
+Changed: uninstalling no longer erases the app's stored data on the spot, so LeanZero can still ask Atlassian to re-link it within 21 days.
+Fixed: dialogs opened low on a long page now open fully on screen.
+Do this after updating: open Backup and restore and check the first backup is there. API tokens and authenticator codes are never backed up.
 <!-- /block -->
 
 ---
