@@ -1,9 +1,14 @@
 ---
 name: sentinel-vault-quality-loop
-description: Per-app App Quality Loop (AQL) skill for Sentinel Vault (Confluence Forge content-protection app on wolfaenpak.atlassian.net). Use whenever running the AQL loop on this repo (map/next/run/status/design/verify), deploying this app, driving its test harness, or making any UI/feature change here. Holds the tuned config, core contract, brand tokens, harness recipes, feature ledger, and iteration history. Living skill — update the changelog and state every iteration.
+description: Per-app App Quality Loop (AQL) skill for Sentinel Vault (Confluence Forge content-protection app on wolfaenpak.atlassian.net). Use whenever running the AQL loop on this repo (map/next/run/status/design/verify), deploying this app, driving its test harness, or making any UI/feature change here. Holds the tuned config, core contract, brand tokens, harness recipes, feature ledger, and iteration history. Living skill — update the changelog and state every iteration. The loop METHOD is the global quality-hunt-loop skill; this one holds Sentinel Vault's config, state and commands.
 ---
 
 # Sentinel Vault — AQL per-app skill
+
+**THE LOOP METHOD LIVES IN `quality-hunt-loop`** (~/.claude/skills — the one home of the hunt/quality-loop method
+since 2026-10-03). This skill holds Sentinel Vault's config, operating facts, mandatory rules, deep-E2E commands,
+state and iteration history. `.agents/skills/sentinel-vault-quality-loop` is a symlink to this directory (it had
+forked: a 2026-09-15 copy with Codex path rewrites).
 
 App repo: `/Users/mihaiperdum/Projects/Sentinel Vault` (**path contains a space — always quote it in shell**).
 App ID `c30bf71e-4287-4872-954d-db49cc68f0ff` · dev site **wolfaenpak.atlassian.net** (Confluence) · dev install `09797ffe-…5e1f` (v5, up-to-date) · prod install `a04a7780-…87a2` (v2, outdated — do NOT touch prod in the loop).
