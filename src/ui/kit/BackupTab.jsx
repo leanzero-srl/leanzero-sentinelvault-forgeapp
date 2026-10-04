@@ -453,7 +453,7 @@ export default function BackupTab() {
         <ConfirmDialog title="Delete the backup?" confirmLabel="Delete the backup" testId="bk-delete-confirm"
           message={<p>The backup page goes to the space trash with every kept backup. If Sentinel Vault is then uninstalled, nothing can bring the setup back. A new backup is taken after the next change unless you uninstall first.</p>}
           onCancel={() => setDeleteOpen(false)}
-          onConfirm={async () => { setDeleteOpen(false); const r = await call("backup-delete"); setMsg(r.ok ? { kind: "ok", text: "Backup deleted." } : { kind: "error", text: r.reason }); load(); }} />
+          onConfirm={async () => { setDeleteOpen(false); const r = await call("backup-delete"); setMsg(r.ok ? { kind: "ok", text: "Backup deleted: the backup page is in the space trash." } : { kind: "error", text: r.reason }); load(); }} />
       )}
     </div>
   );
