@@ -760,14 +760,14 @@ async function restoreMediaPass(ctx, sealFileMap, probeCache = new Map()) {
   // attachment id). Beyond the cap a 404 is treated as NOT confirmed → restore-splice, the
   // non-destructive path; a later event finishes the job.
   const MAX_PURGE_CONFIRMS = 3;
-  const confirmPurgedBudgeted = async (attId) => {
+  const confirmPurgedBudgeted = async (attId, pageId) => {
     const used = probeCache.get("__purge-confirms") || 0;
     if (used >= MAX_PURGE_CONFIRMS) {
       console.warn(`[PAGE-PROTECT] purge-confirmation budget exhausted for ${attId} — treating as NOT confirmed`);
       return false;
     }
     probeCache.set("__purge-confirms", used + 1);
-    return confirmAttachmentPurged(attId);
+    return confirmAttachmentPurged(attId, undefined, { pageId });
   };
   let probesUsed = 0;
   const spliceable = []; // violations whose attachment renders (current, restored, or unknown)
@@ -787,7 +787,7 @@ async function restoreMediaPass(ctx, sealFileMap, probeCache = new Map()) {
         // Vet F1 (lens 3): a SINGLE 404 must never license the destructive branch — a
         // trash-propagation window or container visibility can 404 a live attachment.
         // Corroborate on two API surfaces after a settle delay; unconfirmed → treat as trashed.
-        const purged = await confirmPurgedBudgeted(attId);
+        const purged = await confirmPurgedBudgeted(attId, ctx.pageId || violation.seal.contentId);
         if (!purged) resolution.action = "restore-splice";
       }
       if (resolution.action === "restore-splice") {
@@ -800,7 +800,7 @@ async function restoreMediaPass(ctx, sealFileMap, probeCache = new Map()) {
         if (r.ok) {
           console.warn(`[PAGE-PROTECT] Un-trashed sealed attachment ${attId} before re-splice`);
           resolution.action = "splice";
-        } else if (r.status === "deleted" && (await confirmPurgedBudgeted(attId))) {
+        } else if (r.status === "deleted" && (await confirmPurgedBudgeted(attId, ctx.pageId || violation.seal.contentId))) {
           resolution.action = "cleanup";
         } else {
           resolution.action = "restore-failed";
@@ -2098,7 +2098,7 @@ export async function handleSealedArtifactTrash(sealRecord, artifactId, contentI
   if (!currentVersion || !pageId) {
     const probe = await probeAttachmentStatus(artifactId);
     if (probe.status === "current") return; // already restored by a concurrent run/user
-    if (probe.status === "deleted" && (await confirmAttachmentPurged(artifactId))) {
+    if (probe.status === "deleted" && (await confirmAttachmentPurged(artifactId, undefined, { pageId: pageId || sealRecord.contentId }))) {
       // Trash event raced a purge (double-confirmed — a single transient 404 must never
       // trigger the destructive cleanup): permanent-delete path + honest notice.
       await handleSealedArtifactDeleted(sealRecord, artifactId, pageId, atlassianId, attachment);
@@ -2122,7 +2122,7 @@ export async function handleSealedArtifactTrash(sealRecord, artifactId, contentI
   });
 
   if (!restore.ok) {
-    if (restore.status === "deleted" && (await confirmAttachmentPurged(artifactId))) {
+    if (restore.status === "deleted" && (await confirmAttachmentPurged(artifactId, undefined, { pageId: pageId || sealRecord.contentId }))) {
       await handleSealedArtifactDeleted(sealRecord, artifactId, pageId, atlassianId, attachment);
       return;
     }

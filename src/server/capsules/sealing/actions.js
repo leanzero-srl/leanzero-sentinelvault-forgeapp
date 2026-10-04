@@ -873,7 +873,7 @@ const enumerateOperatorSeals = async (req) => {
           if (!artifactResponse.ok) {
             if (
               artifactResponse.status === 404 &&
-              (await confirmAttachmentPurged(artifactId))
+              (await confirmAttachmentPurged(artifactId, undefined, { pageId: value.contentId || null }))
             ) {
               await kvs.delete(`protection-${artifactId}`);
               if (value.spaceId) {
