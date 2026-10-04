@@ -308,6 +308,37 @@ export async function testStateTrigger(req) {
         for (const id of [pA, pB, pD]) await conf(route`/wiki/rest/api/content/${id}/pageTree`, { method: "DELETE" }).catch(() => {});
         return json(200, { invoked: fn, result: out });
       }
+      // Privacy sweep (capsules/privacy), synchronously. Atlassian's REAL report-accounts answer is
+      // used; `closed` (csv) additionally marks those ids closed, because a test cannot close a real
+      // account — seed rows for a synthetic id, name it here, and assert the rows afterwards.
+      // `now` (ISO) shifts the clock for retention; `resetIndex=1` forgets past reports (cycle).
+      if (fn === "privacySweep") {
+        const { runPrivacySweep } = await import("./server/capsules/privacy/worker.js");
+        const { privacy } = await import("@forge/api");
+        const forced = String(q(req, "closed") || "").split(",").map((s) => s.trim()).filter(Boolean);
+        const seen = [];
+        // `simulate=1`: when the real call is refused (401 without report:personal-data), answer
+        // with the forced ids only, so the erasure path can still be proven end to end.
+        const simulate = q(req, "simulate") === "1";
+        const report = async (batch) => {
+          let real = [];
+          try {
+            real = await privacy.reportPersonalData(batch);
+            seen.push({ sent: batch.length, answered: real.length, statuses: real.map((a) => a.status) });
+          } catch (e) {
+            seen.push({ sent: batch.length, refused: e?.status || String(e?.message || e) });
+            if (!simulate) throw e;
+          }
+          return [...real.filter((a) => !forced.includes(a.accountId)), ...batch.filter((a) => forced.includes(a.accountId)).map((a) => ({ accountId: a.accountId, status: "closed" }))];
+        };
+        if (q(req, "resetIndex") === "1") {
+          const rows = await kvs.query().where("key", WhereConditions.beginsWith("privacy-accounts-")).limit(100).getMany();
+          for (const r of rows.results || []) await kvs.delete(r.key);
+        }
+        const nowParam = q(req, "now");
+        const r = await runPrivacySweep({ reason: "harness", report, ...(nowParam ? { nowMs: Date.parse(nowParam) } : {}) });
+        return json(200, { invoked: fn, result: r, reports: seen });
+      }
       if (fn === "runApiJob") {
         // Drive the consumer synchronously when the queue is slow (dev queues can lag minutes).
         const { runJob } = await import("./server/capsules/config-api/consumer.js");
