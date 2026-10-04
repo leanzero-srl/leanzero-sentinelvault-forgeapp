@@ -49,4 +49,21 @@ eq("sweep: dirty -> save", sweepReason({ lastCheckAt: "2026-10-04T11:59:00Z" }, 
 ok("delete leaves a deletedAt status row instead of no row", /kvs\.set\(STATUS_KEY, \{ deletedAt: nowIso\(\)/.test(worker) && !/kvs\.delete\(STATUS_KEY\)/.test(worker));
 const engine = read("engine.js");
 ok("a recorded backup clears deletedAt (both status writes that set lastBackup)", (engine.match(/const \{ deletedAt: _d, deletedBy: _b, \.\.\.prev(Status)? \} = \(await kvs\.get\(STATUS_KEY\)\) \|\| \{\};/g) || []).length === 2);
+// Review 2026-10-04 D1: a page VIEW must not schedule a backup, and nothing automatic may revive a deleted one.
+{
+  const hook = await import("../src/server/capsules/backup/hook.js");
+  const engineMod = await import("../src/server/capsules/backup/engine.js");
+  eq("guard-page-now: a view that restored nothing schedules no backup", hook.CHANGED_WHEN["guard-page-now"]({ checked: true, restored: true, fresh: false }), false);
+  eq("guard-page-now: a view that put text back schedules one", hook.CHANGED_WHEN["guard-page-now"]({ checked: true, restored: true, fresh: true }), true);
+  eq("hook and engine name the same status row", hook.STATUS_KEY, engineMod.STATUS_KEY);
+  ok("the privacy sweep is automatic", hook.AUTOMATIC_REASONS.includes("privacy"));
+  const hookSrc = read("hook.js");
+  ok("scheduleBackup skips automatic reasons while deletedAt stands", /AUTOMATIC_REASONS\.includes\(reason\) && \(await kvs\.get\(STATUS_KEY\)\)\?\.deletedAt\) return false;/.test(hookSrc));
+  ok("withBackupHook consults CHANGED_WHEN", /succeeded\(result\) && \(CHANGED_WHEN\[key\]/.test(hookSrc));
+  ok("the delete clears the dirty flag", /kvs\.delete\(DIRTY_KEY\)/.test(worker) && worker.indexOf("kvs.delete(DIRTY_KEY)") < worker.indexOf("kvs.set(STATUS_KEY, { deletedAt"));
+  ok("the consumer skips a run queued before the delete", /st\.deletedAt && !\(await kvs\.get\(DIRTY_KEY\)/.test(worker));
+  const storeSrc = read("store.js");
+  ok("D6: a file counts as removed only when the purge succeeded", /if \(!\(res\.ok \|\| res\.status === 404\)\) return false;\s*return purgeFile\(attachmentId\);/.test(storeSrc));
+  ok("D6: a retry purges files an interrupted delete left in the trash", /listAttachments\(pageId, \{ trashed: true \}\)/.test(storeSrc));
+}
 report("backup-delete");

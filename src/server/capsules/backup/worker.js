@@ -140,6 +140,7 @@ export async function deleteAllBackups(actor) {
         : `The backup page${failed.length > 1 ? "s" : ""} ${failed.map((o) => o.pageId).join(", ")} could not be removed (${failed.map((o) => o.state || o.error).join(", ")}). Nothing was deleted; try again.` };
   }
   await kvs.delete(SETTINGS_KEY).catch(() => {});
+  await kvs.delete(DIRTY_KEY).catch(() => {}); // a run queued before the delete must not retake it
   // Keep a status row that SAYS the backup was deleted on purpose (2026-10-04, review): with no
   // row at all the hourly check read "never backed up" and took a fresh backup on a NEW page
   // within the hour, undoing the delete an admin makes before uninstalling. Only a change (the
@@ -164,6 +165,10 @@ async function copyGenerations(fromPageId, toPageId) {
 export async function backupConsumer(event) {
   const body = event?.body || event?.payload || {};
   if (body.kind === "backup") {
+    // After Delete the backup, a run queued BEFORE the delete finds no dirty flag (the delete clears
+    // it) and must not bring the backup back; a change made after the delete re-raises the flag.
+    const st = (await kvs.get(STATUS_KEY).catch(() => null)) || {};
+    if (st.deletedAt && !(await kvs.get(DIRTY_KEY).catch(() => null))) { console.log(`[BACKUP] ${body.reason || "save"} run skipped: the backup was deleted ${st.deletedAt}`); return; }
     // An automatic run that finds another run going simply skips: the dirty flag / next hour retries.
     try { await withLease(() => runBackupAndAudit({ reason: body.reason || "save", actor: null }), { waitMs: 0 }); }
     catch (e) { console.log(`[BACKUP] automatic run skipped: ${errText(e)}`); }
