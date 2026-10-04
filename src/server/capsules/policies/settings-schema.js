@@ -420,6 +420,26 @@ export function validatePolicyWrite(scope, data) {
  * resolves it"), `overrideGlobalSettings` was written and never read. Stripping them here is
  * what "remove the inert control" means on the server side.
  */
+/**
+ * PURE. A steward roster entry as the app stores it: the account id (a string) or
+ * { accountId, displayName } — never an email, avatar or anything else a search result or a REST
+ * bundle carried (2026-10-04, data minimisation). Entries without an id are dropped.
+ */
+export function minimiseRoster(list) {
+  if (!Array.isArray(list)) return list;
+  return list.map((u) => {
+    if (typeof u === "string") return u;
+    if (!u || typeof u !== "object" || !u.accountId) return null;
+    return { accountId: String(u.accountId), displayName: typeof u.displayName === "string" ? u.displayName : null };
+  }).filter((u) => u != null);
+}
+
+/** PURE. A policy write with its roster minimised (both scopes). */
+export function minimisePolicyWrite(data) {
+  if (!data || typeof data !== "object" || !Array.isArray(data.adminUsers)) return data;
+  return { ...data, adminUsers: minimiseRoster(data.adminUsers) };
+}
+
 export const DEAD_SPACE_KEYS = Object.freeze(["activation", "overrideGlobalSettings"]);
 export function stripDeadKeys(scope, data) {
   if (scope !== "space" || !data || typeof data !== "object") return data;

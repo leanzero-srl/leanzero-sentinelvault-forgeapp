@@ -143,6 +143,24 @@ export function stripLegacyEmail(key, value) {
 }
 
 /**
+ * PURE. A steward roster (`admin-settings-*` → adminUsers) keeps { accountId, displayName } only;
+ * an entry saved with an email, avatar or anything else (a REST bundle could carry them) is
+ * reduced. Mirrors policies/settings-schema.js minimiseRoster, which guards every new write.
+ */
+export function stripRosterContact(key, value) {
+  if (!String(key || "").startsWith("admin-settings-") || !value || typeof value !== "object" || !Array.isArray(value.adminUsers)) return { value, changed: false };
+  let changed = false;
+  const adminUsers = value.adminUsers.map((u) => {
+    if (!u || typeof u !== "object") return u;
+    const extra = Object.keys(u).some((k) => k !== "accountId" && k !== "displayName");
+    if (!extra) return u;
+    changed = true;
+    return { accountId: u.accountId, displayName: typeof u.displayName === "string" ? u.displayName : null };
+  });
+  return changed ? { value: { ...value, adminUsers }, changed } : { value, changed: false };
+}
+
+/**
  * PURE. Which accounts to report now, and with what updatedAt.
  * `index` is { [accountId]: { u: updatedAtIso, r: reportedAtIso|null } }; `seen` the ids found.
  * Every seen id gets an entry (first seen → u = now). An id is DUE when it was never reported or
