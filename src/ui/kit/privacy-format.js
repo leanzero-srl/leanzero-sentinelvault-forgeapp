@@ -19,7 +19,8 @@ export function describeSweep(last) {
   const parts = [removed ? `removed ${plural(removed, "history record")} older than ${last.retentionDays} days` : `nothing was older than ${last.retentionDays} days`];
   if (last.accounts) {
     const a = last.accounts;
-    parts.push(`checked ${plural(n(a.reported), "account")} with Atlassian`);
+    if (a.reporting === "not-permitted") parts.push("checking accounts with Atlassian needs a permission this version does not have yet");
+    else parts.push(`checked ${plural(n(a.reported), "account")} with Atlassian`);
     if (n(a.closed)) parts.push(`erased ${plural(n(a.closed), "closed account")}`);
     if (n(a.updated)) parts.push(`refreshed ${plural(n(a.updated), "changed name")}`);
   }
