@@ -12,6 +12,20 @@ const note = (n) => Object.freeze({ ...n, changes: Object.freeze([...(n.changes 
 
 export const RELEASE_NOTES = Object.freeze([
   note({
+    version: "6.9.0",
+    date: "2026-10-04",
+    headline: "Delete the backup stays deleted, and approver lists no longer keep email addresses",
+    changes: [
+      "Changed: after Delete the backup, the hourly check no longer takes a new backup on its own. A new one is taken only after your next change, or when you press Back up now, and the Backup tab says when the backup was deleted.",
+      "Changed: approver lists in workflow settings no longer store the approver's email address. The people picker still shows it while you search. Lists saved earlier are cleaned by the weekly check.",
+    ],
+    fixes: [
+      "Deleting the backup before an uninstall could be undone within the hour by an automatic backup on a new page.",
+      "The Delete the backup dialog said nothing could bring the setup back after an uninstall; an export you downloaded, or Atlassian re-linking the app within 21 days, still can.",
+    ],
+    action: "Nothing to do.",
+  }),
+  note({
     version: "6.7.0",
     date: "2026-10-04",
     headline: "Privacy and retention: an optional keep period for history, and less personal data stored",

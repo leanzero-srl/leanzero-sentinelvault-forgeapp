@@ -209,4 +209,24 @@ ok("L4: page-content rows are skipped by the erase pass", /if \(holdsPageContent
 const wfActions = readFileSync(resolve(here, "../src/server/capsules/workflow/actions.js"), "utf8");
 ok("P1: a request is refused past MAX_REQUEST_APPROVERS", /\(spec\?\.approvers\?\.length \|\| 0\) > MAX_REQUEST_APPROVERS/.test(wfActions));
 ok("401/403 from report-accounts is recorded as not-permitted", worker.includes("export const reportNotPermitted = (status) => status === 401 || status === 403;") && worker.includes('summary.accounts.reporting = "not-permitted"'));
+// Approver namesake hints (review 2026-10-04): the picker stored the approver's EMAIL as `hint`.
+{
+  const { stripRosterContact, stripApproverEmailHints, pairedFields: pf } = await import("../src/server/capsules/privacy/accounts.js");
+  const wf = { enabled: true, approval: { mode: "any", approvers: [
+    { type: "user", id: "712020:aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", name: "Ann", hint: "ann@example.com" },
+    { type: "user", id: "712020:bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb", name: "Bo", hint: "account …bbbbbb" },
+    { type: "group", id: "g1", name: "Approvers" },
+  ] } };
+  const s = stripApproverEmailHints(wf);
+  eq("hint: an email hint is dropped", s.value.approval.approvers[0].hint, undefined);
+  eq("hint: the entry keeps id and name", [s.value.approval.approvers[0].id, s.value.approval.approvers[0].name], ["712020:aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", "Ann"]);
+  eq("hint: a non-email hint is kept", s.value.approval.approvers[1].hint, "account …bbbbbb");
+  eq("hint: the rest of the settings are kept", [s.value.enabled, s.value.approval.mode, s.value.approval.approvers.length], [true, "any", 3]);
+  eq("hint: a clean list is not rewritten", stripApproverEmailHints(s.value).changed, false);
+  eq("hint: the sweep's strip reaches workflow-settings rows", stripRosterContact("workflow-settings-SV", wf).changed, true);
+  eq("hint: erasure clears the hint paired with an id", pf("id").contact.includes("hint"), true);
+  const logic = readFileSync(resolve(here, "../src/server/capsules/workflow/logic.js"), "utf8");
+  ok("hint: a new save drops an email hint", /a\.hint && !a\.hint\.includes\("@"\)/.test(logic));
+  ok("hint: the migration flag moved to V2 so sites that ran V1 strip hints too", worker.includes("migrations.rosterEmailV2") && !worker.includes("rosterEmailV1"));
+}
 report("privacy-accounts");

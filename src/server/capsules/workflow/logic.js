@@ -761,7 +761,7 @@ export async function setSpaceWorkflowSettings(spaceKey, settings) {
   // { approvers: [{ type:"user"|"group", id, name }], mode:"any"|"all"|"min", min }.
   if (settings?.approval && Array.isArray(settings.approval.approvers)) {
     clean.approval = {
-      approvers: settings.approval.approvers.filter((a) => a && a.id).map((a) => ({ type: a.type || "user", id: String(a.id).slice(0, 200), name: typeof a.name === "string" ? a.name.slice(0, 120) : null, ...(typeof a.hint === "string" && a.hint ? { hint: a.hint.slice(0, 200) } : {}) })), // hint: email / public name, to tell namesakes apart
+      approvers: settings.approval.approvers.filter((a) => a && a.id).map((a) => ({ type: a.type || "user", id: String(a.id).slice(0, 200), name: typeof a.name === "string" ? a.name.slice(0, 120) : null, ...(typeof a.hint === "string" && a.hint && !a.hint.includes("@") ? { hint: a.hint.slice(0, 200) } : {}) })), // hint: public name / account tail, to tell namesakes apart. Never an email (2026-10-04): the picker may SHOW one, the app does not store it
       mode: ["any", "all", "min"].includes(settings.approval.mode) ? settings.approval.mode : "any",
       min: Math.max(1, parseInt(settings.approval.min, 10) || 1),
       // Space admins may decide without being listed (default ON; owner, 2026-09-25).
