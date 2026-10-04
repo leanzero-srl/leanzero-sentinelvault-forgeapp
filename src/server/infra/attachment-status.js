@@ -177,26 +177,44 @@ export async function restoreAttachmentFromTrash({ attachmentId, pageId, title, 
   return { ok: false, status: recheck.status === "deleted" ? "deleted" : (lastStatus || "exhausted"), probe: recheck };
 }
 
+/** PURE. Attachment ids compare without the "att" prefix (seal records and v2 bodies differ). */
+export const sameAttachmentId = (a, b) => String(a ?? "").replace(/^att/, "") === String(b ?? "").replace(/^att/, "") && String(a ?? "") !== "";
+
 /**
  * Corroborate a permanent deletion before any DESTRUCTIVE action (adversarial-vet F1/lens-3:
  * a single transient 404 — trash-transaction propagation, container visibility — must never
- * purge a seal). Two witnesses after a settle delay: the v2 GET must STILL 404, and the v1
- * trashed-status GET (a different API surface that distinguishes trashed vs purged, probed
- * live in INCIDENT-2026-07-22.md §7) must also miss. Only the INFERRED path needs this — the
- * real deleted:attachment event is authoritative and keeps cleaning up immediately.
- * Hunt F8: settle default is 1.5s — the two-surface corroboration is the real safeguard, and
- * these sleeps serialize per candidate inside a 25s Forge trigger budget.
+ * purge a seal). Two witnesses after a settle delay: the v2 GET must STILL 404, AND the page's
+ * own attachment list (current + trashed, a different v2 surface) must answer 200 and not carry
+ * the id. Only the INFERRED path needs this — the real deleted:attachment event is authoritative
+ * and keeps cleaning up immediately.
+ *
+ * 2026-10-04: the second witness used to be the v1 GET /content/{id}?status=trashed. Measured live
+ * (dev hook endpointProbe) it answers 410 Gone for a current, a trashed AND a purged attachment,
+ * so a purge was never confirmed and the inferred cleanup never ran. The page list was measured
+ * on the same object: found while current, found while trashed, absent once purged. No page id,
+ * or a list that does not answer 200, means the negative is UNPROVEN → false (keep the seal).
+ * Hunt F8: settle default is 1.5s — these sleeps serialize per candidate inside a 25s budget.
  */
-export async function confirmAttachmentPurged(attachmentId, settleMs = 1500) {
+export async function confirmAttachmentPurged(attachmentId, settleMs = 1500, { pageId = null } = {}) {
   await new Promise((r) => setTimeout(r, settleMs));
   const again = await probeAttachmentStatus(attachmentId);
   if (again.status !== "deleted") return false;
+  if (!pageId) {
+    console.warn(`[ATT-STATUS] purge of ${attachmentId} not corroborated — no page id to list; keeping the seal`);
+    return false;
+  }
   try {
-    const v1 = await asApp().requestConfluence(
-      route`/wiki/rest/api/content/${attachmentId}?status=trashed`,
-    );
-    if (v1.ok) return false; // still visible as trashed on the v1 surface — NOT purged
-    return v1.status === 404;
+    let res = await asApp().requestConfluence(route`/wiki/api/v2/pages/${pageId}/attachments?status=current&status=trashed&limit=250`);
+    for (let i = 0; i < 20; i++) {
+      if (!res.ok) return false; // the page's list must be readable (positive control on the same object)
+      const body = await res.json();
+      if ((body?.results || []).some((a) => sameAttachmentId(a?.id, attachmentId))) return false; // still there
+      const next = body?._links?.next;
+      const cursor = next ? new URL(next, "https://x.invalid").searchParams.get("cursor") : null;
+      if (!cursor) return true;
+      res = await asApp().requestConfluence(route`/wiki/api/v2/pages/${pageId}/attachments?status=current&status=trashed&limit=250&cursor=${cursor}`);
+    }
+    return false; // a list that never ended proves nothing
   } catch (e) {
     console.error(`[ATT-STATUS] purge corroboration errored for ${attachmentId} — treating as NOT confirmed:`, e);
     return false;
