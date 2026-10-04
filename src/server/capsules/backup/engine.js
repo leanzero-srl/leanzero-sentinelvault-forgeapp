@@ -138,6 +138,9 @@ export async function runBackup({ reason = "manual", actor = null } = {}) {
     };
     await scanKvs(async ({ key, value, expireTime }) => {
       if (key === "api-tokens") apiTokens = value;
+      // Seeds are KVS secrets (invisible to this scan); the plain sig-device- marker names the
+      // account. A legacy plain sig-secret- row (not yet migrated) still counts.
+      if (key.startsWith("sig-device-")) authenticatorAccounts.push(key.slice("sig-device-".length));
       if (key.startsWith("sig-secret-")) authenticatorAccounts.push(key.slice("sig-secret-".length));
       if (!isBackedUp(key)) return;
       keys += 1;
