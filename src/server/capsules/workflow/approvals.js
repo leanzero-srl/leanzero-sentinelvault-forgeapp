@@ -168,6 +168,13 @@ export function extractApprovalConfig(approval) {
 // Expand a group to its member account ids (best-effort — an unresolvable group adds
 // no approvers; user approvers are unaffected). Lifted here (#44 §1.5) so the trigger
 // can compute the live-config approver intersection too.
+// Group expansion bounds (2026-10-04). Until this version a group approver never expanded (the
+// endpoint answered 401), so these limits are new behaviour, not a reduction: members read per
+// group, and the approvers ONE request may open records for (2 KVS writes + an @mention each,
+// inside a 25 s resolver). A larger request is refused with a reason (workflow/actions.js).
+export const MAX_GROUP_MEMBERS_READ = 2000;
+export const MAX_REQUEST_APPROVERS = 50;
+
 // PURE. A Confluence group id (the picker's `id`) — a UUID. Older configs may carry the name in `id`.
 export const isGroupId = (v) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(v || ""));
 
@@ -193,13 +200,16 @@ export async function fetchGroupMembers(group) {
     const groupId = await resolveGroupId(group);
     if (!groupId) return { ids, ok: false };
     // Paginated (Tier B review, finding 9): a 140-member group was silently a 100-member one.
-    for (let start = 0; start < 2000; start += 200) {
+    // Paged by what the server returns (it may cap a page below the 200 asked for) and stopped by
+    // the absence of `_links.next`, never by a short page alone (review 2026-10-04, P5).
+    for (let start = 0, i = 0; start < MAX_GROUP_MEMBERS_READ && i < 50; i++) {
       const res = await asApp().requestConfluence(route`/wiki/rest/api/group/${groupId}/membersByGroupId?limit=200&start=${start}`);
       if (!res.ok) return { ids, ok: false }; // non-ok — distinguish an outage from a genuinely empty group
       const body = await res.json();
       const page = body?.results || [];
       for (const u of page) if (u.accountId) ids.push(u.accountId);
-      if (page.length < 200 || !body?._links?.next) break;
+      if (!page.length || !body?._links?.next) break;
+      start += page.length;
     }
     return { ids, ok: true };
   } catch (_) {

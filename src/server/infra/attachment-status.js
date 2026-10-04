@@ -204,7 +204,7 @@ export async function confirmAttachmentPurged(attachmentId, settleMs = 1500, { p
     return false;
   }
   try {
-    let res = await asApp().requestConfluence(route`/wiki/api/v2/pages/${pageId}/attachments?status=current&status=trashed&limit=250`);
+    let res = await asApp().requestConfluence(route`/wiki/api/v2/pages/${pageId}/attachments?status=current&status=trashed&status=archived&limit=250`);
     for (let i = 0; i < 20; i++) {
       if (!res.ok) return false; // the page's list must be readable (positive control on the same object)
       const body = await res.json();
@@ -212,7 +212,7 @@ export async function confirmAttachmentPurged(attachmentId, settleMs = 1500, { p
       const next = body?._links?.next;
       const cursor = next ? new URL(next, "https://x.invalid").searchParams.get("cursor") : null;
       if (!cursor) return true;
-      res = await asApp().requestConfluence(route`/wiki/api/v2/pages/${pageId}/attachments?status=current&status=trashed&limit=250&cursor=${cursor}`);
+      res = await asApp().requestConfluence(route`/wiki/api/v2/pages/${pageId}/attachments?status=current&status=trashed&status=archived&limit=250&cursor=${cursor}`);
     }
     return false; // a list that never ended proves nothing
   } catch (e) {

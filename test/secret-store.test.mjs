@@ -83,6 +83,21 @@ const hasSecret = (v) => !!(v && v.secret);
   eq("both namespaces cleared", [s.secret.has("k"), s.plain.has("k")], [false, false]);
 }
 
+// 7b. A concurrent first read moved the row between our getSecret and get: look once more.
+{
+  const s = fakeStore();
+  let first = true;
+  const raced = { ...s, async getSecret(k) { if (first) { first = false; s.secret.set(k, { secret: "MOVED" }); return undefined; } return s.secret.get(k); } };
+  eq("the racing reader still finds the device", (await readSecret("sig-secret-R", { store: raced, isValid: hasSecret }))?.secret, "MOVED");
+}
+// 7c. A migrated pending enrolment keeps a ttl.
+{
+  const s = fakeStore();
+  s.plain.set("sig-enroll-T", { secret: "P" });
+  await readSecret("sig-enroll-T", { store: s, isValid: hasSecret, migrateOptions: { ttl: { value: 900, unit: "SECONDS" } } });
+  eq("migration passes the ttl to setSecret", s.calls.find((c) => c[0] === "setSecret")?.[2], { ttl: { value: 900, unit: "SECONDS" } });
+}
+
 // 8. Static guard: the signature capsule never reads or writes a seed key with a plain kvs call.
 {
   const here = dirname(fileURLToPath(import.meta.url));
