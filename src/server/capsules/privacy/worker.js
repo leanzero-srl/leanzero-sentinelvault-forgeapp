@@ -349,8 +349,12 @@ export async function runPrivacySweep({ reason = "manual", nowMs = Date.now(), r
       readEffective("historyRetentionDays", settings?.historyRetentionDays));
     summary.retentionDays = days;
     const migrations = (await kvs.get(MIGRATIONS_KEY).catch(() => null)) || {};
-    const stripEmail = !migrations.sealEmailV1;
-    const stripRoster = !migrations.rosterEmailV2; // V2 (2026-10-04): also approver email hints
+    // The email strips run on EVERY sweep, not once (review 2026-10-04): a restore or an import of a
+    // backup taken before them writes the addresses back, and `privacy-` is a runtime family, so a
+    // one-time flag would stay set and the restored emails would never be cleaned. Both strips are
+    // idempotent and only re-read a row they would change. The flags now record the first run.
+    const stripEmail = true;
+    const stripRoster = true; // also approver email hints (6.9.0)
     const done = {}; // migration flags this run completed
 
     const seen = new Set();
@@ -405,8 +409,8 @@ export async function runPrivacySweep({ reason = "manual", nowMs = Date.now(), r
     } else if (stripEmail || stripRoster) {
       summary.migration = { emailStripped, rostersStripped };
     }
-    if (stripEmail) done.sealEmailV1 = nowIso();
-    if (stripRoster) done.rosterEmailV2 = nowIso();
+    if (!migrations.sealEmailV1) done.sealEmailV1 = nowIso();
+    if (!migrations.rosterEmailV2) done.rosterEmailV2 = nowIso();
     if (Object.keys(done).length) await kvs.set(MIGRATIONS_KEY, { ...migrations, ...done });
 
     // Report what is due (≤ once per 7 days per account), 90 at a time.
