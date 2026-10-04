@@ -278,8 +278,10 @@ export function mergeInstallations(list, info, at) {
  * data files still contain one of `needles` (the account ids Atlassian reported closed). The
  * caller takes a fresh, already-scrubbed generation FIRST; the newest generation is never dropped
  * (it is the only copy of the setup), and if it still mentions a needle that is reported as
- * `newestMentions` rather than hidden. A generation whose files cannot be read cannot be proven
- * clean and is dropped. Content-addressed chunks still referenced by a kept generation stay.
+ * `newestMentions` rather than hidden. A file that cannot be read (a 429, a 5xx) ABORTS the purge:
+ * nothing is dropped and the next weekly sweep tries again (review 2026-10-04, L3 — dropping on a
+ * read error could garbage-collect the pinned pre-uninstall generation over one blip). Only a
+ * generation PROVEN to name a closed account is dropped. Chunks a kept generation needs stay.
  */
 export async function purgeGenerationsMentioning(needles) {
   const list = [...new Set((needles || []).filter(Boolean))];
@@ -294,29 +296,36 @@ export async function purgeGenerationsMentioning(needles) {
   const newestId = [...gens].sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)))[0].generationId;
   const mentions = (text) => list.some((n) => String(text).includes(n));
   const cache = new Map(); // chunk name → mentions?
+  // Throws on any unreadable file: the caller aborts the purge (drop nothing) — see the header.
   const generationMentions = async (g) => {
     const m = byTitle.get(g.manifest) || (g.manifestAttachmentId ? { id: g.manifestAttachmentId } : null);
-    if (!m) return true;
+    if (!m) throw new Error(`generation ${g.generationId}: manifest ${g.manifest} is not on the page`);
     const text = await store.getFile(pageId, m.id);
     if (mentions(text)) return true;
     for (const c of JSON.parse(text).chunks || []) {
       if (!cache.has(c.name)) {
         const a = byTitle.get(c.name);
-        cache.set(c.name, a ? mentions(await store.getFile(pageId, a.id)) : true);
+        if (!a) throw new Error(`generation ${g.generationId}: chunk ${c.name} is not on the page`);
+        cache.set(c.name, mentions(await store.getFile(pageId, a.id)));
       }
       if (cache.get(c.name)) return true;
     }
     return false;
   };
   const keep = [];
-  let dropped = 0;
+  const drop = [];
   let newestMentions = false;
-  for (const g of gens) {
-    let hit;
-    try { hit = await generationMentions(g); } catch (_) { hit = true; }
-    if (g.generationId === newestId) { keep.push(g); newestMentions = hit; continue; }
-    if (hit) dropped += 1; else keep.push(g);
+  try {
+    for (const g of gens) {
+      const hit = await generationMentions(g);
+      if (g.generationId === newestId) { keep.push(g); newestMentions = hit; continue; }
+      (hit ? drop : keep).push(g);
+    }
+  } catch (e) {
+    console.warn(`[BACKUP] privacy purge aborted, nothing dropped: ${errText(e)}`);
+    return { pageId, dropped: 0, kept: gens.length, newestMentions: false, aborted: errText(e) };
   }
+  const dropped = drop.length;
   if (dropped) {
     await store.writeIndex(pageId, { ...index, generations: keep });
     await collectGarbage(pageId, keep, attachments).catch((e) => console.warn(`[BACKUP] privacy gc: ${errText(e)}`));

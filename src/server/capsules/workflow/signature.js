@@ -31,7 +31,7 @@ async function readDevice(accountId) {
     onMigrated: (v) => kvs.set(deviceKey(accountId), { enrolledAt: v.enrolledAt || null }),
   });
 }
-const readPending = (accountId) => readSecret(enrollKey(accountId), { isValid: hasSecret });
+const readPending = (accountId) => readSecret(enrollKey(accountId), { isValid: hasSecret, migrateOptions: ttlOption(ENROLL_TTL_MS) });
 const lastKey = (a) => `sig-last-${a}`;
 const failKey = (a) => `sig-fail-${a}`;
 const ENROLL_TTL_MS = 15 * 60 * 1000;

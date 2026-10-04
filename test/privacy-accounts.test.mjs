@@ -63,7 +63,18 @@ eq("accountId pairs name/displayName", pairedFields("accountId").names.slice(0, 
   eq("roster loses A", r1.value.adminUsers, [B]);
   const def = { approval: { mode: "all", approvers: [{ type: "user", id: A, name: "Ann" }, { type: "group", id: "9b1bd7bc-281a-4bb5-8ba2-335f9c725833", name: "g" }] } };
   const r2 = rewriteAccount(def, A, { mode: "erase", removeFromLists: removesFromLists("workflow-def-space-SV") });
-  eq("approver list loses A, keeps the group", r2.value.approval.approvers.map((a) => a.type), ["group"]);
+  // L1 (review 2026-10-04): an approver is NEVER removed — an empty approver list evaluates as
+  // "approved". The entry stays, pseudonymised.
+  eq("approver list keeps a pseudonymised entry", r2.value.approval.approvers.map((a) => [a.type, a.id, a.name]), [["user", PSEUDONYM_ID, PSEUDONYM_NAME], ["group", "9b1bd7bc-281a-4bb5-8ba2-335f9c725833", "g"]]);
+  const settingsApprovers = { approval: { approvers: [{ type: "user", id: A, name: "Ann" }] }, readConfirmation: { audience: [{ type: "user", id: A, name: "Ann" }] } };
+  const r3 = rewriteAccount(settingsApprovers, A, { mode: "erase", removeFromLists: removesFromLists("workflow-settings-SV") });
+  eq("workflow settings: approver kept (pseudonymised)", r3.value.approval.approvers.length, 1);
+  eq("workflow settings: read audience loses A", r3.value.readConfirmation.audience, []);
+  const pending = { approvers: [A], mode: "all", min: 1, requestedBy: B };
+  const r4 = rewriteAccount(pending, A, { mode: "erase", removeFromLists: removesFromLists("workflow-pending-1") });
+  eq("a pending request's approver list never empties", r4.value.approvers, [PSEUDONYM_ID]);
+  const { evaluateApproval } = await import("../src/server/capsules/workflow/approvals.js");
+  eq("…and so cannot evaluate as approved with nobody deciding", evaluateApproval("all", 1, ["pending"], []), "pending");
   const aud = { readConfirmation: { enabled: true, audience: [{ type: "user", id: A, name: "Ann" }] } };
   eq("read audience loses A", rewriteAccount(aud, A, { mode: "erase", removeFromLists: removesFromLists("workflow-settings-SV") }).value.readConfirmation.audience, []);
   eq("a NON-config list keeps a pseudonymised element", rewriteAccount({ ids: [A] }, A, { mode: "erase", removeFromLists: removesFromLists("notification-1") }).value.ids, [PSEUDONYM_ID]);
@@ -90,6 +101,21 @@ eq("own row: read ack", keyNamesAccount(`read-ack-1-${A}`, A), true);
 eq("own row: signature marker", keyNamesAccount(`sig-device-${A}`, A), true);
 eq("someone else's row", keyNamesAccount(`read-ack-1-${B}`, A), false);
 eq("a seal row is never 'own'", keyNamesAccount("protection-att2", A), false);
+
+// ── personal spaces (L2) and page content (L4) ──────────────────────────────────────────────
+{
+  const L = "5b10a2844c20165700ede21f";
+  eq("a personal-space key (~id sanitised to _id) is not the person's row", keyNamesAccount(`admin-settings-space-_${L}`, L), false);
+  eq("…nor a workflow index keyed by it", keyNamesAccount(`workflow-idx-_${L}-approved-123`, L), false);
+  eq("the person's own row still is", keyNamesAccount(`read-ack-123-${L}`, L), true);
+  const rec = { spaceKey: `~${L}`, lockedBy: L, lockedByName: "Lee" };
+  const r = rewriteAccount(rec, L, { mode: "erase" });
+  eq("a ~id space key is left alone", r.value.spaceKey, `~${L}`);
+  eq("the person in the same record is erased", [r.value.lockedBy, r.value.lockedByName], [PSEUDONYM_ID, PSEUDONYM_NAME]);
+  const { holdsPageContent } = await import("../src/server/capsules/privacy/accounts.js");
+  eq("section baselines hold page content", holdsPageContent("section-snapshot-abc"), true);
+  eq("seal records do not", holdsPageContent("section-protection-abc"), false);
+}
 
 // ── the one-time email strip ────────────────────────────────────────────────────────────────
 eq("strip email from a file seal", stripLegacyEmail("protection-1", { lockedBy: A, lockedByEmail: "x@y" }).value, { lockedBy: A });
@@ -175,5 +201,12 @@ ok("a ttl'd row keeps its ttl when rewritten", /async function setPreserving/.te
 ok("closed accounts lose their authenticator (secret namespace)", /eraseSignature\(id\)/.test(worker));
 ok("the backup gets a scrubbed generation and older ones are purged", /runBackup\(\{ reason: "privacy"/.test(worker) && /purgeGenerationsMentioning\(closed\)/.test(worker));
 ok("the status row stores counts, not account ids", !/summary\.[a-z]+\s*=\s*closed\b/.test(worker) && /summary\.accounts\.closed = closed\.length/.test(worker));
+const engine = readFileSync(resolve(here, "../src/server/capsules/backup/engine.js"), "utf8");
+const purge = engine.slice(engine.indexOf("export async function purgeGenerationsMentioning"), engine.indexOf("async function collectGarbage"));
+ok("L3: an unreadable backup file aborts the purge (drops nothing)", /catch \(e\) \{\s*console\.warn\(`\[BACKUP\] privacy purge aborted, nothing dropped/.test(purge) && !/catch \(_\) \{ hit = true; \}/.test(purge));
+ok("P2: the erase pass re-reads a row before rewriting it", /const value = await kvs\.get\(key\);/.test(worker));
+ok("L4: page-content rows are skipped by the erase pass", /if \(holdsPageContent\(key\)\) return;/.test(worker));
+const wfActions = readFileSync(resolve(here, "../src/server/capsules/workflow/actions.js"), "utf8");
+ok("P1: a request is refused past MAX_REQUEST_APPROVERS", /\(spec\?\.approvers\?\.length \|\| 0\) > MAX_REQUEST_APPROVERS/.test(wfActions));
 ok("401/403 from report-accounts is recorded as not-permitted", worker.includes("export const reportNotPermitted = (status) => status === 401 || status === 403;") && worker.includes('summary.accounts.reporting = "not-permitted"'));
 report("privacy-accounts");
