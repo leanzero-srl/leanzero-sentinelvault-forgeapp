@@ -2,7 +2,7 @@
 
 GENERATED from `src/server/shared/release-notes.js` by `scripts/render-release-notes.mjs`. Do not edit.
 
-## 6.7.0 — 2026-10-04 (in testing, not yet on the Marketplace)
+## 6.7.0 — 2026-10-04
 
 **Privacy and retention: an optional keep period for history, and less personal data stored**
 

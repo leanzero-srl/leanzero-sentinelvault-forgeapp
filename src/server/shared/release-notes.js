@@ -14,7 +14,6 @@ export const RELEASE_NOTES = Object.freeze([
   note({
     version: "6.7.0",
     date: "2026-10-04",
-    status: "testing",
     headline: "Privacy and retention: an optional keep period for history, and less personal data stored",
     changes: [
       "New: Site settings, Privacy and retention. Turn on \"Delete old history\" to have activity history, workflow history and read confirmations older than \"Keep history for\" (730 days unless you change it) deleted by a weekly check. It is off unless you turn it on, so nothing is deleted on upgrade.",
