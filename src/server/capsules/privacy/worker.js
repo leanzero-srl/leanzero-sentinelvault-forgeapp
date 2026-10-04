@@ -31,7 +31,7 @@ import { asApp, route, privacy } from "@forge/api";
 import { readEffective } from "../policies/settings-schema.js";
 import { isPastRetention, retainedFamily } from "./retention.js";
 import {
-  extractAccountIds, rewriteAccount, removesFromLists, keyNamesAccount, stripLegacyEmail, stripRosterContact, planReport, batches,
+  extractAccountIds, rewriteAccount, removesFromLists, keyNamesAccount, holdsPageContent, stripLegacyEmail, stripRosterContact, planReport, batches,
 } from "./accounts.js";
 import { scheduleBackup } from "../backup/hook.js";
 import { sealPropertyValue, sealPropertyNeedsScrub } from "../sealing/seal-property.js";
@@ -255,16 +255,22 @@ async function applyAccountUpdates({ closed, updated, places }) {
   const sealPages = new Set();
   const sectionPages = new Set();
 
-  await scanKvs(async ({ key, value, expireTime }) => {
+  await scanKvs(async ({ key, value: scanned, expireTime }) => {
     if (key.startsWith(INDEX_PREFIX) || key === STATUS_KEY || key === LOCK_KEY) return;
+    if (holdsPageContent(key)) return; // page content baselines are never rewritten (accounts.js)
     if (closed.some((id) => keyNamesAccount(key, id))) {
       await kvs.delete(key);
       out.deletedRows += 1;
-      if (key.startsWith("protection-") && value?.contentId) sealPages.add(String(value.contentId));
-      if (key.startsWith("section-protection-") && value?.pageId) sectionPages.add(String(value.pageId));
+      if (key.startsWith("protection-") && scanned?.contentId) sealPages.add(String(scanned.contentId));
+      if (key.startsWith("section-protection-") && scanned?.pageId) sectionPages.add(String(scanned.pageId));
       return;
     }
-    if (value === undefined) return;
+    if (scanned === undefined) return;
+    if (![...closed, ...renames].some((id) => JSON.stringify(scanned).includes(id))) return;
+    // Re-read right before rewriting: a seal released or a setting saved since the scan read
+    // this row must not be undone by writing the scan's copy back (review 2026-10-04, P2).
+    const value = await kvs.get(key);
+    if (value === undefined || value === null) return;
     const json = JSON.stringify(value);
     let v = value;
     let changed = false;
@@ -362,12 +368,16 @@ export async function runPrivacySweep({ reason = "manual", nowMs = Date.now(), r
         return;
       }
       let v = value;
-      if (stripEmail) {
-        const s = stripLegacyEmail(key, v);
+      // One-time strips: decide on the scanned copy, then re-read and strip the FRESH row, so a
+      // seal released or a setting saved since the scan is never written back (review P2).
+      if (stripEmail && stripLegacyEmail(key, v).changed) {
+        const fresh = await kvs.get(key);
+        const s = fresh ? stripLegacyEmail(key, fresh) : { changed: false };
         if (s.changed) { v = s.value; await setPreserving(key, v, expireTime); emailStripped += 1; touched += 1; }
       }
-      if (stripRoster) {
-        const s = stripRosterContact(key, v);
+      if (stripRoster && stripRosterContact(key, v).changed) {
+        const fresh = await kvs.get(key);
+        const s = fresh ? stripRosterContact(key, fresh) : { changed: false };
         if (s.changed) { v = s.value; await setPreserving(key, v, expireTime); rostersStripped += 1; touched += 1; }
       }
       for (const id of extractAccountIds(key, v)) seen.add(id);

@@ -19,12 +19,19 @@ import { kvs } from "@forge/kvs";
  * `isValid(value)` decides whether a row is a real record (an empty or malformed plain row is
  * left alone and reported as absent). Returns the value or null.
  */
-export async function readSecret(key, { store = kvs, isValid = (v) => v != null, onMigrated = null } = {}) {
+export async function readSecret(key, { store = kvs, isValid = (v) => v != null, onMigrated = null, migrateOptions = undefined } = {}) {
   const s = await store.getSecret(key);
   if (isValid(s)) return s;
   const plain = await store.get(key);
-  if (!isValid(plain)) return null;
-  await store.setSecret(key, plain);
+  if (!isValid(plain)) {
+    // A concurrent first read may have moved the row between our two reads: look once more
+    // before answering "no device" (review 2026-10-04, P6).
+    const again = await store.getSecret(key);
+    return isValid(again) ? again : null;
+  }
+  // `migrateOptions` carries a ttl for rows that had one (a pending enrolment keeps its 15 minutes).
+  if (migrateOptions) await store.setSecret(key, plain, migrateOptions);
+  else await store.setSecret(key, plain);
   await store.delete(key);
   if (onMigrated) await onMigrated(plain);
   return plain;

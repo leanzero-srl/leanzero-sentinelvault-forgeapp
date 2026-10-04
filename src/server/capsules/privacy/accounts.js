@@ -19,9 +19,22 @@
  * is replaced by PSEUDONYM_ID and the display name / email paired with it by PSEUDONYM_NAME / null.
  * Pairing is by field stem, never "every *Name field": `lockedBy` → `lockedByName`,
  * `requesterAccountId` → `requesterName`, `accountId` → `name` / `displayName`; `toName` and
- * `fromName` are workflow STATE names and are never touched. In CONFIGURATION rows (rosters,
- * approver lists, audiences) the person is removed from the list instead, so a closed account
- * cannot leave an approval waiting forever on someone who can no longer act.
+ * `fromName` are workflow STATE names and are never touched.
+ *
+ * Lists. A closed person is REMOVED only from steward rosters (`adminUsers`) and read-confirmation
+ * audiences (`audience`): fewer stewards and fewer readers can only narrow what happens. Every
+ * APPROVER list keeps a pseudonymised entry instead (review 2026-10-04): an approval whose list
+ * became empty evaluates as "approved" (approvals.js evaluateApproval, total === 0), so removing
+ * the last approver would approve a page nobody approved. A request waiting on a former user
+ * stays pending until a space admin settles it — the safe failure.
+ *
+ * Personal spaces. A personal space key is `~` + an account id (sanitised to `_` in KVS keys), so
+ * an id preceded by `~` or `_` is a SPACE KEY, not a person reference: it is never matched in a
+ * key and never rewritten in a value (review 2026-10-04, L2).
+ *
+ * Content. Rows that hold PAGE CONTENT (`section-snapshot-` baselines) are never rewritten: a
+ * mention inside page content is Confluence's data, and changing a baseline without its hash
+ * would make the app "restore" content nobody wrote (CONTENT_PREFIXES).
  */
 export const PSEUDONYM_ID = "former-user";
 export const PSEUDONYM_NAME = "Former user";
@@ -34,11 +47,18 @@ const LEGACY = /^[0-9a-f]{24}$/i;
 // Fields whose value (or list elements) name a person.
 const PERSON_FIELD = /^(accountId|by|owner|requester|approver|actor|user|grantee|adminUsers|userIds|approverIds|memberIds|allIds|ids)$|AccountId$|By$/;
 
-/** Rows whose lists are configuration: a closed person is REMOVED from their lists. */
-export const CONFIG_LIST_PREFIXES = Object.freeze([
-  "admin-settings-", "workflow-def-", "workflow-settings-", "validation-config-", "classification-", "workflow-pending-",
-]);
+/** Rows whose rosters / audiences may drop a closed person (see the header: never approver lists). */
+export const CONFIG_LIST_PREFIXES = Object.freeze(["admin-settings-", "workflow-settings-"]);
 export const removesFromLists = (key) => CONFIG_LIST_PREFIXES.some((p) => String(key || "").startsWith(p));
+/** The only list fields an entry is removed from. Everything else is pseudonymised in place. */
+export const LIST_REMOVAL_FIELDS = Object.freeze(["adminUsers", "audience"]);
+/** Rows holding page content: reported (the ids are stored) but never rewritten or deleted. */
+export const CONTENT_PREFIXES = Object.freeze(["section-snapshot-"]);
+export const holdsPageContent = (key) => CONTENT_PREFIXES.some((p) => String(key || "").startsWith(p));
+
+const escapeRe = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+// An occurrence of the id that is a PERSON reference: not part of a personal space key (~id / _id).
+const personRe = (accountId) => new RegExp(`(?<![~_A-Za-z0-9])${escapeRe(accountId)}`, "g");
 
 /** PURE. Is this string an account id, given the field it sits under? */
 export function isAccountId(str, field = "") {
@@ -80,7 +100,7 @@ export function pairedFields(field) {
 }
 
 /** PURE. Does a row KEY belong to the account (their own row)? */
-export const keyNamesAccount = (key, accountId) => !!accountId && String(key || "").includes(accountId);
+export const keyNamesAccount = (key, accountId) => !!accountId && personRe(accountId).test(String(key || ""));
 
 const isPrincipalRef = (o, accountId) => o && typeof o === "object" && !Array.isArray(o) && (o.accountId === accountId || (o.id === accountId && (o.type == null || o.type === "user")));
 
@@ -97,13 +117,17 @@ export function rewriteAccount(value, accountId, { mode = "erase", newName = nul
   const walk = (v, field, depth) => {
     if (depth > 40 || v == null) return v;
     if (typeof v === "string") {
-      if (erase && v.includes(accountId)) { changed = true; return v === accountId ? PSEUDONYM_ID : v.split(accountId).join(PSEUDONYM_ID); }
-      return v;
+      if (!erase || !v.includes(accountId)) return v;
+      if (v === accountId) { changed = true; return PSEUDONYM_ID; }
+      const next = v.replace(personRe(accountId), PSEUDONYM_ID); // a ~id personal space key stays as it is
+      if (next !== v) changed = true;
+      return next;
     }
     if (Array.isArray(v)) {
       const out = [];
+      const removable = erase && removeFromLists && LIST_REMOVAL_FIELDS.includes(field);
       for (const x of v) {
-        if (erase && removeFromLists && (x === accountId || isPrincipalRef(x, accountId))) { changed = true; continue; }
+        if (removable && (x === accountId || isPrincipalRef(x, accountId))) { changed = true; continue; }
         out.push(walk(x, field, depth + 1));
       }
       return out;

@@ -132,7 +132,12 @@ export async function deleteAllBackups(actor) {
   if (done.length) await audit("backup.deleted", actor, { pages: done, purged, ...(failed.length ? { failed: failed.map((o) => o.pageId) } : {}) });
   if (failed.length) {
     return { ok: false, deleted: done.length, purged, failedPages: failed.map((o) => o.pageId),
-      reason: `The backup page${failed.length > 1 ? "s" : ""} ${failed.map((o) => o.pageId).join(", ")} could not be removed (${failed.map((o) => (o.failed ? `${o.failed} file(s) refused` : o.state || o.error)).join(", ")}). The backup is unchanged; try again.` };
+      // Honest about a partial run (review P3): files already purged are gone, so older
+      // generations that used them may no longer restore. The newest backup is retaken on the
+      // next change; deleting again finishes the job.
+      reason: purged
+        ? `Delete stopped part-way: ${purged} backup file${purged === 1 ? "" : "s"} were removed, but ${failed.map((o) => (o.failed ? `${o.failed} file(s) on page ${o.pageId}` : `page ${o.pageId} (${o.state || o.error})`)).join(", ")} could not be. Older backups may no longer restore. Try Delete again to finish.`
+        : `The backup page${failed.length > 1 ? "s" : ""} ${failed.map((o) => o.pageId).join(", ")} could not be removed (${failed.map((o) => o.state || o.error).join(", ")}). Nothing was deleted; try again.` };
   }
   await kvs.delete(SETTINGS_KEY).catch(() => {});
   await kvs.delete(STATUS_KEY).catch(() => {});

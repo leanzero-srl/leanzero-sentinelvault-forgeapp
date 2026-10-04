@@ -46,6 +46,7 @@ import {
   withdrawApproval,
   applyAiVerdict,
   buildApprovalRecord,
+  MAX_REQUEST_APPROVERS,
 } from "./approvals.js";
 import { enqueueAiGate, resolveRules } from "../validations/actions.js";
 import { confirmRead, readStatus, readReport, readConfirmationRequired, requiredVersion } from "./read-acks.js";
@@ -278,6 +279,11 @@ export const requestTransition = async (req) => {
     // to "all the ones we could resolve". Refuse with the cause; the steward can retry.
     if (spec?.unresolved) {
       return { success: false, reason: "The approver groups could not be resolved right now — try again in a moment" };
+    }
+    // Groups expand from this version on (review P1): a request opens one record and one mention
+    // per approver, so a large group is refused rather than half-written or mentioned en masse.
+    if ((spec?.approvers?.length || 0) > MAX_REQUEST_APPROVERS) {
+      return { success: false, reason: `The approvers for this step expand to ${spec.approvers.length} people (groups included); one request can ask at most ${MAX_REQUEST_APPROVERS}. A space admin can name fewer people or a smaller group in the space's Workflow settings.` };
     }
     // Don't let a re-request silently discard approvers' / the AI's in-flight review.
     const existing = await getPageApprovalStatus(pageId);
