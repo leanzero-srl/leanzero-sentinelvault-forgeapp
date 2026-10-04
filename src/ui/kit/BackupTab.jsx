@@ -333,7 +333,9 @@ export default function BackupTab() {
             <span className="bk-status-when"><strong>Last backup {ago(last.createdAt)}</strong> · {when(last.createdAt)}</span>
             <span className="bk-status-size">{Number(last.keys).toLocaleString()} items · {fmtBytes(last.bytes)}{last.reason ? ` · ${REASON[last.reason] || last.reason}` : ""}</span>
           </div>
-        ) : <p className="api-empty" data-testid="bk-none">No backup yet. The first one is taken after the next change, within the hour, or now.</p>}
+        ) : st.deletedAt
+          ? <p className="api-empty" data-testid="bk-none">The backup was deleted {when(st.deletedAt)}. A new one is taken after your next change here or over REST, or when you press Back up now.</p>
+          : <p className="api-empty" data-testid="bk-none">No backup yet. The first one is taken after the next change, within the hour, or now.</p>}
         {st.waiting === "restore-pending" && <p className="api-explain" data-testid="bk-waiting">Automatic backups wait until you restore the earlier setup or choose to start fresh, so they cannot crowd out the backup you came back for.</p>}
         {st.lastError && (!last || String(st.lastError.at) > String(st.lastCheckAt || "")) && <div className="api-inline-error" role="alert" data-testid="bk-last-error">The last backup failed ({when(st.lastError.at)}): {st.lastError.message}</div>}
         {status.settings?.spaceKey && (
@@ -451,7 +453,7 @@ export default function BackupTab() {
       )}
       {deleteOpen && (
         <ConfirmDialog title="Delete the backup?" confirmLabel="Delete the backup" testId="bk-delete-confirm"
-          message={<p>Every kept backup file is deleted for good, and the emptied backup page goes to the space trash. If Sentinel Vault is then uninstalled, nothing can bring the setup back. A new backup is taken after the next change unless you uninstall first.</p>}
+          message={<p>Every kept backup file is deleted for good, and the emptied backup page goes to the space trash. If Sentinel Vault is then uninstalled, only an export you downloaded, or Atlassian re-linking the old storage within 21 days, can bring the setup back. A new backup is taken after the next change unless you uninstall first.</p>}
           onCancel={() => setDeleteOpen(false)}
           onConfirm={() => { setDeleteOpen(false); runJob("Deleting the backup", () => call("backup-delete"), (r) => setMsg({ kind: "ok", text: `Backup deleted: ${r?.purged ?? 0} backup file${r?.purged === 1 ? "" : "s"} removed, and the emptied page moved to the space trash.` })); }} />
       )}
