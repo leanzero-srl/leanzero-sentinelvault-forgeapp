@@ -273,6 +273,57 @@ export function mergeInstallations(list, info, at) {
   return rows.slice(0, 20);
 }
 
+/**
+ * Privacy erasure (capsules/privacy, 2026-10-04): drop every kept generation whose manifest or
+ * data files still contain one of `needles` (the account ids Atlassian reported closed). The
+ * caller takes a fresh, already-scrubbed generation FIRST; the newest generation is never dropped
+ * (it is the only copy of the setup), and if it still mentions a needle that is reported as
+ * `newestMentions` rather than hidden. A generation whose files cannot be read cannot be proven
+ * clean and is dropped. Content-addressed chunks still referenced by a kept generation stay.
+ */
+export async function purgeGenerationsMentioning(needles) {
+  const list = [...new Set((needles || []).filter(Boolean))];
+  const settings = await kvs.get(SETTINGS_KEY).catch(() => null);
+  const pageId = settings?.pageId || null;
+  if (!list.length || !pageId || !(await store.isBackupPage(pageId))) return { pageId, dropped: 0, kept: null, newestMentions: false };
+  const index = (await store.readIndex(pageId))?.value;
+  const gens = Array.isArray(index?.generations) ? index.generations : [];
+  if (!gens.length) return { pageId, dropped: 0, kept: 0, newestMentions: false };
+  const attachments = await store.listAttachments(pageId);
+  const byTitle = new Map(attachments.map((a) => [a.title, a]));
+  const newestId = [...gens].sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)))[0].generationId;
+  const mentions = (text) => list.some((n) => String(text).includes(n));
+  const cache = new Map(); // chunk name → mentions?
+  const generationMentions = async (g) => {
+    const m = byTitle.get(g.manifest) || (g.manifestAttachmentId ? { id: g.manifestAttachmentId } : null);
+    if (!m) return true;
+    const text = await store.getFile(pageId, m.id);
+    if (mentions(text)) return true;
+    for (const c of JSON.parse(text).chunks || []) {
+      if (!cache.has(c.name)) {
+        const a = byTitle.get(c.name);
+        cache.set(c.name, a ? mentions(await store.getFile(pageId, a.id)) : true);
+      }
+      if (cache.get(c.name)) return true;
+    }
+    return false;
+  };
+  const keep = [];
+  let dropped = 0;
+  let newestMentions = false;
+  for (const g of gens) {
+    let hit;
+    try { hit = await generationMentions(g); } catch (_) { hit = true; }
+    if (g.generationId === newestId) { keep.push(g); newestMentions = hit; continue; }
+    if (hit) dropped += 1; else keep.push(g);
+  }
+  if (dropped) {
+    await store.writeIndex(pageId, { ...index, generations: keep });
+    await collectGarbage(pageId, keep, attachments).catch((e) => console.warn(`[BACKUP] privacy gc: ${errText(e)}`));
+  }
+  return { pageId, dropped, kept: keep.length, newestMentions };
+}
+
 /** Delete manifests no longer indexed and chunks no kept manifest references. */
 async function collectGarbage(pageId, generations, attachments) {
   const keepManifests = new Set(generations.map((g) => g.manifest));
