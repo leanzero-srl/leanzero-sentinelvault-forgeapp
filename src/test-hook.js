@@ -308,6 +308,24 @@ export async function testStateTrigger(req) {
         for (const id of [pA, pB, pD]) await conf(route`/wiki/rest/api/content/${id}/pageTree`, { method: "DELETE" }).catch(() => {});
         return json(200, { invoked: fn, result: out });
       }
+      // The purge corroboration (attachment-status.js confirmAttachmentPurged) on a REAL attachment:
+      // uploads one to `pageId`, asks for a verdict while current, trashed and purged.
+      if (fn === "purgeVerdicts") {
+        const { asApp, route } = await import("@forge/api");
+        const { confirmAttachmentPurged } = await import("./server/infra/attachment-status.js");
+        const store = await import("./server/capsules/backup/store.js");
+        const pageId = String(q(req, "pageId") || "").replace(/[^0-9]/g, "");
+        const attId = await store.putFile(pageId, `purge-probe-${Date.now()}.json`, "{}");
+        const v = async () => confirmAttachmentPurged(attId, 300, { pageId });
+        const out = { attId, current: await v() };
+        await asApp().requestConfluence(route`/wiki/api/v2/attachments/${attId}`, { method: "DELETE" });
+        out.trashed = await v();
+        await asApp().requestConfluence(route`/wiki/api/v2/attachments/${attId}?purge=true`, { method: "DELETE" });
+        await new Promise((r) => setTimeout(r, 1500));
+        out.purged = await v();
+        out.purgedWithoutPageId = await confirmAttachmentPurged(attId, 300);
+        return json(200, { invoked: fn, result: out });
+      }
       // TOTP seeds live in the KVS SECRET namespace since 2026-10-04, which `what=delete` cannot
       // reach: a spec that resets an approver's device (esignature.spec.ts clearDevice) calls this.
       if (fn === "eraseSignature") {
