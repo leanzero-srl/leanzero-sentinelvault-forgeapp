@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { createRoot } from "react-dom/client";
-import { invoke, view } from "@forge/bridge";
+import { invoke, view, router } from "@forge/bridge";
 import { enablePaletteSync } from "../../kit/palette-sync";
 import UnsavedFloat from "../../kit/UnsavedFloat";
 import ValidationsEditor from "../../kit/ValidationsEditor";
@@ -8,6 +8,7 @@ import LicenseBanner from "../../kit/LicenseBanner";
 import ClassificationTab from "../../kit/ClassificationTab";
 import BackupTab, { RestoreBanner } from "../../kit/BackupTab";
 import PrivacyStatus from "../../kit/PrivacyStatus";
+import { HELP_LINKS } from "../../kit/help-links.js";
 import WhatsNew from "../../kit/WhatsNew";
 import Dialog, { ConfirmDialog } from "../../kit/Dialog";
 import { formatDurationHours } from "../../kit/format-duration";
@@ -802,7 +803,7 @@ const GlobalPolicyEditor = () => {
     // data-sv-build: deploy-staleness stamp (webpack inlines BUILD_INFO at build time) — lets the
     // harness assert the SERVED frontend matches the deployed backend (`what=version`), the it26 trap.
     <div className="admin-container" data-sv-build={BUILD_INFO.gitSha}>
-      <div className="admin-header">
+      <div className="admin-header admin-header-row">
         <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
           <img src={logo} alt="Sentinel Vault Logo" style={{ height: "32px", width: "auto" }} />
           <div>
@@ -812,6 +813,15 @@ const GlobalPolicyEditor = () => {
             </p>
           </div>
         </div>
+        {/* Marketplace: in-product documentation and support links (2026-10-04). */}
+        <nav className="sv-help-links" aria-label="Help">
+          {HELP_LINKS.map((l) => (
+            <a key={l.href} className="sv-help-link" href={l.href} target="_blank" rel="noreferrer" data-testid={l.testId}
+              onClick={(e) => { e.preventDefault(); try { router.open(l.href); } catch (_) { window.open(l.href, "_blank", "noopener"); } }}>
+              {l.label}
+            </a>
+          ))}
+        </nav>
       </div>
 
       <LicenseBanner />
