@@ -31,24 +31,23 @@ if [[ -n "$(git status --porcelain --untracked-files=no)" ]]; then
   exit 1
 fi
 HEAD_SHA="$(git rev-parse --short HEAD)"
-BUILD_MARK="$(mktemp)"
+# Every static/ resource the manifest serves is moved aside, so a folder the build does not
+# produce is MISSING afterwards instead of silently old (webpack 5 does not rewrite a file whose
+# content is unchanged, so timestamps cannot tell fresh from stale).
+RESOURCES="$(sed -n 's/^ *path: *\(static\/[^ ]*\).*/\1/p' manifest.yml | grep -v '^static/submission-material' | sort -u)"
+ASIDE="$(mktemp -d)"
+restore_aside() { for p in $RESOURCES; do [[ ! -e "$p" && -e "$ASIDE/$p" ]] && mkdir -p "$(dirname "$p")" && mv "$ASIDE/$p" "$p"; done; rm -rf "$ASIDE"; }
+for p in $RESOURCES; do mkdir -p "$ASIDE/$(dirname "$p")"; mv "$p" "$ASIDE/$p" 2>/dev/null || true; done
 echo "==> Building every bundle from HEAD ${HEAD_SHA}"
-npm run build
-if ! grep -q "\"${HEAD_SHA}\"" src/build-info.js; then
-  echo "ABORT: src/build-info.js is not stamped with HEAD ${HEAD_SHA}."
+if ! npm run build; then restore_aside; git checkout -- src/build-info.js 2>/dev/null || true; echo "ABORT: build failed"; exit 1; fi
+MISSING=""
+for p in $RESOURCES; do [[ -f "$p/index.html" ]] || MISSING="${MISSING} ${p}"; done
+if [[ -n "$MISSING" ]] || ! grep -q "\"${HEAD_SHA}\"" src/build-info.js; then
+  restore_aside; git checkout -- src/build-info.js 2>/dev/null || true
+  echo "ABORT: not built from HEAD ${HEAD_SHA}, or these resource folders were not produced:${MISSING}"
   exit 1
 fi
-STALE=""
-while read -r p; do
-  [[ "$p" == static/submission-material* ]] && continue
-  newest="$(find "$p" -type f -newer "$BUILD_MARK" 2>/dev/null | head -1)"
-  [[ -z "$newest" ]] && STALE="${STALE} ${p}"
-done < <(sed -n 's/^ *path: *\(static\/[^ ]*\).*/\1/p' manifest.yml | sort -u)
-if [[ -n "$STALE" ]]; then
-  echo "ABORT: these resource folders were not rebuilt:${STALE}"
-  exit 1
-fi
-rm -f "$BUILD_MARK"
+rm -rf "$ASIDE"
 
 echo "==> Generating a webtrigger-free production manifest"
 cp manifest.yml manifest.yml.dev.bak
