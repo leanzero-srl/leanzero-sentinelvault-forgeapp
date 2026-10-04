@@ -405,7 +405,9 @@
     <ul>
       <li><strong>Data residency.</strong> Seal records and settings live in Forge storage inside Atlassian Cloud; seal and classification markers are also written as Confluence content properties. The app declares no external hosts.</li>
       <li><strong>Licensing.</strong> Sentinel Vault is paid via Atlassian. If the app is unlicensed, sealed content stays protected and the admin consoles show a banner with <strong>Manage subscription</strong>.</li>
-      <li><strong>Uninstall.</strong> Uninstalling deletes the app's stored records.</li>
+      <li><strong>Personal data.</strong> The app stores the Atlassian account ids and display names of the people who seal, request, approve and confirm, in its activity history, workflow history and read confirmations. It does not store email addresses. History older than <em>Keep history for</em> (Site settings → Privacy and retention, 730 days unless changed) is deleted by a weekly check.</li>
+      <li><strong>Uninstall.</strong> Uninstalling does not delete everything. Atlassian keeps the app's Forge storage for its retention period after an uninstall. Two things stay in Confluence until you remove them: the backup page (titled <em>Sentinel Vault backup</em>, restricted to the app, holding a copy of your settings, seals, workflows and history), and the small markers the app writes on pages it protects (content properties such as <code>protection-</code> and <code>sentinel-byline</code>).</li>
+      <li><strong>Removing the backup.</strong> Before you uninstall, go to Site settings → Backup and restore → Delete the backup. Every backup file is deleted for good and the emptied page goes to the space trash. If the app is already uninstalled, reinstall it, delete the backup this way, then uninstall again.</li>
     </ul>
   </section>
 
