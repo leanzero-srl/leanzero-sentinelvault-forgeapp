@@ -308,6 +308,13 @@ export async function testStateTrigger(req) {
         for (const id of [pA, pB, pD]) await conf(route`/wiki/rest/api/content/${id}/pageTree`, { method: "DELETE" }).catch(() => {});
         return json(200, { invoked: fn, result: out });
       }
+      // TOTP seeds live in the KVS SECRET namespace since 2026-10-04, which `what=delete` cannot
+      // reach: a spec that resets an approver's device (esignature.spec.ts clearDevice) calls this.
+      if (fn === "eraseSignature") {
+        const { eraseSignature } = await import("./server/capsules/workflow/signature.js");
+        await eraseSignature(q(req, "actor"));
+        return json(200, { invoked: fn, result: { success: true } });
+      }
       // Privacy sweep (capsules/privacy), synchronously. Atlassian's REAL report-accounts answer is
       // used; `closed` (csv) additionally marks those ids closed, because a test cannot close a real
       // account — seed rows for a synthetic id, name it here, and assert the rows afterwards.
