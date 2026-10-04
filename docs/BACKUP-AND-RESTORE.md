@@ -150,6 +150,11 @@ Evidence: ~/Projects/forge-live-harness/evidence/sentinel-vault/backup/ (1-banne
 - The app's own last audit row after the final backup before an uninstall is not in that backup.
 - A restore onto a site in use puts every backed-up item back as it was (section baselines, approvals included);
   items created since stay. A safety backup is taken first.
+- (2026-10-04) "Delete the backup" and Move purge every backup file and the index property, then trash the emptied
+  page through v1 `DELETE /content/{id}/pageTree` (write:confluence-content). The v2 page DELETE needs
+  delete:page:confluence, which the manifest lacks (401 live), so the app cannot purge the page itself; a trashed
+  app-restricted page answers 404 to a site admin and is not in their space-trash listing (measured), which is why
+  the files are purged first. Delete runs as a queued job (it can outlast 25 s).
 - The backup page outlives an uninstall (that is the point). To leave nothing behind, use "Delete the backup" before
   uninstalling.
 - (Fixed the same day) Dialogs could open below the window in a content-tall frame; every dialog now fits the part
