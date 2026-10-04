@@ -229,6 +229,85 @@ export async function testStateTrigger(req) {
         const { backupSweep } = await import("./server/capsules/backup/worker.js");
         return json(200, { invoked: fn, result: await backupSweep() });
       }
+      // Endpoint probe (2026-10-04, Marketplace compliance pass): which page-delete and
+      // attachment-status endpoints actually answer THIS app with ITS scopes. Creates throwaway
+      // pages in `spaceId` (as the app), tries one door per page, and reports every status. The
+      // decision for backup/store.js deletePage and attachment-status.js rests on this output.
+      if (fn === "endpointProbe") {
+        const { asApp, route } = await import("@forge/api");
+        const store = await import("./server/capsules/backup/store.js");
+        const spaceId = String(q(req, "spaceId") || "").replace(/[^0-9]/g, "");
+        if (!spaceId) return json(400, { error: "spaceId required" });
+        const conf = (r, init) => asApp().requestConfluence(r, init);
+        const JH = { Accept: "application/json", "Content-Type": "application/json" };
+        const out = {};
+        const body = async (res) => { const t = await res.text().catch(() => ""); return t.slice(0, 200); };
+        const mkPage = async (tag) => {
+          const res = await conf(route`/wiki/api/v2/pages`, { method: "POST", headers: JH, body: JSON.stringify({ spaceId, status: "current", title: `SV probe ${tag} ${Date.now()}`, body: { representation: "storage", value: "<p>probe</p>" } }) });
+          if (!res.ok) throw new Error(`create ${tag}: ${res.status} ${await body(res)}`);
+          return String((await res.json()).id);
+        };
+        const pageState = async (id) => {
+          const a = await conf(route`/wiki/api/v2/pages/${id}`);
+          const b = await conf(route`/wiki/api/v2/pages/${id}?status=trashed`);
+          return { get: a.status, getStatus: a.ok ? (await a.json()).status : null, getTrashed: b.status, trashedStatus: b.ok ? (await b.json()).status : null };
+        };
+        // A. page deletes, one door per page
+        const pA = await mkPage("v2-delete");
+        const rA = await conf(route`/wiki/api/v2/pages/${pA}`, { method: "DELETE" });
+        out.v2PageDelete = { pageId: pA, status: rA.status, body: await body(rA), after: await pageState(pA) };
+        const pB = await mkPage("v1-delete");
+        const rB = await conf(route`/wiki/rest/api/content/${pB}`, { method: "DELETE" });
+        out.v1ContentDelete = { pageId: pB, status: rB.status, body: await body(rB), after: await pageState(pB) };
+        const pC = await mkPage("v1-pagetree");
+        const rC = await conf(route`/wiki/rest/api/content/${pC}/pageTree`, { method: "DELETE" });
+        const cBody = await body(rC);
+        await new Promise((r) => setTimeout(r, 4000));
+        out.v1PageTreeDelete = { pageId: pC, status: rC.status, body: cBody, after: await pageState(pC) };
+        // a purge attempt on the page the pageTree door trashed
+        const rP2 = await conf(route`/wiki/api/v2/pages/${pC}?purge=true`, { method: "DELETE" });
+        out.v2PagePurge = { pageId: pC, status: rP2.status, body: await body(rP2), after: await pageState(pC) };
+        // B. attachment status surfaces
+        const pD = await mkPage("attachment");
+        const attId = await store.putFile(pD, "probe.json", "{\"probe\":true}");
+        const v2Get = async () => { const r = await conf(route`/wiki/api/v2/attachments/${attId}`); return { status: r.status, attStatus: r.ok ? (await r.json()).status : null }; };
+        const v1Trashed = async () => { const r = await conf(route`/wiki/rest/api/content/${attId}?status=trashed`); return { status: r.status, body: await body(r) }; };
+        const v2List = async () => {
+          const r = await conf(route`/wiki/api/v2/pages/${pD}/attachments?status=trashed&status=current&limit=50`);
+          return { status: r.status, found: r.ok ? ((await r.json()).results || []).some((a) => String(a.id) === String(attId)) : null };
+        };
+        out.attachment = { pageId: pD, attId, current: { v2: await v2Get(), v1Trashed: await v1Trashed(), v2List: await v2List() } };
+        const tr = await conf(route`/wiki/api/v2/attachments/${attId}`, { method: "DELETE" });
+        out.attachment.trash = tr.status;
+        out.attachment.trashed = { v2: await v2Get(), v1Trashed: await v1Trashed(), v2List: await v2List() };
+        const pu = await conf(route`/wiki/api/v2/attachments/${attId}?purge=true`, { method: "DELETE" });
+        out.attachment.purge = pu.status;
+        await new Promise((r) => setTimeout(r, 1500));
+        out.attachment.purged = { v2: await v2Get(), v1Trashed: await v1Trashed(), v2List: await v2List() };
+        // C. other v1 endpoints the current v1 spec no longer lists
+        const conv = await conf(route`/wiki/rest/api/contentbody/convert/atlas_doc_format`, { method: "POST", headers: JH, body: JSON.stringify({ value: "<p>x</p>", representation: "storage" }) });
+        out.v1ConvertSync = { status: conv.status, body: (await body(conv)).slice(0, 80) };
+        const grp = q(req, "group") || "confluence-users-wolfaenpak";
+        const gm = await conf(route`/wiki/rest/api/group/member?name=${grp}&limit=5`);
+        out.v1GroupMemberByName = { status: gm.status, body: (await body(gm)).slice(0, 80) };
+        const gp = await conf(route`/wiki/rest/api/group/picker?query=${grp}&limit=5`);
+        const gpBody = gp.ok ? await gp.json() : null;
+        const gid = gpBody?.results?.find((g) => g.name === grp)?.id || null;
+        out.v1GroupPicker = { status: gp.status, groupId: gid };
+        if (gid) {
+          const gb = await conf(route`/wiki/rest/api/group/${gid}/membersByGroupId?limit=5`);
+          out.v1MembersByGroupId = { status: gb.status, size: gb.ok ? ((await gb.json()).results || []).length : null };
+        }
+        const spaceKey = q(req, "spaceKey");
+        const actor = q(req, "actor");
+        if (spaceKey && actor) {
+          const pc = await conf(route`/wiki/rest/api/space/${spaceKey}/permission/check`, { method: "POST", headers: JH, body: JSON.stringify({ subject: { type: "user", identifier: actor }, permission: "ADMINISTER" }) });
+          out.v1SpacePermissionCheck = { status: pc.status, body: (await body(pc)).slice(0, 120) };
+        }
+        // clean up: every probe page still current goes to the trash through the door that works
+        for (const id of [pA, pB, pD]) await conf(route`/wiki/rest/api/content/${id}/pageTree`, { method: "DELETE" }).catch(() => {});
+        return json(200, { invoked: fn, result: out });
+      }
       if (fn === "runApiJob") {
         // Drive the consumer synchronously when the queue is slow (dev queues can lag minutes).
         const { runJob } = await import("./server/capsules/config-api/consumer.js");

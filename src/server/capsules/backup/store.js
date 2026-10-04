@@ -143,8 +143,12 @@ export async function createBackupPage(spaceId, environmentType) {
   try {
     await restrictToApp(pageId);
   } catch (e) {
-    // Never leave an unrestricted backup page behind.
-    await conf(route`/wiki/api/v2/pages/${pageId}`, { method: "DELETE" }).catch(() => {});
+    // Never leave an unrestricted backup page behind — and say so loudly when that fails. It holds
+    // no backup data yet (nothing is attached before the restriction), only the explanatory body.
+    const d = await deletePage(pageId).catch((err) => ({ ok: false, state: "unknown", error: err }));
+    if (!d.ok) {
+      throw new Error(`${e?.message || e}. The unrestricted page ${pageId} ("${title}") could not be removed (${d.state}); it holds no backup data — delete it in Confluence.`);
+    }
     throw e;
   }
   await conf(route`/wiki/rest/api/content/${pageId}/label`, {
@@ -213,10 +217,50 @@ export async function deleteFile(attachmentId) {
   return res.ok || res.status === 404;
 }
 
-/** Move the whole page to the trash (the "delete my backup" action). */
-export async function deletePage(pageId) {
-  const res = await conf(route`/wiki/api/v2/pages/${pageId}`, { method: "DELETE" });
-  return res.ok || res.status === 404;
+/**
+ * PURE. What a page read says about a delete: "gone" (404), "trashed", "current" or "unknown".
+ */
+export function pageDeleteState(httpStatus, body) {
+  if (httpStatus === 404) return "gone";
+  if (httpStatus >= 200 && httpStatus < 300) return body?.status === "trashed" ? "trashed" : body?.status === "current" ? "current" : "unknown";
+  return "unknown";
+}
+
+/**
+ * Move the whole page to the trash (the "delete my backup" action, and the cleanups).
+ *
+ * Measured live 2026-10-04 (dev hook `endpointProbe`, wolfaenpak), with this app's scopes:
+ *   v2 DELETE /wiki/api/v2/pages/{id}            401 "scope does not match" (needs delete:page:confluence,
+ *                                                which the manifest does not hold — adding it is a major)
+ *   v1 DELETE /wiki/rest/api/content/{id}        410 Gone (retired for Forge)
+ *   v1 DELETE /wiki/rest/api/content/{id}/pageTree  202 + a long task; the page reads "trashed" seconds later
+ * The pageTree door is in Atlassian's current v1 spec under write:confluence-content, which the app
+ * holds. A backup page has no children, so its tree is the page. Purging from the trash needs
+ * delete:page:confluence too, so the page stays in the space's trash until Confluence or a space
+ * admin empties it.
+ *
+ * Returns { ok, state, status } — `ok` only when a read AFTER the call shows the page trashed or gone.
+ * Callers must check it: before this, the v2 call failed and every caller reported success.
+ */
+export async function deletePage(pageId, { waitMs = 8000, stepMs = 1000 } = {}) {
+  const res = await conf(route`/wiki/rest/api/content/${pageId}/pageTree`, { method: "DELETE" });
+  if (res.status === 404) return { ok: true, state: "gone", status: 404 };
+  if (!res.ok) {
+    const t = await res.text().catch(() => "");
+    console.error(`[BACKUP] delete of page ${pageId} refused: ${res.status} ${t.slice(0, 200)}`);
+    return { ok: false, state: "current", status: res.status };
+  }
+  // 202: a long task. Confirm from the page itself rather than trusting the accept.
+  let state = "unknown";
+  for (let waited = 0; waited <= waitMs; waited += stepMs) {
+    if (waited) await new Promise((r) => setTimeout(r, stepMs));
+    // A plain v2 GET answers 200 with status "trashed" for a trashed page (measured, same probe).
+    const g = await conf(route`/wiki/api/v2/pages/${pageId}`);
+    state = pageDeleteState(g.status, g.ok ? await readJson(g) : null);
+    if (state === "trashed" || state === "gone") return { ok: true, state, status: res.status };
+  }
+  console.error(`[BACKUP] page ${pageId} still reads "${state}" ${waitMs} ms after the delete was accepted`);
+  return { ok: false, state, status: res.status };
 }
 
 export async function readIndex(pageId) {
