@@ -12,7 +12,7 @@ import { eq, ok, report } from "./_assert.mjs";
 // names exactly the pairs the engine enforces, and the alert profiles map to the flags.
 
 // --- the table itself ---
-eq("five groups, in outcome order (CLS-1 added Classification)", GROUPS.map((g) => g.id), ["protection", "expiry", "alerts", "classification", "advanced"]);
+eq("six groups, in outcome order (CLS-1 added Classification, 2026-10-04 Privacy and retention)", GROUPS.map((g) => g.id), ["protection", "expiry", "alerts", "classification", "privacy", "advanced"]);
 for (const c of CONTROLS) {
   ok(`${c.key} has a label`, typeof c.label === "string" && c.label.length > 0);
   ok(`${c.key} has a one-line description`, typeof c.text === "string" && c.text.length > 0 && !c.text.includes("\n"));

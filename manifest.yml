@@ -168,6 +168,11 @@ modules:
     - key: backup-fn
       handler: boot.backupConsumer
       timeoutSeconds: 900
+    # Privacy sweep (capsules/privacy): history retention + Atlassian's Personal Data Reporting
+    # API, weekly. Queued by the daily recurring-nudge trigger (no free scheduled-trigger slot).
+    - key: privacy-fn
+      handler: boot.privacyConsumer
+      timeoutSeconds: 900
 
   # Queue consumer for async realm admin scanning
   consumer:
@@ -187,6 +192,9 @@ modules:
     - key: backup-queue
       queue: backup-queue
       function: backup-fn
+    - key: privacy-queue
+      queue: privacy-queue
+      function: privacy-fn
 
   # Attachment events trigger
   trigger:

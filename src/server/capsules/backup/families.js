@@ -114,6 +114,8 @@ export const FAMILIES = Object.freeze([
   { prefix: "harness-", cls: "runtime" },
   // The backup's own bookkeeping (status, debounce flag, jobs, import staging, paused list).
   { prefix: "backup-", cls: "runtime" },
+  // The privacy sweep's status, lock and account index (capsules/privacy) — rebuilt by the next sweep.
+  { prefix: "privacy-", cls: "runtime" },
 ]);
 
 const BY_LENGTH = [...FAMILIES].sort((a, b) => b.prefix.length - a.prefix.length);

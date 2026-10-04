@@ -126,6 +126,9 @@ export const POLICY_DEFAULTS = Object.freeze({
   signSealActions: false,
   // shared/edit-cooldown.js — hours a person waits after a declined edit request (0 = none).
   editRequestCooldownHours: EDIT_COOLDOWN_HOURS_DEFAULT,
+  // capsules/privacy/retention.js — days the activity history, workflow history and read
+  // confirmations are kept; the weekly privacy sweep deletes older records (2026-10-04).
+  historyRetentionDays: 730,
   // classification/logic.js classificationActive — `=== true` → OFF (CLS-1, owner 2026-09-19):
   // no chip, no ribbon block, no modal section until a site admin turns it on.
   classificationEnabled: false,

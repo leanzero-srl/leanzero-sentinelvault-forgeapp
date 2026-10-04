@@ -7,6 +7,7 @@ import ValidationsEditor from "../../kit/ValidationsEditor";
 import LicenseBanner from "../../kit/LicenseBanner";
 import ClassificationTab from "../../kit/ClassificationTab";
 import BackupTab, { RestoreBanner } from "../../kit/BackupTab";
+import PrivacyStatus from "../../kit/PrivacyStatus";
 import WhatsNew from "../../kit/WhatsNew";
 import Dialog, { ConfirmDialog } from "../../kit/Dialog";
 import { formatDurationHours } from "../../kit/format-duration";
@@ -106,11 +107,11 @@ export const ControlRow = ({ desc, values, siteValues, onChange, children, siteD
               onChange={(e) => {
                 const n = parseInt(e.target.value, 10);
                 if (isNaN(n)) return;
-                let v = n;
-                if (desc.min !== undefined) v = Math.max(desc.min, v);
-                if (desc.max !== undefined) v = Math.min(desc.max, v);
-                set(v);
-              }} />
+                // The floor is applied on blur, not per keystroke: with a floor above one digit
+                // (Keep history for: 30) typing "365" would otherwise snap to 30 after the "3".
+                set(desc.max !== undefined ? Math.min(desc.max, n) : n);
+              }}
+              onBlur={() => { if (desc.min !== undefined && typeof val === "number" && val < desc.min) set(desc.min); }} />
             {unit && <span className="input-unit">{unit}</span>}
           </div>
         );
@@ -859,7 +860,7 @@ const GlobalPolicyEditor = () => {
                   <GroupCard
                     key={g.id}
                     group={g}
-                    extra={g.id === "advanced" && (
+                    extra={g.id === "privacy" ? <PrivacyStatus /> : g.id === "advanced" && (
                       <>
                         <div className="settings-row" data-testid="sv-row-validations-link">
                           <div className="settings-row-info">

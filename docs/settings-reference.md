@@ -56,6 +56,14 @@ Stored in Forge KVS under key: `admin-settings-global`
 
 The Classification tab also holds the levels themselves (KVS `classification-levels`; defaults Public 1, Internal 2, Confidential 3, Restricted 4 — rank 1 is least sensitive), the optional import from a JSM Assets object type (run as the signed-in admin, read-only), and a default level per space. Lowering or clearing a level needs a reason (≤ 300 characters), recorded as `classification.page-set` / `classification.space-default-set` in the activity log.
 
+### Privacy and retention
+
+| Setting | Code key | Type | Default | Description |
+|---------|----------|------|---------|-------------|
+| Keep history for | `historyRetentionDays` | Integer (days) 30–3650 | 730 | Activity history (`activity-page-`, `activity-space-`, `activity-site-`), workflow history (`workflow-log-`) and read confirmations (`read-ack-`) older than this are deleted by the weekly privacy sweep, including records stored before the setting existed. A reader whose confirmation is deleted is asked to confirm again. Backup generations taken before the sweep keep their copy until they age out of the 10 kept generations. |
+
+The group also shows the last sweep and a "Run the check now" button (resolver `privacy-run-now`, site admins; REST op `privacy-sweep`). The sweep runs weekly, queued by the daily recurring-nudge trigger.
+
 ### Advanced
 
 | Setting | Code key | Type | Default | Description |
