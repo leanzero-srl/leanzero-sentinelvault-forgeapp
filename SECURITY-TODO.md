@@ -7,6 +7,12 @@ submission) is visibility-only: no enforcement, auto-closes within 30 days, and 
 build updates it. lodash 4.18.1 has shipped in 4.1.0 and 4.2.0 (both listed). 2026-09-14: the remaining
 within-major fixes were taken (npm audit 15 → 8; see commit 80e434c); the 8 left are the @forge/react 11→12
 major, which needs its own live-verified pass before the next major submission is scanned as Unpublished again.
+2026-10-04: closed differently. `@forge/react` and `@forge/ui` (UI Kit 1, retired by Atlassian) were never
+imported by any source file, so both were removed rather than bumped; @forge/api 6→8, bridge 5→7, kvs 1→2,
+events 2→3, llm 0.6→1, resolver 1→2 (their major notes touch nothing this app calls: api 8 drops the
+`storage` module, which the app never imported; api 7's webtrigger change is query/delete, the app only
+calls `getUrl`). Overrides: fast-uri ^3.1.8, brace-expansion@1 ^1.1.21. `npm audit --omit=dev` and
+`npm audit` both report 0.
 
 ## ✅ SV-SEC-2 — dead resolvers that still answered — **CLOSED 2026-09-05**
 
