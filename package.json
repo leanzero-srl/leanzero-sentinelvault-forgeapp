@@ -13,14 +13,12 @@
     "test": "node test/json-salvage.test.mjs && node test/rules-engine.test.mjs && node test/doc-surgery.test.mjs && node test/validations-logic.test.mjs && node test/workflow-engine.test.mjs && node test/adf-perf.test.mjs && node test/sealing-logic.test.mjs && node test/pagination.test.mjs && node test/format-duration.test.mjs && node test/upload-limits.test.mjs && node test/license.test.mjs && node test/media-restore.test.mjs && node test/media-presentation.test.mjs && node test/kvs-ttl.test.mjs && node test/activity-log.test.mjs && node test/content-access.test.mjs && node test/lapse-policy.test.mjs && node test/notice-dedup.test.mjs && node test/activity-format.test.mjs && node test/page-status.test.mjs && node test/editreq-index.test.mjs && node test/my-work-index.test.mjs && node test/label-sync.test.mjs && node test/read-acks.test.mjs && node test/totp.test.mjs && node test/workflow-definitions.test.mjs && node test/section-retry.test.mjs && node test/release-reason.test.mjs && node test/classification.test.mjs && node test/notice-policy.test.mjs && node test/byline.test.mjs && node test/page-details.test.mjs && node test/ribbon-rules.test.mjs && node test/settings-schema.test.mjs && node test/action-menu.test.mjs && node test/config-api.test.mjs && node test/edit-cooldown.test.mjs && node test/classification-assets.test.mjs && node test/section-range.test.mjs && node test/approval-notice.test.mjs && node test/workflow-status.test.mjs && node test/seal-authority.test.mjs && node test/status-language.test.mjs && node test/notice-kinds.test.mjs && node test/workflow-rule.test.mjs && node test/my-approval-requests.test.mjs && node test/workflow-bundle.test.mjs && node test/validation-rule-config.test.mjs && node test/sealed-groups.test.mjs && node test/activity-filter.test.mjs && node test/mention-adf.test.mjs && node test/restored-title.test.mjs && node test/visible-placement.test.mjs && node test/config-api-wiring.test.mjs && node test/backup-families.test.mjs && node test/backup-snapshot.test.mjs && node test/backup-hook.test.mjs && node test/release-notes.test.mjs"
   },
   "dependencies": {
-    "@forge/api": "^6.1.1",
-    "@forge/bridge": "^5.5.0",
-    "@forge/events": "^2.0.17",
-    "@forge/kvs": "^1.2.6",
-    "@forge/llm": "^0.6.7",
-    "@forge/react": "^11.3.0",
-    "@forge/resolver": "^1.7.0",
-    "@forge/ui": "^1.11.4",
+    "@forge/api": "^8.2.0",
+    "@forge/bridge": "^7.1.0",
+    "@forge/events": "^3.0.7",
+    "@forge/kvs": "^2.0.7",
+    "@forge/llm": "^1.0.7",
+    "@forge/resolver": "^2.0.0",
     "form-data": "^4.0.6",
     "qrcode": "^1.5.4",
     "react": "^19.1.1",
@@ -31,10 +29,10 @@
     "serialize-javascript": "^7.0.3",
     "lodash": "^4.18.1",
     "form-data": "^4.0.6",
-    "brace-expansion@1": "^1.1.18",
+    "brace-expansion@1": "^1.1.21",
     "brace-expansion@5": "^5.0.9",
     "undici": "^7.29.0",
-    "fast-uri": "^3.1.5",
+    "fast-uri": "^3.1.8",
     "markdown-it": "^14.3.0"
   },
   "devDependencies": {
