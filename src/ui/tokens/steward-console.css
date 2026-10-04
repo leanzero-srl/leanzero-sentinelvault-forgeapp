@@ -170,6 +170,42 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   border-radius: 1px;
 }
 
+/* Header with the Documentation / Support links on the right (2026-10-04). */
+.admin-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.sv-help-links {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.sv-help-link {
+  display: inline-flex;
+  align-items: center;
+  padding: 7px 14px;
+  border-radius: 6px;
+  border: 2px solid var(--sv-interactive-primary);
+  color: var(--sv-interactive-primary);
+  background: var(--sv-bg-primary);
+  font-size: 13px;
+  font-weight: 700;
+  text-decoration: none;
+  line-height: 1.2;
+}
+.sv-help-link:first-child {
+  background: var(--sv-interactive-primary);
+  color: var(--sv-text-inverse);
+}
+.sv-help-link:hover { background: var(--sv-interactive-primary-hover); border-color: var(--sv-interactive-primary-hover); color: var(--sv-text-inverse); }
+.sv-help-link:focus-visible { outline: 3px solid var(--sv-interactive-primary); outline-offset: 2px; }
+@media (max-width: 640px) {
+  .admin-header-row { padding: 24px 16px 20px; }
+}
+
 .admin-title {
   color: var(--sv-text-primary);
   font-size: 28px;
