@@ -29,7 +29,7 @@ import { kvs, MetadataField, WhereConditions } from "@forge/kvs";
 import { Queue } from "@forge/events";
 import { asApp, route, privacy } from "@forge/api";
 import { readEffective } from "../policies/settings-schema.js";
-import { isPastRetention, retainedFamily } from "./retention.js";
+import { isPastRetention, retainedFamily, effectiveRetentionDays } from "./retention.js";
 import {
   extractAccountIds, rewriteAccount, removesFromLists, keyNamesAccount, holdsPageContent, stripLegacyEmail, stripRosterContact, planReport, batches,
 } from "./accounts.js";
@@ -344,7 +344,9 @@ export async function runPrivacySweep({ reason = "manual", nowMs = Date.now(), r
   let touched = 0;
   try {
     const settings = await kvs.get("admin-settings-global").catch(() => null);
-    const days = readEffective("historyRetentionDays", settings?.historyRetentionDays);
+    const days = effectiveRetentionDays(
+      readEffective("historyRetentionEnabled", settings?.historyRetentionEnabled),
+      readEffective("historyRetentionDays", settings?.historyRetentionDays));
     summary.retentionDays = days;
     const migrations = (await kvs.get(MIGRATIONS_KEY).catch(() => null)) || {};
     const stripEmail = !migrations.sealEmailV1;

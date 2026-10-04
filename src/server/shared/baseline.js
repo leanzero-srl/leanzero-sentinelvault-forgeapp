@@ -129,6 +129,8 @@ export const POLICY_DEFAULTS = Object.freeze({
   // capsules/privacy/retention.js — days the activity history, workflow history and read
   // confirmations are kept; the weekly privacy sweep deletes older records (2026-10-04).
   historyRetentionDays: 730,
+  // `=== true` → OFF: nothing is deleted for age until a site admin turns retention on.
+  historyRetentionEnabled: false,
   // classification/logic.js classificationActive — `=== true` → OFF (CLS-1, owner 2026-09-19):
   // no chip, no ribbon block, no modal section until a site admin turns it on.
   classificationEnabled: false,
