@@ -140,7 +140,11 @@ export async function deleteAllBackups(actor) {
         : `The backup page${failed.length > 1 ? "s" : ""} ${failed.map((o) => o.pageId).join(", ")} could not be removed (${failed.map((o) => o.state || o.error).join(", ")}). Nothing was deleted; try again.` };
   }
   await kvs.delete(SETTINGS_KEY).catch(() => {});
-  await kvs.delete(STATUS_KEY).catch(() => {});
+  // Keep a status row that SAYS the backup was deleted on purpose (2026-10-04, review): with no
+  // row at all the hourly check read "never backed up" and took a fresh backup on a NEW page
+  // within the hour, undoing the delete an admin makes before uninstalling. Only a change (the
+  // save hook) or Back up now brings a backup back, as the delete dialog says.
+  await kvs.set(STATUS_KEY, { deletedAt: nowIso(), deletedBy: actor || null }).catch(() => {});
   return { ok: true, deleted: done.length, purged, trashed: true };
 }
 
@@ -202,12 +206,25 @@ export async function backupSweep(context) {
     if (!isConfluenceInstall(context)) { console.log(`[BACKUP] sweep skipped in ${context?.installContext}`); return; }
     const status = (await kvs.get(STATUS_KEY)) || {};
     const dirty = await kvs.get(DIRTY_KEY);
-    const last = Date.parse(status.lastCheckAt || status.lastBackup?.createdAt || 0) || 0;
-    if (!dirty && last && Date.now() - last < STALE_MS) return;
-    await new Queue({ key: BACKUP_QUEUE_KEY }).push({ body: { kind: "backup", reason: dirty ? "save" : "schedule" } });
+    const reason = sweepReason(status, !!dirty, Date.now());
+    if (!reason) return;
+    await new Queue({ key: BACKUP_QUEUE_KEY }).push({ body: { kind: "backup", reason } });
   } catch (e) {
     console.error("[BACKUP] sweep failed:", e);
   }
+}
+
+/**
+ * PURE. Should the hourly check queue a backup, and why: "save" (a change is waiting),
+ * "schedule" (none in the last 24 h) or null. A backup DELETED on purpose (`deletedAt`) is not
+ * retaken on schedule — only a change or Back up now brings it back.
+ */
+export function sweepReason(status, dirty, nowMs) {
+  if (dirty) return "save";
+  if (status?.deletedAt) return null;
+  const last = Date.parse(status?.lastCheckAt || status?.lastBackup?.createdAt || "");
+  if (Number.isFinite(last) && nowMs - last < STALE_MS) return null;
+  return "schedule";
 }
 
 /** PURE. Does this invocation belong to the Confluence installation? Unknown context → yes. */

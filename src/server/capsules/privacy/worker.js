@@ -350,7 +350,7 @@ export async function runPrivacySweep({ reason = "manual", nowMs = Date.now(), r
     summary.retentionDays = days;
     const migrations = (await kvs.get(MIGRATIONS_KEY).catch(() => null)) || {};
     const stripEmail = !migrations.sealEmailV1;
-    const stripRoster = !migrations.rosterEmailV1;
+    const stripRoster = !migrations.rosterEmailV2; // V2 (2026-10-04): also approver email hints
     const done = {}; // migration flags this run completed
 
     const seen = new Set();
@@ -406,7 +406,7 @@ export async function runPrivacySweep({ reason = "manual", nowMs = Date.now(), r
       summary.migration = { emailStripped, rostersStripped };
     }
     if (stripEmail) done.sealEmailV1 = nowIso();
-    if (stripRoster) done.rosterEmailV1 = nowIso();
+    if (stripRoster) done.rosterEmailV2 = nowIso();
     if (Object.keys(done).length) await kvs.set(MIGRATIONS_KEY, { ...migrations, ...done });
 
     // Report what is due (≤ once per 7 days per account), 90 at a time.

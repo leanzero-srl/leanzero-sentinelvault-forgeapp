@@ -89,7 +89,7 @@ export function extractAccountIds(key, value) {
 export function pairedFields(field) {
   const f = String(field || "");
   if (f === "accountId" || f === "id" || f === "") {
-    return { names: ["name", "displayName", "publicName"], contact: ["email", "emailAddress", "avatarUrl", "profilePicture", "avatar"] };
+    return { names: ["name", "displayName", "publicName"], contact: ["email", "emailAddress", "avatarUrl", "profilePicture", "avatar", "hint"] }; // hint: the approver picker's namesake hint
   }
   const stem = f.replace(/(AccountId|Id)$/, "");
   return {
@@ -172,6 +172,7 @@ export function stripLegacyEmail(key, value) {
  * reduced. Mirrors policies/settings-schema.js minimiseRoster, which guards every new write.
  */
 export function stripRosterContact(key, value) {
+  if (String(key || "").startsWith("workflow-settings-")) return stripApproverEmailHints(value);
   if (!String(key || "").startsWith("admin-settings-") || !value || typeof value !== "object" || !Array.isArray(value.adminUsers)) return { value, changed: false };
   let changed = false;
   const adminUsers = value.adminUsers.map((u) => {
@@ -182,6 +183,22 @@ export function stripRosterContact(key, value) {
     return { accountId: u.accountId, displayName: typeof u.displayName === "string" ? u.displayName : null };
   });
   return changed ? { value: { ...value, adminUsers }, changed } : { value, changed: false };
+}
+
+/**
+ * PURE. Approver lists (`workflow-settings-*` -> approval.approvers[].hint) saved before
+ * 2026-10-04 may carry the approver's email as the namesake hint; it is dropped (the entry keeps
+ * its id and name). Mirrors workflow/logic.js, which drops an email hint on every new save.
+ */
+export function stripApproverEmailHints(value) {
+  const list = value?.approval?.approvers;
+  if (!Array.isArray(list) || !list.some((a) => typeof a?.hint === "string" && a.hint.includes("@"))) return { value, changed: false };
+  const approvers = list.map((a) => {
+    if (!(typeof a?.hint === "string" && a.hint.includes("@"))) return a;
+    const { hint: _h, ...rest } = a;
+    return rest;
+  });
+  return { value: { ...value, approval: { ...value.approval, approvers } }, changed: true };
 }
 
 /**

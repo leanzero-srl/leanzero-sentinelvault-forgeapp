@@ -97,7 +97,8 @@ const UserPicker = ({ selected, onChange }) => {
     return () => { cancelled = true; clearTimeout(t); };
   }, [query]);
   const add = (u) => {
-    if (!selected.find((s) => s.id === u.accountId)) onChange([...selected, { type: "user", id: u.accountId, name: u.name, hint: personHint(u) }]);
+    // The stored hint never carries the email (the server drops one too): the picker shows it, the app does not keep it.
+    if (!selected.find((s) => s.id === u.accountId)) onChange([...selected, { type: "user", id: u.accountId, name: u.name, hint: personHint({ ...u, email: null }) }]);
     setQuery(""); setResults([]); setOpen(false);
   };
   const remove = (id) => onChange(selected.filter((s) => s.id !== id));

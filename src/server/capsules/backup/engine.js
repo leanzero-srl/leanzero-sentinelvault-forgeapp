@@ -170,7 +170,8 @@ export async function runBackup({ reason = "manual", actor = null } = {}) {
     if (newest && newest.fingerprint === fingerprint && newest.environmentType === info.environmentType) {
       await store.writeIndex(where.pageId, { ...index, installations, lastCheckAt: startedAt });
       // A fresh install (after a restore) has no status row yet: the newest generation IS its last backup.
-      const prev = (await kvs.get(STATUS_KEY)) || {};
+      // A recorded backup ends the "deleted on purpose" state (worker.js sweepReason).
+      const { deletedAt: _d, deletedBy: _b, ...prev } = (await kvs.get(STATUS_KEY)) || {};
       const lastBackup = { ...newest, ...(prev.lastBackup?.generationId === newest.generationId ? prev.lastBackup : {}), pageId: where.pageId, spaceKey: where.spaceKey, spaceName: where.spaceName };
       await kvs.set(STATUS_KEY, { ...prev, lastBackup, lastCheckAt: startedAt, lastError: null });
       return { ok: true, unchanged: true, generationId: newest.generationId, keys, bytes: newest.bytes };
@@ -196,7 +197,8 @@ export async function runBackup({ reason = "manual", actor = null } = {}) {
     await store.writeIndex(where.pageId, { ...index, format: FORMAT, generations, installations: pruneInstallations(installations, allGenerations, info.installationId), lastCheckAt: startedAt });
     await collectGarbage(where.pageId, generations, existing).catch((e) => console.warn(`[BACKUP] gc: ${errText(e)}`));
 
-    const status = { ...((await kvs.get(STATUS_KEY)) || {}), lastBackup: { ...row, pageId: where.pageId, spaceKey: where.spaceKey, spaceName: where.spaceName, uploaded }, lastCheckAt: startedAt, lastError: null };
+    const { deletedAt: _d, deletedBy: _b, ...prevStatus } = (await kvs.get(STATUS_KEY)) || {};
+    const status = { ...prevStatus, lastBackup: { ...row, pageId: where.pageId, spaceKey: where.spaceKey, spaceName: where.spaceName, uploaded }, lastCheckAt: startedAt, lastError: null };
     await kvs.set(STATUS_KEY, status);
     console.log(`[BACKUP] generation ${generationId} reason=${reason} keys=${keys} bytes=${bytes} chunks=${chunks.length} uploaded=${uploaded}`);
     return { ok: true, unchanged: false, generationId, keys, bytes, chunks: chunks.length, uploaded };

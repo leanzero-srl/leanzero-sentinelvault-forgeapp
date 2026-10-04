@@ -35,4 +35,18 @@ ok("the job empties then trashes each page", /store\.emptyAndTrashBackupPage\(b\
 ok("a surviving page fails the job and keeps the location row", /if \(failed\.length\) \{\s*return \{ ok: false/.test(worker) && worker.indexOf("if (failed.length) {") < worker.indexOf("await kvs.delete(SETTINGS_KEY)"));
 ok("relocate no longer swallows the old page's delete", !/store\.deletePage\(before\.pageId\)\.catch\(\(\) => \{\}\)/.test(worker));
 ok("relocate empties the old page and reports it", /store\.emptyAndTrashBackupPage\(before\.pageId\)/.test(worker) && /oldPage = \{ pageId: before\.pageId, removed: !!d\.ok/.test(worker));
+// The hourly check must not undo a delete (review 2026-10-04): with no status row it used to
+// queue a "schedule" backup, and ensureBackupPage created a NEW page within the hour.
+const { sweepReason } = await import("../src/server/capsules/backup/worker.js");
+const NOW = Date.parse("2026-10-04T12:00:00Z");
+eq("sweep: deleted on purpose, nothing changed -> no backup", sweepReason({ deletedAt: "2026-10-04T11:00:00Z" }, false, NOW), null);
+eq("sweep: deleted, then a change -> backup (the dialog's promise)", sweepReason({ deletedAt: "2026-10-04T11:00:00Z" }, true, NOW), "save");
+eq("sweep: deleted long ago, still nothing changed -> no backup", sweepReason({ deletedAt: "2026-01-01T00:00:00Z" }, false, NOW), null);
+eq("sweep: never backed up (fresh install) -> schedule", sweepReason({}, false, NOW), "schedule");
+eq("sweep: last check 2 h ago -> nothing", sweepReason({ lastCheckAt: "2026-10-04T10:00:00Z" }, false, NOW), null);
+eq("sweep: last check 25 h ago -> schedule", sweepReason({ lastCheckAt: "2026-10-03T11:00:00Z" }, false, NOW), "schedule");
+eq("sweep: dirty -> save", sweepReason({ lastCheckAt: "2026-10-04T11:59:00Z" }, true, NOW), "save");
+ok("delete leaves a deletedAt status row instead of no row", /kvs\.set\(STATUS_KEY, \{ deletedAt: nowIso\(\)/.test(worker) && !/kvs\.delete\(STATUS_KEY\)/.test(worker));
+const engine = read("engine.js");
+ok("a recorded backup clears deletedAt (both status writes that set lastBackup)", (engine.match(/const \{ deletedAt: _d, deletedBy: _b, \.\.\.prev(Status)? \} = \(await kvs\.get\(STATUS_KEY\)\) \|\| \{\};/g) || []).length === 2);
 report("backup-delete");
