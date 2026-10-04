@@ -12,6 +12,16 @@ const note = (n) => Object.freeze({ ...n, changes: Object.freeze([...(n.changes 
 
 export const RELEASE_NOTES = Object.freeze([
   note({
+    version: "6.11.0",
+    date: "2026-10-04",
+    headline: "Email addresses brought back by a restore are cleaned again",
+    changes: [
+      "Changed: the weekly personal-data check removes stored email addresses from seal records and approver lists every week, not only the first time, so addresses that a restore or import of an older backup brought back are cleaned too.",
+    ],
+    fixes: [],
+    action: "Nothing to do.",
+  }),
+  note({
     version: "6.10.0",
     date: "2026-10-04",
     headline: "Viewing a page no longer triggers a backup, so a deleted backup stays deleted",

@@ -227,6 +227,7 @@ ok("401/403 from report-accounts is recorded as not-permitted", worker.includes(
   eq("hint: erasure clears the hint paired with an id", pf("id").contact.includes("hint"), true);
   const logic = readFileSync(resolve(here, "../src/server/capsules/workflow/logic.js"), "utf8");
   ok("hint: a new save drops an email hint", /a\.hint && !a\.hint\.includes\("@"\)/.test(logic));
-  ok("hint: the migration flag moved to V2 so sites that ran V1 strip hints too", worker.includes("migrations.rosterEmailV2") && !worker.includes("rosterEmailV1"));
+  ok("hint: no stale V1 flag gates the roster strip", !worker.includes("rosterEmailV1"));
+  ok("the email strips run on every sweep (a restored backup brings addresses back)", worker.includes("const stripEmail = true;") && worker.includes("const stripRoster = true;"));
 }
 report("privacy-accounts");

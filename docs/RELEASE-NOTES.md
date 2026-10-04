@@ -2,6 +2,14 @@
 
 GENERATED from `src/server/shared/release-notes.js` by `scripts/render-release-notes.mjs`. Do not edit.
 
+## 6.11.0 — 2026-10-04
+
+**Email addresses brought back by a restore are cleaned again**
+
+- Changed: the weekly personal-data check removes stored email addresses from seal records and approver lists every week, not only the first time, so addresses that a restore or import of an older backup brought back are cleaned too.
+
+**Do this:** Nothing to do.
+
 ## 6.10.0 — 2026-10-04
 
 **Viewing a page no longer triggers a backup, so a deleted backup stays deleted**
