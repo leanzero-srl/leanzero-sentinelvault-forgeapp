@@ -21,8 +21,9 @@ export const OUTPUT = Object.freeze({
   notAllowed: "not-allowed",
 });
 
-// Pillar 12: the backup ops (capsules/backup/rest.js) ride the same door, admin role only.
-export const BACKUP_OPS = Object.freeze(["backup", "rediscover", "restore", "export", "import", "resume-automations", "backup-location"]);
+// Pillar 12: the backup ops (capsules/backup/rest.js) ride the same door, admin role only; so
+// does `privacy-sweep` (2026-10-04, capsules/privacy: retention + personal data reporting).
+export const BACKUP_OPS = Object.freeze(["backup", "rediscover", "restore", "export", "import", "resume-automations", "backup-location", "privacy-sweep"]);
 export const OPS = Object.freeze(["bundle", "dry-run", "whoami", ...BACKUP_OPS]);
 export const ACTIVE_STATUSES = Object.freeze(["queued", "running"]);
 export const JOB_TTL_MS = 7 * 86400000;
