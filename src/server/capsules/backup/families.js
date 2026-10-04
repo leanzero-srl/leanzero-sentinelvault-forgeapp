@@ -70,8 +70,11 @@ export const FAMILIES = Object.freeze([
   { prefix: "activity-site-", cls: "config", group: "history", label: "Activity history (site)" },
 
   // ── secrets: never leave KVS ────────────────────────────────────────────────────────────
+  // sig-secret- / sig-enroll- live in the KVS SECRET namespace since 2026-10-04 (a plain row is
+  // a pre-migration leftover); sig-device- is the plain "has a device" marker the scan can see.
   { prefix: "sig-secret-", cls: "secret", secretNote: "authenticator" },
   { prefix: "sig-enroll-", cls: "secret", secretNote: "authenticator" },
+  { prefix: "sig-device-", cls: "secret", secretNote: "authenticator" },
   { prefix: "sig-last-", cls: "secret" },
   { prefix: "sig-fail-", cls: "secret" },
   { prefix: "api-tokens", cls: "secret", secretNote: "api-tokens" },
