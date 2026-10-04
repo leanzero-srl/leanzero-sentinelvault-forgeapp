@@ -263,6 +263,27 @@ export async function deletePage(pageId, { waitMs = 8000, stepMs = 1000 } = {}) 
   return { ok: false, state, status: res.status };
 }
 
+/**
+ * Remove a backup page for good as far as this app's scopes allow: purge every attachment (the
+ * backup data — delete:attachment:confluence, purge measured 204), delete the index property,
+ * then move the emptied page to the trash (deletePage). Measured 2026-10-04: a trashed page
+ * restricted to the app answers 404 to a site admin and is not in the space-trash listing they
+ * get, so nobody could purge what it held; emptied first, the trash keeps only the page's
+ * explanatory text. Returns deletePage's { ok, state } plus { purged, failed }; ok is false when
+ * any file could not be removed (the page is then NOT trashed, so the backup stays usable).
+ */
+export async function emptyAndTrashBackupPage(pageId) {
+  let purged = 0;
+  let failed = 0;
+  for (const a of await listAttachments(pageId)) {
+    if (await deleteFile(a.id).catch(() => false)) purged += 1; else failed += 1;
+  }
+  if (failed) return { ok: false, state: "current", status: null, purged, failed };
+  const idx = await readIndex(pageId).catch(() => null);
+  if (idx?.id) await conf(route`/wiki/api/v2/pages/${pageId}/properties/${idx.id}`, { method: "DELETE" }).catch(() => {});
+  return { ...(await deletePage(pageId)), purged, failed };
+}
+
 export async function readIndex(pageId) {
   const res = await conf(route`/wiki/api/v2/pages/${pageId}/properties?key=${INDEX_PROPERTY}`);
   if (!res.ok) return null;

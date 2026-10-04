@@ -7,7 +7,7 @@ import { kvs } from "@forge/kvs";
 import { Queue } from "@forge/events";
 import { recordActivity } from "../../infra/activity-log.js";
 import {
-  runBackup, runRestore, importExport, assembleStagedImport, ensureBackupPage, readJob, writeJob,
+  runBackup, runRestore, importExport, assembleStagedImport, ensureBackupPage, readJob, writeJob, discoverBackups,
   STATUS_KEY, SETTINGS_KEY, appInfo,
 } from "./engine.js";
 import * as store from "./store.js";
@@ -101,16 +101,42 @@ async function executeJobUnleased(job) {
       // otherwise keep a full copy of the setup that nobody knows is there.
       let oldPage = null;
       if (r.ok && before?.pageId && before.pageId !== where.pageId) {
-        const d = await store.deletePage(before.pageId).catch((e) => ({ ok: false, state: "unknown", error: errText(e) }));
+        const d = await store.emptyAndTrashBackupPage(before.pageId).catch((e) => ({ ok: false, state: "unknown", error: errText(e) }));
         oldPage = { pageId: before.pageId, removed: !!d.ok, state: d.state || null };
         if (!d.ok) console.error(`[BACKUP] relocate: the old backup page ${before.pageId} could not be moved to the trash (${d.state || d.error})`);
       }
       await audit("backup.location-set", job.actor, { from: before?.spaceKey || null, to: where.spaceKey, pageId: where.pageId, ...(oldPage && !oldPage.removed ? { oldPageLeft: oldPage.pageId } : {}) });
       return { ...r, spaceKey: where.spaceKey, pageId: where.pageId, ...(oldPage ? { oldPage } : {}) };
     }
+    case "delete":
+      return deleteAllBackups(job.actor);
     default:
       throw new Error(`Unknown backup job ${job.kind}`);
   }
+}
+
+/**
+ * "Delete the backup": every backup page of THIS environment the app can open is emptied (files
+ * purged, index removed) and moved to the trash (store.emptyAndTrashBackupPage). Fails LOUDLY
+ * (2026-10-04): it used to report success while every delete was refused. The location and status
+ * rows are forgotten only once nothing of this environment's backup is left.
+ */
+export async function deleteAllBackups(actor) {
+  const d = await discoverBackups();
+  const mine = d.backups.filter((b) => b.sameEnvironment && b.restricted);
+  const outcomes = [];
+  for (const b of mine) outcomes.push({ pageId: b.pageId, ...(await store.emptyAndTrashBackupPage(b.pageId).catch((e) => ({ ok: false, state: "unknown", error: errText(e) }))) });
+  const failed = outcomes.filter((o) => !o.ok);
+  const done = outcomes.filter((o) => o.ok).map((o) => o.pageId);
+  const purged = outcomes.reduce((n, o) => n + (o.purged || 0), 0);
+  if (done.length) await audit("backup.deleted", actor, { pages: done, purged, ...(failed.length ? { failed: failed.map((o) => o.pageId) } : {}) });
+  if (failed.length) {
+    return { ok: false, deleted: done.length, purged, failedPages: failed.map((o) => o.pageId),
+      reason: `The backup page${failed.length > 1 ? "s" : ""} ${failed.map((o) => o.pageId).join(", ")} could not be removed (${failed.map((o) => (o.failed ? `${o.failed} file(s) refused` : o.state || o.error)).join(", ")}). The backup is unchanged; try again.` };
+  }
+  await kvs.delete(SETTINGS_KEY).catch(() => {});
+  await kvs.delete(STATUS_KEY).catch(() => {});
+  return { ok: true, deleted: done.length, purged, trashed: true };
 }
 
 async function copyGenerations(fromPageId, toPageId) {

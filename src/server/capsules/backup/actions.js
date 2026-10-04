@@ -160,23 +160,12 @@ const setLocation = async (req) => {
 
 const deleteBackup = async (req) => {
   if (!(await siteAdmin(req))) return DENY;
+  // A JOB since 2026-10-04: emptying the page (every backup file purged before the page goes to
+  // the trash) can outlast a resolver's 25 s. The worker (executeJob "delete") does the work and
+  // fails loudly; the tab polls the job like Move.
   try {
-    const d = await discoverBackups();
-    const mine = d.backups.filter((b) => b.sameEnvironment && b.restricted);
-    const outcomes = [];
-    for (const b of mine) outcomes.push({ pageId: b.pageId, ...(await store.deletePage(b.pageId)) });
-    const failed = outcomes.filter((o) => !o.ok);
-    const done = outcomes.filter((o) => o.ok).map((o) => o.pageId);
-    if (done.length) await audit("backup.deleted", req.context.accountId, { pages: done, ...(failed.length ? { failed: failed.map((o) => o.pageId) } : {}) });
-    // Fail LOUDLY (2026-10-04): this used to report success while every delete was refused. The
-    // location and status rows are only forgotten once nothing of this environment's backup is left.
-    if (failed.length) {
-      return { success: false, deleted: done.length, failedPages: failed.map((o) => o.pageId),
-        reason: `The backup page${failed.length > 1 ? "s" : ""} ${failed.map((o) => o.pageId).join(", ")} could not be moved to the trash (Confluence answered ${failed.map((o) => o.status).join(", ")}). Nothing else was changed; try again.` };
-    }
-    await kvs.delete(SETTINGS_KEY).catch(() => {});
-    await kvs.delete(STATUS_KEY).catch(() => {});
-    return { success: true, deleted: done.length, trashed: true };
+    const job = await startJob("delete", {}, req.context.accountId);
+    return { success: true, jobId: job.id };
   } catch (e) { return fail(e); }
 };
 
