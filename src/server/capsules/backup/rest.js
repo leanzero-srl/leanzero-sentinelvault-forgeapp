@@ -11,6 +11,7 @@
  *   import              { pageId, attachmentId, restore? }       import an export file attached to a page you can read
  *   resume-automations  { ids? }                                 turn paused automations back on
  *   backup-location     { spaceKey }                             move the backup page to another space
+ *   privacy-sweep       {}                                       run the privacy sweep now (retention + personal data)
  * Every op also takes `receiptPageId` (a page the minter can edit): the receipt, with these
  * details, is mirrored onto it as the content property `sentinel-vault-receipt`.
  */
@@ -86,6 +87,13 @@ export async function runBackupOp(op, body, accountId) {
       if (!s) return { status: "refused", reason: `Space ${v.spaceKey} was not found, or the app cannot see it.` };
       const r = await executeJob({ id: "rest", kind: "relocate", actor: accountId, payload: { spaceKey: s.spaceKey } });
       return { status: r.ok === false ? "failed" : "done", spaceKey: r.spaceKey, pageId: r.pageId, generationId: r.generationId };
+    }
+    case "privacy-sweep": {
+      // Runs here, in the config-api consumer (900 s), so the receipt carries the summary.
+      const { runPrivacySweep } = await import("../privacy/worker.js");
+      const r = await runPrivacySweep({ reason: "rest" });
+      if (r.ok === false && r.reason === "running") return { status: "refused", reason: "A privacy sweep is already running — try again in a few minutes." };
+      return { status: r.ok ? "done" : "failed", sweep: r };
     }
     default:
       return { status: "refused", reason: `Unknown op ${op}` };

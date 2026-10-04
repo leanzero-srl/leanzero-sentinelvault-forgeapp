@@ -16,6 +16,7 @@ import { actions as classificationActions } from "./capsules/classification/acti
 import { actions as pageDetailsActions } from "./capsules/page-details/actions.js";
 import { actions as configApiActions } from "./capsules/config-api/actions.js";
 import { actions as backupActions } from "./capsules/backup/actions.js";
+import { actions as privacyActions } from "./capsules/privacy/actions.js";
 import { WRITE_ACTIONS, withBackupHook } from "./capsules/backup/hook.js";
 import { CONFIG_WRITER_KEYS, scopeOfConfigWrite, refreshConfigMirror } from "./capsules/config-api/mirror.js";
 import { SIGNED_SEAL_ACTION_KEYS, signSealActionsOn } from "./shared/seal-signature.js";
@@ -41,6 +42,7 @@ export const allActions = [
   ...pageDetailsActions,
   ...configApiActions,
   ...backupActions,
+  ...privacyActions,
 ];
 
 // One home for "a config write refreshes the Confluence-side mirror": every UI save of site or

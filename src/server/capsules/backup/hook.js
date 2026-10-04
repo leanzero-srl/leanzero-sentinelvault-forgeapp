@@ -60,6 +60,8 @@ export const READ_ACTIONS = Object.freeze([
   "backup-status", "backup-discover", "backup-now", "backup-preview", "backup-restore", "backup-decline", "backup-job", "backup-export",
   "backup-export-part", "backup-import-part", "backup-import-commit", "backup-set-location", "backup-delete",
   "backup-resume-automations", "backup-history",
+  // the privacy sweep's doors: the sweep itself schedules a backup when it deleted anything
+  "privacy-status", "privacy-run-now",
 ]);
 
 /**

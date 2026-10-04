@@ -22,6 +22,7 @@ export const GROUPS = Object.freeze([
   { id: "expiry", name: "Expiry", text: "How long a seal lasts and what happens when it runs out." },
   { id: "alerts", name: "Alerts", text: "Who hears about it, and how." },
   { id: "classification", name: "Classification", text: "Whether pages carry a classification level at all." },
+  { id: "privacy", name: "Privacy and retention", text: "How long history that names people is kept, and the weekly personal-data check." },
   { id: "advanced", name: "Advanced", text: "Panel insertion, content rules, AI review and the rarely-used switches." },
 ]);
 
@@ -127,6 +128,12 @@ export const CONTROLS = Object.freeze([
     label: "Classification levels",
     text: "Every page carries a classification level (Public, Internal, Confidential, Restricted…), shown under its title and in the banner at the top of the page — “Unclassified” until a space default or the page itself sets one. Off: nothing is shown and nothing is enforced; stored levels and defaults are kept for when it is turned on again. Confluence's own classification, where the site has it, stays as Confluence shows it.",
     default: POLICY_DEFAULTS.classificationEnabled },
+
+  // ── Privacy and retention (2026-10-04) ───────────────────────────────────────────────────
+  { key: "historyRetentionDays", scope: "global", group: "privacy", kind: "days", min: 30, max: 3650,
+    label: "Keep history for",
+    text: "Activity history, workflow history and read confirmations older than this are deleted by a weekly check, including records already stored. A reader whose confirmation is deleted is asked to confirm again.",
+    default: POLICY_DEFAULTS.historyRetentionDays },
 
   // ── Advanced ──────────────────────────────────────────────────────────────────────────────
   { key: "globalAutoInsertMacro", scope: "global", group: "advanced", kind: "toggle", optIn: true,
@@ -368,6 +375,12 @@ export function validatePolicyWrite(scope, data) {
       if (data[key] != null) {
         const c = control(key);
         if (!isInt(data[key]) || data[key] < c.min) return { ok: false, reason: `${c.label} must be a whole number of at least ${c.min}.` };
+      }
+    }
+    if (data.historyRetentionDays != null) {
+      const c = control("historyRetentionDays");
+      if (!isInt(data.historyRetentionDays) || data.historyRetentionDays < c.min || data.historyRetentionDays > c.max) {
+        return { ok: false, reason: `${c.label} must be a whole number of days from ${c.min} to ${c.max}.` };
       }
     }
     if (data.lapseNoticeIntervalHours != null && (!isInt(data.lapseNoticeIntervalHours) || data.lapseNoticeIntervalHours < 1)) {
