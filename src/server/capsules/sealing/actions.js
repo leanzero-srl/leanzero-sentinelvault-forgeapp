@@ -258,15 +258,14 @@ const sealArtifact = async (req) => {
   // holdPeriod / expiresAt are computed AFTER the space derivation below: with no panel context
   // the space (and so its policy's default duration) is known only once the file's page is.
 
-  // Fetch current operator's email and display name
-  let operatorEmail = null;
+  // The sealer's display name (shown on the seal). Their email is NOT stored (2026-10-04): no
+  // reader ever used it, and it was published in the page property (seal-property.js).
   let operatorDisplayName = "Current User";
   try {
     const prof = await currentUserProfile(operatorAccountId);
-    operatorEmail = prof.email || null;
     operatorDisplayName = prof.displayName || "Current User";
   } catch (error) {
-    console.warn("Failed to fetch operator email:", error);
+    console.warn("Failed to fetch operator display name:", error);
   }
 
   // Fetch artifact details
@@ -377,7 +376,6 @@ const sealArtifact = async (req) => {
 
   const sealPayload = {
     lockedBy: operatorAccountId,
-    lockedByEmail: operatorEmail,
     lockedByName: operatorDisplayName,
     timestamp: new Date().toISOString(),
     expiresAt: expiresAt,
@@ -684,6 +682,7 @@ export const extendSeal = async (req) => {
     extendedBy: operatorAccountId,
     extensionCount: (Number(sealRecord.extensionCount) || 0) + 1,
   };
+  delete updated.lockedByEmail; // a 6.6.0-era record carried the sealer's email; no reader ever used it
   await kvs.set(`protection-${attachmentId}`, updated);
   await touchSealTimestamp();
   // A1: the new expiry is live from this write on.
