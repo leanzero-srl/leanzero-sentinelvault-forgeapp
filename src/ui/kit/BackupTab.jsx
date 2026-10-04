@@ -334,7 +334,7 @@ export default function BackupTab() {
             <span className="bk-status-size">{Number(last.keys).toLocaleString()} items · {fmtBytes(last.bytes)}{last.reason ? ` · ${REASON[last.reason] || last.reason}` : ""}</span>
           </div>
         ) : st.deletedAt
-          ? <p className="api-empty" data-testid="bk-none">The backup was deleted {when(st.deletedAt)}. A new one is taken after your next change here or over REST, or when you press Back up now.</p>
+          ? <p className="api-empty" data-testid="bk-none">The backup was deleted {when(st.deletedAt)}. A new one is taken only after the next change anyone makes in the app or over REST, or when you press Back up now.</p>
           : <p className="api-empty" data-testid="bk-none">No backup yet. The first one is taken after the next change, within the hour, or now.</p>}
         {st.waiting === "restore-pending" && <p className="api-explain" data-testid="bk-waiting">Automatic backups wait until you restore the earlier setup or choose to start fresh, so they cannot crowd out the backup you came back for.</p>}
         {st.lastError && (!last || String(st.lastError.at) > String(st.lastCheckAt || "")) && <div className="api-inline-error" role="alert" data-testid="bk-last-error">The last backup failed ({when(st.lastError.at)}): {st.lastError.message}</div>}

@@ -2,6 +2,19 @@
 
 GENERATED from `src/server/shared/release-notes.js` by `scripts/render-release-notes.mjs`. Do not edit.
 
+## 6.10.0 — 2026-10-04
+
+**Viewing a page no longer triggers a backup, so a deleted backup stays deleted**
+
+- Changed: opening a page no longer schedules a backup. A backup is scheduled only after a change, or when the page check actually puts protected text back.
+- Changed: after Delete the backup, the weekly personal-data check and backups queued before the delete no longer take a new one. Only the next change in the app or over REST, or Back up now, does.
+
+Fixed:
+- Delete the backup could be undone within minutes by someone opening a page.
+- A backup file is counted as deleted only once it is purged from the trash, and a second Delete finishes files an interrupted delete left in the trash.
+
+**Do this:** Nothing to do.
+
 ## 6.9.0 — 2026-10-04
 
 **Delete the backup stays deleted, and approver lists no longer keep email addresses**
