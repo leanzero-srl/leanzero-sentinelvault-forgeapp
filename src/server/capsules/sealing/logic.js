@@ -3,6 +3,7 @@ import { asApp, route } from "@forge/api";
 import { authorizeSteward } from "../../shared/steward-checks.js";
 import { BASELINE_HOLD_SPAN, sanitizeHoldDuration } from "../../shared/baseline.js";
 import { notifyWatchers } from "../bulletins/logic.js";
+import { sealPropertyValue } from "./seal-property.js";
 
 /**
  * Resolve the effective seal hold period, in seconds, for a space.
@@ -68,6 +69,9 @@ export async function readSealRecord(artifactId) {
  */
 export async function writeSealContentProp(contentId, sealData) {
   const propertyKey = "protection-";
+  // Anyone who can read the page can read this property: account id + timestamps only, never
+  // the email, the display name or the note (seal-property.js).
+  const value = sealPropertyValue(sealData);
   try {
     // Check if property already exists by listing with key filter
     const getResponse = await asApp().requestConfluence(
@@ -90,7 +94,7 @@ export async function writeSealContentProp(contentId, sealData) {
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               key: propertyKey,
-              value: sealData,
+              value,
               version: { number: nextVersion },
             }),
           },
@@ -110,7 +114,7 @@ export async function writeSealContentProp(contentId, sealData) {
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               key: propertyKey,
-              value: sealData,
+              value,
             }),
           },
         );

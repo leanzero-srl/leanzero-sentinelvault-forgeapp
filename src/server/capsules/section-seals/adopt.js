@@ -49,8 +49,8 @@ export async function adoptInsertedSection({ pageId, spaceKey, spaceId, pageTitl
   const contentHash = hashAdf(body);
   const holdPeriod = await resolveSealHoldPeriod(spaceKey);
   const expiresAt = new Date(Date.now() + holdPeriod * 1000).toISOString();
-  let ownerName = "Current User", ownerEmail = null;
-  try { const p = await currentUserProfile(ownerAccountId); ownerName = p.displayName || ownerName; ownerEmail = p.email || null; } catch (_) { /* best effort */ }
+  let ownerName = "Current User"; // the email is not stored (2026-10-04)
+  try { const p = await currentUserProfile(ownerAccountId); ownerName = p.displayName || ownerName; } catch (_) { /* best effort */ }
   let title = pageTitle || null;
   let sid = spaceId || null;
   if (!title || !sid) {
@@ -62,7 +62,7 @@ export async function adoptInsertedSection({ pageId, spaceKey, spaceId, pageTitl
   const sectionTitle = headingTextOf(node) || "Sealed section";
   const record = {
     sectionId, pageId: String(pageId), spaceId: sid, spaceKey: spaceKey || null,
-    lockedBy: ownerAccountId, lockedByName: ownerName, lockedByEmail: ownerEmail,
+    lockedBy: ownerAccountId, lockedByName: ownerName,
     timestamp: new Date().toISOString(), expiresAt, lockDuration: holdPeriod,
     sectionTitle, sealedVersion: version ?? null, contentHash, originalIndex: originalIndex ?? null,
     note: null, adoptedOnInsert: true,

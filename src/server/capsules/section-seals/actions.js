@@ -184,10 +184,9 @@ export const sealSection = async (req) => {
   const sectionId = newSectionId();
 
   let operatorName = "Current User";
-  let operatorEmail = null;
   try {
     const prof = await currentUserProfile(operatorAccountId);
-    operatorName = prof.displayName || operatorName; operatorEmail = prof.email || null;
+    operatorName = prof.displayName || operatorName; // the email is not stored (2026-10-04)
   } catch (_) { /* best effort */ }
 
   let result = null;
@@ -242,7 +241,7 @@ export const sealSection = async (req) => {
 
   const record = {
     sectionId, pageId, spaceId: realmId || null, spaceKey: realmKey || null,
-    lockedBy: operatorAccountId, lockedByName: operatorName, lockedByEmail: operatorEmail,
+    lockedBy: operatorAccountId, lockedByName: operatorName,
     timestamp: new Date().toISOString(), expiresAt, lockDuration: holdPeriod,
     sectionTitle, sealedVersion: result.version, contentHash, originalIndex: result.originalIndex,
     note,
