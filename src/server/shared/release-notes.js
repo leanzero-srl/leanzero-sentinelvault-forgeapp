@@ -12,6 +12,20 @@ const note = (n) => Object.freeze({ ...n, changes: Object.freeze([...(n.changes 
 
 export const RELEASE_NOTES = Object.freeze([
   note({
+    version: "6.10.0",
+    date: "2026-10-04",
+    headline: "Viewing a page no longer triggers a backup, so a deleted backup stays deleted",
+    changes: [
+      "Changed: opening a page no longer schedules a backup. A backup is scheduled only after a change, or when the page check actually puts protected text back.",
+      "Changed: after Delete the backup, the weekly personal-data check and backups queued before the delete no longer take a new one. Only the next change in the app or over REST, or Back up now, does.",
+    ],
+    fixes: [
+      "Delete the backup could be undone within minutes by someone opening a page.",
+      "A backup file is counted as deleted only once it is purged from the trash, and a second Delete finishes files an interrupted delete left in the trash.",
+    ],
+    action: "Nothing to do.",
+  }),
+  note({
     version: "6.9.0",
     date: "2026-10-04",
     headline: "Delete the backup stays deleted, and approver lists no longer keep email addresses",

@@ -36,6 +36,20 @@ export const WRITE_ACTIONS = Object.freeze([
   "watch-artifact", "withdraw-approval",
 ]);
 
+/**
+ * WRITE_ACTIONS that run on EVERY page view and usually change nothing: they schedule a backup only
+ * when the result says they wrote something. guard-page-now is called by the page banner on each
+ * view; scheduling on success raised the dirty flag on every view, so a busy site re-read its whole
+ * store every 90 s and a deleted backup came back within minutes (review 2026-10-04, D1).
+ */
+export const CHANGED_WHEN = Object.freeze({
+  "guard-page-now": (r) => r?.fresh === true,
+});
+
+/** Reasons that are the app's own housekeeping, not a person's change: they never revive a deleted backup. */
+export const AUTOMATIC_REASONS = Object.freeze(["privacy", "schedule"]);
+export const STATUS_KEY = "backup-status";
+
 /** Actions that only read (or that ARE the backup's own doors, which schedule nothing). */
 export const READ_ACTIONS = Object.freeze([
   "check-audit-status", "check-edit-request", "check-license", "check-panel-status", "check-seal-stamp", "check-section-edit",
@@ -71,6 +85,7 @@ export const READ_ACTIONS = Object.freeze([
 export async function scheduleBackup(reason = "save") {
   try {
     if (await kvs.get(DIRTY_KEY)) return false;
+    if (AUTOMATIC_REASONS.includes(reason) && (await kvs.get(STATUS_KEY))?.deletedAt) return false;
     await setWithTtl(DIRTY_KEY, { since: new Date().toISOString(), reason }, DIRTY_TTL_MS);
     await new Queue({ key: BACKUP_QUEUE_KEY }).push({ body: { kind: "backup", reason }, delayInSeconds: DEBOUNCE_SECONDS });
     return true;
@@ -86,6 +101,6 @@ export const succeeded = (r) => !(r == null || r === false || (typeof r === "obj
 /** Wrap a write resolver: run it, then schedule a backup if it succeeded. */
 export const withBackupHook = (key, fn) => async (req) => {
   const result = await fn(req);
-  if (succeeded(result)) await scheduleBackup(key);
+  if (succeeded(result) && (CHANGED_WHEN[key] ? CHANGED_WHEN[key](result) : true)) await scheduleBackup(key);
   return result;
 };

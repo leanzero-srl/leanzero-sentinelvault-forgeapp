@@ -170,9 +170,11 @@ export async function isRestrictedToApp(pageId) {
 }
 
 /** Every attachment on the page: [{ id, title, fileSize }] (cursor-paged). */
-export async function listAttachments(pageId) {
+export async function listAttachments(pageId, { trashed = false } = {}) {
   const out = [];
-  let res = await conf(route`/wiki/api/v2/pages/${pageId}/attachments?limit=250`);
+  let res = trashed
+    ? await conf(route`/wiki/api/v2/pages/${pageId}/attachments?limit=250&status=trashed`)
+    : await conf(route`/wiki/api/v2/pages/${pageId}/attachments?limit=250`);
   for (let i = 0; i < 40; i++) {
     if (!res.ok) throw new Error(`Could not list the backup files (${res.status})`);
     const body = await readJson(res);
@@ -181,7 +183,9 @@ export async function listAttachments(pageId) {
     if (!next) break;
     const cursor = new URL(next, "https://x.invalid").searchParams.get("cursor");
     if (!cursor) break;
-    res = await conf(route`/wiki/api/v2/pages/${pageId}/attachments?limit=250&cursor=${cursor}`);
+    res = trashed
+      ? await conf(route`/wiki/api/v2/pages/${pageId}/attachments?limit=250&status=trashed&cursor=${cursor}`)
+      : await conf(route`/wiki/api/v2/pages/${pageId}/attachments?limit=250&cursor=${cursor}`);
   }
   return out;
 }
@@ -210,11 +214,21 @@ export async function getFile(pageId, attachmentId) {
   return res.text();
 }
 
-/** Delete one attachment for good (trash, then purge). */
+/**
+ * Delete one attachment for good (trash, then purge). True only when the PURGE succeeded (or the
+ * file is already gone): a file left in the trash of an app-restricted page is invisible to every
+ * admin, so a trash-only delete must count as a failure (review 2026-10-04, D6).
+ */
 export async function deleteFile(attachmentId) {
   const res = await conf(route`/wiki/api/v2/attachments/${attachmentId}`, { method: "DELETE" });
-  if (res.ok || res.status === 404) await conf(route`/wiki/api/v2/attachments/${attachmentId}?purge=true`, { method: "DELETE" }).catch(() => {});
-  return res.ok || res.status === 404;
+  if (!(res.ok || res.status === 404)) return false;
+  return purgeFile(attachmentId);
+}
+
+/** Purge one attachment that is already in the trash. True on success or when it is gone. */
+export async function purgeFile(attachmentId) {
+  const p = await conf(route`/wiki/api/v2/attachments/${attachmentId}?purge=true`, { method: "DELETE" }).catch(() => null);
+  return !!p && (p.ok || p.status === 404);
 }
 
 /**
@@ -277,6 +291,10 @@ export async function emptyAndTrashBackupPage(pageId) {
   let failed = 0;
   for (const a of await listAttachments(pageId)) {
     if (await deleteFile(a.id).catch(() => false)) purged += 1; else failed += 1;
+  }
+  // Files an earlier, interrupted delete moved to the trash but never purged (a retry must finish them).
+  for (const a of await listAttachments(pageId, { trashed: true }).catch(() => [])) {
+    if (await purgeFile(a.id).catch(() => false)) purged += 1; else failed += 1;
   }
   if (failed) return { ok: false, state: "current", status: null, purged, failed };
   const idx = await readIndex(pageId).catch(() => null);
