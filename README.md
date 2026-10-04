@@ -478,7 +478,7 @@ Built by [LeanZero](https://leanzero.net) -- intelligent tooling for Atlassian C
 
 ## License
 
-MIT
+Apache License 2.0. See [LICENSE](./LICENSE). "Sentinel Vault" and "LeanZero" are trademarks of LeanZero SRL; the licence grants no trademark rights.
 
 ---
 
