@@ -81,6 +81,7 @@ eq("global dependency table", dependencyTable("global").sort((a, b) => a.child.l
   { child: "enableConfluenceDispatches", parent: "enableEmailDispatches", parentValue: true },
   { child: "enablePeriodicReminderEmail", parent: "autoUnlockEnabled", parentValue: false },
   { child: "enableSealExpiryReminderEmail", parent: "enableEmailDispatches", parentValue: true },
+  { child: "historyRetentionDays", parent: "historyRetentionEnabled", parentValue: true },
   { child: "lapseNoticeIntervalHours", parent: "autoUnlockEnabled", parentValue: true },
   { child: "lapseNoticeLimit", parent: "autoUnlockEnabled", parentValue: true },
   { child: "reminderIntervalDays", parent: "enablePeriodicReminderEmail", parentValue: true },

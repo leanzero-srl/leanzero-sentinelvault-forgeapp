@@ -16,7 +16,9 @@ export function describeSweep(last) {
   if (last.ok === false) return `The last check failed: ${last.error || "unknown error"}. It is tried again the next day.`;
   const r = last.retention || {};
   const removed = n(r.activity) + n(r.workflowLog) + n(r.readAck);
-  const parts = [removed ? `removed ${plural(removed, "history record")} older than ${last.retentionDays} days` : `nothing was older than ${last.retentionDays} days`];
+  const parts = [!(n(last.retentionDays) > 0)
+    ? "history deletion is off, nothing was deleted for age"
+    : removed ? `removed ${plural(removed, "history record")} older than ${last.retentionDays} days` : `nothing was older than ${last.retentionDays} days`];
   if (last.accounts) {
     const a = last.accounts;
     if (a.reporting === "not-permitted") parts.push("checking accounts with Atlassian needs a permission this version does not have yet");

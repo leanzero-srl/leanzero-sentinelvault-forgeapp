@@ -130,10 +130,17 @@ export const CONTROLS = Object.freeze([
     default: POLICY_DEFAULTS.classificationEnabled },
 
   // ── Privacy and retention (2026-10-04) ───────────────────────────────────────────────────
+  // OFF by default (owner decision 2026-10-04): the customer is the data controller and our
+  // privacy policy says app data is kept while the app is installed, so the app never deletes a
+  // customer's audit history unless a site admin chooses a retention period.
+  { key: "historyRetentionEnabled", scope: "global", group: "privacy", kind: "toggle", optIn: true,
+    label: "Delete old history",
+    text: "On: activity history, workflow history and read confirmations older than the period below are deleted by a weekly check, including records already stored. Off: history is kept while the app is installed.",
+    default: POLICY_DEFAULTS.historyRetentionEnabled },
   { key: "historyRetentionDays", scope: "global", group: "privacy", kind: "days", min: 30, max: 3650,
     label: "Keep history for",
-    text: "Activity history, workflow history and read confirmations older than this are deleted by a weekly check, including records already stored. A reader whose confirmation is deleted is asked to confirm again.",
-    default: POLICY_DEFAULTS.historyRetentionDays },
+    text: "Records older than this are deleted by the weekly check. A reader whose confirmation is deleted is asked to confirm again.",
+    default: POLICY_DEFAULTS.historyRetentionDays, parent: "historyRetentionEnabled", parentValue: true },
 
   // ── Advanced ──────────────────────────────────────────────────────────────────────────────
   { key: "globalAutoInsertMacro", scope: "global", group: "advanced", kind: "toggle", optIn: true,

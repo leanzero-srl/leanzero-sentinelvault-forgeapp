@@ -4,9 +4,9 @@ GENERATED from `src/server/shared/release-notes.js` by `scripts/render-release-n
 
 ## 6.7.0 — 2026-10-04 (in testing, not yet on the Marketplace)
 
-**Privacy and retention: history has a keep period, and less personal data is stored**
+**Privacy and retention: an optional keep period for history, and less personal data stored**
 
-- New: Site settings, Privacy and retention. Activity history, workflow history and read confirmations older than "Keep history for" (730 days unless you change it) are deleted by a weekly check. A reader whose confirmation is deleted is asked to confirm again.
+- New: Site settings, Privacy and retention. Turn on "Delete old history" to have activity history, workflow history and read confirmations older than "Keep history for" (730 days unless you change it) deleted by a weekly check. It is off unless you turn it on, so nothing is deleted on upgrade.
 - New: the weekly check can be run at once from the same place, and over the REST API (operation privacy-sweep, admin tokens).
 - Changed: authenticator codes for signed actions are now stored as encrypted secrets. Nobody has to set them up again; each moves across the first time it is used.
 - Changed: Sentinel Vault no longer stores the email address of the person who seals a file or section, and the seal marker on a page now carries only who sealed it and when. Older markers are rewritten by the weekly check.
@@ -18,7 +18,7 @@ Fixed:
 - Read confirmations and approvals that name a group now reach the group's members.
 - A sealed file deleted for good is now recognised as gone, so its seal record is cleaned up.
 
-**Do this:** Open Site settings, Privacy and retention, and check that the keep period suits your records policy.
+**Do this:** If your records policy sets a keep period for history, turn on Delete old history in Site settings, Privacy and retention and set it there.
 
 ## 6.6.0 — 2026-10-02
 
