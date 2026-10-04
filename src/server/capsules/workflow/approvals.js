@@ -168,12 +168,33 @@ export function extractApprovalConfig(approval) {
 // Expand a group to its member account ids (best-effort — an unresolvable group adds
 // no approvers; user approvers are unaffected). Lifted here (#44 §1.5) so the trigger
 // can compute the live-config approver intersection too.
+// PURE. A Confluence group id (the picker's `id`) — a UUID. Older configs may carry the name in `id`.
+export const isGroupId = (v) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(v || ""));
+
+// The group's id: the stored one, else the picker's exact (case-insensitive) name match.
+async function resolveGroupId(group) {
+  if (isGroupId(group?.id)) return group.id;
+  const name = String(group?.name || group?.id || "");
+  if (!name) return null;
+  const res = await asApp().requestConfluence(route`/wiki/rest/api/group/picker?query=${name}&limit=50`);
+  if (!res.ok) return null;
+  const hit = ((await res.json())?.results || []).find((g) => String(g?.name || "").toLowerCase() === name.toLowerCase());
+  return hit?.id || null;
+}
+
 export async function fetchGroupMembers(group) {
   const ids = [];
   try {
+    // 2026-10-04: GET /wiki/rest/api/group/member?name= answers 401 "scope does not match" for
+    // this app (measured, dev hook endpointProbe) and is gone from Atlassian's v1 spec, so every
+    // group approver and read-confirmation group resolved to nobody. The id-based
+    // /group/{groupId}/membersByGroupId is in the current spec under read:confluence-groups and
+    // answered 200 in the same probe.
+    const groupId = await resolveGroupId(group);
+    if (!groupId) return { ids, ok: false };
     // Paginated (Tier B review, finding 9): a 140-member group was silently a 100-member one.
     for (let start = 0; start < 2000; start += 200) {
-      const res = await asApp().requestConfluence(route`/wiki/rest/api/group/member?name=${group.name || group.id}&limit=200&start=${start}`);
+      const res = await asApp().requestConfluence(route`/wiki/rest/api/group/${groupId}/membersByGroupId?limit=200&start=${start}`);
       if (!res.ok) return { ids, ok: false }; // non-ok — distinguish an outage from a genuinely empty group
       const body = await res.json();
       const page = body?.results || [];
