@@ -5,13 +5,20 @@
  * Three families name people and had no end: the activity history (`activity-page-`,
  * `activity-space-`, `activity-site-`), the workflow history (`workflow-log-`) and the read
  * confirmations (`read-ack-`). The site setting `historyRetentionDays` (Site settings → Privacy
- * and retention; default 730) bounds all three. The weekly privacy sweep deletes every record
+ * and retention; OFF by default, 730 days once on) bounds all three. The weekly privacy sweep deletes every record
  * older than the window. A KVS ttl at write time cannot do this job: the platform caps it near a
  * year, and a window the admin changes later would not reach rows already written.
  *
  * A record's time comes from its key where the key carries it (both history families sort by
  * time) and from its value otherwise; a record whose time cannot be read is KEPT.
  */
+/** PURE. The window the sweep enforces: 0 (keep everything) unless retention is switched on. */
+export function effectiveRetentionDays(enabled, days) {
+  if (enabled !== true) return 0;
+  const d = Number(days);
+  return d > 0 ? d : 0;
+}
+
 export const RETAINED_FAMILIES = Object.freeze(["activity-page-", "activity-space-", "activity-site-", "workflow-log-", "read-ack-"]);
 const DAY_MS = 86400000;
 const TS_CEILING = 9999999999999; // activity-log.js invertedTs
