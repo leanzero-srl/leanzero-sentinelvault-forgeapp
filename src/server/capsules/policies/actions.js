@@ -4,7 +4,7 @@ import { kvs, WhereConditions } from "@forge/kvs";
 import { MAX_HOLD_SECONDS, POLICY_DEFAULTS, SPACE_POLICY_DEFAULTS, withinHoldBounds } from "../../shared/baseline.js";
 // P2 (UX review §3): the schema owns the extra write validation (lapse counters, reminder days,
 // setupCompletedAt, the space choices) and the two dead space keys the write path drops.
-import { validatePolicyWrite, stripDeadKeys } from "./settings-schema.js";
+import { validatePolicyWrite, stripDeadKeys, minimisePolicyWrite } from "./settings-schema.js";
 import { isOperatorSteward, isOperatorSiteAdmin } from "../../shared/steward-checks.js";
 // 5.0 ribbon: `ribbonMode` / `ribbonThreshold*` no longer drive anything (2026-09-30: with
 // classification on the banner shows on every page; off, only seal/workflow states open it). Old
@@ -63,7 +63,9 @@ const loadPolicy = async (req) => {
  * Save admin settings (unified function for global and realm)
  */
 const storePolicy = async (req) => {
-  const { scope, key, data } = req.payload;
+  const { scope, key } = req.payload;
+  // Rosters keep { accountId, displayName } only — never an email a REST bundle carried (2026-10-04).
+  const data = minimisePolicyWrite(req.payload?.data);
   const caller = req.context?.accountId;
 
   // B14: validate seal-duration bounds at the WRITE boundary (the it55 guard lived in the dead

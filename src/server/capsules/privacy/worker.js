@@ -31,7 +31,7 @@ import { asApp, route, privacy } from "@forge/api";
 import { readEffective } from "../policies/settings-schema.js";
 import { isPastRetention, retainedFamily } from "./retention.js";
 import {
-  extractAccountIds, rewriteAccount, removesFromLists, keyNamesAccount, stripLegacyEmail, planReport, batches,
+  extractAccountIds, rewriteAccount, removesFromLists, keyNamesAccount, stripLegacyEmail, stripRosterContact, planReport, batches,
 } from "./accounts.js";
 import { scheduleBackup } from "../backup/hook.js";
 import { sealPropertyValue, sealPropertyNeedsScrub } from "../sealing/seal-property.js";
@@ -342,11 +342,14 @@ export async function runPrivacySweep({ reason = "manual", nowMs = Date.now(), r
     summary.retentionDays = days;
     const migrations = (await kvs.get(MIGRATIONS_KEY).catch(() => null)) || {};
     const stripEmail = !migrations.sealEmailV1;
+    const stripRoster = !migrations.rosterEmailV1;
+    const done = {}; // migration flags this run completed
 
     const seen = new Set();
     const sealPages = new Set();
     const places = { pageIds: new Set(), spaceKeys: new Set() };
     let emailStripped = 0;
+    let rostersStripped = 0;
 
     // Pass 1: retention, the one-time email strip, and the inventory.
     await scanKvs(async ({ key, value, expireTime }) => {
@@ -363,6 +366,10 @@ export async function runPrivacySweep({ reason = "manual", nowMs = Date.now(), r
         const s = stripLegacyEmail(key, v);
         if (s.changed) { v = s.value; await setPreserving(key, v, expireTime); emailStripped += 1; touched += 1; }
       }
+      if (stripRoster) {
+        const s = stripRosterContact(key, v);
+        if (s.changed) { v = s.value; await setPreserving(key, v, expireTime); rostersStripped += 1; touched += 1; }
+      }
       for (const id of extractAccountIds(key, v)) seen.add(id);
       if (key.startsWith("protection-") && v?.contentId) sealPages.add(String(v.contentId));
       if (key.startsWith("admin-settings-space-")) places.spaceKeys.add(key.slice("admin-settings-space-".length));
@@ -375,17 +382,20 @@ export async function runPrivacySweep({ reason = "manual", nowMs = Date.now(), r
 
     // One-time migration of the 6.6.0-era seal page properties.
     if (!migrations.sealPropsV1) {
-      const m = { pages: sealPages.size, scrubbed: 0, failed: 0, emailStripped };
+      const m = { pages: sealPages.size, scrubbed: 0, failed: 0, emailStripped, rostersStripped };
       for (const pageId of sealPages) {
         const r = await scrubSealProperty(pageId).catch(() => "failed");
         if (r === "scrubbed") m.scrubbed += 1;
         if (r === "failed") m.failed += 1;
       }
       summary.migration = m;
-      if (!m.failed) await kvs.set(MIGRATIONS_KEY, { ...migrations, sealPropsV1: nowIso(), sealEmailV1: nowIso() });
-    } else if (stripEmail) {
-      await kvs.set(MIGRATIONS_KEY, { ...migrations, sealEmailV1: nowIso() });
+      if (!m.failed) done.sealPropsV1 = nowIso();
+    } else if (stripEmail || stripRoster) {
+      summary.migration = { emailStripped, rostersStripped };
     }
+    if (stripEmail) done.sealEmailV1 = nowIso();
+    if (stripRoster) done.rosterEmailV1 = nowIso();
+    if (Object.keys(done).length) await kvs.set(MIGRATIONS_KEY, { ...migrations, ...done });
 
     // Report what is due (≤ once per 7 days per account), 90 at a time.
     const plan = planReport(await readIndex(), seen, nowMs);

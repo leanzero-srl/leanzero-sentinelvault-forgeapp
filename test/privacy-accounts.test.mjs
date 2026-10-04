@@ -140,6 +140,25 @@ eq("batch size constant", REPORT_BATCH, 90);
   ok("the other person is intact", dump.includes(B));
 }
 
+// ── rosters never keep an email (write guard + one-time strip) ──────────────────────────────
+{
+  const { stripRosterContact } = await import("../src/server/capsules/privacy/accounts.js");
+  const { minimiseRoster, minimisePolicyWrite } = await import("../src/server/capsules/policies/settings-schema.js");
+  const stored = { adminUsers: [A, { accountId: B, displayName: "Bo", email: "bo@example.com", profilePicture: "/p.png" }], adminGroups: ["g"] };
+  const s = stripRosterContact("admin-settings-space-SV", stored);
+  eq("strip: email and picture gone", s.value.adminUsers[1], { accountId: B, displayName: "Bo" });
+  eq("strip: bare ids untouched", s.value.adminUsers[0], A);
+  ok("strip: changed", s.changed);
+  eq("strip: a clean roster is not rewritten", stripRosterContact("admin-settings-space-SV", { adminUsers: [{ accountId: B, displayName: "Bo" }] }).changed, false);
+  eq("strip: only admin-settings rows", stripRosterContact("workflow-def-x", stored).changed, false);
+  eq("write guard: same shape", minimiseRoster(stored.adminUsers), [A, { accountId: B, displayName: "Bo" }]);
+  eq("write guard: an entry without an id is dropped", minimiseRoster([{ displayName: "x", email: "y" }]), []);
+  eq("write guard: payload without a roster untouched", minimisePolicyWrite({ enableDocRibbons: true }), { enableDocRibbons: true });
+  ok("write guard: never an email in the saved payload", !JSON.stringify(minimisePolicyWrite(stored)).includes("@"));
+  const pol = readFileSync(resolve(dirname(fileURLToPath(import.meta.url)), "../src/server/capsules/policies/actions.js"), "utf8");
+  ok("store-policy minimises before anything else reads data", /const data = minimisePolicyWrite\(req\.payload\?\.data\);/.test(pol));
+}
+
 // ── a refusal for want of the scope is a state, not a failure ───────────────────────────────
 {
   const { describeSweep } = await import("../src/ui/kit/privacy-format.js");
