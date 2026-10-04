@@ -96,9 +96,17 @@ async function executeJobUnleased(job) {
       // Carry the history: copy every retained generation's files into the new page.
       if (before?.pageId && before.pageId !== where.pageId) await copyGenerations(before.pageId, where.pageId);
       const r = await runBackupAndAudit({ reason: "moved", actor: job.actor });
-      if (r.ok && before?.pageId && before.pageId !== where.pageId) await store.deletePage(before.pageId).catch(() => {});
-      await audit("backup.location-set", job.actor, { from: before?.spaceKey || null, to: where.spaceKey, pageId: where.pageId });
-      return { ...r, spaceKey: where.spaceKey, pageId: where.pageId };
+      // The move succeeded once the new page holds a backup; the old page going to the trash is the
+      // tail. A refusal is reported (job result + audit), never swallowed: the old page would
+      // otherwise keep a full copy of the setup that nobody knows is there.
+      let oldPage = null;
+      if (r.ok && before?.pageId && before.pageId !== where.pageId) {
+        const d = await store.deletePage(before.pageId).catch((e) => ({ ok: false, state: "unknown", error: errText(e) }));
+        oldPage = { pageId: before.pageId, removed: !!d.ok, state: d.state || null };
+        if (!d.ok) console.error(`[BACKUP] relocate: the old backup page ${before.pageId} could not be moved to the trash (${d.state || d.error})`);
+      }
+      await audit("backup.location-set", job.actor, { from: before?.spaceKey || null, to: where.spaceKey, pageId: where.pageId, ...(oldPage && !oldPage.removed ? { oldPageLeft: oldPage.pageId } : {}) });
+      return { ...r, spaceKey: where.spaceKey, pageId: where.pageId, ...(oldPage ? { oldPage } : {}) };
     }
     default:
       throw new Error(`Unknown backup job ${job.kind}`);
