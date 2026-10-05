@@ -2,7 +2,7 @@
 
 GENERATED from `src/server/shared/release-notes.js` by `scripts/render-release-notes.mjs`. Do not edit.
 
-## 7.0.0 — 2026-10-05 (in testing, not yet on the Marketplace)
+## 7.0.0 — 2026-10-05
 
 **The weekly personal-data check now asks Atlassian about closed accounts, and the app asks for fewer permissions**
 
