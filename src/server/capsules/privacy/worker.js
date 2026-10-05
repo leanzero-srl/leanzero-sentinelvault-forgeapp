@@ -42,16 +42,16 @@ import { readEffective } from "../policies/settings-schema.js";
 import { isPastRetention, retainedFamily, effectiveRetentionDays } from "./retention.js";
 import {
   extractAccountIds, rewriteAccount, removesFromLists, keyNamesAccount, holdsPageContent, stripLegacyEmail, stripRosterContact,
-  planReport, batches, sweepSchedule, nextReportAt, acceptAnswers, parseCyclePeriod, erasableMentions, jobAlive, CYCLE_MS, DUE_WINDOW_MS, DUE_MARGIN_MS,
+  planReport, batches, sweepSchedule, nextReportAt, acceptAnswers, parseCyclePeriod, erasableMentions, jobAlive, settleBackupHandOff, CYCLE_MS, DUE_WINDOW_MS, DUE_MARGIN_MS,
 } from "./accounts.js";
 import { scheduleBackup } from "../backup/hook.js";
+import { makeQueueBackupErasure, ERASE_PENDING_KEY } from "./erase-queue.js";
 import { acquireLock, releaseLock, withLock } from "../../shared/kvs-lock.js";
 import { sealPropertyValue, sealPropertyNeedsScrub } from "../sealing/seal-property.js";
 
 export const PRIVACY_QUEUE_KEY = "privacy-queue";
 export const STATUS_KEY = "privacy-status";
-export const ERASE_PENDING_KEY = "privacy-erase-pending";
-const ERASE_PENDING_LOCK = "privacy-erase-pending-lock";
+export { ERASE_PENDING_KEY } from "./erase-queue.js";
 const LOCK_KEY = "privacy-lock";
 const INDEX_PREFIX = "privacy-accounts-";
 const MIGRATIONS_KEY = "privacy-migrations";
@@ -423,21 +423,8 @@ async function applyAccountUpdates({ closed, updated, places }) {
 async function queueBackupErasure(ids) {
   const { readJob } = await import("../backup/engine.js");
   const { startJob } = await import("../backup/worker.js");
-  return withLock(ERASE_PENDING_LOCK, 60000, async () => {
-    const cur = (await kvs.get(ERASE_PENDING_KEY)) || {};
-    const merged = [...new Set([...(cur.ids || []), ...ids])];
-    if (!merged.length) return null;
-    const job = cur.jobId ? await readJob(cur.jobId).catch(() => null) : null;
-    if (jobAlive(job, Date.now())) {
-      await kvs.set(ERASE_PENDING_KEY, { ...cur, ids: merged, at: nowIso() });
-      return { jobId: job.id, reused: true };
-    }
-    const next = await startJob("privacy-erase", {}, null);
-    await kvs.set(ERASE_PENDING_KEY, { ids: merged, at: nowIso(), jobId: next.id });
-    return { jobId: next.id, reused: false };
-  });
+  return makeQueueBackupErasure({ kvs, withLock, readJob, startJob, jobAlive })(ids);
 }
-
 
 /**
  * One sweep. One at a time (shared/kvs-lock.js; a dead run's lock is taken over); a second caller gets
@@ -595,6 +582,10 @@ export async function runPrivacySweep({ reason = "manual", nowMs = Date.now(), r
       // rows actually changed. Page content alone never queues one.
       const forBackup = [...new Set([...newlyClosed, ...unfinished, ...(changes > 0 ? [...stillErasable] : [])])];
       if (forBackup.length) summary.erasure.backup = await queueBackupErasure(forBackup).catch((e) => ({ error: errText(e) }));
+      // The backup's part could not be handed over (the pending lock busy, a failed read, a failed
+      // write): these ids are NOT erased yet — x goes back to null so the next sweep re-erases and
+      // re-queues them (review blocking). Their KVS rows are already clean, so that repeat is cheap.
+      index = settleBackupHandOff(index, forBackup, summary.erasure.backup);
     } else if (toErase.length || toRename.length) {
       handOff = true;
     }
