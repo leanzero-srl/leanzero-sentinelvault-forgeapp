@@ -310,6 +310,45 @@ export async function testStateTrigger(req) {
       }
       // The purge corroboration (attachment-status.js confirmAttachmentPurged) on a REAL attachment:
       // uploads one to `pageId`, asks for a verdict while current, trashed and purged.
+      // Privacy purge proof (2026-10-05, DEV-ONLY): for every kept backup generation, does it name
+      // `ids` (csv) the way the purge judges it — in the manifest as a person (textNamesPerson) or in a
+      // data entry the KVS erasure would change (entriesMentionOutsideContent) — and does it hold the
+      // id at all (content / personal-space traces)? Read as the app from the files themselves.
+      if (fn === "backupMentions") {
+        const ids = String(q(req, "ids") || "").split(",").map((x) => x.trim()).filter(Boolean);
+        const { SETTINGS_KEY } = await import("./server/capsules/backup/engine.js");
+        const store = await import("./server/capsules/backup/store.js");
+        const { parseChunk } = await import("./server/capsules/backup/snapshot.js");
+        const { entriesMentionOutsideContent, textNamesPerson } = await import("./server/capsules/privacy/accounts.js");
+        const settings = await kvs.get(SETTINGS_KEY);
+        if (!settings?.pageId) return json(200, { invoked: fn, result: { pageId: null, generations: [] } });
+        const index = (await store.readIndex(settings.pageId))?.value || {};
+        const atts = await store.listAttachments(settings.pageId);
+        const byTitle = new Map(atts.map((a) => [a.title, a]));
+        const out = [];
+        const cache = new Map(); // chunks are content-addressed and shared between generations
+        for (const g of index.generations || []) {
+          const m = byTitle.get(g.manifest) || (g.manifestAttachmentId ? { id: g.manifestAttachmentId } : null);
+          const row = { generationId: g.generationId, createdAt: g.createdAt, reason: g.reason, installationId: g.installationId, pinned: !!g.pinned, keys: g.keys };
+          if (!m) { out.push({ ...row, error: "manifest missing" }); continue; }
+          const mt = await store.getFile(settings.pageId, m.id);
+          let outside = textNamesPerson(mt, ids); let anyText = ids.some((i) => mt.includes(i));
+          for (const c of JSON.parse(mt).chunks || []) {
+            const a = byTitle.get(c.name);
+            if (!a) { row.error = `chunk ${c.name} missing`; break; }
+            if (!cache.has(c.name)) {
+              const t = await store.getFile(settings.pageId, a.id);
+              const has = ids.some((i) => t.includes(i));
+              cache.set(c.name, { has, outside: has && entriesMentionOutsideContent(parseChunk(t), ids) });
+            }
+            const v = cache.get(c.name);
+            if (v.has) anyText = true;
+            if (v.outside) outside = true;
+          }
+          out.push({ ...row, mentionsOutsideContent: outside, holdsIdAnywhere: anyText });
+        }
+        return json(200, { invoked: fn, result: { pageId: settings.pageId, generations: out } });
+      }
       if (fn === "purgeVerdicts") {
         const { asApp, route } = await import("@forge/api");
         const { confirmAttachmentPurged } = await import("./server/infra/attachment-status.js");
