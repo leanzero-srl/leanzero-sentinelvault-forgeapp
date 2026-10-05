@@ -5,6 +5,7 @@
  * older server renders as a failure block with Retry, never a blank pane.
  */
 import React, { useState, useEffect, useCallback, useRef } from "react";
+import { backupReasonText } from "./backup-reason.js";
 import { invoke } from "@forge/bridge";
 import Dialog, { ConfirmDialog } from "./Dialog";
 import { formatActivity, fmtBytes } from "./activity-format";
@@ -37,7 +38,7 @@ const ago = (iso) => {
   if (h < 48) return `${h} h ago`;
   return `${Math.round(h / 24)} days ago`;
 };
-const REASON = { manual: "on request", schedule: "daily", save: "after a change", rest: "over REST", "before-restore": "before a restore", "after-restore": "after a restore", moved: "after a move", import: "imported file", privacy: "after the personal-data check" };
+
 
 /** Poll a backup job until it settles. */
 async function waitForJob(jobId, onTick) {
@@ -331,7 +332,7 @@ export default function BackupTab() {
         {last ? (
           <div className="bk-status-band" data-testid="bk-last">
             <span className="bk-status-when"><strong>Last backup {ago(last.createdAt)}</strong> · {when(last.createdAt)}</span>
-            <span className="bk-status-size">{Number(last.keys).toLocaleString()} items · {fmtBytes(last.bytes)}{last.reason ? ` · ${REASON[last.reason] || last.reason}` : ""}</span>
+            <span className="bk-status-size">{Number(last.keys).toLocaleString()} items · {fmtBytes(last.bytes)}{last.reason ? ` · ${backupReasonText(last.reason)}` : ""}</span>
           </div>
         ) : st.deletedAt
           ? <p className="api-empty" data-testid="bk-none">The backup was deleted {when(st.deletedAt)}. A new one is taken only after the next change anyone makes in the app or over REST, or when you press Back up now.</p>
@@ -371,7 +372,7 @@ export default function BackupTab() {
               <tbody>
                 {generations.map((g) => (
                   <tr key={`${g.pageId}-${g.generationId}`} data-testid="bk-generation">
-                    <td>{when(g.createdAt)}<span className="api-by">{REASON[g.reason] || g.reason}{g.pinned ? " · kept from an earlier installation" : ""}</span></td>
+                    <td>{when(g.createdAt)}<span className="api-by">{backupReasonText(g.reason)}{g.pinned ? " · kept from an earlier installation" : ""}</span></td>
                     <td className="api-count">{Number(g.keys).toLocaleString()}</td>
                     <td>{fmtBytes(g.bytes)}</td>
                     <td>{g.installationId === install.installationId ? "This installation" : "An earlier installation"}{!g.sameEnvironment ? ` · ${String(g.environmentType || "").toLowerCase()}` : ""}</td>

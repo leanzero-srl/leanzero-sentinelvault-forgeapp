@@ -6,6 +6,7 @@
 import { kvs } from "@forge/kvs";
 import { Queue } from "@forge/events";
 import { recordActivity } from "../../infra/activity-log.js";
+import { acquireLock, releaseLock } from "../../shared/kvs-lock.js";
 import {
   runBackup, runRestore, importExport, assembleStagedImport, ensureBackupPage, readJob, writeJob, discoverBackups,
   STATUS_KEY, SETTINGS_KEY, appInfo,
@@ -19,23 +20,21 @@ const LEASE_MS = 16 * 60000; // > the 900 s consumer timeout: a killed run frees
 
 /**
  * One backup / restore / import / move at a time (review 2026-10-02: overlapping runs raced on the
- * index and one run's cleanup deleted another's fresh files). Atomic acquire with FAIL_IF_EXISTS;
+ * index and one run's cleanup deleted another's fresh files). Atomic acquire (shared/kvs-lock.js, which takes over a dead run's lease);
  * a run that cannot get the lease waits up to `waitMs`, then gives up with a plain reason.
  */
 export async function withLease(fn, { waitMs = 120000 } = {}) {
   const token = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   const until = Date.now() + waitMs;
   for (;;) {
-    try {
-      await kvs.set(LEASE_KEY, { token, at: nowIso() }, { ttl: { value: Math.ceil(LEASE_MS / 1000), unit: "SECONDS" }, keyPolicy: "FAIL_IF_EXISTS" });
-      break;
-    } catch (e) {
-      if (Date.now() > until) throw new Error("Another backup or restore is running — try again in a few minutes.");
-      await new Promise((r) => setTimeout(r, 5000));
-    }
+    // acquireLock takes over a lease older than LEASE_MS: an expired ttl row can linger for hours
+    // and still refuse FAIL_IF_EXISTS (measured 2026-10-05, shared/kvs-lock.js).
+    if (await acquireLock(LEASE_KEY, LEASE_MS, token)) break;
+    if (Date.now() > until) throw new Error("Another backup or restore is running — try again in a few minutes.");
+    await new Promise((r) => setTimeout(r, 5000));
   }
   try { return await fn(); }
-  finally { const cur = await kvs.get(LEASE_KEY).catch(() => null); if (cur?.token === token) await kvs.delete(LEASE_KEY).catch(() => {}); }
+  finally { await releaseLock(LEASE_KEY, token); }
 }
 const nowIso = () => new Date().toISOString();
 const errText = (e) => String(e?.message || e).slice(0, 300);

@@ -45,6 +45,7 @@ import {
   planReport, batches, sweepSchedule, nextReportAt, acceptAnswers, parseCyclePeriod, erasableMentions, CYCLE_MS, DUE_WINDOW_MS, DUE_MARGIN_MS,
 } from "./accounts.js";
 import { scheduleBackup } from "../backup/hook.js";
+import { acquireLock, releaseLock } from "../../shared/kvs-lock.js";
 import { sealPropertyValue, sealPropertyNeedsScrub } from "../sealing/seal-property.js";
 
 export const PRIVACY_QUEUE_KEY = "privacy-queue";
@@ -417,18 +418,16 @@ async function queueBackupErasure(ids) {
 }
 
 /**
- * One sweep. One at a time (an atomic FAIL_IF_EXISTS lock); a second caller gets
+ * One sweep. One at a time (shared/kvs-lock.js; a dead run's lock is taken over); a second caller gets
  * { ok: false, reason: "running" }. Returns the summary it also stores in `privacy-status` — counts
  * only, never an account id. `report` is injectable for tests (default: reportAccounts above),
  * `budgetMs` the time after which it saves and hands the rest to a continuation event.
  */
 export async function runPrivacySweep({ reason = "manual", nowMs = Date.now(), report = reportAccounts, budgetMs = SWEEP_BUDGET_MS } = {}) {
   const token = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-  try {
-    await kvs.set(LOCK_KEY, { token, at: nowIso() }, { ttl: { value: Math.ceil(LOCK_MS / 1000), unit: "SECONDS" }, keyPolicy: "FAIL_IF_EXISTS" });
-  } catch (_) {
-    return { ok: false, reason: "running" };
-  }
+  // A lock older than LOCK_MS is a dead run's and is taken over (shared/kvs-lock.js: an expired
+  // ttl row can linger for hours and still refuse FAIL_IF_EXISTS).
+  if (!(await acquireLock(LOCK_KEY, LOCK_MS, token).catch(() => false))) return { ok: false, reason: "running" };
   const t0 = Date.now();
   const clock = () => nowMs + (Date.now() - t0); // the sweep's own time, shifted like nowMs
   const overBudget = () => Date.now() - t0 > budgetMs;
@@ -598,8 +597,7 @@ export async function runPrivacySweep({ reason = "manual", nowMs = Date.now(), r
       ...prevStatus, lastRunAt: summary.ok ? summary.finishedAt : prevStatus.lastRunAt || null, lastAttemptAt: summary.finishedAt,
       queuedAt: null, nextReportAt: nra, cycleMs, last: summary,
     }).catch(() => {});
-    const cur = await kvs.get(LOCK_KEY).catch(() => null);
-    if (cur?.token === token) await kvs.delete(LOCK_KEY).catch(() => {});
+    await releaseLock(LOCK_KEY, token);
     // Hand-off: the rest runs in a fresh invocation. A report falling due within the window (a
     // later batch of a multi-batch site) is waited for the same way the daily check would.
     try {
