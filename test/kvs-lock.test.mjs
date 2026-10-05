@@ -96,22 +96,46 @@ eq("takeover key embeds the dead token", takeoverKey("backup-lease", "DEAD"), "b
   eq("L4: 3 dead claims older than 3× CLAIM_MS → taken over", await L.acquireLock("k", HOLD, "A"), true);
   eq("L4: … and held by the taker", store.get("k")?.token, "A");
 }
-{ // L4: a ghost row (reads absent, FAIL_IF_EXISTS still refuses) is cleared after 3 sightings spanning the hold
-  const { store, kvs } = fakeKvs();
-  const ghostKeys = new Set(["g"]);
-  const k7 = {
-    get: async (k) => (ghostKeys.has(k) ? undefined : kvs.get(k)),
-    set: async (k, v, o) => { if (ghostKeys.has(k) && o?.keyPolicy === "FAIL_IF_EXISTS") throw new Error("KEY_EXISTS"); return kvs.set(k, v, o); },
-    delete: async (k) => { ghostKeys.delete(k); return kvs.delete(k); },
+{ // Round 4: an empty read followed by a refused write is ANOTHER CALLER's fresh lock — never deleted.
+  // sv-break4/ghost/ghost.mjs case A (deterministic): a live holder C takes the lock between B's
+  // read and B's retry; B must not remove C's row. RED on 3d3265d (ghost clear deleted it).
+  const { store, kvs } = fakeKvs(); const H = 1000, K = "backup-lease";
+  store.set(`${K}:ghost`, { since: new Date(Date.now() - H - 10).toISOString(), n: 2, lastAt: new Date(Date.now() - 50).toISOString() }); // 3d3265d's sightings counter, primed
+  const L = makeLocks(kvs);
+  let injected = false;
+  store.set(K, { token: "A", at: new Date().toISOString() });
+  const kB = {
+    ...kvs,
+    async get(k) {
+      if (k === K && !injected) { store.delete(K); injected = true; const v = await kvs.get(k); await L.acquireLock(K, H, "C-LIVE"); return v; } // A releases; C acquires right after B's empty read
+      return kvs.get(k);
+    },
   };
-  const L = makeLocks(k7);
-  const SHORT = 50; // a 50 ms hold so "spanning the hold" fits in a unit test
-  const r1 = await L.acquireLock("g", SHORT, "A");
-  const r2 = await L.acquireLock("g", SHORT, "A");
-  eq("L4 ghost: refused while the sightings are fewer than 3 or younger than the hold", [r1, r2], [false, false]);
-  await new Promise((r) => setTimeout(r, SHORT + 20));
-  eq("L4 ghost: third sighting after the hold → deleted and acquired", await L.acquireLock("g", SHORT, "A"), true);
-  eq("L4 ghost: the sighting row is cleaned up", store.has("g:ghost"), false);
+  const B = await makeLocks(kB).acquireLock(K, H, "B");
+  eq("round 4: B does not get the lock a live holder just took", B, false);
+  eq("round 4: the live holder keeps its row", store.get(K)?.token, "C-LIVE");
+}
+{ // Round 4: 4 polling workers × 20 trials, short hold, random latency (sv-break4/ghost/count.mjs):
+  // NEVER two holders at once. 3d3265d: 26 overlapping holds; a32e6fd and now: 0.
+  let overlaps = 0, holds = 0;
+  for (let trial = 0; trial < 20; trial++) {
+    const { kvs, ctl } = fakeKvs(); ctl.latency = () => 2 + Math.random() * 15;
+    const L = makeLocks(kvs); let holders = 0;
+    await Promise.all(["W1", "W2", "W3", "W4"].map(async (id) => {
+      const end = Date.now() + 1500; let j = 0;
+      while (Date.now() < end) {
+        const tok = `${id}-${j++}`;
+        if (await L.acquireLock("lease", 300, tok)) { holds += 1; if (++holders > 1) overlaps += 1; await new Promise((r) => setTimeout(r, 40)); holders -= 1; await L.releaseLock("lease", tok); }
+        else await new Promise((r) => setTimeout(r, 10));
+      }
+    }));
+  }
+  eq(`round 4: 0 overlapping holds (${holds} holds by 4 contending workers × 20 trials)`, overlaps, 0);
+  ok("round 4: the workers did get the lock (the test is not vacuous)", holds > 100);
+}
+{ // the sighting counter is gone
+  const src = readFileSync(new URL("../src/server/shared/kvs-lock.js", import.meta.url), "utf8");
+  ok("round 4: no ghost clear, no sightings counter in kvs-lock.js", !/ghost\(|GHOST_TRIES|:ghost`/.test(src) && /if \(cur === "absent"\) return tryPut\(key, token, holdMs\);/.test(src));
 }
 { // L3: withLock waits longer than the hold by default, so a crashed holder is outlived
   const { store, kvs } = fakeKvs(); const L = makeLocks(kvs);
