@@ -238,9 +238,9 @@ After a reinstall there are no tokens (they are never backed up): mint a new one
   receipt (for `403`/`409` a receipt is still written with `status: "refused"` when the token is
   valid). `401` writes nothing.
 - Idempotency keys are kept 7 days.
-- Content properties need `write:content.property:confluence` (granted); space properties need
-  `write:space:confluence` (in the 7.0 batch — until then the space mirror logs a 403 and the receipt
-  is readable only via the site receipt page and the UI).
+- The receipt mirrors are v2 content properties: page properties need `read:page:confluence` +
+  `write:page:confluence`, space properties `read:space:confluence` + `write:space:confluence` (all
+  held; docs/SCOPES-7.0.md).
 
 ## Why not a dynamic trigger behind a feature flag
 
