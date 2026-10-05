@@ -274,20 +274,28 @@ export function acceptAnswers(batch, answers) {
  * absent or unreadable (the caller keeps the cycle it had, 7 days by default). Atlassian's guide
  * calls it the cycle period "you must follow instead" of 7 days and gives no unit; Atlassian staff
  * on the developer community (thread 26940) say DAYS. So: a number below 3600 is days, a number of
- * at least 3600 is seconds (defensive), an ISO-8601 "P7D" is days; always clamped to 1–30 days.
+ * at least 3600 is seconds (defensive), ISO-8601 P<n>D / P<n>W / PT<n>H are days / weeks / hours; always
+ * clamped to 1–30 days.
  * The ONE parser of the header (worker.js reportAccounts), tested in test/privacy-cycle.test.mjs.
  */
 export function parseCyclePeriod(header) {
   if (header == null || header === "") return null;
   const str = String(header).trim();
   let days = null;
-  const iso = /^P(\d+(?:\.\d+)?)D$/i.exec(str);
-  if (iso) days = Number(iso[1]);
+  // ISO-8601 durations: P<n>D (days), P<n>W (weeks), PT<n>H (hours) — the same set all three
+  // LeanZero apps accept, converted to days.
+  const isoD = /^P(\d+(?:\.\d+)?)D$/i.exec(str);
+  const isoW = /^P(\d+(?:\.\d+)?)W$/i.exec(str);
+  const isoH = /^PT(\d+(?:\.\d+)?)H$/i.exec(str);
+  if (isoD) days = Number(isoD[1]);
+  else if (isoW) days = Number(isoW[1]) * 7;
+  else if (isoH) days = Number(isoH[1]) / 24;
   else {
     const n = Number(str);
     if (!Number.isFinite(n) || n <= 0) return null;
     days = n >= 3600 ? n / 86400 : n;
   }
+  if (!(days > 0)) return null; // P0D / PT0H: no period at all → keep the cycle we had
   const clamped = Math.min(30, Math.max(1, days));
   return Math.round(clamped * 86400000);
 }
