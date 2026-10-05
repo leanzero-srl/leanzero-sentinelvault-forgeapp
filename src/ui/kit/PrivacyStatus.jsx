@@ -39,8 +39,8 @@ export default function PrivacyStatus() {
       <div className="settings-row-info">
         <p className="settings-row-label">Weekly personal-data check</p>
         <p className="settings-row-description">
-          Once a week Sentinel Vault deletes the history older than the period above (only when Delete old history is on), then asks Atlassian which of the
-          accounts it stores were closed or changed (each account once a week). A closed account is erased everywhere the app keeps
+          Every week Sentinel Vault deletes the history older than the period above (only when Delete old history is on), then asks Atlassian which of the
+          accounts it stores were closed or changed (each account once per Atlassian's reporting cycle, 7 days unless Atlassian sets another). A closed account is erased everywhere the app keeps
           it, including the backup, except inside sealed content, which stays as the record of what was sealed; a changed name is refreshed.
         </p>
         <p className="settings-row-default" data-testid="sv-privacy-last" role="status">

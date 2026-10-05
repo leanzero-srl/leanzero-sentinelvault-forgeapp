@@ -42,15 +42,16 @@ import { readEffective } from "../policies/settings-schema.js";
 import { isPastRetention, retainedFamily, effectiveRetentionDays } from "./retention.js";
 import {
   extractAccountIds, rewriteAccount, removesFromLists, keyNamesAccount, holdsPageContent, stripLegacyEmail, stripRosterContact,
-  planReport, batches, sweepSchedule, nextReportAt, acceptAnswers, parseCyclePeriod, erasableMentions, CYCLE_MS, DUE_WINDOW_MS, DUE_MARGIN_MS,
+  planReport, batches, sweepSchedule, nextReportAt, acceptAnswers, parseCyclePeriod, erasableMentions, jobAlive, CYCLE_MS, DUE_WINDOW_MS, DUE_MARGIN_MS,
 } from "./accounts.js";
 import { scheduleBackup } from "../backup/hook.js";
-import { acquireLock, releaseLock } from "../../shared/kvs-lock.js";
+import { acquireLock, releaseLock, withLock } from "../../shared/kvs-lock.js";
 import { sealPropertyValue, sealPropertyNeedsScrub } from "../sealing/seal-property.js";
 
 export const PRIVACY_QUEUE_KEY = "privacy-queue";
 export const STATUS_KEY = "privacy-status";
 export const ERASE_PENDING_KEY = "privacy-erase-pending";
+const ERASE_PENDING_LOCK = "privacy-erase-pending-lock";
 const LOCK_KEY = "privacy-lock";
 const INDEX_PREFIX = "privacy-accounts-";
 const MIGRATIONS_KEY = "privacy-migrations";
@@ -247,6 +248,25 @@ async function reportBatch(batch, report) {
  */
 export const reportNotPermitted = (status) => status === 401 || status === 403;
 
+/**
+ * The app's own account id: the `app-account-id` row other capsules cache, or — when nothing has
+ * cached it yet — looked up once as the app (`/wiki/rest/api/user/current`) and cached the same way
+ * (review low 6). A failed lookup returns null: the sweep then cannot exclude it, and reporting the
+ * app account is harmless (Atlassian answers nothing for it), so the sweep still runs.
+ */
+async function ownAccountId() {
+  const cached = await kvs.get("app-account-id").catch(() => null);
+  if (typeof cached === "string" && cached) return cached;
+  try {
+    const res = await asApp().requestConfluence(route`/wiki/rest/api/user/current`);
+    if (res.ok) {
+      const id = (await res.json())?.accountId;
+      if (typeof id === "string" && id) { await kvs.set("app-account-id", id).catch(() => {}); return id; }
+    }
+  } catch (_) { /* not excluded this run */ }
+  return null;
+}
+
 async function displayNameOf(accountId) {
   try {
     const res = await asApp().requestConfluence(route`/wiki/rest/api/user?accountId=${accountId}`);
@@ -401,21 +421,23 @@ async function applyAccountUpdates({ closed, updated, places }) {
  * content, then clears the ids it handled. One job at a time: a queued/running one is reused.
  */
 async function queueBackupErasure(ids) {
-  const cur = (await kvs.get(ERASE_PENDING_KEY).catch(() => null)) || {};
-  const merged = [...new Set([...(cur.ids || []), ...ids])];
-  if (!merged.length) return null;
   const { readJob } = await import("../backup/engine.js");
-  const running = cur.jobId ? await readJob(cur.jobId).catch(() => null) : null;
-  if (running && (running.status === "queued" || running.status === "running")) {
-    await kvs.set(ERASE_PENDING_KEY, { ...cur, ids: merged, at: nowIso() });
-    return { jobId: running.id, reused: true };
-  }
   const { startJob } = await import("../backup/worker.js");
-  await kvs.set(ERASE_PENDING_KEY, { ids: merged, at: nowIso(), jobId: null });
-  const job = await startJob("privacy-erase", {}, null);
-  await kvs.set(ERASE_PENDING_KEY, { ids: merged, at: nowIso(), jobId: job.id });
-  return { jobId: job.id, reused: false };
+  return withLock(ERASE_PENDING_LOCK, 60000, async () => {
+    const cur = (await kvs.get(ERASE_PENDING_KEY)) || {};
+    const merged = [...new Set([...(cur.ids || []), ...ids])];
+    if (!merged.length) return null;
+    const job = cur.jobId ? await readJob(cur.jobId).catch(() => null) : null;
+    if (jobAlive(job, Date.now())) {
+      await kvs.set(ERASE_PENDING_KEY, { ...cur, ids: merged, at: nowIso() });
+      return { jobId: job.id, reused: true };
+    }
+    const next = await startJob("privacy-erase", {}, null);
+    await kvs.set(ERASE_PENDING_KEY, { ids: merged, at: nowIso(), jobId: next.id });
+    return { jobId: next.id, reused: false };
+  });
 }
+
 
 /**
  * One sweep. One at a time (shared/kvs-lock.js; a dead run's lock is taken over); a second caller gets
@@ -452,7 +474,7 @@ export async function runPrivacySweep({ reason = "manual", nowMs = Date.now(), r
     summary.retentionDays = days;
     const migrations = (await kvs.get(MIGRATIONS_KEY).catch(() => null)) || {};
     // The app's own account (the bot that writes restores) is not a person to report or erase (b).
-    const appAccountId = await kvs.get("app-account-id").catch(() => null);
+    const appAccountId = await ownAccountId();
     const exclude = typeof appAccountId === "string" ? [appAccountId] : [];
     const prior = await readIndex();
     const closedIds = Object.entries(prior).filter(([id, e]) => e?.c && !exclude.includes(id)).map(([id]) => id);
