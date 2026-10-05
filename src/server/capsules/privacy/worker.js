@@ -31,7 +31,7 @@ import { asApp, route, privacy } from "@forge/api";
 import { readEffective } from "../policies/settings-schema.js";
 import { isPastRetention, retainedFamily, effectiveRetentionDays } from "./retention.js";
 import {
-  extractAccountIds, rewriteAccount, removesFromLists, keyNamesAccount, holdsPageContent, stripLegacyEmail, stripRosterContact, planReport, batches,
+  extractAccountIds, rewriteAccount, removesFromLists, keyNamesAccount, holdsPageContent, stripLegacyEmail, stripRosterContact, planReport, batches, sweepDue,
 } from "./accounts.js";
 import { scheduleBackup } from "../backup/hook.js";
 import { sealPropertyValue, sealPropertyNeedsScrub } from "../sealing/seal-property.js";
@@ -43,7 +43,6 @@ const INDEX_PREFIX = "privacy-accounts-";
 const MIGRATIONS_KEY = "privacy-migrations";
 const INDEX_CHUNK = 1500; // ~110 bytes an entry → well under the KVS value limit
 const LOCK_MS = 16 * 60000; // > the 900 s consumer timeout: a killed run frees it on its own
-export const SWEEP_EVERY_MS = 6.5 * 86400000;
 const nowIso = () => new Date().toISOString();
 const errText = (e) => String(e?.message || e).slice(0, 300);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -54,11 +53,8 @@ export const isConfluenceInstall = (context) => {
   return !ic || ic.includes(":confluence::");
 };
 
-/** PURE. Is a scheduled sweep due, given the status row? */
-export function sweepDue(status, nowMs = Date.now()) {
-  const last = Date.parse(status?.lastRunAt || status?.queuedAt || "");
-  return !Number.isFinite(last) || nowMs - last >= SWEEP_EVERY_MS;
-}
+// Is a scheduled sweep due? Pure, in accounts.js (unit-tested there).
+export { sweepDue, SWEEP_EVERY_MS } from "./accounts.js";
 
 /** Daily check (boot.js, after the recurring-nudge task). Never throws. */
 export async function privacySweepCheck(context) {
@@ -156,11 +152,12 @@ async function reportBatch(batch, report) {
 }
 
 /**
- * PURE. A report-accounts refusal that means "this app version may not call it" rather than a
- * failure. Measured 2026-10-04 on wolfaenpak dev: 401 — the call needs the `report:personal-data`
- * scope, which the manifest does not hold (adding a scope is a major version and an admin
- * re-consent). Until then the sweep records `reporting: "not-permitted"`, keeps its weekly
- * cadence, and does everything else (retention, the migration, erasure of what it is told).
+ * PURE. A report-accounts refusal that means "the app may not call it" rather than a failure.
+ * Measured 2026-10-04 on wolfaenpak dev (6.x): 401 — the call needs the `report:personal-data`
+ * scope. 7.0.0 declares it (a major: site admins approve it on update), so a 401/403 is no longer
+ * expected; if Atlassian still refuses, the sweep records `reporting: "not-permitted"`, keeps its
+ * weekly cadence, does everything else (retention, the strips), and leaves every account due so
+ * the next sweep reports it.
  */
 export const reportNotPermitted = (status) => status === 401 || status === 403;
 
@@ -430,7 +427,7 @@ export async function runPrivacySweep({ reason = "manual", nowMs = Date.now(), r
     } catch (e) {
       if (reportNotPermitted(e?.status)) {
         summary.accounts.reporting = "not-permitted";
-        console.warn(`[PRIVACY] report-accounts refused (${e.status}): the report:personal-data scope is not in this version's manifest`);
+        console.warn(`[PRIVACY] report-accounts refused (${e.status}) although the manifest declares report:personal-data; every account stays due`);
       } else {
         summary.ok = false;
         summary.error = errText(e);
