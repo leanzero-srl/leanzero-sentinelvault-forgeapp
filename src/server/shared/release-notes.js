@@ -14,7 +14,6 @@ export const RELEASE_NOTES = Object.freeze([
   note({
     version: "7.0.0",
     date: "2026-10-05",
-    status: "testing",
     headline: "The weekly personal-data check now asks Atlassian about closed accounts, and the app asks for fewer permissions",
     changes: [
       "New permission: this update asks a site admin to approve one new permission, reporting personal data to Atlassian. Until it is approved the site stays on the previous version.",
