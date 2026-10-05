@@ -81,7 +81,7 @@ if [[ $LINT_RC -ne 0 ]]; then
 fi
 
 echo "==> Deploying to production"
-forge deploy -e production "$@"
+if [[ "$APPROVE_MAJOR" == "1" ]]; then forge deploy -e production --approve MAJOR_VERSION_RULE "$@"; else forge deploy -e production "$@"; fi
 
 echo "==> Verifying Runs-on-Atlassian eligibility"
 forge eligibility -e production || true   # -e: non-TTY
