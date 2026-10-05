@@ -222,7 +222,7 @@ ok("honours a 429 Retry-After", /status === 429/.test(worker) && /Retry-After/.t
 ok("a ttl'd row keeps its ttl when rewritten", /async function setPreserving/.test(worker) && !/await kvs\.set\(key, v\);/.test(worker));
 ok("closed accounts lose their authenticator (secret namespace)", /eraseSignature\(id\)/.test(worker));
 const bworker = readFileSync(resolve(here, "../src/server/capsules/backup/worker.js"), "utf8");
-ok("the backup erasure is its own backup job: a scrubbed generation, then older ones purged", worker.includes('startJob("privacy-erase", {}, null)') && /case "privacy-erase":/.test(bworker) && /runBackupAndAudit\(\{ reason: "privacy"/.test(bworker) && /purgeGenerationsMentioning\(ids\)/.test(bworker));
+ok("the backup erasure is its own backup job: a scrubbed generation, then older ones purged", worker.includes('startJob("privacy-erase", {}, null)') && /case "privacy-erase":/.test(bworker) && /runBackupAndAudit\(\{ reason: "privacy-erase"/.test(bworker) && /purgeGenerationsMentioning\(ids\)/.test(bworker));
 ok("C2: the sweep no longer waits for the backup lease inline", !/withLease/.test(worker));
 ok("the status row stores counts, not account ids", !/summary\.[a-z]+\s*=\s*closed\b/.test(worker) && /summary\.accounts\.closed = newlyClosed\.length/.test(worker) && /summary\.erasure\.renamed = summary\.erasure\.renamed\.length/.test(worker));
 const engine = readFileSync(resolve(here, "../src/server/capsules/backup/engine.js"), "utf8");

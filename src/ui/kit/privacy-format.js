@@ -25,7 +25,7 @@ export function describeSweep(last) {
     // that the version lacks the permission (6.x said so; that sentence is gone with the scope).
     if (a.reporting === "not-permitted") parts.push("Atlassian refused the account check this time, it is tried again the next day");
     else if (a.reporting === "partial") parts.push(`checked ${plural(n(a.reported), "account")} with Atlassian so far, the rest continue in a few minutes`);
-    else if (!n(a.reported) && !n(a.due)) parts.push("no account was due for a check with Atlassian (each is checked once a week)");
+    else if (!n(a.reported) && !n(a.due)) parts.push("no account was due for a check with Atlassian (each is checked once per Atlassian's cycle, 7 days by default)");
     else parts.push(`checked ${plural(n(a.reported), "account")} with Atlassian`);
     if (n(a.closed)) parts.push(`erased ${plural(n(a.closed), "closed account")}`);
     if (n(a.updated)) parts.push(`refreshed ${plural(n(a.updated), "changed name")}`);

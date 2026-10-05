@@ -271,9 +271,11 @@ export function acceptAnswers(batch, answers) {
 
 /**
  * PURE. Atlassian's `Cycle-Period` response header → milliseconds, clamped to 1–30 days; null when
- * absent or unreadable (the caller keeps the cycle it had, 7 days by default). Atlassian documents
- * it as the cycle period "you must follow instead" of 7 days without a unit; a small number is read
- * as DAYS, a number of at least 3600 as SECONDS (an ISO-8601 duration "P7D" is read too).
+ * absent or unreadable (the caller keeps the cycle it had, 7 days by default). Atlassian's guide
+ * calls it the cycle period "you must follow instead" of 7 days and gives no unit; Atlassian staff
+ * on the developer community (thread 26940) say DAYS. So: a number below 3600 is days, a number of
+ * at least 3600 is seconds (defensive), an ISO-8601 "P7D" is days; always clamped to 1–30 days.
+ * The ONE parser of the header (worker.js reportAccounts), tested in test/privacy-cycle.test.mjs.
  */
 export function parseCyclePeriod(header) {
   if (header == null || header === "") return null;
@@ -310,21 +312,42 @@ export function erasableMentions(key, value, closedIds) {
 }
 
 /**
- * PURE. Does one backup chunk's entries ([[key, value, expireAt], …]) mention any of `needles`
- * OUTSIDE page content? A generation is dropped by the privacy purge only for such a mention: a
- * closed person who remains inside a sealed-section baseline must not make every older generation
- * (pinned pre-uninstall ones included) disappear week after week (review 2026-10-05, C1).
+ * PURE. Does one backup chunk's entries ([[key, value, expireAt], …]) still hold something of any
+ * of `needles` that the KVS erasure WOULD change? The same test as the live erasure
+ * (erasableMentions), so a generation is dropped only for what erasing would have removed — never
+ * for a mention inside page content (a sealed-section baseline, review C1) nor for a personal space
+ * key (`space-protection-~id`, `admin-settings-space-_id`, a seal's `spaceKey: "~id"`; review B3),
+ * which matched as plain text and dropped older generations, pinned ones included, for nothing.
  */
 export function entriesMentionOutsideContent(entries, needles) {
   const list = (needles || []).filter(Boolean);
   if (!list.length) return false;
   for (const e of entries || []) {
     const key = Array.isArray(e) ? e[0] : e?.key;
-    if (holdsPageContent(key)) continue;
-    const text = `${key}\u0000${JSON.stringify(Array.isArray(e) ? e[1] : e?.value)}`;
-    if (list.some((n) => text.includes(n))) return true;
+    const value = Array.isArray(e) ? e[1] : e?.value;
+    if (erasableMentions(key, value, list).length > 0) return true;
   }
   return false;
+}
+
+/**
+ * PURE. Does free text (a backup manifest: who took it, whose authenticator it lists) name one of
+ * `needles` as a PERSON — not as part of a personal space key (~id / _id)?
+ */
+export const textNamesPerson = (text, needles) => (needles || []).some((n) => n && personRe(n).test(String(text || "")));
+
+/**
+ * PURE. Is a privacy-erase job still worth waiting for? Queued, or running for less than
+ * JOB_STALE_MS. A job killed at the 900 s consumer timeout stays "running" until its 7-day ttl;
+ * after 30 minutes it is dead and a new one is queued (review low 2).
+ */
+export const JOB_STALE_MS = 30 * 60000;
+export function jobAlive(job, nowMs) {
+  if (!job) return false;
+  if (job.status === "queued") return true;
+  if (job.status !== "running") return false;
+  const started = Date.parse(job.startedAt || job.createdAt || "");
+  return Number.isFinite(started) && nowMs - started < JOB_STALE_MS;
 }
 
 /** PURE. Split a list into batches of at most `size`. */
