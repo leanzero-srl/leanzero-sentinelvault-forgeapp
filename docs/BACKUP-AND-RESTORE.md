@@ -62,9 +62,9 @@ serialises backup, restore, import, move and the privacy erasure job (`privacy-e
 `shared/kvs-lock.js`: a Forge KVS row with a ttl was measured readable — and still refusing FAIL_IF_EXISTS — two hours
 past its expiry (2026-10-05), so a lease older than its 16-minute hold is taken over; an unreadable lease counts as
 held, and the takeover is first claimed with an atomic `backup-lease:takeover:<dead token>` row so two takers cannot
-both win (a claim chain of dead takers is cleared after 3× the claim's 120 s; a row that reads as absent yet still
-refuses FAIL_IF_EXISTS is cleared after 3 sightings spanning the hold; a takeover whose delete fails gives up and
-releases its claim). A privacy erasure that meets a busy lease is queued again in 5 minutes (up to 12 times); its ids
+both win (a claim chain of dead takers is cleared after 3× the claim's 120 s; a takeover whose delete fails gives up and
+releases its claim). A lease that reads as absent is only ever re-tried with an atomic write, never deleted: that
+refusal means another caller just took it. A privacy erasure that meets a busy lease is queued again in 5 minutes (up to 12 times); its ids
 are written to `privacy-erase-pending` BEFORE the job is started, and if that hand-off fails the sweep marks them
 not-erased so the next sweep re-queues them.
 
