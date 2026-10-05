@@ -110,9 +110,41 @@ async function executeJobUnleased(job) {
     }
     case "delete":
       return deleteAllBackups(job.actor);
+    case "privacy-erase":
+      return privacyErase();
     default:
       throw new Error(`Unknown backup job ${job.kind}`);
   }
+}
+
+/**
+ * The backup's part of a privacy erasure (capsules/privacy queues it; review 2026-10-05, C2). The
+ * closed account ids wait in `privacy-erase-pending` — never in this job row, which the sweep
+ * would otherwise find and "erase" again. A fresh (already scrubbed) generation first, then every
+ * older generation that names them outside page content is dropped (engine purge). The ids it
+ * handled are cleared only on success; a failure leaves them for the next sweep to re-queue.
+ */
+async function privacyErase() {
+  const PENDING = "privacy-erase-pending";
+  const pending = (await kvs.get(PENDING).catch(() => null)) || {};
+  const ids = [...new Set(pending.ids || [])];
+  const clear = async () => {
+    const cur = (await kvs.get(PENDING).catch(() => null)) || {};
+    const left = (cur.ids || []).filter((i) => !ids.includes(i));
+    if (left.length) await kvs.set(PENDING, { ...cur, ids: left, jobId: null }); else await kvs.delete(PENDING);
+  };
+  if (!ids.length) return { ok: true, skipped: "nothing pending" };
+  const settings = await kvs.get(SETTINGS_KEY).catch(() => null);
+  const status = await kvs.get(STATUS_KEY).catch(() => null);
+  // No backup on this site, or the admin deleted it: nothing to scrub, and nothing is recreated.
+  if (!settings?.pageId || status?.deletedAt) { await clear(); return { ok: true, skipped: status?.deletedAt ? "backup deleted" : "no backup on this site", count: ids.length }; }
+  const b = await runBackupAndAudit({ reason: "privacy", actor: null });
+  if (!b.ok) return { ok: false, reason: `backup failed: ${b.reason || "unknown"}` };
+  const { purgeGenerationsMentioning } = await import("./engine.js");
+  const p = await purgeGenerationsMentioning(ids);
+  if (p.aborted) return { ok: false, reason: `purge aborted: ${p.aborted}` };
+  await clear();
+  return { ok: true, generationId: b.generationId || null, dropped: p.dropped, kept: p.kept, newestMentions: p.newestMentions, count: ids.length };
 }
 
 /**

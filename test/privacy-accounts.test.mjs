@@ -211,22 +211,24 @@ eq("batch size constant", REPORT_BATCH, 90);
   eq("due: a REFUSED run a day ago is retried (6.x → 7.0 upgrade)", sweepDue({ lastRunAt: iso(t - 86400000), lastAttemptAt: iso(t - 86400000), last: { accounts: { reporting: "not-permitted" } } }, t), true);
   eq("not due: a refused run an hour ago", sweepDue({ lastRunAt: iso(t - 3600000), lastAttemptAt: iso(t - 3600000), last: { accounts: { reporting: "not-permitted" } } }, t), false);
   eq("not due: a retry is already queued", sweepDue({ lastRunAt: iso(t - 86400000), lastAttemptAt: iso(t - 86400000), queuedAt: iso(t - 3600000), last: { accounts: { reporting: "not-permitted" } } }, t), false);
-  eq("due: a queued retry that never ran is re-queued after the window", sweepDue({ lastRunAt: iso(t - 3 * 86400000), lastAttemptAt: iso(t - 3 * 86400000), queuedAt: iso(t - RETRY_REFUSED_MS - 1), last: { accounts: { reporting: "not-permitted" } } }, t), true);
+  eq("due: a queued retry that never ran is re-queued after the guard window (a day + 15 min)", sweepDue({ lastRunAt: iso(t - 3 * 86400000), lastAttemptAt: iso(t - 3 * 86400000), queuedAt: iso(t - 24 * 3600000 - 16 * 60000), last: { accounts: { reporting: "not-permitted" } } }, t), true);
 }
 
 // ── wiring ──────────────────────────────────────────────────────────────────────────────────
 const here = dirname(fileURLToPath(import.meta.url));
 const worker = readFileSync(resolve(here, "../src/server/capsules/privacy/worker.js"), "utf8");
-ok("reports through @forge/api privacy", /privacy\.reportPersonalData\(b\)/.test(worker));
+ok("reports through report-accounts directly, headers readable (Cycle-Period)", worker.includes('__requestAtlassianAsApp("/app/report-accounts"') && /report = reportAccounts/.test(worker) && worker.includes('res.headers?.get?.("Cycle-Period")'));
 ok("honours a 429 Retry-After", /status === 429/.test(worker) && /Retry-After/.test(worker));
 ok("a ttl'd row keeps its ttl when rewritten", /async function setPreserving/.test(worker) && !/await kvs\.set\(key, v\);/.test(worker));
 ok("closed accounts lose their authenticator (secret namespace)", /eraseSignature\(id\)/.test(worker));
-ok("the backup gets a scrubbed generation and older ones are purged", /runBackup\(\{ reason: "privacy"/.test(worker) && /purgeGenerationsMentioning\(closed\)/.test(worker));
-ok("the status row stores counts, not account ids", !/summary\.[a-z]+\s*=\s*closed\b/.test(worker) && /summary\.accounts\.closed = closed\.length/.test(worker));
+const bworker = readFileSync(resolve(here, "../src/server/capsules/backup/worker.js"), "utf8");
+ok("the backup erasure is its own backup job: a scrubbed generation, then older ones purged", worker.includes('startJob("privacy-erase", {}, null)') && /case "privacy-erase":/.test(bworker) && /runBackupAndAudit\(\{ reason: "privacy"/.test(bworker) && /purgeGenerationsMentioning\(ids\)/.test(bworker));
+ok("C2: the sweep no longer waits for the backup lease inline", !/withLease/.test(worker));
+ok("the status row stores counts, not account ids", !/summary\.[a-z]+\s*=\s*closed\b/.test(worker) && /summary\.accounts\.closed = newlyClosed\.length/.test(worker) && /summary\.erasure\.renamed = summary\.erasure\.renamed\.length/.test(worker));
 const engine = readFileSync(resolve(here, "../src/server/capsules/backup/engine.js"), "utf8");
 const purge = engine.slice(engine.indexOf("export async function purgeGenerationsMentioning"), engine.indexOf("async function collectGarbage"));
 ok("L3: an unreadable backup file aborts the purge (drops nothing)", /catch \(e\) \{\s*console\.warn\(`\[BACKUP\] privacy purge aborted, nothing dropped/.test(purge) && !/catch \(_\) \{ hit = true; \}/.test(purge));
-ok("P2: the erase pass re-reads a row before rewriting it", /const value = await kvs\.get\(key\);/.test(worker));
+ok("P2: the erase pass re-reads a row before rewriting it", /const value = await withBackoff\(\(\) => kvs\.get\(key\)\);/.test(worker));
 ok("L4: page-content rows are skipped by the erase pass", /if \(holdsPageContent\(key\)\) return;/.test(worker));
 const wfActions = readFileSync(resolve(here, "../src/server/capsules/workflow/actions.js"), "utf8");
 ok("P1: a request is refused past MAX_REQUEST_APPROVERS", /\(spec\?\.approvers\?\.length \|\| 0\) > MAX_REQUEST_APPROVERS/.test(wfActions));
@@ -250,6 +252,6 @@ ok("401/403 from report-accounts is recorded as not-permitted", worker.includes(
   const logic = readFileSync(resolve(here, "../src/server/capsules/workflow/logic.js"), "utf8");
   ok("hint: a new save drops an email hint", /a\.hint && !a\.hint\.includes\("@"\)/.test(logic));
   ok("hint: no stale V1 flag gates the roster strip", !worker.includes("rosterEmailV1"));
-  ok("the email strips run on every sweep (a restored backup brings addresses back)", worker.includes("const stripEmail = true;") && worker.includes("const stripRoster = true;"));
+  ok("the email strips run on every sweep (a restored backup brings addresses back)", worker.includes("if (stripLegacyEmail(key, v).changed)") && worker.includes("if (stripRosterContact(key, v).changed)"));
 }
 report("privacy-accounts");

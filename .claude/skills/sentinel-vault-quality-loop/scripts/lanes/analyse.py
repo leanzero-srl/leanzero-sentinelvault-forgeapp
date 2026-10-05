@@ -21,6 +21,8 @@ for c in calls:
         c["spec"] = "v1 GET /wiki/rest/api/group (path lacks /wiki)"; c["alts"] = [["read:confluence-groups"], ["read:group:confluence"]]
     elif "${collection}" in r:
         c["spec"] = "v2 GET /pages|blogposts/{id}/attachments"; c["alts"] = [["read:attachment:confluence"]]
+    elif r.startswith("/app/report-accounts"):
+        c["spec"] = "Forge POST /app/report-accounts (Personal Data Reporting, via __requestAtlassianAsApp)"; c["alts"] = [["report:personal-data"]]
     elif "/permission/check" in r and "/space/" in r:
         c["spec"] = "v1 POST /wiki/rest/api/space/{key}/permission/check (not in the current spec; measured 401 2026-10-04, fail-closed)"; c["alts"] = []
 json.dump(calls, open("calls-final.json", "w"), indent=1)
