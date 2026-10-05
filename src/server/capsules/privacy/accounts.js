@@ -337,17 +337,33 @@ export function entriesMentionOutsideContent(entries, needles) {
 export const textNamesPerson = (text, needles) => (needles || []).some((n) => n && personRe(n).test(String(text || "")));
 
 /**
- * PURE. Is a privacy-erase job still worth waiting for? Queued, or running for less than
- * JOB_STALE_MS. A job killed at the 900 s consumer timeout stays "running" until its 7-day ttl;
- * after 30 minutes it is dead and a new one is queued (review low 2).
+ * PURE. Is a privacy-erase job still worth waiting for? Queued for less than JOB_STALE_MS (a
+ * re-queue stamps `queuedAt`; a push that failed after the row said "queued" would otherwise be
+ * reused forever — review L1), or running for less than JOB_STALE_MS (a job killed at the 900 s
+ * consumer timeout stays "running" until its 7-day ttl — review low 2). Otherwise a new one is queued.
  */
 export const JOB_STALE_MS = 30 * 60000;
 export function jobAlive(job, nowMs) {
   if (!job) return false;
-  if (job.status === "queued") return true;
+  const since = (field) => Date.parse(job[field] || job.createdAt || "");
+  if (job.status === "queued") { const q = since("queuedAt"); return Number.isFinite(q) && nowMs - q < JOB_STALE_MS; }
   if (job.status !== "running") return false;
-  const started = Date.parse(job.startedAt || job.createdAt || "");
+  const started = since("startedAt");
   return Number.isFinite(started) && nowMs - started < JOB_STALE_MS;
+}
+
+/**
+ * PURE. After the sweep tried to hand the backup's part of an erasure over: if it failed (`result`
+ * carries an error — the pending lock busy, a failed read or write), the ids go back to
+ * NOT-erased (x: null) so the next sweep re-erases (cheap: the rows are already clean) and
+ * re-queues them. Without this the ids were lost for good and old generations kept the person
+ * (review blocking, 2026-10-05). Returns a new index.
+ */
+export function settleBackupHandOff(index, forBackup, result) {
+  if (!result?.error) return index;
+  const next = { ...index };
+  for (const id of forBackup || []) if (next[id]) next[id] = { ...next[id], x: null };
+  return next;
 }
 
 /** PURE. Split a list into batches of at most `size`. */

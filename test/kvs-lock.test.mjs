@@ -4,7 +4,7 @@
 // 33/200 double wins). Plus the measured trap behind the takeover: an expired ttl row lingers.
 import { readFileSync } from "node:fs";
 import { eq, ok, report } from "./_assert.mjs";
-import { lockIsStale, makeLocks, takeoverKey } from "../src/server/shared/kvs-lock.js";
+import { lockIsStale, makeLocks, takeoverKey, CLAIM_MS } from "../src/server/shared/kvs-lock.js";
 
 function fakeKvs() {
   const store = new Map();
@@ -76,6 +76,50 @@ eq("takeover key embeds the dead token", takeoverKey("backup-lease", "DEAD"), "b
   store.set("j", { token: "DEAD", at: ago(20 * M) });
   store.set(takeoverKey("j", "DEAD"), { token: "BUSY", at: ago(1000) });
   eq("a fresh claim (a takeover in progress) is respected", await L.acquireLock("j", HOLD, "C"), false);
+}
+{ // L2: the winner's delete throws → acquireLock returns false, the claim row is released
+  const { store, kvs } = fakeKvs();
+  const k8 = { get: kvs.get, set: kvs.set, delete: async (k) => { if (k === "k") throw new Error("500 on delete"); return kvs.delete(k); } };
+  store.set("k", { token: "DEAD", at: ago(20 * M) });
+  let threw = false; let r = null;
+  try { r = await makeLocks(k8).acquireLock("k", HOLD, "A"); } catch (_) { threw = true; }
+  eq("L2: a throwing delete does not escape acquireLock", [threw, r], [false, false]);
+  eq("L2: the claim row is released", store.has(takeoverKey("k", "DEAD")), false);
+  eq("L2: the next healthy taker gets it", await makeLocks(kvs).acquireLock("k", HOLD, "B"), true);
+}
+{ // L4: a 3-deep chain of dead claims no longer wedges once it is 3× CLAIM_MS old
+  const { store, kvs } = fakeKvs(); const L = makeLocks(kvs);
+  const build = (age) => { store.clear(); store.set("k", { token: "DEAD", at: ago(20 * M) }); let ck = "k", tok = "DEAD"; for (let d = 0; d < 3; d++) { const c = takeoverKey(ck, tok); store.set(c, { token: `DT${d}`, at: ago(age) }); ck = c; tok = `DT${d}`; } };
+  build(CLAIM_MS + 1000);
+  eq("L4: 3 dead claims, only just stale → still refused (atomic levels only)", await L.acquireLock("k", HOLD, "A"), false);
+  build(3 * CLAIM_MS + 1000);
+  eq("L4: 3 dead claims older than 3× CLAIM_MS → taken over", await L.acquireLock("k", HOLD, "A"), true);
+  eq("L4: … and held by the taker", store.get("k")?.token, "A");
+}
+{ // L4: a ghost row (reads absent, FAIL_IF_EXISTS still refuses) is cleared after 3 sightings spanning the hold
+  const { store, kvs } = fakeKvs();
+  const ghostKeys = new Set(["g"]);
+  const k7 = {
+    get: async (k) => (ghostKeys.has(k) ? undefined : kvs.get(k)),
+    set: async (k, v, o) => { if (ghostKeys.has(k) && o?.keyPolicy === "FAIL_IF_EXISTS") throw new Error("KEY_EXISTS"); return kvs.set(k, v, o); },
+    delete: async (k) => { ghostKeys.delete(k); return kvs.delete(k); },
+  };
+  const L = makeLocks(k7);
+  const SHORT = 50; // a 50 ms hold so "spanning the hold" fits in a unit test
+  const r1 = await L.acquireLock("g", SHORT, "A");
+  const r2 = await L.acquireLock("g", SHORT, "A");
+  eq("L4 ghost: refused while the sightings are fewer than 3 or younger than the hold", [r1, r2], [false, false]);
+  await new Promise((r) => setTimeout(r, SHORT + 20));
+  eq("L4 ghost: third sighting after the hold → deleted and acquired", await L.acquireLock("g", SHORT, "A"), true);
+  eq("L4 ghost: the sighting row is cleaned up", store.has("g:ghost"), false);
+}
+{ // L3: withLock waits longer than the hold by default, so a crashed holder is outlived
+  const { store, kvs } = fakeKvs(); const L = makeLocks(kvs);
+  store.set("p", { token: "CRASHED", at: ago(0) });
+  const t0 = Date.now();
+  const r = await L.withLock("p", 300, async () => "ran", { stepMs: 20 }); // default waitMs = hold + 5 s
+  eq("L3: a crashed holder's fresh lock is outlived and taken over (no 'busy')", r, "ran");
+  ok(`L3: … after about the hold (${Date.now() - t0} ms)`, Date.now() - t0 >= 280);
 }
 { // withLock
   const { store, kvs } = fakeKvs(); const L = makeLocks(kvs);

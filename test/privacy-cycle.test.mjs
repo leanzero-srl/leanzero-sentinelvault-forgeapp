@@ -132,7 +132,8 @@ function sweep(store, index, nowMs, { closedAtAtlassian = [], exclude = [] } = {
 // ── low 2: a privacy-erase job killed at 900 s does not block the requeue for a week ──────────
 {
   const now = Date.parse("2026-10-05T18:00:00Z");
-  eq("a queued job is alive", jobAlive({ status: "queued" }, now), true);
+  eq("a job queued 1 min ago is alive", jobAlive({ status: "queued", queuedAt: iso(now - 60000) }, now), true);
+  eq("a queued job with no time at all is not trusted (L1)", jobAlive({ status: "queued" }, now), false);
   eq("a job running for 5 min is alive", jobAlive({ status: "running", startedAt: iso(now - 5 * 60000) }, now), true);
   eq("a job 'running' for 31 min is dead (killed at the timeout)", jobAlive({ status: "running", startedAt: iso(now - 31 * 60000) }, now), false);
   eq("stale threshold is 30 minutes", JOB_STALE_MS, 30 * 60000);
@@ -228,7 +229,7 @@ for (const [label, cfg] of [["±5 min jitter, 0–3 min queue latency (the revie
   ok("d: both scans back off on a KVS 429", (worker.match(/withBackoff\(\(\) => q\.getMany\(\)\)/g) || []).length === 2 && /responseDetails\?\.status === 429/.test(worker));
   ok("a: the reported Cycle-Period is followed and stored", /if \(res\.cycleMs\) cycleMs = res\.cycleMs;/.test(worker) && /nextReportAt: nra, cycleMs/.test(worker));
   const bworker = readFileSync(resolve(dirname(fileURLToPath(import.meta.url)), "../src/server/capsules/backup/worker.js"), "utf8");
-  ok("low 1: the pending list is changed only under its lock (sweep and job)", /withLock\(ERASE_PENDING_LOCK, 60000,/.test(worker) && /withLock\(PENDING_LOCK, 60000,/.test(bworker));
+  ok("low 1: the pending list is changed only under its lock (sweep and job)", /withLock\(ERASE_PENDING_LOCK, 60000,/.test(readFileSync(resolve(dirname(fileURLToPath(import.meta.url)), "../src/server/capsules/privacy/erase-queue.js"), "utf8")) && /withLock\(PENDING_LOCK, 60000,/.test(bworker));
   ok("low 3: a privacy-erase that met a busy lease is re-queued with a delay", /job\.kind === "privacy-erase" && LEASE_BUSY\.test/.test(bworker) && /delayInSeconds: 300/.test(bworker));
   ok("low 4: only the erasure's own backup claims an erasure", /reason: "privacy-erase"/.test(bworker) && /scheduleBackup\("privacy"\)/.test(worker));
   ok("low 6: the app account is looked up when not cached", /async function ownAccountId\(\)/.test(worker) && /route`\/wiki\/rest\/api\/user\/current`/.test(worker) && /const appAccountId = await ownAccountId\(\);/.test(worker));
