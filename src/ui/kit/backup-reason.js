@@ -7,6 +7,6 @@
 export const BACKUP_REASON = Object.freeze({
   manual: "on request", schedule: "daily", save: "after a change", rest: "over REST", "rest-bundle": "after a change over REST",
   "before-restore": "before a restore", "after-restore": "after a restore", moved: "after a move", import: "imported file",
-  privacy: "after the personal-data check",
+  privacy: "after the personal-data check", "privacy-erase": "after the personal-data check erased a closed account",
 });
 export const backupReasonText = (reason) => (reason ? BACKUP_REASON[reason] || "after a change" : "");

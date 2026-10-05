@@ -20,7 +20,7 @@ import {
   pauseAutomations, restoreDecision, previewGroups, indexKeyCount, sha256, stableStringify,
 } from "./snapshot.js";
 import * as store from "./store.js";
-import { entriesMentionOutsideContent } from "../privacy/accounts.js";
+import { entriesMentionOutsideContent, textNamesPerson } from "../privacy/accounts.js";
 
 export const SETTINGS_KEY = "backup-settings";
 export const STATUS_KEY = "backup-status";
@@ -278,8 +278,9 @@ export function mergeInstallations(list, info, at) {
 
 /**
  * Privacy erasure (capsules/privacy, 2026-10-04): drop every kept generation whose manifest or
- * data files still contain one of `needles` (the account ids Atlassian reported closed) OUTSIDE
- * page content — a mention inside a sealed-section baseline is the sealed record, kept as it is,
+ * data files still hold one of `needles` (the account ids Atlassian reported closed) in a form the
+ * KVS erasure would change (accounts.js erasableMentions — not a personal space key, review B3;
+ * not page content) — a mention inside a sealed-section baseline is the sealed record, kept as it is,
  * and must not drop generations (review 2026-10-05, C1: it dropped every older generation, pinned
  * pre-uninstall ones included, on every sweep while the newest still held the snapshot). The
  * caller takes a fresh, already-scrubbed generation FIRST; the newest generation is never dropped
@@ -307,7 +308,7 @@ export async function purgeGenerationsMentioning(needles) {
     const m = byTitle.get(g.manifest) || (g.manifestAttachmentId ? { id: g.manifestAttachmentId } : null);
     if (!m) throw new Error(`generation ${g.generationId}: manifest ${g.manifest} is not on the page`);
     const text = await store.getFile(pageId, m.id);
-    if (mentions(text)) return true;
+    if (textNamesPerson(text, list)) return true; // the manifest names who took it and whose authenticator it lists
     for (const c of JSON.parse(text).chunks || []) {
       if (!cache.has(c.name)) {
         const a = byTitle.get(c.name);

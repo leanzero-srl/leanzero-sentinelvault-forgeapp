@@ -386,7 +386,7 @@ export function formatActivity(entry) {
     // ── Backup and restore (pillar 12; the site leg) ──
     case "backup.taken": {
       const size = fmtBytes(d.bytes);
-      const why = { manual: "on request", schedule: "on the daily schedule", save: "after a change", rest: "over REST", "before-restore": "before a restore", "after-restore": "right after a restore", moved: "in its new space", privacy: "after the personal-data check erased a closed account" }[d.reason] || "";
+      const why = { manual: "on request", schedule: "on the daily schedule", save: "after a change", rest: "over REST", "before-restore": "before a restore", "after-restore": "right after a restore", moved: "in its new space", privacy: "after the personal-data check", "privacy-erase": "after the personal-data check erased a closed account" }[d.reason] || "";
       return { ...base, label: d.unchanged ? "Backup checked" : "Backup taken", glyph: "check", tone: "positive",
         sentence: d.unchanged ? `${who} checked the backup — nothing had changed` : `${who} backed up the setup${why ? ` ${why}` : ""}`,
         detail: [d.keys != null ? `${d.keys} items` : "", size].filter(Boolean).join(" · ") };

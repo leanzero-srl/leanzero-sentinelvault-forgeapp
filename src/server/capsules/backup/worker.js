@@ -6,7 +6,7 @@
 import { kvs } from "@forge/kvs";
 import { Queue } from "@forge/events";
 import { recordActivity } from "../../infra/activity-log.js";
-import { acquireLock, releaseLock } from "../../shared/kvs-lock.js";
+import { acquireLock, releaseLock, withLock } from "../../shared/kvs-lock.js";
 import {
   runBackup, runRestore, importExport, assembleStagedImport, ensureBackupPage, readJob, writeJob, discoverBackups,
   STATUS_KEY, SETTINGS_KEY, appInfo,
@@ -125,19 +125,24 @@ async function executeJobUnleased(job) {
  */
 async function privacyErase() {
   const PENDING = "privacy-erase-pending";
+  const PENDING_LOCK = "privacy-erase-pending-lock";
   const pending = (await kvs.get(PENDING).catch(() => null)) || {};
   const ids = [...new Set(pending.ids || [])];
-  const clear = async () => {
-    const cur = (await kvs.get(PENDING).catch(() => null)) || {};
+  // Read-modify-write of the pending list under its own lock (review low 1): a sweep merging a new
+  // id at the same moment must not have it dropped by this clear.
+  const clear = () => withLock(PENDING_LOCK, 60000, async () => {
+    const cur = (await kvs.get(PENDING)) || {};
     const left = (cur.ids || []).filter((i) => !ids.includes(i));
     if (left.length) await kvs.set(PENDING, { ...cur, ids: left, jobId: null }); else await kvs.delete(PENDING);
-  };
+  });
   if (!ids.length) return { ok: true, skipped: "nothing pending" };
   const settings = await kvs.get(SETTINGS_KEY).catch(() => null);
   const status = await kvs.get(STATUS_KEY).catch(() => null);
   // No backup on this site, or the admin deleted it: nothing to scrub, and nothing is recreated.
   if (!settings?.pageId || status?.deletedAt) { await clear(); return { ok: true, skipped: status?.deletedAt ? "backup deleted" : "no backup on this site", count: ids.length }; }
-  const b = await runBackupAndAudit({ reason: "privacy", actor: null });
+  // "privacy-erase": the audit says a closed account was erased only for THIS backup (review low 4);
+  // the debounced backup after an ordinary sweep keeps reason "privacy".
+  const b = await runBackupAndAudit({ reason: "privacy-erase", actor: null });
   if (!b.ok) return { ok: false, reason: `backup failed: ${b.reason || "unknown"}` };
   const { purgeGenerationsMentioning } = await import("./engine.js");
   const p = await purgeGenerationsMentioning(ids);
@@ -215,10 +220,21 @@ export async function backupConsumer(event) {
     const ok = result?.ok !== false;
     await writeJob({ ...job, status: ok ? "done" : "failed", startedAt, finishedAt: nowIso(), result: slim(result), ...(ok ? {} : { error: result?.reason || "failed" }) });
   } catch (e) {
+    // A privacy erasure that only met another run's lease (a restore can hold it longer than the
+    // 120 s wait) is queued again in 5 minutes rather than waiting for next week's sweep (review low 3).
+    if (job.kind === "privacy-erase" && LEASE_BUSY.test(errText(e)) && (job.attempts || 0) < PRIVACY_ERASE_RETRIES) {
+      await writeJob({ ...job, status: "queued", attempts: (job.attempts || 0) + 1, lastError: errText(e), startedAt: null });
+      await new Queue({ key: BACKUP_QUEUE_KEY }).push({ body: { kind: "job", jobId: job.id }, delayInSeconds: 300 });
+      console.warn(`[BACKUP] privacy-erase job ${job.id} re-queued in 5 min (attempt ${(job.attempts || 0) + 1}): ${errText(e)}`);
+      return;
+    }
     console.error(`[BACKUP] job ${job.id} (${job.kind}) failed:`, e);
     await writeJob({ ...job, status: "failed", startedAt, finishedAt: nowIso(), error: errText(e) });
   }
 }
+
+const LEASE_BUSY = /Another backup or restore is running/;
+const PRIVACY_ERASE_RETRIES = 12;
 
 /** PURE. Keep a job's stored result small (lists capped). */
 export function slim(r) {

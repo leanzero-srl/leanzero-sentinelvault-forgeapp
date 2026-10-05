@@ -58,7 +58,11 @@ applied anything does the same. The hourly index cron checks once an hour (Forge
 the app has five) and backs up when something changed or a day passed, only in the Confluence installation (the app
 is also installed in Jira for JSM Assets, and that install has its own empty store). Automatic runs record nothing
 while a restore from an earlier installation is pending (14 days) and never an empty generation. One lease
-serialises backup, restore, import and move.
+serialises backup, restore, import, move and the privacy erasure job (`privacy-erase`). The lease is
+`shared/kvs-lock.js`: a Forge KVS row with a ttl was measured readable — and still refusing FAIL_IF_EXISTS — two hours
+past its expiry (2026-10-05), so a lease older than its 16-minute hold is taken over; an unreadable lease counts as
+held, and the takeover is first claimed with an atomic `backup-lease:takeover:<dead token>` row so two takers cannot
+both win. A privacy erasure that meets a busy lease is queued again in 5 minutes (up to 12 times).
 
 ## Restore (engine.js)
 

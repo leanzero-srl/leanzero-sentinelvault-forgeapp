@@ -9,7 +9,7 @@ import { fileURLToPath } from "node:url";
 import { eq, ok, report } from "./_assert.mjs";
 import {
   extractAccountIds, planReport, nextReportAt, acceptAnswers, parseCyclePeriod, erasableMentions, entriesMentionOutsideContent,
-  sweepSchedule, rewriteAccount, keyNamesAccount, holdsPageContent, removesFromLists, batches, CYCLE_MS, DUE_MARGIN_MS,
+  sweepSchedule, rewriteAccount, keyNamesAccount, holdsPageContent, removesFromLists, batches, CYCLE_MS, DUE_MARGIN_MS, textNamesPerson, jobAlive, JOB_STALE_MS,
 } from "../src/server/capsules/privacy/accounts.js";
 
 const H = 3600000, D = 24 * H;
@@ -108,6 +108,37 @@ function sweep(store, index, nowMs, { closedAtAtlassian = [], exclude = [] } = {
   ok("engine purge uses the content-aware test on chunk entries", /entriesMentionOutsideContent\(parseChunk\(text\), list\)/.test(engine));
 }
 
+// ── B3: a personal space key is not a mention — no generation is dropped for it ───────────────
+{
+  const personalOnly = [
+    [`space-protection-~${CLOSED}`, ["att1"], null],
+    [`admin-settings-space-_${CLOSED.replace(":", "")}`, { adminUsers: [OTHER] }, null],
+    [`admin-settings-space-~${CLOSED}`, { adminUsers: [OTHER] }, null],
+    ["protection-att1", { contentId: "9", spaceKey: `~${CLOSED}`, lockedBy: OTHER, lockedByName: "Ann" }, null],
+    ["section-snapshot-abc", { bodyContent: [{ attrs: { id: CLOSED } }] }, null],
+  ];
+  eq("B3: a generation whose only traces are personal-space keys (and sealed content) is NOT dropped", entriesMentionOutsideContent(personalOnly, [CLOSED]), false);
+  eq("B3: … the same rows are not erasable in KVS either (one test for both)", personalOnly.some(([k, v]) => erasableMentions(k, v, [CLOSED]).length > 0), false);
+  eq("B3: the person in an ordinary row still drops it", entriesMentionOutsideContent([...personalOnly, ["protection-att2", { lockedBy: CLOSED, lockedByName: "Bob" }, null]], [CLOSED]), true);
+  // the purge decision over a generation list: every generation holds only personal-space traces → none dropped
+  const generations = [personalOnly, personalOnly.slice(0, 2), personalOnly.slice(3)];
+  eq("B3: purge decision over three such generations drops none (pinned ones included)", generations.filter((g) => entriesMentionOutsideContent(g, [CLOSED])).length, 0);
+  eq("manifest: a personal-space key is not a person", textNamesPerson(`{"counts":{"space-protection-~${CLOSED}":1}}`, [CLOSED]), false);
+  eq("manifest: who took the backup IS a person", textNamesPerson(`{"actor":{"accountId":"${CLOSED}"}}`, [CLOSED]), true);
+  const engine = readFileSync(resolve(dirname(fileURLToPath(import.meta.url)), "../src/server/capsules/backup/engine.js"), "utf8");
+  ok("engine manifest check uses textNamesPerson, not a substring", /if \(textNamesPerson\(text, list\)\) return true;/.test(engine));
+}
+
+// ── low 2: a privacy-erase job killed at 900 s does not block the requeue for a week ──────────
+{
+  const now = Date.parse("2026-10-05T18:00:00Z");
+  eq("a queued job is alive", jobAlive({ status: "queued" }, now), true);
+  eq("a job running for 5 min is alive", jobAlive({ status: "running", startedAt: iso(now - 5 * 60000) }, now), true);
+  eq("a job 'running' for 31 min is dead (killed at the timeout)", jobAlive({ status: "running", startedAt: iso(now - 31 * 60000) }, now), false);
+  eq("stale threshold is 30 minutes", JOB_STALE_MS, 30 * 60000);
+  eq("a failed job is not alive", jobAlive({ status: "failed" }, now), false);
+}
+
 // ── C4: only ids from the batch ─────────────────────────────────────────────────────────────
 {
   const batch = [{ accountId: OTHER, updatedAt: "x" }];
@@ -196,6 +227,11 @@ for (const [label, cfg] of [["±5 min jitter, 0–3 min queue latency (the revie
   ok("b: the app's own account is excluded", /kvs\.get\("app-account-id"\)/.test(worker) && /planReport\(prior, seen, nowMs, \{ cycleMs, exclude \}\)/.test(worker));
   ok("d: both scans back off on a KVS 429", (worker.match(/withBackoff\(\(\) => q\.getMany\(\)\)/g) || []).length === 2 && /responseDetails\?\.status === 429/.test(worker));
   ok("a: the reported Cycle-Period is followed and stored", /if \(res\.cycleMs\) cycleMs = res\.cycleMs;/.test(worker) && /nextReportAt: nra, cycleMs/.test(worker));
+  const bworker = readFileSync(resolve(dirname(fileURLToPath(import.meta.url)), "../src/server/capsules/backup/worker.js"), "utf8");
+  ok("low 1: the pending list is changed only under its lock (sweep and job)", /withLock\(ERASE_PENDING_LOCK, 60000,/.test(worker) && /withLock\(PENDING_LOCK, 60000,/.test(bworker));
+  ok("low 3: a privacy-erase that met a busy lease is re-queued with a delay", /job\.kind === "privacy-erase" && LEASE_BUSY\.test/.test(bworker) && /delayInSeconds: 300/.test(bworker));
+  ok("low 4: only the erasure's own backup claims an erasure", /reason: "privacy-erase"/.test(bworker) && /scheduleBackup\("privacy"\)/.test(worker));
+  ok("low 6: the app account is looked up when not cached", /async function ownAccountId\(\)/.test(worker) && /route`\/wiki\/rest\/api\/user\/current`/.test(worker) && /const appAccountId = await ownAccountId\(\);/.test(worker));
   ok("the sweep's own rows are never scanned for people", (worker.match(/if \(key\.startsWith\(OWN_PREFIX\)\) return;/g) || []).length === 2);
 }
 
