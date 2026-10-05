@@ -63,8 +63,8 @@ export function mustVerify(payloadId, contextId) {
  * of a 404 that would be indistinguishable from "page was deleted"; and the subject is
  * req.context.accountId, which is Forge-supplied and so trustworthy to name.
  *
- * Requires read:confluence-content.permission / read:content.permission:confluence —
- * both already in manifest.yml, so this adds no scope and needs no re-consent.
+ * Accepts read:confluence-content.permission (classic, held) or
+ * read:content.permission:confluence (granular, dropped in 7.0.0 — docs/SCOPES-7.0.md).
  *
  * Denies on every failure path: non-2xx, malformed body, thrown error.
  */
