@@ -37,7 +37,7 @@ const ago = (iso) => {
   if (h < 48) return `${h} h ago`;
   return `${Math.round(h / 24)} days ago`;
 };
-const REASON = { manual: "on request", schedule: "daily", save: "after a change", rest: "over REST", "before-restore": "before a restore", "after-restore": "after a restore", moved: "after a move", import: "imported file" };
+const REASON = { manual: "on request", schedule: "daily", save: "after a change", rest: "over REST", "before-restore": "before a restore", "after-restore": "after a restore", moved: "after a move", import: "imported file", privacy: "after the personal-data check" };
 
 /** Poll a backup job until it settles. */
 async function waitForJob(jobId, onTick) {

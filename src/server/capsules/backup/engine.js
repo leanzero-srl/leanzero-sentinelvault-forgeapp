@@ -20,6 +20,7 @@ import {
   pauseAutomations, restoreDecision, previewGroups, indexKeyCount, sha256, stableStringify,
 } from "./snapshot.js";
 import * as store from "./store.js";
+import { entriesMentionOutsideContent } from "../privacy/accounts.js";
 
 export const SETTINGS_KEY = "backup-settings";
 export const STATUS_KEY = "backup-status";
@@ -277,7 +278,10 @@ export function mergeInstallations(list, info, at) {
 
 /**
  * Privacy erasure (capsules/privacy, 2026-10-04): drop every kept generation whose manifest or
- * data files still contain one of `needles` (the account ids Atlassian reported closed). The
+ * data files still contain one of `needles` (the account ids Atlassian reported closed) OUTSIDE
+ * page content — a mention inside a sealed-section baseline is the sealed record, kept as it is,
+ * and must not drop generations (review 2026-10-05, C1: it dropped every older generation, pinned
+ * pre-uninstall ones included, on every sweep while the newest still held the snapshot). The
  * caller takes a fresh, already-scrubbed generation FIRST; the newest generation is never dropped
  * (it is the only copy of the setup), and if it still mentions a needle that is reported as
  * `newestMentions` rather than hidden. A file that cannot be read (a 429, a 5xx) ABORTS the purge:
@@ -308,7 +312,8 @@ export async function purgeGenerationsMentioning(needles) {
       if (!cache.has(c.name)) {
         const a = byTitle.get(c.name);
         if (!a) throw new Error(`generation ${g.generationId}: chunk ${c.name} is not on the page`);
-        cache.set(c.name, mentions(await store.getFile(pageId, a.id)));
+        const text = await store.getFile(pageId, a.id);
+        cache.set(c.name, mentions(text) && entriesMentionOutsideContent(parseChunk(text), list));
       }
       if (cache.get(c.name)) return true;
     }

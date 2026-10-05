@@ -338,8 +338,7 @@ export async function testStateTrigger(req) {
       // account — seed rows for a synthetic id, name it here, and assert the rows afterwards.
       // `now` (ISO) shifts the clock for retention; `resetIndex=1` forgets past reports (cycle).
       if (fn === "privacySweep") {
-        const { runPrivacySweep } = await import("./server/capsules/privacy/worker.js");
-        const { privacy } = await import("@forge/api");
+        const { runPrivacySweep, reportAccounts } = await import("./server/capsules/privacy/worker.js");
         const forced = String(q(req, "closed") || "").split(",").map((s) => s.trim()).filter(Boolean);
         const seen = [];
         // `simulate=1`: when the real call is refused (401 without report:personal-data), answer
@@ -347,21 +346,25 @@ export async function testStateTrigger(req) {
         const simulate = q(req, "simulate") === "1";
         const report = async (batch) => {
           let real = [];
+          let cycleMs = null;
           try {
-            real = await privacy.reportPersonalData(batch);
-            seen.push({ sent: batch.length, answered: real.length, statuses: real.map((a) => a.status) });
+            const r = await reportAccounts(batch);
+            real = r.accounts; cycleMs = r.cycleMs;
+            seen.push({ sent: batch.length, answered: real.length, statuses: real.map((a) => a.status), cycleMs });
           } catch (e) {
             seen.push({ sent: batch.length, refused: e?.status || String(e?.message || e) });
             if (!simulate) throw e;
           }
-          return [...real.filter((a) => !forced.includes(a.accountId)), ...batch.filter((a) => forced.includes(a.accountId)).map((a) => ({ accountId: a.accountId, status: "closed" }))];
+          return { accounts: [...real.filter((a) => !forced.includes(a.accountId)), ...batch.filter((a) => forced.includes(a.accountId)).map((a) => ({ accountId: a.accountId, status: "closed" }))], cycleMs };
         };
         if (q(req, "resetIndex") === "1") {
           const rows = await kvs.query().where("key", WhereConditions.beginsWith("privacy-accounts-")).limit(100).getMany();
           for (const r of rows.results || []) await kvs.delete(r.key);
         }
         const nowParam = q(req, "now");
-        const r = await runPrivacySweep({ reason: "harness", report, ...(nowParam ? { nowMs: Date.parse(nowParam) } : {}) });
+        // The hook is a web trigger capped at 55 s: hand off well before that (a continuation event
+        // finishes the run in the 900 s consumer).
+        const r = await runPrivacySweep({ reason: "harness", report, budgetMs: Number(q(req, "budgetMs")) || 30000, ...(nowParam ? { nowMs: Date.parse(nowParam) } : {}) });
         return json(200, { invoked: fn, result: r, reports: seen });
       }
       if (fn === "runApiJob") {

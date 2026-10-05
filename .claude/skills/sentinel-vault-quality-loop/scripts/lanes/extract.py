@@ -4,14 +4,14 @@ import os, re, json, sys
 ROOT = "/Users/mihaiperdum/Projects/Sentinel Vault/.claude/worktrees/sv-7-personal-data"
 OUT = os.path.dirname(os.path.abspath(__file__))
 calls = []
-PATH_RX = re.compile(r"`((?:\$\{base\}|\$\{[a-zA-Z]+Base\}|/wiki/|/rest/|/jsm/|/gateway/)[^`]*)`")
+PATH_RX = re.compile(r"`((?:\$\{base\}|\$\{[a-zA-Z]+Base\}|/wiki/|/rest/|/jsm/|/gateway/)[^`]*)`|\"((?:/wiki/|/rest/|/jsm/|/app/)[^\"]*)\"")
 for d, _, fs in os.walk(f"{ROOT}/src"):
     for f in fs:
         if not f.endswith((".js", ".jsx")): continue
         p = os.path.join(d, f); rel = os.path.relpath(p, ROOT)
         txt = open(p).read()
         for m in PATH_RX.finditer(txt):
-            raw = m.group(1)
+            raw = m.group(1) or m.group(2)
             line = txt[: m.start()].count("\n") + 1
             # the enclosing call: walk back to the unmatched '('
             depth, i = 0, m.start() - 1
