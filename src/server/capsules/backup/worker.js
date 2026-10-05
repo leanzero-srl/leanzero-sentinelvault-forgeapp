@@ -223,7 +223,9 @@ export async function backupConsumer(event) {
     // A privacy erasure that only met another run's lease (a restore can hold it longer than the
     // 120 s wait) is queued again in 5 minutes rather than waiting for next week's sweep (review low 3).
     if (job.kind === "privacy-erase" && LEASE_BUSY.test(errText(e)) && (job.attempts || 0) < PRIVACY_ERASE_RETRIES) {
-      await writeJob({ ...job, status: "queued", attempts: (job.attempts || 0) + 1, lastError: errText(e), startedAt: null });
+      // queuedAt: if the push below fails, the "queued" row goes stale (privacy jobAlive) and the
+      // next sweep starts a new job instead of waiting on this one forever (review L1).
+      await writeJob({ ...job, status: "queued", queuedAt: nowIso(), attempts: (job.attempts || 0) + 1, lastError: errText(e), startedAt: null });
       await new Queue({ key: BACKUP_QUEUE_KEY }).push({ body: { kind: "job", jobId: job.id }, delayInSeconds: 300 });
       console.warn(`[BACKUP] privacy-erase job ${job.id} re-queued in 5 min (attempt ${(job.attempts || 0) + 1}): ${errText(e)}`);
       return;
