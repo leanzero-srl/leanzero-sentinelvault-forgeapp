@@ -330,6 +330,10 @@ permissions:
     - read:configuration:confluence
     - write:space:confluence
     - storage:app
+    # 7.0 — Atlassian's Personal Data Reporting API (privacy.reportPersonalData, the weekly privacy
+    # sweep in capsules/privacy). Without it report-accounts answers 401 (measured on wolfaenpak
+    # 2026-10-04) and closed accounts are never erased. A new scope is a major version.
+    - report:personal-data
   content:
     styles:
       - unsafe-inline

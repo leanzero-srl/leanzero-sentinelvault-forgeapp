@@ -227,3 +227,25 @@ export function batches(list, size = REPORT_BATCH) {
   for (let i = 0; i < list.length; i += size) out.push(list.slice(i, i + size));
   return out;
 }
+
+export const SWEEP_EVERY_MS = 6.5 * 86400000;
+export const RETRY_REFUSED_MS = 20 * 3600000;
+
+/**
+ * PURE. Is a scheduled sweep due, given the `privacy-status` row? Weekly (6.5 days, checked by the
+ * daily trigger). 7.0.0: a sweep whose report Atlassian REFUSED (`reporting: "not-permitted"` —
+ * every 6.x sweep, which lacked report:personal-data) is retried the next day instead of a week
+ * later, so an upgraded site reports its accounts within a day of approving the update. A refusal
+ * leaves every account due, so the retry reports them all.
+ */
+export function sweepDue(status, nowMs = Date.now()) {
+  const last = Date.parse(status?.lastRunAt || status?.queuedAt || "");
+  if (!Number.isFinite(last) || nowMs - last >= SWEEP_EVERY_MS) return true;
+  if (status?.last?.accounts?.reporting === "not-permitted") {
+    const tried = Date.parse(status?.lastAttemptAt || status?.lastRunAt || "");
+    const queued = Date.parse(status?.queuedAt || "");
+    if (Number.isFinite(queued) && queued > (Number.isFinite(tried) ? tried : 0) && nowMs - queued < RETRY_REFUSED_MS) return false;
+    return !Number.isFinite(tried) || nowMs - tried >= RETRY_REFUSED_MS;
+  }
+  return false;
+}

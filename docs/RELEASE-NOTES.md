@@ -2,6 +2,19 @@
 
 GENERATED from `src/server/shared/release-notes.js` by `scripts/render-release-notes.mjs`. Do not edit.
 
+## 7.0.0 — 2026-10-05 (in testing, not yet on the Marketplace)
+
+**The weekly personal-data check now asks Atlassian about closed accounts**
+
+- New permission: this update asks a site admin to approve one new permission, reporting personal data to Atlassian. Until it is approved the site stays on the previous version.
+- Changed: once approved, the weekly personal-data check sends Atlassian the ids of the accounts Sentinel Vault stores, each at most once a week. When Atlassian answers that an account was closed, the app erases that person everywhere it keeps them, including the backup. When it answers that an account changed, the app refreshes the stored name.
+- Changed: the first check runs within a day of the update. If Atlassian refuses a check, it is tried again the next day instead of a week later.
+
+Fixed:
+- The weekly check could not ask Atlassian about closed or changed accounts, because the app did not hold the permission for it.
+
+**Do this:** A site admin approves the update in Confluence administration, Apps, Manage apps. Nothing else to do.
+
 ## 6.11.0 — 2026-10-04
 
 **Email addresses brought back by a restore are cleaned again**

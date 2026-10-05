@@ -189,7 +189,29 @@ eq("batch size constant", REPORT_BATCH, 90);
 {
   const { describeSweep } = await import("../src/ui/kit/privacy-format.js");
   const s = describeSweep({ ok: true, retentionDays: 730, retention: {}, finishedAt: "2026-10-04T12:00:00Z", accounts: { reporting: "not-permitted", reported: 0 } });
-  ok("not-permitted is explained, not counted", /needs a permission this version does not have yet/.test(s) && !/checked 0/.test(s));
+  ok("not-permitted is explained, not counted", /Atlassian refused the account check this time, it is tried again the next day/.test(s) && !/checked 0/.test(s));
+  ok("7.0 holds the scope: no sentence says the version lacks the permission", !/does not have yet|needs a permission/.test(s));
+  const due0 = describeSweep({ ok: true, retentionDays: 0, retention: {}, finishedAt: "2026-10-04T12:00:00Z", accounts: { reporting: "done", stored: 12, due: 0, reported: 0 } });
+  ok("nothing due reads as nothing due, not 'checked 0'", /no account was due/.test(due0) && !/checked 0/.test(due0));
+  const done = describeSweep({ ok: true, retentionDays: 0, retention: {}, finishedAt: "2026-10-04T12:00:00Z", accounts: { reporting: "done", stored: 12, due: 12, reported: 12, closed: 1, updated: 2 } });
+  ok("a real report is counted", /checked 12 accounts with Atlassian, erased 1 closed account, refreshed 2 changed names/.test(done));
+}
+// ── 7.0.0: the manifest holds the scope the sweep reports with ──────────────────────────────
+{
+  const manifest = readFileSync(resolve(dirname(fileURLToPath(import.meta.url)), "../manifest.yml"), "utf8");
+  ok("manifest declares report:personal-data", /^\s*- report:personal-data\s*$/m.test(manifest));
+}
+{
+  const { sweepDue, RETRY_REFUSED_MS, SWEEP_EVERY_MS } = await import("../src/server/capsules/privacy/accounts.js");
+  const t = Date.parse("2026-10-05T12:00:00Z");
+  const iso = (ms) => new Date(ms).toISOString();
+  eq("due: never run", sweepDue({}, t), true);
+  eq("due: a week old", sweepDue({ lastRunAt: iso(t - SWEEP_EVERY_MS) }, t), true);
+  eq("not due: a reported run a day ago", sweepDue({ lastRunAt: iso(t - 86400000), lastAttemptAt: iso(t - 86400000), last: { accounts: { reporting: "done" } } }, t), false);
+  eq("due: a REFUSED run a day ago is retried (6.x → 7.0 upgrade)", sweepDue({ lastRunAt: iso(t - 86400000), lastAttemptAt: iso(t - 86400000), last: { accounts: { reporting: "not-permitted" } } }, t), true);
+  eq("not due: a refused run an hour ago", sweepDue({ lastRunAt: iso(t - 3600000), lastAttemptAt: iso(t - 3600000), last: { accounts: { reporting: "not-permitted" } } }, t), false);
+  eq("not due: a retry is already queued", sweepDue({ lastRunAt: iso(t - 86400000), lastAttemptAt: iso(t - 86400000), queuedAt: iso(t - 3600000), last: { accounts: { reporting: "not-permitted" } } }, t), false);
+  eq("due: a queued retry that never ran is re-queued after the window", sweepDue({ lastRunAt: iso(t - 3 * 86400000), lastAttemptAt: iso(t - 3 * 86400000), queuedAt: iso(t - RETRY_REFUSED_MS - 1), last: { accounts: { reporting: "not-permitted" } } }, t), true);
 }
 
 // ── wiring ──────────────────────────────────────────────────────────────────────────────────
