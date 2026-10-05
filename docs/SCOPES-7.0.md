@@ -24,6 +24,24 @@ Before: 39 scopes. After: 27. Removed: 12. Calls not covered after the trim: **0
 - `read:confluence-content.summary` — REQUIRED by the five product triggers (page created/updated, attachment updated/trashed/deleted): Forge's events reference says page and attachment events "require the OAuth scope `read:confluence-content.summary`", and `forge lint` fails with `permission-scope-required` on all five when it is removed (measured 2026-10-05). Removing it would have silently switched off seal enforcement.
 - `read:label:confluence` — `forge lint` maps the page-label read (`/wiki/api/v2/pages/{id}/labels`, src/server/infra/labels.js:20-21) to `GET /labels` and fails without it, while the v2 spec lists only read:page:confluence. Ambiguous, so it stays.
 
+## Live proof on development (wolfaenpak, 2026-10-05)
+
+Same lanes, same dev install (e0f4fa35), before the trim (39 scopes, dev 9.x) and after it (27 scopes, dev 10.x, finally 18.x at 10f1aa7).
+
+| Lane | Before (39) | After (27) |
+|---|---|---|
+| REST specs (22) | 21 passed, 1 flaky (gate-revert) | 20 passed; gate-revert and revert-destructive red in the run right after the upgrade, revert-destructive and sealed-media green on a quiet re-run; gate-revert red |
+| Read-confirmation groups | 6/6 | 6/6 |
+| Purge witness | 4/4 | 4/4 |
+| Privacy erasure (real closed account) | 18/18 | 18/18 |
+| Backup relocate / restore / delete / re-create | 13/13 | 13/13 |
+| TOTP enrol / signed approval / replay | 12/12 | 12/12 |
+| Browser lane (34) | 26 passed, 3 failed (a11y Dialog, classification badge, first-run merge; all three also fail on 6.6.0) | 25 passed, the same 3 failed, plus sealed-delete-restore-journey |
+| Endpoint probe (hook) | convert 200, group picker 200, membersByGroupId 200, pageTree delete 202 | identical |
+| Backup discovery (content search expand=space, restriction read) | spaceKey WFH, restricted true | identical |
+
+The reds that were green are event latency, not scopes. gate-revert, revert-destructive and the restore journey wait for Confluence's page-updated / attachment-trashed events, and on dev today those arrived 30 s to 10 min late in bursts (the issue in docs/FORGE-SUPPORT-EVENT-LATENCY-2026-09-15.md). Proof: (1) the [PAGE-EVENT] first-line log shows the handler simply had not been invoked yet when the specs gave up, then the events landed in bursts; (2) an A/B with the FULL 39 scopes redeployed on the same install failed both too: the restore journey on the identical assertion (the trashed event had not landed), gate-revert even earlier, waiting 30 s for the created-page event (zero user update events delivered in that window); (3) a bisect (control, then each group of the 12 removed, then all 12) delivered a user page update within 4-5 s every time. `forge logs` after the trim: no scope refusal; every 401 is AUTH_TYPE_UNAVAILABLE (a user-context call with no user), the same lines as before the trim.
+
 ## Not REST: what else needs a scope
 
 | Consumer | Needs | Kept |
