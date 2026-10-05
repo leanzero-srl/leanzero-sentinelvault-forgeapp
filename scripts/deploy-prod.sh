@@ -11,6 +11,9 @@ cd "$REPO"
 # Licensing guard: manifest.yml carries `licensing.enabled: true`. Deploying that to PROD
 # before a PAID pricing plan is live in the Partner portal makes every existing install read
 # unlicensed -> the nag banner appears for all current customers. Acknowledge explicitly.
+APPROVE_MAJOR=0
+for a in "$@"; do [[ "$a" == "--approve-major" ]] && APPROVE_MAJOR=1; done
+set -- $(for a in "$@"; do [[ "$a" != "--approve-major" ]] && printf '%s ' "$a"; done)
 if grep -qE '^\s*enabled:\s*true' <(sed -n '/^  licensing:/,/^  [a-z]/p' manifest.yml) ; then
   if [[ "${1:-}" == "--licensing-live" ]]; then
     shift
@@ -60,7 +63,22 @@ cleanup() { cp manifest.yml.dev.bak manifest.yml; rm -f manifest.yml.dev.bak man
 trap cleanup EXIT
 
 echo "==> forge lint (production manifest)"
-forge lint -e production   # -e: a non-TTY shell cannot answer the environment prompt
+# A scope change makes the deploy a MAJOR: lint reports it as an "approval" (0 errors, 0 warnings)
+# and exits non-zero. --approve-major (owner-approved release only) accepts exactly that and nothing
+# else: any error, warning or a non-MAJOR_VERSION_RULE approval still stops the deploy.
+set +e
+LINT_OUT="$(forge lint -e production 2>&1)"; LINT_RC=$?   # -e: a non-TTY shell cannot answer the environment prompt
+set -e
+echo "$LINT_OUT"
+if [[ $LINT_RC -ne 0 ]]; then
+  if [[ "$APPROVE_MAJOR" == "1" ]] && grep -q "(0 errors, 0 warnings, [0-9]* approval" <<<"$LINT_OUT" \
+     && [[ "$(grep -c "approval" <<<"$LINT_OUT")" -ge 1 ]] \
+     && ! grep -E "^\s*[0-9]+:[0-9]+\s+approval" <<<"$LINT_OUT" | grep -vq "MAJOR_VERSION_RULE\|major version upgrade"; then
+    echo "==> Lint: only the MAJOR_VERSION_RULE approval; accepted by --approve-major"
+  else
+    echo "ABORT: forge lint failed (rc=$LINT_RC)."; exit 1
+  fi
+fi
 
 echo "==> Deploying to production"
 forge deploy -e production "$@"
