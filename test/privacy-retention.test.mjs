@@ -68,7 +68,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 const src = (p) => readFileSync(resolve(here, "..", p), "utf8");
 ok("boot wraps the daily recurring-nudge task with the privacy check", /recurringNudgeTaskCore\(event, context\); \} finally \{ await privacySweepCheck\(context \|\| event\?\.context\)/.test(src("src/boot.js")));
 ok("the check refuses a non-Confluence installation", /if \(!isConfluenceInstall\(context\)\) return;/.test(src("src/server/capsules/privacy/worker.js")));
-ok("the worker deletes only past-retention rows", /if \(isPastRetention\(key, value, nowMs, days\)\) \{\s*await kvs\.delete\(key\);/.test(src("src/server/capsules/privacy/worker.js")));
+ok("the worker deletes only past-retention rows", /if \(isPastRetention\(key, value, nowMs, days\)\) \{\s*await withBackoff\(\(\) => kvs\.delete\(key\)\);/.test(src("src/server/capsules/privacy/worker.js")));
 const manifest = src("manifest.yml");
 ok("manifest: privacy consumer with 900 s", /- key: privacy-fn\s+handler: boot\.privacyConsumer\s+timeoutSeconds: 900/.test(manifest));
 ok("manifest: privacy queue", /- key: privacy-queue\s+queue: privacy-queue\s+function: privacy-fn/.test(manifest));

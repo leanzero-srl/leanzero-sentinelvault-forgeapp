@@ -203,22 +203,128 @@ export function stripApproverEmailHints(value) {
 
 /**
  * PURE. Which accounts to report now, and with what updatedAt.
- * `index` is { [accountId]: { u: updatedAtIso, r: reportedAtIso|null } }; `seen` the ids found.
- * Every seen id gets an entry (first seen → u = now). An id is DUE when it was never reported or
- * its last report is a full cycle old. Ids no longer stored drop out of the index.
+ * `index` is { [accountId]: { u: updatedAtIso, r: reportedAtIso|null, c?: closedAtIso, x?: erasedAtIso } };
+ * `seen` the ids found. Every seen id gets an entry (first seen → u = now). An id is DUE when it was
+ * never reported or its last report is a full cycle old (`cycleMs`, Atlassian's Cycle-Period).
+ *
+ * CLOSED is durable (review 2026-10-05, C1). Atlassian said `closed` once; the id is never reported
+ * again and keeps its marker (`c`) whether or not a row still holds it. Before, the id was dropped
+ * from the index after the erasure, so a closed person who stays in a sealed-section baseline (page
+ * content, never rewritten) or in a personal space key came back next week as "new", was reported
+ * again (a 6.5-day cadence, under Atlassian's 7) and erased again — and every erasure dropped all
+ * older backup generations. `closedSeen` lists marked ids a row still holds; the worker decides
+ * from the rows whether anything is left to erase (erasableMentions), never by asking again.
+ * Ids in `exclude` (the app's own account) are never indexed. Unseen, unclosed ids leave the index.
  */
-export function planReport(index, seen, nowMs) {
+export function planReport(index, seen, nowMs, { cycleMs = CYCLE_MS, exclude = [] } = {}) {
   const nowIso = new Date(nowMs).toISOString();
+  const skip = new Set(exclude.filter(Boolean));
   const next = {};
   const due = [];
+  const closedSeen = [];
+  for (const [id, prev] of Object.entries(index || {})) if (prev?.c && !skip.has(id)) next[id] = { ...prev };
   for (const id of seen) {
+    if (skip.has(id)) continue;
     const prev = index?.[id];
-    const entry = { u: prev?.u || nowIso, r: prev?.r || null };
+    if (prev?.c) { closedSeen.push(id); continue; }
+    const entry = { u: prev?.u || nowIso, r: prev?.r || null, ...(prev?.n ? { n: 1 } : {}) };
     next[id] = entry;
-    const last = Date.parse(entry.r || "");
-    if (!Number.isFinite(last) || nowMs - last >= CYCLE_MS) due.push({ accountId: id, updatedAt: entry.u });
+    if (isDue(entry, nowMs, cycleMs)) due.push({ accountId: id, updatedAt: entry.u });
   }
-  return { index: next, due };
+  return { index: next, due, closedSeen };
+}
+
+/** PURE. Is one index entry due at `nowMs`? Closed entries never are. */
+export function isDue(entry, nowMs, cycleMs = CYCLE_MS) {
+  if (!entry || entry.c) return false;
+  const last = Date.parse(entry.r || "");
+  return !Number.isFinite(last) || nowMs - last >= cycleMs;
+}
+
+/** PURE. When the next report falls due: the OLDEST report + one cycle; null when none is waiting. */
+export function nextReportAt(index, cycleMs = CYCLE_MS) {
+  let min = Infinity;
+  for (const e of Object.values(index || {})) {
+    if (!e || e.c) continue;
+    const r = Date.parse(e.r || "");
+    if (Number.isFinite(r) && r < min) min = r;
+  }
+  return Number.isFinite(min) ? new Date(min + cycleMs).toISOString() : null;
+}
+
+/**
+ * PURE. Atlassian's answer, kept to the batch that was asked about (review 2026-10-05, C4): an
+ * answer naming an id we did not send is ignored — it must never erase someone we never reported.
+ */
+export function acceptAnswers(batch, answers) {
+  const asked = new Set((batch || []).map((a) => a?.accountId).filter(Boolean));
+  const closed = new Set();
+  const updated = new Set();
+  for (const a of Array.isArray(answers) ? answers : []) {
+    if (!a || !asked.has(a.accountId)) continue;
+    if (a.status === "closed") closed.add(a.accountId);
+    else if (a.status === "updated") updated.add(a.accountId);
+  }
+  for (const id of closed) updated.delete(id);
+  return { closed: [...closed], updated: [...updated] };
+}
+
+/**
+ * PURE. Atlassian's `Cycle-Period` response header → milliseconds, clamped to 1–30 days; null when
+ * absent or unreadable (the caller keeps the cycle it had, 7 days by default). Atlassian documents
+ * it as the cycle period "you must follow instead" of 7 days without a unit; a small number is read
+ * as DAYS, a number of at least 3600 as SECONDS (an ISO-8601 duration "P7D" is read too).
+ */
+export function parseCyclePeriod(header) {
+  if (header == null || header === "") return null;
+  const str = String(header).trim();
+  let days = null;
+  const iso = /^P(\d+(?:\.\d+)?)D$/i.exec(str);
+  if (iso) days = Number(iso[1]);
+  else {
+    const n = Number(str);
+    if (!Number.isFinite(n) || n <= 0) return null;
+    days = n >= 3600 ? n / 86400 : n;
+  }
+  const clamped = Math.min(30, Math.max(1, days));
+  return Math.round(clamped * 86400000);
+}
+
+/**
+ * PURE. Does a row still hold something of a CLOSED account that the erasure would change? Its own
+ * row (the key names them), or a person reference rewriteAccount would pseudonymise. A sealed-
+ * section baseline (page content, CONTENT_PREFIXES) and a personal space key (~id) are NOT: the
+ * sealed snapshot is the record of what was sealed and is never rewritten, so a closed person who
+ * stays mentioned inside sealed content stays there (as in Confluence's own page history).
+ */
+export function erasableMentions(key, value, closedIds) {
+  const out = [];
+  if (holdsPageContent(key)) return out;
+  const json = value === undefined ? "" : JSON.stringify(value);
+  for (const id of closedIds || []) {
+    if (keyNamesAccount(key, id)) { out.push(id); continue; }
+    if (!json.includes(id)) continue;
+    if (rewriteAccount(value, id, { mode: "erase", removeFromLists: removesFromLists(key) }).changed) out.push(id);
+  }
+  return out;
+}
+
+/**
+ * PURE. Does one backup chunk's entries ([[key, value, expireAt], …]) mention any of `needles`
+ * OUTSIDE page content? A generation is dropped by the privacy purge only for such a mention: a
+ * closed person who remains inside a sealed-section baseline must not make every older generation
+ * (pinned pre-uninstall ones included) disappear week after week (review 2026-10-05, C1).
+ */
+export function entriesMentionOutsideContent(entries, needles) {
+  const list = (needles || []).filter(Boolean);
+  if (!list.length) return false;
+  for (const e of entries || []) {
+    const key = Array.isArray(e) ? e[0] : e?.key;
+    if (holdsPageContent(key)) continue;
+    const text = `${key}\u0000${JSON.stringify(Array.isArray(e) ? e[1] : e?.value)}`;
+    if (list.some((n) => text.includes(n))) return true;
+  }
+  return false;
 }
 
 /** PURE. Split a list into batches of at most `size`. */
@@ -230,22 +336,41 @@ export function batches(list, size = REPORT_BATCH) {
 
 export const SWEEP_EVERY_MS = 6.5 * 86400000;
 export const RETRY_REFUSED_MS = 20 * 3600000;
+/**
+ * A report falling due within this window is waited for (a delayed queue event that re-queues itself
+ * in 15-minute hops), not skipped a day. A full day, so one daily trigger always falls inside it
+ * however far the report time has drifted from the trigger's time of day: no cycle ever slips to 8.
+ */
+export const DUE_WINDOW_MS = 24 * 3600000;
+/** Margin after the due moment, so a sweep never reports a hair before the cycle is complete. */
+export const DUE_MARGIN_MS = 5000;
 
 /**
- * PURE. Is a scheduled sweep due, given the `privacy-status` row? Weekly (6.5 days, checked by the
- * daily trigger). 7.0.0: a sweep whose report Atlassian REFUSED (`reporting: "not-permitted"` —
- * every 6.x sweep, which lacked report:personal-data) is retried the next day instead of a week
- * later, so an upgraded site reports its accounts within a day of approving the update. A refusal
- * leaves every account due, so the retry reports them all.
+ * PURE. Should the daily check queue a sweep, and when may it start? → { due, notBefore }.
+ *
+ * Reports run on THEIR cycle, not on the sweep's (review 2026-10-05, C3). Before, the sweep ran
+ * when the last one was 6.5 days old and an account was due when its report was exactly 7 days old
+ * — a daily trigger that fired a few minutes early on day 7 found nothing due, and the account
+ * waited until day 14 about half the time. Now:
+ *   1. a report falling due within DUE_WINDOW_MS (status.nextReportAt = oldest report + cycle) →
+ *      due, with notBefore = that moment + DUE_MARGIN_MS; the consumer re-queues itself with a
+ *      delay until then, so day 7 stays day 7 whatever the trigger's jitter;
+ *   2. otherwise the weekly scan (retention, new ids): the last run 6.5 days old;
+ *   3. a sweep Atlassian REFUSED (`not-permitted`) is retried after 20 h, not a week;
+ * and a sweep already queued (queuedAt after the last attempt, within the window) is not queued twice.
  */
-export function sweepDue(status, nowMs = Date.now()) {
-  const last = Date.parse(status?.lastRunAt || status?.queuedAt || "");
-  if (!Number.isFinite(last) || nowMs - last >= SWEEP_EVERY_MS) return true;
-  if (status?.last?.accounts?.reporting === "not-permitted") {
-    const tried = Date.parse(status?.lastAttemptAt || status?.lastRunAt || "");
-    const queued = Date.parse(status?.queuedAt || "");
-    if (Number.isFinite(queued) && queued > (Number.isFinite(tried) ? tried : 0) && nowMs - queued < RETRY_REFUSED_MS) return false;
-    return !Number.isFinite(tried) || nowMs - tried >= RETRY_REFUSED_MS;
-  }
-  return false;
+export function sweepSchedule(status, nowMs = Date.now()) {
+  const st = status || {};
+  const tried = Date.parse(st.lastAttemptAt || st.lastRunAt || "");
+  const queued = Date.parse(st.queuedAt || "");
+  if (Number.isFinite(queued) && queued > (Number.isFinite(tried) ? tried : 0) && nowMs - queued < DUE_WINDOW_MS + 15 * 60000) return { due: false, notBefore: null };
+  const nra = Date.parse(st.nextReportAt || "");
+  if (Number.isFinite(nra) && nowMs >= nra - DUE_WINDOW_MS) return { due: true, notBefore: Math.max(nowMs, nra + DUE_MARGIN_MS) };
+  const last = Date.parse(st.lastRunAt || "");
+  if (!Number.isFinite(last) || nowMs - last >= SWEEP_EVERY_MS) return { due: true, notBefore: nowMs };
+  if (st.last?.accounts?.reporting === "not-permitted" && (!Number.isFinite(tried) || nowMs - tried >= RETRY_REFUSED_MS)) return { due: true, notBefore: nowMs };
+  return { due: false, notBefore: null };
 }
+
+/** PURE. sweepSchedule(...).due — kept for callers that only need yes/no. */
+export const sweepDue = (status, nowMs = Date.now()) => sweepSchedule(status, nowMs).due;
