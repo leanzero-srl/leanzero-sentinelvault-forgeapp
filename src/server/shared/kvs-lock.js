@@ -23,7 +23,6 @@ import { kvs as forgeKvs } from "@forge/kvs";
 
 export const CLAIM_MS = 120000;
 const CLAIM_DEPTH = 3;
-const GHOST_TRIES = 3;
 
 /** PURE. Is this lock row stale at `nowMs` (unreadable time, or older than `holdMs`)? A MISSING row is not stale: it is free. */
 export function lockIsStale(row, nowMs, holdMs) {
@@ -61,35 +60,16 @@ export function makeLocks(kvs = forgeKvs) {
     return (await tryPut(ck, token, CLAIM_MS)) ? ck : null;
   }
 
-  /**
-   * L4: a row that reads as ABSENT while FAIL_IF_EXISTS still refuses it (an expired ttl row the
-   * read path hides but the write path still counts). Seen GHOST_TRIES times, spanning more than
-   * the hold, it is deleted and the write retried, logged — what the very first version did on
-   * every refusal. The sightings live in `${key}:ghost` (a plain row; reset when stale).
-   */
-  async function ghost(key, token, holdMs) {
-    const gk = `${key}:ghost`;
-    const now = Date.now();
-    let g = await read(gk);
-    if (g === "failed") return false;
-    if (g === "absent" || !(now - Date.parse(g.lastAt || "") < 2 * holdMs)) g = { since: new Date(now).toISOString(), n: 0 };
-    g = { ...g, n: (g.n || 0) + 1, lastAt: new Date(now).toISOString() };
-    if (g.n >= GHOST_TRIES && now - Date.parse(g.since) >= holdMs) {
-      console.warn(`[LOCK] ${key}: reads as absent but refuses FAIL_IF_EXISTS since ${g.since} (${g.n} tries) — deleted and retried`);
-      try { await kvs.delete(key); } catch (_) { return false; }
-      await kvs.delete(gk).catch(() => {});
-      return tryPut(key, token, holdMs);
-    }
-    await kvs.set(gk, g).catch(() => {});
-    return false;
-  }
-
   /** Try once to take `key` for `holdMs`. Resolves true only when this caller holds it (with `token`). */
   async function acquireLock(key, holdMs, token) {
     if (await tryPut(key, token, holdMs)) return true;
     const cur = await read(key);
     if (cur === "failed") return false; // B1: cannot see it → treat as held
-    if (cur === "absent") return (await tryPut(key, token, holdMs)) || ghost(key, token, holdMs); // released meanwhile, or a ghost (L4)
+    // Released meanwhile: one more atomic try. NEVER a delete here (review round 4): a refused write
+    // after an empty read almost always means another caller took the lock in between, so clearing
+    // "ghost" rows deleted LIVE holders (26 overlapping holds in sv-break4/count.mjs). The measured
+    // real case — an expired row that is still READABLE — is the stale takeover below.
+    if (cur === "absent") return tryPut(key, token, holdMs);
     if (!lockIsStale(cur, Date.now(), holdMs)) return false;
     const ck = await claim(key, cur.token, token);
     if (!ck) return false; // B2: someone else is taking it over
