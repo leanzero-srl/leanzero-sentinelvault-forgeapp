@@ -78,9 +78,12 @@ for (let i = 0; i < 90; i++) {
 }
 console.log("sweep:", JSON.stringify(sum).slice(0, 1500));
 check("sweep ok", sum.ok === true, sum.error);
-check("the real report-accounts call was made", sum.accounts?.reported >= 1, sum.accounts);
+// 7.0.0 (review C1): once Atlassian said closed, the id carries a durable marker and is never
+// reported again; rows seeded for it afterwards are erased as "brought back" without a report.
+const firstTime = sum.accounts?.closed >= 1;
+check(firstTime ? "the real report-accounts call was made" : "already marked closed: not reported again", firstTime ? sum.accounts?.reported >= 1 : sum.accounts?.closed === 0, sum.accounts);
 check("reporting recorded as done (7.0 holds report:personal-data)", sum.accounts?.reporting === "done", sum.accounts);
-check("Atlassian answered S closed (a real answer, nothing forced)", sum.accounts?.closed >= 1, sum.accounts);
+check(firstTime ? "Atlassian answered S closed (a real answer, nothing forced)" : "the re-seeded rows were erased without asking Atlassian again", firstTime || (sum.erasure && sum.erasure.deletedRows >= 1), sum.erasure);
 if (sum.retentionDays > 0) check("retention deleted the 800-day-old log", !(await get(`workflow-log-${pageId}-${now - 800 * 86400000}`)));
 else check("retention is off on dev: the 800-day-old log is kept", !!(await get(`workflow-log-${pageId}-${now - 800 * 86400000}`)), { retentionDays: sum.retentionDays });
 check("recent log kept", !!(await get(`workflow-log-${pageId}-${now}`)));
@@ -97,7 +100,7 @@ check("activity actor pseudonymised", act?.actor?.accountId === "former-user" &&
 const after = await conf(`/wiki/api/v2/pages/${pageId}/properties?key=protection-`);
 const pv = after.body?.results?.[0]?.value;
 check("page property: no email, no name, no note, no S", pv && !JSON.stringify(pv).includes(EMAIL) && !JSON.stringify(pv).includes(NAME) && !("note" in pv) && !JSON.stringify(pv).includes(S), pv);
-check("backup step ran", sum.erasure?.backup && !sum.erasure.backup.error, sum.erasure?.backup);
+check("backup erasure queued as its own job", sum.erasure?.backup?.jobId && !sum.erasure.backup.error, sum.erasure?.backup);
 check("status row has no account id", !JSON.stringify(sum).includes(S));
 
 // 5. clean up
