@@ -373,44 +373,33 @@ npm run lint
 
 ## Permissions
 
-The app requests the following Forge permissions:
+The app requests the following Forge permissions (27 since 7.0.0; the call-by-call audit is docs/SCOPES-7.0.md):
 
 | Scope | Purpose |
 |-------|---------|
 | `read:confluence-content.all` | Read page and attachment data |
-| `read:confluence-content.summary` | Read content summaries |
+| `read:confluence-content.summary` | Receive page and attachment events (the triggers behind seal enforcement require it) |
 | `write:confluence-content` | Write comments, update attachments (for reversion) |
 | `write:confluence-file` | Upload attachment files (for reversion and user uploads) |
 | `readonly:content.attachment:confluence` | Read-only attachment access |
-| `read:confluence-space.summary` | Resolve space context for space-level settings |
 | `read:space:confluence` | Read space metadata |
-| `read:confluence-props` | Read content properties (seal status) |
 | `write:confluence-props` | Write content properties (seal markers) |
 | `read:confluence-content.permission` | Check content permissions |
 | `read:confluence-user` | Resolve user identity for seal ownership |
 | `read:confluence-groups` | Resolve group membership for space-admin groups |
 | `search:confluence` | CQL queries for sealed attachment discovery |
-| `read:content:confluence` | Read content via v2 API |
 | `read:content-details:confluence` | Read content details via v2 API |
 | `read:page:confluence` | Read pages via v2 API |
 | `write:page:confluence` | Write pages via v2 API (content protection restoration) |
-| `write:content:confluence` | Write content via v2 API |
 | `read:attachment:confluence` | Read attachments via v2 API |
-| `write:attachment:confluence` | Write attachments via v2 API |
 | `delete:attachment:confluence` | Delete attachments (trash management) |
-| `read:comment:confluence` | Read comments via v2 API |
 | `write:comment:confluence` | Write comments via v2 API (violation notifications) |
-| `read:content.property:confluence` | Read content properties via v2 API |
-| `write:content.property:confluence` | Write content properties via v2 API |
-| `read:content.restriction:confluence` | Read content restrictions |
-| `write:content.restriction:confluence` | Write content restrictions |
-| `read:content.metadata:confluence` | Read content metadata |
-| `read:content.permission:confluence` | Read content permissions |
 | `read:label:confluence` | Read page labels (label-scoped workflows, state mirroring) |
 | `read:configuration:confluence` | Read Confluence's own classification levels |
 | `write:space:confluence` | Set a space's default level through Confluence's classification API |
 | `read:servicedesk-request` | Find the JSM Assets workspace (classification import) |
 | `read:cmdb-schema:jira`, `read:cmdb-type:jira`, `read:cmdb-object:jira`, `read:cmdb-attribute:jira` | Read JSM Assets objects to import classification levels (read-only, as the signed-in admin) |
+| `report:personal-data` | Report stored account ids to Atlassian's personal data reporting API (weekly check; closed accounts are erased) |
 | `storage:app` | Persist seal records, settings, and audit logs |
 
 There are **no external fetch permissions** (`permissions.external` is absent from the manifest). The REST API is a web trigger with a static response, so it returns no data. The app has no external dependencies and is eligible for the **"Runs on Atlassian"** Marketplace badge. All notifications are posted as Confluence footer comments with `@mention` of the recipient; Confluence's own notification engine emails the user according to their personal preferences.

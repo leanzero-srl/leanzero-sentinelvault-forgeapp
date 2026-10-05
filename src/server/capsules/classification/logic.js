@@ -268,9 +268,9 @@ export async function resolveSpaceId(request, pageId) {
  * next version number, DELETE). Best-effort by design: KVS is the read path, the property is a
  * mirror for CQL and visibility, and a mirror that cannot be written must not block the decision.
  *
- * Space properties need write:space:confluence, which is NOT in the manifest yet — live, that
- * branch answers 403 and is logged, nothing more. Page (content) properties are covered by
- * write:content.property:confluence, which is granted.
+ * These are v2 properties: page properties need read:page + write:page, space properties
+ * read:space + write:space (all held since 5.0; docs/SCOPES-7.0.md). A refused write is logged,
+ * nothing more.
  */
 export async function mirrorProperty(request, base, value, log = () => {}, key = PROPERTY_KEY) {
   // `key` defaults to the classification property; the config API reuses this for its
