@@ -15,11 +15,13 @@ export const RELEASE_NOTES = Object.freeze([
     version: "7.0.0",
     date: "2026-10-05",
     status: "testing",
-    headline: "The weekly personal-data check now asks Atlassian about closed accounts",
+    headline: "The weekly personal-data check now asks Atlassian about closed accounts, and the app asks for fewer permissions",
     changes: [
       "New permission: this update asks a site admin to approve one new permission, reporting personal data to Atlassian. Until it is approved the site stays on the previous version.",
       "Changed: once approved, the weekly personal-data check sends Atlassian the ids of the accounts Sentinel Vault stores, each at most once a week. When Atlassian answers that an account was closed, the app erases that person everywhere it keeps them, including the backup. When it answers that an account changed, the app refreshes the stored name.",
       "Changed: the first check runs within a day of the update. If Atlassian refuses a check, it is tried again the next day instead of a week later.",
+      "Changed: Sentinel Vault asks for fewer permissions. It no longer requests 12 it held but did not use: read:confluence-space.summary, read:confluence-props, read:content:confluence, write:content:confluence, write:attachment:confluence, read:comment:confluence, read:content.property:confluence, write:content.property:confluence, read:content.restriction:confluence, write:content.restriction:confluence, read:content.metadata:confluence and read:content.permission:confluence. Everything the app did with them it already does through the permissions it keeps, so nothing it does changes.",
+      "Kept on purpose: read:confluence-content.summary, because Confluence only tells the app about page and attachment changes with it, and read:label:confluence, which the page label check uses.",
     ],
     fixes: [
       "The weekly check could not ask Atlassian about closed or changed accounts, because the app did not hold the permission for it.",
