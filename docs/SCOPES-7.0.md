@@ -47,7 +47,7 @@ The reds that were green are event latency, not scopes. gate-revert, revert-dest
 | Consumer | Needs | Kept |
 |---|---|---|
 | triggers `avi:confluence:created:page`, `updated:page`, `updated:attachment` | read:confluence-content.summary | yes |
-| triggers `avi:confluence:trashed:attachment`, `deleted:attachment` | read:confluence-content.summary **and** write:confluence-content ("Trashed and deleted events, in addition to the above, require the OAuth scope `write:confluence-content`" — Forge events reference) | yes, both |
+| triggers `avi:confluence:trashed:attachment`, `deleted:attachment` | read:confluence-content.summary only ("Attachment events require the OAuth scope `read:confluence-content.summary`"; the extra `write:confluence-content` applies to PAGE/blog trashed and deleted events, which the app does not subscribe to — Forge events reference, and @forge/manifest product-event-to-scope-mapping.json) | yes (summary scope); write:confluence-content is held for labels, the backup page restriction and moving an emptied backup page to the trash, not for these events |
 | `privacy.reportPersonalData` (weekly personal-data check) | report:personal-data | yes (added in 7.0.0) |
 | `@forge/kvs` (storage and secrets) | storage:app | yes |
 | Custom UI `@forge/bridge` | invoke / router / view / Modal / showFlag only — no `requestConfluence` from the browser, so no scope | — |
