@@ -39,14 +39,13 @@ export default function UnsavedFloat({ dirty, busy = false, onApply, onDiscard }
     if (!dirty || !touch || !ref.current) { setPos(null); return; }
     const anchor = touch.el?.isConnected ? touch.el.getBoundingClientRect() : touch.rect;
     const box = ref.current.getBoundingClientRect();
-    const blockedAt = (x, y) => {
-      for (const el of document.elementsFromPoint(x, y)) {
-        if (ref.current && ref.current.contains(el)) continue;
-        return !!el.closest?.(CONTROL);
-      }
-      return false;
-    };
-    setPos(placeFloat({ anchor, size: { width: box.width, height: box.height }, view: { width: window.innerWidth, height: window.innerHeight }, blockedAt }));
+    const blockers = [];
+    for (const el of document.querySelectorAll(CONTROL)) {
+      if (ref.current.contains(el)) continue;
+      const r = el.getBoundingClientRect();
+      if (r.width > 0 && r.height > 0) blockers.push({ left: r.left, top: r.top, right: r.right, bottom: r.bottom });
+    }
+    setPos(placeFloat({ anchor, size: { width: box.width, height: box.height }, view: { width: window.innerWidth, height: window.innerHeight }, blockers }));
   }, [dirty, touch]);
 
   if (!dirty || !touch) return null;

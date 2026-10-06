@@ -1,10 +1,11 @@
 // Where the "Not applied yet" reminder (kit/UnsavedFloat.jsx) goes — device matrix 2026-10-06,
 // SV-10. It used to sit 28 px under the POINTER, right-aligned: after "+ Add rule" that put it on
 // the new rule's type and severity pickers (phones) and on the rule's × (every width). Now it is
-// placed next to the ROW that was touched, on the first of four spots that covers no control:
+// placed next to the ROW that was touched, on the first of four spots that overlaps no control:
 // under the row on its left, under it on its right, above it on its right, above it on its left.
-// If every spot covers something, the one covering the fewest controls wins. PURE: the caller
-// passes `blockedAt(x, y)` (is there a control under this point, the float itself excluded).
+// If every spot overlaps something, the one overlapping the fewest controls wins. PURE: the caller
+// passes `blockers`, the on-screen rectangles of the page's controls (the reminder's own excluded).
+// (A 9-point sample was tried first and missed a 24 px × between two sample columns.)
 
 /** Selector for the row the reminder sits beside: the touched setting's row, rule card, choice block or card. */
 export const FLOAT_ANCHOR = ".settings-row, .val-rule-card, .val-rules-head, .wf-def-row, .sv-choice-block, .settings-card, [data-float-anchor]";
@@ -12,23 +13,16 @@ export const FLOAT_ANCHOR = ".settings-row, .val-rule-card, .val-rules-head, .wf
 const GAP = 8;
 const EDGE = 8;
 
-/** Sample points across a rectangle (corners, edge midpoints, centre). */
-export function samplePoints({ left, top, width, height }) {
-  const xs = [left + 2, left + width / 2, left + width - 2];
-  const ys = [top + 2, top + height / 2, top + height - 2];
-  const pts = [];
-  for (const y of ys) for (const x of xs) pts.push([Math.round(x), Math.round(y)]);
-  return pts;
-}
+const overlaps = (a, b) => a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top;
 
 /**
- * @param anchor  {top, bottom, left, right} of the touched row (viewport px)
- * @param size    {width, height} of the reminder
- * @param view    {width, height} of the frame's viewport
- * @param blockedAt (x, y) => boolean
+ * @param anchor   {top, bottom, left, right} of the touched row (viewport px)
+ * @param size     {width, height} of the reminder
+ * @param view     {width, height} of the frame's viewport
+ * @param blockers [{top, bottom, left, right}] of every control on screen
  * @returns {left, top, spot}
  */
-export function placeFloat({ anchor, size, view, blockedAt = () => false }) {
+export function placeFloat({ anchor, size, view, blockers = [] }) {
   const w = Math.min(size.width, Math.max(0, view.width - 2 * EDGE));
   const h = size.height;
   const clampX = (x) => Math.max(EDGE, Math.min(x, view.width - w - EDGE));
@@ -43,7 +37,8 @@ export function placeFloat({ anchor, size, view, blockedAt = () => false }) {
   ];
   let best = null;
   for (const s of spots) {
-    const hits = samplePoints({ left: s.left, top: s.top, width: w, height: h }).filter(([x, y]) => blockedAt(x, y)).length;
+    const rect = { left: s.left, top: s.top, right: s.left + w, bottom: s.top + h };
+    const hits = blockers.filter((b) => overlaps(rect, b)).length;
     if (hits === 0) return { left: Math.round(s.left), top: Math.round(s.top), spot: s.spot };
     if (!best || hits < best.hits) best = { ...s, hits };
   }
