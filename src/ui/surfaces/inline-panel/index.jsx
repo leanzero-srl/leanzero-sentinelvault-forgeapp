@@ -70,7 +70,7 @@ const OperatorChip = ({ accountId }) => {
   return (
     <span className="user-display">
       <span className="user-avatar-fallback" title={operator.displayName}>
-        <span style={{ fontSize: "10px", fontWeight: 600, color: "var(--sv-text-subtle)" }}>
+        <span style={{ fontSize: "11px", fontWeight: 600, color: "var(--sv-text-subtle)" }}>
           {extractInitials(operator.displayName)}
         </span>
       </span>

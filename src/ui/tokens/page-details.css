@@ -14,6 +14,7 @@
   --sv-text-subtle: #5B6B80;
   --sv-text-inverse: #FFFFFF;
   --sv-text-on-primary: #FFFFFF;
+  --sv-text-on-danger: #FFFFFF; /* M-03: ink on a danger fill — white on the light red */
   --sv-border-primary: #E2E8F0;
   --sv-border-focus: #0E7490;
   --sv-interactive-primary: #0E7490;
@@ -41,6 +42,7 @@ html[data-color-mode="dark"] {
   --sv-text-subtle: #94A3B8;
   --sv-text-inverse: #FFFFFF;
   --sv-text-on-primary: #0F172A;
+  --sv-text-on-danger: #0F172A; /* M-03: navy on the dark theme's #F87171 (6.5:1); white was 2.8:1 */
   --sv-border-primary: #38414A;
   --sv-border-focus: #22D3EE;
   --sv-interactive-primary: #22D3EE;
@@ -121,8 +123,15 @@ html[data-color-mode="dark"] .pd-ok { color: #4ADE80; }
 .pd-dd-cur { display: inline-flex; align-items: center; gap: 8px; }
 .pd-sw { width: 10px; height: 10px; border-radius: 50%; flex: none; }
 .pd-dd-arrow { color: var(--sv-text-subtle); font-size: 11px; }
-.pd-dd-menu { position: absolute; top: calc(100% + 4px); left: 0; min-width: 280px; max-height: 320px; overflow-y: auto; background: var(--sv-bg-elevated); border: 1px solid var(--sv-border-primary); border-radius: 8px; box-shadow: var(--sv-shadow-medium); z-index: 30; padding: 4px; }
-.pd-dd-opt { display: grid; grid-template-columns: 10px auto 1fr; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 6px; cursor: pointer; }
+.pd-dd-menu { position: absolute; top: calc(100% + 4px); left: 0; min-width: min(340px, calc(100vw - 24px)); max-height: 320px; overflow-y: auto; background: var(--sv-bg-elevated); border: 1px solid var(--sv-border-primary); border-radius: 8px; box-shadow: var(--sv-shadow-medium); z-index: 30; padding: 4px; }
+/* kit/visible-placement.js: cut at the right edge → align to the trigger's right edge; no room
+   below → open above. */
+.pd-dd-menu.is-end { left: auto; right: 0; }
+.pd-dd-menu.is-up, .pd-menu.is-up { top: auto; bottom: calc(100% + 4px); }
+/* SV-07: the description sits UNDER the level's name — beside it, it started wherever the name
+   ended and wrapped into a ragged 6-8 line column, and only 2-3 options fitted the menu. */
+.pd-dd-opt { display: grid; grid-template-columns: 10px minmax(0, 1fr); align-items: center; gap: 2px 8px; padding: 8px 10px; border-radius: 6px; cursor: pointer; }
+.pd-dd-opt .pd-dd-hint { grid-column: 2; line-height: 1.4; }
 .pd-dd-opt:hover, .pd-dd-opt:focus-visible { background: var(--sv-bg-tertiary); }
 .pd-dd-opt.sel { background: var(--sv-interactive-primary); color: var(--sv-text-on-primary); }
 .pd-dd-opt.sel .pd-dd-hint { color: inherit; opacity: .9; }
@@ -152,6 +161,9 @@ html[data-color-mode="dark"] .pd-state.declined { background: #F87171; color: #0
 .pd-kebab-wrap { position: relative; }
 .pd-kebab { width: 28px; height: 28px; border-radius: 6px; border: 1px solid var(--sv-border-primary); background: transparent; color: var(--sv-text-secondary); font-weight: 700; cursor: pointer; }
 .pd-kebab:hover, .pd-kebab[aria-expanded="true"] { border-color: var(--sv-text-secondary); color: var(--sv-text-primary); }
+/* M-01: kit/visible-placement.js adds .is-start when the menu would run past the modal's LEFT
+   edge (the Move to… button wraps to the start of its row on a phone) — then it opens rightwards. */
+.pd-menu.is-start { right: auto; left: 0; }
 .pd-menu { position: absolute; right: 0; top: calc(100% + 4px); min-width: 180px; background: var(--sv-bg-elevated); border: 1px solid var(--sv-border-primary); border-radius: 8px; box-shadow: var(--sv-shadow-medium); z-index: 20; padding: 4px; display: grid; }
 .pd-menu-item { text-align: left; border: 0; background: transparent; color: var(--sv-text-primary); padding: 8px 10px; border-radius: 6px; font-size: 12.5px; font-weight: 600; cursor: pointer; white-space: nowrap; }
 .pd-menu-item:hover, .pd-menu-item:focus-visible { background: var(--sv-bg-tertiary); }
@@ -184,6 +196,9 @@ html[data-color-mode="dark"] .pd-state.declined { background: #F87171; color: #0
 html[data-color-mode="dark"] .pd-loz.mine { background: #818CF8; color: #0F172A; }
 html[data-color-mode="dark"] .pd-loz.locked { background: #FBBF24; color: #0F172A; }
 .pd-seal-form { display: flex; align-items: flex-end; gap: 12px; flex-wrap: wrap; padding: 12px; border: 1px solid var(--sv-border-primary); border-radius: 8px; background: var(--sv-bg-secondary); }
+/* SV-15: pinned to the bottom of the scrolling body while anything is ticked — solid surface, a
+   solid accent border and a shadow so it reads as on top of the list (no tint). */
+.pd-seal-form.is-pinned { position: sticky; bottom: 0; z-index: 3; border: 2px solid var(--sv-interactive-primary); box-shadow: 0 -6px 18px rgba(2, 6, 23, 0.22); }
 .pd-seal-field { display: grid; gap: 4px; }
 .pd-seal-field.grow { flex: 1; min-width: 220px; }
 .pd-seal-label { font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--sv-text-subtle); }
@@ -278,6 +293,41 @@ html[data-color-mode="dark"] .sv-activity-chip-validation.is-active { background
   .pd-row-main { grid-template-columns: 24px 1fr; }
   .pd-a { grid-column: 2; justify-content: flex-start; flex-wrap: wrap; }
   .pd-foot span { display: none; }
+  /* SV-03: the seal action's rows have FOUR children (checkbox, icon, text, actions); the 2-column
+     rule above put the file's name and size into the 24 px icon column ("R…", "i…"). The compound
+     selector outranks .pd-row-main and .pd-a wherever it sits. */
+  .pd-row-main.pd-row-check { grid-template-columns: 16px 24px minmax(0, 1fr); }
+  .pd-row-check .pd-a { grid-column: 3 / -1; }
+}
+/* SV-16 / M-04: a short frame (the banner's Open on a landscape phone) — the head, tabs and footer
+   took most of ~270 px. The whole modal scrolls instead of a nested body, and the footer's hint
+   sentence drops. */
+@media (max-height: 520px) {
+  html, body { overflow: auto; }
+  .pd-modal { height: auto; min-height: 100vh; }
+  .pd-body { overflow: visible; flex: none; }
+  .pd-head { padding: 10px 16px 8px; }
+  .pd-tab { padding: 8px 10px; }
+  .pd-foot span { display: none; }
+  .pd-seal-form.is-pinned { position: static; }
+}
+/* SV-12: touch targets on a coarse pointer (phone, tablet): checkboxes 22 px, buttons ≥ 32 px. */
+@media (pointer: coarse) {
+  .pd-check input { width: 22px; height: 22px; }
+  .pd-row-check { grid-template-columns: 22px 24px 1fr auto; }
+  .pd-row-main.pd-row-check { column-gap: 10px; }
+  .pd-kebab { width: 36px; height: 36px; }
+  .pd-dismiss { width: 40px; height: 40px; }
+  .pd-tab { min-height: 40px; }
+  .pd-btn { height: 36px; }
+  .pd-dd { height: 40px; }
+  .pd-menu-item, .pd-dd-opt { min-height: 40px; }
+  .pd-hold-opt { height: 32px; }
+  .sv-activity-chip-btn { min-height: 36px; }
+  .sv-activity-chip-link { min-height: 32px; display: inline-flex; align-items: center; }
+}
+@media (pointer: coarse) and (max-width: 520px) {
+  .pd-row-main.pd-row-check { grid-template-columns: 22px 24px minmax(0, 1fr); }
 }
 
 /* kit/Dialog.jsx + kit/GiveAccessDialog.jsx — the modal surface hosts the give-access dialog. */
@@ -324,7 +374,7 @@ html[data-color-mode="dark"] .sv-activity-chip-validation.is-active { background
 .pd-pick-row { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--sv-border-primary); background: var(--sv-bg-secondary); color: var(--sv-text-primary); cursor: pointer; font-family: inherit; }
 .pd-pick-row:hover:not(:disabled) { border-color: var(--sv-interactive-primary); }
 .pd-pick.is-picked .pd-pick-row { border-color: var(--sv-interactive-primary); }
-.pd-pick-level { flex: none; min-width: 28px; height: 22px; padding: 0 6px; border-radius: 6px; background: var(--sv-interactive-primary); color: #FFFFFF; font-size: 11px; font-weight: 800; display: inline-flex; align-items: center; justify-content: center; }
+.pd-pick-level { flex: none; min-width: 28px; height: 22px; padding: 0 6px; border-radius: 6px; background: var(--sv-interactive-primary); color: var(--sv-text-on-primary); font-size: 11px; font-weight: 800; display: inline-flex; align-items: center; justify-content: center; }
 .pd-pick-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
 .pd-pick-text { font-size: 13px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pd-pick-range { font-size: 11.5px; color: var(--sv-text-secondary); }
@@ -333,7 +383,7 @@ html[data-color-mode="dark"] .sv-activity-chip-validation.is-active { background
 .pd-hold-label { font-size: 12px; font-weight: 700; }
 .pd-hold-opts { display: inline-flex; gap: 6px; flex-wrap: wrap; }
 .pd-hold-opt { height: 26px; padding: 0 10px; border-radius: 13px; border: 1.5px solid var(--sv-border-primary); background: var(--sv-bg-secondary); color: var(--sv-text-primary); font-size: 12px; font-weight: 600; cursor: pointer; font-family: inherit; }
-.pd-hold-opt.is-on { background: var(--sv-interactive-primary); border-color: var(--sv-interactive-primary); color: #FFFFFF; }
+.pd-hold-opt.is-on { background: var(--sv-interactive-primary); border-color: var(--sv-interactive-primary); color: var(--sv-text-on-primary); }
 
 /* Tester report 2026-09-21: bulk chip moves + a sentence that says what the filter is doing. */
 .sv-activity-chip-bulk { display: inline-flex; align-items: center; gap: 10px; margin-left: 4px; }
@@ -346,5 +396,7 @@ html[data-color-mode="dark"] .sv-activity-chip-validation.is-active { background
 /* Anchored dialogs (kit/Dialog: every surface opens a dialog level with the click) sit at the
    computed marginTop from the top edge — without this the flex centring moved them (tester 2026-09-30). */
 .sv-dialog-backdrop.is-anchored { align-items: flex-start; }
+/* SV-18: the frame is wider than the screen (a phone) — kit/Dialog sets the left margin to the visible band. */
+.sv-dialog-backdrop.is-hanchored { justify-content: flex-start; padding-left: 0; padding-right: 0; }
 /* 2026-09-30 (classification P4): "Saved · Undo" after a level change — a plain link button. */
 .pd-link { background: transparent; border: 0; padding: 0; font: inherit; font-weight: 700; color: var(--sv-interactive-primary); cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }

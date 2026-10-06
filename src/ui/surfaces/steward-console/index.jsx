@@ -473,7 +473,13 @@ const ApiTokensCard = ({ state, onRetry, onMinted, onRevoked }) => {
   };
   const cancelConfirm = useCallback(() => { if (!busy) setConfirm(null); }, [busy]);
 
-  const tokens = state.tokens || [];
+  const allTokens = state.tokens || [];
+  // SV-13: a site that minted and revoked many tokens (every harness run does) listed every
+  // revoked one, five lines each — the active tokens come first and the revoked ones wait behind
+  // one link. Nothing is hidden for good: "Show N revoked" lists them all.
+  const [showRevoked, setShowRevoked] = useState(false);
+  const revokedCount = allTokens.filter((t) => !!t.revokedAt).length;
+  const tokens = showRevoked ? allTokens : allTokens.filter((t) => !t.revokedAt);
   return (
     <ApiCard id="tokens" title="Tokens" text="A token acts as the site admin who minted it; its role narrows what it may submit. Only a hash is stored.">
       {state.status === "loading" && <ApiSkeleton testId="api-tokens-skeleton" />}
@@ -486,17 +492,19 @@ const ApiTokensCard = ({ state, onRetry, onMinted, onRevoked }) => {
             <table className="cls-table api-table" data-testid="api-tokens-table">
               <thead><tr><th>Name</th><th>Prefix</th><th>Role</th><th>Created</th><th>Last used</th><th>State</th><th><span className="sr-only">Actions</span></th></tr></thead>
               <tbody>
-                {tokens.length === 0 && <tr><td colSpan={7} className="api-empty" data-testid="api-tokens-empty">No tokens yet. Mint one below.</td></tr>}
+                {allTokens.length === 0 && <tr><td colSpan={7} className="api-empty" data-testid="api-tokens-empty">No tokens yet. Mint one below.</td></tr>}
+                {allTokens.length > 0 && tokens.length === 0 && <tr><td colSpan={7} className="api-empty" data-testid="api-tokens-none-active">No active tokens. Mint one below.</td></tr>}
                 {tokens.map((t) => {
                   const revoked = !!t.revokedAt;
                   return (
                     <tr key={t.id} className={revoked ? "is-revoked" : ""} data-testid="api-token-row" data-token-name={t.name} data-token-state={revoked ? "revoked" : "active"}>
                       <td className="api-token-name">{t.name}</td>
-                      <td><code>{t.prefix}…</code></td>
-                      <td><SolidChip text={t.role || "admin"} color={ROLE_COLOR[t.role || "admin"]} /></td>
-                      <td>{fmtWhen(t.createdAt)}{t.createdBy && <span className="api-by">by {t.createdByName || t.createdBy}</span>}</td>
-                      <td>{t.lastUsedAt ? fmtWhen(t.lastUsedAt) : "Never"}</td>
-                      <td data-testid="api-token-state"><SolidChip text={revoked ? "Revoked" : "Active"} color={revoked ? "#64748B" : "#15803D"} /></td>
+                      <td data-label="Prefix"><code>{t.prefix}…</code></td>
+                      <td data-label="Role"><SolidChip text={t.role || "admin"} color={ROLE_COLOR[t.role || "admin"]} /></td>
+                      {/* SV-19: the minter's NAME (list-api-tokens resolves it); a raw accountId meant nothing to an admin and made every row five lines tall. */}
+                      <td data-label="Created">{fmtWhen(t.createdAt)}{t.createdByName && <span className="api-by" title={t.createdBy || undefined}>by {t.createdByName}</span>}</td>
+                      <td data-label="Last used">{t.lastUsedAt ? fmtWhen(t.lastUsedAt) : "Never"}</td>
+                      <td data-label="State" data-testid="api-token-state"><SolidChip text={revoked ? "Revoked" : "Active"} color={revoked ? "#64748B" : "#15803D"} /></td>
                       <td className="api-row-actions">
                         {!revoked && <button type="button" className="btn-secondary api-revoke" onClick={() => setConfirm(t)} disabled={busy} data-testid="api-token-revoke">Revoke</button>}
                       </td>
@@ -506,6 +514,11 @@ const ApiTokensCard = ({ state, onRetry, onMinted, onRevoked }) => {
               </tbody>
             </table>
           </div>
+          {revokedCount > 0 && (
+            <button type="button" className="sv-link api-revoked-toggle" onClick={() => setShowRevoked((v) => !v)} aria-expanded={showRevoked} data-testid="api-tokens-revoked-toggle">
+              {showRevoked ? `Hide the ${revokedCount} revoked` : `Show ${revokedCount} revoked`}
+            </button>
+          )}
 
           {minted ? (
             <div className="api-minted" role="region" aria-live="assertive" aria-label="New token" data-testid="api-minted-panel">
@@ -527,7 +540,7 @@ const ApiTokensCard = ({ state, onRetry, onMinted, onRevoked }) => {
                   <input className="form-input api-input" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. ci-deploy" maxLength={80} disabled={busy}
                     onKeyDown={(e) => { if (e.key === "Enter") mint(); }} data-testid="api-mint-name" />
                 </label>
-                <div className="api-field">
+                <div className="api-field api-field-role">
                   <span className="api-field-label">Role</span>
                   <RolePicker value={role} onChange={setRole} disabled={busy} />
                 </div>
@@ -572,18 +585,18 @@ const ApiJobsCard = ({ state, onRetry }) => {
                 return (
                   <React.Fragment key={j.id}>
                     <tr data-testid="api-job-row" data-job-id={j.id} data-job-status={j.status}>
-                      <td>
+                      <td className="api-job-cell">
                         <button type="button" className="sv-link api-job-toggle" onClick={() => setOpenId(open ? null : j.id)} aria-expanded={open} data-testid="api-job-toggle">
                           {open ? "▾" : "▸"} <code>{j.id}</code>
                         </button>
                       </td>
-                      <td><SolidChip text={j.status || "queued"} color={JOB_COLOR[j.status] || JOB_COLOR.queued} testId="api-job-status" /></td>
-                      <td>{j.submittedByName || j.submittedBy || "—"}{j.role && <span className="api-by">as {j.role}</span>}</td>
-                      <td><code>{j.op || "bundle"}</code></td>
-                      <td>{fmtWhen(j.submittedAt)}{j.finishedAt && <span className="api-by">finished {fmtWhen(j.finishedAt)}</span>}</td>
-                      <td className="api-count api-count-applied">{s.applied ?? 0}</td>
-                      <td className="api-count api-count-refused">{s.refused ?? 0}</td>
-                      <td className="api-count api-count-failed">{s.failed ?? 0}</td>
+                      <td data-label="Status"><SolidChip text={j.status || "queued"} color={JOB_COLOR[j.status] || JOB_COLOR.queued} testId="api-job-status" /></td>
+                      <td data-label="Who" title={j.submittedBy || undefined}>{j.submittedByName || "—"}{j.role && <span className="api-by">as {j.role}</span>}</td>
+                      <td data-label="Op"><code>{j.op || "bundle"}</code></td>
+                      <td data-label="Submitted">{fmtWhen(j.submittedAt)}{j.finishedAt && <span className="api-by">finished {fmtWhen(j.finishedAt)}</span>}</td>
+                      <td data-label="Applied" className="api-count api-count-applied">{s.applied ?? 0}</td>
+                      <td data-label="Refused" className="api-count api-count-refused">{s.refused ?? 0}</td>
+                      <td data-label="Failed" className="api-count api-count-failed">{s.failed ?? 0}</td>
                     </tr>
                     {open && (
                       <tr className="api-job-detail" data-testid="api-job-results">
@@ -938,7 +951,7 @@ const GlobalPolicyEditor = () => {
             <Dialog title="Apply your changes first?" onClose={() => setLeaveTo(null)} busy={loading} testId="sv-unsaved-dialog">
               <div className="sv-dialog-body">You changed settings and have not applied them. Leaving the tab now throws them away.</div>
               <div className="sv-dialog-actions sv-unsaved-actions">
-                <button type="button" className="action-btn confirm-yes" style={{ background: "var(--sv-interactive-primary)" }} disabled={loading} data-testid="sv-unsaved-apply"
+                <button type="button" className="action-btn confirm-yes" style={{ background: "var(--sv-interactive-primary)", color: "var(--sv-text-on-primary)" }} disabled={loading} data-testid="sv-unsaved-apply"
                   onClick={async () => { const go = leaveTo; if (await onSavePreferences()) { setLeaveTo(null); go(); } }}>Apply and continue</button>
                 <button type="button" className="action-btn confirm-no" disabled={loading} data-testid="sv-unsaved-discard"
                   onClick={() => { const go = leaveTo; discard(); setLeaveTo(null); go(); }}>Discard</button>

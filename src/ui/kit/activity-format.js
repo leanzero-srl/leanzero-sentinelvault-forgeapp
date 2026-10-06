@@ -72,10 +72,17 @@ export const categoryLabel = (id) => ALL_CATEGORIES.find((c) => c.id === id)?.la
 
 const APP_NAME = "Sentinel Vault";
 
-const actorName = (entry) => {
+// An Atlassian accountId ("712020:937bc860-…", or a legacy 24-hex id) is never a name. Some events
+// carry one in `actor.name` (device matrix SV-08: it printed in the Who column and the sentence,
+// and its width held the whole Activity table at 1,193 px).
+const ACCOUNT_ID = /^(?:\d+:)?[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$|^[0-9a-f]{24}$/i;
+export const looksLikeAccountId = (v) => typeof v === "string" && ACCOUNT_ID.test(v.trim());
+
+/** Who did it, for display: the actor's name; "Someone" for an account with no readable name; the app itself when there is no actor. */
+export const actorName = (entry) => {
   const a = entry?.actor;
-  if (a?.name) return a.name;
-  if (a?.accountId) return "Someone";
+  if (a?.name && !looksLikeAccountId(a.name)) return a.name;
+  if (a?.accountId || a?.name) return "Someone";
   return APP_NAME;
 };
 

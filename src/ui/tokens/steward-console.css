@@ -13,6 +13,7 @@
   --sv-text-disabled: #CBD5E1;
   --sv-text-inverse: #FFFFFF;
   --sv-text-on-primary: #FFFFFF;
+  --sv-text-on-danger: #FFFFFF; /* M-03: ink on a danger fill — white on the light red */
   --sv-border-primary: #E2E8F0;
   --sv-border-secondary: #E2E8F0;
   --sv-border-focus: #0E7490;
@@ -65,6 +66,7 @@ html[data-color-mode="dark"] {
   --sv-text-disabled: #475569;
   --sv-text-inverse: #FFFFFF;
   --sv-text-on-primary: #0F172A;
+  --sv-text-on-danger: #0F172A; /* M-03: navy on the dark theme's #F87171 (6.5:1); white was 2.8:1 */
   --sv-border-primary: #334155;
   --sv-border-secondary: #334155;
   --sv-border-focus: #22D3EE;
@@ -198,9 +200,9 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 }
 .sv-help-link:first-child {
   background: var(--sv-interactive-primary);
-  color: var(--sv-text-inverse);
+  color: var(--sv-text-on-primary); /* navy on the dark theme's cyan; text-inverse stayed white (1.8:1) */
 }
-.sv-help-link:hover { background: var(--sv-interactive-primary-hover); border-color: var(--sv-interactive-primary-hover); color: var(--sv-text-inverse); }
+.sv-help-link:hover { background: var(--sv-interactive-primary-hover); border-color: var(--sv-interactive-primary-hover); color: var(--sv-text-on-primary); }
 .sv-help-link:focus-visible { outline: 3px solid var(--sv-interactive-primary); outline-offset: 2px; }
 @media (max-width: 640px) {
   .admin-header-row { padding: 24px 16px 20px; }
@@ -282,7 +284,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .alert-error {
   padding: 14px 20px;
   background-color: var(--sv-interactive-danger);
-  color: white;
+  color: var(--sv-text-on-danger);
   border: none;
   border-radius: 10px;
   margin: 24px 40px 0;
@@ -362,8 +364,12 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   .settings-row { flex-direction: column; align-items: flex-start; gap: 10px; }
 }
 
+/* The label block has a floor (M-06): when the control would squeeze it under 260 px (a wide
+   checkbox group at a 664 px frame left it 110 px, one phrase per line) the control wraps under
+   it — at any width, not only below the 640 px stacking rule. */
+.settings-row { flex-wrap: wrap; }
 .settings-row-info {
-  flex: 1;
+  flex: 1 1 260px;
   min-width: 0;
 }
 
@@ -384,6 +390,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 
 .settings-row-control {
   flex-shrink: 0;
+  max-width: 100%; /* a wide control (the workflow's state chips + "Edit the states…") wraps inside the row instead of pushing the frame 18-148 px wider */
   padding-top: 2px;
 }
 
@@ -649,7 +656,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 /* ── Semantic AI Validations authoring ────────────── */
 .val-ai { margin-top: 24px; padding-top: 16px; border-top: 1px solid var(--sv-border-secondary); }
 .val-ai-badge {
-  font-size: 10px;
+  font-size: 11px; /* never below 11px (device matrix 2026-10-06) */
   font-weight: 700;
   padding: 2px 10px;
   border-radius: 9999px;
@@ -748,14 +755,22 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 }
 .cls-chip-none { background: var(--sv-bg-tertiary); color: var(--sv-text-secondary); font-weight: 600; }
 
-.cls-levels-list { display: flex; flex-wrap: wrap; gap: 10px; }
+/* One full-width row per level (device matrix M-05): content-sized cards made a ragged brick wall at
+   1920/2560 and split "rank 3" over two lines on tablets. Chip and rank in fixed columns, so every
+   description starts at the same x. */
+.cls-levels-list { display: grid; grid-template-columns: 1fr; gap: 10px; }
 .cls-level-card {
-  display: flex; align-items: center; gap: 10px; padding: 10px 14px;
+  display: grid; grid-template-columns: minmax(120px, max-content) max-content minmax(0, 1fr); align-items: center; gap: 4px 14px; padding: 10px 14px;
   border: 1px solid var(--sv-border-secondary); border-radius: 10px; background: var(--sv-bg-primary);
   font-size: 13px; color: var(--sv-text-primary);
 }
-.cls-level-rank { font-weight: 600; color: var(--sv-text-secondary); }
-.cls-level-desc { color: var(--sv-text-secondary); }
+.cls-level-card .cls-chip { justify-self: start; }
+.cls-level-rank { font-weight: 600; color: var(--sv-text-secondary); white-space: nowrap; }
+.cls-level-desc { color: var(--sv-text-secondary); min-width: 0; }
+@media (max-width: 560px) {
+  .cls-level-card { grid-template-columns: max-content minmax(0, 1fr); }
+  .cls-level-desc { grid-column: 1 / -1; }
+}
 
 .cls-levels-editor { display: flex; flex-direction: column; gap: 8px; }
 .cls-levels-head, .cls-level-row {
@@ -768,7 +783,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   width: 32px; height: 32px; border-radius: 8px; border: 1px solid var(--sv-border-secondary);
   background: var(--sv-bg-primary); color: var(--sv-text-secondary); font-size: 18px; cursor: pointer;
 }
-.cls-level-remove:hover:not(:disabled) { background: var(--sv-interactive-danger); color: #FFFFFF; border-color: var(--sv-interactive-danger); }
+.cls-level-remove:hover:not(:disabled) { background: var(--sv-interactive-danger); color: var(--sv-text-on-danger); border-color: var(--sv-interactive-danger); }
 .cls-level-remove:disabled { opacity: 0.4; cursor: not-allowed; }
 .cls-levels-actions { display: flex; align-items: center; gap: 12px; margin-top: 6px; flex-wrap: wrap; }
 .cls-swatch-wrap { position: relative; }
@@ -806,14 +821,19 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .cls-picker { min-width: 200px; }
 .cls-picker.disabled { opacity: 0.6; pointer-events: none; }
 .cls-picker-placeholder { color: var(--sv-text-subtle); }
-.cls-picker-menu { min-width: 260px; max-height: 320px; overflow-y: auto; z-index: 30; }
+.cls-picker-menu { min-width: min(340px, calc(100vw - 24px)); max-height: 320px; overflow-y: auto; z-index: 30; }
 .cls-picker.open-up .mini-select-menu { top: auto; bottom: calc(100% + 4px); }
+/* kit/visible-placement.js found the menu cut at the frame's right edge (the Space defaults
+   table's last column at 1280): it aligns to the trigger's RIGHT edge instead. */
+.mini-select.open-end .mini-select-menu { left: auto; right: 0; }
 /* The write notice stays in view wherever the user acted (defect 3). */
 .cls-notice-sticky { position: sticky; top: 8px; z-index: 20; }
 .cls-swatch-pop { z-index: 40; }
 .cls-picker-search { width: calc(100% - 16px); margin: 8px; box-sizing: border-box; }
-.cls-picker-opt { display: flex; align-items: center; gap: 10px; }
-.cls-picker-opt-hint { font-size: 12px; color: var(--sv-text-secondary); }
+/* The description sits UNDER the level's chip (SV-07): beside it, each started wherever the name
+   ended and wrapped into a ragged 6-8 line column, so only 2-3 options fitted the menu. */
+.cls-picker-opt { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 10px; }
+.cls-picker-opt-hint { font-size: 12px; color: var(--sv-text-secondary); flex-basis: 100%; line-height: 1.4; }
 .cls-picker-opt.sel .cls-picker-opt-hint { color: inherit; } /* readable on the selected (solid) row */
 .cls-picker-empty { padding: 10px 12px; font-size: 13px; color: var(--sv-text-secondary); }
 
@@ -986,12 +1006,14 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .sv-dialog-body { font-size: 14px; line-height: 1.5; }
 .sv-dialog-body p { margin: 0 0 8px; }
 .sv-dialog-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 18px; }
-.action-btn {
+/* Dialog buttons only — the same block in realm-console.css was unscoped and swelled every card
+   pill there (device matrix 2026-10-06); scoped here too so it never can. */
+.sv-dialog .action-btn {
   border: none; border-radius: 10px; padding: 10px 20px; font-family: inherit; font-size: 14px; font-weight: 600; cursor: pointer;
   transition: background 150ms ease;
 }
-.action-btn:disabled { cursor: not-allowed; opacity: 0.7; }
-.action-btn.confirm-yes { background: var(--sv-interactive-danger); color: #FFFFFF; }
+.sv-dialog .action-btn:disabled { cursor: not-allowed; opacity: 0.7; }
+.action-btn.confirm-yes { background: var(--sv-interactive-danger); color: var(--sv-text-on-danger); }
 .action-btn.confirm-yes:hover:not(:disabled) { background: var(--sv-interactive-danger-hover); }
 .action-btn.confirm-no { background: var(--sv-bg-tertiary); color: var(--sv-text-primary); }
 .action-btn.confirm-no:hover:not(:disabled) { background: var(--sv-bg-hover); }
@@ -1036,10 +1058,10 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .api-results th { text-align: left; padding: 6px 8px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--sv-text-secondary); }
 .api-results td { padding: 6px 8px; border-top: 1px solid var(--sv-border-secondary); vertical-align: top; }
 
-.api-inline-error { margin: 0 0 12px; padding: 10px 14px; border-radius: 10px; background: var(--sv-interactive-danger); color: #FFFFFF; font-size: 13px; font-weight: 600; }
+.api-inline-error { margin: 0 0 12px; padding: 10px 14px; border-radius: 10px; background: var(--sv-interactive-danger); color: var(--sv-text-on-danger); font-size: 13px; font-weight: 600; }
 .api-failure {
   display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
-  padding: 14px 16px; border-radius: 10px; background: var(--sv-interactive-danger); color: #FFFFFF; font-size: 14px; font-weight: 600;
+  padding: 14px 16px; border-radius: 10px; background: var(--sv-interactive-danger); color: var(--sv-text-on-danger); font-size: 14px; font-weight: 600;
 }
 .api-failure .api-retry { background: #FFFFFF; color: var(--sv-interactive-danger); padding: 8px 18px; font-size: 13px; }
 .api-failure .api-retry:hover:not(:disabled) { background: #FEE2E2; }
@@ -1059,7 +1081,11 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .api-input { width: 220px; }
 .api-mint-btn { padding: 10px 24px; }
 
-.api-role-picker { min-width: 320px; max-width: 460px; flex: 1 1 320px; }
+/* M-02: the row sizing belongs to the Role FIELD (a child of the horizontal .api-mint-grid). On the
+   picker itself — a child of the column-flex .api-field — "flex: 1 1 320px" became a 320 px HEIGHT,
+   so Name and Mint sat ~285 px below the Role box and the menu opened ~260 px under its trigger. */
+.api-field-role { flex: 1 1 320px; min-width: min(320px, 100%); max-width: 460px; }
+.api-role-picker { flex: none; width: 100%; min-width: 0; }
 .api-role-value { width: 100%; font-family: inherit; text-align: left; }
 .api-role-value:focus-visible { outline: 2px solid var(--sv-border-focus); outline-offset: 1px; }
 .api-role-value:disabled { cursor: not-allowed; }
@@ -1096,7 +1122,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 
 @media (max-width: 640px) {
   .api-card-body { padding: 14px 16px 16px; }
-  .api-role-picker { min-width: 0; }
+  .api-field-role { min-width: 0; flex-basis: 100%; }
   .api-input { width: 100%; }
 }
 
@@ -1165,6 +1191,8 @@ html[data-color-mode="dark"] .sv-unsaved-float { background: #FBBF24; color: #0F
 /* Anchored dialogs (kit/Dialog: every surface opens a dialog level with the click) sit at the
    computed marginTop from the top edge — without this the flex centring moved them (tester 2026-09-30). */
 .sv-dialog-backdrop.is-anchored { align-items: flex-start; }
+/* SV-18: the frame is wider than the screen (a phone) — kit/Dialog sets the left margin to the visible band. */
+.sv-dialog-backdrop.is-hanchored { justify-content: flex-start; padding-left: 0; padding-right: 0; }
 
 /* ── Classification: save-on-pick + reason-on-lowering (2026-09-30, P4/P5/P9) ────────────────
    "Saved" is plain solid-colour text next to the picker; the lowering reason is an inline row
@@ -1270,7 +1298,7 @@ html[data-color-mode="dark"] .sv-unsaved-float { background: #FBBF24; color: #0F
 .wn-note { padding: 10px 0; border-top: 1px solid var(--sv-border-primary); cursor: pointer; }
 .wn-note.is-open { cursor: default; }
 .wn-head { margin: 0; font-size: 13px; }
-.wn-version { display: inline-block; padding: 2px 8px; border-radius: 6px; background: var(--sv-interactive-primary); color: #FFFFFF; font-weight: 800; }
+.wn-version { display: inline-block; padding: 2px 8px; border-radius: 6px; background: var(--sv-interactive-primary); color: var(--sv-text-on-primary); font-weight: 800; }
 .wn-date { color: var(--sv-text-secondary); font-weight: 600; }
 .wn-headline { margin: 6px 0; font-weight: 700; }
 .wn-list { margin: 0 0 8px; padding-left: 18px; font-size: 13px; line-height: 1.55; }
@@ -1283,4 +1311,67 @@ html[data-color-mode="dark"] .sv-unsaved-float { background: #FBBF24; color: #0F
   .bk-ids { grid-template-columns: 1fr; }
   .bk-banner { padding: 16px; }
   .wn-link { display: block; margin: 4px 0 0; }
+}
+
+/* ════════════════════════════════════════════════════════════════════════════════════════════
+   Responsive pass (device matrix 2026-10-06). Every surface is its own iframe, so these width
+   queries read the frame width Confluence hands the console (636 px on a 390 px phone, 664 iPad
+   mini portrait, 754 iPad Pro 11 portrait). No tints, no rails, desktop frames ≥ 900 px untouched
+   except the wide-screen measure cap.
+   ════════════════════════════════════════════════════════════════════════════════════════════ */
+
+/* SV-17: a settings form keeps a readable measure on wide screens — at 1920/2560 a row ran
+   2,000 px with its toggle 1,500 px from its label. Tables and lists keep the full width. */
+.tab-content > .settings-panel { max-width: 1200px; }
+
+/* SV-11: narrow frames — 16 px gutters (40 px wasted a sixth of a 636 px frame) and tighter tabs,
+   so the five tabs fit one row down to ~540 px instead of leaving "Backup and restore" alone. */
+@media (max-width: 900px) {
+  .admin-header { padding: 24px 16px 20px; }
+  .admin-header::after { left: 16px; right: 16px; }
+  .tab-navigation { margin: 20px 16px 0; max-width: calc(100% - 32px); }
+  .tab-button { padding: 8px 12px; }
+  .tab-content { padding: 8px 16px 0; }
+  .alert-success, .alert-error, .alert-message { margin-left: 16px; margin-right: 16px; }
+  .action-bar { padding: 12px 16px; }
+}
+/* Below that the row would wrap unevenly: an even grid instead (3 + 2, never 4 + 1). */
+@media (max-width: 560px) {
+  .tab-navigation { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .tab-button { white-space: normal; text-align: center; }
+}
+
+/* SV-04 + SV-19: a table that drops columns or would scroll sideways on a portrait tablet stacks
+   its rows instead — every cell keeps its header as a small label (data-label on the td). */
+@media (max-width: 760px) {
+  .api-table thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  .api-table, .api-table tbody { display: block; }
+  .api-table tr { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 6px 16px; padding: 12px 14px; border-top: 1px solid var(--sv-border-secondary); }
+  .api-table tbody tr:first-child { border-top: none; }
+  .api-table td { display: block; padding: 0; border: 0; min-width: 0; }
+  .api-table td[data-label]::before { content: attr(data-label); display: block; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--sv-text-secondary); margin-bottom: 2px; }
+  .api-table td.api-token-name, .api-table td.api-job-cell { grid-column: 1 / -1; font-weight: 700; }
+  .api-table td.api-row-actions { grid-column: 1 / -1; text-align: left; }
+  .api-table td.api-empty { grid-column: 1 / -1; }
+  .api-table tr.api-job-detail { display: block; }
+  .api-table tr.api-job-detail > td { display: block; }
+  .api-table-wrap { overflow-x: visible; }
+}
+
+/* SV-12: touch targets — a coarse pointer (phone, tablet) gets ≥ 32 px controls. Fine pointers
+   (mouse, trackpad) match none of this. */
+@media (pointer: coarse) {
+  .tab-button { min-height: 40px; }
+  .btn-primary, .btn-secondary, .btn-danger, .sv-dialog .action-btn { min-height: 40px; }
+  .mini-select-value { min-height: 40px; }
+  .mini-select-opt { padding-top: 11px; padding-bottom: 11px; }
+  .form-checkbox input[type="checkbox"] { width: 44px; height: 26px; border-radius: 13px; }
+  .form-checkbox input[type="checkbox"]::after { width: 22px; height: 22px; }
+  .form-checkbox input[type="checkbox"]:checked::after { transform: translateX(18px); }
+  .cls-col-check .form-checkbox input[type="checkbox"], .cls-personal-toggle .form-checkbox input[type="checkbox"] { width: 44px; height: 26px; }
+  .sv-link, .sv-activity-chip-link, .wn-link { min-height: 32px; display: inline-flex; align-items: center; }
+  .val-rule-remove, .cls-level-remove { min-width: 32px; min-height: 32px; }
+  .api-revoke, .api-copy, .bk-copy { min-height: 36px; }
+  .sv-help-link { min-height: 36px; }
+  .form-input { min-height: 36px; }
 }

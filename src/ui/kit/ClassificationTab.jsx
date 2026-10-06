@@ -51,7 +51,7 @@ export const LevelPicker = ({ value, levels, onChange, placeholder = "Choose a l
   const pick = (id) => { onChange(id); setOpen(false); setQ(""); };
   const menuStyle = { ...(place.ready ? null : { opacity: 0, pointerEvents: "none" }), ...(place.maxHeight ? { maxHeight: `${place.maxHeight}px` } : null) };
   return (
-    <div className={`mini-select cls-picker ${disabled ? "disabled" : ""}${place.up ? " open-up" : ""}`} tabIndex={disabled ? -1 : 0} onBlur={closeOnLeave(setOpen)} data-testid={testId}>
+    <div className={`mini-select cls-picker ${disabled ? "disabled" : ""}${place.up ? " open-up" : ""}${place.cutX === "right" ? " open-end" : ""}`} tabIndex={disabled ? -1 : 0} onBlur={closeOnLeave(setOpen)} data-testid={testId}>
       <div className="mini-select-value" onClick={() => !disabled && setOpen(!open)} role="button" aria-haspopup="listbox" aria-expanded={open} aria-label={ariaLabel}>
         {current ? <LevelChip level={current} /> : <span className={value === NONE ? "" : "cls-picker-placeholder"}>{value === NONE ? "Not set" : placeholder}</span>}
         <span className={`mini-select-arrow ${open ? "open" : ""}`}>▼</span>
@@ -513,7 +513,7 @@ export default function ClassificationTab({ onEnabledChange } = {}) {
                   <React.Fragment key={s.id}>
                   <tr data-testid={`cls-space-row-${s.key}`} className={selected.has(s.id) ? "sel" : ""}>
                     <td className="cls-col-check"><label className="form-checkbox"><input type="checkbox" checked={selected.has(s.id)} onChange={(e) => setSelected((prev) => { const n = new Set(prev); if (e.target.checked) n.add(s.id); else n.delete(s.id); return n; })} aria-label={`Select ${s.name}`} /></label></td>
-                    <td className="cls-key">{s.key}</td>
+                    <td className="cls-key cls-col-key">{s.key}</td>
                     <td>{s.name}</td>
                     <td className="cls-type cls-col-type">{String(s.type || "").replace(/_/g, " ")}</td>
                     <td><LevelChip level={levelById.get(s.defaultLevelId) || null} testId={`cls-space-level-${s.key}`} /></td>

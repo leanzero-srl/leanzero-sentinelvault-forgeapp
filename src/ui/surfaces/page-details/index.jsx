@@ -10,6 +10,7 @@ import { approvalSummary } from "../../../server/capsules/workflow/status.js"; /
 import GiveAccessDialog from "../../kit/GiveAccessDialog";
 import { useSignedInvoke } from "../../kit/SignedInvoke";
 import { listenOutside } from "../../kit/outside-close.js";
+import { useVisiblePlacement } from "../../kit/visible-placement.js";
 import { isDowngrade, findLevel } from "../../../server/capsules/classification/logic.js"; // P5: the one downgrade rule
 
 // 5.0 — the page-details modal (mockup §4), the page-level hub behind the byline chip. ONE
@@ -41,6 +42,8 @@ const LevelPill = ({ level, sealed, testId }) => (
 const LevelPicker = ({ levels, value, onPick, disabled }) => {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
+  const menuRef = useRef(null);
+  const place = useVisiblePlacement(open, menuRef); // SV-07: never past the modal's edge
   const current = levels.find((l) => l.id === value) || null;
   useEffect(() => {
     if (!open) return undefined;
@@ -53,7 +56,8 @@ const LevelPicker = ({ levels, value, onPick, disabled }) => {
         <span className="pd-dd-arrow" aria-hidden="true">▾</span>
       </button>
       {open && (
-        <div className="pd-dd-menu" role="listbox" aria-label="Classification levels">
+        <div ref={menuRef} className={`pd-dd-menu${place.cutX === "right" ? " is-end" : ""}${place.up ? " is-up" : ""}`} role="listbox" aria-label="Classification levels"
+          style={{ ...(place.ready ? null : { opacity: 0, pointerEvents: "none" }), ...(place.maxHeight ? { maxHeight: `${place.maxHeight}px` } : null) }}>
           {levels.map((l) => (
             <div key={l.id} role="option" aria-selected={l.id === value} tabIndex={0} className={`pd-dd-opt ${l.id === value ? "sel" : ""}`} data-testid={`pd-level-option-${l.id}`}
               onClick={() => { setOpen(false); onPick(l.id); }}
@@ -360,15 +364,20 @@ const fmtDueDay = (iso) => whenDay(iso, undefined, { utc: true });
 const MoveMenu = ({ available, onPick, disabled }) => {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
+  const menuRef = useRef(null);
+  // M-01 (device matrix 2026-10-06): on a phone the button wraps to the START of its row and the
+  // right-anchored menu ran 62-67 px past the modal's left edge ("Draft" invisible). The menu is
+  // measured hidden first and anchored to whichever edge keeps it on screen.
+  const place = useVisiblePlacement(open, menuRef);
   useEffect(() => {
     if (!open) return undefined;
     return listenOutside({ refs: [ref], onClose: () => setOpen(false) });
   }, [open]);
   return (
-    <div className="pd-kebab-wrap" ref={ref}>
+    <div className="pd-kebab-wrap pd-move-wrap" ref={ref}>
       <button type="button" className="pd-btn primary" aria-haspopup="menu" aria-expanded={open} disabled={disabled} onClick={() => setOpen((o) => !o)} data-testid="pd-wf-move">Move to… ▾</button>
       {open && (
-        <div className="pd-menu" role="menu">
+        <div ref={menuRef} className={`pd-menu${place.cutX === "left" ? " is-start" : ""}${place.up ? " is-up" : ""}`} role="menu" style={place.ready ? undefined : { opacity: 0, pointerEvents: "none" }}>
           {available.map((s) => (
             <button key={s.id} type="button" role="menuitem" className="pd-menu-item" data-testid={`pd-wf-move-${s.id}`} onClick={() => { setOpen(false); onPick(s); }}>
               <span className="pd-wf-dot" style={{ background: TONE_BG[s.color] || TONE_BG.neutral }} />{s.name}{s.requiresApproval ? <span className="pd-wf-hint"> · asks the approvers</span> : null}
@@ -771,7 +780,9 @@ const SealActionSeam = ({ summary, reload, siteUrl, loadError, onRetry }) => {
           </ul>
           {tabSignatureDialog}
           {givingFor && <GiveAccessDialog invoker={signedTab} target={{ attachmentId: givingFor.id }} name={givingFor.name} onClose={() => setGivingFor(null)} onGranted={() => reload()} testId="pd-give-access" />}
-          <div className="pd-seal-form">
+          {/* SV-15: once a file is ticked the form pins to the bottom of the list, so "Seal N attachments"
+              is in reach without scrolling 32 rows (it lived only after the last row). */}
+          <div className={`pd-seal-form${n > 0 ? " is-pinned" : ""}`} data-testid="pd-seal-form">
             <div className="pd-seal-field"><span className="pd-seal-label">Seal holds for</span><DurationPicker value={duration} defaultSeconds={summary.sealDefaults?.holdSeconds} onChange={setDuration} disabled={busy} /></div>
             <div className="pd-seal-field grow"><span className="pd-seal-label">Note (optional)</span><input className="pd-input" value={note} maxLength={300} placeholder="Why these are sealed — shown with the seal" onChange={(e) => setNote(e.target.value)} disabled={busy} data-testid="pd-note" /></div>
             <button type="button" className="pd-btn primary pd-seal-go" disabled={busy || n === 0} onClick={seal} data-testid="pd-seal-go">{busy ? "Sealing…" : n === 1 ? "Seal 1 attachment" : `Seal ${n} attachments`}</button>

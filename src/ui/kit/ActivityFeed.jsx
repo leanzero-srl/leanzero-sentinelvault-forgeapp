@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@forge/bridge";
-import { formatActivity, formatAbsolute, relativeTime } from "./activity-format";
+import { actorName, formatActivity, formatAbsolute, relativeTime } from "./activity-format";
 
 // A1 — Document Activity feed. One list, three homes (inline panel group, overlay section, and
 // — through ActivityReport — the realm console). Reads `get-page-activity` when it has a pageId,
@@ -40,7 +40,7 @@ export const ActivityGlyph = ({ name }) => {
 
 export const ActivityRow = ({ entry, compact }) => {
   const f = formatActivity(entry);
-  const actor = entry?.actor?.name || (entry?.actor?.accountId ? "Someone" : "Sentinel Vault");
+  const actor = actorName(entry);
   return (
     <li className={`sv-activity-row ${compact ? "is-compact" : ""}`} data-testid="sv-activity-row" data-type={entry?.type || ""}>
       <span className={`sv-activity-glyph sv-activity-tone-${f.tone}`}>

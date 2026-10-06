@@ -13,6 +13,7 @@
   --sv-text-subtle: #5B6B80;
   --sv-text-inverse: #FFFFFF;
   --sv-text-on-primary: #FFFFFF;
+  --sv-text-on-danger: #FFFFFF; /* M-03: ink on a danger fill — white on the light red */
 
   --sv-border-primary: #E2E8F0;
   --sv-border-secondary: #E2E8F0;
@@ -69,6 +70,7 @@ html[data-color-mode="dark"] {
   --sv-text-subtle: #94A3B8;
   --sv-text-inverse: #FFFFFF;
   --sv-text-on-primary: #0F172A;
+  --sv-text-on-danger: #0F172A; /* M-03: navy on the dark theme's #F87171 (6.5:1); white was 2.8:1 */
 
   --sv-border-primary: #334155;
   --sv-border-secondary: #334155;
@@ -210,7 +212,7 @@ button:focus-visible {
 }
 
 .sv-card-section-count {
-  font-size: 10px;
+  font-size: 11px; /* never below 11px (device matrix SV-20) */
   font-weight: 500;
   color: var(--sv-text-subtle);
   background: var(--sv-bg-tertiary);
@@ -231,10 +233,12 @@ button:focus-visible {
 }
 
 /* ── Card list (CSS grid) ──────────────────────── */
+/* The macro's "cards per row" is the MOST columns (inline style); the sv-card-responsive block
+   below fits the columns to the panel's width. */
 .sv-card-list {
+  --sv-cards-per-row: 1;
+  --sv-card-gap: 6px;
   display: grid;
-  grid-template-columns: repeat(var(--sv-cards-per-row, 1), minmax(0, 1fr));
-  gap: 6px;
   padding: 6px 12px 10px;
 }
 
@@ -338,7 +342,7 @@ html[data-color-mode="dark"] .artifact-card.status-trashed { border-color: #FB92
 
 .card-meta-type {
   text-transform: uppercase;
-  font-size: 10px;
+  font-size: 11px;
   letter-spacing: 0.3px;
   font-weight: 500;
 }
@@ -362,6 +366,28 @@ html[data-color-mode="dark"] .artifact-card.status-trashed { border-color: #FB92
   max-width: 200px;
   font-style: italic;
 }
+
+/* ── sv-card-responsive:start ─────────────────────────────────────────────────────────────────
+   Byte-identical in realm-console.css, overlay.css and inline-panel.css (test/responsive-css
+   .test.mjs fails the build when the three copies drift — they had: the same card, three files).
+   Device matrix 2026-10-06: a fixed 3 columns at a 994 px frame left each card 299 px and the
+   file name 57 px ("i…", "R…"). Now --sv-cards-per-row is a MAXIMUM and every card is at least
+   --sv-card-min wide, so a narrower frame gets fewer, readable columns. Each surface is its own
+   iframe, so the percentages here are the width the app really has. */
+.sv-card-list {
+  --sv-card-min: 340px;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, max(var(--sv-card-min), (100% - (var(--sv-cards-per-row) - 1) * var(--sv-card-gap)) / var(--sv-cards-per-row))), 1fr));
+  gap: var(--sv-card-gap);
+}
+/* The name has a floor: when the name, the status and the actions do not fit on one line, the
+   actions wrap under the name (still on the right) instead of crushing the name to one letter. */
+.card-row-primary, .card-row-secondary { flex-wrap: wrap; row-gap: 6px; }
+.card-row-primary > .card-filename { flex: 1 1 180px; }
+.card-row-secondary > .card-secondary-left { flex: 1 1 180px; }
+.card-row-primary > .card-row-right, .card-row-secondary > .card-secondary-right { margin-left: auto; }
+.card-meta { flex-wrap: wrap; row-gap: 2px; }
+.card-meta-owner { white-space: nowrap; }
+/* ── sv-card-responsive:end ── */
 
 /* ── Overflow prevention (critical for iframe) ── */
 .sv-panel-container,
@@ -463,36 +489,14 @@ html[data-color-mode="dark"] .artifact-card.status-trashed { border-color: #FB92
 }
 
 .sv-card-list[data-cols="3"] .label-chip {
-  font-size: 10px;
+  font-size: 11px;
   padding: 1px 6px;
 }
 
-/* ── Responsive: container query fallbacks ──────── */
-@container (max-width: 700px) {
-  .sv-card-list[data-cols="3"] {
-    --sv-cards-per-row: 2 !important;
-    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
-  }
-}
-
-@container (max-width: 480px) {
-  .sv-card-list[data-cols="2"],
-  .sv-card-list[data-cols="3"] {
-    --sv-cards-per-row: 1 !important;
-    grid-template-columns: 1fr !important;
-  }
-}
-
-@container (max-width: 380px) {
-  .card-row-primary {
-    flex-wrap: wrap;
-    gap: 4px;
-  }
-  .card-row-right {
-    width: 100%;
-    justify-content: flex-start;
-  }
-}
+/* (The container-query column overrides and the 380 px row wrap that lived here are gone: the
+   sv-card-responsive block fits the columns by card width and wraps the actions under the name
+   whenever they would crush it — on any panel width, not only below 380 px. They forced 2 and 1
+   columns with !important and would have overridden it.) */
 
 /* ── Status lozenge ─────────────────────────────── */
 .status-lozenge {
@@ -805,7 +809,7 @@ html[data-color-mode="dark"] .action-btn.editgrant {
 .sv-section-pick-row:disabled { opacity: 0.5; cursor: not-allowed; }
 .sv-section-pick-level {
   flex: 0 0 auto;
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 700;
   color: var(--sv-text-on-primary);
   background: var(--sv-interactive-primary);
@@ -847,7 +851,7 @@ html[data-color-mode="dark"] .action-btn.editgrant {
 .sv-section-hold-label { font-size: 12px; font-weight: 700; color: var(--sv-text-primary); }
 .sv-section-hold-opts { display: inline-flex; gap: 6px; flex-wrap: wrap; }
 .sv-hold-opt { height: 26px; padding: 0 10px; border-radius: 13px; border: 1.5px solid var(--sv-border-primary); background: var(--sv-bg-secondary); color: var(--sv-text-primary); font-size: 12px; font-weight: 600; cursor: pointer; font-family: inherit; }
-.sv-hold-opt.is-on { background: var(--sv-interactive-primary); border-color: var(--sv-interactive-primary); color: #FFFFFF; }
+.sv-hold-opt.is-on { background: var(--sv-interactive-primary); border-color: var(--sv-interactive-primary); color: var(--sv-text-on-primary); }
 .sv-section-hold-note { flex: 1 1 220px; min-width: 160px; height: 28px; padding: 0 10px; border-radius: 6px; border: 1px solid var(--sv-border-primary); background: var(--sv-bg-primary); color: var(--sv-text-primary); font-size: 12.5px; font-family: inherit; }
 .sv-section-row-warn { color: #B45309; font-weight: 700; }
 html[data-color-mode="dark"] .sv-section-row-warn { color: #FBBF24; }
@@ -855,15 +859,20 @@ html[data-color-mode="dark"] .sv-section-row-warn { color: #FBBF24; }
 .sv-section-row {
   display: flex;
   align-items: center;
-  gap: 10px;
+  flex-wrap: wrap;
+  gap: 4px 10px;
   padding: 8px 12px;
   border: 1px solid var(--sv-border-secondary);
   border-radius: var(--sv-radius-md, 10px);
   background: var(--sv-bg-secondary);
   margin-bottom: 6px;
 }
+/* SV-14: the name has a floor (200 px). When the name, the status sentence and the action do not
+   fit on one line the sentence wraps to its own line instead of the name shrinking to
+   "3. Staging …" while the sentence kept its full width. */
 .sv-section-row-title {
-  flex: 1 1 auto;
+  flex: 1 1 200px;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -872,7 +881,8 @@ html[data-color-mode="dark"] .sv-section-row-warn { color: #FBBF24; }
   color: var(--sv-text-primary);
 }
 .sv-section-row-meta {
-  flex: 0 0 auto;
+  flex: 0 1 auto;
+  min-width: 0;
   font-size: 11px;
   color: var(--sv-text-subtle);
 }
@@ -912,7 +922,7 @@ html[data-color-mode="dark"] .sv-section-row-warn { color: #FBBF24; }
 .action-btn.purge:hover:not(:disabled) {
   /* it57: solid danger hover (rule-b: no faded tints); the danger token is theme-reactive */
   background: var(--sv-interactive-danger);
-  color: #ffffff;
+  color: var(--sv-text-on-danger);
 }
 
 /* ── Missing section badge ─────────────────────── */
@@ -1266,7 +1276,7 @@ html[data-color-mode="dark"] .badge-stale {
 /* ── Validation status group ───────────────────────── */
 .sv-validation .sv-card-section-header { display: flex; align-items: center; gap: 8px; }
 .sv-val-badge {
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 700;
   padding: 2px 8px;
   border-radius: 9999px;
@@ -1326,9 +1336,12 @@ html[data-color-mode="dark"] .badge-stale {
 }
 
 /* ── Edit-request reason input + owner inbox (in-card) ── */
-.card-reason-bar { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
+/* The reason gets its own full-width line, the buttons sit under it on the right (SV-06: on one
+   row with Send / Cancel the input was a sliver on every card narrower than ~500 px). */
+.card-reason-bar { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: 6px; }
+.card-reason-bar .confirm-actions { margin-left: auto; }
 .card-reason-input {
-  flex: 1;
+  flex: 1 1 100%;
   min-width: 0;
   padding: 6px 10px;
   font: inherit;
@@ -1402,7 +1415,7 @@ html[data-color-mode="dark"] .badge-stale {
 .sv-val-item.sv-ai-muted { opacity: 0.6; }
 .sv-ai-tag {
   margin-left: 8px;
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.04em;
@@ -1595,7 +1608,7 @@ html[data-color-mode="dark"] .sv-activity-chip-validation.is-active { background
 .sv-activity-col-page a:hover { text-decoration: underline; }
 .sv-activity-col-who { white-space: nowrap; }
 .sv-activity-col-target { display: flex; flex-direction: column; gap: 2px; min-width: 120px; }
-.sv-activity-target-kind { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--sv-text-secondary); }
+.sv-activity-target-kind { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--sv-text-secondary); }
 .sv-activity-target-name { overflow-wrap: anywhere; }
 .sv-activity-col-details { min-width: 240px; }
 .sv-activity-chip {
@@ -1766,3 +1779,26 @@ html[data-color-mode="dark"] .sv-section-block.status-expired { border-color: #F
 .sv-decline-hint { display: block; margin-top: 6px; font-size: 11px; color: var(--sv-text-secondary); }
 .sv-declined-reason { margin-top: 6px; font-size: 12px; font-style: italic; color: var(--sv-text-secondary); }
 .sv-dialog-backdrop.is-anchored { align-items: flex-start; }
+/* SV-18: the frame is wider than the screen (a phone) — kit/Dialog sets the left margin to the visible band. */
+.sv-dialog-backdrop.is-hanchored { justify-content: flex-start; padding-left: 0; padding-right: 0; }
+
+/* ════════════════════════════════════════════════════════════════════════════════════════════
+   SV-12 (device matrix 2026-10-06): touch targets. A coarse pointer (phone, tablet) gets ≥ 32 px
+   controls — the panel measured 39 controls under 24 px (× 15×18, "Show details" 16×16, label +
+   22×22). Mouse and trackpad match none of this.
+   ════════════════════════════════════════════════════════════════════════════════════════════ */
+@media (pointer: coarse) {
+  .card-expand-toggle { min-width: 32px; min-height: 32px; justify-content: center; }
+  .action-btn { min-height: 32px; padding-top: 6px; padding-bottom: 6px; }
+  .sv-kebab { width: 32px; height: 32px; }
+  .label-add-btn { width: 32px; height: 32px; }
+  .label-chip-remove { width: 24px; height: 24px; }
+  .sv-explainer-dismiss { min-width: 32px; min-height: 32px; }
+  .sv-group-toggle { min-width: 32px; min-height: 32px; justify-content: center; }
+  .load-more-btn { min-height: 36px; }
+  .sv-hold-opt { height: 32px; }
+  .sv-ai-act { min-height: 32px; }
+  .sv-activity-chip-btn { min-height: 36px; }
+  .sv-activity-chip-link { min-height: 32px; display: inline-flex; align-items: center; }
+  .sv-menu-item { min-height: 40px; }
+}

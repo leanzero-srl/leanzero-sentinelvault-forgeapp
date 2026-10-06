@@ -13,6 +13,7 @@
   --sv-text-disabled: #CBD5E1;
   --sv-text-inverse: #FFFFFF;
   --sv-text-on-primary: #FFFFFF;
+  --sv-text-on-danger: #FFFFFF; /* M-03: ink on a danger fill — white on the light red */
   --sv-border-primary: #E2E8F0;
   --sv-border-secondary: #E2E8F0;
   --sv-border-focus: #0891B2;
@@ -65,6 +66,7 @@ html[data-color-mode="dark"] {
   --sv-text-disabled: #475569;
   --sv-text-inverse: #FFFFFF;
   --sv-text-on-primary: #0F172A;
+  --sv-text-on-danger: #0F172A; /* M-03: navy on the dark theme's #F87171 (6.5:1); white was 2.8:1 */
   --sv-border-primary: #334155;
   --sv-border-secondary: #334155;
   --sv-border-focus: #22D3EE;
@@ -314,3 +316,12 @@ html[data-color-mode="dark"] .sv-busy-veil { background: var(--sv-frosted-bg, rg
 /* Anchored dialogs (kit/Dialog: every surface opens a dialog level with the click) sit at the
    computed marginTop from the top edge — without this the flex centring moved them (tester 2026-09-30). */
 .sv-dialog-backdrop.is-anchored { align-items: flex-start; }
+/* SV-18: the frame is wider than the screen (a phone) — kit/Dialog sets the left margin to the visible band. */
+.sv-dialog-backdrop.is-hanchored { justify-content: flex-start; padding-left: 0; padding-right: 0; }
+
+/* SV-12 (device matrix 2026-10-06): touch targets — a coarse pointer (phone, tablet) gets ≥ 36 px
+   buttons. Mouse and trackpad match none of this. */
+@media (pointer: coarse) {
+  .mw-btn { min-height: 36px; }
+  .sv-dialog .action-btn { min-height: 40px; }
+}

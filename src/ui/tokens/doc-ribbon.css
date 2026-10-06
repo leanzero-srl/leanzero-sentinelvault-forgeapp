@@ -17,6 +17,7 @@
   --sv-text-disabled: #CBD5E1;
   --sv-text-inverse: #FFFFFF;
   --sv-text-on-primary: #FFFFFF;
+  --sv-text-on-danger: #FFFFFF; /* M-03: ink on a danger fill — white on the light red */
 
   --sv-border-primary: #E2E8F0;
   --sv-border-secondary: #E2E8F0;
@@ -82,6 +83,7 @@ html[data-color-mode="dark"] {
   --sv-text-disabled: #475569;
   --sv-text-inverse: #FFFFFF;
   --sv-text-on-primary: #0F172A;
+  --sv-text-on-danger: #0F172A; /* M-03: navy on the dark theme's #F87171 (6.5:1); white was 2.8:1 */
 
   --sv-border-primary: #334155;
   --sv-border-secondary: #334155;
@@ -205,6 +207,10 @@ button:focus-visible {
   box-shadow: 0 1px 3px var(--sv-shadow-medium);
   border-radius: 6px;
   overflow: hidden;
+  /* clip, not hidden: a hidden box can still be SCROLLED by focus / scrollIntoView — tapping a
+     half-hidden chip on a phone slid the whole bar sideways and the classification block went
+     off-screen for good (device matrix SV-02). clip forbids any scrolling. */
+  overflow: clip;
   white-space: nowrap;
   font-size: 13px;
   color: var(--sv-text-primary);
@@ -226,7 +232,15 @@ button:focus-visible {
 .rb-lvsrc { font-weight: 400; opacity: 0.9; font-size: 12px; }
 
 /* Right half: one state pill, one sentence (ellipsis), the existing workflow/validation chips. */
-.rb-body { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0; padding: 0 12px; }
+/* SV-02: the body clips its own overflow, so a chip that does not fit is cut at the body's edge and
+   never slides under Open / × (it overprinted Open on every phone). */
+.rb-body { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0; padding: 0 12px; overflow: hidden; overflow: clip; }
+.rb-body .wf-chip:focus-visible { outline-offset: -2px; }
+/* The secondary chips (validation, AI) in one strip that never shrinks: below 860 px (where the bar
+   runs out of room for them beside the sentence, the state chip, Open and ×) the strip is hidden
+   whole — the Open modal carries both — instead of a chip being cut under Open. */
+.rb-extras { display: inline-flex; align-items: center; gap: 10px; flex: none; }
+@media (max-width: 860px) { .rb-body .rb-extras { display: none; } }
 .rb-body .rb-msg { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; color: var(--sv-text-primary); }
 .rb-body .rb-msg b, .rb-body .rb-msg strong { font-weight: 600; }
 .rb-msg--error { color: var(--sv-interactive-danger); font-weight: 600; }
@@ -260,11 +274,26 @@ button:focus-visible {
 .rb-btn--quiet:hover:not(:disabled) { background: var(--sv-bg-hover); color: var(--sv-text-primary); }
 .rb-btn:disabled { opacity: 0.7; cursor: wait; }
 
-/* Phone width: the source and the sentence drop first; level, pill and buttons survive (mockup §3). */
+/* SV-02: under 720 px the level's source and the secondary chips (review date, validation, AI) drop
+   first — the Open modal carries all of them — so the sentence, the state chip, Open and × keep
+   their room (iPad Pro 13 portrait's 656 px banner collapsed the sentence to nothing). */
+@media (max-width: 720px) {
+  .rb-lvsrc { display: none; }
+  .rb-body .wf-chip-outline, .rb-body .rb-extras { display: none; }
+}
+/* Phone width: the sentence drops too; level, pill, state chip and buttons survive (mockup §3). */
 @media (max-width: 480px) {
   .rb-lvsrc { display: none; }
   .rb-body .rb-msg { display: none; }
-  .rb-class { max-width: 40%; }
+  .rb-class { max-width: 40%; padding: 0 10px 0 8px; gap: 8px; }
+  .rb-body { gap: 6px; padding: 0 8px; }
+  .rb-actions { gap: 4px; padding: 0 6px 0 0; }
+}
+/* SV-12: touch targets inside the 44 px bar — chips 28, buttons 32 (fine pointers untouched). */
+@media (pointer: coarse) {
+  .wf-chip { min-height: 28px; }
+  .rb-btn { height: 32px; }
+  .ribbon-dismiss { min-width: 32px; min-height: 32px; }
 }
 
 /* Shield icon area */
@@ -328,7 +357,7 @@ button:focus-visible {
 .ribbon-bar--error { border-color: var(--sv-interactive-danger); box-shadow: none; }
 .ribbon-icon--error { color: var(--sv-interactive-danger); }
 .ribbon-status--error { color: var(--sv-interactive-danger); font-weight: 600; }
-.ribbon-retry { background: var(--sv-interactive-danger); border-color: var(--sv-interactive-danger); color: #ffffff; }
+.ribbon-retry { background: var(--sv-interactive-danger); border-color: var(--sv-interactive-danger); color: var(--sv-text-on-danger); }
 .ribbon-retry:hover { filter: brightness(0.9); }
 .ribbon-retry:disabled { opacity: 0.7; cursor: wait; }
 
@@ -359,7 +388,7 @@ button:focus-visible {
   background: transparent; border: 0; border-radius: 6px;
   color: var(--sv-text-subtle); cursor: pointer;
 }
-.ribbon-dismiss:hover { background: var(--sv-interactive-danger); border-color: var(--sv-interactive-danger); color: #ffffff; }
+.ribbon-dismiss:hover { background: var(--sv-interactive-danger); border-color: var(--sv-interactive-danger); color: var(--sv-text-on-danger); }
 
 /* Alert chip in the row — solid amber, dark ink (same pair as the awaiting-approval chip). */
 .ribbon-chip-alert { background: #F59E0B; color: #1F2937; border: none; cursor: pointer; font-family: inherit; }
@@ -465,7 +494,7 @@ html[data-color-mode="dark"] .sv-text-inverse {
   white-space: nowrap;
 }
 .ribbon-chip-passed { background: var(--sv-interactive-success); color: var(--sv-text-on-primary); }
-.ribbon-chip-failed { background: var(--sv-interactive-danger); color: var(--sv-text-inverse); }
+.ribbon-chip-failed { background: var(--sv-interactive-danger); color: var(--sv-text-on-danger); }
 .ribbon-chip-awaiting-approval { background: #F59E0B; color: #1F2937; }
 .ribbon-chip-ai { background: #7C3AED; color: #ffffff; }
 
@@ -577,7 +606,7 @@ html[data-color-mode="dark"] .wf-review-clear:disabled { border-color: #475569; 
   box-shadow: 0 8px 24px var(--sv-shadow-strong, rgba(0, 0, 0, 0.12));
 }
 .wf-menu-head {
-  padding: 4px 8px 6px; font-size: 10px; font-weight: 700; letter-spacing: 0.08em;
+  padding: 4px 8px 6px; font-size: 11px; font-weight: 700; letter-spacing: 0.08em;
   text-transform: uppercase; color: var(--sv-text-subtle, #94A3B8);
 }
 .wf-menu-item {
@@ -620,7 +649,7 @@ html[data-color-mode="dark"] .wf-dot-neutral  { background: #64748b; }
 .wf-chip-count {
   display: inline-flex; align-items: center;
   margin-left: 2px; padding: 0 6px; border-radius: 9999px;
-  background: rgba(0, 0, 0, 0.18); font-size: 10px; font-weight: 800; letter-spacing: 0.02em;
+  background: rgba(0, 0, 0, 0.18); font-size: 11px; font-weight: 800; letter-spacing: 0.02em;
 }
 .wf-appr-panel {
   position: absolute; top: calc(100% + 6px); left: 0; z-index: 40;
@@ -643,7 +672,7 @@ html[data-color-mode="dark"] .wf-dot-neutral  { background: #64748b; }
 .wf-appr-row { display: flex; align-items: center; gap: 8px; font-size: 12px; }
 .wf-appr-badge {
   flex: none; min-width: 62px; text-align: center;
-  padding: 2px 8px; border-radius: 9999px; font-size: 10px; font-weight: 800; color: #ffffff;
+  padding: 2px 8px; border-radius: 9999px; font-size: 11px; font-weight: 800; color: #ffffff; /* SV-20: never below 11px */
 }
 .wf-appr-approved { background: #15803d; }
 .wf-appr-denied   { background: #dc2626; }
@@ -744,7 +773,7 @@ html[data-color-mode="dark"] .wf-read-done { color: #67E8F9; }
 .wf-appr-sign-input:focus-visible { outline: 2px solid #7C3AED; outline-offset: 2px; }
 .wf-appr-sign-missing { padding: 8px 10px; border-radius: 8px; background: #7C3AED; color: #fff; font-size: 12px; font-weight: 700; }
 .wf-appr-sign-missing a { color: #fff; text-decoration: underline; }
-.wf-appr-signed { display: inline-flex; align-items: center; padding: 1px 7px; border-radius: 9999px; background: #7C3AED; color: #fff; font-size: 10px; font-weight: 800; letter-spacing: 0.02em; }
+.wf-appr-signed { display: inline-flex; align-items: center; padding: 1px 7px; border-radius: 9999px; background: #7C3AED; color: #fff; font-size: 11px; font-weight: 800; letter-spacing: 0.02em; }
 /* Chips never wrap mid-label (the bar wraps whole chips instead). */
 .wf-read-btn, .wf-read-done { white-space: nowrap; }
 

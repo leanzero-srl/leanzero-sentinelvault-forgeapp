@@ -14,6 +14,7 @@
   --sv-text-disabled: #CBD5E1;
   --sv-text-inverse: #FFFFFF;
   --sv-text-on-primary: #FFFFFF;
+  --sv-text-on-danger: #FFFFFF; /* M-03: ink on a danger fill — white on the light red */
   --sv-border-primary: #E2E8F0;
   --sv-border-secondary: #E2E8F0;
   --sv-border-focus: #0E7490;
@@ -69,6 +70,7 @@ html[data-color-mode="dark"] {
   --sv-text-disabled: #475569;
   --sv-text-inverse: #FFFFFF;
   --sv-text-on-primary: #0F172A;
+  --sv-text-on-danger: #0F172A; /* M-03: navy on the dark theme's #F87171 (6.5:1); white was 2.8:1 */
   --sv-border-primary: #334155;
   --sv-border-secondary: #334155;
   --sv-border-focus: #22D3EE;
@@ -327,6 +329,12 @@ textarea:focus {
   box-sizing: border-box;
 }
 
+/* The list column (was inline styles — moved here so a short frame can let the whole modal scroll). */
+.modal-body.ov-body { display: flex; flex-direction: column; }
+.ov-list-wrap { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.attachments-tab-content { flex: 1; overflow-y: auto; min-height: 0; }
+.ov-macro-notice { padding: 12px 16px; }
+
 /* Modal footer */
 .modal-footer {
   padding: 12px 32px;
@@ -389,7 +397,7 @@ textarea:focus {
   color: var(--sv-text-secondary);
 }
 .sv-card-section-count {
-  font-size: 10px;
+  font-size: 11px; /* never below 11px (device matrix SV-20) */
   font-weight: 500;
   color: var(--sv-text-subtle);
   background: var(--sv-bg-tertiary);
@@ -398,10 +406,12 @@ textarea:focus {
 }
 
 /* ── Card list grid ────────────────────────────── */
+/* The column formula is in the sv-card-responsive block below. Up to 5 columns: a 2,440 px modal
+   at 2560 adds columns instead of stretching 3 cards to 780 px each (device matrix SV-17). */
 .sv-card-list {
+  --sv-cards-per-row: 5;
+  --sv-card-gap: 8px;
   display: grid;
-  grid-template-columns: repeat(var(--sv-cards-per-row, 3), minmax(0, 1fr));
-  gap: 8px;
   padding: 6px 32px 12px;
 }
 
@@ -494,7 +504,7 @@ html[data-color-mode="dark"] .artifact-card.status-trashed { border-color: #FB92
 }
 .card-meta-type {
   text-transform: uppercase;
-  font-size: 10px;
+  font-size: 11px;
   letter-spacing: 0.3px;
   font-weight: 500;
 }
@@ -516,6 +526,28 @@ html[data-color-mode="dark"] .artifact-card.status-trashed { border-color: #FB92
   max-width: 280px;
   font-style: italic;
 }
+
+/* ── sv-card-responsive:start ─────────────────────────────────────────────────────────────────
+   Byte-identical in realm-console.css, overlay.css and inline-panel.css (test/responsive-css
+   .test.mjs fails the build when the three copies drift — they had: the same card, three files).
+   Device matrix 2026-10-06: a fixed 3 columns at a 994 px frame left each card 299 px and the
+   file name 57 px ("i…", "R…"). Now --sv-cards-per-row is a MAXIMUM and every card is at least
+   --sv-card-min wide, so a narrower frame gets fewer, readable columns. Each surface is its own
+   iframe, so the percentages here are the width the app really has. */
+.sv-card-list {
+  --sv-card-min: 340px;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, max(var(--sv-card-min), (100% - (var(--sv-cards-per-row) - 1) * var(--sv-card-gap)) / var(--sv-cards-per-row))), 1fr));
+  gap: var(--sv-card-gap);
+}
+/* The name has a floor: when the name, the status and the actions do not fit on one line, the
+   actions wrap under the name (still on the right) instead of crushing the name to one letter. */
+.card-row-primary, .card-row-secondary { flex-wrap: wrap; row-gap: 6px; }
+.card-row-primary > .card-filename { flex: 1 1 180px; }
+.card-row-secondary > .card-secondary-left { flex: 1 1 180px; }
+.card-row-primary > .card-row-right, .card-row-secondary > .card-secondary-right { margin-left: auto; }
+.card-meta { flex-wrap: wrap; row-gap: 2px; }
+.card-meta-owner { white-space: nowrap; }
+/* ── sv-card-responsive:end ── */
 
 /* Card labels inline */
 .card-labels-inline {
@@ -631,7 +663,7 @@ html[data-color-mode="dark"] .status-lozenge.trashed { background: #FB923C; colo
 .action-btn.delete:hover:not(:disabled) {
   /* it57: solid danger hover (rule-b: no faded tints); the danger token is theme-reactive */
   background: var(--sv-interactive-danger);
-  color: #ffffff;
+  color: var(--sv-text-on-danger);
 }
 .action-btn.purge {
   background: none;
@@ -641,7 +673,7 @@ html[data-color-mode="dark"] .status-lozenge.trashed { background: #FB923C; colo
 .action-btn.purge:hover:not(:disabled) {
   /* it57: solid danger hover (rule-b: no faded tints); the danger token is theme-reactive */
   background: var(--sv-interactive-danger);
-  color: #ffffff;
+  color: var(--sv-text-on-danger);
 }
 
 /* Inline confirmation bar */
@@ -652,7 +684,7 @@ html[data-color-mode="dark"] .status-lozenge.trashed { background: #FB923C; colo
 }
 .action-btn.confirm-yes {
   background: var(--sv-interactive-danger, #ca3521);
-  color: #fff;
+  color: var(--sv-text-on-danger);
   border: none;
   padding: 3px 10px;
   border-radius: 3px;
@@ -937,17 +969,8 @@ html[data-color-mode="dark"] .badge-stale {
   }
 }
 
-/* ── Responsive ────────────────────────────────── */
-@media (max-width: 900px) {
-  .sv-card-list {
-    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
-  }
-}
-@media (max-width: 600px) {
-  .sv-card-list {
-    grid-template-columns: 1fr !important;
-  }
-}
+/* (The 900/600 px column overrides that lived here are gone: the sv-card-responsive block fits
+   the columns to the frame by card width.) */
 
 /* ── Skeleton card placeholder ─────────────────── */
 .skeleton-card {
@@ -1263,7 +1286,7 @@ html[data-color-mode="dark"] .sv-activity-chip-validation.is-active { background
 .sv-activity-col-page a:hover { text-decoration: underline; }
 .sv-activity-col-who { white-space: nowrap; }
 .sv-activity-col-target { display: flex; flex-direction: column; gap: 2px; min-width: 120px; }
-.sv-activity-target-kind { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--sv-text-secondary); }
+.sv-activity-target-kind { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--sv-text-secondary); }
 .sv-activity-target-name { overflow-wrap: anywhere; }
 .sv-activity-col-details { min-width: 240px; }
 .sv-activity-chip {
@@ -1441,3 +1464,61 @@ html[data-color-mode="dark"] .sv-state.trashed { background: #94A3B8; color: #0F
 /* Anchored dialogs (kit/Dialog: every surface opens a dialog level with the click) sit at the
    computed marginTop from the top edge — without this the flex centring moved them (tester 2026-09-30). */
 .sv-dialog-backdrop.is-anchored { align-items: flex-start; }
+/* SV-18: the frame is wider than the screen (a phone) — kit/Dialog sets the left margin to the visible band. */
+.sv-dialog-backdrop.is-hanchored { justify-content: flex-start; padding-left: 0; padding-right: 0; }
+
+/* ════════════════════════════════════════════════════════════════════════════════════════════
+   Responsive pass (device matrix 2026-10-06). The overlay is a Forge modal of size "max": its
+   frame is the screen minus the host's margins (390 px wide on a portrait phone, ~270 px TALL on a
+   landscape phone). No tints, no rails.
+   ════════════════════════════════════════════════════════════════════════════════════════════ */
+
+/* SV-05: a short frame (a landscape phone) — the title, toolbar, notice and footer took all of
+   ~270 px and left a 32 px list with Done cut off. Compact chrome, the notice's sentence drops,
+   and the WHOLE modal scrolls (nothing pinned), so every card and its ⋯ can be reached. */
+@media (max-height: 560px) {
+  .modal-container { overflow-y: auto; }
+  .modal-header { padding: 8px 16px; }
+  .modal-header::after { left: 16px; right: 16px; }
+  .modal-title { font-size: 16px; }
+  .modal-title::before { width: 20px; height: 20px; }
+  .overlay-toolbar { padding: 6px 16px; }
+  .ov-macro-notice { padding: 6px 16px; }
+  .ov-macro-notice-desc { display: none; }
+  .modal-body.ov-body { flex: none; overflow: visible; padding: 8px 16px; }
+  .ov-list-wrap { flex: none; }
+  .attachments-tab-content { flex: none; overflow: visible; }
+  .modal-footer { padding: 6px 16px; }
+}
+
+/* SV-05: a narrow frame (a portrait phone) — the list was inset 64 px a side (modal-body 32 +
+   list 32), which also cost the cards their names. 12 px gutters; the toolbar wraps whole items. */
+@media (max-width: 600px) {
+  .modal-header { padding: 14px 16px; }
+  .modal-header::after { left: 16px; right: 16px; }
+  .overlay-toolbar { padding: 8px 12px; flex-wrap: wrap; row-gap: 8px; }
+  .column-picker-trigger, .toolbar-refresh, .toolbar-file-count { white-space: nowrap; }
+  .ov-macro-notice { padding: 10px 12px; }
+  .modal-body { padding: 12px; }
+  .modal-body .sv-card-list { padding-left: 0; padding-right: 0; }
+  .modal-body .sv-card-section-header { padding-left: 0; padding-right: 0; }
+  .sv-sealed-group-header, .sv-sealed-group-wait { padding-left: 0; padding-right: 0; }
+  .sv-sealed-group + .sv-sealed-group { margin-left: 0; margin-right: 0; }
+  .sv-activity-section .sv-activity-feed { padding-left: 0; padding-right: 0; }
+  .modal-footer { padding: 10px 12px; }
+}
+
+/* SV-12: touch targets on a coarse pointer (phone, tablet); mouse and trackpad are untouched. */
+@media (pointer: coarse) {
+  .card-expand-toggle { min-width: 32px; min-height: 32px; justify-content: center; }
+  .action-btn { min-height: 32px; padding-top: 6px; padding-bottom: 6px; }
+  .sv-kebab { width: 32px; height: 32px; }
+  .modal-close { width: 40px; height: 40px; }
+  .column-picker-trigger, .toolbar-refresh { min-height: 36px; }
+  .column-picker-option { min-height: 40px; }
+  .column-picker-option input[type="checkbox"] { width: 20px; height: 20px; }
+  .load-more-btn { min-height: 36px; }
+  .sv-activity-chip-btn { min-height: 36px; }
+  .sv-activity-chip-link { min-height: 32px; display: inline-flex; align-items: center; }
+  .sv-menu-item { min-height: 40px; }
+}
