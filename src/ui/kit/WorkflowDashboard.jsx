@@ -13,10 +13,15 @@ function toCsv(pages) {
   return [header, ...rows].map((r) => r.map(esc).join(",")).join("\r\n");
 }
 
+// SV-13 (device matrix 2026-10-06): the table listed every page (216 rows on the WFH space) ABOVE
+// the workflow settings, so the settings started ~8,000 px down. It shows this many, then "Show all".
+export const DASHBOARD_ROWS = 20;
+
 // #48: read-only workflow dashboard for a space — state distribution + recent pages + CSV.
 export function WorkflowDashboard({ spaceKey }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [showAll, setShowAll] = useState(false);
 
   useEffect(() => {
     let alive = true;
@@ -93,14 +98,14 @@ export function WorkflowDashboard({ spaceKey }) {
             <tr><th scope="col">Page</th><th scope="col">State</th><th scope="col">Entered</th><th scope="col">Review due</th></tr>
           </thead>
           <tbody>
-            {data.pages.map((p) => (
+            {(showAll ? data.pages : data.pages.slice(0, DASHBOARD_ROWS)).map((p) => (
               <tr key={p.pageId}>
                 <td className="wf-dash-page">
                   {p.url ? <a href={p.url} target="_blank" rel="noreferrer">{p.title}</a> : p.title}
                 </td>
                 <td><span className={`wf-state-chip wf-state-${colorOf[p.stateId] || "neutral"}`}>{p.stateName}</span></td>
-                <td>{fmtDate(p.enteredAt)}</td>
-                <td className={p.overdue ? "wf-dash-overdue" : ""}>
+                <td className="wf-dash-date">{fmtDate(p.enteredAt)}</td>
+                <td className={`wf-dash-date${p.overdue ? " wf-dash-overdue" : ""}`}>
                   {p.reviewDueAt ? (p.overdue ? `${fmtDate(p.reviewDueAt)} · overdue` : fmtDate(p.reviewDueAt)) : "—"}
                 </td>
               </tr>
@@ -109,6 +114,14 @@ export function WorkflowDashboard({ spaceKey }) {
         </table>
       </div>
 
+      {data.pages.length > DASHBOARD_ROWS && (
+        <div className="wf-dash-more" data-testid="wf-dash-more">
+          <span>{showAll ? `Showing all ${data.pages.length} pages` : `Showing ${DASHBOARD_ROWS} of ${data.pages.length} pages`}</span>
+          <button type="button" className="sv-link" onClick={() => setShowAll((v) => !v)} aria-expanded={showAll} data-testid="wf-dash-show-all">
+            {showAll ? "Show fewer" : `Show all ${data.pages.length}`}
+          </button>
+        </div>
+      )}
       {data.truncated && (
         <p className="wf-dash-note">Showing the {data.listCap} most recently updated pages. The counts above cover all {data.total}.</p>
       )}

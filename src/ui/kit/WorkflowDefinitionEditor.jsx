@@ -90,15 +90,15 @@ const DefinitionForm = ({ initial, isExtra, onSave, onDelete, saving, message, r
         </div>
         {states.map((s) => (
           <div key={s.id} className="wf-def-row" role="row" data-testid="wf-def-state" data-state-id={s.id}>
-            <span className="wf-def-cell-name">
+            <span className="wf-def-cell-name" data-label="State">
               {/* WF-10: the raw id is a developer's word — it lives in the tooltip, not on the row. */}
               <input className="form-input" value={s.name} onChange={(e) => renameState(s, e.target.value)} aria-label={`Name of state ${s.name}`} title={`Stored as "${s.id}" — the id never changes once saved`} data-testid="wf-def-state-name" />
             </span>
-            <span><MiniSelect ariaLabel={`Colour of ${s.name}`} value={s.color || "neutral"} options={COLOR_OPTS} onChange={(color) => patchState(s.id, { color })} testId={`wf-def-color-${s.id}`} /></span>
-            <span><input type="radio" name={`initial-${def.id}`} checked={!!s.initial} onChange={() => setInitial(s.id)} aria-label={`${s.name} is the first state`} data-testid="wf-def-initial" /></span>
-            <span><input type="checkbox" checked={!!s.enforce} onChange={(e) => patchState(s.id, { enforce: e.target.checked })} aria-label={`${s.name} is a protected (approved) state`} data-testid="wf-def-enforce" /></span>
-            <span><input className="form-input wf-def-days" type="number" min="1" max="3650" value={s.reviewAfterDays ?? ""} onChange={(e) => patchState(s.id, { reviewAfterDays: e.target.value === "" ? null : parseInt(e.target.value, 10) })} aria-label={`Re-review ${s.name} after days`} /></span>
-            <span className="wf-def-targets">
+            <span className="wf-def-cell-color" data-label="Colour"><MiniSelect ariaLabel={`Colour of ${s.name}`} value={s.color || "neutral"} options={COLOR_OPTS} onChange={(color) => patchState(s.id, { color })} testId={`wf-def-color-${s.id}`} /></span>
+            <span className="wf-def-cell-initial" data-label="Starts here"><input type="radio" name={`initial-${def.id}`} checked={!!s.initial} onChange={() => setInitial(s.id)} aria-label={`${s.name} is the first state`} data-testid="wf-def-initial" /></span>
+            <span className="wf-def-cell-enforce" data-label="Approved (enforced)"><input type="checkbox" checked={!!s.enforce} onChange={(e) => patchState(s.id, { enforce: e.target.checked })} aria-label={`${s.name} is a protected (approved) state`} data-testid="wf-def-enforce" /></span>
+            <span className="wf-def-cell-days" data-label="Re-review after (days)"><input className="form-input wf-def-days" type="number" min="1" max="3650" value={s.reviewAfterDays ?? ""} onChange={(e) => patchState(s.id, { reviewAfterDays: e.target.value === "" ? null : parseInt(e.target.value, 10) })} aria-label={`Re-review ${s.name} after days`} /></span>
+            <span className="wf-def-targets" data-label="Can move to">
               {states.filter((t) => t.id !== s.id).map((t) => (
                 <label key={t.id} className={`wf-def-target${can(s.id, t.id) ? " on" : ""}`}>
                   <input type="checkbox" checked={can(s.id, t.id)} onChange={() => toggle(s.id, t.id)} aria-label={`${s.name} can move to ${t.name}`} data-testid={`wf-def-edge-${s.id}-${t.id}`} />

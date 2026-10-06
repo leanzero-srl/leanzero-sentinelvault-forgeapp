@@ -14,7 +14,7 @@
  */
 import React, { useEffect, useLayoutEffect, useRef, useId, useState } from "react";
 import { createPortal } from "react-dom";
-import { measureVisibleBand, placeInBand } from "./visible-placement";
+import { measureVisibleBand, placeInBand, placeInBandX } from "./visible-placement";
 
 // ANCHORED mode (owner, 2026-09-24). The page panel's iframe is as tall as its content and the
 // Confluence page scrolls AROUND it, so the iframe's "viewport centre" can be a thousand pixels
@@ -43,6 +43,7 @@ export default function Dialog({ title, children, onClose, busy = false, danger 
   const titleId = useId();
   const [top, setTop] = useState(null); // anchored mode: the dialog's top edge, px
   const [maxH, setMaxH] = useState(null); // anchored mode: cap when the visible band is shorter than the dialog
+  const [hx, setHx] = useState(null); // { left, maxWidth } when the frame is wider than the screen (SV-18)
   const desiredRef = useRef(null);
   const bandRef = useRef(undefined); // undefined = not measured yet; null = cannot be told
 
@@ -66,6 +67,7 @@ export default function Dialog({ title, children, onClose, busy = false, danger 
       if (!live || !ref.current) return;
       bandRef.current = band;
       const p = placeInBand({ desiredTop: desired, h: ref.current.getBoundingClientRect().height || h, band });
+      setHx(placeInBandX({ w: ref.current.getBoundingClientRect().width, band, frameWidth: window.innerWidth }));
       setMaxH(p.maxHeight); setTop(p.top);
     });
     return () => { live = false; };
@@ -118,8 +120,8 @@ export default function Dialog({ title, children, onClose, busy = false, danger 
   }, [onClose, busy, initialFocus]);
 
   return createPortal(
-    <div className={`sv-dialog-backdrop${top != null ? " is-anchored" : ""}`} role="presentation" onMouseDown={(e) => { if (e.target === e.currentTarget && !busy) onClose(); }} data-testid={`${testId}-backdrop`}>
-      <div ref={ref} style={top != null ? { marginTop: `${Math.round(top)}px`, ...(maxH ? { maxHeight: `${maxH}px`, overflowY: "auto" } : {}) } : (anchorMode ? { visibility: "hidden" } : undefined)} className={`sv-dialog${danger ? " danger" : ""} ${className}`.trim()} role="dialog" aria-modal="true" aria-labelledby={titleId} tabIndex={-1} data-testid={testId}>
+    <div className={`sv-dialog-backdrop${top != null ? " is-anchored" : ""}${top != null && hx ? " is-hanchored" : ""}`} role="presentation" onMouseDown={(e) => { if (e.target === e.currentTarget && !busy) onClose(); }} data-testid={`${testId}-backdrop`}>
+      <div ref={ref} style={top != null ? { marginTop: `${Math.round(top)}px`, ...(maxH ? { maxHeight: `${maxH}px`, overflowY: "auto" } : {}), ...(hx ? { marginLeft: `${hx.left}px`, maxWidth: `${hx.maxWidth}px` } : {}) } : (anchorMode ? { visibility: "hidden" } : undefined)} className={`sv-dialog${danger ? " danger" : ""} ${className}`.trim()} role="dialog" aria-modal="true" aria-labelledby={titleId} tabIndex={-1} data-testid={testId}>
         <h3 className="sv-dialog-title" id={titleId}>{title}</h3>
         {children}
       </div>

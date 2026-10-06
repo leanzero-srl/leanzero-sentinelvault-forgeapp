@@ -25,6 +25,7 @@ import { decideRibbon, untilLabel } from "../../kit/ribbon-rules";
 import { alertWord, refusalText, when } from "../../kit/status-language.js"; // SEC-3: one vocabulary, one clock
 import { sourcePhrase } from "../../../server/capsules/classification/logic.js"; // P3: "from space default" / "set on this page"
 import BusyVeil from "../../kit/BusyVeil";
+import { detailsModalSize } from "../../kit/modal-size.js";
 
 /**
  * Workflow state chip + transition control (#42). Shows the page's current
@@ -1111,7 +1112,9 @@ const DocumentRibbon = () => {
   // the page id from the banner's own context (extension.content.id). The old "Manage Attachments"
   // overlay is the modal's Attachments tab now.
   const openDetails = useCallback(() => {
-    const modal = new Modal({ resource: "page-details-ui", size: "large", onClose: () => { evaluate("details closed"); } });
+    // SV-16 / M-04: full-screen ("max") on a phone, the 800 px hub ("large") everywhere else.
+    const size = detailsModalSize(typeof window !== "undefined" ? window.screen : null);
+    const modal = new Modal({ resource: "page-details-ui", size, onClose: () => { evaluate("details closed"); } });
     modal.open();
   }, [evaluate]);
 
@@ -1326,14 +1329,20 @@ const DocumentRibbon = () => {
               onTransitioned={afterWorkflowChange}
             />
           )}
-          {!loading && showValidation && (
-            <span className={`ribbon-chip ribbon-chip-${validationState}`} title="Page content validation status">
-              {validationState === "passed" ? "Validation: passed" : "Validation: issues"}
-            </span>
-          )}
-          {!loading && !rightHidden && aiCount !== null && aiCount > 0 && (
-            <span className="ribbon-chip ribbon-chip-ai" title="AI content review findings">
-              AI check: {aiCount} finding{aiCount !== 1 ? "s" : ""}
+          {/* SV-02: the secondary chips sit in one strip that shows a chip WHOLE or not at all — one
+              that does not fit wraps to a hidden second line instead of being cut under Open. */}
+          {!loading && (showValidation || (!rightHidden && aiCount !== null && aiCount > 0)) && (
+            <span className="rb-extras" data-testid="ribbon-extras">
+              {showValidation && (
+                <span className={`ribbon-chip ribbon-chip-${validationState}`} title="Page content validation status">
+                  {validationState === "passed" ? "Validation: passed" : "Validation: issues"}
+                </span>
+              )}
+              {!rightHidden && aiCount !== null && aiCount > 0 && (
+                <span className="ribbon-chip ribbon-chip-ai" title="AI content review findings">
+                  AI check: {aiCount} finding{aiCount !== 1 ? "s" : ""}
+                </span>
+              )}
             </span>
           )}
         </div>

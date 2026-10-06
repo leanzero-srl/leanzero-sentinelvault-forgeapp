@@ -14,6 +14,7 @@
   --sv-text-disabled: #CBD5E1;
   --sv-text-inverse: #FFFFFF;
   --sv-text-on-primary: #FFFFFF;
+  --sv-text-on-danger: #FFFFFF; /* M-03: ink on a danger fill — white on the light red */
   --sv-border-primary: #E2E8F0;
   --sv-border-secondary: #E2E8F0;
   --sv-border-focus: #0E7490;
@@ -70,6 +71,7 @@ html[data-color-mode="dark"] {
   --sv-text-disabled: #475569;
   --sv-text-inverse: #FFFFFF;
   --sv-text-on-primary: #0F172A;
+  --sv-text-on-danger: #0F172A; /* M-03: navy on the dark theme's #F87171 (6.5:1); white was 2.8:1 */
   --sv-border-primary: #334155;
   --sv-border-secondary: #334155;
   --sv-border-focus: #22D3EE;
@@ -548,7 +550,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .alert-error {
   padding: 14px 20px;
   background-color: var(--sv-interactive-danger);
-  color: white;
+  color: var(--sv-text-on-danger);
   border: none;
   border-radius: 10px;
   margin: 24px 40px 0;
@@ -762,8 +764,11 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   .settings-row { flex-direction: column; align-items: flex-start; gap: 10px; }
 }
 
+/* The label block has a floor (M-06): when the control would squeeze it under 260 px (the
+   Enforcement checkboxes left it 110 px at a 664 px frame) the control wraps under it. */
+.settings-row { flex-wrap: wrap; }
 .settings-row-info {
-  flex: 1;
+  flex: 1 1 260px;
   min-width: 0;
 }
 
@@ -784,6 +789,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 
 .settings-row-control {
   flex-shrink: 0;
+  max-width: 100%; /* a wide control (the workflow's state chips + "Edit the states…") wraps inside the row instead of pushing the frame 18-148 px wider */
   padding-top: 2px;
 }
 
@@ -922,7 +928,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 
 .btn-warning {
   background: var(--sv-interactive-danger);
-  color: white;
+  color: var(--sv-text-on-danger);
   border: none;
   border-radius: 10px;
   padding: 10px 20px;
@@ -1174,10 +1180,12 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 }
 
 /* ── Card layout ───────────────────────────────── */
+/* The column formula is in the sv-card-responsive block below (shared with the overlay and the
+   panel); --sv-cards-per-row is the MOST columns, the frame decides how many fit. */
 .sv-card-list {
+  --sv-cards-per-row: 3;
+  --sv-card-gap: 8px;
   display: grid;
-  grid-template-columns: repeat(var(--sv-cards-per-row, 3), minmax(0, 1fr));
-  gap: 8px;
   padding: 8px 0;
 }
 
@@ -1273,6 +1281,7 @@ html[data-color-mode="dark"] .artifact-card.status-trashed { border-color: #FB92
   color: var(--sv-text-subtle);
   font-size: 10px;
 }
+.card-meta-chunk { display: inline-flex; align-items: center; gap: 6px; min-width: 0; }
 
 .card-meta-owner {
   display: inline-flex;
@@ -1286,13 +1295,35 @@ html[data-color-mode="dark"] .artifact-card.status-trashed { border-color: #FB92
   white-space: nowrap;
 }
 
+/* ── sv-card-responsive:start ─────────────────────────────────────────────────────────────────
+   Byte-identical in realm-console.css, overlay.css and inline-panel.css (test/responsive-css
+   .test.mjs fails the build when the three copies drift — they had: the same card, three files).
+   Device matrix 2026-10-06: a fixed 3 columns at a 994 px frame left each card 299 px and the
+   file name 57 px ("i…", "R…"). Now --sv-cards-per-row is a MAXIMUM and every card is at least
+   --sv-card-min wide, so a narrower frame gets fewer, readable columns. Each surface is its own
+   iframe, so the percentages here are the width the app really has. */
+.sv-card-list {
+  --sv-card-min: 340px;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, max(var(--sv-card-min), (100% - (var(--sv-cards-per-row) - 1) * var(--sv-card-gap)) / var(--sv-cards-per-row))), 1fr));
+  gap: var(--sv-card-gap);
+}
+/* The name has a floor: when the name, the status and the actions do not fit on one line, the
+   actions wrap under the name (still on the right) instead of crushing the name to one letter. */
+.card-row-primary, .card-row-secondary { flex-wrap: wrap; row-gap: 6px; }
+.card-row-primary > .card-filename { flex: 1 1 180px; }
+.card-row-secondary > .card-secondary-left { flex: 1 1 180px; }
+.card-row-primary > .card-row-right, .card-row-secondary > .card-secondary-right { margin-left: auto; }
+.card-meta { flex-wrap: wrap; row-gap: 2px; }
+.card-meta-owner { white-space: nowrap; }
+/* ── sv-card-responsive:end ── */
+
 /* Status lozenge */
 .status-lozenge {
   display: inline-flex;
   align-items: center;
   padding: 2px 10px;
   border-radius: 9999px;
-  font-size: 10px;
+  font-size: 11px; /* review §7.2: never below 11px (device matrix 2026-10-06: it was 10 here) */
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.3px;
@@ -1355,6 +1386,18 @@ html[data-color-mode="dark"] .status-lozenge.trashed { background: #FB923C; colo
   background: var(--sv-interactive-success);
   color: var(--sv-text-on-primary);
   border-color: var(--sv-interactive-success);
+}
+
+/* SEC-10: Release on your own seal (My Sealed Files) is the quiet style — the same rule as
+   overlay.css and inline-panel.css; this sheet never had it, so the button rendered bare. */
+.action-btn.release {
+  background: var(--sv-bg-tertiary);
+  color: var(--sv-text-primary);
+  border-color: var(--sv-border-secondary);
+}
+.action-btn.release:hover:not(:disabled) {
+  border-color: var(--sv-interactive-primary);
+  color: var(--sv-interactive-primary);
 }
 
 /* Steward request banner */
@@ -1671,13 +1714,8 @@ html[data-color-mode="dark"] .status-lozenge.trashed { background: #FB923C; colo
   }
 }
 
-/* Responsive */
-@media (max-width: 900px) {
-  .sv-card-list { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
-}
-@media (max-width: 600px) {
-  .sv-card-list { grid-template-columns: 1fr !important; }
-}
+/* (The 900/600 px column overrides that lived here are gone: the sv-card-responsive block fits
+   the columns to the frame by card width, which covers both and every width between.) */
 
 /* ── Expand toggle ─────────────────────────────── */
 .card-expand-toggle {
@@ -1795,7 +1833,7 @@ html[data-color-mode="dark"] .status-lozenge.trashed { background: #FB923C; colo
 .mini-select-opt:hover { background: var(--sv-bg-tertiary); }
 .mini-select-opt.sel { background: var(--sv-interactive-primary); color: var(--sv-text-on-primary); font-weight: 600; }
 .val-ai { margin-top: 24px; padding-top: 16px; border-top: 1px solid var(--sv-border-secondary); }
-.val-ai-badge { font-size: 10px; font-weight: 700; padding: 2px 10px; border-radius: 9999px; background: var(--sv-interactive-primary); color: var(--sv-text-on-primary); }
+.val-ai-badge { font-size: 11px; font-weight: 700; padding: 2px 10px; border-radius: 9999px; background: var(--sv-interactive-primary); color: var(--sv-text-on-primary); }
 .val-textarea { width: 100%; resize: vertical; font-family: inherit; min-width: 260px; }
 
 /* ── Workflow settings — state preview chips (#42) ──────── */
@@ -1836,7 +1874,7 @@ html[data-color-mode="dark"] .wf-state-neutral { background: #64748b; }
   border-radius: 8px;
   padding: 9px 16px;
   background: var(--sv-interactive-primary, #0e7490);
-  color: #fff;
+  color: var(--sv-text-on-primary);
   font-size: 13px;
   font-weight: 700;
   cursor: pointer;
@@ -1867,6 +1905,8 @@ html[data-color-mode="dark"] .wf-state-neutral { background: #64748b; }
   white-space: nowrap;
 }
 .wf-dash-table td { padding: 11px 12px; border-bottom: 1px solid var(--sv-border-subtle, #E2E8F0); color: var(--sv-text-primary); vertical-align: middle; }
+.wf-dash-date { white-space: nowrap; } /* "Sep 29, / 2026" wrapped at 834 px */
+.wf-dash-more { display: flex; align-items: center; gap: 12px; margin-top: 12px; font-size: 13px; color: var(--sv-text-secondary); }
 .wf-dash-page a { color: var(--sv-interactive-primary, #0e7490); text-decoration: none; font-weight: 600; }
 .wf-dash-page a:hover { text-decoration: underline; }
 .wf-dash-overdue { color: #dc2626; font-weight: 700; }
@@ -2089,7 +2129,7 @@ html[data-color-mode="dark"] .sv-activity-chip-validation.is-active { background
 .sv-activity-table-wrap { overflow-x: auto; margin-top: 8px; }
 .sv-activity-table { width: 100%; border-collapse: collapse; font-size: 13px; }
 .sv-activity-table th {
-  text-align: left; font-weight: 700; color: var(--sv-text-secondary);
+  text-align: left; font-weight: 700; font-size: 13px; color: var(--sv-text-secondary);
   padding: 8px 10px; border-bottom: 2px solid var(--sv-border-primary); white-space: nowrap;
 }
 .sv-activity-table td { padding: 10px; border-bottom: 1px solid var(--sv-border-primary); color: var(--sv-text-primary); vertical-align: top; }
@@ -2097,11 +2137,15 @@ html[data-color-mode="dark"] .sv-activity-chip-validation.is-active { background
 .sv-activity-col-when { white-space: nowrap; color: var(--sv-text-secondary); font-size: 12px; }
 .sv-activity-col-page a { color: var(--sv-interactive-primary); text-decoration: none; font-weight: 600; }
 .sv-activity-col-page a:hover { text-decoration: underline; }
-.sv-activity-col-who { white-space: nowrap; }
-.sv-activity-col-target { display: flex; flex-direction: column; gap: 2px; min-width: 120px; }
-.sv-activity-target-kind { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--sv-text-secondary); }
+/* SV-08: a name wraps (a raw accountId used to hold this column at 340 px); the td stays a table
+   cell — the flex column lives on the inner .sv-activity-target, so the row borders line up. */
+.sv-activity-col-who { white-space: normal; overflow-wrap: break-word; max-width: 160px; }
+.sv-activity-col-target { min-width: 120px; }
+.sv-activity-target { display: flex; flex-direction: column; gap: 2px; }
+.sv-activity-target-kind { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--sv-text-secondary); }
 .sv-activity-target-name { overflow-wrap: anywhere; }
 .sv-activity-col-details { min-width: 240px; }
+.sv-activity-target-inline { display: none; }
 .sv-activity-chip {
   display: inline-flex; align-items: center; gap: 6px; white-space: nowrap;
   padding: 3px 10px 3px 8px; border-radius: 9999px; font-size: 11px; font-weight: 700; line-height: 1.6;
@@ -2135,7 +2179,7 @@ html[data-color-mode="dark"] .wf-rule { background: #2563EB; color: #FFFFFF; }
 .wf-def-head { display: flex; gap: 14px; flex-wrap: wrap; margin-bottom: 14px; }
 .wf-def-head label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; font-weight: 700; color: var(--sv-text-secondary); }
 .wf-def-name { flex: 1 1 220px; } .wf-def-labels { flex: 2 1 260px; } .wf-def-priority { flex: 0 0 110px; }
-.wf-def-table { display: flex; flex-direction: column; gap: 6px; overflow-x: auto; }
+.wf-def-table { display: flex; flex-direction: column; gap: 6px; overflow-x: auto; container: wf-def-table / inline-size; }
 .wf-def-row { display: grid; grid-template-columns: minmax(140px, 1fr) 130px 48px 72px 92px minmax(170px, 2fr) 100px; gap: 8px; align-items: center; padding: 8px 10px; border-radius: 10px; background: var(--sv-bg-secondary, #F8FAFC); min-width: 760px; }
 .wf-def-row-head { background: transparent; font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.04em; color: var(--sv-text-secondary); padding-bottom: 0; }
 .wf-def-cell-name { display: flex; flex-direction: column; gap: 3px; }
@@ -2177,10 +2221,13 @@ html[data-color-mode="dark"] .wf-rule { background: #2563EB; color: #FFFFFF; }
 .settings-section-desc { margin: 3px 0 0; font-size: 13px; color: var(--sv-text-secondary); max-width: 720px; }
 .settings-section .settings-row { padding-left: 0; padding-right: 0; }
 
-/* Break-glass reason bar (3.5): shared shape with the inline panel's request-reason bar. */
-.card-reason-bar { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
+/* Break-glass reason bar (3.5): shared shape with the inline panel's request-reason bar. The
+   required reason gets its own full-width line and the buttons sit under it on the right — on one
+   row the input was 70-140 px wide on every screen, the prompt cut at "Why are…" (2026-10-06). */
+.card-reason-bar { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: 6px; }
+.card-reason-bar .confirm-actions { margin-left: auto; }
 .card-reason-input {
-  flex: 1;
+  flex: 1 1 100%;
   min-width: 0;
   padding: 6px 10px;
   font: inherit;
@@ -2377,12 +2424,15 @@ html[data-color-mode="dark"] .action-bar-pill { background: #FBBF24; color: #0F1
 .sv-dialog-body { font-size: 14px; line-height: 1.5; }
 .sv-dialog-body p { margin: 0 0 8px; }
 .sv-dialog-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 18px; }
-.action-btn {
+/* Dialog buttons only. This block was unscoped (74e6e83) and, coming after the card pill rule,
+   turned every card's Force release / Watch and the Access Control Approve / Deny into 37 px
+   tall, 120 px wide buttons that pushed the file name out of the card (device matrix 2026-10-06). */
+.sv-dialog .action-btn {
   border: none; border-radius: 10px; padding: 10px 20px; font-family: inherit; font-size: 14px; font-weight: 600; cursor: pointer;
   transition: background 150ms ease;
 }
-.action-btn:disabled { cursor: not-allowed; opacity: 0.7; }
-.action-btn.confirm-yes { background: var(--sv-interactive-danger); color: #FFFFFF; }
+.sv-dialog .action-btn:disabled { cursor: not-allowed; opacity: 0.7; }
+.action-btn.confirm-yes { background: var(--sv-interactive-danger); color: var(--sv-text-on-danger); }
 .action-btn.confirm-yes:hover:not(:disabled) { background: var(--sv-interactive-danger-hover); }
 .action-btn.confirm-no { background: var(--sv-bg-tertiary); color: var(--sv-text-primary); }
 .action-btn.confirm-no:hover:not(:disabled) { background: var(--sv-bg-hover); }
@@ -2447,6 +2497,8 @@ html[data-color-mode="dark"] .sv-busy-veil { background: var(--sv-frosted-bg, rg
 /* Anchored dialogs (kit/Dialog: every surface opens a dialog level with the click) sit at the
    computed marginTop from the top edge — without this the flex centring moved them (tester 2026-09-30). */
 .sv-dialog-backdrop.is-anchored { align-items: flex-start; }
+/* SV-18: the frame is wider than the screen (a phone) — kit/Dialog sets the left margin to the visible band. */
+.sv-dialog-backdrop.is-hanchored { justify-content: flex-start; padding-left: 0; padding-right: 0; }
 
 /* ── Classification: save-on-pick + reason-on-lowering (2026-09-30, P4/P5/P9) ────────────────
    "Saved" is plain solid-colour text next to the picker; the lowering reason is an inline row
@@ -2479,13 +2531,138 @@ html[data-color-mode="dark"] .sv-busy-veil { background: var(--sv-frosted-bg, rg
 .cls-picker { min-width: 200px; }
 .cls-picker.disabled { opacity: 0.6; pointer-events: none; }
 .cls-picker-placeholder { color: var(--sv-text-subtle); }
-.cls-picker-menu { min-width: 260px; max-height: 320px; overflow-y: auto; z-index: 30; }
+.cls-picker-menu { min-width: min(340px, calc(100vw - 24px)); max-height: 320px; overflow-y: auto; z-index: 30; }
 .cls-picker.open-up .mini-select-menu { top: auto; bottom: calc(100% + 4px); }
+/* kit/visible-placement.js found the menu cut at the frame's right edge: align it to the trigger's right edge. */
+.mini-select.open-end .mini-select-menu { left: auto; right: 0; }
 .cls-picker-search { width: calc(100% - 16px); margin: 8px; box-sizing: border-box; }
-.cls-picker-opt { display: flex; align-items: center; gap: 10px; }
-.cls-picker-opt-hint { font-size: 12px; color: var(--sv-text-secondary); }
+/* The description sits UNDER the level's chip (SV-07), the same rule as steward-console.css. */
+.cls-picker-opt { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 10px; }
+.cls-picker-opt-hint { font-size: 12px; color: var(--sv-text-secondary); flex-basis: 100%; line-height: 1.4; }
 .cls-picker-opt.sel .cls-picker-opt-hint { color: inherit; } /* readable on the selected (solid) row */
 .cls-picker-empty { padding: 10px 12px; font-size: 13px; color: var(--sv-text-secondary); }
 .sv-space-default { padding: 0 0 14px; margin: 0 0 14px; border-bottom: 1px solid var(--sv-border-primary); }
 .sv-space-default-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
 .sv-space-default-row > div:first-child { flex: 1 1 320px; }
+
+/* ════════════════════════════════════════════════════════════════════════════════════════════
+   Responsive pass (device matrix 2026-10-06). Every surface is its own iframe, so these width
+   queries read the frame width Confluence hands the console (620 px on a 390 px phone, 664 iPad
+   mini portrait, 754/794 iPad Pro 11, 834 at a 1280 laptop). No tints, no rails.
+   ════════════════════════════════════════════════════════════════════════════════════════════ */
+
+/* SV-17: settings forms keep a readable measure on wide screens (a row ran 2,000 px with the toggle
+   1,500 px from its label at 2560). The Sealed Files grid, the workflow table and the Activity
+   report keep the full width. */
+.tab-content > .settings-panel,
+.tab-content > .settings-card,
+.tab-content > .settings-note { max-width: 1200px; }
+
+/* SV-11: 16 px gutters and tighter tabs under 900 px — the seven tabs fit one row at 834 (1280
+   laptop) and on iPad Pro 11, instead of leaving "Activity" alone on a second row. */
+@media (max-width: 900px) {
+  .space-admin-header { padding: 24px 16px 20px; }
+  .space-admin-header::after { left: 16px; right: 16px; }
+  .tab-navigation { margin: 20px 16px 0; max-width: calc(100% - 32px); }
+  .tab-button { padding: 8px 12px; }
+  .tab-content { padding: 8px 16px 0; }
+  .alert-success, .alert-error { margin-left: 16px; margin-right: 16px; }
+  .action-bar { padding: 12px 16px; }
+}
+/* Below ~700 px seven tabs cannot share a row: an even 4 + 3 grid, never 6 + 1. */
+@media (max-width: 700px) {
+  .tab-navigation { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .tab-button { white-space: normal; text-align: center; padding: 8px 6px; }
+}
+@media (max-width: 420px) {
+  .tab-navigation { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+/* SV-08: the Activity table. 900-1099 px: the Target column folds into Details (so Details — the
+   column that says what happened — is on screen at a 994 px frame without a sideways scroll).
+   Under 900 px: every event is a stacked block, nothing scrolls sideways. */
+@media (max-width: 1099px) {
+  .sv-activity-table .sv-activity-col-target { display: none; }
+  .sv-activity-target-inline { display: block; margin-bottom: 4px; }
+  .sv-activity-target-inline .sv-activity-target-kind { margin-right: 6px; }
+  .sv-activity-col-details { min-width: 200px; }
+}
+@media (max-width: 899px) {
+  .sv-activity-table thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  .sv-activity-table, .sv-activity-table tbody { display: block; }
+  .sv-activity-table tr.sv-activity-row {
+    display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 6px 16px;
+    padding: 12px 0; border-bottom: 1px solid var(--sv-border-primary);
+  }
+  .sv-activity-table td { display: block; padding: 0; border: 0; min-width: 0; max-width: none; }
+  .sv-activity-table .sv-activity-col-event { grid-column: 1; grid-row: 1; }
+  .sv-activity-table .sv-activity-col-when { grid-column: 2; grid-row: 1; justify-self: end; align-self: center; }
+  .sv-activity-table .sv-activity-col-page, .sv-activity-table .sv-activity-col-details { grid-column: 1 / -1; }
+  .sv-activity-table .sv-activity-col-who { grid-column: 1 / -1; }
+  .sv-activity-table td[data-label]::before { content: attr(data-label) " "; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--sv-text-secondary); margin-right: 6px; }
+  .sv-activity-col-details { min-width: 0; }
+  .sv-activity-table-wrap { overflow-x: visible; }
+}
+
+/* SV-09: the states editor needs ~830 px for its seven columns. Narrower (a 664-794 px tablet frame,
+   a phone, the 834 px frame of a 1280 laptop) each state is a block: name and tools, then the
+   colour / starts here / approved / re-review controls with their own labels, then "Can move to"
+   at full width. */
+@container wf-def-table (max-width: 830px) {
+  .wf-def-row {
+    min-width: 0; padding: 12px; gap: 10px 14px; align-items: end;
+    grid-template-columns: minmax(0, 1fr) auto auto auto;
+    grid-template-areas: "name name name tools" "color initial enforce days" "targets targets targets targets";
+  }
+  .wf-def-row-head { display: none; }
+  .wf-def-cell-name { grid-area: name; }
+  .wf-def-tools { grid-area: tools; align-self: end; }
+  .wf-def-cell-color { grid-area: color; }
+  .wf-def-cell-initial { grid-area: initial; }
+  .wf-def-cell-enforce { grid-area: enforce; }
+  .wf-def-cell-days { grid-area: days; }
+  .wf-def-targets { grid-area: targets; }
+  .wf-def-row > [data-label]::before { content: attr(data-label); display: block; margin-bottom: 4px; font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.04em; color: var(--sv-text-secondary); white-space: nowrap; }
+  .wf-def-targets[data-label]::before { flex-basis: 100%; margin-bottom: 0; }
+  .wf-def-cell-initial, .wf-def-cell-enforce { display: flex; flex-direction: column; align-items: flex-start; }
+}
+@container wf-def-table (max-width: 520px) {
+  .wf-def-row {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    grid-template-areas: "name tools" "color color" "initial enforce" "days days" "targets targets";
+  }
+  .wf-def-tools { justify-self: end; }
+}
+
+/* SV-10: the "Not applied yet" reminder is placed by kit/UnsavedFloat.jsx (beside the touched row,
+   never on a control); on a narrow frame it spans the width under that row. */
+@media (max-width: 640px) {
+  .sv-unsaved-float { max-width: calc(100% - 32px); }
+}
+
+/* SV-12: touch targets — a coarse pointer (phone, tablet) gets ≥ 32 px controls. Fine pointers
+   (mouse, trackpad) match none of this. */
+@media (pointer: coarse) {
+  .tab-button { min-height: 40px; }
+  .card-expand-toggle { min-width: 32px; min-height: 32px; justify-content: center; }
+  .action-btn { min-height: 32px; padding-top: 6px; padding-bottom: 6px; }
+  .guild-chip-remove { min-width: 32px; min-height: 32px; font-size: 16px; }
+  .steward-remove { width: 32px; height: 32px; }
+  .column-picker-trigger { min-height: 36px; }
+  .column-picker-option { min-height: 40px; }
+  .column-picker-option input[type="checkbox"] { width: 20px; height: 20px; }
+  .btn-primary, .btn-secondary, .sv-dialog .action-btn { min-height: 40px; }
+  .mini-select-value { min-height: 40px; }
+  .mini-select-opt { padding-top: 11px; padding-bottom: 11px; }
+  .form-checkbox input[type="checkbox"] { width: 44px; height: 26px; border-radius: 13px; }
+  .form-checkbox input[type="checkbox"]::after { width: 22px; height: 22px; }
+  .form-checkbox input[type="checkbox"]:checked::after { transform: translateX(18px); }
+  .form-checkbox-inline input[type="checkbox"], .checkbox-control input { width: 22px; height: 22px; }
+  .val-rule-remove { width: 32px; height: 32px; }
+  .wf-def-tool { width: 36px; height: 36px; }
+  .wf-def-target { min-height: 32px; }
+  .wf-userchip-x { min-width: 28px; min-height: 28px; }
+  .sv-link, .sv-activity-chip-link { min-height: 32px; display: inline-flex; align-items: center; }
+  .sv-activity-chip-btn { min-height: 36px; }
+  .form-input { min-height: 36px; }
+}
