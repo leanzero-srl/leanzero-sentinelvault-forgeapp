@@ -3,7 +3,7 @@ import { invoke } from "@forge/bridge";
 import { MiniSelect } from "./WorkflowSettingsEditor";
 import { ActivityGlyph } from "./ActivityFeed";
 import {
-  ACTIVITY_CATEGORIES, activityToCsv, formatAbsolute, formatActivity, pageTitleOf, relativeTime,
+  ACTIVITY_CATEGORIES, activityToCsv, actorName, formatAbsolute, formatActivity, pageTitleOf, relativeTime,
 } from "./activity-format";
 import { nextSelection, selectAll, clearAll, isAllOn } from "./activity-filter";
 
@@ -205,12 +205,13 @@ export default function ActivityReport({ spaceKey, siteUrl = null }) {
           <table className="sv-activity-table">
             <thead>
               <tr>
-                <th scope="col">When</th>
-                <th scope="col">Event</th>
-                <th scope="col">Page</th>
-                <th scope="col">Who</th>
-                <th scope="col">Target</th>
-                <th scope="col">Details</th>
+                {/* Each th carries its column's class: a rule that hides a column hides its header too (SV-04's lesson). */}
+                <th scope="col" className="sv-activity-col-when">When</th>
+                <th scope="col" className="sv-activity-col-event">Event</th>
+                <th scope="col" className="sv-activity-col-page">Page</th>
+                <th scope="col" className="sv-activity-col-who">Who</th>
+                <th scope="col" className="sv-activity-col-target">Target</th>
+                <th scope="col" className="sv-activity-col-details">Details</th>
               </tr>
             </thead>
             <tbody>
@@ -218,7 +219,13 @@ export default function ActivityReport({ spaceKey, siteUrl = null }) {
                 const f = formatActivity(e);
                 const href = pageUrl(siteUrl, e.pageId);
                 const title = pageTitleOf(e) || "—";
-                const who = e.actor?.name || (e.actor?.accountId ? "Someone" : "Sentinel Vault");
+                const who = actorName(e);
+                const target = (
+                  <>
+                    <span className="sv-activity-target-kind">{kindWord(e.target?.kind)}</span>
+                    {e.target?.name ? <span className="sv-activity-target-name">{e.target.name}</span> : null}
+                  </>
+                );
                 return (
                   <tr key={e.id || `${e.ts}-${i}`} className="sv-activity-row" data-testid="sv-activity-row" data-type={e.type || ""}>
                     <td className="sv-activity-col-when">
@@ -230,15 +237,15 @@ export default function ActivityReport({ spaceKey, siteUrl = null }) {
                         {f.label}
                       </span>
                     </td>
-                    <td className="sv-activity-col-page">
+                    <td className="sv-activity-col-page" data-label="Page">
                       {href ? <a href={href} target="_blank" rel="noreferrer">{title}</a> : title}
                     </td>
-                    <td className="sv-activity-col-who">{who}</td>
-                    <td className="sv-activity-col-target">
-                      <span className="sv-activity-target-kind">{kindWord(e.target?.kind)}</span>
-                      {e.target?.name ? <span className="sv-activity-target-name">{e.target.name}</span> : null}
-                    </td>
+                    <td className="sv-activity-col-who" data-label="By">{who}</td>
+                    {/* SV-08: the flex column is an inner div — a display:flex td is not a table cell, so its border never met the row's. */}
+                    <td className="sv-activity-col-target"><div className="sv-activity-target">{target}</div></td>
                     <td className="sv-activity-col-details">
+                      {/* Shown only where the Target column is folded away (frames under 1,100 px). */}
+                      {e.target?.kind !== "page" && <div className="sv-activity-target-inline">{target}</div>}
                       <div className="sv-activity-sentence">{f.sentence}</div>
                       {f.detail && <div className="sv-activity-detail">{f.detail}</div>}
                     </td>

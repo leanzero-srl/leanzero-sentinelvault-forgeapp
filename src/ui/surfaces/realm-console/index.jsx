@@ -336,11 +336,13 @@ const RealmClaimedCard = ({ artifact, onForceRelease, onWatch, isWatching, force
         <div className="card-row card-row-secondary">
           <span className="card-secondary-left">
             <span className="card-meta">
-              {metaItems.reduce((acc, item, i) => {
-                if (i > 0) acc.push(<span key={`sep-${i}`} className="card-meta-sep">&middot;</span>);
-                acc.push(item);
-                return acc;
-              }, [])}
+              {/* Each item carries its own separator, so a wrapped line never starts with a lone "·". */}
+              {metaItems.map((item, i) => (
+                <span key={`chunk-${i}`} className="card-meta-chunk">
+                  {i > 0 && <span className="card-meta-sep">&middot;</span>}
+                  {item}
+                </span>
+              ))}
             </span>
           </span>
           <span className="card-secondary-right">
@@ -454,11 +456,13 @@ const MyClaimedCard = ({ artifact, onRelease, onExtend, busyAction, siteUrl }) =
         <div className="card-row card-row-secondary">
           <span className="card-secondary-left">
             <span className="card-meta">
-              {metaItems.reduce((acc, item, i) => {
-                if (i > 0) acc.push(<span key={`sep-${i}`} className="card-meta-sep">&middot;</span>);
-                acc.push(item);
-                return acc;
-              }, [])}
+              {/* Each item carries its own separator, so a wrapped line never starts with a lone "·". */}
+              {metaItems.map((item, i) => (
+                <span key={`chunk-${i}`} className="card-meta-chunk">
+                  {i > 0 && <span className="card-meta-sep">&middot;</span>}
+                  {item}
+                </span>
+              ))}
             </span>
           </span>
         </div>
@@ -1674,10 +1678,10 @@ const RealmPolicyDashboard = () => {
                 <span style={{
                   marginLeft: "6px",
                   background: "var(--sv-interactive-danger)",
-                  color: "var(--sv-text-inverse)",
+                  color: "var(--sv-text-on-danger)", /* M-03: white on the dark theme's #F87171 was 2.8:1 */
                   borderRadius: "9999px",
                   padding: "1px 7px",
-                  fontSize: "10px",
+                  fontSize: "11px",
                   fontWeight: 700,
                   minWidth: "18px",
                   textAlign: "center",
@@ -1771,10 +1775,10 @@ const RealmPolicyDashboard = () => {
                       <div key={busyKey} className="steward-card">
                         <div className="steward-avatar">{initials}</div>
                         <span className="steward-name">{name}</span>
-                        <span style={{ fontSize: "10px", color: "var(--sv-text-subtle)", textAlign: "center" }} title={request.attachmentName}>
+                        <span style={{ fontSize: "11px", color: "var(--sv-text-subtle)", textAlign: "center" }} title={request.attachmentName}>
                           {request.attachmentName || "Sealed file"}
                         </span>
-                        {reqDate && <span style={{ fontSize: "10px", color: "var(--sv-text-subtle)" }}>{reqDate}</span>}
+                        {reqDate && <span style={{ fontSize: "11px", color: "var(--sv-text-subtle)" }}>{reqDate}</span>}
                         <span style={{ display: "flex", gap: "6px", marginTop: "4px" }}>
                           {(!editReqBusy || editReqBusy.id !== busyKey || editReqBusy.action === "approve") && (
                             <button
@@ -1970,6 +1974,7 @@ const RealmPolicyDashboard = () => {
                 {notificationsModeChoices.map((option) => {
                   const selected = (realmPrefs.notificationsMode || "normal") === option.value;
                   const accent = option.value === "quiet" ? "var(--sv-interactive-danger)" : "var(--sv-interactive-primary)";
+                  const ink = option.value === "quiet" ? "var(--sv-text-on-danger)" : "var(--sv-text-on-primary)"; // M-03: white was 1.8:1 on the dark cyan
                   return (
                     <button
                       key={option.value}
@@ -1986,7 +1991,7 @@ const RealmPolicyDashboard = () => {
                         borderRadius: "8px",
                         border: `2px solid ${selected ? accent : "var(--sv-border-primary)"}`,
                         background: selected ? accent : "var(--sv-surface-raised)",
-                        color: selected ? "var(--sv-text-inverse)" : "var(--sv-text-primary)",
+                        color: selected ? ink : "var(--sv-text-primary)",
                         fontFamily: "inherit",
                       }}
                     >
@@ -2031,6 +2036,7 @@ const RealmPolicyDashboard = () => {
                   const selected = (realmPrefs.classification || "inherit") === option.value;
                   const locked = !siteValues.classificationEnabled;
                   const accent = option.value === "off" ? "var(--sv-interactive-danger)" : "var(--sv-interactive-primary)";
+                  const ink = option.value === "off" ? "var(--sv-text-on-danger)" : "var(--sv-text-on-primary)";
                   return (
                     <button key={option.value} type="button" role="radio" aria-checked={selected} disabled={locked}
                       data-testid={`sv-classification-${option.value}`}
@@ -2039,7 +2045,7 @@ const RealmPolicyDashboard = () => {
                         flex: "1 1 220px", textAlign: "left", cursor: locked ? "not-allowed" : "pointer", padding: "12px 14px", borderRadius: "8px",
                         border: `2px solid ${selected ? accent : "var(--sv-border-primary)"}`,
                         background: selected ? accent : "var(--sv-surface-raised)",
-                        color: selected ? "var(--sv-text-inverse)" : "var(--sv-text-primary)",
+                        color: selected ? ink : "var(--sv-text-primary)",
                         fontFamily: "inherit", opacity: locked ? 0.5 : 1,
                       }}>
                       <div style={{ fontWeight: 700, fontSize: "14px", marginBottom: "4px" }}>{option.label}</div>
@@ -2135,7 +2141,7 @@ const RealmPolicyDashboard = () => {
                                 <div className="user-name">
                                   {operator.displayName}
                                   {isAlreadyAdded && (
-                                    <span style={{ marginLeft: "8px", fontSize: "10px" }}>(Already added)</span>
+                                    <span style={{ marginLeft: "8px", fontSize: "11px" }}>(Already added)</span>
                                   )}
                                 </div>
                                 {operator.email && (
@@ -2194,7 +2200,7 @@ const RealmPolicyDashboard = () => {
                             <div className="user-name">
                               {operator.displayName}
                               {isAlreadyAdded && (
-                                <span style={{ marginLeft: "8px", fontSize: "10px" }}>(Already added)</span>
+                                <span style={{ marginLeft: "8px", fontSize: "11px" }}>(Already added)</span>
                               )}
                             </div>
                             {operator.email && (
@@ -2308,7 +2314,7 @@ const RealmPolicyDashboard = () => {
                       <div key={request.accountId} className="steward-card">
                         <div className="steward-avatar">{initials}</div>
                         <span className="steward-name">{request.displayName || "Unknown User"}</span>
-                        {requestDate && <span style={{ fontSize: "10px", color: "var(--sv-text-subtle)" }}>{requestDate}</span>}
+                        {requestDate && <span style={{ fontSize: "11px", color: "var(--sv-text-subtle)" }}>{requestDate}</span>}
                         <span style={{ display: "flex", gap: "6px", marginTop: "4px" }}>
                           {(!requestActionBusy || requestActionBusy.id !== request.accountId || requestActionBusy.action === "approve") && (
                             <button
@@ -2526,7 +2532,7 @@ const RealmPolicyDashboard = () => {
         <Dialog title="Apply your changes first?" onClose={() => setLeaveTo(null)} busy={loading} testId="sv-unsaved-dialog">
           <div className="sv-dialog-body">You changed settings on this tab and have not applied them. Leaving the tab now throws them away.</div>
           <div className="sv-dialog-actions sv-unsaved-actions">
-            <button type="button" className="action-btn confirm-yes" style={{ background: "var(--sv-interactive-primary)" }} disabled={loading} data-testid="sv-unsaved-apply"
+            <button type="button" className="action-btn confirm-yes" style={{ background: "var(--sv-interactive-primary)", color: "var(--sv-text-on-primary)" }} disabled={loading} data-testid="sv-unsaved-apply"
               onClick={async () => { const go = leaveTo; if (await onSaveRealmPrefs()) { setLeaveTo(null); go(); } }}>Apply and continue</button>
             <button type="button" className="action-btn confirm-no" disabled={loading} data-testid="sv-unsaved-discard"
               onClick={() => { const go = leaveTo; discardPrefs(); setLeaveTo(null); go(); }}>Discard</button>

@@ -1032,10 +1032,11 @@ const ArtifactControlPanel = () => {
         </button>
       </div>
 
-      {/* Inline panel visibility setting */}
+      {/* Inline panel visibility setting — classed (ov-macro-notice) so a short frame can compact it
+          (SV-05: on a landscape phone the pinned chrome left a 32 px list). */}
       <div
+        className="ov-macro-notice"
         style={{
-          padding: "12px 16px",
           borderBottom: "1px solid var(--sv-border-primary)",
           // it57: no faded state-wash (rule-b) — neutral surface; the dot + text + button carry state.
           background: "var(--sv-bg-secondary)",
@@ -1086,6 +1087,7 @@ const ArtifactControlPanel = () => {
               </span>
             </div>
             <p
+              className="ov-macro-notice-desc"
               style={{
                 margin: 0,
                 fontSize: "12px",
@@ -1126,7 +1128,7 @@ const ArtifactControlPanel = () => {
               color: !panelConfigReady
                 ? "var(--sv-text-subtle)"
                 : panelHidden
-                  ? "#ffffff"
+                  ? "var(--sv-text-on-primary)" /* M-03: navy on the dark theme's cyan, white in light */
                   : "var(--sv-text-secondary)",
               border: panelConfigReady && panelHidden
                 ? "1px solid var(--sv-interactive-primary)"
@@ -1154,23 +1156,13 @@ const ArtifactControlPanel = () => {
         </div>
       </div>
 
-      <div
-        className="modal-body"
-        style={{ display: "flex", flexDirection: "column" }}
-      >
+      <div className="modal-body ov-body">
         {error && <div className="alert-error">{error}</div>}
 
         {/* Page Artifacts */}
-          <div
-            style={{
-              display: "flex",
-              flexDirection: "column",
-              flex: 1,
-              minHeight: 0,
-            }}
-          >
+          <div className="ov-list-wrap">
             {loading && !fileList.length && (
-              <div className="sv-card-list" data-cols="3" style={{ '--sv-cards-per-row': 3 }}>
+              <div className="sv-card-list" data-cols="3">
                 {Array.from({ length: 6 }).map((_, i) => <SkeletonCard key={`init-skel-${i}`} />)}
               </div>
             )}
@@ -1192,10 +1184,7 @@ const ArtifactControlPanel = () => {
             )}
 
             {!loading && !error && fileList.length > 0 && (
-              <div
-                className="attachments-tab-content"
-                style={{ flex: 1, overflowY: "auto", minHeight: 0 }}
-              >
+              <div className="attachments-tab-content">
                 {(() => {
                   const sortedFiles = arrangeFileList();
                   const isClaimedFile = (a) => a.lockStatus === "HELD" || a.lockStatus === "HELD_BY_ACTOR";
@@ -1334,7 +1323,7 @@ const ArtifactControlPanel = () => {
                           <div className="sv-card-section-header">
                             <span className="sv-card-section-title">Loading more files…</span>
                           </div>
-                          <div className="sv-card-list" data-cols="3" style={{ '--sv-cards-per-row': 3 }}>
+                          <div className="sv-card-list" data-cols="3">
                             {Array.from({ length: 6 }).map((_, i) => <SkeletonCard key={`skel-${i}`} />)}
                           </div>
                         </div>

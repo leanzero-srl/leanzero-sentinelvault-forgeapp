@@ -17,6 +17,8 @@ import { webTrigger } from "@forge/api";
 import { isOperatorSiteAdmin, isOperatorSteward } from "../../shared/steward-checks.js";
 import { listApiTokens, createApiToken, revokeApiToken } from "./tokens.js";
 import { exportSpaceConfig, exportSiteConfig } from "./export.js";
+import { resolveActorName } from "../../infra/activity-log.js";
+import { withDisplayNames } from "./display-names.js";
 
 export const WEBTRIGGER_KEY = "config-api";
 export const WEBTRIGGER_URL_KVS_KEY = "webtrigger-url:config-api";
@@ -40,7 +42,7 @@ export async function resolveConfigApiUrl() {
 const listTokens = async (req) => {
   if (!(await siteAdmin(req))) return DENY;
   const [tokens, url] = await Promise.all([listApiTokens(), resolveConfigApiUrl()]);
-  return { success: true, tokens, url };
+  return { success: true, tokens: await withDisplayNames(tokens, "createdBy", "createdByName", resolveActorName), url };
 };
 
 const createToken = async (req) => {
@@ -78,7 +80,7 @@ const listJobs = async (req) => {
     q = kvs.query().where("key", WhereConditions.beginsWith(JOB_PREFIX)).limit(100).cursor(nextCursor);
   }
   jobs.sort((a, b) => String(b?.submittedAt || "").localeCompare(String(a?.submittedAt || "")));
-  return { success: true, jobs: jobs.slice(0, limit) };
+  return { success: true, jobs: await withDisplayNames(jobs.slice(0, limit), "submittedBy", "submittedByName", resolveActorName) };
 };
 
 const getJob = async (req) => {

@@ -275,3 +275,9 @@ body {
 /* A section that arrived with a page copy (tester 2026-09-29) — solid neutral band, no tint. */
 .sec-copied { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 10px 14px; background: #334155; color: #FFFFFF; font-size: 13px; font-weight: 600; }
 .sec-copied .sec-undone-btn { background: #FFFFFF; color: #0F172A; }
+
+/* SV-12 (device matrix 2026-10-06): touch targets on a coarse pointer (phone, tablet). */
+@media (pointer: coarse) {
+  .sec-btn, .sec-undone-btn { min-height: 36px; }
+  .sec-undone-close { min-width: 32px; min-height: 32px; }
+}
