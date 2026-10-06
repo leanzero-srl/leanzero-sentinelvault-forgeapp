@@ -1653,7 +1653,7 @@ html[data-color-mode="dark"] .status-lozenge.trashed { background: #FB923C; colo
 .guild-chip-remove {
   background: none;
   border: none;
-  color: var(--sv-text-subtle);
+  color: inherit; /* the chip's own ink — subtle grey on the solid chip was near invisible (M-03) */
   cursor: pointer;
   font-size: 13px;
   padding: 0;
