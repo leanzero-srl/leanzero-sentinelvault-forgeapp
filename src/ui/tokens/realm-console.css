@@ -1281,7 +1281,12 @@ html[data-color-mode="dark"] .artifact-card.status-trashed { border-color: #FB92
   color: var(--sv-text-subtle);
   font-size: 10px;
 }
+/* Meta items wrap whole, each with its leading "·"; the 12 px pull hides the dot that starts a line. */
 .card-meta-chunk { display: inline-flex; align-items: center; gap: 6px; min-width: 0; }
+.card-meta-chunk > .card-meta-sep { display: inline-block; width: 6px; text-align: center; }
+.card-secondary-left:has(> .card-meta > .card-meta-chunk) { overflow: hidden; }
+.card-meta:has(> .card-meta-chunk) { margin-left: -12px; column-gap: 0; }
+.card-meta:has(> .card-meta-chunk) > .card-meta-chunk { margin-right: 6px; }
 
 .card-meta-owner {
   display: inline-flex;
