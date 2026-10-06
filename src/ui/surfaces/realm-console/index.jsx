@@ -336,10 +336,11 @@ const RealmClaimedCard = ({ artifact, onForceRelease, onWatch, isWatching, force
         <div className="card-row card-row-secondary">
           <span className="card-secondary-left">
             <span className="card-meta">
-              {/* Each item carries its own separator, so a wrapped line never starts with a lone "·". */}
+              {/* Every item carries a leading separator; .card-meta is pulled 12 px left inside a
+                  clipping box, so the separator that starts any line (the first included) is hidden. */}
               {metaItems.map((item, i) => (
                 <span key={`chunk-${i}`} className="card-meta-chunk">
-                  {i > 0 && <span className="card-meta-sep">&middot;</span>}
+                  <span className="card-meta-sep" aria-hidden="true">&middot;</span>
                   {item}
                 </span>
               ))}
@@ -456,10 +457,11 @@ const MyClaimedCard = ({ artifact, onRelease, onExtend, busyAction, siteUrl }) =
         <div className="card-row card-row-secondary">
           <span className="card-secondary-left">
             <span className="card-meta">
-              {/* Each item carries its own separator, so a wrapped line never starts with a lone "·". */}
+              {/* Every item carries a leading separator; .card-meta is pulled 12 px left inside a
+                  clipping box, so the separator that starts any line (the first included) is hidden. */}
               {metaItems.map((item, i) => (
                 <span key={`chunk-${i}`} className="card-meta-chunk">
-                  {i > 0 && <span className="card-meta-sep">&middot;</span>}
+                  <span className="card-meta-sep" aria-hidden="true">&middot;</span>
                   {item}
                 </span>
               ))}
