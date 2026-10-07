@@ -7,9 +7,9 @@ GENERATED from `src/server/shared/release-notes.js` by `scripts/render-release-n
 **Sentinel Vault fits phones, tablets and laptop screens**
 
 - Changed: file lists on phones, tablets and laptops no longer cut a file's name short to fit its buttons. A card keeps its buttons on the same line as the name when both fit and moves them under the name when they do not, and wide screens show more columns instead of stretched cards.
-- Changed: the page banner fits a phone. Nothing overlaps its Open button, and Open fills the screen. The page details window and Seal attachments lay out for a phone's width, their menus open where you can see them, and the Seal button stays in view while you tick files.
+- Changed: the page banner fits a phone. Nothing overlaps its Open button, and Open fills the screen. The page details window and Seal attachments lay out for a phone's width, their menus open where you can see them, and the Seal button stays in view while you tick files without covering the file you just ticked.
 - Changed: space and site settings fit narrow screens. The tabs sit on even rows, tables turn into stacked rows instead of scrolling sideways, long lists show their first rows with a Show all link, and on wide screens the settings keep a readable width.
-- Changed: buttons, checkboxes and chips are bigger on touch screens, no label is smaller than 11 px, and in dark mode the text on cyan and red buttons is readable.
+- Changed: buttons, checkboxes, switches and chips are bigger on touch screens, no label is smaller than 11 px, and in dark mode the text on cyan and red buttons is readable.
 
 Fixed:
 - API access and the Activity report showed some people as an account ID. They now show the person's name, or Someone when Atlassian returns no name for that account.

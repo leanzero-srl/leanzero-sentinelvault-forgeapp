@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { invoke, view, router, Modal } from "@forge/bridge";
 import { enablePaletteSync } from "../../kit/palette-sync";
@@ -11,6 +11,7 @@ import GiveAccessDialog from "../../kit/GiveAccessDialog";
 import { useSignedInvoke } from "../../kit/SignedInvoke";
 import { listenOutside } from "../../kit/outside-close.js";
 import { useVisiblePlacement } from "../../kit/visible-placement.js";
+import { revealAboveDelta } from "../../kit/reveal-above.js";
 import { isDowngrade, findLevel } from "../../../server/capsules/classification/logic.js"; // P5: the one downgrade rule
 
 // 5.0 — the page-details modal (mockup §4), the page-level hub behind the byline chip. ONE
@@ -704,8 +705,9 @@ const SealActionSeam = ({ summary, reload, siteUrl, loadError, onRetry }) => {
   const sealRowById = useMemo(() => new Map((summary?.seals || []).filter((r) => r.kind === "attachment").map((r) => [r.id, r])), [summary]);
   const selectable = attachments.filter((a) => !a.sealed);
   const allOn = selectable.length > 0 && selectable.every((a) => selected.has(a.id));
-  const toggle = (id) => setSelected((prev) => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; });
-  const toggleAll = () => setSelected(allOn ? new Set() : new Set(selectable.map((a) => a.id)));
+  const tickedRef = useRef(null); // the row just ticked (BN-02 first tick, below)
+  const toggle = (id) => { tickedRef.current = id; setSelected((prev) => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; }); };
+  const toggleAll = () => { tickedRef.current = null; setSelected(allOn ? new Set() : new Set(selectable.map((a) => a.id))); };
   const n = [...selected].filter((id) => selectable.some((a) => a.id === id)).length;
   const pinned = n > 0;
 
@@ -724,6 +726,25 @@ const SealActionSeam = ({ summary, reload, siteUrl, loadError, onRetry }) => {
     ro?.observe(form);
     return () => { ro?.disconnect(); body.style.scrollPaddingBottom = ""; };
   }, [pinned, summary]);
+  // BN-02, first tick (breaker round 2): scroll-padding only steers LATER focus scrolls, so the tick
+  // that PINS the form hid the row just ticked (and its focused checkbox) under it whenever that row
+  // was low in the visible list — keyboard, mouse and touch alike. After each tick, before paint,
+  // bring that row (or, for Select all, whatever holds focus in the list) back above the form with
+  // the same 8 px clearance the scroll-padding keeps. Only the body's scrollTop moves; no layout.
+  useLayoutEffect(() => {
+    const id = tickedRef.current;
+    tickedRef.current = null;
+    const form = formRef.current;
+    const body = form?.closest?.(".pd-body");
+    if (!pinned || !form || !body) return;
+    const rows = id == null ? [] : [...body.querySelectorAll('[data-testid="pd-attachment-row"]')];
+    const active = typeof document !== "undefined" ? document.activeElement : null;
+    const focused = active && active !== body && body.contains(active) && !form.contains(active) ? (active.closest(".pd-row") || active) : null;
+    const target = rows.find((r) => r.dataset.id === String(id)) || focused;
+    if (!target) return;
+    const delta = revealAboveDelta(target.getBoundingClientRect(), form.getBoundingClientRect(), body.getBoundingClientRect());
+    if (delta > 0) body.scrollTop += delta;
+  }, [selected, pinned]);
 
   const seal = async () => {
     const ids = selectable.filter((a) => selected.has(a.id));

@@ -2697,7 +2697,15 @@ html[data-color-mode="dark"] .sv-busy-veil { background: var(--sv-frosted-bg, rg
   .form-checkbox input[type="checkbox"] { width: 44px; height: 26px; border-radius: 13px; }
   .form-checkbox input[type="checkbox"]::after { width: 22px; height: 22px; }
   .form-checkbox input[type="checkbox"]:checked::after { transform: translateX(18px); }
-  .form-checkbox-inline input[type="checkbox"], .checkbox-control input { width: 24px; height: 24px; }
+  .form-checkbox-inline input[type="checkbox"] { width: 24px; height: 24px; }
+  /* BRK2-01 (breaker round 2): .checkbox-control is a SWITCH (the Macro Position Top/Bottom radios,
+     drawn with appearance:none, a 36x20 track and a sliding ::after knob). It used to share the 24 px
+     checkbox rule above, which squashed the track into a 24x24 square with the chosen knob 10 px
+     outside it. On touch it grows like .form-checkbox: a 44x26 track, a 22 px knob, 18 px of travel. */
+  .checkbox-control { align-items: center; }
+  .checkbox-control input { width: 44px; height: 26px; border-radius: 13px; margin: 0; }
+  .checkbox-control input::after { width: 22px; height: 22px; }
+  .checkbox-control input:checked::after { transform: translateX(18px); }
   .wf-def-row > span > input[type="checkbox"], .wf-def-row > span > input[type="radio"] { width: 24px; height: 24px; }
   .val-rule-remove { width: 32px; height: 32px; }
   .wf-def-tool { width: 36px; height: 36px; }
