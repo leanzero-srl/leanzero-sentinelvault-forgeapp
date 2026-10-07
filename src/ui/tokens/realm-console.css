@@ -1420,6 +1420,9 @@ html[data-color-mode="dark"] .status-lozenge.trashed { background: #FB923C; colo
   border-radius: 8px;
   margin-bottom: 16px;
 }
+/* The banner's one call to action keeps the full button size it had (the unscoped dialog rule gave
+   it that by accident; scoping that rule to .sv-dialog shrank it to a card pill on every desktop). */
+.steward-request-banner .action-btn { flex: none; padding: 10px 20px; border: none; border-radius: 10px; font-size: 14px; }
 
 /* ── Toolbar (reused from overlay) ─────────────── */
 .overlay-toolbar {
@@ -2661,14 +2664,15 @@ html[data-color-mode="dark"] .sv-busy-veil { background: var(--sv-frosted-bg, rg
   .steward-remove { width: 32px; height: 32px; }
   .column-picker-trigger { min-height: 36px; }
   .column-picker-option { min-height: 40px; }
-  .column-picker-option input[type="checkbox"] { width: 20px; height: 20px; }
+  .column-picker-option input[type="checkbox"] { width: 24px; height: 24px; }
   .btn-primary, .btn-secondary, .sv-dialog .action-btn { min-height: 40px; }
   .mini-select-value { min-height: 40px; }
   .mini-select-opt { padding-top: 11px; padding-bottom: 11px; }
   .form-checkbox input[type="checkbox"] { width: 44px; height: 26px; border-radius: 13px; }
   .form-checkbox input[type="checkbox"]::after { width: 22px; height: 22px; }
   .form-checkbox input[type="checkbox"]:checked::after { transform: translateX(18px); }
-  .form-checkbox-inline input[type="checkbox"], .checkbox-control input { width: 22px; height: 22px; }
+  .form-checkbox-inline input[type="checkbox"], .checkbox-control input { width: 24px; height: 24px; }
+  .wf-def-cell-initial input, .wf-def-cell-enforce input { width: 24px; height: 24px; }
   .val-rule-remove { width: 32px; height: 32px; }
   .wf-def-tool { width: 36px; height: 36px; }
   .wf-def-target { min-height: 32px; }
@@ -2676,4 +2680,8 @@ html[data-color-mode="dark"] .sv-busy-veil { background: var(--sv-frosted-bg, rg
   .sv-link, .sv-activity-chip-link { min-height: 32px; display: inline-flex; align-items: center; }
   .sv-activity-chip-btn { min-height: 36px; }
   .form-input { min-height: 36px; }
+  /* A text link that IS the target of its row or card (a file name, a page title) gets a 24 px hit
+     area (WCAG 2.5.8): the line box grows, or the inline box is padded, with no change to the layout. */
+  .card-filename-link, .card-expand-link { line-height: 24px; }
+  .sv-activity-table a, .wf-dash-table a { padding-top: 4px; padding-bottom: 4px; }
 }

@@ -22,6 +22,20 @@ const rules = (text) => {
   return out;
 };
 const px = (body, prop) => { const m = new RegExp(`(?:^|;|\\s)${prop}\\s*:\\s*([0-9.]+)px`).exec(body); return m ? Number(m[1]) : null; };
+/** The bodies of every `query` block (e.g. "@media (pointer: coarse)"), brace-matched. */
+const mediaBlocks = (text, query) => {
+  const t = strip(text);
+  const out = [];
+  let i = t.indexOf(query);
+  while (i >= 0) {
+    const open = t.indexOf("{", i);
+    let depth = 0, j = open;
+    for (; j < t.length; j++) { if (t[j] === "{") depth++; else if (t[j] === "}" && --depth === 0) break; }
+    out.push(t.slice(open + 1, j));
+    i = t.indexOf(query, j);
+  }
+  return out;
+};
 
 // ── SV-01: one card layout, three copies — byte-identical, and nothing overrides it ────────────
 const CARD_FILES = ["realm-console.css", "overlay.css", "inline-panel.css"];
@@ -71,6 +85,8 @@ ok("SV-02 .ribbon-bar clips (overflow: clip) — a focused chip cannot scroll th
 ok("SV-02 .rb-body clips its own overflow", rules(ribbon).some((x) => x.sel === ".rb-body" && /overflow:\s*clip/.test(x.body)));
 ok("SV-02 under 720 px the review-date chip and the secondary chips are hidden", /@media \(max-width: 720px\)[\s\S]*?\.rb-body \.wf-chip-outline, \.rb-body \.rb-extras \{ display: none; \}/.test(strip(ribbon)));
 
+ok("SV-02 on a phone the state chip gives way with an ellipsis instead of running under Open", (() => { const b = mediaBlocks(ribbon, "@media (max-width: 480px)").join("\n"); return /\.rb-body > \.wf-control \{ min-width: 0; flex: 0 1 auto; \}/.test(b) && /\.rb-body \.wf-chip-label \{ min-width: 0; overflow: hidden; text-overflow: ellipsis; \}/.test(b); })());
+
 // ── SV-03: the seal action's 4-column rows survive the phone rule ───────────────────────────────
 const pd = strip(css("page-details.css"));
 ok("SV-03 the ≤520 px rule keeps the checkbox rows in their own columns", /@media \(max-width: 520px\)[\s\S]*?\.pd-row-main\.pd-row-check \{ grid-template-columns: 16px 24px minmax\(0, 1fr\); \}/.test(pd));
@@ -79,6 +95,27 @@ ok("SV-03 the ≤520 px rule keeps the checkbox rows in their own columns", /@me
 for (const f of ["realm-console.css", "steward-console.css", "overlay.css", "inline-panel.css", "page-details.css", "doc-ribbon.css", "my-work.css", "section-setup.css"]) {
   ok(`SV-12 ${f} has a (pointer: coarse) block`, /@media \(pointer: coarse\)/.test(css(f)));
 }
+
+// The coarse blocks themselves: every checkbox they size is at least 24 px (WCAG 2.5.8 — 20 and 22
+// were measured under the bar on phones), and the copies of one control agree across sheets (the
+// Validations editor's checkbox was 22 px in the space console and 13 px in site settings).
+const COARSE = "@media (pointer: coarse)";
+for (const f of ["realm-console.css", "steward-console.css", "overlay.css", "inline-panel.css", "page-details.css", "doc-ribbon.css", "my-work.css", "section-setup.css"]) {
+  for (const b of mediaBlocks(css(f), COARSE)) {
+    for (const r of rules(b)) {
+      if (!/\binput\b/.test(r.sel) || /::after/.test(r.sel)) continue;
+      const w = px(r.body, "width"), h = px(r.body, "height");
+      if (w != null || h != null) ok(`SV-12 ${f} coarse ${r.sel} is at least 24 px (${w}×${h})`, (w == null || w >= 24) && (h == null || h >= 24));
+    }
+  }
+}
+ok("SV-12 site settings sizes the Validations editor's checkboxes on touch too", mediaBlocks(css("steward-console.css"), COARSE).some((b) => /\.form-checkbox-inline input\[type="checkbox"\] \{ width: 24px; height: 24px; \}/.test(b)));
+// A text link that IS a row's target gets a 24 px hit area on touch, in every sheet that has one.
+for (const f of ["realm-console.css", "overlay.css", "inline-panel.css"]) {
+  ok(`SV-12 ${f}: card file-name links get a 24 px line on touch`, mediaBlocks(css(f), COARSE).some((b) => /\.card-filename-link, \.card-expand-link \{ line-height: 24px; \}/.test(b)));
+}
+ok("SV-12 realm tables pad their page links on touch", mediaBlocks(css("realm-console.css"), COARSE).some((b) => /\.sv-activity-table a, \.wf-dash-table a \{ padding-top: 4px; padding-bottom: 4px; \}/.test(b)));
+ok("SV-12 My work pads its page links on touch", mediaBlocks(css("my-work.css"), COARSE).some((b) => /\.mw-link \{ padding-top: 4px; padding-bottom: 4px; \}/.test(b)));
 
 // ── SV-20: status lozenges, badges and labels are never below 11 px ─────────────────────────────
 const NEVER_BELOW_11 = [".status-lozenge", ".sv-activity-target-kind", ".val-ai-badge", ".sv-card-section-count", ".wf-appr-badge", ".card-meta-type", ".sv-val-badge"];
@@ -118,6 +155,8 @@ ok("SV-11 both consoles use 16 px gutters under 900 px", ["realm-console.css", "
 // ── SV-13: long lists are capped by default ────────────────────────────────────────────────────
 ok("SV-13 the workflow dashboard shows DASHBOARD_ROWS rows until Show all", /slice\(0, DASHBOARD_ROWS\)/.test(read("src/ui/kit/WorkflowDashboard.jsx")));
 ok("SV-13 revoked API tokens wait behind Show N revoked", /api-tokens-revoked-toggle/.test(read("src/ui/surfaces/steward-console/index.jsx")));
+ok("SV-13 a token revoked in this visit stays in the list reading Revoked", /setRevokedHere\(/.test(read("src/ui/surfaces/steward-console/index.jsx")) && /revokedHere\.has\(t\.id\)/.test(read("src/ui/surfaces/steward-console/index.jsx")));
+ok("SV-13 the API receipts show the newest JOBS_SHOWN until Show all", /allJobs\.slice\(0, JOBS_SHOWN\)/.test(read("src/ui/surfaces/steward-console/index.jsx")) && /api-jobs-show-all/.test(read("src/ui/surfaces/steward-console/index.jsx")));
 
 // ── SV-17: settings forms keep a measure on wide screens ───────────────────────────────────────
 ok("SV-17 settings panels are capped at 1200 px", ["realm-console.css", "steward-console.css"].every((f) => /\.tab-content > \.settings-panel[^{]*\{ max-width: 1200px; \}/.test(strip(css(f)))));
@@ -139,6 +178,16 @@ for (const f of ["realm-console.css", "steward-console.css"]) {
 // ── SV-14: a sealed section's NAME never truncates to make room for its sentence ────────────────
 const panel = strip(css("inline-panel.css"));
 ok("SV-14 section rows wrap and the title has a floor", /\.sv-section-row \{[^}]*flex-wrap: wrap;/.test(panel) && /\.sv-section-row-title \{\s*flex: 1 1 200px;/.test(panel));
+
+ok("SV-14 under 720 px a section's sentence takes its own line (the ⋯ never wraps alone)", mediaBlocks(css("inline-panel.css"), "@media (max-width: 720px)").some((b) => /\.sv-section-row-meta \{ order: 1; flex-basis: 100%; \}/.test(b)));
+
+// ── SV-10: the reminder never covers a control — with no free spot it makes room ─────────────────
+const float = read("src/ui/kit/UnsavedFloat.jsx");
+ok("SV-10 UnsavedFloat opens a gap under the row when every spot is blocked", /spot\.hits === 0/.test(float) && /roomNeeded\(size\)/.test(float) && /roomBelow\(/.test(float) && /closeRoom\(\)/.test(float));
+ok("SV-10 UnsavedFloat keeps to the part of the frame on screen", /measureVisibleBand\(\)/.test(float));
+
+// ── SV-01 cause 1, the other side: scoping the dialog rule must not shrink a real call to action ──
+ok("SV-01 the space console's 'Request admin access' keeps its full button size", rules(css("realm-console.css")).some((x) => x.sel === ".steward-request-banner .action-btn" && /padding:\s*10px 20px/.test(x.body) && /font-size:\s*14px/.test(x.body)));
 
 // ── SV-05 / SV-15 / SV-16 ───────────────────────────────────────────────────────────────────────
 const ov = strip(css("overlay.css"));

@@ -1516,9 +1516,12 @@ html[data-color-mode="dark"] .sv-state.trashed { background: #94A3B8; color: #0F
   .modal-close { width: 40px; height: 40px; }
   .column-picker-trigger, .toolbar-refresh { min-height: 36px; }
   .column-picker-option { min-height: 40px; }
-  .column-picker-option input[type="checkbox"] { width: 20px; height: 20px; }
+  .column-picker-option input[type="checkbox"] { width: 24px; height: 24px; }
   .load-more-btn { min-height: 36px; }
   .sv-activity-chip-btn { min-height: 36px; }
   .sv-activity-chip-link { min-height: 32px; display: inline-flex; align-items: center; }
   .sv-menu-item { min-height: 40px; }
+  /* A text link that IS the target of its row or card (a file name, a page title) gets a 24 px hit
+     area (WCAG 2.5.8): the line box grows, or the inline box is padded, with no change to the layout. */
+  .card-filename-link, .card-expand-link { line-height: 24px; }
 }
