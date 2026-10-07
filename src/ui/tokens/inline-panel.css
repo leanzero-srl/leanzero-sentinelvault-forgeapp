@@ -1719,6 +1719,14 @@ html[data-color-mode="dark"] .sv-state.trashed { background: #94A3B8; color: #0F
 .sv-sealed-group-count { font-size: 11px; font-weight: 700; color: var(--sv-text-secondary); }
 .sv-sealed-group-note { font-size: 11px; color: var(--sv-text-secondary); }
 .sv-sealed-group-wait { font-size: 12px; color: var(--sv-text-secondary); padding: 6px 0; }
+/* The group headings and the sealed-section blocks line up with the cards (their list is 12 px in;
+   the headings and the section blocks ran to the frame's very edges — device matrix 2026-10-07). */
+.sv-sealed-group-header, .sv-sealed-group-wait { padding-left: 14px; padding-right: 14px; }
+.sv-section-list { padding-left: 12px; padding-right: 12px; }
+/* …and so do the Validation and AI review results ("All checks passed.", the findings), which sat
+   on the frame's left edge under their 14 px-in headings. */
+.sv-validation > .sv-val-ok, .sv-validation > .sv-val-list, .sv-validation > .sv-val-note, .sv-validation > .sv-val-error,
+.sv-ai-review > .sv-val-ok, .sv-ai-review > .sv-val-list, .sv-ai-review > .sv-ai-showhidden { margin-left: 14px; margin-right: 14px; }
 
 /* Sealed sections wear the attachment cards' look (owner, 2026-09-24): ONE solid 2px border around
    the whole block — the row plus its editors / requests / bars inside it, like a card — yours
