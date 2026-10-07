@@ -117,7 +117,7 @@ for (const f of ["realm-console.css", "overlay.css", "inline-panel.css"]) {
   ok(`SV-12 ${f}: card file-name links get a 24 px line on touch`, mediaBlocks(css(f), COARSE).some((b) => /\.card-filename-link, \.card-expand-link \{ line-height: 24px; \}/.test(b)));
 }
 ok("SV-12 realm tables pad their page links on touch", mediaBlocks(css("realm-console.css"), COARSE).some((b) => /\.sv-activity-table a, \.wf-dash-table a \{ padding-top: 4px; padding-bottom: 4px; \}/.test(b)));
-ok("SV-12 My work pads its page links on touch", mediaBlocks(css("my-work.css"), COARSE).some((b) => /\.mw-link \{ padding-top: 4px; padding-bottom: 4px; \}/.test(b)));
+ok("SV-12 My work pads its page links on touch", mediaBlocks(css("my-work.css"), COARSE).some((b) => /\.mw-link \{ padding-top: 5px; padding-bottom: 5px; \}/.test(b)));
 
 // ── SV-20: status lozenges, badges and labels are never below 11 px ─────────────────────────────
 const NEVER_BELOW_11 = [".status-lozenge", ".sv-activity-target-kind", ".val-ai-badge", ".sv-card-section-count", ".wf-appr-badge", ".card-meta-type", ".sv-val-badge"];
