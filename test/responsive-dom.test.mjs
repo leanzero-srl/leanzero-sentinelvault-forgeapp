@@ -48,9 +48,12 @@ function serve(root) {
     const s = http.createServer((req, res) => {
       let p = decodeURIComponent(req.url.split("?")[0]); if (p === "/") p = "/index.html";
       if (p === "/__phone.html") { // a page that frames the surface the way Confluence does (same origin)
-        const w = Number(new URL(req.url, "http://x").searchParams.get("w")) || 620;
+        // Live phone-360/390 (2026-10-07): Confluence puts the frame 32 px in from the screen's left
+        // edge, so the part of a 636 px frame on a 360 px screen is 0-328, not 0-360.
+        const q = new URL(req.url, "http://x").searchParams;
+        const w = Number(q.get("w")) || 620, x = Number(q.get("x") ?? 32);
         res.writeHead(200, { "Content-Type": "text/html" });
-        return res.end(`<html><body style="margin:0;padding:48px 0 0;width:${w + 48}px"><iframe id="f" src="/index.html" style="border:0;display:block;width:${w}px;height:900px"></iframe><div style="height:400px"></div></body></html>`);
+        return res.end(`<html><body style="margin:0;padding:48px 0 0 ${x}px;width:${w + 48}px"><iframe id="f" src="/index.html" style="border:0;display:block;width:${w}px;height:900px"></iframe><div style="height:400px"></div></body></html>`);
       }
       const f = path.join(root, p);
       if (!f.startsWith(root) || !fs.existsSync(f)) { res.writeHead(404); return res.end("x"); }
