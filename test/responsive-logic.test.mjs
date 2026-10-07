@@ -6,6 +6,7 @@ import { horizontalCut, placeInBandX } from "../src/ui/kit/visible-placement.js"
 import { detailsModalSize } from "../src/ui/kit/modal-size.js";
 import { actorName, looksLikeAccountId } from "../src/ui/kit/activity-format.js";
 import { withDisplayNames } from "../src/server/capsules/config-api/display-names.js";
+import { revealAboveDelta } from "../src/ui/kit/reveal-above.js";
 import { eq, ok, report } from "./_assert.mjs";
 
 // ── SV-10 / BR-03: the reminder covers no control and no TEXT, and sits near the control used ──
@@ -119,5 +120,17 @@ const rows = await withDisplayNames([{ createdBy: "a" }, { createdBy: "a" }, { c
 eq("resolved names land on the rows", rows.map((r) => r.createdByName ?? null), ["Mihai Perdum", "Mihai Perdum", null, null, null, "Kept"]);
 eq("one lookup per distinct id", calls.sort(), ["a", "b", "boom"]);
 eq("not a list → empty list", await withDisplayNames(undefined, "createdBy", "createdByName", resolveName), []);
+
+// ── BN-02 first tick: how far the body scrolls so the row just ticked clears the pinned form ──
+// Geometry from the breaker's round-2 probes (viewport y).
+const R = (top, bottom) => ({ top, bottom });
+eq("BN-02 1440: checkbox 581-597 under the form at 581-659 → up 24 px (8 px clear)", revealAboveDelta(R(581, 597), R(581, 659), R(70, 659)), 24);
+eq("BN-02 phone-390: row 626-650 under the form at 460-659 → up 198 px", revealAboveDelta(R(626, 650), R(460, 659), R(109, 659)), 198);
+eq("BN-02 iPad Pro 11 portrait: 684-708 under the form at 687-775 → up 29 px", revealAboveDelta(R(684, 708), R(687, 775), R(140, 775)), 29);
+eq("BN-02 a row already 8 px clear of the form → no scroll", revealAboveDelta(R(500, 573), R(581, 659), R(70, 659)), 0);
+eq("BN-02 a row well above the form → no scroll", revealAboveDelta(R(120, 160), R(581, 659), R(70, 659)), 0);
+eq("BN-02 the form back in the flow after the list (short frame) → no scroll", revealAboveDelta(R(600, 640), R(660, 740), R(0, 400)), 0);
+eq("BN-02 a target taller than the room above the form stops at the body's top", revealAboveDelta(R(100, 700), R(500, 600), R(80, 600)), 20);
+eq("BN-02 nothing to measure → no scroll", revealAboveDelta(null, R(0, 1), R(0, 1)), 0);
 
 report("responsive-logic");

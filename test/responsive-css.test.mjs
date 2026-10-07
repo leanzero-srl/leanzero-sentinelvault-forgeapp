@@ -6,7 +6,7 @@ import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { eq, ok, report } from "./_assert.mjs";
-import { deadNarrowOverrides, winningValue } from "./_css.mjs";
+import { deadNarrowOverrides, winningValue, parseSheet } from "./_css.mjs";
 import { readdirSync } from "node:fs";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -118,6 +118,32 @@ for (const f of ["realm-console.css", "steward-console.css", "overlay.css", "inl
       if (w != null || h != null) ok(`SV-12 ${f} coarse ${r.sel} is at least 24 px (${w}×${h})`, (w == null || w >= 24) && (h == null || h >= 24));
     }
   }
+}
+// BRK2-01 (breaker round 2): a SWITCH — an input drawn with appearance:none whose ::after knob slides
+// on :checked — keeps its shape on touch. The 24 px checkbox rule also caught .checkbox-control (the
+// Macro Position switch) and made its track a 24x24 square with the chosen knob 10 px outside it.
+// For every switch in every sheet: track wider than tall, knob no taller than the track, and the
+// knob's far edge (left + width + travel) inside the track — with a mouse AND on a coarse pointer.
+for (const f of ["realm-console.css", "steward-console.css", "overlay.css", "inline-panel.css", "page-details.css", "doc-ribbon.css", "my-work.css", "section-setup.css"]) {
+  const all = parseSheet(css(f));
+  const fine = all.filter((r) => r.at.length === 0);
+  const coarse = all.filter((r) => r.at.length === 0 || (r.at.length === 1 && r.at[0] === COARSE));
+  const last = (set, sel, prop) => { let v = null; for (const r of set) if (r.sel.includes(sel)) for (const d of r.decls) if (d.prop === prop) v = d.value; return v; };
+  const num = (v) => (v == null ? null : Number((/(-?[0-9.]+)px/.exec(v) || [])[1]));
+  const switches = fine.flatMap((r) => (r.decls.some((d) => d.prop === "appearance" && d.value === "none") ? r.sel : []))
+    .filter((s) => /\binput\b/.test(s) && /translateX/.test(last(fine, `${s}:checked::after`, "transform") || ""));
+  for (const s of switches) {
+    for (const [mode, set] of [["mouse", fine], ["touch", coarse]]) {
+      const w = num(last(set, s, "width")), h = num(last(set, s, "height"));
+      const kw = num(last(set, `${s}::after`, "width")), kh = num(last(set, `${s}::after`, "height")), kl = num(last(set, `${s}::after`, "left")) ?? 0;
+      const travel = num((/translateX\(([^)]+)\)/.exec(last(set, `${s}:checked::after`, "transform") || "") || [])[1]) ?? 0;
+      ok(`BRK2-01 ${f} switch ${s} (${mode}): a pill, wider than tall (${w}×${h})`, w != null && h != null && w > h);
+      ok(`BRK2-01 ${f} switch ${s} (${mode}): the knob fits the track's height (${kh} ≤ ${h})`, kh != null && kh <= h);
+      ok(`BRK2-01 ${f} switch ${s} (${mode}): the knob stays inside when on (${kl}+${kw}+${travel} ≤ ${w})`, kw != null && kl + kw + travel <= w);
+    }
+  }
+  if (f === "realm-console.css") ok("BRK2-01 realm-console.css: the Macro Position switch is checked as a switch", switches.includes(".checkbox-control input"));
+  if (f === "realm-console.css" || f === "steward-console.css") ok(`BRK2-01 ${f}: the settings switch is checked as a switch`, switches.includes('.form-checkbox input[type="checkbox"]'));
 }
 ok("SV-12 site settings sizes the Validations editor's checkboxes on touch too", mediaBlocks(css("steward-console.css"), COARSE).some((b) => /\.form-checkbox-inline input\[type="checkbox"\] \{ width: 24px; height: 24px; \}/.test(b)));
 // A text link that IS a row's target gets a 24 px hit area on touch, in every sheet that has one.

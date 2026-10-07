@@ -11,7 +11,9 @@
 //   BR-03  the "Not applied yet" reminder covers no control and no line of text
 //   BR-04  a desktop card whose name fits beside its actions stays on ONE line
 //   BN-01  the seal-duration menu opens where it can be seen, inside the scrolling body
-//   BN-02  the pinned seal form sits on the scrollport's edge and keyboard focus never lands under it
+//   BN-02  the pinned seal form sits on the scrollport's edge and keyboard focus never lands under it,
+//          including the FIRST tick, which pins the form (breaker round 2: it hid the row just ticked)
+//   BRK2-01 the Macro Position switch keeps its pill shape on touch (the 24 px checkbox rule squashed it)
 //
 // Needs Playwright (borrowed from ~/Projects/forge-live-harness, like scripts/responsive/capture.mjs).
 // Missing → FAIL, unless SV_SKIP_DOM=1 says to skip it knowingly. SV_DOM_NOBUILD=1 reuses the last
@@ -461,6 +463,72 @@ for (const [w, h] of [[800, 720], [430, 720], [390, 720]]) {
   }
   ok(`BN-02 seal @${w}x${h}: Tab visited list controls`, stops >= 5);
   eq(`BN-02 seal @${w}x${h}: focus never landed under the pinned form`, under, 0);
+  await ctx.close();
+}
+
+// ── BN-02, first tick (breaker round 2): the tick that PINS the form does not hide that row ─────
+// scroll-padding only steers LATER focus scrolls; the first tick pinned the form over the row just
+// ticked (1440: checkbox 581-597 under the form at 581-659). Scroll an unsealed row to the bottom of
+// the visible body and tick it with a mouse, a finger and the keyboard: the row, and the focused
+// checkbox, must end above the form. A row the form does not cover must not scroll anything.
+for (const [w, h, how] of [[800, 720, "mouse"], [800, 720, "keyboard"], [390, 720, "touch"], [430, 720, "keyboard"]]) {
+  const { ctx, page } = await open("page-details", "pd-seal", w, h, { touch: how === "touch" });
+  const ids = await page.evaluate(() => [...document.querySelectorAll('[data-testid="pd-attachment-row"]')].filter((r) => r.querySelector('[data-testid="pd-attachment-check"]:not(:disabled)')).map((r) => r.dataset.id));
+  ok(`BN-02 first tick @${w}x${h} ${how}: unsealed rows to tick (precondition)`, ids.length >= 3);
+  if (ids.length < 3) { await ctx.close(); continue; }
+  const place = (id, edge) => page.evaluate(([id, edge]) => {
+    const body = document.querySelector(".pd-body"); const b = body.getBoundingClientRect();
+    const r = document.querySelector(`[data-testid="pd-attachment-row"][data-id="${id}"]`).getBoundingClientRect();
+    body.scrollTop += edge === "bottom" ? r.bottom - (b.bottom - 6) : r.top - (b.top + 10);
+    const r2 = document.querySelector(`[data-testid="pd-attachment-row"][data-id="${id}"]`).getBoundingClientRect();
+    return { scrollTop: body.scrollTop, gapBelow: b.bottom - r2.bottom };
+  }, [id, edge]);
+  const tick = async (id) => {
+    const box = page.locator(`[data-testid="pd-attachment-row"][data-id="${id}"] [data-testid="pd-attachment-check"]`);
+    if (how === "mouse") await box.click();
+    else if (how === "touch") await box.tap();
+    else { await box.focus(); await page.keyboard.press("Space"); }
+    await sleep(300);
+  };
+  const low = ids[ids.length - 2]; // not the last row: the body can always scroll it to its bottom edge
+  const p0 = await place(low, "bottom");
+  ok(`BN-02 first tick @${w}x${h} ${how}: the row sits at the bottom of the visible list (${Math.round(p0.gapBelow)} px above the edge)`, p0.gapBelow >= 0 && p0.gapBelow <= 12);
+  await tick(low);
+  const g = await page.evaluate((id) => {
+    const form = document.querySelector('[data-testid="pd-seal-form"]'); const f = form.getBoundingClientRect();
+    const row = document.querySelector(`[data-testid="pd-attachment-row"][data-id="${id}"]`); const r = row.getBoundingClientRect();
+    const c = row.querySelector('[data-testid="pd-attachment-check"]'); const cr = c.getBoundingClientRect();
+    const a = document.activeElement;
+    return { pinned: form.classList.contains("is-pinned"), checked: c.checked, rowBottom: r.bottom, boxBottom: cr.bottom, formTop: f.top, focusedUnder: !!a && row.contains(a) && a.getBoundingClientRect().bottom > f.top };
+  }, low);
+  ok(`BN-02 first tick @${w}x${h} ${how}: the tick pinned the form`, g.pinned && g.checked);
+  ok(`BN-02 first tick @${w}x${h} ${how}: the ticked row ends above the pinned form (row bottom ${Math.round(g.rowBottom)}, form top ${Math.round(g.formTop)})`, g.rowBottom <= g.formTop);
+  ok(`BN-02 first tick @${w}x${h} ${how}: its checkbox (and any focus on it) is not under the form`, g.boxBottom <= g.formTop && !g.focusedUnder);
+  const p1 = await place(ids[0], "top");
+  await tick(ids[0]);
+  eq(`BN-02 first tick @${w}x${h} ${how}: ticking a row the form does not cover scrolls nothing`, await page.evaluate(() => document.querySelector(".pd-body").scrollTop), p1.scrollTop);
+  await ctx.close();
+}
+
+// ── BRK2-01: the Macro Position switch keeps its pill shape, with the knob inside, on touch ─────
+// The 24 px touch-checkbox rule also caught .checkbox-control and made the track 24x24 with the
+// chosen knob 10 px outside it. Measured with the real cascade, mouse and touch.
+for (const [w, touch] of [[620, true], [754, true], [994, false]]) {
+  const { ctx, page } = await open("realm-console", "realm-steward", w, 900, { touch });
+  await page.locator('.tab-navigation .tab-button:has-text("Macro")').first().click();
+  await sleep(500);
+  const sw = await page.evaluate(() => [...document.querySelectorAll(".checkbox-control input")].map((el) => {
+    const r = el.getBoundingClientRect(); const k = getComputedStyle(el, "::after");
+    const tx = el.checked ? new DOMMatrixReadOnly(k.transform === "none" ? undefined : k.transform).m41 : 0;
+    const label = el.parentElement.querySelector(".checkbox-label").getBoundingClientRect();
+    return { w: r.width, h: r.height, knobRight: parseFloat(k.left) + parseFloat(k.width) + tx, knobH: parseFloat(k.height), gap: label.left - r.right, checked: el.checked };
+  }));
+  ok(`BRK2-01 macro @${w} ${touch ? "touch" : "mouse"}: two position switches, one on`, sw.length === 2 && sw.filter((x) => x.checked).length === 1);
+  for (const [i, x] of sw.entries()) {
+    ok(`BRK2-01 macro @${w} ${touch ? "touch" : "mouse"} #${i}: a pill (${x.w}×${x.h})`, x.w > x.h + 8);
+    ok(`BRK2-01 macro @${w} ${touch ? "touch" : "mouse"} #${i}: the knob stays inside (${x.knobRight} ≤ ${x.w}, ${x.knobH} ≤ ${x.h})`, x.knobRight <= x.w && x.knobH <= x.h);
+    ok(`BRK2-01 macro @${w} ${touch ? "touch" : "mouse"} #${i}: the label keeps its distance (${Math.round(x.gap)} px)`, x.gap >= 10);
+  }
   await ctx.close();
 }
 
