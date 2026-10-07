@@ -29,7 +29,7 @@
 /** Selector for the row the reminder sits beside: the touched setting's row, rule card, choice block or card. */
 export const FLOAT_ANCHOR = ".settings-row, .val-rule-card, .val-rules-head, .wf-def-row, .sv-choice-block, .settings-card, [data-float-anchor]";
 
-const EDGE = 8;            // from the visible band's edges
+const EDGE = 6;            // from the visible band's edges (6, not 8: on a 360 px phone the compact form beside a switch needs every pixel)
 const CLEAR_CONTROL = 6;   // air kept around a control
 const CLEAR_TEXT = 4;      // air kept around a line of text
 const REACH = 320;         // how far (px, vertically) a spot may be from the control and still read as "beside it"
