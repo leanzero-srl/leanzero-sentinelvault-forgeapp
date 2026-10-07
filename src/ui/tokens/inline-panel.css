@@ -1016,7 +1016,7 @@ html[data-color-mode="dark"] .badge-stale {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 8px 4px 2px;
+  padding: 8px 14px 2px; /* in line with the group headings and the cards (was 4 px) */
 }
 .sv-group-footer-count {
   font-size: 12px;
