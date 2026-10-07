@@ -87,6 +87,8 @@ ok("SV-02 under 720 px the review-date chip and the secondary chips are hidden",
 
 ok("SV-02 on a phone the state chip gives way with an ellipsis instead of running under Open", (() => { const b = mediaBlocks(ribbon, "@media (max-width: 480px)").join("\n"); return /\.rb-body > \.wf-control \{ min-width: 0; flex: 0 1 auto; \}/.test(b) && /\.rb-body \.wf-chip-label \{ min-width: 0; overflow: hidden; text-overflow: ellipsis; \}/.test(b); })());
 
+ok("SV-02 under 400 px the level glyph drops so the state chip keeps its whole label", mediaBlocks(ribbon, "@media (max-width: 400px)").some((b) => /\.rb-class \.rb-glyph \{ display: none; \}/.test(b)));
+
 // ── SV-03: the seal action's 4-column rows survive the phone rule ───────────────────────────────
 const pd = strip(css("page-details.css"));
 ok("SV-03 the ≤520 px rule keeps the checkbox rows in their own columns", /@media \(max-width: 520px\)[\s\S]*?\.pd-row-main\.pd-row-check \{ grid-template-columns: 16px 24px minmax\(0, 1fr\); \}/.test(pd));

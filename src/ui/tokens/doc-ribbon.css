@@ -296,6 +296,11 @@ button:focus-visible {
   .rb-body > .wf-control > .wf-chip { min-width: 0; max-width: 100%; padding-left: 8px; padding-right: 8px; }
   .rb-body .wf-chip-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 }
+/* The smallest phones (360 px): the level block's glyph goes too, so the state chip keeps its whole
+   label ("Approved v9" read "Approve…"); the level's NAME still says it. */
+@media (max-width: 400px) {
+  .rb-class .rb-glyph { display: none; }
+}
 /* SV-12: touch targets inside the 44 px bar — chips 28, buttons 32 (fine pointers untouched). */
 @media (pointer: coarse) {
   .wf-chip { min-height: 28px; }

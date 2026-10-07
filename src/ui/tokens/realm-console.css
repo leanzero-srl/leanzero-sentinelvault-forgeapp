@@ -2672,7 +2672,7 @@ html[data-color-mode="dark"] .sv-busy-veil { background: var(--sv-frosted-bg, rg
   .form-checkbox input[type="checkbox"]::after { width: 22px; height: 22px; }
   .form-checkbox input[type="checkbox"]:checked::after { transform: translateX(18px); }
   .form-checkbox-inline input[type="checkbox"], .checkbox-control input { width: 24px; height: 24px; }
-  .wf-def-cell-initial input, .wf-def-cell-enforce input { width: 24px; height: 24px; }
+  .wf-def-row > span > input[type="checkbox"], .wf-def-row > span > input[type="radio"] { width: 24px; height: 24px; }
   .val-rule-remove { width: 32px; height: 32px; }
   .wf-def-tool { width: 36px; height: 36px; }
   .wf-def-target { min-height: 32px; }
