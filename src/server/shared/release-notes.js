@@ -12,21 +12,22 @@ const note = (n) => Object.freeze({ ...n, changes: Object.freeze([...(n.changes 
 
 export const RELEASE_NOTES = Object.freeze([
   note({
-    version: "7.0.1",
+    version: "7.1.0",
     date: "2026-10-07",
-    headline: "Sentinel Vault fits phones, tablets and laptop screens",
+    headline: "Sentinel Vault works better on phones, tablets and smaller laptop screens",
     changes: [
-      "Changed: file lists on phones, tablets and laptops no longer cut a file's name short to fit its buttons. A card keeps its buttons on the same line as the name when both fit and moves them under the name when they do not, and wide screens show more columns instead of stretched cards.",
-      "Changed: the page banner fits a phone. Nothing overlaps its Open button, and Open fills the screen. The page details window and Seal attachments lay out for a phone's width, their menus open where you can see them, and the Seal button stays in view while you tick files without covering the file you just ticked.",
-      "Changed: space and site settings fit narrow screens. The tabs sit on even rows, tables turn into stacked rows instead of scrolling sideways, long lists show their first rows with a Show all link, and on wide screens the settings keep a readable width.",
-      "Changed: buttons, checkboxes, switches and chips are bigger on touch screens, no label is smaller than 11 px, and in dark mode the text on cyan and red buttons is readable.",
+      "Changed: file cards in space settings, the attachments view and the page panel no longer cut a file's name short to fit their buttons, on phones, tablets and laptops. A card keeps its buttons on the same line as the name when both fit and moves them under the name when they do not. On wide screens the attachments view shows up to five columns instead of three stretched cards. The panel's Cards per row setting is now a maximum, because a card is never narrower than about 340 px, so a panel set to 3 per row shows 2 on a standard-width page.",
+      "Changed: the page banner fits a phone, and nothing overlaps its Open button. To make room, a banner narrower than about 860 px (phones, most tablets, narrow windows) no longer shows the Validation and AI check chips, and below about 720 px it also leaves out the approval and review-date chip. The review date and approval record are still in the window Open shows. Validation and AI check results are in the Sentinel Vault panel on pages that have one.",
+      "Changed: the Sentinel Vault window (Open on the banner, or Sentinel Vault under the page title) and Seal attachments lay out for a phone's width, their menus open where you can see them, and while you tick files the Seal button stays pinned in view without covering the file you just ticked. On a phone only Open on the banner fills the screen. Opened from under the page title or from Seal attachments… in the page menu, the window keeps a fixed height, and on a phone held sideways you scroll down to reach the Seal button.",
+      "Changed: space and site settings fit tablets and narrow windows. On a phone, Confluence still shows these pages wider than the screen, so you scroll sideways, but their dialogs and the Not applied yet reminder open in the part you can see. The tabs wrap into even rows instead of leaving one tab alone on a line, the Activity, API access and backup tables turn into stacked rows instead of scrolling sideways, the Workflow tab lists its first 20 pages and API access its newest 10 jobs with a Show all link, revoked API tokens are folded behind a link that shows them, and on wide screens the settings keep a readable width.",
+      "Changed: buttons, checkboxes, switches and chips are bigger on phones and tablets, most small labels and badges are now at least 11 px, and in dark mode the text on cyan and red buttons is readable.",
     ],
     fixes: [
-      "API access and the Activity report showed some people as an account ID. They now show the person's name, or Someone when Atlassian returns no name for that account.",
+      "API access and the Activity report showed some people as an account ID. They now show the person's name. When Atlassian returns no name for an account, the Activity report says Someone and API access leaves the name out.",
       "The Not applied yet reminder could cover the setting you had just changed, such as a new validation rule's pickers. It now appears near that setting without covering any button or field, and nothing on the page moves when it appears.",
-      "A sealed section further down a page could show \"could not display this section's text\" if you scrolled to it after a few seconds. It now waits until you reach it and shows its content.",
+      "A sealed section further down a page could show \"could not display this section's text\" if you reached it more than about 15 seconds after the page opened. It now waits until you reach it and shows its content.",
     ],
-    action: "Nothing to do.",
+    action: "Nothing to do if your site already runs 7.0.0. A site still on an earlier version gets this update after a site admin approves the 7.0.0 update in Confluence administration, Apps, Manage apps.",
   }),
   note({
     version: "7.0.0",
