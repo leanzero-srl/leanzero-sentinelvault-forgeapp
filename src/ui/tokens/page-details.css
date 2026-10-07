@@ -311,10 +311,10 @@ html[data-color-mode="dark"] .sv-activity-chip-validation.is-active { background
   .pd-foot span { display: none; }
   .pd-seal-form.is-pinned { position: static; }
 }
-/* SV-12: touch targets on a coarse pointer (phone, tablet): checkboxes 22 px, buttons ≥ 32 px. */
+/* SV-12: touch targets on a coarse pointer (phone, tablet): checkboxes 24 px, buttons ≥ 32 px. */
 @media (pointer: coarse) {
-  .pd-check input { width: 22px; height: 22px; }
-  .pd-row-check { grid-template-columns: 22px 24px 1fr auto; }
+  .pd-check input { width: 24px; height: 24px; }
+  .pd-row-check { grid-template-columns: 24px 24px 1fr auto; }
   .pd-row-main.pd-row-check { column-gap: 10px; }
   .pd-kebab { width: 36px; height: 36px; }
   .pd-dismiss { width: 40px; height: 40px; }
@@ -327,7 +327,7 @@ html[data-color-mode="dark"] .sv-activity-chip-validation.is-active { background
   .sv-activity-chip-link { min-height: 32px; display: inline-flex; align-items: center; }
 }
 @media (pointer: coarse) and (max-width: 520px) {
-  .pd-row-main.pd-row-check { grid-template-columns: 22px 24px minmax(0, 1fr); }
+  .pd-row-main.pd-row-check { grid-template-columns: 24px 24px minmax(0, 1fr); }
 }
 
 /* kit/Dialog.jsx + kit/GiveAccessDialog.jsx — the modal surface hosts the give-access dialog. */

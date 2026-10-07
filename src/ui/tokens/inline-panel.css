@@ -890,6 +890,12 @@ html[data-color-mode="dark"] .sv-section-row-warn { color: #FBBF24; }
   flex: 0 0 auto;
   font-size: 11px;
 }
+/* A macro narrower than the 760 px desktop column (every tablet and phone: 556-690 px) cannot hold
+   name, sentence and actions on one line. The name and its actions keep the first line together and
+   the sentence takes the second, instead of the ⋯ wrapping alone onto a line of its own. */
+@media (max-width: 720px) {
+  .sv-section-row-meta { order: 1; flex-basis: 100%; }
+}
 
 .action-btn.delete {
   background: none;
@@ -1801,4 +1807,7 @@ html[data-color-mode="dark"] .sv-section-block.status-expired { border-color: #F
   .sv-activity-chip-btn { min-height: 36px; }
   .sv-activity-chip-link { min-height: 32px; display: inline-flex; align-items: center; }
   .sv-menu-item { min-height: 40px; }
+  /* A text link that IS the target of its row or card (a file name, a page title) gets a 24 px hit
+     area (WCAG 2.5.8): the line box grows, or the inline box is padded, with no change to the layout. */
+  .card-filename-link, .card-expand-link { line-height: 24px; }
 }

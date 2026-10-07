@@ -1024,6 +1024,8 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .api-card-body { padding: 18px 24px 20px; }
 .api-explain { margin: 12px 0; font-size: 13px; color: var(--sv-text-secondary); line-height: 1.55; }
 .api-empty { font-size: 13px; color: var(--sv-text-secondary); margin: 4px 0; }
+/* SV-13: "Showing the newest 10 of 50 · Show all 50" under the receipts (same look as the workflow table's). */
+.api-jobs-more { display: flex; align-items: center; gap: 12px; margin-top: 12px; font-size: 13px; color: var(--sv-text-secondary); }
 .api-by { display: block; font-size: 11px; color: var(--sv-text-subtle); margin-top: 2px; }
 .api-chip { text-transform: capitalize; }
 
@@ -1377,4 +1379,7 @@ html[data-color-mode="dark"] .sv-unsaved-float { background: #FBBF24; color: #0F
   .api-revoke, .api-copy, .bk-copy { min-height: 36px; }
   .sv-help-link { min-height: 36px; }
   .form-input { min-height: 36px; }
+  /* The Validations editor's enforcement checkboxes (13 px here while the space console had 22: the
+     coarse rule lived in one of the two copies). */
+  .form-checkbox-inline input[type="checkbox"] { width: 24px; height: 24px; }
 }

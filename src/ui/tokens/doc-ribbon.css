@@ -286,14 +286,22 @@ button:focus-visible {
   .rb-lvsrc { display: none; }
   .rb-body .rb-msg { display: none; }
   .rb-class { max-width: 40%; padding: 0 10px 0 8px; gap: 8px; }
-  .rb-body { gap: 6px; padding: 0 8px; }
+  .rb-body { gap: 4px; padding: 0 8px; }
   .rb-actions { gap: 4px; padding: 0 6px 0 0; }
+  /* With the sentence gone the state chip is the only thing left that can give: it drops its
+     decorative flag and, if the bar is still short (a 360 px phone: "Approved v9" ran 22 px under
+     Open), its label ends in an ellipsis instead of being cut mid-chip with its caret hidden. */
+  .rb-body .wf-chip-icon { display: none; }
+  .rb-body > .wf-control { min-width: 0; flex: 0 1 auto; }
+  .rb-body > .wf-control > .wf-chip { min-width: 0; max-width: 100%; padding-left: 8px; padding-right: 8px; }
+  .rb-body .wf-chip-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 }
 /* SV-12: touch targets inside the 44 px bar — chips 28, buttons 32 (fine pointers untouched). */
 @media (pointer: coarse) {
   .wf-chip { min-height: 28px; }
   .rb-btn { height: 32px; }
   .ribbon-dismiss { min-width: 32px; min-height: 32px; }
+  .wf-version-link { min-height: 28px; } /* "View approved version" in the approval record */
 }
 
 /* Shield icon area */
