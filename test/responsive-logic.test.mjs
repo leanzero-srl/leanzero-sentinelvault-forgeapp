@@ -1,38 +1,73 @@
 // The pure decisions behind the 2026-10-07 responsive pass (device matrix 2026-10-06): where the
 // "Not applied yet" reminder goes, which edge a menu anchors to, where a dialog sits on a phone,
 // which modal size the banner opens, how an actor is named, and the API lists' display names.
-import { placeFloat, roomBelow, roomNeeded } from "../src/ui/kit/float-placement.js";
+import { placeFloat } from "../src/ui/kit/float-placement.js";
 import { horizontalCut, placeInBandX } from "../src/ui/kit/visible-placement.js";
 import { detailsModalSize } from "../src/ui/kit/modal-size.js";
 import { actorName, looksLikeAccountId } from "../src/ui/kit/activity-format.js";
 import { withDisplayNames } from "../src/server/capsules/config-api/display-names.js";
 import { eq, ok, report } from "./_assert.mjs";
 
-// ── SV-10: the reminder never lands on a control when a free spot exists ───────────────────────
-const view = { width: 1000, height: 2000 };
-const size = { width: 400, height: 40 };
-const row = { top: 300, bottom: 360, left: 40, right: 960 };
+// ── SV-10 / BR-03: the reminder covers no control and no TEXT, and sits near the control used ──
 const box = (left, top, right, bottom) => ({ left, top, right, bottom });
-eq("nothing in the way → under the row, on its left", placeFloat({ anchor: row, size, view }).spot, "below-left");
-eq("…8 px under the row", placeFloat({ anchor: row, size, view }).top, 368);
-eq("a toggle at the right under the row → stays left", placeFloat({ anchor: row, size, view, blockers: [box(920, 376, 956, 396)] }).spot, "below-left");
-// A validation rule right under the head row: its pickers on the left AND its 24 px × on the right
-// (the × that a 9-point sample missed).
-const rule = [box(50, 380, 220, 416), box(228, 380, 400, 416), box(926, 380, 950, 404)];
-const p = placeFloat({ anchor: row, size, view, blockers: rule });
-eq("pickers left and × right under the row → above the row instead", p.spot, "above-right");
-eq("…ending 8 px above the row", p.top, 300 - 8 - 40);
-eq("every spot blocked → the one overlapping the fewest controls", placeFloat({ anchor: row, size, view, blockers: [box(0, 360, 1000, 420), box(0, 360, 1000, 420), box(0, 250, 500, 300)] }).spot, "above-right");
-eq("a free spot reports no hits", placeFloat({ anchor: row, size, view }).hits, 0);
-eq("every spot blocked → hits > 0 (the caller opens a gap)", placeFloat({ anchor: row, size, view, blockers: [box(0, 360, 1000, 420), box(0, 250, 1000, 300)] }).hits > 0, true);
-eq("the gap is the reminder's height + 2 gaps", roomNeeded({ width: 400, height: 40 }), 56);
-eq("in the gap: 8 px under the row, on its left", roomBelow({ anchor: row, size, view }), { left: 40, top: 368, spot: "room-below", hits: 0, width: 400 });
-// A 620 px console frame on a 390 px phone (SV-18): only 0-390 is on screen.
-const band = { width: 620, height: 2000, left: 0, right: 390 };
-const onPhone = placeFloat({ anchor: { top: 100, bottom: 140, left: 16, right: 604 }, size: { width: 560, height: 48 }, view: band });
-eq("a phone shows 0-390 of the frame → the reminder fits the visible part", [onPhone.left, onPhone.width], [8, 374]);
-eq("…and the gap placement too", roomBelow({ anchor: { top: 100, bottom: 140, left: 16, right: 604 }, size: { width: 560, height: 48 }, view: { ...band, left: 230, right: 620 } }).left, 238);
-eq("a phone-width frame clamps the reminder inside it", placeFloat({ anchor: { top: 100, bottom: 140, left: 16, right: 604 }, size: { width: 700, height: 40 }, view: { width: 620, height: 900 } }).left, 8);
+const hit = (s, sz, rects) => rects.filter((r) => s.left < r.right && s.left + (s.width ?? sz.width) > r.left && s.top < r.bottom && s.top + sz.height > r.top).length;
+const FULL = { width: 480, height: 43 };
+const COMPACT = { width: 270, height: 40 };
+
+// A desktop settings list (site settings at 1440, the breaker's float-steward-laptop-1440): row A was
+// toggled; row B's name and description sit right under it — round 1 put the reminder on them.
+const rowZ = { label: box(65, 97, 300, 113), desc: box(65, 117, 680, 133), eff: box(65, 138, 192, 155), toggle: box(909, 97, 945, 117) };
+const rowA = { label: box(65, 187, 339, 203), desc: box(65, 207, 627, 223), eff: box(65, 228, 192, 245), toggle: box(909, 187, 945, 207), row: box(41, 173, 969, 260) };
+const rowB = { label: box(65, 278, 302, 294), desc: box(65, 298, 702, 314), eff: box(65, 319, 192, 336), toggle: box(909, 278, 945, 298) };
+const rowC = { label: box(65, 368, 290, 384), desc: box(65, 388, 660, 404), toggle: box(909, 368, 945, 388) };
+const deskControls = [rowZ.toggle, rowA.toggle, rowB.toggle, rowC.toggle];
+const deskText = [rowZ.label, rowZ.desc, rowZ.eff, rowA.label, rowA.desc, rowA.eff, rowB.label, rowB.desc, rowB.eff, rowC.label, rowC.desc];
+const desk = placeFloat({ target: rowA.toggle, anchor: rowA.row, size: FULL, compact: COMPACT, view: { width: 1010, height: 2000, left: 0, right: 1010, top: 0, bottom: 900 }, controls: deskControls, content: deskText });
+eq("desktop list: a clear spot near the toggle (full form)", [desk.spot, desk.compact], ["clear", false]);
+eq("…covering no control", hit(desk, FULL, deskControls), 0);
+eq("…and no text: not the next setting's name or description (BR-03)", hit(desk, FULL, deskText), 0);
+ok("…between the row above's last line and row B's name (beside the touched row)", desk.top >= rowZ.eff.bottom && desk.top + FULL.height <= rowB.label.top);
+
+// The Validations tab after "+ Add rule" at a 834 px frame (the round-1 offline shot put it over the
+// "1 required global rule always applies" sentence): the free strip left of the button.
+const val = {
+  text: [box(16, 380, 750, 396), box(16, 398, 92, 413), box(16, 442, 55, 458), box(29, 535, 140, 551), box(29, 565, 200, 583)],
+  controls: [box(440, 292, 794, 312), box(440, 320, 794, 336), box(440, 348, 794, 364), box(732, 435, 818, 465), box(29, 490, 208, 526), box(217, 490, 396, 526), box(781, 497, 805, 521), box(29, 560, 805, 590)],
+};
+const add = val.controls[3];
+const v = placeFloat({ target: add, anchor: box(16, 435, 818, 465), size: FULL, compact: COMPACT, view: { width: 834, height: 1700, top: 0, bottom: 900, left: 0, right: 834 }, controls: val.controls, content: val.text });
+eq("validations add-rule: clear", v.spot.startsWith("clear"), true);
+eq("…no control (the new rule's pickers and × stay free)", hit(v, v.compact ? COMPACT : FULL, val.controls), 0);
+eq("…no text", hit(v, v.compact ? COMPACT : FULL, val.text), 0);
+ok("…beside the button it was asked from (within 60 px of it)", Math.abs(v.top - add.top) <= 60);
+
+// A stacked row on a 390 px phone (frame 636, band 0-390): label, two description lines, the default
+// line, the toggle on its own line. The full reminder wraps to ~80 px and fits nowhere near; the
+// compact one sits to the right of the toggle.
+const phoneText = [box(24, 100, 300, 118), box(24, 120, 370, 136), box(24, 138, 360, 154), box(24, 158, 150, 174), box(24, 236, 280, 254), box(24, 256, 372, 272), box(24, 274, 330, 290)];
+const phoneControls = [box(24, 184, 68, 208), box(24, 314, 68, 338)];
+const ph = placeFloat({ target: phoneControls[0], anchor: box(0, 86, 636, 222), size: { width: 374, height: 80 }, compact: COMPACT, view: { width: 636, height: 3000, left: 0, right: 390, top: 0, bottom: 760 }, controls: phoneControls, content: phoneText });
+eq("phone stacked row: the compact form, clear, beside the toggle", [ph.spot, ph.compact], ["clear-compact", true]);
+ok("…inside the visible band (0-390)", ph.left >= 8 && ph.left + COMPACT.width <= 390 - 8);
+eq("…covering nothing", hit(ph, COMPACT, [...phoneControls, ...phoneText]), 0);
+
+// Nothing clear within reach (a wall of text 700 px tall around the control): further away in the band.
+const wall = Array.from({ length: 50 }, (_, i) => box(0, i * 18, 1000, 16 + i * 18)); // 0-900 px of text lines 2 px apart
+const farText = wall.filter((r) => !(r.top < 426 && r.bottom > 394));
+const far = placeFloat({ target: box(900, 400, 940, 420), size: FULL, compact: COMPACT, view: { width: 1000, height: 2000, left: 0, right: 1000, top: 0, bottom: 1400 }, controls: [box(900, 400, 940, 420)], content: farText });
+eq("no clear spot within reach → clear-far (compact), still covering nothing", [far.spot, hit(far, COMPACT, farText)], ["clear-far", 0]);
+
+// Nothing clear on screen at all: covers the least text, never a control.
+const fullText = Array.from({ length: 60 }, (_, i) => box(0, i * 15, 1000, i * 15 + 14));
+const ctlRow = [box(0, 300, 1000, 330)];
+const worst = placeFloat({ target: box(400, 300, 440, 330), size: FULL, compact: COMPACT, view: { width: 1000, height: 900, left: 0, right: 1000, top: 0, bottom: 900 }, controls: ctlRow, content: fullText });
+eq("no clear spot anywhere → covers-text, zero controls", [worst.spot, worst.covers.controls, hit(worst, COMPACT, ctlRow)], ["covers-text", 0, 0]);
+
+// The band: the reminder never leaves the part of the frame on screen.
+const banded = placeFloat({ target: box(300, 2000, 340, 2020), size: FULL, compact: COMPACT, view: { width: 636, height: 5000, left: 230, right: 620, top: 1500, bottom: 2300 }, controls: [box(300, 2000, 340, 2020)], content: [] });
+ok("panned phone band 230-620 → inside it", banded.left >= 238 && banded.left + banded.width <= 612);
+ok("…and inside the vertical band", banded.top >= 1508 && banded.top + FULL.height <= 2292);
+eq("a frame narrower than the reminder clamps its width", placeFloat({ target: box(20, 100, 60, 120), size: { width: 700, height: 40 }, view: { width: 620, height: 900 }, controls: [], content: [] }).width, 604);
 
 // ── M-01 / SV-07: which side cuts a menu ───────────────────────────────────────────────────────
 const io = (b, v) => ({ isIntersecting: true, intersectionRatio: 0.5, boundingClientRect: b, intersectionRect: v });

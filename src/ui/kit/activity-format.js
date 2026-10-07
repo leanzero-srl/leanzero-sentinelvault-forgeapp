@@ -11,6 +11,7 @@
 //
 // Copy rules: Confluence-native words only (space, page, file, section, group) — never realm /
 // guild / artifact / operator in anything a user reads.
+import { looksLikeAccountId } from "../../server/shared/account-id.js";
 
 /** Report filter chips, in display order. `types` is what the server-side `types` filter takes. */
 export const ACTIVITY_CATEGORIES = Object.freeze([
@@ -74,9 +75,10 @@ const APP_NAME = "Sentinel Vault";
 
 // An Atlassian accountId ("712020:937bc860-…", or a legacy 24-hex id) is never a name. Some events
 // carry one in `actor.name` (device matrix SV-08: it printed in the Who column and the sentence,
-// and its width held the whole Activity table at 1,193 px).
-const ACCOUNT_ID = /^(?:\d+:)?[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$|^[0-9a-f]{24}$/i;
-export const looksLikeAccountId = (v) => typeof v === "string" && ACCOUNT_ID.test(v.trim());
+// and its width held the whole Activity table at 1,193 px). The readers now resolve it to the
+// person's name (BN-04); "Someone" is left only for an account Atlassian will not name. The rule
+// itself is server/shared/account-id.js (one copy for the writer, the readers and this file).
+export { looksLikeAccountId };
 
 /** Who did it, for display: the actor's name; "Someone" for an account with no readable name; the app itself when there is no actor. */
 export const actorName = (entry) => {

@@ -539,11 +539,16 @@ html[data-color-mode="dark"] .artifact-card.status-trashed { border-color: #FB92
   grid-template-columns: repeat(auto-fill, minmax(min(100%, max(var(--sv-card-min), (100% - (var(--sv-cards-per-row) - 1) * var(--sv-card-gap)) / var(--sv-cards-per-row))), 1fr));
   gap: var(--sv-card-gap);
 }
-/* The name has a floor: when the name, the status and the actions do not fit on one line, the
-   actions wrap under the name (still on the right) instead of crushing the name to one letter. */
+/* The name is never crushed: when the name, the status and the actions do not fit on one line, the
+   actions wrap under the name (still on the right) and the name keeps the whole first line. The
+   line break is decided by the name's OWN width (basis auto), never by a fixed basis or floor
+   (BR-04, 2026-10-07: a 180 px basis — and equally a 180 px min-width — plus ~171 px of actions was
+   wider than a 356 px card, so EVERY card wrapped, "notes.txt" included, and the 1440 attachments
+   view showed half as many files). A name that fits beside its actions stays on one line; only a
+   longer one pushes the actions down, and on its own line it ellipsizes only past the card's width. */
 .card-row-primary, .card-row-secondary { flex-wrap: wrap; row-gap: 6px; }
-.card-row-primary > .card-filename { flex: 1 1 180px; }
-.card-row-secondary > .card-secondary-left { flex: 1 1 180px; }
+.card-row-primary > .card-filename { flex: 1 1 auto; min-width: 0; }
+.card-row-secondary > .card-secondary-left { flex: 1 1 auto; min-width: 0; }
 .card-row-primary > .card-row-right, .card-row-secondary > .card-secondary-right { margin-left: auto; }
 .card-meta { flex-wrap: wrap; row-gap: 2px; }
 .card-meta-owner { white-space: nowrap; }

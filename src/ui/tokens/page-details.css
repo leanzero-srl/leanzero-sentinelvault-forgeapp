@@ -76,7 +76,7 @@ button:focus-visible, input:focus-visible, [role="option"]:focus-visible { outli
 .pd-tabs { display: flex; gap: 2px; padding: 0 20px; border-bottom: 1px solid var(--sv-border-primary); background: var(--sv-bg-secondary); flex: none; }
 .pd-tab { padding: 10px 12px; font-size: 12.5px; font-weight: 600; color: var(--sv-text-secondary); border: 0; border-bottom: 2px solid transparent; background: transparent; cursor: pointer; margin-bottom: -1px; }
 .pd-tab.on { color: var(--sv-interactive-primary); border-bottom-color: var(--sv-interactive-primary); }
-.pd-body { flex: 1; min-height: 0; overflow-y: auto; padding: 16px 20px 20px; display: grid; gap: 16px; align-content: start; }
+.pd-body { --pd-body-pad-b: 20px; flex: 1; min-height: 0; overflow-y: auto; padding: 16px 20px var(--pd-body-pad-b); display: grid; gap: 16px; align-content: start; }
 .pd-foot { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 12px 20px; border-top: 1px solid var(--sv-border-primary); background: var(--sv-bg-secondary); font-size: 12px; color: var(--sv-text-secondary); flex: none; }
 .pd-sec h4 { margin: 0 0 8px; font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--sv-text-subtle); }
 .pd-desc { color: var(--sv-text-secondary); }
@@ -198,7 +198,10 @@ html[data-color-mode="dark"] .pd-loz.locked { background: #FBBF24; color: #0F172
 .pd-seal-form { display: flex; align-items: flex-end; gap: 12px; flex-wrap: wrap; padding: 12px; border: 1px solid var(--sv-border-primary); border-radius: 8px; background: var(--sv-bg-secondary); }
 /* SV-15: pinned to the bottom of the scrolling body while anything is ticked — solid surface, a
    solid accent border and a shadow so it reads as on top of the list (no tint). */
-.pd-seal-form.is-pinned { position: sticky; bottom: 0; z-index: 3; border: 2px solid var(--sv-interactive-primary); box-shadow: 0 -6px 18px rgba(2, 6, 23, 0.22); }
+/* BN-02 (2026-10-07): a sticky box stops at the scroll container's PADDING edge, so bottom: 0 left
+   the body's 20 px bottom padding open and the rows scrolled through that band under the form.
+   bottom: -padding seats it on the scrollport's edge (square bottom corners: it is docked there). */
+.pd-seal-form.is-pinned { position: sticky; bottom: calc(-1 * var(--pd-body-pad-b, 20px)); z-index: 3; border: 2px solid var(--sv-interactive-primary); border-bottom-left-radius: 0; border-bottom-right-radius: 0; box-shadow: 0 -6px 18px rgba(2, 6, 23, 0.22); }
 .pd-seal-field { display: grid; gap: 4px; }
 .pd-seal-field.grow { flex: 1; min-width: 220px; }
 .pd-seal-label { font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--sv-text-subtle); }

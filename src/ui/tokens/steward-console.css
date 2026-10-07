@@ -358,15 +358,6 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   background: var(--sv-bg-hover);
 }
 
-/* responsive (it15): stack the 2-column settings rows below the phone breakpoint (see
-   realm-console.css) so labels stay readable and controls don't collide at narrow widths. */
-@media (max-width: 640px) {
-  .settings-row { flex-direction: column; align-items: flex-start; gap: 10px; }
-  /* In a COLUMN the 260 px basis of .settings-row-info would become its HEIGHT (the M-02 trap):
-     here it is just a full-width block. */
-  .settings-row-info { flex: 0 0 auto; width: 100%; }
-}
-
 /* The label block has a floor (M-06): when the control would squeeze it under 260 px (a wide
    checkbox group at a 664 px frame left it 110 px, one phrase per line) the control wraps under
    it — at any width, not only below the 640 px stacking rule. */
@@ -374,6 +365,18 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .settings-row-info {
   flex: 1 1 260px;
   min-width: 0;
+}
+
+/* responsive (it15): stack the 2-column settings rows below the phone breakpoint (see
+   realm-console.css) so labels stay readable and controls don't collide at narrow widths. */
+@media (max-width: 640px) {
+  .settings-row { flex-direction: column; align-items: flex-start; gap: 10px; }
+  /* In a COLUMN the 260 px basis of .settings-row-info would become its HEIGHT (the M-02 trap):
+     here it is just a full-width block. This block must stay AFTER the base .settings-row-info rule
+     above (same specificity: the later rule wins). BR-01, 2026-10-07: it sat before it, the base rule
+     won, and every stacked row was 260 px tall (site settings 5,540 -> 10,696 px on a phone).
+     Guarded by deadNarrowOverrides in test/responsive-css.test.mjs and by test/responsive-dom. */
+  .settings-row-info { flex: 0 0 auto; width: 100%; }
 }
 
 .settings-row-label {
@@ -1191,7 +1194,10 @@ html[data-color-mode="dark"] .action-bar-pill { background: #FBBF24; color: #0F1
 .sv-unsaved-float .btn-secondary { background: #FFFFFF; color: #1F2937; border-color: #FFFFFF; }
 .sv-unsaved-float .btn-primary { background: #1F2937; color: #FFFFFF; border-color: #1F2937; }
 html[data-color-mode="dark"] .sv-unsaved-float { background: #FBBF24; color: #0F172A; }
-@media (prefers-reduced-motion: no-preference) { .sv-unsaved-float { transition: top 120ms ease; } }
+/* Compact form (kit/float-placement.js): only "Not applied yet" and the two buttons, when the full
+   sentence has no clear spot near the control. No transition on top/left: a reminder sliding across
+   the form could pass under a pointer that is about to press something (BR-02). */
+.sv-unsaved-float.is-compact .sv-unsaved-float-more { display: none; }
 
 /* Anchored dialogs (kit/Dialog: every surface opens a dialog level with the click) sit at the
    computed marginTop from the top edge — without this the flex centring moved them (tester 2026-09-30). */
