@@ -362,6 +362,9 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
    realm-console.css) so labels stay readable and controls don't collide at narrow widths. */
 @media (max-width: 640px) {
   .settings-row { flex-direction: column; align-items: flex-start; gap: 10px; }
+  /* In a COLUMN the 260 px basis of .settings-row-info would become its HEIGHT (the M-02 trap):
+     here it is just a full-width block. */
+  .settings-row-info { flex: 0 0 auto; width: 100%; }
 }
 
 /* The label block has a floor (M-06): when the control would squeeze it under 260 px (a wide
