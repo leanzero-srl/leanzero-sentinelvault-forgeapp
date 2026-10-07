@@ -468,6 +468,7 @@ const ApiTokensCard = ({ state, onRetry, onMinted, onRevoked }) => {
     const r = await callApi("revoke-api-token", { id: confirm.id });
     setBusy(false);
     if (!r.ok) { setRevokeError(r.reason); setConfirm(null); return; }
+    setRevokedHere((prev) => new Set(prev).add(confirm.id));
     onRevoked(confirm.id);
     setConfirm(null);
   };
@@ -476,10 +477,14 @@ const ApiTokensCard = ({ state, onRetry, onMinted, onRevoked }) => {
   const allTokens = state.tokens || [];
   // SV-13: a site that minted and revoked many tokens (every harness run does) listed every
   // revoked one, five lines each — the active tokens come first and the revoked ones wait behind
-  // one link. Nothing is hidden for good: "Show N revoked" lists them all.
+  // one link. Nothing is hidden for good: "Show N revoked" lists them all. A token revoked HERE,
+  // in this visit, stays in the list reading "Revoked" — the row changing in place is the proof the
+  // revoke happened (it vanishing would look like it was deleted, or like nothing happened).
   const [showRevoked, setShowRevoked] = useState(false);
-  const revokedCount = allTokens.filter((t) => !!t.revokedAt).length;
-  const tokens = showRevoked ? allTokens : allTokens.filter((t) => !t.revokedAt);
+  const [revokedHere, setRevokedHere] = useState(() => new Set());
+  const inList = (t) => !t.revokedAt || revokedHere.has(t.id);
+  const revokedCount = allTokens.filter((t) => !inList(t)).length;
+  const tokens = showRevoked ? allTokens : allTokens.filter(inList);
   return (
     <ApiCard id="tokens" title="Tokens" text="A token acts as the site admin who minted it; its role narrows what it may submit. Only a hash is stored.">
       {state.status === "loading" && <ApiSkeleton testId="api-tokens-skeleton" />}
@@ -565,14 +570,21 @@ const ApiTokensCard = ({ state, onRetry, onMinted, onRevoked }) => {
   );
 };
 
+// The newest receipts first, this many, then "Show all" (device matrix 2026-10-06, SV-13: fifty
+// receipts made the tab 9,400 px tall on a laptop and 13,900 px on a phone, where each receipt is a
+// stacked card). The same pattern as the workflow status table.
+const JOBS_SHOWN = 10;
+
 const ApiJobsCard = ({ state, onRetry }) => {
   const [openId, setOpenId] = useState(null);
-  const jobs = state.jobs || [];
+  const [showAllJobs, setShowAllJobs] = useState(false);
+  const allJobs = state.jobs || [];
+  const jobs = showAllJobs ? allJobs : allJobs.slice(0, JOBS_SHOWN);
   return (
     <ApiCard id="jobs" title="Recent jobs" text="The last 50 receipts site-wide, newest first. The same receipt is mirrored to the sentinel-vault-receipt property of every space a job touched.">
       {state.status === "loading" && <ApiSkeleton testId="api-jobs-skeleton" />}
       {state.status !== "loading" && state.status !== "ok" && <ApiFailure reason={state.reason} onRetry={onRetry} testId="api-jobs-error" />}
-      {state.status === "ok" && jobs.length === 0 && <p className="api-empty" data-testid="api-jobs-empty">No API jobs yet.</p>}
+      {state.status === "ok" && allJobs.length === 0 && <p className="api-empty" data-testid="api-jobs-empty">No API jobs yet.</p>}
       {state.status === "ok" && jobs.length > 0 && (
         <div className="cls-table-wrap api-table-wrap">
           <table className="cls-table api-table" data-testid="api-jobs-table">
@@ -623,6 +635,14 @@ const ApiJobsCard = ({ state, onRetry }) => {
               })}
             </tbody>
           </table>
+        </div>
+      )}
+      {state.status === "ok" && allJobs.length > JOBS_SHOWN && (
+        <div className="api-jobs-more" data-testid="api-jobs-more">
+          <span>{showAllJobs ? `Showing all ${allJobs.length} receipts` : `Showing the newest ${JOBS_SHOWN} of ${allJobs.length}`}</span>
+          <button type="button" className="sv-link" onClick={() => setShowAllJobs((v) => !v)} aria-expanded={showAllJobs} data-testid="api-jobs-show-all">
+            {showAllJobs ? "Show fewer" : `Show all ${allJobs.length}`}
+          </button>
         </div>
       )}
     </ApiCard>
