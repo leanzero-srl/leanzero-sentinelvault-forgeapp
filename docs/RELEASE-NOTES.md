@@ -6,14 +6,14 @@ GENERATED from `src/server/shared/release-notes.js` by `scripts/render-release-n
 
 **Sentinel Vault fits phones, tablets and laptop screens**
 
-- Changed: every file list shows the file's full name on phones, tablets and laptops. When a card is narrow its buttons move under the name, and wide screens show more columns instead of stretched cards.
-- Changed: the page banner, the page details window and Seal attachments fit a phone. Nothing overlaps the Open button, menus open where you can see them, the Seal button stays in view while you tick files, and Open fills the screen on a phone.
+- Changed: every file list shows the file's full name on phones, tablets and laptops. A card keeps its buttons on the same line as the name when both fit and moves them under the name when they do not, and wide screens show more columns instead of stretched cards.
+- Changed: the page banner fits a phone. Nothing overlaps its Open button, and Open fills the screen. The page details window and Seal attachments lay out for a phone's width, their menus open where you can see them, and the Seal button stays in view while you tick files.
 - Changed: space and site settings fit narrow screens. The tabs sit on even rows, tables turn into stacked rows instead of scrolling sideways, long lists show their first rows with a Show all link, and on wide screens the settings keep a readable width.
 - Changed: buttons, checkboxes and chips are bigger on touch screens, no label is smaller than 11 px, and in dark mode the text on cyan and red buttons is readable.
 
 Fixed:
-- API access and the Activity report showed some people as an account ID. They now show the person's name, or Someone when there is no name to show.
-- The Not applied yet reminder could cover the setting you had just changed, such as a new validation rule's pickers. It now sits beside that setting, or makes room under it.
+- API access and the Activity report showed some people as an account ID. They now show the person's name, or Someone when Atlassian returns no name for that account.
+- The Not applied yet reminder could cover the setting you had just changed, such as a new validation rule's pickers. It now appears next to that setting without covering any button or field, and nothing on the page moves when it appears.
 - A sealed section further down a page could show "could not display this section's text" if you scrolled to it after a few seconds. It now waits until you reach it and shows its content.
 
 **Do this:** Nothing to do.
