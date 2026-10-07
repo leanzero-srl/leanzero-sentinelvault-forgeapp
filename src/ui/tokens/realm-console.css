@@ -2493,7 +2493,7 @@ html[data-color-mode="dark"] .sv-unsaved-float { background: #FBBF24; color: #0F
    still easing from the compact to the full form read 16 px narrower than it became (it then grew
    over the "+ Add rule" button it had been placed beside). */
 .sv-unsaved-float, .sv-unsaved-float * { transition: none; }
-.sv-unsaved-float.is-compact { gap: 6px; padding-left: 10px; padding-right: 6px; }
+.sv-unsaved-float.is-compact { gap: 4px; padding-left: 8px; padding-right: 6px; }
 .sv-unsaved-float.is-compact .btn-secondary, .sv-unsaved-float.is-compact .btn-primary { padding-left: 6px; padding-right: 6px; }
 
 /* People picker: a second line that tells namesakes apart — email when Confluence shares it (owner, 2026-09-25). */

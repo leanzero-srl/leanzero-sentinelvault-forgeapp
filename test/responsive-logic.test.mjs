@@ -48,8 +48,21 @@ const phoneText = [box(24, 100, 300, 118), box(24, 120, 370, 136), box(24, 138, 
 const phoneControls = [box(24, 184, 68, 208), box(24, 314, 68, 338)];
 const ph = placeFloat({ target: phoneControls[0], anchor: box(0, 86, 636, 222), size: { width: 374, height: 80 }, compact: COMPACT, view: { width: 636, height: 3000, left: 0, right: 390, top: 0, bottom: 760 }, controls: phoneControls, content: phoneText });
 eq("phone stacked row: the compact form, clear, beside the toggle", [ph.spot, ph.compact], ["clear-compact", true]);
-ok("…inside the visible band (0-390)", ph.left >= 8 && ph.left + COMPACT.width <= 390 - 8);
+ok("…inside the visible band (0-390)", ph.left >= 6 && ph.left + COMPACT.width <= 390 - 6);
 eq("…covering nothing", hit(ph, COMPACT, [...phoneControls, ...phoneText]), 0);
+
+// LIVE geometry, phone-360 space console > Validations (dev 7b271ec, 2026-10-07): the frame shows
+// 0-320 x 0-545; the box ticked is "Flag with a comment". The one clear spot is right of the
+// "Enable content validation" switch, and a 225 px compact form 8 px from the edge missed it by 3 px
+// and covered "Enforcement". Edge 6 + the 219 px form fit it.
+{
+  const B = (a) => box(...a);
+  const live = { target: [40, 466, 409, 496], band: [0, 0, 320, 545], controls: [[20, 137, 162, 177], [166, 137, 308, 177], [312, 137, 454, 177], [458, 137, 600, 177], [20, 181, 162, 221], [166, 181, 308, 221], [312, 181, 454, 221], [40, 343, 84, 369], [40, 466, 409, 496], [44, 469, 68, 493], [40, 504, 409, 534], [44, 507, 68, 531], [40, 542, 409, 572], [44, 545, 68, 569], [517, 606, 604, 646]], content: [[54, 149, 128, 165], [190, 149, 284, 165], [341, 149, 425, 165], [510, 149, 548, 165], [56, 193, 126, 209], [208, 193, 266, 209], [360, 193, 406, 209], [40, 256, 206, 273], [40, 278, 572, 293], [40, 296, 543, 311], [40, 314, 109, 329], [40, 398, 124, 415], [40, 419, 555, 434], [40, 437, 145, 452], [79, 472, 269, 488], [79, 510, 244, 526], [79, 548, 409, 564], [16, 618, 54, 635], [530, 619, 591, 634], [16, 659, 281, 674]] };
+  const [l, t, r, b] = live.band;
+  const got = placeFloat({ target: B(live.target), size: { width: 334, height: 84 }, compact: { width: 219, height: 44 }, view: { width: 620, height: 1148, left: l, top: t, right: r, bottom: b }, controls: live.controls.map(B), content: live.content.map(B) });
+  eq("live phone-360 validations: the compact form fits right of the Enable switch, covering nothing", [got.spot, got.covers.text, got.covers.controls], ["clear-compact", 0, 0]);
+  ok("…inside the visible 0-320 band", got.left >= 6 && got.left + got.width <= 314);
+}
 
 // Nothing clear within reach (a wall of text 700 px tall around the control): further away in the band.
 const wall = Array.from({ length: 50 }, (_, i) => box(0, i * 18, 1000, 16 + i * 18)); // 0-900 px of text lines 2 px apart
@@ -65,9 +78,9 @@ eq("no clear spot anywhere → covers-text, zero controls", [worst.spot, worst.c
 
 // The band: the reminder never leaves the part of the frame on screen.
 const banded = placeFloat({ target: box(300, 2000, 340, 2020), size: FULL, compact: COMPACT, view: { width: 636, height: 5000, left: 230, right: 620, top: 1500, bottom: 2300 }, controls: [box(300, 2000, 340, 2020)], content: [] });
-ok("panned phone band 230-620 → inside it", banded.left >= 238 && banded.left + banded.width <= 612);
-ok("…and inside the vertical band", banded.top >= 1508 && banded.top + FULL.height <= 2292);
-eq("a frame narrower than the reminder clamps its width", placeFloat({ target: box(20, 100, 60, 120), size: { width: 700, height: 40 }, view: { width: 620, height: 900 }, controls: [], content: [] }).width, 604);
+ok("panned phone band 230-620 → inside it (6 px from its edges)", banded.left >= 236 && banded.left + banded.width <= 614);
+ok("…and inside the vertical band", banded.top >= 1506 && banded.top + FULL.height <= 2294);
+eq("a frame narrower than the reminder clamps its width", placeFloat({ target: box(20, 100, 60, 120), size: { width: 700, height: 40 }, view: { width: 620, height: 900 }, controls: [], content: [] }).width, 608);
 
 // ── M-01 / SV-07: which side cuts a menu ───────────────────────────────────────────────────────
 const io = (b, v) => ({ isIntersecting: true, intersectionRatio: 0.5, boundingClientRect: b, intersectionRect: v });
