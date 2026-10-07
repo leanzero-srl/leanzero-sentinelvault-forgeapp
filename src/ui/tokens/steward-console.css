@@ -1203,7 +1203,7 @@ html[data-color-mode="dark"] .sv-unsaved-float { background: #FBBF24; color: #0F
    over the "+ Add rule" button it had been placed beside). */
 .sv-unsaved-float, .sv-unsaved-float * { transition: none; }
 .sv-unsaved-float.is-compact { gap: 6px; padding-left: 10px; padding-right: 6px; }
-.sv-unsaved-float.is-compact .btn-secondary, .sv-unsaved-float.is-compact .btn-primary { padding-left: 10px; padding-right: 10px; }
+.sv-unsaved-float.is-compact .btn-secondary, .sv-unsaved-float.is-compact .btn-primary { padding-left: 6px; padding-right: 6px; }
 
 /* Anchored dialogs (kit/Dialog: every surface opens a dialog level with the click) sit at the
    computed marginTop from the top edge — without this the flex centring moved them (tester 2026-09-30). */
