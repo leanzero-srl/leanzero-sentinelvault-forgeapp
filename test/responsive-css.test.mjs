@@ -196,6 +196,7 @@ ok("SV-01 the space console's 'Request admin access' keeps its full button size"
 // ── SV-05 / SV-15 / SV-16 ───────────────────────────────────────────────────────────────────────
 const ov = strip(css("overlay.css"));
 ok("SV-05 a short overlay frame scrolls as a whole and the notice sentence drops", /@media \(max-height: 560px\)[\s\S]*?\.modal-container \{ overflow-y: auto; \}[\s\S]*?\.ov-macro-notice-desc \{ display: none; \}/.test(ov));
+ok("SV-05 a laptop-short overlay (≤720 px tall) drops the notice sentence but keeps the list scroller", mediaBlocks(css("overlay.css"), "@media (max-height: 720px)").some((b) => /\.ov-macro-notice-desc \{ display: none; \}/.test(b) && !/modal-container/.test(b)));
 ok("SV-05 the overlay notice is classed (no padding locked in an inline style)", /className="ov-macro-notice"/.test(read("src/ui/surfaces/overlay/index.jsx")));
 ok("SV-15 the seal form pins while files are ticked", /\.pd-seal-form\.is-pinned \{ position: sticky; bottom: 0;/.test(pd) && /pd-seal-form\$\{n > 0 \? " is-pinned" : ""\}/.test(read("src/ui/surfaces/page-details/index.jsx")));
 ok("SV-16 the banner's Open picks the modal size by device", /detailsModalSize\(/.test(read("src/ui/surfaces/doc-ribbon/index.jsx")));
