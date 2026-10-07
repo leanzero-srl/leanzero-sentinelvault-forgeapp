@@ -24,6 +24,7 @@ export const RELEASE_NOTES = Object.freeze([
     fixes: [
       "API access and the Activity report showed some people as an account ID. They now show the person's name, or Someone when there is no name to show.",
       "The Not applied yet reminder could cover the setting you had just changed, such as a new validation rule's pickers. It now sits beside that setting, or makes room under it.",
+      "A sealed section further down a page could show \"could not display this section's text\" if you scrolled to it after a few seconds. It now waits until you reach it and shows its content.",
     ],
     action: "Nothing to do.",
   }),
