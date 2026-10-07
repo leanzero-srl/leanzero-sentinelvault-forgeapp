@@ -8,11 +8,12 @@ GENERATED from `src/server/shared/release-notes.js` by `scripts/render-release-n
 
 - Changed: every file list shows the file's full name on phones, tablets and laptops. When a card is narrow its buttons move under the name, and wide screens show more columns instead of stretched cards.
 - Changed: the page banner, the page details window and Seal attachments fit a phone. Nothing overlaps the Open button, menus open where you can see them, the Seal button stays in view while you tick files, and Open fills the screen on a phone.
-- Changed: space and site settings fit narrow screens. The tabs sit on even rows, tables turn into stacked rows instead of scrolling sideways, long lists show 20 rows with a Show all link, and on wide screens the settings keep a readable width.
+- Changed: space and site settings fit narrow screens. The tabs sit on even rows, tables turn into stacked rows instead of scrolling sideways, long lists show their first rows with a Show all link, and on wide screens the settings keep a readable width.
 - Changed: buttons, checkboxes and chips are bigger on touch screens, no label is smaller than 11 px, and in dark mode the text on cyan and red buttons is readable.
 
 Fixed:
 - API access and the Activity report showed some people as an account ID. They now show the person's name, or Someone when there is no name to show.
+- The Not applied yet reminder could cover the setting you had just changed, such as a new validation rule's pickers. It now sits beside that setting, or makes room under it.
 
 **Do this:** Nothing to do.
 
