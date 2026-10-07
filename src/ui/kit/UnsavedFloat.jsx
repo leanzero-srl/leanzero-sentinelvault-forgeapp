@@ -59,8 +59,9 @@ export default function UnsavedFloat({ dirty, busy = false, onApply, onDiscard }
   const [band, setBand] = useState(null);   // { n, value } — the on-screen part, last measured for touch n
   const [pos, setPos] = useState(null);
   const [resized, setResized] = useState(0);
+  const [relayout, setRelayout] = useState(0);
   const ref = useRef(null);
-  const moreRef = useRef(null);
+  const placedSize = useRef(null); // the size the last placement was computed for
 
   useEffect(() => {
     const remember = (el) => {
@@ -97,13 +98,40 @@ export default function UnsavedFloat({ dirty, busy = false, onApply, onDiscard }
     if (!dirty || !touch) return undefined;
     let live = true;
     const n = touch.n;
-    measureVisibleBand().then((b) => {
+    // …and its own font: the bold face loads on first use, and a box measured before it arrives is
+    // ~16 px narrower than the one that is shown (capped wait — a font that never loads must not hide it).
+    const fonts = typeof document !== "undefined" && document.fonts?.ready ? Promise.race([document.fonts.ready, new Promise((r) => setTimeout(r, 400))]) : null;
+    Promise.all([measureVisibleBand(), fonts]).then(([b]) => {
       if (!live) return;
       const ok = b && [b.left, b.right, b.top, b.bottom].every(Number.isFinite);
       setBand({ n, value: ok ? { left: b.left, right: b.right, top: b.top, bottom: b.bottom } : null });
     });
     return () => { live = false; };
   }, [dirty, touch, resized]);
+
+  // Placed once is not placed for good: the reminder's own text can re-flow after it is measured (its
+  // bold web font arrives a moment later and the box grew 466 -> 482 px over the "+ Add rule" button
+  // in the offline gate), and the page can change under it (a rule's problem line, a list that loads).
+  // Either one re-places it — position only, never the page's layout.
+  useEffect(() => {
+    const el = ref.current;
+    if (!dirty || !touch || !el || typeof ResizeObserver !== "function") return undefined;
+    let raf = 0;
+    const again = () => { cancelAnimationFrame(raf); raf = requestAnimationFrame(() => setRelayout((k) => k + 1)); };
+    const ro = new ResizeObserver((entries) => {
+      for (const e of entries) {
+        if (e.target === el) {
+          const r = el.getBoundingClientRect(); const last = placedSize.current;
+          if (last && Math.abs(last.width - r.width) < 1 && Math.abs(last.height - r.height) < 1) continue;
+        }
+        again();
+        return;
+      }
+    });
+    ro.observe(el);
+    ro.observe(document.body);
+    return () => { ro.disconnect(); cancelAnimationFrame(raf); };
+  }, [dirty, touch]);
 
   useLayoutEffect(() => {
     const el = ref.current;
@@ -117,12 +145,14 @@ export default function UnsavedFloat({ dirty, busy = false, onApply, onDiscard }
     const was = { left: el.style.left, top: el.style.top };
     el.style.left = "0px"; el.style.top = "0px";
     el.style.maxWidth = `${cap}px`;
-    const more = moreRef.current;
-    if (more) more.style.display = "inline";
+    // Both forms are measured with their own CSS (the compact one is tighter, so it fits beside a
+    // switch on a 360 px phone); the class React rendered is put back before it renders the new one.
+    const wasCompact = el.classList.contains("is-compact");
+    el.classList.remove("is-compact");
     const full = el.getBoundingClientRect();
-    if (more) more.style.display = "none";
+    el.classList.add("is-compact");
     const small = el.getBoundingClientRect();
-    if (more) more.style.display = "";
+    if (!wasCompact) el.classList.remove("is-compact");
     el.style.left = was.left; el.style.top = was.top; // React's own values; it re-renders the new ones
     const target = touch.control?.isConnected ? rectOf(touch.control.getBoundingClientRect()) : touch.controlRect;
     const anchor = touch.row?.isConnected ? rectOf(touch.row.getBoundingClientRect()) : touch.rowRect;
@@ -130,13 +160,14 @@ export default function UnsavedFloat({ dirty, busy = false, onApply, onDiscard }
       target,
       anchor,
       size: { width: full.width, height: full.height },
-      compact: more ? { width: small.width, height: small.height } : null,
+      compact: { width: small.width, height: small.height },
       view: { width: window.innerWidth, height: window.innerHeight, ...(b || {}) },
       controls: controlRects(el),
       content: contentRects(el),
     });
+    placedSize.current = spot.compact ? { width: small.width, height: small.height } : { width: full.width, height: full.height };
     setPos({ ...spot, cap });
-  }, [dirty, touch, band]);
+  }, [dirty, touch, band, relayout]);
 
   if (!dirty || !touch) return null;
   const style = pos
@@ -144,7 +175,7 @@ export default function UnsavedFloat({ dirty, busy = false, onApply, onDiscard }
     : { top: "0px", left: "0px", right: "auto", visibility: "hidden" }; // measured first, then placed
   return (
     <div ref={ref} className={`sv-unsaved-float${pos?.compact ? " is-compact" : ""}`} role="status" style={style} data-testid="sv-unsaved-float" data-spot={pos?.spot || ""}>
-      <span className="sv-unsaved-float-text">Not applied yet<span ref={moreRef} className="sv-unsaved-float-more"> — nothing changes until you apply</span></span>
+      <span className="sv-unsaved-float-text">Not applied yet<span className="sv-unsaved-float-more"> — nothing changes until you apply</span></span>
       <button type="button" className="btn-secondary" onClick={onDiscard} disabled={busy} data-testid="sv-unsaved-float-discard">Discard</button>
       <button type="button" className="btn-primary" onClick={onApply} disabled={busy} data-testid="sv-unsaved-float-apply">{busy ? "Applying…" : "Apply"}</button>
     </div>
