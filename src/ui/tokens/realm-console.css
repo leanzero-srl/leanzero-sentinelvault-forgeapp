@@ -762,6 +762,9 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
    with it. Pairs with the min-width removals that let the console reflow to ~320px (WCAG 1.4.10). */
 @media (max-width: 640px) {
   .settings-row { flex-direction: column; align-items: flex-start; gap: 10px; }
+  /* In a COLUMN the 260 px basis of .settings-row-info would become its HEIGHT (the M-02 trap):
+     here it is just a full-width block. */
+  .settings-row-info { flex: 0 0 auto; width: 100%; }
 }
 
 /* The label block has a floor (M-06): when the control would squeeze it under 260 px (the
@@ -2187,7 +2190,10 @@ html[data-color-mode="dark"] .wf-rule { background: #2563EB; color: #FFFFFF; }
 .wf-def-table { display: flex; flex-direction: column; gap: 6px; overflow-x: auto; container: wf-def-table / inline-size; }
 .wf-def-row { display: grid; grid-template-columns: minmax(140px, 1fr) 130px 48px 72px 92px minmax(170px, 2fr) 100px; gap: 8px; align-items: center; padding: 8px 10px; border-radius: 10px; background: var(--sv-bg-secondary, #F8FAFC); min-width: 760px; }
 .wf-def-row-head { background: transparent; font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.04em; color: var(--sv-text-secondary); padding-bottom: 0; }
-.wf-def-cell-name { display: flex; flex-direction: column; gap: 3px; }
+.wf-def-cell-name { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+/* The state's name fills its column (the base .form-input is an 80 px number box — "Needs re-review"
+   read "Needs re-re" at every width, SV-09). */
+.wf-def-cell-name .form-input { width: 100%; box-sizing: border-box; text-align: left; }
 .wf-def-id { font-size: 11px; color: var(--sv-text-subtle); }
 .wf-def-days { width: 84px; }
 .wf-def-targets { display: flex; flex-wrap: wrap; gap: 6px; }

@@ -1,7 +1,7 @@
 // Responsive contract (device matrix 2026-10-06/07): every CLASS of layout defect the 14-device
 // walk found on phones, tablets and laptops is pinned here, statically, so it cannot ship again.
 // Each check names the finding it guards. The live proof is forge-live-harness's device matrix
-// (walks/sentinel.mjs); the desktop pixel proof is static/_screenshot-harness/responsive-capture.mjs.
+// (walks/sentinel.mjs); the desktop pixel proof is scripts/responsive/capture.mjs + diff.py.
 import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -128,6 +128,12 @@ ok("M-02 .api-role-picker carries no flex basis", !rules(css("steward-console.cs
 // ── M-06: a settings row's label has a floor (the control wraps under it) ───────────────────────
 for (const f of ["realm-console.css", "steward-console.css"]) {
   ok(`M-06 ${f}: .settings-row-info has a 260 px basis and the row wraps`, rules(css(f)).some((x) => x.sel === ".settings-row-info" && /flex:\s*1 1 260px/.test(x.body)) && rules(css(f)).some((x) => x.sel === ".settings-row" && /flex-wrap:\s*wrap/.test(x.body)));
+}
+
+for (const f of ["realm-console.css", "steward-console.css"]) {
+  // The trap that bit twice (M-02, then this pass): a flex BASIS in px on a child of a container that
+  // turns into a column becomes the child's HEIGHT. The ≤640 stacking rule must reset it.
+  ok(`M-06 ${f}: the ≤640 px column rule resets .settings-row-info's basis`, /@media \(max-width: 640px\) \{[^}]*\.settings-row \{ flex-direction: column;[^}]*\}\s*\.settings-row-info \{ flex: 0 0 auto; width: 100%; \}/.test(strip(css(f))));
 }
 
 // ── SV-14: a sealed section's NAME never truncates to make room for its sentence ────────────────
