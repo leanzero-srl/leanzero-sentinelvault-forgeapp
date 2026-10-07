@@ -23,7 +23,9 @@ import {
   activityPagePrefix,
   activitySpacePrefix,
   ACTIVITY_TYPES,
+  resolveActorName,
 } from "../../infra/activity-log.js";
+import { decorateActorNames as decorateNames } from "./actor-names.js";
 
 const clampLimit = (limit, fallback) => {
   const n = Number(limit);
@@ -39,26 +41,12 @@ const cursorOf = (v) => (typeof v === "string" && v ? v : undefined);
 // fetched — bounded (≤100 ids), parallel, best-effort, as the app, exactly the way the
 // workflow dashboard does. A page the app cannot read keeps its id.
 // Same idea for WHO: an entry written from a path with no user session (the hourly sweep, the
-// harness hook) carries the seal record's fallback "Current User" or no name at all. The
-// reader resolves the display name for the distinct unresolved account ids, as the app,
-// bounded and parallel; a lookup that fails keeps what was stored.
-const UNRESOLVED_NAME = /^(?:current user|user [0-9a-f]{4})$/i;
-async function decorateActorNames(entries) {
-  const ids = [...new Set(entries
-    .filter((e) => e?.actor?.accountId && (!e.actor.name || UNRESOLVED_NAME.test(String(e.actor.name))))
-    .map((e) => e.actor.accountId))].slice(0, 100);
-  if (!ids.length) return entries;
-  const names = new Map();
-  await Promise.all(ids.map(async (id) => {
-    try {
-      const res = await asApp().requestConfluence(route`/wiki/rest/api/user?accountId=${id}`);
-      if (res.ok) { const u = await res.json(); if (u?.displayName) names.set(id, u.displayName); }
-    } catch (_) { /* best-effort */ }
-  }));
-  return entries.map((e) => (e?.actor?.accountId && names.has(e.actor.accountId)
-    ? { ...e, actor: { ...e.actor, name: names.get(e.actor.accountId) } }
-    : e));
-}
+// harness hook) carries the seal record's fallback "Current User", no name at all — or the
+// accountId itself in the name (BN-04, 2026-10-07: the report then read "Someone approved…" for an
+// account API access names "Mihai Perdum"). The reader resolves the display name for the distinct
+// unresolved accounts, as the app, bounded and parallel; a lookup that fails keeps what was stored.
+// The decision is pure (./actor-names.js, test/activity-names.test.mjs).
+const decorateActorNames = (entries) => decorateNames(entries, resolveActorName);
 
 async function decoratePageTitles(entries, spaceKey) {
   const ids = [...new Set(entries.map((e) => e?.pageId).filter(Boolean))].slice(0, 100);

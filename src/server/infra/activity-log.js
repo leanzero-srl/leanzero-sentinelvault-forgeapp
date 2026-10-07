@@ -25,6 +25,7 @@
  */
 import { kvs, WhereConditions } from "@forge/kvs";
 import { asApp, route } from "@forge/api";
+import { accountToName, looksLikeAccountId } from "../shared/account-id.js";
 
 // Twenty-odd call sites write `actor: { accountId, name: null }` (triggers, stewards acting on
 // another owner's seal, realm actions) and the feed then read "Someone denied edit access" —
@@ -182,7 +183,14 @@ export async function recordActivity(entry) {
     const actor = entry.actor && (entry.actor.accountId || entry.actor.name)
       ? { accountId: entry.actor.accountId || null, name: entry.actor.name || null }
       : { accountId: null, name: null };
-    if (actor.accountId && !actor.name) actor.name = await resolveActorName(actor.accountId);
+    // No name, a placeholder, or an accountId passed as the name (BN-04): look the person up.
+    const lookup = accountToName(actor);
+    if (lookup) {
+      if (!actor.accountId) actor.accountId = lookup;
+      const resolved = await resolveActorName(lookup);
+      if (resolved) actor.name = resolved;
+      else if (looksLikeAccountId(actor.name)) actor.name = null; // never store an id as a name
+    }
     const target = {
       kind: entry.target?.kind || "page",
       id: entry.target?.id != null ? String(entry.target.id) : (pageId || null),

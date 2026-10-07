@@ -162,6 +162,10 @@ const MENU_LABEL = { extend: "Extend the seal", "give-access": "Give edit access
 const Kebab = ({ items, onPick, name }) => {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
+  const menuRef = useRef(null);
+  // Same class as BN-01: a row near the bottom of the scrolling body (above the pinned seal form,
+  // or the last rows of a long list) opened its menu downward past the body's bottom edge.
+  const place = useVisiblePlacement(open, menuRef);
   useEffect(() => {
     if (!open) return undefined;
     return listenOutside({ refs: [ref], onClose: () => setOpen(false), escape: false });
@@ -179,7 +183,8 @@ const Kebab = ({ items, onPick, name }) => {
     <div className="pd-kebab-wrap" ref={ref} onKeyDown={onKey}>
       <button type="button" className="pd-kebab" aria-label={`More actions for ${name}`} aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen((o) => !o)} data-testid="pd-kebab">⋯</button>
       {open && (
-        <div className="pd-menu" role="menu">
+        <div ref={menuRef} className={`pd-menu${place.cutX === "left" ? " is-start" : ""}${place.up ? " is-up" : ""}`} role="menu"
+          style={{ ...(place.ready ? null : { opacity: 0, pointerEvents: "none" }), ...(place.maxHeight ? { maxHeight: `${place.maxHeight}px`, overflowY: "auto" } : null) }}>
           {items.map((id) => (
             <button key={id} type="button" role="menuitem" className={`pd-menu-item ${id === "force-release" ? "danger" : ""}`} data-testid={`pd-menu-${id}`}
               onClick={() => { setOpen(false); onPick(id); }}>{MENU_LABEL[id] || id}</button>
@@ -615,6 +620,12 @@ const fileSize = (b) => (b == null ? "" : b < 1024 ? `${b} B` : b < 1048576 ? `$
 const DurationPicker = ({ value, defaultSeconds, onChange, disabled }) => {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
+  const menuRef = useRef(null);
+  // BN-01 (2026-10-07): inside the pinned seal form (SV-15) a menu that always opened downward ran
+  // past the bottom of the scrolling body — 30 of 294 px visible at 1440. Same placement hook as
+  // the level picker and the Move menu: it opens upward when below is cut, and caps its height when
+  // neither side has room.
+  const place = useVisiblePlacement(open, menuRef);
   useEffect(() => {
     if (!open) return undefined;
     return listenOutside({ refs: [ref], onClose: () => setOpen(false) });
@@ -628,7 +639,8 @@ const DurationPicker = ({ value, defaultSeconds, onChange, disabled }) => {
         <span className="pd-dd-cur">{current.label}</span><span className="pd-dd-arrow" aria-hidden="true">▾</span>
       </button>
       {open && (
-        <div className="pd-dd-menu" role="listbox" aria-label="Seal duration">
+        <div ref={menuRef} className={`pd-dd-menu${place.cutX === "right" ? " is-end" : ""}${place.up ? " is-up" : ""}`} role="listbox" aria-label="Seal duration"
+          style={{ ...(place.ready ? null : { opacity: 0, pointerEvents: "none" }), ...(place.maxHeight ? { maxHeight: `${place.maxHeight}px` } : null) }}>
           {options.map((o) => (
             <div key={String(o.seconds)} role="option" aria-selected={o.seconds === value} tabIndex={0} className={`pd-dd-opt pd-dd-opt-plain ${o.seconds === value ? "sel" : ""}`} data-testid={`pd-duration-${o.seconds == null ? "default" : o.seconds}`}
               onClick={() => { setOpen(false); onChange(o.seconds); }}
@@ -695,6 +707,23 @@ const SealActionSeam = ({ summary, reload, siteUrl, loadError, onRetry }) => {
   const toggle = (id) => setSelected((prev) => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; });
   const toggleAll = () => setSelected(allOn ? new Set() : new Set(selectable.map((a) => a.id)));
   const n = [...selected].filter((id) => selectable.some((a) => a.id === id)).length;
+  const pinned = n > 0;
+
+  // BN-02 (2026-10-07): while the seal form is pinned over the list, keyboard focus must never land
+  // UNDER it — Tab put 5 of 37 stops behind it at 1440 and 22 of 37 on a phone. scroll-padding on the
+  // scrolling body (the form's own height + 8 px, kept current as it wraps) makes the browser's
+  // focus scroll stop above the form. It changes no layout, only where a focus scroll ends.
+  const formRef = useRef(null);
+  useEffect(() => {
+    const form = formRef.current;
+    const body = form?.closest?.(".pd-body");
+    if (!pinned || !form || !body) return undefined;
+    const apply = () => { body.style.scrollPaddingBottom = `${Math.ceil(form.getBoundingClientRect().height) + 8}px`; };
+    apply();
+    const ro = typeof ResizeObserver === "function" ? new ResizeObserver(apply) : null;
+    ro?.observe(form);
+    return () => { ro?.disconnect(); body.style.scrollPaddingBottom = ""; };
+  }, [pinned, summary]);
 
   const seal = async () => {
     const ids = selectable.filter((a) => selected.has(a.id));
@@ -782,7 +811,7 @@ const SealActionSeam = ({ summary, reload, siteUrl, loadError, onRetry }) => {
           {givingFor && <GiveAccessDialog invoker={signedTab} target={{ attachmentId: givingFor.id }} name={givingFor.name} onClose={() => setGivingFor(null)} onGranted={() => reload()} testId="pd-give-access" />}
           {/* SV-15: once a file is ticked the form pins to the bottom of the list, so "Seal N attachments"
               is in reach without scrolling 32 rows (it lived only after the last row). */}
-          <div className={`pd-seal-form${n > 0 ? " is-pinned" : ""}`} data-testid="pd-seal-form">
+          <div ref={formRef} className={`pd-seal-form${n > 0 ? " is-pinned" : ""}`} data-testid="pd-seal-form">
             <div className="pd-seal-field"><span className="pd-seal-label">Seal holds for</span><DurationPicker value={duration} defaultSeconds={summary.sealDefaults?.holdSeconds} onChange={setDuration} disabled={busy} /></div>
             <div className="pd-seal-field grow"><span className="pd-seal-label">Note (optional)</span><input className="pd-input" value={note} maxLength={300} placeholder="Why these are sealed — shown with the seal" onChange={(e) => setNote(e.target.value)} disabled={busy} data-testid="pd-note" /></div>
             <button type="button" className="pd-btn primary pd-seal-go" disabled={busy || n === 0} onClick={seal} data-testid="pd-seal-go">{busy ? "Sealing…" : n === 1 ? "Seal 1 attachment" : `Seal ${n} attachments`}</button>
