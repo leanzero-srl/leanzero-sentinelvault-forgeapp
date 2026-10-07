@@ -388,7 +388,11 @@ html[data-color-mode="dark"] .artifact-card.status-trashed { border-color: #FB92
    longer one pushes the actions down, and on its own line it ellipsizes only past the card's width. */
 .card-row-primary, .card-row-secondary { flex-wrap: wrap; row-gap: 6px; }
 .card-row-primary > .card-filename { flex: 1 1 auto; min-width: 0; }
-.card-row-secondary > .card-secondary-left { flex: 1 1 auto; min-width: 0; }
+/* The meta line is the opposite case: it is wrapping text (owner, space, age), so it keeps a 180 px
+   basis — Watch stays beside it and the text wraps inside. With basis auto (round 2, first cut) it
+   claimed its one-line width and pushed Watch onto a line of its own: every space-console card grew
+   56-69 px at the 834-1120 px desktop frames (offline diff c449ac2 -> 3ad15ca). */
+.card-row-secondary > .card-secondary-left { flex: 1 1 180px; min-width: 0; }
 .card-row-primary > .card-row-right, .card-row-secondary > .card-secondary-right { margin-left: auto; }
 .card-meta { flex-wrap: wrap; row-gap: 2px; }
 .card-meta-owner { white-space: nowrap; }

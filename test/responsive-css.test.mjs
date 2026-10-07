@@ -53,7 +53,10 @@ ok("SV-01 the shared block sets a minimum card width (columns are a MAXIMUM)", /
 ok("SV-01 the file name has a floor and the actions wrap under it", /\.card-row-primary > \.card-filename \{ flex: 1 1 auto; min-width: 0; \}/.test(blocks[0] || "") && /\.card-row-primary, \.card-row-secondary \{ flex-wrap: wrap;/.test(blocks[0] || ""));
 // BR-04 (2026-10-07): a px BASIS on the name decided the line break by the basis, not the name, so
 // every desktop card wrapped whatever its name (the 1440 attachments view showed half as many files).
-ok("BR-04 no px flex-basis or px floor on the card name or the meta (the break follows the name's own width)", !/\.card-(filename|secondary-left) \{ flex: \d+ \d+ \d+px/.test(blocks[0] || "") && !/\.card-(filename|secondary-left) \{[^}]*min-width: (min\()?\d+px/.test(blocks[0] || ""));
+ok("BR-04 no px flex-basis or px floor on the card NAME (the break follows the name's own width)", !/\.card-filename \{ flex: \d+ \d+ \d+px/.test(blocks[0] || "") && !/\.card-filename \{[^}]*min-width: (min\()?\d+px/.test(blocks[0] || ""));
+// …but the META line keeps its 180 px basis (round-2 offline diff: basis auto there pushed Watch onto
+// its own line and every space-console card grew 56-69 px at the 834-1120 px desktop frames).
+ok("BR-04 the meta line keeps a 180 px basis, so Watch stays beside it", /\.card-row-secondary > \.card-secondary-left \{ flex: 1 1 180px; min-width: 0; \}/.test(blocks[0] || ""));
 for (const f of CARD_FILES) {
   const r = rules(css(f)).filter((x) => /(^|,|\s)\.sv-card-list(\[|\s|,|$)/.test(x.sel) && /grid-template-columns/.test(x.body));
   const bad = r.filter((x) => !/auto-fill/.test(x.body));

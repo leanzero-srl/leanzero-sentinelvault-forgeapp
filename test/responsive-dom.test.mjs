@@ -369,12 +369,25 @@ for (const [app, shot, w, h, name] of [
   ["overlay", "overlay", 1800, 960, "attachments view @1800 (1920)"],
   ["inline-panel", "panel", 760, 1400, "page panel @760"],
   ["realm-console", "realm-steward", 994, 900, "space console cards @994"],
+  ["realm-console", "realm-steward", 834, 900, "space console cards @834 (1280 laptop)"],
+  ["realm-console", "realm-steward", 1120, 900, "space console cards @1120"],
 ]) {
   const { ctx, page } = await open(app, shot, w, h);
   const cards = await cardLines(page);
   ok(`BR-04 ${name}: cards measured`, cards.length >= 3);
   eq(`BR-04 ${name}: every card whose name fits beside its actions is on one line`, cards.filter((c) => c.fits && !c.oneLine).map((c) => c.title), []);
   eq(`BR-04 ${name}: a card that wraps does so to show its whole name (none truncated that fit the card)`, cards.filter((c) => !c.oneLine && c.truncated && c.nameNeed <= c.room).map((c) => c.title), []);
+  // The meta line (owner · space · age) wraps INSIDE itself and keeps Watch beside it whenever 180 px
+  // are left for it (round 2's first cut gave it basis auto and Watch fell onto a line of its own:
+  // space-console cards 56-69 px taller at 834-1120 px).
+  const metas = await page.evaluate(() => [...document.querySelectorAll(".artifact-card .card-row-secondary")].map((row) => {
+    const left = row.querySelector(":scope > .card-secondary-left"); const right = row.querySelector(":scope > .card-secondary-right");
+    if (!left || !right || !right.getBoundingClientRect().width) return null;
+    const rs = getComputedStyle(row); const room = row.clientWidth - parseFloat(rs.paddingLeft) - parseFloat(rs.paddingRight);
+    const gap = parseFloat(rs.columnGap) || 0; const rw = right.getBoundingClientRect().width;
+    return { title: (row.closest(".artifact-card").querySelector(".card-filename-text")?.textContent || "").slice(0, 40), roomy: room >= 180 + gap + rw, beside: right.getBoundingClientRect().top < left.getBoundingClientRect().bottom - 2 };
+  }).filter(Boolean));
+  eq(`BR-04 ${name}: the meta line keeps its button beside it when 180 px are left for the text`, metas.filter((m) => m.roomy && !m.beside).map((m) => m.title), []);
   await ctx.close();
 }
 
