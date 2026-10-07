@@ -1473,6 +1473,16 @@ html[data-color-mode="dark"] .sv-state.trashed { background: #94A3B8; color: #0F
    landscape phone). No tints, no rails.
    ════════════════════════════════════════════════════════════════════════════════════════════ */
 
+/* SV-05: a laptop-short frame (1280x800 → 681 px, iPad landscape → 625-715 px): the explanatory
+   sentence under "Sentinel Vault macro is visible on this page" drops and the header tightens, so the
+   list keeps another card row in view. The list still scrolls on its own (the whole-modal scroll is
+   for frames under 560 px). */
+@media (max-height: 720px) {
+  .modal-header { padding-top: 14px; padding-bottom: 14px; }
+  .ov-macro-notice { padding-top: 8px; padding-bottom: 8px; }
+  .ov-macro-notice-desc { display: none; }
+}
+
 /* SV-05: a short frame (a landscape phone) — the title, toolbar, notice and footer took all of
    ~270 px and left a 32 px list with Done cut off. Compact chrome, the notice's sentence drops,
    and the WHOLE modal scrolls (nothing pinned), so every card and its ⋯ can be reached. */
