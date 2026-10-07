@@ -61,6 +61,10 @@ export default function UnsavedFloat({ dirty, busy = false, onApply, onDiscard }
     if (!dirty || !touch || !ref.current) { setPos(null); return; }
     const row = touch.el?.isConnected ? touch.el : null;
     const anchor = row ? row.getBoundingClientRect() : touch.rect;
+    // Measured at the width it will be shown at: on a phone the visible band is ~300 px and the
+    // reminder wraps to two or three lines, so a gap sized from its one-line height was too short.
+    const cap = Math.max(160, Math.round((band ? band.right - band.left : window.innerWidth) - 16));
+    ref.current.style.maxWidth = `${cap}px`;
     const box = ref.current.getBoundingClientRect();
     const size = { width: box.width, height: box.height };
     const view = { width: window.innerWidth, height: window.innerHeight, ...(band || {}) };
@@ -71,17 +75,17 @@ export default function UnsavedFloat({ dirty, busy = false, onApply, onDiscard }
       if (r.width > 0 && r.height > 0) blockers.push({ left: r.left, top: r.top, right: r.right, bottom: r.bottom });
     }
     const spot = placeFloat({ anchor, size, view, blockers });
-    if (spot.hits === 0 || !row) { setPos(spot); return; }
+    if (spot.hits === 0 || !row) { setPos({ ...spot, cap }); return; }
     // Every spot covers a control: open a gap under the row and sit in it.
     room.current = { el: row, margin: row.style.marginBottom };
     const base = parseFloat(getComputedStyle(row).marginBottom) || 0;
     row.style.marginBottom = `${base + roomNeeded(size)}px`;
-    setPos(roomBelow({ anchor: row.getBoundingClientRect(), size, view }));
+    setPos({ ...roomBelow({ anchor: row.getBoundingClientRect(), size, view }), cap });
   }, [dirty, touch, band]);
 
   if (!dirty || !touch) return null;
   const style = pos
-    ? { top: `${pos.top}px`, left: `${pos.left}px`, right: "auto", ...(band && pos.width ? { maxWidth: `${pos.width}px` } : {}) }
+    ? { top: `${pos.top}px`, left: `${pos.left}px`, right: "auto", maxWidth: `${pos.cap}px` }
     : { top: "0px", left: "0px", right: "auto", visibility: "hidden" }; // measured first, then placed
   return (
     <div ref={ref} className="sv-unsaved-float" role="status" style={style} data-testid="sv-unsaved-float" data-spot={pos?.spot || ""}>
