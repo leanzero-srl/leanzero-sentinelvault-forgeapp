@@ -209,7 +209,9 @@ const floatCode = float.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, ""
 ok("BR-02 UnsavedFloat never listens to pointerdown / mousedown / touchstart", !/["'](pointerdown|mousedown|touchstart)["']/.test(floatCode));
 ok("BR-02 UnsavedFloat follows the CLICK (and keys)", /addEventListener\("click", onClick, true\)/.test(floatCode) && /addEventListener\("keyup", onKey, true\)/.test(floatCode));
 ok("BR-02 UnsavedFloat writes no layout to any other element (no margin / padding / height gap)", !/\.style\.(margin|padding|height|minHeight)/.test(floatCode) && !/roomBelow|roomNeeded|closeRoom/.test(floatCode));
-ok("BR-02 the reminder does not slide (no transition on its position)", ["realm-console.css", "steward-console.css"].every((f) => !rules(css(f)).some((x) => /\.sv-unsaved-float\b/.test(x.sel) && /transition/.test(x.body))));
+ok("BR-02 the reminder does not slide (no transition on its position)", ["realm-console.css", "steward-console.css"].every((f) => !rules(css(f)).some((x) => /\.sv-unsaved-float\b/.test(x.sel) && /transition:(?!\s*none)/.test(x.body))));
+ok("BR-03 nothing inside the reminder animates (its size is measured for each placement)", ["realm-console.css", "steward-console.css"].every((f) => rules(css(f)).some((x) => x.sel === ".sv-unsaved-float, .sv-unsaved-float *" && /transition:\s*none/.test(x.body))));
+ok("BR-03 the reminder re-places itself when it or the page resizes", /new ResizeObserver/.test(floatCode) && /ro\.observe\(document\.body\)/.test(floatCode));
 // BR-03 / SV-10: text is an obstacle too, measured as line boxes, and the compact form exists.
 ok("BR-03 UnsavedFloat passes every line of text to the placement", /content: contentRects\(el\)/.test(floatCode) && /getClientRects\(\)/.test(floatCode));
 ok("BR-03 the compact form hides only the sentence", ["realm-console.css", "steward-console.css"].every((f) => /\.sv-unsaved-float\.is-compact \.sv-unsaved-float-more \{ display: none; \}/.test(strip(css(f)))));
