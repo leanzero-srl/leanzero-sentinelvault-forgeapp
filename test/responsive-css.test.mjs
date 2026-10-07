@@ -6,6 +6,8 @@ import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { eq, ok, report } from "./_assert.mjs";
+import { deadNarrowOverrides, winningValue } from "./_css.mjs";
+import { readdirSync } from "node:fs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const read = (p) => readFileSync(resolve(here, "..", p), "utf8");
@@ -48,7 +50,10 @@ const blocks = CARD_FILES.map((f) => block(css(f)));
 blocks.forEach((b, i) => ok(`SV-01 ${CARD_FILES[i]} carries the sv-card-responsive block`, !!b));
 ok("SV-01 the three sv-card-responsive blocks are byte-identical", blocks.every((b) => b === blocks[0]));
 ok("SV-01 the shared block sets a minimum card width (columns are a MAXIMUM)", /--sv-card-min:\s*\d+px/.test(blocks[0] || "") && /repeat\(auto-fill, minmax\(min\(100%, max\(var\(--sv-card-min\)/.test(blocks[0] || ""));
-ok("SV-01 the file name has a floor and the actions wrap under it", /\.card-row-primary > \.card-filename \{ flex: 1 1 \d+px; \}/.test(blocks[0] || "") && /\.card-row-primary, \.card-row-secondary \{ flex-wrap: wrap;/.test(blocks[0] || ""));
+ok("SV-01 the file name has a floor and the actions wrap under it", /\.card-row-primary > \.card-filename \{ flex: 1 1 auto; min-width: 0; \}/.test(blocks[0] || "") && /\.card-row-primary, \.card-row-secondary \{ flex-wrap: wrap;/.test(blocks[0] || ""));
+// BR-04 (2026-10-07): a px BASIS on the name decided the line break by the basis, not the name, so
+// every desktop card wrapped whatever its name (the 1440 attachments view showed half as many files).
+ok("BR-04 no px flex-basis or px floor on the card name or the meta (the break follows the name's own width)", !/\.card-(filename|secondary-left) \{ flex: \d+ \d+ \d+px/.test(blocks[0] || "") && !/\.card-(filename|secondary-left) \{[^}]*min-width: (min\()?\d+px/.test(blocks[0] || ""));
 for (const f of CARD_FILES) {
   const r = rules(css(f)).filter((x) => /(^|,|\s)\.sv-card-list(\[|\s|,|$)/.test(x.sel) && /grid-template-columns/.test(x.body));
   const bad = r.filter((x) => !/auto-fill/.test(x.body));
@@ -171,11 +176,23 @@ for (const f of ["realm-console.css", "steward-console.css"]) {
   ok(`M-06 ${f}: .settings-row-info has a 260 px basis and the row wraps`, rules(css(f)).some((x) => x.sel === ".settings-row-info" && /flex:\s*1 1 260px/.test(x.body)) && rules(css(f)).some((x) => x.sel === ".settings-row" && /flex-wrap:\s*wrap/.test(x.body)));
 }
 
+// The trap that bit twice (M-02, then round 1): a flex BASIS in px on a child of a container that
+// turns into a column becomes the child's HEIGHT, so the ≤640 stacking rule resets it. Round 1 checked
+// only that the reset's TEXT existed — it sat ABOVE the base rule, lost the cascade, and every stacked
+// row was 260 px tall (BR-01). These check what WINS.
 for (const f of ["realm-console.css", "steward-console.css"]) {
-  // The trap that bit twice (M-02, then this pass): a flex BASIS in px on a child of a container that
-  // turns into a column becomes the child's HEIGHT. The ≤640 stacking rule must reset it.
-  ok(`M-06 ${f}: the ≤640 px column rule resets .settings-row-info's basis`, /@media \(max-width: 640px\) \{[^}]*\.settings-row \{ flex-direction: column;[^}]*\}\s*\.settings-row-info \{ flex: 0 0 auto; width: 100%; \}/.test(strip(css(f))));
+  eq(`M-06/BR-01 ${f}: at a 620 px frame .settings-row-info's flex is the column reset`, winningValue(css(f), ".settings-row-info", "flex", 620)?.value, "0 0 auto");
+  eq(`M-06 ${f}: at a 700 px frame it keeps its 260 px floor`, winningValue(css(f), ".settings-row-info", "flex", 700)?.value, "1 1 260px");
+  eq(`M-06 ${f}: at a 994 px desktop frame too`, winningValue(css(f), ".settings-row-info", "flex", 994)?.value, "1 1 260px");
 }
+// The CLASS: no narrow-frame declaration anywhere is cancelled by a later rule for the same selector
+// (unconditional, or a wider max-width) — such a rule is dead code that LOOKS like a fix.
+for (const f of readdirSync(resolve(here, "..", TOKENS)).filter((x) => x.endsWith(".css"))) {
+  eq(`BR-01 class ${f}: no narrow-frame override is cancelled by a later rule`, deadNarrowOverrides(css(f)), []);
+}
+// …and the checker itself catches the exact BR-01 shape (a guard that matches nothing guards nothing).
+ok("BR-01 class: the checker flags a reset placed before its base rule", deadNarrowOverrides("@media (max-width: 640px) { .a { flex: 0 0 auto; } }\n.a { flex: 1 1 260px; }").length === 1);
+ok("BR-01 class: …and passes the same rules in the right order", deadNarrowOverrides(".a { flex: 1 1 260px; }\n@media (max-width: 640px) { .a { flex: 0 0 auto; } }").length === 0);
 
 // ── SV-14: a sealed section's NAME never truncates to make room for its sentence ────────────────
 const panel = strip(css("inline-panel.css"));
@@ -187,8 +204,16 @@ ok("SV-14 the panel's group headings and sealed-section blocks are inset like th
 
 // ── SV-10: the reminder never covers a control — with no free spot it makes room ─────────────────
 const float = read("src/ui/kit/UnsavedFloat.jsx");
-ok("SV-10 UnsavedFloat opens a gap under the row when every spot is blocked", /spot\.hits === 0/.test(float) && /roomNeeded\(size\)/.test(float) && /roomBelow\(/.test(float) && /closeRoom\(\)/.test(float));
-ok("SV-10 UnsavedFloat keeps to the part of the frame on screen", /measureVisibleBand\(\)/.test(float));
+const floatCode = float.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
+// BR-02: nothing this component does may happen between a press and its click.
+ok("BR-02 UnsavedFloat never listens to pointerdown / mousedown / touchstart", !/["'](pointerdown|mousedown|touchstart)["']/.test(floatCode));
+ok("BR-02 UnsavedFloat follows the CLICK (and keys)", /addEventListener\("click", onClick, true\)/.test(floatCode) && /addEventListener\("keyup", onKey, true\)/.test(floatCode));
+ok("BR-02 UnsavedFloat writes no layout to any other element (no margin / padding / height gap)", !/\.style\.(margin|padding|height|minHeight)/.test(floatCode) && !/roomBelow|roomNeeded|closeRoom/.test(floatCode));
+ok("BR-02 the reminder does not slide (no transition on its position)", ["realm-console.css", "steward-console.css"].every((f) => !rules(css(f)).some((x) => /\.sv-unsaved-float\b/.test(x.sel) && /transition/.test(x.body))));
+// BR-03 / SV-10: text is an obstacle too, measured as line boxes, and the compact form exists.
+ok("BR-03 UnsavedFloat passes every line of text to the placement", /content: contentRects\(el\)/.test(floatCode) && /getClientRects\(\)/.test(floatCode));
+ok("BR-03 the compact form hides only the sentence", ["realm-console.css", "steward-console.css"].every((f) => /\.sv-unsaved-float\.is-compact \.sv-unsaved-float-more \{ display: none; \}/.test(strip(css(f)))));
+ok("SV-10 UnsavedFloat keeps to the part of the frame on screen", /measureVisibleBand\(\)/.test(floatCode));
 
 // ── SV-01 cause 1, the other side: scoping the dialog rule must not shrink a real call to action ──
 ok("SV-01 the space console's 'Request admin access' keeps its full button size", rules(css("realm-console.css")).some((x) => x.sel === ".steward-request-banner .action-btn" && /padding:\s*10px 20px/.test(x.body) && /font-size:\s*14px/.test(x.body)));
@@ -198,7 +223,23 @@ const ov = strip(css("overlay.css"));
 ok("SV-05 a short overlay frame scrolls as a whole and the notice sentence drops", /@media \(max-height: 560px\)[\s\S]*?\.modal-container \{ overflow-y: auto; \}[\s\S]*?\.ov-macro-notice-desc \{ display: none; \}/.test(ov));
 ok("SV-05 a laptop-short overlay (≤720 px tall) drops the notice sentence but keeps the list scroller", mediaBlocks(css("overlay.css"), "@media (max-height: 720px)").some((b) => /\.ov-macro-notice-desc \{ display: none; \}/.test(b) && !/modal-container/.test(b)));
 ok("SV-05 the overlay notice is classed (no padding locked in an inline style)", /className="ov-macro-notice"/.test(read("src/ui/surfaces/overlay/index.jsx")));
-ok("SV-15 the seal form pins while files are ticked", /\.pd-seal-form\.is-pinned \{ position: sticky; bottom: 0;/.test(pd) && /pd-seal-form\$\{n > 0 \? " is-pinned" : ""\}/.test(read("src/ui/surfaces/page-details/index.jsx")));
+ok("SV-15 the seal form pins while files are ticked", /\.pd-seal-form\.is-pinned \{ position: sticky;/.test(pd) && /pd-seal-form\$\{n > 0 \? " is-pinned" : ""\}/.test(read("src/ui/surfaces/page-details/index.jsx")));
+// BN-02: sticky stops at the scroll container's PADDING edge — the pinned form sits at minus the
+// body's bottom padding (one variable for both, so they cannot drift), and focus never lands under it.
+ok("BN-02 .pd-body's bottom padding is the --pd-body-pad-b variable", /\.pd-body \{ --pd-body-pad-b: 20px;[^}]*padding: 16px 20px var\(--pd-body-pad-b\);/.test(pd));
+ok("BN-02 the pinned form sits on the scrollport edge (bottom: -padding)", /\.pd-seal-form\.is-pinned \{ position: sticky; bottom: calc\(-1 \* var\(--pd-body-pad-b, 20px\)\);/.test(pd));
+ok("BN-02 the body's scroll-padding follows the pinned form's height", /body\.style\.scrollPaddingBottom = `\$\{Math\.ceil\(form\.getBoundingClientRect\(\)\.height\) \+ 8\}px`/.test(read("src/ui/surfaces/page-details/index.jsx")));
+// BN-01: every menu inside the details modal's scrolling body takes the visible-placement hook.
+{
+  const pdx = read("src/ui/surfaces/page-details/index.jsx");
+  for (const name of ["LevelPicker", "MoveMenu", "DurationPicker", "Kebab"]) {
+    const i = pdx.indexOf(`const ${name} = `);
+    const body = i >= 0 ? pdx.slice(i, pdx.indexOf("\n};", i)) : "";
+    ok(`BN-01 page details ${name} opens where it can be seen (useVisiblePlacement)`, /useVisiblePlacement\(open, menuRef\)/.test(body) && /ref=\{menuRef\}/.test(body) && /place\.up \? " is-up" : ""/.test(body));
+  }
+  const menus = (pdx.match(/className=\{?[`"]pd-(dd-)?menu[`"$ ]/g) || []).length; // the menus, not their items
+  eq("BN-01 page details: no other menu without the hook", menus, 4);
+}
 ok("SV-16 the banner's Open picks the modal size by device", /detailsModalSize\(/.test(read("src/ui/surfaces/doc-ribbon/index.jsx")));
 
 report("responsive-css");
