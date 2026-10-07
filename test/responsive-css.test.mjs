@@ -183,7 +183,7 @@ ok("SV-14 section rows wrap and the title has a floor", /\.sv-section-row \{[^}]
 
 ok("SV-14 under 720 px a section's sentence takes its own line (the ⋯ never wraps alone)", mediaBlocks(css("inline-panel.css"), "@media (max-width: 720px)").some((b) => /\.sv-section-row-meta \{ order: 1; flex-basis: 100%; \}/.test(b)));
 
-ok("SV-14 the panel's group headings and sealed-section blocks are inset like the cards (nothing on the frame edge)", rules(css("inline-panel.css")).some((x) => x.sel === ".sv-sealed-group-header, .sv-sealed-group-wait" && /padding-left:\s*14px/.test(x.body)) && rules(css("inline-panel.css")).some((x) => x.sel === ".sv-section-list" && /padding-left:\s*12px/.test(x.body)));
+ok("SV-14 the panel's group headings and sealed-section blocks are inset like the cards (nothing on the frame edge)", rules(css("inline-panel.css")).some((x) => x.sel === ".sv-sealed-group-header, .sv-sealed-group-wait" && /padding-left:\s*14px/.test(x.body)) && rules(css("inline-panel.css")).some((x) => x.sel === ".sv-section-list" && /padding-left:\s*12px/.test(x.body)) && rules(css("inline-panel.css")).some((x) => x.sel === ".sv-group-footer" && /padding:\s*8px 14px 2px/.test(x.body)));
 
 // ── SV-10: the reminder never covers a control — with no free spot it makes room ─────────────────
 const float = read("src/ui/kit/UnsavedFloat.jsx");
