@@ -1198,6 +1198,12 @@ html[data-color-mode="dark"] .sv-unsaved-float { background: #FBBF24; color: #0F
    sentence has no clear spot near the control. No transition on top/left: a reminder sliding across
    the form could pass under a pointer that is about to press something (BR-02). */
 .sv-unsaved-float.is-compact .sv-unsaved-float-more { display: none; }
+/* Nothing in it animates: its size is MEASURED for each placement, and a button whose padding was
+   still easing from the compact to the full form read 16 px narrower than it became (it then grew
+   over the "+ Add rule" button it had been placed beside). */
+.sv-unsaved-float, .sv-unsaved-float * { transition: none; }
+.sv-unsaved-float.is-compact { gap: 6px; padding-left: 10px; padding-right: 6px; }
+.sv-unsaved-float.is-compact .btn-secondary, .sv-unsaved-float.is-compact .btn-primary { padding-left: 10px; padding-right: 10px; }
 
 /* Anchored dialogs (kit/Dialog: every surface opens a dialog level with the click) sit at the
    computed marginTop from the top edge — without this the flex centring moved them (tester 2026-09-30). */
@@ -1372,6 +1378,11 @@ html[data-color-mode="dark"] .sv-unsaved-float { background: #FBBF24; color: #0F
 /* SV-12: touch targets — a coarse pointer (phone, tablet) gets ≥ 32 px controls. Fine pointers
    (mouse, trackpad) match none of this. */
 @media (pointer: coarse) {
+  /* The reminder's buttons stay 32 px on touch (above the 24 px minimum) so its compact form is 44 px
+     tall and fits the line beside a stacked setting's switch on a phone; at the 40 px every other
+     button gets it was 56 px and found no clear spot there (round 2 live probe, phone-390). */
+  .sv-unsaved-float .btn-primary, .sv-unsaved-float .btn-secondary { min-height: 32px; padding-top: 4px; padding-bottom: 4px; }
+  .sv-unsaved-float { padding-top: 6px; padding-bottom: 6px; }
   .tab-button { min-height: 40px; }
   .btn-primary, .btn-secondary, .btn-danger, .sv-dialog .action-btn { min-height: 40px; }
   .mini-select-value { min-height: 40px; }

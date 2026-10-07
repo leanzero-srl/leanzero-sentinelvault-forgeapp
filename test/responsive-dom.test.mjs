@@ -47,6 +47,11 @@ function serve(root) {
   return new Promise((done) => {
     const s = http.createServer((req, res) => {
       let p = decodeURIComponent(req.url.split("?")[0]); if (p === "/") p = "/index.html";
+      if (p === "/__phone.html") { // a page that frames the surface the way Confluence does (same origin)
+        const w = Number(new URL(req.url, "http://x").searchParams.get("w")) || 620;
+        res.writeHead(200, { "Content-Type": "text/html" });
+        return res.end(`<html><body style="margin:0;padding:48px 0 0;width:${w + 48}px"><iframe id="f" src="/index.html" style="border:0;display:block;width:${w}px;height:900px"></iframe><div style="height:400px"></div></body></html>`);
+      }
       const f = path.join(root, p);
       if (!f.startsWith(root) || !fs.existsSync(f)) { res.writeHead(404); return res.end("x"); }
       res.writeHead(200, { "Content-Type": MIME[path.extname(f)] || "application/octet-stream" });
@@ -255,6 +260,90 @@ for (const [app, shot, tab, name] of [
   }
 }
 
+// ── Phones, as Confluence builds them: the console is a 620/636 px CONTENT-TALL iframe inside a
+// 360/390 px screen (Confluence keeps a 700 px minimum content width), so only part of the frame is
+// on screen and the reminder must fit that part. The round-2 live probe found the 56 px compact
+// form fit nowhere there and fell back to covering text; this scene would have caught it. ────────
+async function openFramed(app, shot, frameW, vw, vh) {
+  const ctx = await browser.newContext({ viewport: { width: vw, height: vh }, deviceScaleFactor: 2, hasTouch: true, reducedMotion: "reduce" });
+  await ctx.addInitScript((sh) => { window.__SHOT__ = sh; try { localStorage.clear(); } catch (_) { /* fresh */ } }, shot);
+  const page = await ctx.newPage();
+  await page.goto(`${await urlOf(app)}__phone.html?w=${frameW}`, { waitUntil: "domcontentloaded" });
+  await page.waitForFunction(() => { const f = document.getElementById("f"); const d = f && f.contentDocument; const r = d && d.getElementById("root"); return r && r.children.length > 0; }, { timeout: 10000 });
+  await sleep(1200);
+  const frame = page.frames().find((f) => f !== page.mainFrame());
+  const fit = async () => { const H = await frame.evaluate(() => document.documentElement.scrollHeight); await page.evaluate((h) => { document.getElementById("f").style.height = `${h}px`; }, H); await sleep(150); };
+  await fit();
+  return { ctx, page, frame, fit, F: page.frameLocator("#f") };
+}
+async function pressIn(page, fit, loc) {
+  await fit();
+  await loc.scrollIntoViewIfNeeded();
+  await sleep(100);
+  const a = await loc.boundingBox();
+  await page.mouse.move(a.x + a.width / 2, a.y + a.height / 2);
+  await page.mouse.down();
+  await sleep(120);
+  const b = await loc.boundingBox();
+  await page.mouse.up();
+  await sleep(350);
+  return { moved: !b || Math.abs(b.x - a.x) > 1 || Math.abs(b.y - a.y) > 1, from: Math.round(a.y), to: b ? Math.round(b.y) : null };
+}
+const checkFloatIn = async (frame, label) => {
+  const c = await floatCovers(frame);
+  ok(`BR-03 ${label}: the reminder is shown`, !!c);
+  if (!c) return;
+  ok(`BR-03 ${label}: the reminder found a clear spot (${c.spot} ${JSON.stringify(c.rect)})`, /^clear/.test(c.spot));
+  eq(`BR-03 ${label}: the reminder covers no control`, c.controls, []);
+  eq(`BR-03 ${label}: the reminder covers no text`, c.text, []);
+  const band = await frame.evaluate(() => { const r = document.querySelector(".sv-unsaved-float").getBoundingClientRect(); return { left: r.left, right: r.right }; });
+  ok(`BR-03 ${label}: the reminder is inside the part of the frame on screen`, band.left >= 0 && band.right <= 999);
+};
+for (const [vw, vh] of [[360, 780], [390, 844]]) {
+  {
+    const { ctx, page, frame, fit, F } = await openFramed("steward-console", "steward", 636, vw, vh);
+    const sw = F.locator('.settings-row .settings-row-control input[type="checkbox"]:not(:disabled)');
+    const n = Math.min(8, await sw.count());
+    for (let i = 0; i < n; i++) {
+      const before = await sw.nth(i).isChecked();
+      const r = await pressIn(page, fit, sw.nth(i));
+      ok(`BR-02 phone ${vw} site settings toggle #${i}: did not move during the press`, !r.moved);
+      eq(`BR-02 phone ${vw} site settings toggle #${i}: toggled`, await sw.nth(i).isChecked(), !before);
+      await checkFloatIn(frame, `phone ${vw} site settings toggle #${i}`);
+      const onScreen = await page.evaluate(() => { const f = document.getElementById("f").getBoundingClientRect(); const d = document.getElementById("f").contentDocument.querySelector(".sv-unsaved-float"); if (!d) return null; const r = d.getBoundingClientRect(); return { left: f.left + r.left, right: f.left + r.right, w: innerWidth }; });
+      ok(`BR-03 phone ${vw} site settings toggle #${i}: the reminder is on the phone's screen (${onScreen && Math.round(onScreen.left)}-${onScreen && Math.round(onScreen.right)} of ${vw})`, !!onScreen && onScreen.left >= 0 && onScreen.right <= onScreen.w);
+    }
+    await ctx.close();
+  }
+  {
+    const { ctx, page, frame, fit, F } = await openFramed("realm-console", "realm-steward", 620, vw, vh);
+    await F.locator('.tab-navigation .tab-button:has-text("Validations")').first().click();
+    await sleep(700);
+    const modes = F.locator('.val-modes input[type="checkbox"]');
+    for (let i = 0; i < 3; i++) {
+      const before = await modes.nth(i).isChecked();
+      const r = await pressIn(page, fit, modes.nth(i));
+      ok(`BR-02 phone ${vw} space validations mode #${i}: did not move`, !r.moved);
+      eq(`BR-02 phone ${vw} space validations mode #${i}: toggled`, await modes.nth(i).isChecked(), !before);
+      await checkFloatIn(frame, `phone ${vw} space validations mode #${i}`);
+    }
+    const cards = F.locator(".val-rule-card");
+    const n0 = await cards.count();
+    const ra = await pressIn(page, fit, F.locator("button", { hasText: "+ Add rule" }).first());
+    ok(`BR-02 phone ${vw} + Add rule: did not move`, !ra.moved);
+    eq(`BR-02 phone ${vw} + Add rule: added`, await cards.count(), n0 + 1);
+    await checkFloatIn(frame, `phone ${vw} after + Add rule`);
+    const rp = await pressIn(page, fit, cards.last().locator(".mini-select-value").first());
+    ok(`BR-02 phone ${vw} the new rule's type picker: did not move`, !rp.moved);
+    eq(`BR-02 phone ${vw} the new rule's type picker: one press opened it`, await cards.last().locator(".mini-select-menu").count(), 1);
+    await pressIn(page, fit, cards.last().locator(".mini-select-value").first());
+    const rx = await pressIn(page, fit, cards.last().locator(".val-rule-remove"));
+    ok(`BR-02 phone ${vw} the new rule's ×: did not move`, !rx.moved);
+    eq(`BR-02 phone ${vw} the new rule's ×: removed it`, await cards.count(), n0);
+    await ctx.close();
+  }
+}
+
 // ── BR-04: a card whose name fits beside its actions stays on one line (desktop density) ───────
 const cardLines = (page) => page.evaluate(() => [...document.querySelectorAll(".artifact-card")].map((c) => {
   const row = c.querySelector(".card-row-primary");
@@ -319,6 +408,26 @@ for (const [w, h] of [[800, 720], [430, 720], [390, 720]]) {
     await page.locator('[data-testid="pd-duration"]').click().catch(() => {});
     await sleep(200);
     if (await page.locator('[role="listbox"][aria-label="Seal duration"]').count()) { await page.locator('[data-testid="pd-duration"]').click(); await sleep(200); }
+  }
+  // A row's ⋯ just above the pinned form (the same class as BN-01): its menu opens where it is seen.
+  const kebabs = page.locator('[data-testid="pd-kebab"]');
+  if (await kebabs.count()) {
+    await page.evaluate(() => {
+      const body = document.querySelector(".pd-body"); const ks = body.querySelectorAll('[data-testid="pd-kebab"]');
+      const k = ks[ks.length - 1]; const form = document.querySelector('[data-testid="pd-seal-form"]');
+      body.scrollTop += k.getBoundingClientRect().bottom - (form.getBoundingClientRect().top - 6);
+    });
+    await sleep(200);
+    await kebabs.last().click();
+    await sleep(500);
+    const km = await page.evaluate(() => {
+      const m = document.querySelector(".pd-kebab-wrap .pd-menu"); const b = document.querySelector(".pd-body").getBoundingClientRect();
+      if (!m) return null; const r = m.getBoundingClientRect();
+      return { shown: Math.max(0, Math.min(r.bottom, b.bottom) - Math.max(r.top, b.top)), height: r.height };
+    });
+    ok(`BN-01 seal @${w}x${h}: the last row's ⋯ menu opens fully inside the body (${km && Math.round(km.shown)} of ${km && Math.round(km.height)} px)`, !!km && km.shown >= km.height - 1);
+    await page.keyboard.press("Escape");
+    await sleep(200);
   }
   // Keyboard: Tab from the top through the list — no focused control may sit under the pinned form.
   await page.evaluate(() => { document.querySelector(".pd-body").scrollTop = 0; document.querySelector('[data-testid="pd-select-all"]').focus(); });
