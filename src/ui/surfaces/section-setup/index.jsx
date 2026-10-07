@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import { view, invoke, router } from "@forge/bridge";
 import { enablePaletteSync } from "../../kit/palette-sync";
 import { when, sealSentence } from "../../kit/status-language.js"; // SEC-3: one vocabulary, one clock
+import { visibleTimeout } from "../../kit/visible-timeout.js";
 
 // The "was undone" notice can be closed, and stays closed for THAT restore across reloads (owner,
 // 2026-09-25: it came back on every reload for minutes, with no way to dismiss it). The key is the
@@ -217,18 +218,24 @@ const SectionMacro = () => {
     const poll = setInterval(measure, 250);
     // A ready that was posted before this effect ran is gone; nudge the frame once it has loaded.
     const nudge = setTimeout(send, 1500);
-    const timer = setTimeout(() => {
-      if (done) return;
-      done = true;
-      if (attempt < RENDERER_ATTEMPTS) {
-        console.warn(`[SECTION-UI] body not rendered after ${RENDERER_WAIT_MS} ms — remounting the renderer (attempt ${attempt + 1})`);
-        setAttempt((a) => a + 1);
-      } else {
-        console.warn("[SECTION-UI] body renderer gave no content; showing the plain message instead");
-        setRendererTimedOut(true);
-      }
-    }, RENDERER_WAIT_MS);
-    return () => { window.removeEventListener("message", onMessage); clearInterval(poll); clearTimeout(nudge); clearTimeout(timer); };
+    // The wait only counts while this frame is ON SCREEN (kit/visible-timeout.js): the renderer does
+    // not report off-screen, and a section below the fold gave up before the reader got to it.
+    const stopTimer = visibleTimeout({
+      ms: RENDERER_WAIT_MS,
+      target: document.documentElement,
+      onExpire: () => {
+        if (done) return;
+        done = true;
+        if (attempt < RENDERER_ATTEMPTS) {
+          console.warn(`[SECTION-UI] body not rendered after ${RENDERER_WAIT_MS} ms on screen — remounting the renderer (attempt ${attempt + 1})`);
+          setAttempt((a) => a + 1);
+        } else {
+          console.warn("[SECTION-UI] body renderer gave no content; showing the plain message instead");
+          setRendererTimedOut(true);
+        }
+      },
+    });
+    return () => { window.removeEventListener("message", onMessage); clearInterval(poll); clearTimeout(nudge); stopTimer(); };
   }, [bodyProps, attempt]);
 
   const [error, setError] = useState(null);
