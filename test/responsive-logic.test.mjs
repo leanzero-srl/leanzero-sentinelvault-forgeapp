@@ -1,7 +1,7 @@
 // The pure decisions behind the 2026-10-07 responsive pass (device matrix 2026-10-06): where the
 // "Not applied yet" reminder goes, which edge a menu anchors to, where a dialog sits on a phone,
 // which modal size the banner opens, how an actor is named, and the API lists' display names.
-import { placeFloat } from "../src/ui/kit/float-placement.js";
+import { placeFloat, roomBelow, roomNeeded } from "../src/ui/kit/float-placement.js";
 import { horizontalCut, placeInBandX } from "../src/ui/kit/visible-placement.js";
 import { detailsModalSize } from "../src/ui/kit/modal-size.js";
 import { actorName, looksLikeAccountId } from "../src/ui/kit/activity-format.js";
@@ -23,6 +23,15 @@ const p = placeFloat({ anchor: row, size, view, blockers: rule });
 eq("pickers left and × right under the row → above the row instead", p.spot, "above-right");
 eq("…ending 8 px above the row", p.top, 300 - 8 - 40);
 eq("every spot blocked → the one overlapping the fewest controls", placeFloat({ anchor: row, size, view, blockers: [box(0, 360, 1000, 420), box(0, 360, 1000, 420), box(0, 250, 500, 300)] }).spot, "above-right");
+eq("a free spot reports no hits", placeFloat({ anchor: row, size, view }).hits, 0);
+eq("every spot blocked → hits > 0 (the caller opens a gap)", placeFloat({ anchor: row, size, view, blockers: [box(0, 360, 1000, 420), box(0, 250, 1000, 300)] }).hits > 0, true);
+eq("the gap is the reminder's height + 2 gaps", roomNeeded({ width: 400, height: 40 }), 56);
+eq("in the gap: 8 px under the row, on its left", roomBelow({ anchor: row, size, view }), { left: 40, top: 368, spot: "room-below", hits: 0, width: 400 });
+// A 620 px console frame on a 390 px phone (SV-18): only 0-390 is on screen.
+const band = { width: 620, height: 2000, left: 0, right: 390 };
+const onPhone = placeFloat({ anchor: { top: 100, bottom: 140, left: 16, right: 604 }, size: { width: 560, height: 48 }, view: band });
+eq("a phone shows 0-390 of the frame → the reminder fits the visible part", [onPhone.left, onPhone.width], [8, 374]);
+eq("…and the gap placement too", roomBelow({ anchor: { top: 100, bottom: 140, left: 16, right: 604 }, size: { width: 560, height: 48 }, view: { ...band, left: 230, right: 620 } }).left, 238);
 eq("a phone-width frame clamps the reminder inside it", placeFloat({ anchor: { top: 100, bottom: 140, left: 16, right: 604 }, size: { width: 700, height: 40 }, view: { width: 620, height: 900 } }).left, 8);
 
 // ── M-01 / SV-07: which side cuts a menu ───────────────────────────────────────────────────────
