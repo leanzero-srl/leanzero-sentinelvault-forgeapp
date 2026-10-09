@@ -50,15 +50,22 @@ export const ENTRIES = {
   "97c0b636a957c0d4": ["Closed accounts are erased from Sentinel Vault's records, except mentions inside sealed content", "D", {
     d: "Once the 7.0.0 update is approved, the weekly personal-data check sends Atlassian the ids of the accounts Sentinel Vault stores, each at most once per Atlassian's reporting cycle (7 days unless Atlassian sets another period). When Atlassian answers that an account was closed, the app erases that person everywhere it keeps them, including the backup. When it answers that an account changed, the app refreshes the stored name. Sealed sections are the record of what was sealed and are never rewritten: a closed account mentioned inside sealed content stays mentioned there, as in Confluence's own page history. Everything else the app keeps about that person is erased once, and is erased again only if a restore brings it back.",
   }],
-  "79e107cef46f4431": ["The first personal-data check runs within a day of the update", "D"],
+  // Review 2026-10-09: the bare line said "the first check" and relied on the line before it.
+  "79e107cef46f4431": ["The first personal-data check runs within a day of the update", "D", {
+    d: "The first personal-data check runs within a day of the 7.0.0 update, and each account is then checked every 7 days on the day, or on the period Atlassian asks for. If Atlassian refuses a check, it is tried again the next day instead of a week later.",
+  }],
   // A note that qualifies the erasure line above; carried in that issue's description.
   "4556ad45fa3d8ee4": ["", "D", { fold: "97c0b636a957c0d4" }],
-  "43a02b2d24c9bcde": ["Sentinel Vault asks for 12 fewer permissions", "I", {
+  // Review 2026-10-09: the net change is 11 fewer (38 -> 27 scopes: 12 removed, 1 added in the same
+  // release), so the title names the 12 unused ones instead of a net count.
+  "43a02b2d24c9bcde": ["Sentinel Vault no longer asks for 12 permissions it did not use", "I", {
     d: "Sentinel Vault asks for fewer permissions. It no longer requests 12 it held but did not use: read:confluence-space.summary, read:confluence-props, read:content:confluence, write:content:confluence, write:attachment:confluence, read:comment:confluence, read:content.property:confluence, write:content.property:confluence, read:content.restriction:confluence, write:content.restriction:confluence, read:content.metadata:confluence and read:content.permission:confluence. Everything the app did with them it already does through the permissions it keeps, so nothing it does changes. Two are kept on purpose: read:confluence-content.summary, because Confluence only tells the app about page and attachment changes with it, and read:label:confluence, which the page label check uses.",
   }],
   // "Kept on purpose" qualifies the permission line above; carried in that issue's description.
   "1c37b3461723560b": ["", "I", { fold: "43a02b2d24c9bcde" }],
-  f9be20e18d7cff16: ["The weekly check could not ask Atlassian about closed or changed accounts", "D"],
+  f9be20e18d7cff16: ["The weekly personal-data check could not ask Atlassian about closed or changed accounts", "D", {
+    d: "The weekly personal-data check could not ask Atlassian about closed or changed accounts, because the app did not hold the permission for it.",
+  }],
 
   // 6.11.0 (2026-10-04)
   "312ffb32a22ec18b": ["Email addresses brought back by a restore are cleaned every week", "D"],
@@ -70,7 +77,10 @@ export const ENTRIES = {
   "5c79d3744c4b859e": ["A backup file counted as deleted while it was still in the trash", "B"],
 
   // 6.9.0 (2026-10-04)
-  "6036a92c6caa7bf3": ["After Delete the backup, no new backup is taken until your next change", "B"],
+  // Review 2026-10-09: the note's "only after your next change" was disproved by two 6.10.0 fixes.
+  "6036a92c6caa7bf3": ["After Delete the backup, the hourly check no longer takes a new backup on its own", "B", {
+    d: "After Delete the backup, the hourly check no longer takes a new backup on its own, and the Backup tab says when the backup was deleted. Opening a page, the weekly personal-data check and backups queued before the delete could still take one until 6.10.0.",
+  }],
   "913ede5ce2ad9cad": ["Approver lists in workflow settings no longer store email addresses", "D"],
   ecd546ab2fb14d66: ["A backup deleted before an uninstall could come back within the hour", "B"],
   c47db610d884c943: ["The Delete the backup dialog said nothing could bring the setup back after an uninstall", "B"],
@@ -79,8 +89,9 @@ export const ENTRIES = {
   "6f53aee0c9069a52": ["Optional keep period for activity history, workflow history and read confirmations", "D", {
     d: "Site settings has a new Privacy and retention section. Turn on \"Delete old history\" to have activity history, workflow history and read confirmations older than \"Keep history for\" (730 days unless you change it) deleted by a weekly check. It is off unless you turn it on, so nothing is deleted on upgrade. If your records policy sets a keep period for history, turn on Delete old history there and set the period.",
   }],
-  c3680a2963cfa650: ["Run the weekly privacy check at once, in Site settings or over the REST API", "D", {
-    d: "The weekly privacy check can be run at once from Site settings, Privacy and retention, and over the REST API (operation privacy-sweep, admin tokens).",
+  // The screen calls it "Weekly personal-data check", button "Run the check now".
+  c3680a2963cfa650: ["Run the weekly personal-data check at once, in Site settings or over the REST API", "D", {
+    d: "The weekly personal-data check can be run at once with Run the check now in Site settings, Privacy and retention, and over the REST API (operation privacy-sweep, admin tokens).",
   }],
   eb363ed1144af6ba: ["", "D", { withhold: "How authenticator codes for signed actions are stored (secret storage); security mechanism topic, as the CogniRunner tracker withholds secrets lines." }],
   eaf7dcbd01d6a84f: ["Sentinel Vault no longer stores the email address of the person who seals", "D", {
@@ -113,9 +124,14 @@ export const ENTRIES = {
   }],
 
   // 6.4.0 (2026-09-30)
-  "02dc09e3ae3c6c5a": ["Every page shows its classification level", "L"],
+  // Classification is off unless a site admin turns it on (owner's decision 2026-09-19), and a space can opt out.
+  "02dc09e3ae3c6c5a": ["Pages show their classification level when Classification levels is on", "L", {
+    d: "When a site admin turns on Classification levels in Site settings (it is off unless turned on), every page shows its classification level, unless its space opts out. Raising a page's level is one action; lowering it asks for a reason.",
+  }],
   "63b9625934ccc58c": ["Force release is offered only when a space admin may use it", "S"],
-  "3dc93496d26ec777": ["Sealed and Available files page separately, and the counts match the cards", "S"],
+  "3dc93496d26ec777": ["Sealed and Available files have separate paging, and the counts match the cards", "S", {
+    d: "Sealed and Available files have separate paging, the counts match the cards, and a file you just sealed or released moves to the top of its group.",
+  }],
   "25208201ab12f4bd": ["A declined edit request can be asked again after a cooldown", "E"],
   "62540185f1c856a3": ["Seal actions can require an authenticator code", "S"],
 };
@@ -124,7 +140,8 @@ export const ENTRIES = {
 // at the 7.1.0 release (2026-10-09); `affects` is the version it was confirmed on. Keyed by a stable
 // slug. `why` (optional) says when the cause is Confluence's, not the app's.
 // Open items that would describe how protection can be got round are NOT written here (this file is
-// public); they go to the owner privately and are fixed instead.
+// public); they go to the owner privately and are fixed instead. The same holds for a row that
+// shares its trigger with such an item: it waits for the fix and is then published as a Done bug.
 export const KNOWN = [
   {
     k: "known-phone-settings-wider-than-screen", c: "C", affects: "7.1.0",
@@ -139,7 +156,7 @@ export const KNOWN = [
     t: "On a phone, the Sentinel Vault window opened from under the page title or the page menu keeps a fixed height",
     see: "Opened from Sentinel Vault under the page title, or from Seal attachments… in the page menu, the Sentinel Vault window keeps a fixed height. On a phone held sideways it runs past the bottom of the screen, so you scroll down to reach the Seal button. Held upright, it can leave empty space under its buttons.",
     where: "The Sentinel Vault window and Seal attachments, on a phone.",
-    workaround: "Use Open on the page's Sentinel Vault banner where the page shows one: on a phone that window fills the screen. Otherwise scroll down inside the window to reach its buttons.",
+    workaround: "For the Sentinel Vault window, use Open on the page's Sentinel Vault banner where the page shows one: on a phone it fills the screen. To seal files, open its Attachments tab and press Open the full attachments view, which also fills the screen and has a seal control on each file. Otherwise scroll down inside the window to reach its buttons.",
     why: "Confluence sets the size of windows opened from these two places.",
   },
   {
@@ -150,17 +167,10 @@ export const KNOWN = [
     workaround: "Open the page the file is attached to: its Sentinel Vault panel and the Sentinel Vault window list the seals on that page.",
   },
   {
-    k: "known-edit-access-ends-at-old-seal-date", c: "E", affects: "7.1.0",
-    t: "After Seals expire is turned off and on again, edit access on a sealed file can end before the seal does",
-    see: "Edit access given on a sealed file ends on the seal's end date. When a site admin turns Seals expire off and later on again, the seal's end date moves later by the time it was off, but edit access already given still ends on the old date, so after that date the person can no longer change the file.",
-    where: "Edit access on sealed files, on a site where Seals expire (Site settings) was turned off and then on again.",
-    workaround: "The file's owner, or a space admin, gives edit access again with Give edit access… in the file's ⋯ menu. The new access lasts until the seal's new end date.",
-  },
-  {
     k: "known-ai-chip-counts-dismissed", c: "P", affects: "7.1.0",
     t: "The banner's AI check chip still counts findings you dismissed",
     see: "The AI check chip on the page banner counts every finding from the latest AI review, including the ones you dismissed or marked as a false positive.",
-    where: "The page banner, on pages that had an AI review, on screens wider than about 860 px.",
+    where: "The page banner, on pages that had an AI review, when the banner is about 860 px wide or wider (narrower banners do not show the chip).",
     workaround: "The Sentinel Vault panel on the page lists open findings apart from the hidden ones. Re-running the AI review after the page is fixed refreshes the count.",
   },
   {
@@ -172,9 +182,9 @@ export const KNOWN = [
   },
   {
     k: "known-reminder-over-heading-phone", c: "C", affects: "7.1.0",
-    t: "On a narrow phone, the Not applied yet reminder can sit over the Enforcement heading",
-    see: "On a narrow phone, after you change a validation setting, the Not applied yet reminder can cover the Enforcement heading's text. It does not cover a button or a field.",
-    where: "Space settings or Site settings, Validations tab, on a narrow phone.",
-    workaround: "Press Apply or Discard on the reminder, or scroll a little to read the heading.",
+    t: "On a very narrow phone, the Not applied yet reminder can sit over the Enforcement heading",
+    see: "On a phone narrower than about 355 px, after you change a validation setting, the Not applied yet reminder can cover the Enforcement heading's text. It does not cover a button or a field.",
+    where: "Space settings or Site settings, Validations tab, on a phone narrower than about 355 px.",
+    workaround: "Scroll a little to read the heading. The reminder goes away once you press Apply or Discard.",
   },
 ];
