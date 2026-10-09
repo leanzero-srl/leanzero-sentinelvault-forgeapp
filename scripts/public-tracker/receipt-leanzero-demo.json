@@ -1,0 +1,298 @@
+{
+  "site": "https://leanzero-demo.atlassian.net",
+  "projectKey": "SVT",
+  "components": {
+    "Sealed files and sections": "10117",
+    "Edit requests and access": "10118",
+    "Page banner and Sentinel Vault window": "10119",
+    "Space and site settings": "10120",
+    "Workflow and approvals": "10121",
+    "Classification": "10122",
+    "Backup and restore": "10123",
+    "Privacy and personal data": "10124",
+    "REST API": "10125",
+    "My work": "10126",
+    "Activity report": "10127",
+    "Layout and accessibility": "10128",
+    "App permissions and updates": "10129"
+  },
+  "versions": {
+    "6.4.0": "10111",
+    "6.5.0": "10112",
+    "6.6.0": "10113",
+    "6.7.0": "10114",
+    "6.9.0": "10115",
+    "6.10.0": "10116",
+    "6.11.0": "10117",
+    "7.0.0": "10118",
+    "7.1.0": "10119"
+  },
+  "issues": {
+    "02dc09e3ae3c6c5a": {
+      "key": "SVT-1",
+      "id": "26811"
+    },
+    "63b9625934ccc58c": {
+      "key": "SVT-2",
+      "id": "26812"
+    },
+    "3dc93496d26ec777": {
+      "key": "SVT-3",
+      "id": "26813"
+    },
+    "25208201ab12f4bd": {
+      "key": "SVT-4",
+      "id": "26814"
+    },
+    "62540185f1c856a3": {
+      "key": "SVT-5",
+      "id": "26815"
+    },
+    "2e41e20b3342877f": {
+      "key": "SVT-6",
+      "id": "26816"
+    },
+    "af0750e9409a3cd1": {
+      "key": "SVT-7",
+      "id": "26817"
+    },
+    "67ff2bdee773be89": {
+      "key": "SVT-8",
+      "id": "26818"
+    },
+    "b6ca3fcc1e0d4623": {
+      "key": "SVT-9",
+      "id": "26819"
+    },
+    "f068e52a8c2063e3": {
+      "key": "SVT-10",
+      "id": "26820"
+    },
+    "54e26958cb39ec07": {
+      "key": "SVT-11",
+      "id": "26821"
+    },
+    "d3ea1dc0ed5f4434": {
+      "key": "SVT-12",
+      "id": "26822"
+    },
+    "6f53aee0c9069a52": {
+      "key": "SVT-13",
+      "id": "26823"
+    },
+    "c3680a2963cfa650": {
+      "key": "SVT-14",
+      "id": "26824"
+    },
+    "eaf7dcbd01d6a84f": {
+      "key": "SVT-15",
+      "id": "26825"
+    },
+    "19aacd619c901ba0": {
+      "key": "SVT-16",
+      "id": "26826"
+    },
+    "21e239ea4b19e7bf": {
+      "key": "SVT-17",
+      "id": "26827"
+    },
+    "34b5a70ce95e3f81": {
+      "key": "SVT-18",
+      "id": "26828"
+    },
+    "797353b009467098": {
+      "key": "SVT-19",
+      "id": "26829"
+    },
+    "41ffc8131f0821e6": {
+      "key": "SVT-20",
+      "id": "26830"
+    },
+    "6036a92c6caa7bf3": {
+      "key": "SVT-21",
+      "id": "26831"
+    },
+    "913ede5ce2ad9cad": {
+      "key": "SVT-22",
+      "id": "26832"
+    },
+    "ecd546ab2fb14d66": {
+      "key": "SVT-23",
+      "id": "26833"
+    },
+    "c47db610d884c943": {
+      "key": "SVT-24",
+      "id": "26834"
+    },
+    "2c3b5920fd91e2ba": {
+      "key": "SVT-25",
+      "id": "26835"
+    },
+    "b7dba70248a89e99": {
+      "key": "SVT-26",
+      "id": "26836"
+    },
+    "88c021613301e484": {
+      "key": "SVT-27",
+      "id": "26837"
+    },
+    "5c79d3744c4b859e": {
+      "key": "SVT-28",
+      "id": "26838"
+    },
+    "312ffb32a22ec18b": {
+      "key": "SVT-29",
+      "id": "26839"
+    },
+    "22ba9b1dab16f22a": {
+      "key": "SVT-30",
+      "id": "26840"
+    },
+    "97c0b636a957c0d4": {
+      "key": "SVT-31",
+      "id": "26841"
+    },
+    "79e107cef46f4431": {
+      "key": "SVT-32",
+      "id": "26842"
+    },
+    "43a02b2d24c9bcde": {
+      "key": "SVT-33",
+      "id": "26843"
+    },
+    "f9be20e18d7cff16": {
+      "key": "SVT-34",
+      "id": "26844"
+    },
+    "bb738ac5493e0004": {
+      "key": "SVT-35",
+      "id": "26845"
+    },
+    "1b1796693e630826": {
+      "key": "SVT-36",
+      "id": "26846"
+    },
+    "5a72bb4ba304ca77": {
+      "key": "SVT-37",
+      "id": "26847"
+    },
+    "fdd961d457492eef": {
+      "key": "SVT-38",
+      "id": "26848"
+    },
+    "ef8cbf2f0ed996ad": {
+      "key": "SVT-39",
+      "id": "26849"
+    },
+    "3e641e0a32ebd960": {
+      "key": "SVT-40",
+      "id": "26850"
+    },
+    "01da593d264d0386": {
+      "key": "SVT-41",
+      "id": "26851"
+    },
+    "d0431e9f0d93b3bc": {
+      "key": "SVT-42",
+      "id": "26852"
+    },
+    "known-phone-settings-wider-than-screen": {
+      "key": "SVT-43",
+      "id": "26853"
+    },
+    "known-phone-window-fixed-height": {
+      "key": "SVT-44",
+      "id": "26854"
+    },
+    "known-my-sealed-files-large-site": {
+      "key": "SVT-45",
+      "id": "26855"
+    },
+    "known-ai-chip-counts-dismissed": {
+      "key": "SVT-46",
+      "id": "26856"
+    },
+    "known-macro-position-focus": {
+      "key": "SVT-47",
+      "id": "26857"
+    },
+    "known-reminder-over-heading-phone": {
+      "key": "SVT-48",
+      "id": "26858"
+    }
+  },
+  "permissionScheme": {
+    "id": 10265,
+    "created": true,
+    "grants": 73,
+    "droppedUnrecognised": [
+      "VIEW_PROJECTS",
+      "VIEW_ISSUES"
+    ],
+    "assigned": true
+  },
+  "updatedAt": "2026-10-09T14:03:43.967Z",
+  "projectId": "10278",
+  "issueTypeScheme": {
+    "id": "10636",
+    "name": "SVT: Kanban Issue Type Scheme"
+  },
+  "issueTypes": {
+    "Bug": "10041",
+    "Improvement": "10151"
+  },
+  "withheld": [
+    {
+      "h": "eb363ed1144af6ba",
+      "version": "6.7.0",
+      "kind": "changes",
+      "why": "How authenticator codes for signed actions are stored (secret storage); security mechanism topic, as the CogniRunner tracker withholds secrets lines."
+    }
+  ],
+  "folds": {
+    "4556ad45fa3d8ee4": {
+      "version": "7.0.0",
+      "into": "97c0b636a957c0d4",
+      "key": "SVT-31"
+    },
+    "1c37b3461723560b": {
+      "version": "7.0.0",
+      "into": "43a02b2d24c9bcde",
+      "key": "SVT-33"
+    }
+  },
+  "public": {
+    "schemeId": 10265,
+    "grantId": 11703,
+    "grantedAt": "2026-10-09T14:03:24.251Z",
+    "undo": "DELETE /rest/api/3/permissionscheme/10265/permission/11703",
+    "proof": {
+      "GET /rest/api/3/issue/SVT-1": 200,
+      "GET /rest/api/3/issue/ATLAS-2361": 404,
+      "GET /rest/api/3/issue/CRBAK-1": 404,
+      "GET /rest/api/3/issue/CRD-30": 404,
+      "GET /rest/api/3/issue/CRS-9": 404,
+      "GET /rest/api/3/issue/CRT-168": 200,
+      "GET /rest/api/3/issue/CS-1223": 404,
+      "GET /rest/api/3/issue/DACC-5": 404,
+      "GET /rest/api/3/issue/DESIGN-1225": 404,
+      "GET /rest/api/3/issue/GROWTH-1226": 404,
+      "GET /rest/api/3/issue/GUARD-3": 404,
+      "GET /rest/api/3/issue/HELIOS-1724": 404,
+      "GET /rest/api/3/issue/ITHELP-1223": 404,
+      "GET /rest/api/3/issue/KAN-1": 404,
+      "GET /rest/api/3/issue/LEDGER-1225": 404,
+      "GET /rest/api/3/issue/LZMT-38": 404,
+      "GET /rest/api/3/issue/ORBIT-91": 404,
+      "GET /rest/api/3/issue/PLATSUP-1222": 404,
+      "GET /rest/api/3/issue/PRISM-1223": 404,
+      "GET /rest/api/3/issue/SEC-1225": 404,
+      "GET /rest/api/3/issue/VOY-1992": 404,
+      "anonymous site-wide search (bounded, all pages)": "SVT 48, CRT 168",
+      "anonymous listing of SVT": "48 issues (已完成 42, Backlog 6)",
+      "other projects whose scheme lets anyone browse": "CRT",
+      "expected public (allowlist)": "CRT",
+      "GET /jira/software/c/projects/SVT/issues": 200
+    }
+  }
+}
