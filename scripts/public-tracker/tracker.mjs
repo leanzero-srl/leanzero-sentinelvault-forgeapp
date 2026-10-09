@@ -645,10 +645,30 @@ async function makePublic() {
     const is = (s.issues || [])[0];
     if (is) proof[`GET /rest/api/3/issue/${is.key}`] = await anonGet(`/rest/api/3/issue/${is.key}`);
   }
-  const all = await fetch(`${SITE}/rest/api/3/search/jql?jql=${encodeURIComponent("ORDER BY created DESC")}&maxResults=100&fields=project`, { headers: { Accept: "application/json" } });
-  const allBody = all.ok ? await all.json() : { issues: [] };
-  const seen = [...new Set((allBody.issues || []).map((x) => x.fields.project.key))];
-  proof["anonymous site-wide search: projects returned"] = seen.join(",") || `HTTP ${all.status}`;
+  // Logged-out searches. The enhanced search refuses UNBOUNDED JQL ("ORDER BY created DESC" alone
+  // answers 400 to everyone), and a refused search must never read as "nothing leaked": bound the
+  // JQL, page through every result, and fail the proof on any non-200.
+  const anonSearch = async (jql, fields) => {
+    const out = [];
+    let next;
+    for (let n = 0; n < 200; n++) {
+      const u = `${SITE}/rest/api/3/search/jql?jql=${encodeURIComponent(jql)}&maxResults=100&fields=${fields}${next ? `&nextPageToken=${encodeURIComponent(next)}` : ""}`;
+      const r = await fetch(u, { headers: { Accept: "application/json" } });
+      if (!r.ok) return { status: r.status, issues: out };
+      const b = await r.json();
+      out.push(...(b.issues || []));
+      next = b.nextPageToken;
+      if (b.isLast || !next) return { status: 200, issues: out };
+    }
+    return { status: "too many pages", issues: out };
+  };
+  const site = await anonSearch('created >= "2000-01-01" ORDER BY created DESC', "project");
+  const seenCount = site.issues.reduce((m, x) => ((m[x.fields.project.key] = (m[x.fields.project.key] || 0) + 1), m), {});
+  const seen = Object.keys(seenCount);
+  proof["anonymous site-wide search (bounded, all pages)"] = site.status === 200 ? Object.entries(seenCount).map(([k, v]) => `${k} ${v}`).join(", ") || "no issues" : `HTTP ${site.status}`;
+  const mine = await anonSearch(`project = ${KEY} ORDER BY key ASC`, "summary,status");
+  proof[`anonymous listing of ${KEY}`] = mine.status === 200 ? `${mine.issues.length} issues (${Object.entries(mine.issues.reduce((m, x) => ((m[x.fields.status.name] = (m[x.fields.status.name] || 0) + 1), m), {})).map(([k, v]) => `${k} ${v}`).join(", ")})` : `HTTP ${mine.status}`;
+  const wantCount = Object.keys(rc.issues).length;
   proof["other projects whose scheme lets anyone browse"] = [...alsoPublic].join(",") || "none";
   proof["expected public (allowlist)"] = [...EXPECTED_PUBLIC].join(",");
   proof[`GET /jira/software/c/projects/${KEY}/issues`] = (await fetch(`${SITE}/jira/software/c/projects/${KEY}/issues`, { redirect: "manual" })).status;
@@ -659,7 +679,11 @@ async function makePublic() {
   const leaks = Object.entries(proof).filter(([k, v]) => keyOf(k) && keyOf(k) !== KEY && !EXPECTED_PUBLIC.has(keyOf(k)) && v === 200);
   const searchLeak = seen.filter((k) => k !== KEY && !EXPECTED_PUBLIC.has(k));
   const schemeLeak = [...alsoPublic].filter((k) => !EXPECTED_PUBLIC.has(k));
-  if (proof[`GET /rest/api/3/issue/${firstKey}`] !== 200 || leaks.length || searchLeak.length || schemeLeak.length) { console.log("PROOF FAILED", { leaks, searchLeak, schemeLeak }); process.exitCode = 1; }
+  const searchBroken = site.status !== 200 || mine.status !== 200 || mine.issues.length !== wantCount;
+  if (proof[`GET /rest/api/3/issue/${firstKey}`] !== 200 || leaks.length || searchLeak.length || schemeLeak.length || searchBroken) {
+    console.log("PROOF FAILED", { leaks, searchLeak, schemeLeak, searchBroken, listed: mine.issues.length, wantCount });
+    process.exitCode = 1;
+  } else console.log(`PROOF OK: ${KEY} readable logged out (${mine.issues.length}/${wantCount} listed), no other project readable except ${[...EXPECTED_PUBLIC].join(", ")}`);
 }
 
 const cmd = process.argv[2];
