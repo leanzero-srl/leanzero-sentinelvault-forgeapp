@@ -231,7 +231,7 @@
     ],
     "assigned": true
   },
-  "updatedAt": "2026-10-09T14:03:43.967Z",
+  "updatedAt": "2026-10-09T14:47:22.100Z",
   "projectId": "10278",
   "issueTypeScheme": {
     "id": "10636",
@@ -268,13 +268,14 @@
     "undo": "DELETE /rest/api/3/permissionscheme/10265/permission/11703",
     "proof": {
       "GET /rest/api/3/issue/SVT-1": 200,
+      "GET /rest/api/3/issue/SVT-48": 200,
       "GET /rest/api/3/issue/ATLAS-2361": 404,
       "GET /rest/api/3/issue/CRBAK-1": 404,
       "GET /rest/api/3/issue/CRD-30": 404,
       "GET /rest/api/3/issue/CRS-9": 404,
-      "GET /rest/api/3/issue/CRT-168": 200,
+      "GET /rest/api/3/issue/CRT-317": 200,
       "GET /rest/api/3/issue/CS-1223": 404,
-      "GET /rest/api/3/issue/DACC-5": 404,
+      "GET /rest/api/3/issue/DACC-6": 404,
       "GET /rest/api/3/issue/DESIGN-1225": 404,
       "GET /rest/api/3/issue/GROWTH-1226": 404,
       "GET /rest/api/3/issue/GUARD-3": 404,
@@ -282,17 +283,24 @@
       "GET /rest/api/3/issue/ITHELP-1223": 404,
       "GET /rest/api/3/issue/KAN-1": 404,
       "GET /rest/api/3/issue/LEDGER-1225": 404,
-      "GET /rest/api/3/issue/LZMT-38": 404,
+      "GET /rest/api/3/issue/LZMT-307": 200,
       "GET /rest/api/3/issue/ORBIT-91": 404,
       "GET /rest/api/3/issue/PLATSUP-1222": 404,
       "GET /rest/api/3/issue/PRISM-1223": 404,
       "GET /rest/api/3/issue/SEC-1225": 404,
       "GET /rest/api/3/issue/VOY-1992": 404,
-      "anonymous site-wide search (bounded, all pages)": "SVT 48, CRT 168",
-      "anonymous listing of SVT": "48 issues (已完成 42, Backlog 6)",
-      "other projects whose scheme lets anyone browse": "CRT",
-      "expected public (allowlist)": "CRT",
+      "anonymous site-wide search (bounded, all pages): issues per project": {
+        "CRT": 317,
+        "LZMT": 307,
+        "SVT": 48
+      },
+      "anonymous listing of SVT": "48 issues (receipt holds 48; 已完成 42, Backlog 6)",
+      "other projects whose scheme lets anyone browse": "CRT,LZMT",
+      "public trackers (allowlist)": "CRT,SVT,LZMT",
+      "negative control": "13 fake broken answers, each failed the verdict",
       "GET /jira/software/c/projects/SVT/issues": 200
-    }
+    },
+    "provenAt": "2026-10-09T14:47:22.100Z",
+    "proofFailures": []
   }
 }

@@ -12,6 +12,8 @@
 //   node scripts/public-tracker/tracker.mjs apply                # create what is missing (idempotent)
 //   node scripts/public-tracker/tracker.mjs verify               # re-read every issue, counts, review file
 //   node scripts/public-tracker/tracker.mjs public               # grant BROWSE_PROJECTS to anyone on SVT's OWN scheme, prove it
+//   node scripts/public-tracker/tracker.mjs public --reprove     # the re-proof after every update: refuses to add a missing grant
+//   node scripts/public-tracker/tracker.mjs selftest             # offline: the logged-out proof's verdict must FAIL on fake leaks
 //
 // `plan` writes review-<date>.md next to this file: every planned issue's exact public text. Nothing
 // is applied or made public before an independent adversarial review of that file passes (the gate
@@ -66,10 +68,10 @@ const MARKETPLACE_VERSIONS = "https://marketplace.atlassian.com/rest/2/addons/co
 // installed automatically: a site below it stays there until a site admin approves the update. So every
 // issue of version M.x says that a site on version M-1 or earlier gets it only after that approval.
 // The Marketplace number of a Forge app carries the Forge major, so M is the version's first number.
-// Projects that may answer a logged-out read besides SVT: LeanZero's other PUBLIC trackers, by key.
-// Anything else readable without a login is a leak and fails `public` (review 2026-10-09: deriving
-// this from "its scheme grants anyone" switched the check off for every other project).
-const EXPECTED_PUBLIC = new Set(["CRT", "LZMT"]); // LZMT public since 2026-10-09
+// The projects that may answer a logged-out read: PUBLIC_TRACKERS (CRT, SVT, LZMT, by key), with the
+// logged-out proof further down. Anything else readable without a login is a leak and fails `public`.
+// `public --reprove` re-proves an already public tracker and refuses to add a missing grant.
+const REPROVE = process.argv.includes("--reprove");
 const STATUS = { released: "Done", known: ["Backlog", "To Do", "Open"] };
 
 const vparts = (v) => v.split(".").map(Number);
@@ -611,79 +613,207 @@ async function verify() {
   if (fails.length) { console.log(fails.join("\n")); process.exitCode = 1; }
 }
 
+// ---------- the logged-out proof: what it reads, its verdict, and the verdict's negative control ----------
+// The same block lives in the CRT, SVT and LZMT drivers (one per repo, baseline pillar 11); keep them in step.
+//
+// The public trackers on leanzero-demo, by KEY and nothing else. Any other project an anonymous request
+// can read, or whose permission scheme lets "anyone" browse it, is a LEAK and fails the proof. Never
+// derive this list (from scheme names, or from "its scheme grants anyone"): each derived rule switched
+// the leak check off for whatever it matched. When another app's tracker goes public, add its key here
+// AND in the other two drivers, or their next re-proof fails.
+export const PUBLIC_TRACKERS = new Set(["CRT", "SVT", "LZMT"]);
+// Jira's enhanced search answers 400 to UNBOUNDED JQL ("ORDER BY created DESC" alone, logged in or out),
+// and that 400 was once recorded as a pass. The site-wide search is bounded, read to its last page, and
+// any non-200 fails.
+export const SITE_JQL = 'created >= "2000-01-01" ORDER BY created DESC';
+const tally = (list, field) => list.reduce((m, x) => ((m[x[field]] = (m[x[field]] || 0) + 1), m), {});
+
+/** Every issue an anonymous search for `jql` returns, all pages, as { key, project, status }. `get` is
+ *  the fetch to use (the negative control passes a fake one; the proof passes plain fetch, no login).
+ *  Fails closed: a non-200, a page that says more follow but carries no token, or too many pages comes
+ *  back as a non-200 status; an issue without a project field counts under "(no project field)", which
+ *  no allowlist holds. */
+export async function anonSearch(get, site, jql) {
+  const issues = [];
+  let next = null;
+  for (let page = 0; page < 200; page++) {
+    const url = `${site}/rest/api/3/search/jql?jql=${encodeURIComponent(jql)}&maxResults=100&fields=project,status${next ? `&nextPageToken=${encodeURIComponent(next)}` : ""}`;
+    const r = await get(url, { headers: { Accept: "application/json" } });
+    if (r.status !== 200) return { status: r.status, issues };
+    const b = await r.json();
+    for (const x of b.issues || []) {
+      const f = x.fields || {};
+      issues.push({ key: x.key, project: (f.project && f.project.key) || "(no project field)", status: f.status ? f.status.name : null });
+    }
+    if (b.isLast === true || (b.isLast === undefined && !b.nextPageToken)) return { status: 200, issues };
+    if (!b.nextPageToken) return { status: "a page said more follow but carried no nextPageToken", issues };
+    next = b.nextPageToken;
+  }
+  return { status: "more than 200 pages", issues };
+}
+
+/** The verdict over the logged-out reads; an empty list means proven. Pure, so the negative control
+ *  can run it on fake answers.
+ *  receiptKeys: the tracker's issue keys from the receipt. ownReads: { "<KEY>-n": status } for its own
+ *  issues read logged out (each must be 200). samples: [{ project, issue, status }], one issue of every
+ *  other project read logged out. anyoneSchemes: the other projects whose scheme lets anyone browse.
+ *  site / own: anonSearch results for SITE_JQL and for `project = <KEY>`. */
+export function judgeProof({ key, receiptKeys, ownReads, samples, anyoneSchemes, site, own }) {
+  const fails = [];
+  if (!PUBLIC_TRACKERS.has(key)) fails.push(`${key} is not in PUBLIC_TRACKERS`);
+  if (!receiptKeys.length) fails.push("the receipt holds no issues, so nothing is proven");
+  if (!Object.keys(ownReads).length) fails.push(`no ${key} issue was read logged out`);
+  for (const [k, st] of Object.entries(ownReads)) if (st !== 200) fails.push(`${k} answered ${st} logged out`);
+  for (const s of samples) if (s.status === 200 && !PUBLIC_TRACKERS.has(s.project)) fails.push(`LEAK: ${s.issue} (${s.project}) is readable logged out`);
+  for (const p of anyoneSchemes) if (!PUBLIC_TRACKERS.has(p)) fails.push(`LEAK: ${p}'s permission scheme lets anyone browse it`);
+  if (site.status !== 200) fails.push(`the anonymous site-wide search answered ${site.status}, so it proves nothing`);
+  const perProject = tally(site.issues, "project");
+  for (const [p, n] of Object.entries(perProject)) if (!PUBLIC_TRACKERS.has(p)) fails.push(`LEAK: the anonymous site-wide search reaches ${p} (${n} issues)`);
+  // Positive control on the search itself: a search that cannot see the tracker's own issues cannot
+  // see a leak either, and would otherwise pass as "nothing leaked".
+  if ((perProject[key] || 0) !== receiptKeys.length) fails.push(`positive control: the anonymous site-wide search found ${perProject[key] || 0} ${key} issues, the receipt holds ${receiptKeys.length}`);
+  if (own.status !== 200) fails.push(`the anonymous listing of ${key} answered ${own.status}`);
+  else {
+    const got = new Set(own.issues.map((x) => x.key));
+    const want = new Set(receiptKeys);
+    const missing = receiptKeys.filter((k) => !got.has(k));
+    const extra = [...got].filter((k) => !want.has(k));
+    if (missing.length || extra.length || own.issues.length !== receiptKeys.length) {
+      fails.push(`the anonymous listing of ${key} holds ${own.issues.length} issues, the receipt ${receiptKeys.length} (missing: ${missing.slice(0, 5).join(",") || "none"}; not in the receipt: ${extra.slice(0, 5).join(",") || "none"})`);
+    }
+  }
+  return fails;
+}
+
+/** NEGATIVE CONTROL: runs the reader and the verdict on fake Jira answers, one healthy and the rest each
+ *  broken in one way, and throws unless the healthy one passes and every broken one FAILS. The fake
+ *  search answers 400 to unbounded JQL as Jira does and pages two issues at a time, so a leak on the
+ *  last page and an unbounded SITE_JQL are both exercised. Offline; runs first in every `public` and
+ *  alone as `selftest`. A leak check nobody has seen fail is not a check. */
+export async function negativeControl(key) {
+  const own = [1, 2, 3].map((n) => `${key}-${n}`);
+  const other = [...PUBLIC_TRACKERS].find((k) => k !== key);
+  const issue = (k) => ({ key: k, fields: { project: { key: k.split("-")[0] }, status: { name: "Done" } } });
+  const fake = (answer) => async (url) => {
+    const q = new URL(url).searchParams;
+    const jql = q.get("jql") || "";
+    if (/^\s*order\s+by\b/i.test(jql)) return { status: 400, json: async () => ({ errorMessages: ["Unbounded JQL queries are not allowed here."] }) };
+    const a = answer(jql);
+    if (typeof a === "number") return { status: a, json: async () => ({}) };
+    // In a page, a number is that page's HTTP status and "no token" makes it claim more pages without one.
+    const at = Number(q.get("nextPageToken") || 0);
+    const page = a.slice(at, at + 2);
+    const failed = page.find((x) => typeof x === "number");
+    if (failed) return { status: failed, json: async () => ({}) };
+    const issues = page.filter((x) => typeof x === "object");
+    if (page.includes("no token")) return { status: 200, json: async () => ({ issues, isLast: false }) };
+    const more = at + 2 < a.length;
+    return { status: 200, json: async () => ({ issues, isLast: !more, ...(more ? { nextPageToken: String(at + 2) } : {}) }) };
+  };
+  const healthy = {
+    siteJql: SITE_JQL,
+    site: [...own, `${other}-9`].map(issue),
+    own: own.map(issue),
+    ownReads: { [own[0]]: 200, [own[2]]: 200 },
+    samples: [{ project: other, issue: `${other}-9`, status: 200 }, { project: "VOY", issue: "VOY-7", status: 404 }],
+    anyoneSchemes: [other],
+  };
+  const run = async (c) => {
+    const get = fake((jql) => (jql.startsWith(`project = ${key} `) ? c.own : c.site));
+    const site = await anonSearch(get, "https://fake.invalid", c.siteJql);
+    const listing = await anonSearch(get, "https://fake.invalid", `project = ${key} ORDER BY key ASC`);
+    return judgeProof({ key, receiptKeys: own, ownReads: c.ownReads, samples: c.samples, anyoneSchemes: c.anyoneSchemes, site, own: listing });
+  };
+  const broken = {
+    "a private project's issue on the LAST page of the site-wide search": { site: [...healthy.site, issue("VOY-7")] },
+    "the site-wide search answers 400": { site: 400 },
+    "a later page of the site-wide search answers 500": { site: [...healthy.site, 500] },
+    "a site-wide page says more follow but carries no token": { site: [...healthy.site, "no token"] },
+    "an unbounded site-wide JQL": { siteJql: "ORDER BY created DESC" },
+    "the site-wide search finds none of the tracker's issues": { site: [issue(`${other}-9`)] },
+    "the site-wide search misses one of the tracker's issues": { site: healthy.site.slice(1) },
+    "a site-wide search hit without a project field": { site: [...healthy.site, { key: "VOY-8", fields: {} }] },
+    "a private project's issue answers 200 logged out": { samples: [healthy.samples[0], { project: "VOY", issue: "VOY-7", status: 200 }] },
+    "a private project's scheme lets anyone browse": { anyoneSchemes: [other, "VOY"] },
+    "the tracker's own issue answers 404 logged out": { ownReads: { [own[0]]: 404, [own[2]]: 200 } },
+    "the anonymous listing misses an issue": { own: own.slice(0, 2).map(issue) },
+    "the anonymous listing answers 401": { own: 401 },
+  };
+  const base = await run(healthy);
+  if (base.length) throw new Error(`negative control: the healthy fake answer fails: ${base.join("; ")}`);
+  const blind = [];
+  for (const [name, change] of Object.entries(broken)) if (!(await run({ ...healthy, ...change })).length) blind.push(name);
+  if (blind.length) throw new Error(`negative control: the proof PASSES on ${blind.join("; ")}`);
+  return Object.keys(broken).length;
+}
+
 // ---------- public ----------
-// Grants BROWSE_PROJECTS to holder type "anyone" (Jira's REST name for "anyone on the web") on SVT's
-// OWN permission scheme, and nothing else; then proves it with unauthenticated reads.
+// Grants BROWSE_PROJECTS to holder type "anyone" (Jira's REST name for "Anyone on the web") on SVT's
+// OWN permission scheme, and nothing else; then proves it with unauthenticated reads (judgeProof above).
+// Idempotent: on a tracker that is already public it adds nothing and keeps the first grant's time, so
+// `public --reprove` is the re-proof after every update; --reprove refuses to add a missing grant.
 async function makePublic() {
+  const controls = await negativeControl(KEY); // throws, before any Jira call, if the verdict cannot fail
   const rc = readReceipt();
   const perm = must(await jira(`/rest/api/3/project/${KEY}/permissionscheme`), `${KEY} scheme`);
   const users = await schemeUsers(perm.id);
   if (users.join() !== KEY) throw new Error(`scheme ${perm.id} "${perm.name}" is used by ${users.join(", ")}; refusing to grant anonymous access on a shared scheme`);
   const full = must(await jira(`/rest/api/3/permissionscheme/${perm.id}?expand=permissions`), "grants");
   let grant = full.permissions.find((g) => g.holder.type === "anyone" && g.permission === "BROWSE_PROJECTS");
+  const existed = !!grant;
+  if (!grant && REPROVE) throw new Error(`${KEY}'s scheme ${perm.id} has no anonymous browse grant; --reprove never adds one (run public without it, after the review gate, to make ${KEY} public)`);
   if (!grant) grant = must(await jira(`/rest/api/3/permissionscheme/${perm.id}/permission`, "POST", { holder: { type: "anyone" }, permission: "BROWSE_PROJECTS" }), "grant anonymous browse");
   const after = must(await jira(`/rest/api/3/permissionscheme/${perm.id}?expand=permissions`), "grants");
   const anon = after.permissions.filter((g) => g.holder.type === "anyone");
   if (anon.some((g) => g.permission !== "BROWSE_PROJECTS")) throw new Error(`anonymous holds more than browse: ${anon.map((g) => g.permission).join(", ")}`);
-  rc.public = { schemeId: perm.id, grantId: grant.id, grantedAt: new Date().toISOString(), undo: `DELETE /rest/api/3/permissionscheme/${perm.id}/permission/${grant.id}` };
+  const keptAt = existed && rc.public && String(rc.public.grantId) === String(grant.id) ? rc.public.grantedAt : null;
+  rc.public = { schemeId: perm.id, grantId: grant.id, grantedAt: keptAt || new Date().toISOString(), undo: `DELETE /rest/api/3/permissionscheme/${perm.id}/permission/${grant.id}` };
   writeReceipt(rc);
   const anonGet = async (path) => (await fetch(SITE + path, { headers: { Accept: "application/json" } })).status;
-  const firstKey = `${KEY}-1`;
-  // A new grant takes ~20 s to reach Jira's permission cache (measured on CRT: 404 at once, then 200).
-  for (let n = 0; n < 12 && (await anonGet(`/rest/api/3/issue/${firstKey}`)) !== 200; n++) await new Promise((res) => setTimeout(res, 10000));
-  const first = rc.issues[Object.keys(rc.issues)[0]].key;
-  const proof = { [`GET /rest/api/3/issue/${first}`]: await anonGet(`/rest/api/3/issue/${first}`), [`GET /rest/api/3/issue/${firstKey}`]: await anonGet(`/rest/api/3/issue/${firstKey}`) };
-  // LeanZero's other public trackers (EXPECTED_PUBLIC, by key) may answer a logged-out read; any other
-  // project that does, or whose scheme lets "anyone" browse it, is a leak and fails the proof.
-  const others = must(await jira("/rest/api/3/project/search?maxResults=100"), "projects").values.filter((pr) => pr.key !== KEY);
-  const alsoPublic = new Set();
-  for (const pr of others) {
-    const ps = must(await jira(`/rest/api/3/project/${pr.key}/permissionscheme`), `scheme of ${pr.key}`);
-    const g = must(await jira(`/rest/api/3/permissionscheme/${ps.id}?expand=permissions`), `grants of ${pr.key}`);
-    if (g.permissions.some((x) => x.holder.type === "anyone" && x.permission === "BROWSE_PROJECTS")) alsoPublic.add(pr.key);
-    const s = must(await jira("/rest/api/3/search/jql", "POST", { jql: `project = ${pr.key} ORDER BY created DESC`, maxResults: 1, fields: ["summary"] }), `sample ${pr.key}`);
-    const is = (s.issues || [])[0];
-    if (is) proof[`GET /rest/api/3/issue/${is.key}`] = await anonGet(`/rest/api/3/issue/${is.key}`);
+  // A new grant takes a short while to reach Jira's permission cache (measured on CRT: 404 at once, 200
+  // about 20 s later), so wait for it before recording the proof.
+  for (let n = 0; n < 12 && (await anonGet(`/rest/api/3/issue/${KEY}-1`)) !== 200; n++) await new Promise((res) => setTimeout(res, 10000));
+  const receiptKeys = [...new Set(Object.values(rc.issues).map((x) => x.key))].sort((a, b) => Number(a.split("-")[1]) - Number(b.split("-")[1]));
+  const ownReads = {};
+  for (const k of new Set([`${KEY}-1`, receiptKeys[receiptKeys.length - 1]].filter(Boolean))) ownReads[k] = await anonGet(`/rest/api/3/issue/${k}`);
+  // Every other project on the site (all pages): its scheme must not let anyone browse, and its newest
+  // issue must not answer a logged-out read, unless it is one of PUBLIC_TRACKERS.
+  const others = [];
+  for (let startAt = 0; ;) {
+    const page = must(await jira(`/rest/api/3/project/search?startAt=${startAt}&maxResults=50`), "projects");
+    others.push(...page.values.filter((p) => p.key !== KEY));
+    if (page.isLast || !page.values.length) break;
+    startAt += page.values.length;
   }
-  // Logged-out searches. The enhanced search refuses UNBOUNDED JQL ("ORDER BY created DESC" alone
-  // answers 400 to everyone), and a refused search must never read as "nothing leaked": bound the
-  // JQL, page through every result, and fail the proof on any non-200.
-  const anonSearch = async (jql, fields) => {
-    const out = [];
-    let next;
-    for (let n = 0; n < 200; n++) {
-      const u = `${SITE}/rest/api/3/search/jql?jql=${encodeURIComponent(jql)}&maxResults=100&fields=${fields}${next ? `&nextPageToken=${encodeURIComponent(next)}` : ""}`;
-      const r = await fetch(u, { headers: { Accept: "application/json" } });
-      if (!r.ok) return { status: r.status, issues: out };
-      const b = await r.json();
-      out.push(...(b.issues || []));
-      next = b.nextPageToken;
-      if (b.isLast || !next) return { status: 200, issues: out };
-    }
-    return { status: "too many pages", issues: out };
-  };
-  const site = await anonSearch('created >= "2000-01-01" ORDER BY created DESC', "project");
-  const seenCount = site.issues.reduce((m, x) => ((m[x.fields.project.key] = (m[x.fields.project.key] || 0) + 1), m), {});
-  const seen = Object.keys(seenCount);
-  proof["anonymous site-wide search (bounded, all pages)"] = site.status === 200 ? Object.entries(seenCount).map(([k, v]) => `${k} ${v}`).join(", ") || "no issues" : `HTTP ${site.status}`;
-  const mine = await anonSearch(`project = ${KEY} ORDER BY key ASC`, "summary,status");
-  proof[`anonymous listing of ${KEY}`] = mine.status === 200 ? `${mine.issues.length} issues (${Object.entries(mine.issues.reduce((m, x) => ((m[x.fields.status.name] = (m[x.fields.status.name] || 0) + 1), m), {})).map(([k, v]) => `${k} ${v}`).join(", ")})` : `HTTP ${mine.status}`;
-  const wantCount = Object.keys(rc.issues).length;
-  proof["other projects whose scheme lets anyone browse"] = [...alsoPublic].join(",") || "none";
-  proof["expected public (allowlist)"] = [...EXPECTED_PUBLIC].join(",");
+  const samples = [];
+  const anyoneSchemes = [];
+  for (const p of others) {
+    const ps = must(await jira(`/rest/api/3/project/${p.key}/permissionscheme`), `scheme of ${p.key}`);
+    const g = must(await jira(`/rest/api/3/permissionscheme/${ps.id}?expand=permissions`), `grants of ${p.key}`);
+    if (g.permissions.some((x) => x.holder.type === "anyone" && x.permission === "BROWSE_PROJECTS")) anyoneSchemes.push(p.key);
+    const s = must(await jira("/rest/api/3/search/jql", "POST", { jql: `project = ${p.key} ORDER BY created DESC`, maxResults: 1, fields: ["summary"] }), `sample ${p.key}`);
+    const is = (s.issues || [])[0];
+    if (is) samples.push({ project: p.key, issue: is.key, status: await anonGet(`/rest/api/3/issue/${is.key}`) });
+  }
+  const site = await anonSearch(fetch, SITE, SITE_JQL);
+  const own = await anonSearch(fetch, SITE, `project = ${KEY} ORDER BY key ASC`);
+  const fails = judgeProof({ key: KEY, receiptKeys, ownReads, samples, anyoneSchemes, site, own });
+  const proof = {};
+  for (const [k, v] of Object.entries(ownReads)) proof[`GET /rest/api/3/issue/${k}`] = v;
+  for (const s of samples) proof[`GET /rest/api/3/issue/${s.issue}`] = s.status;
+  proof["anonymous site-wide search (bounded, all pages): issues per project"] = site.status === 200 ? tally(site.issues, "project") : `HTTP ${site.status}`;
+  proof[`anonymous listing of ${KEY}`] = own.status === 200 ? `${own.issues.length} issues (receipt holds ${receiptKeys.length}; ${Object.entries(tally(own.issues, "status")).map(([s, n]) => `${s} ${n}`).join(", ")})` : `HTTP ${own.status}`;
+  proof["other projects whose scheme lets anyone browse"] = anyoneSchemes.join(",") || "none";
+  proof["public trackers (allowlist)"] = [...PUBLIC_TRACKERS].join(",");
+  proof["negative control"] = `${controls} fake broken answers, each failed the verdict`;
   proof[`GET /jira/software/c/projects/${KEY}/issues`] = (await fetch(`${SITE}/jira/software/c/projects/${KEY}/issues`, { redirect: "manual" })).status;
   rc.public.proof = proof;
+  rc.public.provenAt = new Date().toISOString();
+  rc.public.proofFailures = fails;
   writeReceipt(rc);
-  console.log(JSON.stringify({ scheme: `${perm.id} ${perm.name}`, anonymous: anon.map((g) => `${g.id}:${g.permission}`), proof }, null, 1));
-  const keyOf = (k) => (k.match(/\/issue\/([A-Z][A-Z0-9]*)-\d+$/) || [])[1];
-  const leaks = Object.entries(proof).filter(([k, v]) => keyOf(k) && keyOf(k) !== KEY && !EXPECTED_PUBLIC.has(keyOf(k)) && v === 200);
-  const searchLeak = seen.filter((k) => k !== KEY && !EXPECTED_PUBLIC.has(k));
-  const schemeLeak = [...alsoPublic].filter((k) => !EXPECTED_PUBLIC.has(k));
-  const searchBroken = site.status !== 200 || mine.status !== 200 || mine.issues.length !== wantCount;
-  if (proof[`GET /rest/api/3/issue/${firstKey}`] !== 200 || leaks.length || searchLeak.length || schemeLeak.length || searchBroken) {
-    console.log("PROOF FAILED", { leaks, searchLeak, schemeLeak, searchBroken, listed: mine.issues.length, wantCount });
-    process.exitCode = 1;
-  } else console.log(`PROOF OK: ${KEY} readable logged out (${mine.issues.length}/${wantCount} listed), no other project readable except ${[...EXPECTED_PUBLIC].join(", ")}`);
+  console.log(JSON.stringify({ scheme: `${perm.id} ${perm.name}`, anonymous: anon.map((g) => `${g.id}:${g.permission}`), grantExisted: existed, proof }, null, 1));
+  if (fails.length) { console.log("PROOF FAILED\n" + fails.join("\n")); process.exitCode = 1; }
+  else console.log(`PROOF PASSED: ${KEY} readable logged out (${own.issues.length}/${receiptKeys.length} listed, ${Object.keys(ownReads).join(" and ")} 200), no other project readable except ${[...PUBLIC_TRACKERS].filter((k) => k !== KEY).join(", ")}; negative control ${controls}/${controls} failed as they must`);
 }
 
 const cmd = process.argv[2];
@@ -691,4 +821,5 @@ if (cmd === "plan") await plan();
 else if (cmd === "apply") await apply();
 else if (cmd === "verify") await verify();
 else if (cmd === "public") await makePublic();
-else { console.log("usage: tracker.mjs plan [--check-site] | apply | verify | public"); process.exitCode = 2; }
+else if (cmd === "selftest") console.log(`negative control: ${await negativeControl(KEY)} fake broken answers, each failed the verdict; the healthy one passed`);
+else { console.log("usage: tracker.mjs plan [--check-site] | apply | verify | public [--reprove] | selftest"); process.exitCode = 2; }
