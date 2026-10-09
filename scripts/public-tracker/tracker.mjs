@@ -56,17 +56,41 @@ const FIRST_VERSION = [6, 4, 0];
 // The newest version the tracker records. Raise it deliberately when a new release's lines are to be
 // published (each needs an entries.mjs row first); main may already carry later notes.
 const LAST_VERSION = [7, 1, 0];
-// PRODUCTION: every version up to `upTo` is live on the Marketplace, each released on its note's date
-// (tags v6.4.0 .. v7.1.0 + GitHub releases). A version above `upTo` reads "in testing" and its Jira
-// version stays unreleased. 7.0.0 added a permission, so a site on version 6 gets 7.x only after a
-// site admin approves the 7.0.0 update; issues of 7.0.0 and later say so.
-const PRODUCTION = { upTo: [7, 1, 0] };
-const APPROVAL_MAJOR = [7, 0, 0];
+// RELEASED = listed as "public" by the Marketplace's own versions endpoint (no login), and released in
+// Jira on the Marketplace's release date. Sentinel Vault has no deploy ledger, so the Marketplace is
+// the source; there is no hand-set constant to forget to raise or to raise too early (review
+// 2026-10-09). A version the Marketplace does not list as public reads "in testing" and its Jira
+// version stays unreleased. If the endpoint cannot be read, every mode refuses to run.
+const MARKETPLACE_VERSIONS = "https://marketplace.atlassian.com/rest/2/addons/com.leanzero.confluence.sentinelvault/versions?limit=100";
+// A Forge MAJOR (6.0.0 added the Assets read scopes, 7.0.0 the personal-data reporting scope) is not
+// installed automatically: a site below it stays there until a site admin approves the update. So every
+// issue of version M.x says that a site on version M-1 or earlier gets it only after that approval.
+// The Marketplace number of a Forge app carries the Forge major, so M is the version's first number.
+// Projects that may answer a logged-out read besides SVT: LeanZero's other PUBLIC trackers, by key.
+// Anything else readable without a login is a leak and fails `public` (review 2026-10-09: deriving
+// this from "its scheme grants anyone" switched the check off for every other project).
+const EXPECTED_PUBLIC = new Set(["CRT"]);
 const STATUS = { released: "Done", known: ["Backlog", "To Do", "Open"] };
 
 const vparts = (v) => v.split(".").map(Number);
 const vge = (a, b) => { for (let i = 0; i < 3; i++) { if (a[i] !== b[i]) return a[i] > b[i]; } return true; };
-const inProduction = (v) => vge(PRODUCTION.upTo, vparts(v));
+let MARKET = null; // version name -> { status, date } from the Marketplace
+async function loadMarketplace() {
+  if (MARKET) return MARKET;
+  const r = await fetch(MARKETPLACE_VERSIONS, { headers: { Accept: "application/json" } });
+  if (!r.ok) throw new Error(`Marketplace versions endpoint answered HTTP ${r.status}; refusing to guess what is released`);
+  const body = await r.json();
+  const list = (body._embedded && body._embedded.versions) || [];
+  if (!list.length) throw new Error("Marketplace versions endpoint listed no versions; refusing to guess what is released");
+  MARKET = new Map(list.map((v) => [v.name, { status: v.status, date: v.release && v.release.date }]));
+  return MARKET;
+}
+const inProduction = (v) => {
+  if (!MARKET) throw new Error("Marketplace versions not loaded");
+  const m = MARKET.get(v);
+  return !!(m && m.status === "public" && m.date);
+};
+const marketDate = (v) => (MARKET && MARKET.get(v) ? MARKET.get(v).date : null);
 export const hashOf = (line) => createHash("sha256").update(line).digest("hex").slice(0, 16);
 
 // ---------- credentials (lazy: plan without --check-site needs none) ----------
@@ -141,6 +165,7 @@ const PUBLIC_LINT = [
 const lint = (text) => PUBLIC_LINT.filter(([re]) => re.test(text)).map(([, why]) => why);
 
 export async function desired() {
+  await loadMarketplace();
   const notes = await loadNotes();
   const issues = [];
   const withheld = [];
@@ -186,7 +211,7 @@ export async function desired() {
     if (i.summary.length > 200) problems.push(`${i.id}: summary too long`);
     if (i.known && !KNOWN_VERSION_OK(i.affects, notes)) problems.push(`${i.id}: affects ${i.affects} is not a tracked version`);
   }
-  const versions = notes.map((n) => ({ name: n.version, date: n.date, released: inProduction(n.version) }));
+  const versions = notes.map((n) => ({ name: n.version, date: inProduction(n.version) ? marketDate(n.version) : null, noteDate: n.date, released: inProduction(n.version) }));
   return { issues, withheld, problems, versions, folds, notes };
 }
 const KNOWN_VERSION_OK = (v, notes) => notes.some((n) => n.version === v);
@@ -198,9 +223,10 @@ function tailSentence(i) {
   const verb = i.type === "Improvement" ? "Added" : "Fixed";
   if (!inProduction(i.version)) return `${verb} in ${APP} ${i.version}, which is in testing and not yet in the Marketplace version.`;
   const base = `${verb} in ${APP} ${i.version}.`;
-  // A site on version 6 gets 7.x only once its admin approves the 7.0.0 update (new permission).
-  if (vge(vparts(i.version), APPROVAL_MAJOR) && !/Manage apps/.test(i.text)) {
-    return `${base} A site still on version 6 gets it once a site admin approves the 7.0.0 update in Confluence administration, Apps, Manage apps.`;
+  // A site below this version's Forge major gets it only once a site admin approves the update.
+  const major = vparts(i.version)[0];
+  if (major > 1 && !/Manage apps/.test(i.text)) {
+    return `${base} A site still on version ${major - 1} or earlier gets it once a site admin approves the update in Confluence administration, Apps, Manage apps.`;
   }
   return base;
 }
@@ -440,7 +466,7 @@ function reviewMarkdown(want, siteCheck) {
     "",
     `- Site: ${SITE}. Project ${KEY} "${NAME}" (company-managed Kanban), description: "${DESCRIPTION}"`,
     `- Permission scheme: its own, "${PERM_SCHEME_NAME}", a copy of the default scheme's grants (internal roles only); public = one BROWSE_PROJECTS grant to "anyone", nothing else, added only by the separate public step.`,
-    `- Range: ${APP} ${want.versions[0].name} to ${want.versions[want.versions.length - 1].name} (every version the in-app release notes carry; 6.8.0 has no note of its own). All are on the Marketplace (production 7.1.0, 2026-10-07).`,
+    `- Range: ${APP} ${want.versions[0].name} to ${want.versions[want.versions.length - 1].name} (every version the in-app release notes carry; 6.8.0 has no note of its own). Released state and dates read from the Marketplace versions endpoint: ${want.versions.map((v) => `${v.name} ${v.released ? `public ${v.date}` : "NOT public"}`).join(", ")}.`,
     `- Issues: ${want.issues.length} (${done.length} Done from release-note lines, ${known.length} open known bugs in Backlog). Withheld note lines: ${want.withheld.length}. Folded note lines: ${Object.keys(want.folds).length}.`,
     `- Done by type: ${fmt(by(done, (i) => i.type))}. By version: ${fmt(by(done, (i) => i.version))}.`,
     `- By component: ${fmt(by(want.issues, (i) => i.component))}.`,
@@ -448,9 +474,9 @@ function reviewMarkdown(want, siteCheck) {
     "",
     "## Versions",
     "",
-    "| Version | Jira state | Release date | Description |",
-    "|---|---|---|---|",
-    ...want.versions.map((v) => { const w = versionWant(v); return `| ${v.name} | ${w.released ? "released" : "unreleased"} | ${w.releaseDate || "-"} | ${w.description} |`; }),
+    "| Version | Jira state | Release date (Marketplace) | Note date | Description |",
+    "|---|---|---|---|---|",
+    ...want.versions.map((v) => { const w = versionWant(v); return `| ${v.name} | ${w.released ? "released" : "unreleased"} | ${w.releaseDate || "-"} | ${v.noteDate} | ${w.description} |`; }),
     "",
     "## Components",
     "",
@@ -462,7 +488,7 @@ function reviewMarkdown(want, siteCheck) {
   ];
   for (const v of [...want.versions].reverse()) {
     const rows = done.filter((i) => i.version === v.name);
-    out.push(`## ${APP} ${v.name} (${v.date}) - ${rows.length} Done issue${rows.length === 1 ? "" : "s"}`, "");
+    out.push(`## ${APP} ${v.name} (${v.date || `not public, note ${v.noteDate}`}) - ${rows.length} Done issue${rows.length === 1 ? "" : "s"}`, "");
     for (const i of rows) {
       out.push(`### [${i.type}] ${i.summary}`, "", `- id ${i.id}; component: ${i.component}; status: Done; fixVersion: ${i.version}${i.sanitized ? "; description REWRITTEN from the note line (see below)" : ""}`, "", quote(plainText(i)), "");
       if (i.sanitized) out.push(`  Note line as shipped in the app: "${i.line}"`, "");
@@ -497,7 +523,7 @@ async function plan() {
   console.log("by type", by((i) => i.type));
   console.log("by component", by((i) => i.component));
   console.log("by version", by((i) => i.version || `affects ${i.affects}`));
-  console.log("versions", want.versions.map((v) => `${v.name}${v.released ? ` released ${v.date}` : " unreleased"}`).join(", "));
+  console.log("versions (Marketplace)", want.versions.map((v) => `${v.name}${v.released ? ` released ${v.date}` : " unreleased"}${v.released && v.date !== v.noteDate ? ` (note says ${v.noteDate})` : ""}`).join(", "));
   for (const w of want.withheld) console.log(`WITHHELD ${w.version} ${w.kind} ${w.h}: ${w.why}`);
   const check = process.argv.includes("--check-site") ? await siteCheck() : null;
   if (check) console.log(`site check (read-only): ${check}`);
@@ -607,8 +633,8 @@ async function makePublic() {
   for (let n = 0; n < 12 && (await anonGet(`/rest/api/3/issue/${firstKey}`)) !== 200; n++) await new Promise((res) => setTimeout(res, 10000));
   const first = rc.issues[Object.keys(rc.issues)[0]].key;
   const proof = { [`GET /rest/api/3/issue/${first}`]: await anonGet(`/rest/api/3/issue/${first}`), [`GET /rest/api/3/issue/${firstKey}`]: await anonGet(`/rest/api/3/issue/${firstKey}`) };
-  // Another project on the site may be public through ITS OWN scheme (CogniRunner's CRT is): a
-  // logged-out 200 there is expected, a 200 anywhere else is a leak.
+  // LeanZero's other public trackers (EXPECTED_PUBLIC, by key) may answer a logged-out read; any other
+  // project that does, or whose scheme lets "anyone" browse it, is a leak and fails the proof.
   const others = must(await jira("/rest/api/3/project/search?maxResults=100"), "projects").values.filter((pr) => pr.key !== KEY);
   const alsoPublic = new Set();
   for (const pr of others) {
@@ -623,15 +649,17 @@ async function makePublic() {
   const allBody = all.ok ? await all.json() : { issues: [] };
   const seen = [...new Set((allBody.issues || []).map((x) => x.fields.project.key))];
   proof["anonymous site-wide search: projects returned"] = seen.join(",") || `HTTP ${all.status}`;
-  proof["projects public through their own scheme"] = [...alsoPublic].join(",") || "none";
+  proof["other projects whose scheme lets anyone browse"] = [...alsoPublic].join(",") || "none";
+  proof["expected public (allowlist)"] = [...EXPECTED_PUBLIC].join(",");
   proof[`GET /jira/software/c/projects/${KEY}/issues`] = (await fetch(`${SITE}/jira/software/c/projects/${KEY}/issues`, { redirect: "manual" })).status;
   rc.public.proof = proof;
   writeReceipt(rc);
   console.log(JSON.stringify({ scheme: `${perm.id} ${perm.name}`, anonymous: anon.map((g) => `${g.id}:${g.permission}`), proof }, null, 1));
   const keyOf = (k) => (k.match(/\/issue\/([A-Z][A-Z0-9]*)-\d+$/) || [])[1];
-  const leaks = Object.entries(proof).filter(([k, v]) => keyOf(k) && keyOf(k) !== KEY && !alsoPublic.has(keyOf(k)) && v === 200);
-  const searchLeak = seen.filter((k) => k !== KEY && !alsoPublic.has(k));
-  if (proof[`GET /rest/api/3/issue/${firstKey}`] !== 200 || leaks.length || searchLeak.length) { console.log("PROOF FAILED", { leaks, searchLeak }); process.exitCode = 1; }
+  const leaks = Object.entries(proof).filter(([k, v]) => keyOf(k) && keyOf(k) !== KEY && !EXPECTED_PUBLIC.has(keyOf(k)) && v === 200);
+  const searchLeak = seen.filter((k) => k !== KEY && !EXPECTED_PUBLIC.has(k));
+  const schemeLeak = [...alsoPublic].filter((k) => !EXPECTED_PUBLIC.has(k));
+  if (proof[`GET /rest/api/3/issue/${firstKey}`] !== 200 || leaks.length || searchLeak.length || schemeLeak.length) { console.log("PROOF FAILED", { leaks, searchLeak, schemeLeak }); process.exitCode = 1; }
 }
 
 const cmd = process.argv[2];
