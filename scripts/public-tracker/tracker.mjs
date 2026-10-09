@@ -69,7 +69,7 @@ const MARKETPLACE_VERSIONS = "https://marketplace.atlassian.com/rest/2/addons/co
 // Projects that may answer a logged-out read besides SVT: LeanZero's other PUBLIC trackers, by key.
 // Anything else readable without a login is a leak and fails `public` (review 2026-10-09: deriving
 // this from "its scheme grants anyone" switched the check off for every other project).
-const EXPECTED_PUBLIC = new Set(["CRT"]);
+const EXPECTED_PUBLIC = new Set(["CRT", "LZMT"]); // LZMT public since 2026-10-09
 const STATUS = { released: "Done", known: ["Backlog", "To Do", "Open"] };
 
 const vparts = (v) => v.split(".").map(Number);
