@@ -18,7 +18,7 @@ import {
   ACTIVITY, JIRA_SEAL_MAX_BYTES, buildSealRecord, forcedCommentAdf, isExpired, jiraCopyKey, jiraLapseKey, normId, rowFor, sealIdOf, viewerPowers,
 } from "./logic.js";
 import {
-  callerPermissions, downloadAttachment, dropSeal, getSeal, postIssueComment, putSeal, readIssue, sha256Hex, storeCopy, userName,
+  callerPermissions, downloadAttachment, dropSeal, getSeal, postIssueComment, putSeal, readIssue, sealsOwnedBy, sha256Hex, storeCopy, syncIssueProperty, userName,
 } from "./store.js";
 import { resolveSealHoldPeriod } from "../sealing/logic.js";
 import { sanitizeHoldDuration } from "../../shared/baseline.js";
@@ -87,6 +87,7 @@ export async function sealJiraAttachment({ accountId, issueId, attachmentId, loc
     holdSeconds, sha256: sha256Hex(bytes), copyKey, note, nowMs: nowMs(),
   });
   await putSeal(record);
+  await syncIssueProperty(record.issueId, { add: record });
   await issueActivity(record, ACTIVITY.SEALED, accountId, { holdSeconds, size: record.size });
   return { success: true, seal: record };
 }
@@ -106,6 +107,7 @@ export async function releaseJiraAttachment({ accountId, issueId, attachmentId, 
   }
   const dropped = await dropSeal(record);
   if (!dropped.ok) return { success: false, reason: dropped.reason };
+  await syncIssueProperty(record.issueId, { removeId: record.attachmentId });
   await issueActivity(record, isOwner ? ACTIVITY.RELEASED : ACTIVITY.FORCED, accountId, forcedReason ? { forced: true, reason: forcedReason } : {});
   // The Confluence force release tells the owner (mailStewardOverrideNotice); so does this one, on
   // the issue, when the site posts Sentinel Vault comments at all.
@@ -136,6 +138,7 @@ export async function extendJiraAttachment({ accountId, issueId, attachmentId, l
     extensionCount: (Number(record.extensionCount) || 0) + 1,
   };
   await putSeal(next);
+  await syncIssueProperty(next.issueId, { add: next });
   await kvs.delete(jiraLapseKey(sealIdOf(record))).catch(() => {});
   await issueActivity(next, ACTIVITY.EXTENDED, accountId, { addedSeconds: add, expiresAt: next.expiresAt });
   return { success: true, seal: next };
@@ -193,12 +196,25 @@ const withPowers = (core) => async (req) => {
   });
 };
 
+// My work: the files the CALLER holds sealed on Jira (their own index prefix — a payload names nothing).
+const myJiraSeals = async (req) => {
+  const accountId = req?.context?.accountId;
+  if (!accountId) return { success: false, reason: "Not signed in" };
+  const now = nowMs();
+  const seals = (await sealsOwnedBy(accountId)).slice(0, 200).map((r) => ({
+    attachmentId: r.attachmentId, attachmentName: r.attachmentName, issueKey: r.issueKey, issueId: r.issueId,
+    expiresAt: r.expiresAt, expired: isExpired(r, now), restoreCount: r.restoreCount || 0,
+  }));
+  return { success: true, seals };
+};
+
 const sealOnIssue = withPowers(sealJiraAttachment);
 const releaseOnIssue = withPowers(releaseJiraAttachment);
 const extendOnIssue = withPowers(extendJiraAttachment);
 
 export const actions = [
   ["jira-issue-seals", issueSeals],
+  ["list-my-jira-seals", myJiraSeals],
   ["jira-seal-attachment", sealOnIssue],
   ["jira-release-attachment", releaseOnIssue],
   ["jira-extend-attachment", extendOnIssue],

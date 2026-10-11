@@ -55,6 +55,7 @@ export const FAMILIES = Object.freeze([
   // (Atlassian's 21-day re-link) — otherwise a later delete is reported as "could not put it back".
   { prefix: "jira-protection-", cls: "config", group: "seals", label: "Sealed Jira files" },
   { prefix: "jira-seal-issue-", cls: "config", group: "seals", index: true, label: "Sealed Jira files per issue" },
+  { prefix: "jira-seal-owner-", cls: "config", group: "seals", index: true, label: "Sealed Jira files per owner" },
   // ── document workflow ───────────────────────────────────────────────────────────────────
   { prefix: "workflow-state-", cls: "config", group: "workflow", label: "Page workflow states" },
   { prefix: "workflow-pending-", cls: "config", group: "workflow", label: "Open approval requests" },

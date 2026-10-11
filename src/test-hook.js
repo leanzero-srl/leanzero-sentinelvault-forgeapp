@@ -222,6 +222,10 @@ export async function testStateTrigger(req) {
         const { handleJiraIssueDeleted } = await import("./server/capsules/jira-seals/trigger.js");
         return json(200, { invoked: fn, result: await handleJiraIssueDeleted({ eventType: "avi:jira:deleted:issue", issue: { id: q(req, "issueId") } }) });
       }
+      if (fn === "jiraPermsOf") {
+        const { permissionsForAccount } = await import("./server/capsules/jira-seals/store.js");
+        return json(200, { invoked: fn, result: await permissionsForAccount(q(req, "actor"), q(req, "issueKey")) });
+      }
       if (fn === "jiraSweep") {
         const { jiraSealSweep } = await import("./server/capsules/jira-seals/trigger.js");
         return json(200, { invoked: fn, result: await jiraSealSweep() });

@@ -47,6 +47,11 @@ export const CONTENT_OPS = Object.freeze({
   "grant-section-edit": { allow: ["sectionId", "editorAccountId"], required: ["sectionId", "editorAccountId"], resolverKey: "grant-section-edit", role: "editor" },
   "revoke-section-edit": { allow: ["sectionId", "editorAccountId"], required: ["sectionId", "editorAccountId"], resolverKey: "revoke-section-edit-grant", role: "editor" },
   // SEC-8 (2026-09-20): a request can be declined over the API, with the optional word that reaches the requester.
+  // 8.0 — Jira attachment seals (docs/JIRA-SEALS.md). `issueKey` names the issue; the minter's
+  // permissions on it are read from Jira as the app (the queue has no user session).
+  "seal-jira-attachment": { allow: ["issueKey", "attachmentId", "lockDuration", "note"], required: ["issueKey", "attachmentId"], resolverKey: "jira-seal-attachment", role: "editor" },
+  "release-jira-attachment": { allow: ["issueKey", "attachmentId", "reason"], required: ["issueKey", "attachmentId"], resolverKey: "jira-release-attachment", role: "editor" },
+  "extend-jira-attachment": { allow: ["issueKey", "attachmentId", "additionalSeconds"], required: ["issueKey", "attachmentId"], resolverKey: "jira-extend-attachment", role: "editor" },
   "decline-attachment-edit": { allow: ["attachmentId", "requesterAccountId", "reason"], required: ["attachmentId", "requesterAccountId"], resolverKey: "deny-edit-request", role: "editor" },
   "decline-section-edit": { allow: ["sectionId", "requesterAccountId", "reason"], required: ["sectionId", "requesterAccountId"], resolverKey: "deny-section-edit", role: "editor" },
   // 2026-09-30 (P5): lowering a page's level (or resetting it onto a lower space default) needs `reason`.
@@ -186,6 +191,8 @@ export function validateBundle(bundle, { rawBytes = null } = {}) {
         for (const k of ["pageId", "attachmentId", "sectionId", "levelId", "workflowId", "toStateId", "editorAccountId"]) {
           if (c[k] !== undefined && c[k] !== null && !ID_RE.test(String(c[k]))) err(`${p}.${k}`, "invalid id");
         }
+        if (c.issueKey !== undefined && !/^[A-Z][A-Z0-9_]{0,19}-\d{1,9}$/.test(String(c.issueKey))) err(`${p}.issueKey`, "must be a Jira issue key like ABC-123");
+        if (/jira-attachment$/.test(c.op) && c.attachmentId != null && !/^\d{1,18}$/.test(String(c.attachmentId))) err(`${p}.attachmentId`, "must be a Jira attachment id (digits)");
         if (c.lockDuration !== undefined && !(Number.isFinite(Number(c.lockDuration)) && Number(c.lockDuration) > 0)) err(`${p}.lockDuration`, "must be a positive number of seconds");
         if (c.additionalSeconds !== undefined && !(Number.isFinite(Number(c.additionalSeconds)) && Number(c.additionalSeconds) > 0)) err(`${p}.additionalSeconds`, "must be a positive number of seconds");
       });
@@ -285,6 +292,17 @@ export function planBundle(bundle) {
         break;
       case "decline-section-edit":
         step(p, spec.resolverKey, { sectionId: String(c.sectionId), requesterAccountId: String(c.requesterAccountId), reason: c.reason });
+        break;
+      case "seal-jira-attachment":
+      case "release-jira-attachment":
+      case "extend-jira-attachment":
+        step(p, spec.resolverKey, {
+          issueKey: String(c.issueKey), attachmentId: String(c.attachmentId),
+          ...(c.lockDuration !== undefined ? { lockDuration: Number(c.lockDuration) } : {}),
+          ...(c.additionalSeconds !== undefined ? { lockDuration: Number(c.additionalSeconds) } : {}),
+          ...(c.note !== undefined ? { note: c.note } : {}),
+          ...(c.reason !== undefined ? { reason: c.reason } : {}),
+        }, { needs: "jira" });
         break;
       case "classify-page":
         step(p, spec.resolverKey, { pageId: String(c.pageId), levelId: c.levelId ?? null, ...(c.reason ? { reason: c.reason } : {}) });
