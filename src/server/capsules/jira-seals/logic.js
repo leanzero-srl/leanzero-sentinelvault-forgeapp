@@ -46,6 +46,15 @@ export const jiraLapseKey = (attachmentId) => `${JIRA_LAPSE_PREFIX}${attachmentI
 export const sealIdOf = (record) => String(record?.originalAttachmentId || record?.attachmentId || "");
 /** Object Store key of a seal's copy. Keyed by the FIRST attachment id: a restore keeps the copy. */
 export const jiraCopyKey = (originalAttachmentId) => `jira-seal/${originalAttachmentId}`;
+/**
+ * A copy whose delete failed is remembered under jira-seal-copy-gc-<original id> and the hourly
+ * sweep tries again (the Object Store cannot be listed, so a delete that is only logged would leave
+ * the copy for ever). KVS keys cannot hold "/", hence the id rather than the copy key.
+ */
+export const JIRA_COPY_GC_PREFIX = "jira-seal-copy-gc-";
+export const jiraCopyGcKey = (copyKey) => `${JIRA_COPY_GC_PREFIX}${String(copyKey).replace(/^jira-seal\//, "")}`;
+/** Where the hourly sweep stopped in the seal list, so a large site is covered over several runs. */
+export const JIRA_SWEEP_CURSOR_KEY = "jira-seal-sweep-cursor";
 
 /** Jira ids are digits. Anything else is refused before it reaches a route or a key. */
 export const isJiraId = (v) => typeof v === "string" ? /^\d{1,18}$/.test(v) : Number.isSafeInteger(v) && v > 0;
