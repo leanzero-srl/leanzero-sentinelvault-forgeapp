@@ -209,6 +209,32 @@ export async function testStateTrigger(req) {
       // spec (config-api.spec.ts) can drive the static web trigger with plain fetch. The seam
       // calls the same tokens.js store the resolver does; the site-admin gate is the resolver's
       // (the hook is dev-only and secret-gated).
+      // 8.0 Jira attachment seals: the delete handler with a synthetic event, the hourly sweep, and
+      // the three cores as an ACTOR with explicit powers (the app cannot ask Jira about another
+      // person, so the browser spec proves the real permission read; these seams drive the rules).
+      if (fn === "jiraDeleted") {
+        const { handleJiraAttachmentDeleted } = await import("./server/capsules/jira-seals/trigger.js");
+        const event = { eventType: "avi:jira:deleted:attachment", atlassianId: q(req, "actor") || null, selfGenerated: q(req, "self") === "1",
+          attachment: { id: q(req, "att"), issueId: q(req, "issueId") || null } };
+        return json(200, { invoked: fn, result: await handleJiraAttachmentDeleted(event) });
+      }
+      if (fn === "jiraIssueDeleted") {
+        const { handleJiraIssueDeleted } = await import("./server/capsules/jira-seals/trigger.js");
+        return json(200, { invoked: fn, result: await handleJiraIssueDeleted({ eventType: "avi:jira:deleted:issue", issue: { id: q(req, "issueId") } }) });
+      }
+      if (fn === "jiraSweep") {
+        const { jiraSealSweep } = await import("./server/capsules/jira-seals/trigger.js");
+        return json(200, { invoked: fn, result: await jiraSealSweep() });
+      }
+      if (fn === "jiraSeal" || fn === "jiraRelease" || fn === "jiraExtend") {
+        const m = await import("./server/capsules/jira-seals/actions.js");
+        const core = fn === "jiraSeal" ? m.sealJiraAttachment : fn === "jiraRelease" ? m.releaseJiraAttachment : m.extendJiraAttachment;
+        const p = q(req, "powers") || "edit";
+        const powers = { canSee: p !== "none", canEdit: p === "edit" || p === "steward", isSteward: p === "steward" };
+        const result = await core({ accountId: q(req, "actor"), issueId: q(req, "issueId"), attachmentId: q(req, "att"),
+          lockDuration: q(req, "lockDuration") ? Number(q(req, "lockDuration")) : undefined, note: q(req, "note") || undefined, reason: q(req, "reason") || undefined, powers });
+        return json(200, { invoked: fn, result });
+      }
       if (fn === "createApiToken") {
         const { createApiToken } = await import("./server/capsules/config-api/tokens.js");
         const r = await createApiToken({ name: q(req, "name") || "harness", role: q(req, "role") || undefined, accountId: q(req, "actor") });
