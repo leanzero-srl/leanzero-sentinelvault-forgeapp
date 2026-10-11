@@ -9,7 +9,7 @@ import {
   mailEditorReverted,
 } from "./infra/notice-composer.js";
 
-import { recordDispatch, postDocFootnote } from "./capsules/bulletins/logic.js";
+import { recordDispatch, postDocFootnote, sweepWatchers } from "./capsules/bulletins/logic.js";
 import { resolveBulletinToggles } from "./shared/bulletin-flags.js";
 import { touchSealTimestamp, releaseSealContentPropIfLast } from "./capsules/sealing/logic.js";
 import { releaseSeal } from "./capsules/sealing/release.js";
@@ -256,7 +256,8 @@ export async function artifactEventTrigger(event) {
 
     // S7: trashedOnly TRACKING records are NOT seals — they must never trigger edit-revert or
     // trash-restore (vet finding: a panel-deleted unsealed attachment would get un-deleted).
-    // Permanent delete still cleans the dangling record up.
+    // Permanent delete still cleans the dangling record up — silently (handleSealedArtifactDeleted
+    // posts no notice for a stub: it was never a seal).
     if (sealRecord.trashedOnly && eventType !== "avi:confluence:deleted:attachment") {
       return;
     }
@@ -2224,12 +2225,20 @@ export async function handleSealedArtifactDeleted(sealRecord, artifactId, conten
   // record purge below. Previously an unguarded throw here (e.g. postDocFootnote 4xx/5xx on a since-gone
   // page) skipped every kvs.delete, leaving protection-*/space-protection-*/edit-grant-* ORPHANED with
   // no retry — so the (now-deleted) attachment read as "still sealed" forever. Wrap it; always clean up.
-  try {
-    // Fix 1 copy: its own verb — the generic "delete" layout claimed "has been restored",
-    // false on THIS (permanent) path.
-    await sendViolationNotifications(sealRecord, artifactId, pageId, atlassianId, artifactName, "permanently-deleted");
-  } catch (e) {
-    console.error("[SEAL-DELETED] final notice failed (continuing cleanup):", e);
+  //
+  // S7: a trashedOnly TRACKING record was never a seal (a deleted file the app keeps
+  // discoverable, or a seal that already ended when its owner trashed the file). Purging the file
+  // is the end of the stub, not a violation: no "permanently deleted" notice to its "owner" (the
+  // person who trashed it), no dispatch — a silent cleanup. The seal.deleted activity row below
+  // still records it, flagged trashedOnly.
+  if (!sealRecord.trashedOnly) {
+    try {
+      // Fix 1 copy: its own verb — the generic "delete" layout claimed "has been restored",
+      // false on THIS (permanent) path.
+      await sendViolationNotifications(sealRecord, artifactId, pageId, atlassianId, artifactName, "permanently-deleted");
+    } catch (e) {
+      console.error("[SEAL-DELETED] final notice failed (continuing cleanup):", e);
+    }
   }
 
   // Clean up KVS records since attachment is gone
@@ -2246,7 +2255,10 @@ export async function handleSealedArtifactDeleted(sealRecord, artifactId, conten
     version: null,
   });
   if (sealRecord.spaceId) {
-    await kvs.delete(`space-protection-${sealRecord.spaceId}-${artifactId}`);
+    // Best effort like the rest of the tail: an unguarded throw here skipped the edit-access sweep
+    // and the stamp below, orphaning grants on a file that no longer exists.
+    await kvs.delete(`space-protection-${sealRecord.spaceId}-${artifactId}`).catch((e) =>
+      console.warn("[SEAL-DELETED] index row delete failed (continuing cleanup):", e?.message || e));
   }
 
   // Remove content property — ONLY when this was the page's last live seal (vet F2: the
@@ -2256,7 +2268,15 @@ export async function handleSealedArtifactDeleted(sealRecord, artifactId, conten
   if (pageId) await releaseSealContentPropIfLast(pageId, artifactId);
 
   // Clear any Edit Requests / grants tied to this seal
-  await sweepEditAccess(artifactId);
+  await sweepEditAccess(artifactId).catch((e) => console.warn("[SEAL-DELETED] edit-access sweep failed:", e?.message || e));
+  // The file is gone for good: its "notify me when unsealed" watches and the sweep's reminder
+  // counters have nothing left to describe (parity with purge-seal-record / releaseSeal). Not the
+  // whole releaseSeal: that also rewrites the page body for the panel, and this runs from inside
+  // the page pipeline's media pass, whose own write would then race it.
+  await sweepWatchers(artifactId).catch(() => {});
+  await kvs.delete(`expiry-notified-${artifactId}`).catch(() => {});
+  await kvs.delete(`fifty-percent-reminder-sent-${artifactId}`).catch(() => {});
+  await kvs.delete(`reminder-sent-${artifactId}`).catch(() => {});
 
   await touchSealTimestamp();
   console.warn(`[SEAL-DELETED] Cleaned up seal records for ${artifactName} (${artifactId})`);
