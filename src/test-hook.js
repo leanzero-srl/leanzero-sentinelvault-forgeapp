@@ -226,6 +226,15 @@ export async function testStateTrigger(req) {
         const { permissionsForAccount } = await import("./server/capsules/jira-seals/store.js");
         return json(200, { invoked: fn, result: await permissionsForAccount(q(req, "actor"), q(req, "issueKey")) });
       }
+      if (fn === "jiraDropCopy") {
+        const { deleteCopy } = await import("./server/capsules/jira-seals/store.js");
+        await deleteCopy(q(req, "key"));
+        return json(200, { invoked: fn, dropped: q(req, "key") });
+      }
+      if (fn === "jiraRetry") {
+        const m = await import("./server/capsules/jira-seals/actions.js");
+        return json(200, { invoked: fn, result: await m.retryJiraRestore({ accountId: q(req, "actor"), issueId: q(req, "issueId"), attachmentId: q(req, "att"), powers: { canSee: true, canEdit: true, isSteward: false } }) });
+      }
       if (fn === "jiraSweep") {
         const { jiraSealSweep } = await import("./server/capsules/jira-seals/trigger.js");
         return json(200, { invoked: fn, result: await jiraSealSweep() });

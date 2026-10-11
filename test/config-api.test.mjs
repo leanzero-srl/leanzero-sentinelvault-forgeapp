@@ -108,6 +108,12 @@ const memStorage = () => { const m = new Map(); return { m, get: async (k) => (m
   eq("readSet $replace", readSet({ $replace: true, items: [] }), { replace: true, items: [] });
   eq("readSet bad", readSet("x"), null);
 
+  // 8.0 Jira ops refuse a malformed issue key or a non-Jira attachment id.
+  ok("jira: bad issue key refused", !validateBundle({ version: 1, content: [{ op: "seal-jira-attachment", issueKey: "abc-1", attachmentId: "1" }] }).ok);
+  ok("jira: path-like key refused", !validateBundle({ version: 1, content: [{ op: "release-jira-attachment", issueKey: "../ABC-1", attachmentId: "1" }] }).ok);
+  ok("jira: Confluence-style id refused", !validateBundle({ version: 1, content: [{ op: "extend-jira-attachment", issueKey: "ABC-1", attachmentId: "att1" }] }).ok);
+  ok("jira: good op passes", validateBundle({ version: 1, content: [{ op: "seal-jira-attachment", issueKey: "ABC-12", attachmentId: "14731", lockDuration: 3600, note: "n" }] }).ok);
+
   // Limits.
   const big = { version: 1, site: { policy: { note: "x".repeat(MAX_BUNDLE_BYTES) } } };
   ok("size limit (computed)", validateBundle(big).errors[0].includes("exceeds"));
@@ -118,7 +124,9 @@ const memStorage = () => { const m = new Map(); return { m, get: async (k) => (m
 
   // Content op allow-lists: every op refuses a foreign field and demands its required ones.
   for (const [op, spec] of Object.entries(CONTENT_OPS)) {
-    const base = { op }; for (const k of spec.required) base[k] = "x1";
+    // A required field gets a well-formed sample: Jira ops take an issue key and a numeric id.
+    const sample = (k) => (k === "issueKey" ? "ABC-1" : /jira-attachment$/.test(op) && k === "attachmentId" ? "14731" : "x1");
+    const base = { op }; for (const k of spec.required) base[k] = sample(k);
     ok(`${op}: minimal passes`, validateBundle({ version: 1, content: [base] }).ok);
     ok(`${op}: foreign field refused`, validateBundle({ version: 1, content: [{ ...base, adminOverride: true }] }).errors.includes(`content[0].adminOverride: not a field of ${op}`));
     for (const k of spec.required) {

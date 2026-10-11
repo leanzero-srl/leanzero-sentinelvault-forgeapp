@@ -75,7 +75,6 @@ export const FAMILIES = Object.freeze([
   { prefix: "activity-space-", cls: "config", group: "history", label: "Activity history (spaces)" },
   { prefix: "activity-site-", cls: "config", group: "history", label: "Activity history (site)" },
   { prefix: "activity-issue-", cls: "config", group: "history", label: "Activity history (Jira issues)" },
-  { prefix: "activity-project-", cls: "config", group: "history", label: "Activity history (Jira projects)" },
 
   // ── secrets: never leave KVS ────────────────────────────────────────────────────────────
   // sig-secret- / sig-enroll- live in the KVS SECRET namespace since 2026-10-04 (a plain row is
@@ -123,6 +122,11 @@ export const FAMILIES = Object.freeze([
   { prefix: "jira-seal-noticed-", cls: "runtime" },
   { prefix: "jira-seal-lapse-", cls: "runtime" },
   { prefix: "jira-seal-restoring-", cls: "runtime" },
+  { prefix: "jira-seal-restore-intent-", cls: "runtime" },
+  { prefix: "jira-seal-sweep-lock", cls: "runtime" },
+  // A seal whose file could not be put back: config (it is what tells the owner, and what the sweep
+  // retries) — a restore of the backup brings back the retry, never a false "sealed".
+  { prefix: "jira-seal-lost-", cls: "config", group: "seals", index: true, label: "Sealed Jira files not put back yet" },
   // The backup's own bookkeeping (status, debounce flag, jobs, import staging, paused list).
   { prefix: "backup-", cls: "runtime" },
   // The privacy sweep's status, lock and account index (capsules/privacy) — rebuilt by the next sweep.
