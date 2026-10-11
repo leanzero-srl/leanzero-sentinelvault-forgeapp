@@ -2727,9 +2727,12 @@ async function expirySweepSeals() {
         // --- Lapsed seal: remind, then release (F5) ---
         if (now >= expiresAt) {
           // The page is gone for good (confirmed): nothing left to protect and nowhere to post.
-          // Release now, without a notice — whatever the reminder countdown says, and even when
-          // the policy never auto-releases (limit 0): a seal on a purged page guards nothing.
-          const delivery = await deliveryFor(subjectPageId);
+          // Release now, without a notice — whatever the reminder countdown says. Not when the
+          // policy never auto-releases (limit 0): "gone" is two 404s, and a page the app can no
+          // longer SEE answers the same way, so a site that chose never to release keeps the seal;
+          // its one reminder is counted as undeliverable instead (below) and the retries stop.
+          let delivery = await deliveryFor(subjectPageId);
+          if (delivery === "release-silently" && !(lapseNoticeLimit > 0)) delivery = "undeliverable";
           if (delivery === "release-silently") {
             const sentSoFar = priorNoticeCount(await kvs.get(dedupKey));
             const autoRelease = { reason: "page-deleted", noticeCount: sentSoFar, noticeLimit: lapseNoticeLimit };
@@ -2823,7 +2826,7 @@ async function expirySweepSeals() {
           // the lapse policy completes (the release follows after the last one, as for any seal).
           if (noticeWanted && !noticeDeliverable) {
             noticePosted = true;
-            console.warn(`[EXPIRY-SWEEP] lapse notice ${noticeNumber}/${lapseNoticeLimit} for ${kind} ${artifactId} is undeliverable — page ${subjectPageId} is in the trash; counted, not posted`);
+            console.warn(`[EXPIRY-SWEEP] lapse notice ${noticeNumber}/${lapseNoticeLimit} for ${kind} ${artifactId} is undeliverable — page ${subjectPageId} is ${confirmedStatuses.get(String(subjectPageId)) || "unavailable"}; counted, not posted`);
           } else if (noticeWanted) {
             try {
               const dateOpts = { year: "numeric", month: "long", day: "numeric" };

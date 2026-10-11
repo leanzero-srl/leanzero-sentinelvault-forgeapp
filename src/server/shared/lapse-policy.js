@@ -139,7 +139,9 @@ export function lapseSubject(kind, key, value) {
  *   "missing" — gone for good: both page lookups succeeded and neither returned it, AND a direct
  *               read of it as a page and as a blog post both answered 404 (the batched lookup only
  *               knows pages, so a blog post reads as missing there). Nothing left to protect and
- *               nowhere to post → "release-silently".
+ *               nowhere to post → "release-silently". (The sweep downgrades this to
+ *               "undeliverable" when the policy never auto-releases — limit 0 — because a page the
+ *               app can no longer see answers with the same two 404s.)
  *   "trashed" — Confluence keeps the page but refuses a comment on it → "undeliverable": the
  *               reminder is counted as sent (logged) so the normal lapse policy runs to its end,
  *               and the page can still be restored with its seal intact until then.
