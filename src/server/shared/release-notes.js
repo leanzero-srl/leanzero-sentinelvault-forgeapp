@@ -12,6 +12,15 @@ const note = (n) => Object.freeze({ ...n, changes: Object.freeze([...(n.changes 
 
 export const RELEASE_NOTES = Object.freeze([
   note({
+    version: "8.5.0",
+    date: "2026-10-11",
+    headline: "A sealed Jira file's copy is safe when the file is sealed again",
+    fixes: [
+      "In a rare case, the hourly retry of a failed copy delete could remove the copy belonging to a later seal on the same file. Sealing a file now clears any such retry first, and the two can no longer overlap.",
+    ],
+    action: "Nothing to do if your site already runs 8.0.0. A site on an earlier version gets this update after a site admin approves the 8.0.0 update in Confluence administration, Apps, Manage apps.",
+  }),
+  note({
     version: "8.4.0",
     date: "2026-10-11",
     headline: "A Jira file being put back says so",
@@ -64,11 +73,11 @@ export const RELEASE_NOTES = Object.freeze([
       "Changed: times read today, yesterday and tomorrow in words instead of a weekday, and a time a full week away shows its date.",
     ],
     fixes: [
-      "Purging or restoring a deleted file, and a space admin's force release, are checked against the space the file is in.",
-      "Clearing a lapsed seal from space settings needs its owner, a space admin of the file's space, or someone who can edit the page the file is on, and it cleans up everything the seal left behind.",
+      "The permission checks on purging or restoring a deleted file, and on a space admin's force release, are stricter.",
+      "Clearing a lapsed seal from space settings now cleans up everything the seal left behind, and who may clear it is checked more strictly.",
       "Each seal on a page now stays in force until that seal itself is released or expires.",
       "A new version uploaded by a seal's owner is now the version the seal protects. Before, the next unauthorised change was undone back to the original file, losing the owner's update.",
-      "While a page's approval holds its seals, they stay in force until the approval ends: a sealed file moved to the trash by anyone outside the approval, its owner included, is put back.",
+      "While a page's approval holds its seals, they stay in force until the approval ends: a sealed file moved to the trash by anyone other than the page's approvers or a space admin is put back.",
       "A lapsed seal on a page that was deleted is now released, unless Overdue reminders before release is set to 0, which keeps seals. Before, its reminder could not be posted, so it was retried every hour and the seal was never released. On a page in the trash, the seal now finishes its normal countdown.",
       "A file deleted from the panel without a seal no longer blocks someone else from sealing it later, and its permanent deletion no longer posts a violation notice.",
       "Edit requests waiting on you are listed even on sites where Seals expire is off, and space settings no longer show a file as sealed when it was only moved to the trash from the panel and never sealed.",

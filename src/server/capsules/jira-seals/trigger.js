@@ -22,7 +22,7 @@ import { Queue } from "@forge/events";
 
 import {
   ACTIVITY, JIRA_COPY_GC_PREFIX, JIRA_INTENT_PREFIX, JIRA_LOST_PREFIX, JIRA_SWEEP_CURSOR_KEY, JIRA_ORPHAN_KEEP_MS, commentRefusalIsFinal, decideDeletion, isExpired,
-  JIRA_QUEUED_TTL_MS, jiraIntentKey, jiraIssueIndexKey, jiraQueuedKey, jiraLapseKey, jiraLostKey, jiraNoticeKey, jiraSealKey, lapseCommentAdf, loopTripped,
+  JIRA_QUEUED_TTL_MS, jiraCopyGcKey, jiraIntentKey, jiraIssueIndexKey, jiraQueuedKey, jiraLapseKey, jiraLostKey, jiraNoticeKey, jiraSealKey, lapseCommentAdf, loopTripped,
   movedRecord, nextRetryAt, noticeDue, normId, restoreCommentAdf, restoreNoticePlan, sealIdOf,
 } from "./logic.js";
 import { acquireLock, releaseLock } from "../../shared/kvs-lock.js";
@@ -135,6 +135,9 @@ export async function restoreSealedFile(record, actorId) {
   if (!moved.ok) console.error(`[JIRA-SEAL] seal moved to ${next.attachmentId} but the old record ${record.attachmentId} could not be removed`);
   await kvs.delete(jiraLostKey(record.attachmentId)).catch(() => {});
   await kvs.delete(jiraIntentKey(sid)).catch(() => {});
+  // The copy is this live seal's: no delete retry may stand for it. The sweep's retry checks the seal
+  // under the FIRST id, which a move leaves behind, so the row is cleared here as well as at sealing.
+  await kvs.delete(jiraCopyGcKey(record.copyKey)).catch(() => {});
   await syncIssueProperty(next.issueId, { add: next, removeId: record.attachmentId });
   await activity(next, ACTIVITY.RESTORED, actorId, { from: record.attachmentId, to: next.attachmentId, restoreCount: next.restoreCount });
   await scheduleBackup("jira-restore"); // the seal now lives under a new id: the backup must learn it
