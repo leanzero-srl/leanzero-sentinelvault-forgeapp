@@ -57,6 +57,9 @@ export const ACTIVITY_TYPES = Object.freeze([
   // Pillar 12 (backup and restore) — site-level, written to the `activity-site-` leg.
   "backup.taken", "backup.failed", "backup.restored", "backup.restore-failed", "backup.exported", "backup.imported",
   "backup.location-set", "backup.deleted", "backup.automations-resumed",
+  // 8.0 — Jira attachment seals (capsules/jira-seals), written to the issue and project legs.
+  "jira.sealed", "jira.released", "jira.forced", "jira.extended", "jira.restored", "jira.restore-failed",
+  "jira.auto-released", "jira.ended",
 ]);
 
 const PAGE_PREFIX = "activity-page-";
@@ -64,6 +67,8 @@ const SPACE_PREFIX = "activity-space-";
 // Site-level events (backup and restore) belong to no page or space: their own leg, read by the
 // site console's history. Same inverted-timestamp ordering.
 export const SITE_PREFIX = "activity-site-";
+// 8.0 — Jira attachment seals: an issue's feed, the page leg's twin.
+const ISSUE_PREFIX = "activity-issue-";
 const TS_CEILING = 9999999999999; // 13 digits — every ms timestamp until the year 2286 fits under it
 const MAX_DETAILS_BYTES = 1024;
 
@@ -84,6 +89,8 @@ export const activitySpaceSegment = (spaceKey) =>
 
 /** Prefix of one page's feed. */
 export const activityPagePrefix = (pageId) => `${PAGE_PREFIX}${pageId}-`;
+/** Prefix of one Jira issue's feed. */
+export const activityIssuePrefix = (issueId) => `${ISSUE_PREFIX}${activitySpaceSegment(issueId)}-`;
 /** Prefix of one space's report. */
 export const activitySpacePrefix = (spaceKey) => `${SPACE_PREFIX}${activitySpaceSegment(spaceKey)}-`;
 
@@ -98,11 +105,12 @@ const randomSuffix = () => {
  * its scope is unknown — an event with no page (a seal record that never recorded a contentId)
  * still lands on the space report, and vice versa.
  */
-export function buildActivityKeys({ pageId, spaceKey, tsMs, rand, site = false }) {
+export function buildActivityKeys({ pageId, spaceKey, tsMs, rand, site = false, issueId = null }) {
   const inv = invertedTs(tsMs);
   const suffix = `${inv}-${rand}`;
   return {
     id: suffix,
+    issueKey: issueId != null && issueId !== "" ? `${activityIssuePrefix(issueId)}${suffix}` : null,
     pageKey: pageId != null && pageId !== "" ? `${activityPagePrefix(pageId)}${suffix}` : null,
     spaceKey: spaceKey != null && spaceKey !== "" ? `${activitySpacePrefix(spaceKey)}${suffix}` : null,
     siteKey: site ? `${SITE_PREFIX}${suffix}` : null,
@@ -175,8 +183,9 @@ export async function recordActivity(entry) {
     const tsMs = Date.now();
     const pageId = entry.pageId != null && entry.pageId !== "" ? String(entry.pageId) : null;
     const spaceKey = entry.spaceKey != null && entry.spaceKey !== "" ? String(entry.spaceKey) : null;
-    const { id, pageKey, spaceKey: spaceStoreKey, siteKey } = buildActivityKeys({ pageId, spaceKey, tsMs, rand: randomSuffix(), site: entry.site === true });
-    if (!pageKey && !spaceStoreKey && !siteKey) {
+    const issueId = entry.issueId != null && entry.issueId !== "" ? String(entry.issueId) : null;
+    const { id, pageKey, spaceKey: spaceStoreKey, siteKey, issueKey: issueStoreKey } = buildActivityKeys({ pageId, spaceKey, tsMs, rand: randomSuffix(), site: entry.site === true, issueId });
+    if (!pageKey && !spaceStoreKey && !siteKey && !issueStoreKey) {
       console.warn(`[ACTIVITY] ${type} has neither pageId nor spaceKey — nothing to index it under`);
       return null;
     }
@@ -203,6 +212,7 @@ export async function recordActivity(entry) {
       type,
       pageId,
       spaceKey,
+      ...(issueId ? { issueId } : {}),
       actor,
       target,
       details: boundDetails(entry.details),
@@ -214,6 +224,9 @@ export async function recordActivity(entry) {
     }
     if (spaceStoreKey) {
       await kvs.set(spaceStoreKey, value).catch((e) => console.warn(`[ACTIVITY] space key write failed (${type}):`, e));
+    }
+    if (issueStoreKey) {
+      await kvs.set(issueStoreKey, value).catch((e) => console.warn(`[ACTIVITY] issue key write failed (${type}):`, e));
     }
     if (siteKey) {
       await kvs.set(siteKey, value).catch((e) => console.warn(`[ACTIVITY] site key write failed (${type}):`, e));

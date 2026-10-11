@@ -409,6 +409,65 @@ const MySeals = () => {
   );
 };
 
+// 8.0 — the Jira files the current user holds sealed (their own owner index, list-my-jira-seals).
+// Only drawn when there is something to show: a site that never connected Jira sees no Jira card.
+const MyJiraSeals = () => {
+  const { items, error, reload } = useList("list-my-jira-seals", pickJiraSeals);
+  const [dl, setDl] = useState(null); // { id, msg }
+  if (error) return <section className="mw-card" data-testid="mw-jira-seals"><LoadError what="your sealed Jira files" onRetry={reload} testId="mw-jira-seals-error" /></section>;
+  if (!items || items.length === 0) return null;
+  // An orphan (its issue was deleted): the copy is kept 30 days and only its owner can download it.
+  const download = async (s) => {
+    setDl({ id: s.attachmentId, msg: null });
+    try {
+      const r = await invoke("jira-copy-download", { attachmentId: s.attachmentId });
+      if (!r?.success || !r.url) { setDl({ id: s.attachmentId, msg: r?.reason || "The copy could not be found" }); return; }
+      await router.open(r.url);
+      setDl(null);
+    } catch (_) { setDl({ id: s.attachmentId, msg: "Could not reach Sentinel Vault. Try again." }); }
+  };
+  const pill = (s) => {
+    if (s.issueDeletedAt) return <span className="mw-pill mw-pill-stale">Issue deleted</span>;
+    if (s.lost) return <span className="mw-pill mw-pill-overdue">Not put back</span>;
+    if (s.expired) return <span className="mw-pill mw-pill-overdue">{WORDS.expired}</span>;
+    return <span className="mw-pill mw-pill-live">Sealed</span>;
+  };
+  return (
+    <section className="mw-card" data-testid="mw-jira-seals">
+      <div className="mw-card-head">
+        <span className="mw-card-title">Jira files you hold sealed</span>
+        <span className="mw-count mw-count-seals">{items.length}</span>
+      </div>
+      <ul className="mw-list">
+        {items.map((s) => (
+          <li key={s.attachmentId} className="mw-row" data-testid="mw-jira-seal-row">
+            <div className="mw-row-info">
+              <span className="mw-row-main">{s.attachmentName}</span>
+              <span className="mw-row-meta">
+                {s.issueDeletedAt
+                  ? `${s.issueKey || "The issue"} was deleted ${when(s.issueDeletedAt)} · the copy is kept until ${when(s.orphanUntil)}`
+                  : <>
+                    {s.issueKey ? <a className="mw-link" href={`/browse/${s.issueKey}`} onClick={go(`/browse/${s.issueKey}`)}>{s.issueKey}</a> : ""}
+                    {s.lost ? " · deleted and not put back yet: open the issue to put it back" : ` · ${s.expired ? `expired ${when(s.expiresAt)}` : `until ${when(s.expiresAt)}`}`}
+                    {s.restoreCount && !s.lost ? ` · put back ${s.restoreCount === 1 ? "once" : `${s.restoreCount} times`}` : ""}
+                  </>}
+              </span>
+              {dl?.id === s.attachmentId && dl.msg && <span className="mw-row-meta" role="alert">{dl.msg}</span>}
+            </div>
+            <div className="mw-row-actions">
+              {s.issueDeletedAt && (
+                <button type="button" className="mw-btn mw-btn-more" disabled={dl?.id === s.attachmentId && !dl.msg} onClick={() => download(s)} data-testid="mw-jira-copy-download">Download the copy</button>
+              )}
+              {pill(s)}
+            </div>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+};
+const pickJiraSeals = (r) => (r?.success ? r.seals : null);
+
 // B3: the approver's signature device. Enrol once (scan the QR, or type the key, into any
 // authenticator app), confirm with the first code, and spaces that require signed decisions
 // accept your approvals. The QR is drawn HERE from the otpauth URI — nothing leaves Atlassian.
@@ -556,6 +615,7 @@ const MyWork = () => {
         <MyRequests />
         <MyApprovalRequests />
         <MySeals />
+        <MyJiraSeals />
         <SignatureCard />
       </div>
     </div>

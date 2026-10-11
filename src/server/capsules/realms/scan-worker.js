@@ -1,6 +1,7 @@
 import { asApp, route } from "@forge/api";
 import { kvs, WhereConditions } from "@forge/kvs";
 import { Queue } from "@forge/events";
+import { isLiveAttachmentSeal } from "../../shared/live-seal.js";
 
 /**
  * Async queue consumer for rebuilding the realm-seal index.
@@ -35,6 +36,7 @@ export async function realmScanConsumer(event) {
     let totalPagesFetched = 0;
     let totalArtifactsScanned = 0;
     let sealedCount = 0;
+    const notSealIds = new Set(); // current files whose protection- record is not a seal (stub / ownerless)
 
     // Fetch all pages in the realm using cursor-based pagination
     do {
@@ -71,6 +73,15 @@ export async function realmScanConsumer(event) {
           for (const artifact of artifacts) {
             const sealRecord = await kvs.get(`protection-${artifact.id}`);
 
+            // Only a real seal gets a row: the steward console lists every row as a seal. An S7
+            // trashedOnly stub on a CURRENT file (restored outside the app, the stub left behind)
+            // and an ownerless record are not seals — writing them listed phantom seals ("User ")
+            // that unseal then acted on. Such a stub's existing row is dropped in the cleanup.
+            if (sealRecord && !isLiveAttachmentSeal(sealRecord)) {
+              notSealIds.add(String(artifact.id));
+              continue;
+            }
+
             if (sealRecord) {
               // Write/update the realm-seal index key
               await kvs.set(`space-protection-${realmId}-${artifact.id}`, {
@@ -87,16 +98,27 @@ export async function realmScanConsumer(event) {
                 pageTitle: page.title || "Unknown Page",
                 spaceKey: realmKey,
                 fileSize: artifact.fileSize || null,
+                // The console's download action reads this; a rebuilt row used to drop it (the
+                // row sealArtifact writes carries it).
+                downloadLink: artifact.downloadLink || artifact._links?.download || sealRecord.downloadLink || null,
                 creatorName: null, // Avoid extra API calls in background
                 creatorAccountId: artifact.version?.authorId || null,
+                workflowHeld: sealRecord.workflowHeld || null, // SEC-2: seal-custody keeps this on the row
               });
 
-              // Also ensure the seal data has realmId for future cleanup
+              // Also ensure the seal data has realmId for future cleanup. Merged onto a FRESH
+              // read, and only while it is still the same seal — writing the scan-start snapshot
+              // back would resurrect a seal released while the scan ran. (The space KEY is not
+              // stamped: the steward gates derive it from the record's page when it is missing,
+              // and the cron pairs this job's id and key from records, not from the space.)
               if (!sealRecord.spaceId) {
-                await kvs.set(`protection-${artifact.id}`, {
-                  ...sealRecord,
-                  spaceId: realmId,
-                });
+                const fresh = await kvs.get(`protection-${artifact.id}`);
+                if (isLiveAttachmentSeal(fresh) && !fresh.spaceId && fresh.lockedBy === sealRecord.lockedBy && fresh.timestamp === sealRecord.timestamp) {
+                  await kvs.set(`protection-${artifact.id}`, {
+                    ...fresh,
+                    spaceId: realmId,
+                  });
+                }
               }
 
               sealedCount++;
@@ -142,10 +164,15 @@ export async function realmScanConsumer(event) {
 
         const { results, nextCursor } = await query.getMany();
 
-        for (const { key, value } of results || []) {
+        for (const { key } of results || []) {
           const artifactId = key.replace(prefix, "");
           const sealExists = await kvs.get(`protection-${artifactId}`);
-          if (!sealExists) {
+          // Gone, ownerless, or a trashedOnly stub on a file this scan just saw CURRENT (restored
+          // outside the app): not a seal, so not a console row. A stub on a file still in the
+          // trash keeps its row — the console shows it as "Trash" and offers restore/purge.
+          const notASeal = !sealExists || !sealExists.lockedBy
+            || (sealExists.trashedOnly && notSealIds.has(String(artifactId)));
+          if (notASeal) {
             await kvs.delete(key);
             staleCount++;
           }

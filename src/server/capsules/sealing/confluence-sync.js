@@ -1,5 +1,5 @@
 import { kvs } from "@forge/kvs";
-import { writeSealContentProp, removeSealContentProp, touchSealTimestamp } from "./logic.js";
+import { writeSealContentProp, releaseSealContentPropIfLast, touchSealTimestamp } from "./logic.js";
 import { sweepEditAccess } from "../editreq/logic.js";
 
 /**
@@ -82,19 +82,9 @@ export async function syncSealToContentProp(contentId, sealData) {
 }
 
 /**
- * Remove seal content property from a page when it is unsealed.
- *
- * @param {string} contentId - The parent page/content ID
- * @returns {Promise<void>}
- */
-export async function clearSealContentProp(contentId) {
-  if (!contentId) return;
-  await removeSealContentProp(contentId);
-}
-
-/**
  * Full cleanup of all seal-related external state for an artifact.
- * Removes KVS seal record, content property, and realm index key.
+ * Removes KVS seal record, the page's content property (only when this was the page's LAST
+ * seal — it is one per page and gates the media fast path for the others), and realm index key.
  *
  * @param {string} artifactId - The artifact (attachment) ID
  * @param {Object} sealRecord - The existing seal record
@@ -107,7 +97,7 @@ export async function purgeAllSealState(artifactId, sealRecord) {
   await touchSealTimestamp();
 
   if (sealRecord?.contentId) {
-    await removeSealContentProp(sealRecord.contentId);
+    await releaseSealContentPropIfLast(sealRecord.contentId, artifactId);
   }
 
   if (sealRecord?.spaceId) {
