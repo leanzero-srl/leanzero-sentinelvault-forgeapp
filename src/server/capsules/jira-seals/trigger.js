@@ -22,7 +22,7 @@ import { Queue } from "@forge/events";
 
 import {
   ACTIVITY, JIRA_COPY_GC_PREFIX, JIRA_INTENT_PREFIX, JIRA_LOST_PREFIX, JIRA_SWEEP_CURSOR_KEY, JIRA_ORPHAN_KEEP_MS, commentRefusalIsFinal, decideDeletion, isExpired,
-  jiraIntentKey, jiraIssueIndexKey, jiraLapseKey, jiraLostKey, jiraNoticeKey, jiraSealKey, lapseCommentAdf, loopTripped,
+  JIRA_QUEUED_TTL_MS, jiraIntentKey, jiraIssueIndexKey, jiraQueuedKey, jiraLapseKey, jiraLostKey, jiraNoticeKey, jiraSealKey, lapseCommentAdf, loopTripped,
   movedRecord, nextRetryAt, noticeDue, normId, restoreCommentAdf, restoreNoticePlan, sealIdOf,
 } from "./logic.js";
 import { acquireLock, releaseLock } from "../../shared/kvs-lock.js";
@@ -208,12 +208,15 @@ export async function handleJiraAttachmentDeleted(event) {
   }
   // The restore moves up to 25 MB twice: it runs in the queue consumer (300 s), not in this trigger.
   // A push that fails falls back to restoring here — a slow restore beats none.
+  await setUntil(jiraQueuedKey(attId), { at: new Date(nowMs).toISOString() }, nowMs + JIRA_QUEUED_TTL_MS).catch(() => {});
   try {
     await new Queue({ key: RESTORE_QUEUE }).push({ body: { attachmentId: attId, actorId } });
     return { outcome: "queued" };
   } catch (e) {
     console.error("[JIRA-SEAL] restore queue push failed, restoring inline:", e?.message || e);
-    return restoreWithClaim(attId, actorId);
+    const r = await restoreWithClaim(attId, actorId);
+    await kvs.delete(jiraQueuedKey(attId)).catch(() => {});
+    return r;
   }
 }
 
@@ -230,6 +233,9 @@ export async function jiraRestoreConsumer(event) {
   const attId = normId(body.attachmentId);
   if (!attId) return;
   const r = await restoreWithClaim(attId, body.actorId || null);
+  // "in-progress": a twin holds the lock and clears it when IT finishes.
+  const twinHoldsIt = r.outcome === "in-progress";
+  if (!twinHoldsIt) await kvs.delete(jiraQueuedKey(attId)).catch(() => {});
   console.warn(`[JIRA-SEAL] restore of ${attId}: ${r.outcome}${r.attachmentId ? ` → ${r.attachmentId}` : ""}`);
 }
 

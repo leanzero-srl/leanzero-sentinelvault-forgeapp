@@ -41,6 +41,7 @@ const CHIP = {
   held: { text: "Sealed", cls: "held" },
   expired: { text: "Expired", cls: "expired" },
   lost: { text: "Not put back", cls: "expired" },
+  restoring: { text: "Being put back", cls: "held" },
 };
 const mb = (bytes) => `${Math.round((Number(bytes) || 0) / 1048576)} MB`;
 
@@ -102,6 +103,7 @@ function SealForm({ att, defaults, onSeal, onCancel, busy }) {
 /** The row's one sentence: who holds it, until when, and what that means for this viewer. */
 function sealLine(att, viewerId, maxBytes) {
   const s = att.seal;
+  if (att.lost && att.row.state === "restoring") return "Deleted just now. Sentinel Vault is putting it back from its copy.";
   if (att.lost) {
     const i = att.lostInfo;
     if (i?.reason === "loop") return "Deleted again each time it was put back, so Sentinel Vault stopped. It still holds the copy.";
@@ -186,6 +188,16 @@ function App() {
     try { sub = events.on("JIRA_ISSUE_CHANGED", () => { setFlash(null); load(); }); } catch (_) { /* older hosts: the Refresh button */ }
     return () => { Promise.resolve(sub).then((s) => s?.unsubscribe?.()).catch(() => {}); };
   }, [load]);
+  // While a put-back is queued or running, re-read every 3 s (for at most a minute) so the row turns
+  // into the restored file on its own.
+  const restoringCount = (data?.attachments || []).filter((a) => a.row?.state === "restoring").length;
+  const polls = useRef(0);
+  useEffect(() => {
+    if (!restoringCount) { polls.current = 0; return undefined; }
+    if (polls.current >= 20) return undefined;
+    const t = setTimeout(() => { polls.current += 1; load(); }, 3000);
+    return () => clearTimeout(t);
+  }, [restoringCount, data, load]);
   // A confirmation is news for a few seconds, not a banner that outlives the next event.
   useEffect(() => {
     if (!flash || flash.kind !== "ok") return undefined;
