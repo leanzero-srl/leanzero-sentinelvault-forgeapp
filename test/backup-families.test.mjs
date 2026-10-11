@@ -23,6 +23,7 @@ const NOT_KEYS = [
   /-queue$/, /^sentinel-/, /^sv-state-$/, /^config-api$/,
   /^(seal|unseal|extend|grant|revoke|decline)-(attachment|section)(-edit)?$/, /^classify-page$/, /^recheck-validation$/,
   /^approve-validation$/, /^idempotency-key$/,
+  /^(seal|release|extend)-jira-attachment$/, // 8.0 REST content op names (config-api/bundle.js), not storage keys
 ];
 const lineRe = /kvs\.|beginsWith|setWithTtl|setUntil|Key\s*=|Key\(|KEY\s*=|PREFIX\s*=|[Pp]refix\s*[:=]|_KEY\b|Key\s*:|\bkey\s*=/;
 const heads = new Map();
