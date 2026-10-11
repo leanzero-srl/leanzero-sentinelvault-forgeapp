@@ -83,4 +83,5 @@ module.exports = [
   createBuildConfig("section-setup",    "./src/ui/surfaces/section-setup/index.jsx",    "static/section-setup",    "section-setup.css"),
   createBuildConfig("my-work",          "./src/ui/surfaces/my-work/index.jsx",          "static/my-work",          "my-work.css"),
   createBuildConfig("page-details",     "./src/ui/surfaces/page-details/index.jsx",     "static/page-details",     "page-details.css"),
+  createBuildConfig("jira-issue",       "./src/ui/surfaces/jira-issue/index.jsx",       "static/jira-issue",       "jira-issue.css"),
 ];

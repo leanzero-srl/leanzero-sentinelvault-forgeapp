@@ -130,6 +130,12 @@ const storePolicy = async (req) => {
         if (!nextCursor) break;
         sq = kvs.query().where("key", WhereConditions.beginsWith("protection-")).limit(100).cursor(nextCursor);
       }
+      // 8.0 — Jira seals pause with the rest (review 2026-10-11, D1): they live under their own
+      // prefix, and a seal that "expired" during the pause would let a stranger's delete stand.
+      try {
+        const { extendAllSealsBy } = await import("../jira-seals/store.js");
+        extended += await extendAllSealsBy(pauseDuration);
+      } catch (e) { console.error("Auto-unseal resume: Jira seals not extended:", e); }
       console.info(`Auto-unseal resume: extended ${extended} seal(s) by ${Math.round(pauseDuration / 1000)}s`);
 
       data.autoUnlockPausedAt = null;

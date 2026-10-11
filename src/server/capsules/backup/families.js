@@ -50,6 +50,12 @@ export const FAMILIES = Object.freeze([
   { prefix: "steward-request-", cls: "config", group: "access", label: "Space-admin access requests" },
   { prefix: "stewardreq-space-", cls: "config", group: "access", index: true, label: "Space-admin request index" },
   { prefix: "notify-request-", cls: "config", group: "access", label: "\"Tell me when it is released\" watches" },
+  // 8.0 — Jira attachment seals. The file COPIES live in the Forge Object Store, not KVS: a restore
+  // after an uninstall brings the seal back, and the copy is there only if the Object Store kept it
+  // (Atlassian's 21-day re-link) — otherwise a later delete is reported as "could not put it back".
+  { prefix: "jira-protection-", cls: "config", group: "seals", label: "Sealed Jira files" },
+  { prefix: "jira-seal-issue-", cls: "config", group: "seals", index: true, label: "Sealed Jira files per issue" },
+  { prefix: "jira-seal-owner-", cls: "config", group: "seals", index: true, label: "Sealed Jira files per owner" },
   // ── document workflow ───────────────────────────────────────────────────────────────────
   { prefix: "workflow-state-", cls: "config", group: "workflow", label: "Page workflow states" },
   { prefix: "workflow-pending-", cls: "config", group: "workflow", label: "Open approval requests" },
@@ -68,6 +74,7 @@ export const FAMILIES = Object.freeze([
   { prefix: "activity-page-", cls: "config", group: "history", label: "Activity history (pages)" },
   { prefix: "activity-space-", cls: "config", group: "history", label: "Activity history (spaces)" },
   { prefix: "activity-site-", cls: "config", group: "history", label: "Activity history (site)" },
+  { prefix: "activity-issue-", cls: "config", group: "history", label: "Activity history (Jira issues)" },
 
   // ── secrets: never leave KVS ────────────────────────────────────────────────────────────
   // sig-secret- / sig-enroll- live in the KVS SECRET namespace since 2026-10-04 (a plain row is
@@ -112,6 +119,14 @@ export const FAMILIES = Object.freeze([
   { prefix: "api-job-", cls: "runtime" },
   { prefix: "api-active-", cls: "runtime" },
   { prefix: "harness-", cls: "runtime" },
+  { prefix: "jira-seal-noticed-", cls: "runtime" },
+  { prefix: "jira-seal-lapse-", cls: "runtime" },
+  { prefix: "jira-seal-restoring-", cls: "runtime" },
+  { prefix: "jira-seal-restore-intent-", cls: "runtime" },
+  { prefix: "jira-seal-sweep-lock", cls: "runtime" },
+  // A seal whose file could not be put back: config (it is what tells the owner, and what the sweep
+  // retries) — a restore of the backup brings back the retry, never a false "sealed".
+  { prefix: "jira-seal-lost-", cls: "config", group: "seals", index: true, label: "Sealed Jira files not put back yet" },
   // The backup's own bookkeeping (status, debounce flag, jobs, import staging, paused list).
   { prefix: "backup-", cls: "runtime" },
   // The privacy sweep's status, lock and account index (capsules/privacy) — rebuilt by the next sweep.
