@@ -16,6 +16,8 @@ export const SIGNED_SEAL_ACTION_KEYS = Object.freeze([
   "unseal-artifact", "unseal-section", "steward-unseal", "extend-seal", "extend-section",
   "approve-edit-request", "deny-edit-request", "approve-section-edit", "deny-section-edit",
   "grant-edit-access", "grant-section-edit", "revoke-edit-grant", "revoke-section-edit-grant",
+  // 8.0 — Jira attachment seals: the same acts, the same signature.
+  "jira-seal-attachment", "jira-release-attachment", "jira-extend-attachment",
 ]);
 
 /** PURE: does this site sign seal actions? Opt-in. */
