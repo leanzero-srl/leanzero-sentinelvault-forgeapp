@@ -57,6 +57,7 @@ import { randomUUID } from "node:crypto";
 import { recordActivity } from "./infra/activity-log.js";
 import { refreshByline } from "./capsules/page-details/byline.js"; // 5.0 byline chip — refreshed once per page save, after the restore passes
 import { isWorkflowHeld, mayEditInside } from "./shared/seal-authority.js"; // SEC-2
+import { isLiveAttachmentSeal, advancesSealedVersion } from "./shared/live-seal.js";
 import { workflowPrivilegeForPage } from "./capsules/workflow/privilege.js";
 
 // --- Fix 3 (CORE T6 extension): cross-run violation-comment dedup ---
@@ -628,7 +629,9 @@ async function collectMediaSealsForPage(pageId) {
 async function rebaselineSealNotEmbedded(seal, who) {
   if (!seal.attachmentId) return;
   try {
-    const fresh = (await kvs.get(`protection-${seal.attachmentId}`)) || seal;
+    // Never resurrect: `|| seal` used to re-create a seal released while this save was in flight.
+    const fresh = await kvs.get(`protection-${seal.attachmentId}`);
+    if (!isLiveAttachmentSeal(fresh)) return;
     await kvs.set(`protection-${seal.attachmentId}`, { ...fresh, embedded: false, mediaBaseline: null });
     seal.embedded = false;
     seal.mediaBaseline = null;
@@ -664,7 +667,9 @@ async function restoreMediaPass(ctx, sealFileMap, probeCache = new Map()) {
         // copy is canonical). Hunt F5: merge onto a FRESH read of the record — the attachment
         // trigger's grant re-baseline can race this write; patch only mediaBaseline here.
         const current = capturePresentation(nodes[0]);
-        const fresh = (await kvs.get(`protection-${seal.attachmentId}`)) || seal;
+        // Never resurrect: `|| seal` used to re-create a seal released while this save was in flight.
+        const fresh = await kvs.get(`protection-${seal.attachmentId}`);
+        if (!isLiveAttachmentSeal(fresh)) continue;
         await kvs.set(`protection-${seal.attachmentId}`, { ...fresh, mediaBaseline: current });
         seal.mediaBaseline = current;
         await touchSealTimestamp(); // hunt H2-F5: S5 — every seal mutation touches the stamp
@@ -1847,6 +1852,61 @@ async function sendSectionViolationNotifications(seal, pageId, actor, kind, reve
   await postDedupedFootnote(bulletinToggles, pageId, seal.sectionId, markerClass, seal.lockedBy, actor, title, verb, { targetKind: "section", revertedVersion });
 }
 
+// --- A sanctioned new version of a sealed file becomes the seal's baseline ---
+// Sanctioned = the seal owner's upload while the seal is personal, an active grantee's, or (SEC-2)
+// the workflow's privileged set while the page holds it. One re-baseline for all three (it was
+// written for grantees only; the owner and the held+privileged path returned without one).
+async function rebaselineSanctionedEdit(sealRecord, artifactId, pageId, currentVersion, atlassianId, who) {
+  try {
+    // Never resurrect and never move backwards. The old `(await kvs.get(…)) || sealRecord`
+    // re-created a seal released while this event was in flight; and the trigger is at-least-once
+    // and unordered, so a redelivered OLDER upload must not pull the baseline back under a newer one.
+    const before = await kvs.get(`protection-${artifactId}`);
+    if (!isLiveAttachmentSeal(before)) return;
+    if (!advancesSealedVersion(before.sealedVersion, currentVersion)) {
+      console.warn(`[EDIT-GRANT] ${who} edit of ${artifactId} at v${currentVersion} does not advance the baseline (v${before.sealedVersion}) — skipped`);
+      return;
+    }
+    let newFileId = before.sealedFileId || sealRecord.sealedFileId || null;
+    const attRes = await asApp().requestConfluence(
+      route`/wiki/api/v2/attachments/${artifactId}`,
+    );
+    if (attRes.ok) {
+      const attData = await attRes.json();
+      newFileId = attData.fileId || newFileId;
+    }
+    // Hunt F6: the approved upload replaced the binary — the OLD file's presentation
+    // baseline is stale (new natural dimensions surface as attr drift that would later be
+    // "restored" onto the new image, distorting it and accusing an innocent editor).
+    // Refresh from a fresh server read against the NEW fileId; on any failure keep NO
+    // baseline (attr protection off until the next authorized change beats stale-revert).
+    let newBaseline = null;
+    if (pageId && newFileId) {
+      try {
+        const { adfDoc } = await readDocBody(pageId);
+        newBaseline = capturePresentation(findSealedMediaSingle(adfDoc, newFileId));
+      } catch (_) { /* null baseline — fail toward no attr protection */ }
+    }
+    // Hunt F5: merge onto a FRESH record — the page trigger's attr-pass re-baseline can race
+    // this write (one grantee save fires both events); patch only the fields this path owns
+    // (sealedVersion/sealedFileId/mediaBaseline), never persist the trigger-entry snapshot.
+    const fresh = await kvs.get(`protection-${artifactId}`);
+    if (!isLiveAttachmentSeal(fresh) || !advancesSealedVersion(fresh.sealedVersion, currentVersion)) return;
+    await kvs.set(`protection-${artifactId}`, {
+      ...fresh,
+      sealedVersion: currentVersion || fresh.sealedVersion,
+      sealedFileId: newFileId,
+      mediaBaseline: newBaseline,
+    });
+    await touchSealTimestamp();
+    console.warn(
+      `[EDIT-GRANT] Allowed ${who} edit of ${artifactId} by ${atlassianId} — re-baselined seal to v${currentVersion}`,
+    );
+  } catch (e) {
+    console.error(`[EDIT-GRANT] Failed to re-baseline seal after ${who} edit:`, e);
+  }
+}
+
 // --- Handle unauthorized edit of a sealed artifact ---
 async function handleSealedArtifactEdit(sealRecord, artifactId, contentId, atlassianId, attachment) {
   let currentVersion = attachment.version?.number;
@@ -1857,11 +1917,32 @@ async function handleSealedArtifactEdit(sealRecord, artifactId, contentId, atlas
   // grantee may not, exactly as sections already do (mayEditInside, grants frozen). Before this,
   // an "Edit now" grant still let its holder replace a file on an Approved page.
   const held = isWorkflowHeld(sealRecord);
+  // Hunt F9 (Fix-2 parity): a degraded updated:attachment event can omit container/version —
+  // the trash handler completes those from a probe, this handler built a download route with
+  // "undefined" and failed open. Fill the gaps the same way before proceeding. (Before the
+  // sanctioned-edit check now: a sanctioned edit needs the version to re-baseline to.)
+  const fillGaps = async () => {
+    if (!pageId || !currentVersion) {
+      const probe = await probeAttachmentStatus(artifactId);
+      pageId = pageId || probe.pageId;
+      currentVersion = currentVersion || probe.version;
+    }
+  };
+  let sanctionedBy = null;
   if (held) {
     const p = await workflowPrivilegeForPage(pageId, atlassianId).catch(() => ({ privileged: false }));
-    if (p.privileged) return;
+    if (p.privileged) sanctionedBy = "workflow-privileged";
   } else if (sealRecord.lockedBy === atlassianId) {
     // Allow the seal owner to edit their own sealed artifact
+    sanctionedBy = "owner";
+  }
+  if (sanctionedBy) {
+    // The owner's (or, while held, the workflow's) new version IS the seal's content from now
+    // on. This used to return without re-baselining, so the seal still pointed at the ORIGINAL
+    // sealed version: the next unauthorized upload was reverted to that, silently discarding the
+    // owner's update. Same re-baseline the grantee path below has always done.
+    await fillGaps();
+    await rebaselineSanctionedEdit(sealRecord, artifactId, pageId, currentVersion, atlassianId, sanctionedBy);
     return;
   }
 
@@ -1872,58 +1953,14 @@ async function handleSealedArtifactEdit(sealRecord, artifactId, contentId, atlas
     return;
   }
 
-  // Hunt F9 (Fix-2 parity): a degraded updated:attachment event can omit container/version —
-  // the trash handler completes those from a probe, this handler built a download route with
-  // "undefined" and failed open. Fill the gaps the same way before proceeding.
-  if (!pageId || !currentVersion) {
-    const probe = await probeAttachmentStatus(artifactId);
-    pageId = pageId || probe.pageId;
-    currentVersion = currentVersion || probe.version;
-  }
+  await fillGaps();
 
   // Allow approved editors (Edit Requests) to edit without reverting. Re-baseline
   // the seal to the new version + fileId so future reverts target the edited
   // content, and pageContentTrigger's media-presence check keeps matching.
   const grant = held ? null : await getActiveEditGrant(artifactId, atlassianId); // frozen while held
   if (grant) {
-    try {
-      let newFileId = sealRecord.sealedFileId || null;
-      const attRes = await asApp().requestConfluence(
-        route`/wiki/api/v2/attachments/${artifactId}`,
-      );
-      if (attRes.ok) {
-        const attData = await attRes.json();
-        newFileId = attData.fileId || newFileId;
-      }
-      // Hunt F6: the approved upload replaced the binary — the OLD file's presentation
-      // baseline is stale (new natural dimensions surface as attr drift that would later be
-      // "restored" onto the new image, distorting it and accusing an innocent editor).
-      // Refresh from a fresh server read against the NEW fileId; on any failure keep NO
-      // baseline (attr protection off until the next authorized change beats stale-revert).
-      let newBaseline = null;
-      if (pageId && newFileId) {
-        try {
-          const { adfDoc } = await readDocBody(pageId);
-          newBaseline = capturePresentation(findSealedMediaSingle(adfDoc, newFileId));
-        } catch (_) { /* null baseline — fail toward no attr protection */ }
-      }
-      // Hunt F5: merge onto a FRESH record — the page trigger's attr-pass re-baseline can race
-      // this write (one grantee save fires both events); patch only the fields this path owns
-      // (sealedVersion/sealedFileId/mediaBaseline), never persist the trigger-entry snapshot.
-      const fresh = (await kvs.get(`protection-${artifactId}`)) || sealRecord;
-      await kvs.set(`protection-${artifactId}`, {
-        ...fresh,
-        sealedVersion: currentVersion || fresh.sealedVersion,
-        sealedFileId: newFileId,
-        mediaBaseline: newBaseline,
-      });
-      await touchSealTimestamp();
-      console.warn(
-        `[EDIT-GRANT] Allowed approved edit of ${artifactId} by ${atlassianId} — re-baselined seal to v${currentVersion}`,
-      );
-    } catch (e) {
-      console.error("[EDIT-GRANT] Failed to re-baseline seal after approved edit:", e);
-    }
+    await rebaselineSanctionedEdit(sealRecord, artifactId, pageId, currentVersion, atlassianId, "grantee");
     return;
   }
 
@@ -2057,29 +2094,46 @@ export async function handleSealedArtifactTrash(sealRecord, artifactId, contentI
   // to an inert S7 trashedOnly TRACKING record (the restore UI already handles those) instead
   // of returning with the live seal intact. A live seal left behind means the NEXT non-owner
   // page save un-trashes the owner's deliberate delete and publicly blames that bystander.
-  if (sealRecord.lockedBy === atlassianId) {
+  //
+  // SEC-2: while the workflow HOLDS the seal (the page is Approved) it is not the owner's to end.
+  // The edit path refuses the owner then and lets only the workflow's privileged set (approvers ∩
+  // live, or a space admin) change the file; trashing is a change, so the same rule decides here.
+  // A held trash by anyone else falls through to the restore below like any unauthorized trash.
+  const held = isWorkflowHeld(sealRecord);
+  let sanctioned = false;
+  if (held) {
+    const p = await workflowPrivilegeForPage(contentId || sealRecord.contentId, atlassianId).catch(() => ({ privileged: false }));
+    sanctioned = p.privileged === true;
+  } else {
+    sanctioned = sealRecord.lockedBy === atlassianId;
+  }
+  if (sanctioned) {
     try {
       // F5 discipline: merge onto a fresh read (the panel's own delete-artifact conversion can
-      // race this event); this path owns only trashedOnly.
+      // race this event); this path owns only trashedOnly (and ends a hold with the seal — a stub
+      // that still read as held would never be handed back by seal-custody).
       const fresh = (await kvs.get(`protection-${artifactId}`)) || sealRecord;
-      await kvs.set(`protection-${artifactId}`, { ...fresh, trashedOnly: true, trashedBy: atlassianId, trashedAt: new Date().toISOString() });
+      const { workflowHeld: _endedHold, ...ended } = fresh;
+      await kvs.set(`protection-${artifactId}`, { ...ended, trashedOnly: true, trashedBy: atlassianId, trashedAt: new Date().toISOString() });
       await touchSealTimestamp();
       // Review F2: same teardown discipline as every other seal end (release, purge, re-seal).
       await sweepEditAccess(artifactId).catch((e) => console.warn("[TRASH-RESTORE] edit-access sweep failed:", e));
-      console.warn(`[TRASH-RESTORE] owner ${atlassianId} trashed their own sealed ${artifactId} — seal released (trashedOnly tracking record)`);
+      console.warn(`[TRASH-RESTORE] ${held ? "workflow-privileged" : "owner"} ${atlassianId} trashed sealed ${artifactId} — seal released (trashedOnly tracking record)`);
       // A1: the seal ended here (owner intent, S3) — a feed that shows "sealed" and then nothing
       // while the file sits in the trash would be lying by omission (A1 review F6).
       await recordActivity({
         type: "seal.released",
         pageId: contentId || sealRecord.contentId || null,
         spaceKey: sealRecord.spaceKey || null,
-        actor: { accountId: atlassianId, name: sealRecord.lockedByName || null },
+        actor: { accountId: atlassianId, name: sealRecord.lockedBy === atlassianId ? (sealRecord.lockedByName || null) : null },
         target: { kind: "attachment", id: artifactId, name: sealRecord.attachmentName || attachment?.title || null },
-        details: { reason: "owner-trashed", via: "trash-event" },
+        details: sealRecord.lockedBy === atlassianId
+          ? { reason: "owner-trashed", via: "trash-event" }
+          : { reason: "workflow-trashed", via: "trash-event", forced: true, ownerAccountId: sealRecord.lockedBy || null },
         version: null,
       });
     } catch (e) {
-      console.error(`[TRASH-RESTORE] failed to release seal on owner trash of ${artifactId}:`, e);
+      console.error(`[TRASH-RESTORE] failed to release seal on sanctioned trash of ${artifactId}:`, e);
     }
     return;
   }

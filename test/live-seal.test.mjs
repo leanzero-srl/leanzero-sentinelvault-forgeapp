@@ -1,4 +1,4 @@
-import { isLiveAttachmentSeal, isOtherSealOnPage } from "../src/server/shared/live-seal.js";
+import { isLiveAttachmentSeal, isOtherSealOnPage, advancesSealedVersion } from "../src/server/shared/live-seal.js";
 import { eq, report } from "./_assert.mjs";
 
 const past = new Date(Date.now() - 3600_000).toISOString();
@@ -28,5 +28,14 @@ eq("a held seal keeps it", isOtherSealOnPage(seal("2", "100", { expiresAt: null,
 eq("no exclusion → every live seal on the page counts", isOtherSealOnPage(seal("1", "100"), "100", null), true);
 eq("no page id → nothing counts", isOtherSealOnPage(seal("2", "100"), null, "1"), false);
 eq("a malformed row is not a seal", isOtherSealOnPage(null, "100", "1"), false);
+
+// advancesSealedVersion — a sanctioned upload re-baselines only forward (unordered, at-least-once trigger)
+eq("owner uploads v4 over sealed v3 → advance", advancesSealedVersion(3, 4), true);
+eq("a redelivered v3 after v4 was baselined → no regression", advancesSealedVersion(4, 3), false);
+eq("the same version redelivered → no-op", advancesSealedVersion(4, 4), false);
+eq("legacy seal with no sealedVersion → advance", advancesSealedVersion(null, 2), true);
+eq("undefined sealedVersion → advance", advancesSealedVersion(undefined, 2), true);
+eq("unknown new version → refresh allowed (number kept by the caller)", advancesSealedVersion(3, null), true);
+eq("numeric strings compare as numbers", advancesSealedVersion("9", "10"), true);
 
 report("live-seal");
