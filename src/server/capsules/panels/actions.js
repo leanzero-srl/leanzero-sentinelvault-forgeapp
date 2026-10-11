@@ -296,7 +296,7 @@ export const deleteArtifact = async (req) => {
         if (attRes.ok) {
           const attData = await attRes.json();
           attTitle = attData.title || attTitle;
-          attPageId = attData.pageId || null;
+          attPageId = attData.pageId || attData.blogPostId || null;
         }
       } catch (_) { /* best effort */ }
     }

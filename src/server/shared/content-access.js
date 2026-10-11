@@ -111,7 +111,8 @@ export const canReadPage = (accountId, pageId) =>
  * B11 (live-verified): the v1 read `/wiki/rest/api/content/{id}?expand=space` now returns
  * **410 Gone** for Forge apps — the v1 content GETs were sunset — which silently made this
  * return null for every page and so denied every steward. It resolves via v2 for that reason:
- * page → spaceId → space key. Returns null on any failure, and null must be treated as deny.
+ * page (or blog post) → spaceId → space key. Returns null on any failure, and null must be
+ * treated as deny.
  *
  * Moved here from validations/actions.js so the workflow capsule shares this one copy rather
  * than growing a second that can drift.
@@ -128,7 +129,11 @@ export async function resolvePageSpaceKey(pageId) {
 export async function resolvePageSpace(pageId) {
   if (!pageId) return null;
   try {
-    const pres = await asApp().requestConfluence(route`/wiki/api/v2/pages/${pageId}`);
+    // A blog post is content too (seals and attachments live on them): a 404 as a page is asked
+    // again as a blog post before giving up. The caller's context used to paper over this for
+    // blog posts — the steward stood on the post — and that fallback is gone (objectSpaceKeyOf).
+    let pres = await asApp().requestConfluence(route`/wiki/api/v2/pages/${pageId}`);
+    if (pres.status === 404) pres = await asApp().requestConfluence(route`/wiki/api/v2/blogposts/${pageId}`);
     if (!pres.ok) return null;
     const spaceId = (await pres.json())?.spaceId;
     if (!spaceId) return null;
