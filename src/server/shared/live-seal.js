@@ -20,6 +20,24 @@ export function isLiveAttachmentSeal(value) {
 }
 
 /**
+ * PURE. May a sanctioned upload at `nextVersion` become the seal's baseline over `prevVersion`?
+ *
+ * The attachment trigger is at-least-once and unordered: an owner uploading v3 then v4 can be
+ * handled v4-first, and a redelivered v3 must not pull the baseline back — the next unauthorized
+ * upload would then be reverted to v3, discarding v4. Only a strictly newer version advances.
+ * An unknown version on either side cannot be ordered: an unknown previous (a seal from before
+ * sealedVersion was tracked) is advanced over; an unknown next keeps the old number but may
+ * still refresh the file id (the caller keeps `prev` in that case).
+ */
+export function advancesSealedVersion(prevVersion, nextVersion) {
+  const prev = Number(prevVersion);
+  const next = Number(nextVersion);
+  if (nextVersion == null || !Number.isFinite(next)) return true;
+  if (prevVersion == null || !Number.isFinite(prev)) return true;
+  return next > prev;
+}
+
+/**
  * PURE. Does this KVS row keep `pageId` "carrying a seal" once `excludeAttachmentId` is gone?
  *
  * The `protection-` page content property is ONE per page and gates the media fast path
