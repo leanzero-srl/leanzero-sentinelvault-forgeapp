@@ -409,6 +409,38 @@ const MySeals = () => {
   );
 };
 
+// 8.0 — the Jira files the current user holds sealed (their own owner index, list-my-jira-seals).
+// Only drawn when there is something to show: a site that never connected Jira sees no Jira card.
+const MyJiraSeals = () => {
+  const { items, error, reload } = useList("list-my-jira-seals", pickJiraSeals);
+  if (error) return <section className="mw-card" data-testid="mw-jira-seals"><LoadError what="your sealed Jira files" onRetry={reload} testId="mw-jira-seals-error" /></section>;
+  if (!items || items.length === 0) return null;
+  return (
+    <section className="mw-card" data-testid="mw-jira-seals">
+      <div className="mw-card-head">
+        <span className="mw-card-title">Jira files you hold sealed</span>
+        <span className="mw-count mw-count-seals">{items.length}</span>
+      </div>
+      <ul className="mw-list">
+        {items.map((s) => (
+          <li key={s.attachmentId} className="mw-row" data-testid="mw-jira-seal-row">
+            <div className="mw-row-info">
+              <span className="mw-row-main">{s.attachmentName}</span>
+              <span className="mw-row-meta">
+                {s.issueKey ? <a className="mw-link" href={`/browse/${s.issueKey}`} onClick={go(`/browse/${s.issueKey}`)}>{s.issueKey}</a> : ""}
+                {` · ${s.expired ? `expired ${when(s.expiresAt)}` : `until ${when(s.expiresAt)}`}`}
+                {s.restoreCount ? ` · put back ${s.restoreCount === 1 ? "once" : `${s.restoreCount} times`}` : ""}
+              </span>
+            </div>
+            <div className="mw-row-actions">{s.expired ? <span className="mw-pill mw-pill-overdue">{WORDS.expired}</span> : <span className="mw-pill mw-pill-live">Sealed</span>}</div>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+};
+const pickJiraSeals = (r) => (r?.success ? r.seals : null);
+
 // B3: the approver's signature device. Enrol once (scan the QR, or type the key, into any
 // authenticator app), confirm with the first code, and spaces that require signed decisions
 // accept your approvals. The QR is drawn HERE from the otpauth URI — nothing leaves Atlassian.
@@ -556,6 +588,7 @@ const MyWork = () => {
         <MyRequests />
         <MyApprovalRequests />
         <MySeals />
+        <MyJiraSeals />
         <SignatureCard />
       </div>
     </div>

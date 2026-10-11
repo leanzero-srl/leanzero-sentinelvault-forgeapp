@@ -12,9 +12,10 @@ import { actions as sectionSealActions } from "../section-seals/actions.js";
 import { actions as validationActions } from "../validations/actions.js";
 import { actions as workflowActions } from "../workflow/actions.js";
 import { actions as classificationActions } from "../classification/actions.js";
+import { actions as jiraSealActions } from "../jira-seals/actions.js"; // 8.0: the Jira content ops' keys (run through runJiraStep)
 import { actions as editreqActions } from "../editreq/actions.js"; // the grant/revoke/decline content ops (bundle.js) resolve here — without it they failed "No resolver"
 
-const lists = [sealingActions, policyActions, sectionSealActions, validationActions, workflowActions, classificationActions, editreqActions];
+const lists = [sealingActions, policyActions, sectionSealActions, validationActions, workflowActions, classificationActions, editreqActions, jiraSealActions];
 
 export function handlerByKey(key) {
   for (const list of lists) {
