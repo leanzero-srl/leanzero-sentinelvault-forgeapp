@@ -1,4 +1,4 @@
-# CI: unit tests, lint and the production build on every push to main, and on demand.
+# CI: unit tests, lint, the production build and npm audit (high+) on every push to main, and on demand.
 #
 # RUNS ON THE SELF-HOSTED WORKHORSE RUNNER (Mac Studio, runner workhorse-sv, label `sentinelvault`),
 # never on a GitHub-hosted runner: Actions billing is off on leanzero-srl, so GitHub-hosted jobs die
@@ -35,7 +35,7 @@ env:
 
 jobs:
   unit:
-    name: unit tests, lint, build
+    name: unit tests, lint, build, audit
     if: github.repository == 'leanzero-srl/leanzero-sentinelvault-forgeapp' && github.actor == 'leanzero-srl'
     runs-on: [self-hosted, sentinelvault]
     timeout-minutes: 30
@@ -60,3 +60,7 @@ jobs:
         run: npm run lint
       - name: production build
         run: npm run build
+      - name: npm audit (shipped dependencies, high and critical fail)
+        # Anonymous registry read, no token. --omit=dev: what ships. A new advisory against an unchanged
+        # tree turns this red on the next push or dispatch; fix with an `overrides` entry or a bump.
+        run: npm audit --omit=dev --audit-level=high

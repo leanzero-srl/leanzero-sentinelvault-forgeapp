@@ -34,4 +34,7 @@ for (const f of files) {
     }
   }
 }
+const ci = yaml.load(readFileSync(resolve(dir, "ci.yml"), "utf8"));
+const runs = Object.values(ci.jobs).flatMap((j) => (j.steps || []).map((s) => s.run || ""));
+ok("ci.yml: npm audit --omit=dev --audit-level=high is a gate (GHSA-c8x8-7fp4-3x9w, 2026-10-11)", runs.some((r) => /npm audit --omit=dev --audit-level=high\b/.test(r)));
 report("ci-workflow");
