@@ -15,5 +15,8 @@ for (const s of ["read:confluence-content.summary", "read:label:confluence", "re
 for (const s of ["read:confluence-space.summary", "read:confluence-props", "read:content:confluence", "write:content:confluence", "write:attachment:confluence", "read:comment:confluence", "read:content.property:confluence", "write:content.property:confluence", "read:content.restriction:confluence", "write:content.restriction:confluence", "read:content.metadata:confluence", "read:content.permission:confluence"]) {
   ok(`dropped in 7.0.0: ${s}`, !scopes.has(s));
 }
-ok("27 scopes", scopes.size === 27);
+// 8.0 (docs/JIRA-SEALS.md): three Jira scopes for sealing Jira attachments — a major version.
+for (const s of ["read:jira-work", "write:jira-work", "read:jira-user"]) ok(`8.0 adds ${s}`, scopes.has(s));
+ok("30 scopes", scopes.size === 30);
+ok("Jira is an OPTIONAL app of the one installation", /compatibility:\n\s+confluence:\n\s+required: true\n\s+jira:\n\s+required: false/.test(manifest));
 report("manifest-scopes");

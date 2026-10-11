@@ -135,8 +135,14 @@ export const sealSection = async (req) => {
   const note = typeof req.payload?.note === "string" && req.payload.note.trim() ? req.payload.note.trim().slice(0, 300) : null;
   const operatorAccountId = req.context.accountId;
   const pageId = payloadPageId || req.context.extension?.content?.id;
-  let realmId =
-    req.context.extension?.content?.space?.id || req.context.extension?.space?.id;
+  // The context's space describes the page the caller STANDS on. It is the sealed page's space
+  // only when that is the page being sealed; a payload pageId naming another page took the
+  // caller's space here, and the record's spaceKey is what the steward gates (unseal, extend,
+  // edit-request decisions) trust as the object's own. Otherwise derive both from the page.
+  const contextIsPage = !!pageId && String(pageId) === String(req.context.extension?.content?.id ?? "");
+  let realmId = contextIsPage
+    ? (req.context.extension?.content?.space?.id || req.context.extension?.space?.id)
+    : null;
 
   if (!pageId || headingIndex == null) return { success: false, reason: "Missing pageId/headingIndex" };
 
@@ -145,8 +151,7 @@ export const sealSection = async (req) => {
   // action) has none, and without it the seal was written with spaceKey null — no space index
   // leg for the steward console and, since A1, no space-report entry. Derive it from the page.
   const realmKey =
-    req.context.extension?.content?.space?.key
-    || req.context.extension?.space?.key
+    (contextIsPage && (req.context.extension?.content?.space?.key || req.context.extension?.space?.key))
     || (await resolvePageSpaceKey(pageId));
 
   // SV-SEC-1 (fixed 2026-08-20; see SECURITY-TODO.md and CLAUDE.md). pageId above is attacker-controlled and everything below reads and REWRITES
@@ -282,8 +287,6 @@ export const sealSection = async (req) => {
 export const unsealSection = async (req) => {
   const { sectionId, reason: rawReason } = req.payload || {};
   const operatorAccountId = req.context.accountId;
-  const realmKey =
-    req.context.extension?.content?.space?.key || req.context.extension?.space?.key;
   if (!sectionId) return { success: false, reason: "Missing sectionId" };
 
   const record = await kvs.get(`section-protection-${sectionId}`);
@@ -292,11 +295,13 @@ export const unsealSection = async (req) => {
   const isOwner = record.lockedBy === operatorAccountId;
   let allowed = isOwner;
   let viaSteward = false; // a space admin's override, as opposed to an editor clearing a lapsed seal
+  // Review F3: the space is a property of the RECORD's page, never of where the caller is
+  // standing (CLAUDE.md — the confused-deputy shape). A record with no spaceKey is resolved
+  // from its page; a steward of some other space stays refused. The same key files the activity
+  // row and picks the owner notice's quiet mode below (both used to fall back to the caller's
+  // context, filing a release of someone else's section under the caller's own space).
+  const objectSpaceKey = record.spaceKey || (record.pageId ? await resolvePageSpaceKey(record.pageId) : null);
   if (!allowed) {
-    // Review F3: the space is a property of the RECORD's page, never of where the caller is
-    // standing (CLAUDE.md — the confused-deputy shape). A record with no spaceKey is resolved
-    // from its page; a steward of some other space stays refused.
-    const objectSpaceKey = record.spaceKey || (record.pageId ? await resolvePageSpaceKey(record.pageId) : null);
     try { allowed = !!objectSpaceKey && await authorizeSteward(operatorAccountId, objectSpaceKey); }
     catch (_) { /* deny */ }
     viaSteward = allowed;
@@ -331,7 +336,7 @@ export const unsealSection = async (req) => {
   await recordActivity({
     type: "section.released",
     pageId,
-    spaceKey: record.spaceKey || realmKey || null,
+    spaceKey: objectSpaceKey || null,
     actor: {
       accountId: operatorAccountId,
       name: record.lockedBy === operatorAccountId ? (record.lockedByName || null) : null,
@@ -358,7 +363,7 @@ export const unsealSection = async (req) => {
         record.sectionTitle || "a sealed section",
         pageId,
         when,
-        record.spaceKey || realmKey || null,
+        objectSpaceKey || null,
         forcedReason,
         { targetKind: "section", lapsed: !viaSteward },
       );

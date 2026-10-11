@@ -1,8 +1,9 @@
-import { isWorkflowHeld } from "../../shared/seal-authority.js"; // SEC-2 (zero-import module: no cycle)
+import { isWorkflowHeld, heldRefusal, HELD_REASON } from "../../shared/seal-authority.js"; // SEC-2 (zero-import module: no cycle)
+import { isLiveAttachmentSeal } from "../../shared/live-seal.js"; // zero-import: a trashedOnly stub is not a seal
 import { asUser, asApp, route } from "@forge/api";
 import { kvs } from "@forge/kvs";
 import { withinUploadSizeLimit, MAX_UPLOAD_LABEL } from "../../shared/upload-limits.js";
-import { canEditPage, canReadPage, mustVerify } from "../../shared/content-access.js";
+import { canEditPage, canReadPage, mustVerify, resolvePageSpace } from "../../shared/content-access.js";
 import { recordActivity } from "../../infra/activity-log.js";
 import { isOperatorSiteAdmin } from "../../shared/steward-checks.js";
 
@@ -232,8 +233,10 @@ const unlabelArtifact = async (req) => {
 
 /**
  * Delete an artifact (moves to trash)
- * Works for any attachment state: unsealed, sealed (own claim), or stale.
- * If sealed, removes the seal record first to prevent auto-restore triggers.
+ * Works for any attachment state: unsealed, sealed (own claim), or stale. A seal the workflow
+ * holds (SEC-2) can only be ended this way by the workflow's privileged set.
+ * If sealed, converts the seal to a trashedOnly tracking record so the trash trigger does not
+ * restore the file.
  * Conditional on global setting `allowAttachmentDelete`
  */
 export const deleteArtifact = async (req) => {
@@ -250,18 +253,41 @@ export const deleteArtifact = async (req) => {
   }
 
   try {
-    // Block deletion of attachments sealed by another user
+    const callerId = req.context.accountId;
     const sealData = await kvs.get(`protection-${attachmentId}`);
-    if (sealData && sealData.lockedBy && sealData.lockedBy !== req.context.accountId) {
-      return {
-        success: false,
-        reason: "Cannot delete an attachment sealed by another user.",
-      };
+    // S7: a trashedOnly tracking record (or an ownerless row) is NOT a seal — a file restored
+    // outside the app leaves one behind, and its lockedBy is whoever trashed it, so reading it as
+    // a seal refused everyone else's delete forever. It is treated as absent (and replaced by a
+    // fresh tracking record below).
+    const liveSeal = isLiveAttachmentSeal(sealData) ? sealData : null;
+    // Does this delete END a live seal? The owner's own delete does — unless the workflow holds the
+    // seal (SEC-2): on an Approved page the seal is the workflow's, the edit path refuses the owner
+    // and only the workflow's privileged set (approvers ∩ live, or a space admin) may change the
+    // file. Trashing is a change, so the same rule — before, the owner could end a held seal by
+    // simply deleting the file.
+    let releasing = false;
+    if (liveSeal) {
+      if (isWorkflowHeld(liveSeal)) {
+        const { workflowPrivilegeForPage } = await import("../workflow/privilege.js"); // dynamic: no cycle with workflow
+        const p = await workflowPrivilegeForPage(liveSeal.contentId || liveSeal.workflowHeld?.pageId, callerId)
+          .catch(() => ({ privileged: false }));
+        if (!p.privileged) return { success: false, reason: heldRefusal(liveSeal, "release") || HELD_REASON };
+        releasing = true;
+      } else if (liveSeal.lockedBy !== callerId) {
+        // Block deletion of attachments sealed by another user
+        return {
+          success: false,
+          reason: "Cannot delete an attachment sealed by another user.",
+        };
+      } else {
+        releasing = true;
+      }
     }
 
     // For unsealed items, fetch metadata before trashing so we can create a tracking record
     let attTitle = "Unknown Attachment";
-    const isUnsealed = !sealData;
+    let attPageId = null;
+    const isUnsealed = !liveSeal;
     if (isUnsealed) {
       try {
         const attRes = await asApp().requestConfluence(
@@ -270,6 +296,7 @@ export const deleteArtifact = async (req) => {
         if (attRes.ok) {
           const attData = await attRes.json();
           attTitle = attData.title || attTitle;
+          attPageId = attData.pageId || attData.blogPostId || null;
         }
       } catch (_) { /* best effort */ }
     }
@@ -282,13 +309,21 @@ export const deleteArtifact = async (req) => {
     if (response.ok || response.status === 204) {
       // For unsealed items, create a tracking record so trashed item is discoverable
       if (isUnsealed) {
-        const contentId = req.context.extension?.content?.id;
-        const spaceId = req.context.extension?.content?.space?.id || null;
+        // The page and space the FILE lives in, not where the caller stands: purge and restore
+        // authorize stewards against this record's space, and a record with no spaceKey used to
+        // fall back to the CALLER's context there — so a steward of any one space could purge
+        // every file deleted this way. Derived from the attachment's own container. The context
+        // page is kept only as a display hint when the attachment read failed (so the trashed row
+        // still lists on the page it was deleted from) — no space is stamped from it, and purge /
+        // restore prefer the attachment's own container over the record's contentId.
+        const contentId = attPageId || req.context.extension?.content?.id || null;
+        const space = attPageId ? await resolvePageSpace(attPageId) : null;
         await kvs.set(`protection-${attachmentId}`, {
           lockedBy: req.context.accountId,
           timestamp: new Date().toISOString(),
           contentId,
-          spaceId,
+          spaceId: space?.spaceId || null,
+          spaceKey: space?.spaceKey || null,
           attachmentId,
           attachmentName: attTitle,
           trashedOnly: true,
@@ -297,14 +332,18 @@ export const deleteArtifact = async (req) => {
         });
         const { touchSealTimestamp } = await import("../sealing/logic.js");
         await touchSealTimestamp();
-      } else if (sealData.lockedBy === req.context.accountId && !sealData.trashedOnly) {
+      } else if (releasing) {
         // Hunt F2: deleting your OWN sealed file releases the seal — convert the live record
         // to an inert S7 trashedOnly tracking record HERE, not only in the trash trigger (the
         // trashed:attachment event can drop). A live seal left behind would let the next
         // non-owner page save un-trash this deliberate delete and blame a bystander.
         // Merge onto a fresh read — the trash trigger's own conversion can race this write.
+        // SEC-2: the same holds for a workflow-privileged delete of a HELD seal; the hold ends
+        // with the seal (a trashedOnly stub that still read as held would say "locked by the
+        // approval" about a file in the trash, and seal-custody never hands stubs back).
         const freshSeal = (await kvs.get(`protection-${attachmentId}`)) || sealData;
-        await kvs.set(`protection-${attachmentId}`, { ...freshSeal, trashedOnly: true, trashedBy: req.context.accountId, trashedAt: new Date().toISOString() });
+        const { workflowHeld: _endedHold, ...endedSeal } = freshSeal;
+        await kvs.set(`protection-${attachmentId}`, { ...endedSeal, trashedOnly: true, trashedBy: req.context.accountId, trashedAt: new Date().toISOString() });
         const { touchSealTimestamp } = await import("../sealing/logic.js");
         await touchSealTimestamp();
         // Review F2: the live seal ended here — pending requests and grants end with it, or
@@ -319,9 +358,11 @@ export const deleteArtifact = async (req) => {
           // names its page; the context is the fallback.
           pageId: sealData.contentId || req.context.extension?.content?.id || null,
           spaceKey: sealData.spaceKey || null,
-          actor: { accountId: req.context.accountId, name: sealData.lockedByName || null },
+          actor: { accountId: req.context.accountId, name: sealData.lockedBy === callerId ? (sealData.lockedByName || null) : null },
           target: { kind: "attachment", id: attachmentId, name: sealData.attachmentName || attTitle || null },
-          details: { reason: "owner-deleted", via: "panel" },
+          details: sealData.lockedBy === callerId
+            ? { reason: "owner-deleted", via: "panel" }
+            : { reason: "workflow-deleted", via: "panel", forced: true, ownerAccountId: sealData.lockedBy || null },
           version: null,
         });
       }

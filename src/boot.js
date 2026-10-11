@@ -20,7 +20,14 @@ export { configApiConsumer } from "./server/capsules/config-api/consumer.js";
 // index cron (the manifest is at Forge's limit of 5 scheduled triggers). backupSweep never throws.
 export { backupConsumer } from "./server/capsules/backup/worker.js";
 export async function sealIndexCron(event, context) {
-  try { return await sealIndexCronCore(event, context); } finally { await backupSweep(context || event?.context); }
+  try { return await sealIndexCronCore(event, context); } finally {
+    // The backup check only queues and is cheap: it goes first so a long Jira sweep never starves it.
+    await backupSweep(context || event?.context);
+    await jiraSealSweep();
+  }
 }
+// 8.0 — Jira attachment seals: the product-event handler; the hourly lapse sweep rides the index cron.
+export { jiraAttachmentEventTrigger, jiraRestoreConsumer } from "./server/capsules/jira-seals/trigger.js";
+import { jiraSealSweep } from "./server/capsules/jira-seals/trigger.js";
 // DEV-ONLY harness test-state web trigger (gated by HARNESS_SECRET; 404 in prod)
 export { testStateTrigger } from "./test-hook.js";

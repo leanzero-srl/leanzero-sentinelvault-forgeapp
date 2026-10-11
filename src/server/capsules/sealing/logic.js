@@ -1,9 +1,11 @@
-import { kvs } from "@forge/kvs";
+import { kvs, WhereConditions } from "@forge/kvs";
 import { asApp, route } from "@forge/api";
-import { authorizeSteward } from "../../shared/steward-checks.js";
 import { BASELINE_HOLD_SPAN, sanitizeHoldDuration } from "../../shared/baseline.js";
-import { notifyWatchers } from "../bulletins/logic.js";
 import { sealPropertyValue } from "./seal-property.js";
+// 2026-10-11: computeSealStatus / breakSeal (a lazy "delete the expired seal on read" and an
+// owner-or-steward release with partial teardowns) lived here with zero callers; deleted. Releases
+// go through release.js releaseSeal; lapsed seals through the expiry sweep (F5).
+import { isOtherSealOnPage } from "../../shared/live-seal.js";
 
 /**
  * Resolve the effective seal hold period, in seconds, for a space.
@@ -185,147 +187,57 @@ export async function removeSealContentProp(contentId) {
 }
 
 /**
- * Check if an artifact is sealed and if the seal has expired
- * Returns computed seal status accounting for expiry
+ * Does any OTHER attachment seal still target this page?
  *
- * @param {string} artifactId - The artifact ID
- * @param {string} operatorAccountId - The current operator's account ID
- * @returns {Promise<Object>} Object with lockStatus, lockedByAccountId, and expiresAt
+ * The `protection-` content property is ONE per page and gates the media fast path
+ * (triggers.js collectMediaSealsForPage), and the inline panel is one per page as well. This
+ * used to live in triggers.js (vet F2) while releaseSeal carried its own first-100-rows copy and
+ * three other removers did not ask at all — so releasing one seal switched page-body protection
+ * off for every other seal on the page. One copy now, cursor-paginated (a single limit(100)
+ * misses the page's seals once the site holds more than 100), and every remover asks it.
+ * What counts is the pure rule in shared/live-seal.js (isOtherSealOnPage).
+ *
+ * Fails toward TRUE (keep the property / panel): a scan that throws, or one that hits the
+ * iteration cap without finishing, has not proven the page is empty.
  */
-export async function computeSealStatus(artifactId, operatorAccountId) {
-  const sealRecord = await readSealRecord(artifactId);
-
-  let computedSealState = "OPEN";
-  let expiresAt = null;
-  let heldByAccountId = null;
-
-  if (sealRecord) {
-    // Check if seal has expired
-    if (sealRecord.expiresAt && new Date(sealRecord.expiresAt) < new Date()) {
-      await kvs.delete(`protection-${artifactId}`);
-      await touchSealTimestamp();
-      // Also delete the seal property from the parent page for CQL searchability
-      if (sealRecord.contentId) {
-        await removeSealContentProp(sealRecord.contentId);
-      }
-      // Clean up realm-seal index key
-      if (sealRecord.spaceId) {
-        try {
-          await kvs.delete(`space-protection-${sealRecord.spaceId}-${artifactId}`);
-        } catch (e) {
-          /* best effort */
-        }
-      }
-      await notifyWatchers(artifactId, {
-        attachmentName: sealRecord.attachmentName,
-        contentId: sealRecord.contentId,
-      });
-      computedSealState = "OPEN";
-    } else {
-      // Seal is still valid
-      if (sealRecord.lockedBy === operatorAccountId) {
-        computedSealState = "HELD_BY_ACTOR";
-        heldByAccountId = operatorAccountId;
-      } else {
-        computedSealState = "HELD";
-        heldByAccountId = sealRecord.lockedBy;
-      }
-      expiresAt = sealRecord.expiresAt;
+export async function pageHasOtherLiveSeals(pageId, excludeAttachmentId) {
+  if (!pageId) return false;
+  try {
+    let query = kvs.query().where("key", WhereConditions.beginsWith("protection-")).limit(100);
+    for (let iters = 0; iters < 50; iters++) {
+      const { results, nextCursor } = await query.getMany();
+      if ((results || []).some((row) => isOtherSealOnPage(row, pageId, excludeAttachmentId))) return true;
+      if (!nextCursor) return false;
+      query = kvs.query().where("key", WhereConditions.beginsWith("protection-")).limit(100).cursor(nextCursor);
     }
+  } catch (e) {
+    console.warn(`[SEAL-PROPERTY] other-seal scan for page ${pageId} failed — keeping the property:`, e?.message || e);
   }
-
-  return { lockStatus: computedSealState, lockedByAccountId: heldByAccountId, expiresAt };
+  return true;
 }
 
 /**
- * Break a seal on an artifact
- *
- * @param {string} artifactId - The artifact ID
- * @param {string} operatorAccountId - The operator's account ID
- * @param {string} [realmKey] - Optional realm key for steward check
- * @param {boolean} [stewardOverride=false] - Whether this is a steward override
- * @returns {Promise<{success: boolean, reason: string}>} Result object
+ * Remove the page's `protection-` content property ONLY when the seal on `excludeAttachmentId`
+ * was the page's last one. The single door every seal remover goes through (releaseSeal,
+ * purgeAllSealState, the permanent-delete handler). Best effort; never throws.
+ * `hasOthers`: the caller's own answer from pageHasOtherLiveSeals for the same page and
+ * exclusion (releaseSeal needs it for the panel too) — saves a second full scan.
+ * @returns {Promise<boolean>} true when the property was removed
  */
-export async function breakSeal(
-  artifactId,
-  operatorAccountId,
-  realmKey,
-  stewardOverride = false,
-) {
-  const sealRecord = await readSealRecord(artifactId);
-
-  if (!sealRecord) {
-    return { success: false, reason: "Attachment is not locked" };
-  }
-
-  // Check if seal has expired - auto-unseal without permission check
-  if (sealRecord.expiresAt && new Date(sealRecord.expiresAt) < new Date()) {
-    await kvs.delete(`protection-${artifactId}`);
-    await touchSealTimestamp();
-    if (sealRecord.spaceId) {
-      try {
-        await kvs.delete(`space-protection-${sealRecord.spaceId}-${artifactId}`);
-      } catch (e) {
-        /* best effort */
-      }
+export async function releaseSealContentPropIfLast(pageId, excludeAttachmentId, { hasOthers } = {}) {
+  if (!pageId) return false;
+  try {
+    const others = typeof hasOthers === "boolean" ? hasOthers : await pageHasOtherLiveSeals(pageId, excludeAttachmentId);
+    if (others) {
+      console.warn(`[SEAL-PROPERTY] keeping the protection- property on ${pageId} — other seals still target this page`);
+      return false;
     }
-    return { success: true, reason: "lock expired" };
+    await removeSealContentProp(pageId);
+    return true;
+  } catch (e) {
+    console.warn(`[SEAL-PROPERTY] conditional removal on ${pageId} failed:`, e?.message || e);
+    return false;
   }
-
-  let canRelease = false;
-  let releaseReason = "";
-
-  // Check if operator owns the seal
-  if (sealRecord.lockedBy === operatorAccountId) {
-    canRelease = true;
-    releaseReason = "owner unlock";
-  }
-  // Check steward override capability
-  else if (stewardOverride && realmKey) {
-    const hasStewardPermission = await authorizeSteward(
-      operatorAccountId,
-      realmKey,
-    );
-    if (hasStewardPermission) {
-      canRelease = true;
-      releaseReason = "admin override";
-    } else {
-      return {
-        success: false,
-        reason: "Admin override denied - insufficient permissions",
-      };
-    }
-  }
-  // Unauthorized unseal attempt
-  else {
-    return {
-      success: false,
-      reason: "You do not have permission to unlock this attachment",
-    };
-  }
-
-  if (canRelease) {
-    await kvs.delete(`protection-${artifactId}`);
-    await touchSealTimestamp();
-
-    // Also delete the seal property from the parent page for CQL searchability
-    if (sealRecord?.contentId) {
-      await removeSealContentProp(sealRecord.contentId);
-    }
-
-    // Clean up realm-seal index key
-    if (sealRecord?.spaceId) {
-      try {
-        await kvs.delete(`space-protection-${sealRecord.spaceId}-${artifactId}`);
-      } catch (e) {
-        /* best effort */
-      }
-    }
-
-    return { success: true, reason: releaseReason };
-  }
-
-  return { success: false, reason: "Unlock failed" };
 }
 
 /**

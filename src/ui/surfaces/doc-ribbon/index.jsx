@@ -786,7 +786,8 @@ const bridgeClose = () => { try { const r = view.close(); if (r && r.catch) r.ca
 const bridgeOpen = () => { try { const r = view.open?.(); if (r && r.catch) r.catch((e) => console.info("[ribbon] view.open rejected", e?.message || e)); } catch (e) { console.info("[ribbon] view.open unavailable", e?.message || e); } };
 
 // One sentence per alert kind the server actually RECORDS (recordDispatch call sites, 2026-09-15):
-// SEAL_CONFLICT (artifact-fetch.js, carries display names); edit-reverted / content-reverted /
+// SEAL_CONFLICT (legacy: its only writer, artifact-fetch.js artifactEventHandler, was never wired
+// and was deleted 2026-10-11 — kept for records already stored); edit-reverted / content-reverted /
 // trash-restored / presentation-restored / seal-released (triggers.js sendViolationNotifications);
 // section-reverted / section-restored; revert-failed; seal-auto-released; reservation-expired;
 // periodic-reminder. The old chip only knew SEAL_CONFLICT and a SEAL_EXPIRED nothing writes, and
