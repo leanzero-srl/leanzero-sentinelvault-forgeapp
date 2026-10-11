@@ -159,19 +159,29 @@ export function viewerPowers(permissions, { allowAdminOverride = true } = {}) {
   return { canSee, canEdit, isSteward: isAdmin && allowAdminOverride !== false };
 }
 
-/** PURE. The one row rule: what the viewer is offered on an attachment. */
-export function rowFor({ record, viewerId, powers, nowMs }) {
+/**
+ * PURE. The one row rule: what the viewer is offered on an attachment.
+ *   lost     — a seal whose file was deleted and could NOT be put back (the copy is still kept):
+ *              anyone who may edit the issue can try again; the owner or an admin may let it go
+ *   expired  — no longer protected: an editor may seal it anew (the server replaces a lapsed seal)
+ */
+export function rowFor({ record, viewerId, powers, nowMs, lost = false }) {
   if (!record || !record.lockedBy) {
     return { state: "open", primary: powers.canEdit ? "seal" : null, menu: [] };
   }
   const mine = record.lockedBy === viewerId;
+  if (lost) {
+    const menu = [];
+    if (!mine && powers.isSteward) menu.push("force-release");
+    return { state: "lost", primary: powers.canEdit ? "retry" : null, menu: mine ? ["release"] : menu };
+  }
   const expired = isExpired(record, nowMs);
   const menu = [];
   if (mine || powers.isSteward) menu.push("extend");
   if (!mine && powers.isSteward) menu.push("force-release");
   return {
     state: expired ? "expired" : mine ? "mine" : "held",
-    primary: mine ? "release" : null,
+    primary: mine ? "release" : expired && powers.canEdit ? "seal" : null,
     menu,
   };
 }

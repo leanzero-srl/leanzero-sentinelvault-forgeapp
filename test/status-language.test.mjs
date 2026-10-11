@@ -21,7 +21,10 @@ ok("inside the week → weekday + 24-h time", /^[A-Za-z]{3} \d{2}:\d{2}$/.test(w
   const nextSun = new Date(2026, 9, 18, 10, 52).toISOString();
   ok("one week away (same weekday as today) → a date, never the bare weekday", /^\d{1,2} [A-Za-z]{3} \d{2}:\d{2}$/.test(when(nextSun, sun, L)));
   ok("six days away → still the weekday", /^[A-Za-z]{3} \d{2}:\d{2}$/.test(when(new Date(2026, 9, 17, 9, 0).toISOString(), sun, L)));
-  ok("later today → the weekday", /^[A-Za-z]{3} \d{2}:\d{2}$/.test(when(new Date(2026, 9, 11, 18, 0).toISOString(), sun, L)));
+  eq("later today → 'today'", when(new Date(2026, 9, 11, 18, 0).toISOString(), sun, L), "today 18:00");
+  eq("earlier today → 'today'", when(new Date(2026, 9, 11, 9, 5).toISOString(), sun, L), "today 09:05");
+  eq("yesterday", when(new Date(2026, 9, 10, 23, 59).toISOString(), sun, L), "yesterday 23:59");
+  eq("tomorrow", when(new Date(2026, 9, 12, 0, 1).toISOString(), sun, L), "tomorrow 00:01");
   ok("a week ago (same weekday) → a date", /^\d{1,2} [A-Za-z]{3} \d{2}:\d{2}$/.test(when(new Date(2026, 9, 4, 12, 30).toISOString(), sun, L)));
 }
 ok("beyond the week, same year → day month + time", /^\d{1,2} [A-Za-z]{3} \d{2}:\d{2}$/.test(when("2026-10-05T09:00:00.000Z", now, L)));

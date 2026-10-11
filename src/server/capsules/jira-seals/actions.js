@@ -18,7 +18,7 @@ import {
   ACTIVITY, JIRA_SEAL_MAX_BYTES, buildSealRecord, forcedCommentAdf, isExpired, jiraCopyKey, jiraLapseKey, normId, rowFor, sealIdOf, viewerPowers,
 } from "./logic.js";
 import {
-  callerPermissions, downloadAttachment, dropSeal, getSeal, postIssueComment, putSeal, readIssue, sealsOwnedBy, sha256Hex, storeCopy, syncIssueProperty, userName,
+  callerPermissions, downloadAttachment, dropSeal, getSeal, postIssueComment, putSeal, readIssue, sealsOfIssue, sealsOwnedBy, sha256Hex, storeCopy, syncIssueProperty, userName,
 } from "./store.js";
 import { resolveSealHoldPeriod } from "../sealing/logic.js";
 import { sanitizeHoldDuration } from "../../shared/baseline.js";
@@ -170,10 +170,20 @@ const issueSeals = async (req) => {
       tooLarge: att.size > JIRA_SEAL_MAX_BYTES,
     });
   }
-  let history = [];
-  try { history = (await readActivity(activityIssuePrefix(issue.id), { limit: 8 })).entries; }
-  catch (e) { console.warn("[JIRA-SEAL] history read failed:", e?.message || e); }
-  return {
+  // A seal whose file is no longer on the issue: the delete was not undone (the copy could not be put
+  // back, or a restore is running right now). It stays visible so its owner can see it and anyone who
+  // may edit the issue can try again — the app still holds the copy.
+  const listed = new Set(issue.attachments.map((a) => a.id));
+  for (const seal of await sealsOfIssue(issue.id)) {
+    if (listed.has(seal.attachmentId)) continue;
+    rows.push({
+      id: seal.attachmentId, filename: seal.attachmentName, size: seal.size, mimeType: seal.mimeType, lost: true,
+      seal: { lockedBy: seal.lockedBy, lockedByName: seal.lockedByName, timestamp: seal.timestamp, expiresAt: seal.expiresAt, note: seal.note, restoreCount: seal.restoreCount || 0, lastRestoredAt: seal.lastRestoredAt || null },
+      row: rowFor({ record: seal, viewerId, powers, nowMs: now, lost: true }),
+      tooLarge: false,
+    });
+  }
+  let history = [];  return {
     success: true,
     issue: { id: issue.id, key: issue.key },
     viewer: { accountId: viewerId, ...powers },
@@ -196,6 +206,25 @@ const withPowers = (core) => async (req) => {
   });
 };
 
+// "Try again" on a seal whose file was deleted and could not be put back. Anyone who may edit the
+// issue may ask; the bytes come from the copy taken at seal time, never from the caller.
+export async function retryJiraRestore({ accountId, issueId, attachmentId, powers }) {
+  const attId = normId(attachmentId);
+  const record = attId ? await getSeal(attId) : null;
+  if (!record?.lockedBy) return { success: false, reason: "This file is not sealed" };
+  if (record.issueId !== String(issueId)) return { success: false, reason: "That seal belongs to another issue" };
+  if (!powers.canEdit) return { success: false, reason: "You need permission to edit this issue" };
+  const issue = await readIssue(issueId);
+  if (!issue) return { success: false, reason: "This issue no longer exists" };
+  if (issue.attachments.some((a) => a.id === attId)) return { success: false, reason: "The file is already on the issue" };
+  const { restoreWithClaim } = await import("./trigger.js");
+  const r = await restoreWithClaim(attId, accountId);
+  if (r.outcome === "restored") return { success: true, attachmentId: r.attachmentId };
+  if (r.outcome === "in-progress") return { success: false, reason: "Sentinel Vault is putting it back right now — refresh in a moment" };
+  if (r.outcome === "already-handled") return { success: true };
+  return { success: false, reason: `Still could not put it back: ${r.error || "try again later"}` };
+}
+
 // My work: the files the CALLER holds sealed on Jira (their own index prefix — a payload names nothing).
 const myJiraSeals = async (req) => {
   const accountId = req?.context?.accountId;
@@ -211,6 +240,7 @@ const myJiraSeals = async (req) => {
 const sealOnIssue = withPowers(sealJiraAttachment);
 const releaseOnIssue = withPowers(releaseJiraAttachment);
 const extendOnIssue = withPowers(extendJiraAttachment);
+const retryOnIssue = withPowers(retryJiraRestore);
 
 export const actions = [
   ["jira-issue-seals", issueSeals],
@@ -218,4 +248,5 @@ export const actions = [
   ["jira-seal-attachment", sealOnIssue],
   ["jira-release-attachment", releaseOnIssue],
   ["jira-extend-attachment", extendOnIssue],
+  ["jira-retry-restore", retryOnIssue],
 ];

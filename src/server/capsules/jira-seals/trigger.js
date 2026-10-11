@@ -55,7 +55,7 @@ export async function restoreSealedFile(record, actorId) {
         ] }],
       });
     }
-    return { ok: false };
+    return { ok: false, error: String(e?.message || e).slice(0, 200) };
   }
   const next = movedRecord(record, created, { actorId, nowMs });
   await putSeal(next);
@@ -105,9 +105,17 @@ export async function handleJiraAttachmentDeleted(event) {
     }
     return { outcome: decision };
   }
-  // Delivery is at-least-once and duplicates can arrive together: without a claim two of them would
-  // each upload the copy. The claim is per deleted attachment id; the winner re-reads the seal (a
-  // finished twin has already moved it off this id) before restoring.
+  return restoreWithClaim(attId, actorId);
+}
+
+/**
+ * Put the file of the seal recorded under `attId` back, at most once at a time. Delivery is
+ * at-least-once and duplicates can arrive together: without a claim two of them would each upload
+ * the copy. The claim is per deleted attachment id; the winner re-reads the seal (a finished twin
+ * has already moved it off this id) before restoring. Also the panel's "Try again" on a seal whose
+ * file could not be put back.
+ */
+export async function restoreWithClaim(attId, actorId) {
   const lockKey = `jira-seal-restoring-${attId}`;
   const token = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   if (!(await acquireLock(lockKey, 120000, token))) return { outcome: "in-progress" };
@@ -115,7 +123,7 @@ export async function handleJiraAttachmentDeleted(event) {
     const fresh = await getSeal(attId);
     if (!fresh?.lockedBy) return { outcome: "already-handled" };
     const r = await restoreSealedFile(fresh, actorId);
-    return { outcome: r.ok ? "restored" : "restore-failed", attachmentId: r.attachmentId || null };
+    return { outcome: r.ok ? "restored" : "restore-failed", attachmentId: r.attachmentId || null, error: r.error || null };
   } finally {
     await releaseLock(lockKey, token);
   }

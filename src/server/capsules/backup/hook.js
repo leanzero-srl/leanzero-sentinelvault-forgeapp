@@ -35,7 +35,7 @@ export const WRITE_ACTIONS = Object.freeze([
   "unlabel-artifact", "unseal-artifact", "unseal-section", "unwatch-artifact", "upload-artifact", "validate-page-now",
   "watch-artifact", "withdraw-approval",
   // 8.0 — Jira attachment seals
-  "jira-seal-attachment", "jira-release-attachment", "jira-extend-attachment",
+  "jira-seal-attachment", "jira-release-attachment", "jira-extend-attachment", "jira-retry-restore",
 ]);
 
 /**
