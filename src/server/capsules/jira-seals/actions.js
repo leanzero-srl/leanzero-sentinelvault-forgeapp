@@ -15,7 +15,7 @@
 import { kvs } from "@forge/kvs";
 
 import {
-  ACTIVITY, JIRA_SEAL_MAX_BYTES, buildSealRecord, forcedCommentAdf, isExpired, jiraCopyKey, jiraIntentKey, jiraLapseKey, jiraLostKey, jiraQueuedKey, normId, rowFor, sealIdOf, viewerPowers,
+  ACTIVITY, JIRA_SEAL_MAX_BYTES, buildSealRecord, forcedCommentAdf, isExpired, jiraCopyGcKey, jiraCopyKey, jiraIntentKey, jiraLapseKey, jiraLostKey, jiraQueuedKey, normId, rowFor, sealIdOf, viewerPowers,
 } from "./logic.js";
 import {
   callerPermissions, copyDownloadUrl, downloadAttachment, dropSeal, getSeal, postIssueComment, putSeal, readIssue, sealsOfIssue, sealsOwnedBy, sha256Hex, storeCopy, syncIssueProperty, userName,
@@ -102,16 +102,26 @@ export async function sealJiraAttachment({ accountId, issueId, attachmentId, loc
   catch (e) { return { success: false, reason: `Could not read the file from Jira: ${e.message}` }; }
   if (bytes.length !== att.size) return { success: false, reason: "The file changed while it was being read — try again" };
   const copyKey = jiraCopyKey(attId);
-  try { await storeCopy(copyKey, bytes); }
-  catch (e) { return { success: false, reason: `Could not keep a copy of the file, so it was not sealed: ${e.message}` }; }
-
-  const record = buildSealRecord({
-    attachment: att, issue, project: issue.project,
-    owner: { accountId, name: await userName(accountId) },
-    holdSeconds, sha256: sha256Hex(bytes), copyKey, note, nowMs: nowMs(),
-  });
-  // FAIL_IF_EXISTS: two people sealing the same file at once must not both be told "sealed".
-  if (!(await putSeal(record, { create: true }))) return { success: false, reason: "Someone sealed this file a moment ago — refresh to see who" };
+  const ownerName = await userName(accountId);
+  // Under the seal's lock, which the sweep's retry of a failed copy delete also takes: a retry left by
+  // an EARLIER seal of this same file (same copy key) is cleared before the new copy is written, so
+  // it can never delete the copy this seal is about to rely on (independent review, 2026-10-11).
+  const locked = await withSealLock(attId, async () => {
+    await kvs.delete(jiraCopyGcKey(copyKey));
+    try { await storeCopy(copyKey, bytes); }
+    catch (e) { return { reason: `Could not keep a copy of the file, so it was not sealed: ${e.message}` }; }
+    const rec = buildSealRecord({
+      attachment: att, issue, project: issue.project,
+      owner: { accountId, name: ownerName },
+      holdSeconds, sha256: sha256Hex(bytes), copyKey, note, nowMs: nowMs(),
+    });
+    // FAIL_IF_EXISTS: two people sealing the same file at once must not both be told "sealed".
+    if (!(await putSeal(rec, { create: true }))) return { reason: "Someone sealed this file a moment ago — refresh to see who" };
+    return { record: rec };
+  }).catch((e) => ({ busy: false, value: { reason: `Could not seal the file: ${e?.message || e}` } }));
+  if (locked.busy) return { success: false, reason: BUSY };
+  if (!locked.value?.record) return { success: false, reason: locked.value?.reason || "Could not seal the file" };
+  const record = locked.value.record;
   await syncIssueProperty(record.issueId, { add: record });
   await issueActivity(record, ACTIVITY.SEALED, accountId, { holdSeconds, size: record.size });
   return { success: true, seal: record };
