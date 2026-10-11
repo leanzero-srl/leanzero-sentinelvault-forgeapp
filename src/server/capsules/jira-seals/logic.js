@@ -15,6 +15,13 @@ export const JIRA_NOTICE_PREFIX = "jira-seal-noticed-";
 /** Lapse reminder counter (the Confluence sweep's `expiry-notified-` shape, Jira's own family). */
 export const JIRA_LAPSE_PREFIX = "jira-seal-lapse-";
 export const JIRA_NOTICE_WINDOW_MS = 10 * 60 * 1000;
+/** Delete-loop breaker: more than this many restores of one seal inside the window stops restoring. */
+export const JIRA_LOOP_MAX = 3;
+export const JIRA_LOOP_WINDOW_MS = 60 * 60 * 1000;
+/** Failed restores are retried with backoff (1 h, 2 h, 4 h … capped at 24 h), at most this often. */
+export const JIRA_RETRY_MAX = 10;
+/** A deleted issue's seals keep their copy this long, for the owner to download. */
+export const JIRA_ORPHAN_KEEP_MS = 30 * 86400000;
 /** The copy is taken inside one resolver call; above this it cannot finish safely. */
 export const JIRA_SEAL_MAX_BYTES = 25 * 1024 * 1024;
 
@@ -24,6 +31,16 @@ export const jiraIssueIndexPrefix = (issueId) => `${JIRA_ISSUE_INDEX_PREFIX}${is
 export const jiraOwnerIndexPrefix = (accountId) => `${JIRA_OWNER_INDEX_PREFIX}${accountId}-`;
 export const jiraOwnerIndexKey = (accountId, sealId) => `${JIRA_OWNER_INDEX_PREFIX}${accountId}-${sealId}`;
 export const jiraNoticeKey = (attachmentId) => `${JIRA_NOTICE_PREFIX}${attachmentId}`;
+/**
+ * A seal whose file is NOT on the issue and was not put back (a failed restore, a delete loop the
+ * breaker stopped, or a deleted issue). Keyed by the deleted attachment id; the sweep retries what
+ * is retryable and the panel / My work show the rest. Its copy is never deleted by a sweep.
+ */
+export const JIRA_LOST_PREFIX = "jira-seal-lost-";
+export const jiraLostKey = (attachmentId) => `${JIRA_LOST_PREFIX}${attachmentId}`;
+/** A restore that started uploading (crash-safe adoption of an upload whose seal move never ran). */
+export const JIRA_INTENT_PREFIX = "jira-seal-restore-intent-";
+export const jiraIntentKey = (sealId) => `${JIRA_INTENT_PREFIX}${sealId}`;
 export const jiraLapseKey = (attachmentId) => `${JIRA_LAPSE_PREFIX}${attachmentId}`;
 /** A seal's stable identity across restores (the attachment id changes each time it is put back). */
 export const sealIdOf = (record) => String(record?.originalAttachmentId || record?.attachmentId || "");
@@ -87,6 +104,7 @@ export function decideDeletion({ record, actorId, selfGenerated, appAccountId, n
 export function movedRecord(record, created, { actorId, nowMs }) {
   return {
     ...record,
+    restores: withRestore(record.restores, nowMs),
     attachmentId: String(created.id),
     attachmentName: String(created.filename || record.attachmentName),
     restoreCount: (Number(record.restoreCount) || 0) + 1,
@@ -94,6 +112,24 @@ export function movedRecord(record, created, { actorId, nowMs }) {
     lastDeletedBy: actorId || null,
   };
 }
+
+/** PURE. Is this restore one too many (a delete loop)? `restores` = ISO times of recent restores. */
+export function loopTripped(restores, nowMs, { max = JIRA_LOOP_MAX, windowMs = JIRA_LOOP_WINDOW_MS } = {}) {
+  const recent = (Array.isArray(restores) ? restores : []).map((t) => Date.parse(t)).filter((t) => Number.isFinite(t) && nowMs - t < windowMs);
+  return recent.length >= max;
+}
+/** PURE. The recent-restores list after one more (bounded). */
+export const withRestore = (restores, nowMs) => [...(Array.isArray(restores) ? restores : []), new Date(nowMs).toISOString()].slice(-10);
+
+/** PURE. When a failed restore is tried next (null = no more automatic tries). */
+export function nextRetryAt(attempts, nowMs, { max = JIRA_RETRY_MAX } = {}) {
+  const n = Math.max(0, Number(attempts) || 0);
+  if (n >= max) return null;
+  return nowMs + Math.min(3600000 * 2 ** n, 24 * 3600000);
+}
+
+/** PURE. Is a comment refusal permanent (count it as delivered-or-declined) or worth retrying? */
+export const commentRefusalIsFinal = (status) => [400, 401, 403, 404].includes(Number(status));
 
 /** PURE. Should a restore comment go out now (one per seal per window)? */
 export function noticeDue(lastNotice, nowMs, windowMs = JIRA_NOTICE_WINDOW_MS) {
