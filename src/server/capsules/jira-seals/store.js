@@ -87,6 +87,7 @@ export async function dropSeal(record, opts = {}) {
     await kvs.delete(jiraOwnerIndexKey(record.lockedBy, sid)).catch(() => {});
     await kvs.delete(jiraLapseKey(sid)).catch(() => {});
     await kvs.delete(jiraNoticeKey(sid)).catch(() => {});
+    await kvs.delete(jiraNoticeKey(`${sid}-loop`)).catch(() => {});
     if (record.copyKey) await deleteCopy(record.copyKey);
   }
   return { ok: true };

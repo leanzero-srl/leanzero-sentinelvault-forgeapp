@@ -33,27 +33,53 @@ was deliberately left out.
 3. **What happens on delete.**
    - The owner deletes their own sealed file → the seal is released (owner intent), the copy deleted.
    - The seal has expired → nothing is restored; the seal and its copy are cleaned up.
-   - Anyone else deletes it → the app uploads the copy back to the same issue under the same name,
-     the seal moves to the new attachment id (`originalAttachmentId` keeps the first one,
-     `restoreCount` counts), and a comment on the issue tells the person who deleted it and the owner
-     (mentions; one comment per seal per ten minutes, so a delete loop cannot flood the issue).
+   - Anyone else deletes it → the trigger queues the restore (`jira-restore-queue`, a 300 s consumer:
+     a product trigger cannot take a custom timeout); the consumer uploads the copy back to the same
+     issue under the same name, the seal moves to the new attachment id (`originalAttachmentId`
+     keeps the first one, `restoreCount` counts), and a comment on the issue tells the person who
+     deleted it, and the owner when comments are on (one comment per seal per ten minutes).
+   - A restore is crash-safe: an intent row is written before the upload, and a retry ADOPTS the
+     app's own upload (same name and size, after the intent) instead of uploading twice.
+   - A restore that fails (Jira error, missing copy) is never final: the seal is kept on the dead id
+     (`jira-seal-lost-<id>`), the panel shows it as "Not put back" with "Put it back", the hourly
+     sweep retries (1 h, doubling to 24 h, 10 tries), and the lapse rules never release it. Only a
+     person lets it go: the owner, or an admin with a reason.
+   - Delete-loop breaker: a fourth restore of one seal inside an hour is not made (an Automation
+     rule that deletes a file type would otherwise loop for ever); the seal is "lost / loop" and the
+     owner puts it back by hand after fixing the cause.
    - The issue itself is deleted → nothing can be restored (Jira deletes the issue's attachments
-     without one event each); every seal of that issue and its copy are cleaned up.
+     without one event each); the seals become orphans: record and copy are kept 30 days, the owner
+     sees them on My work and can download the copy (a short-lived Object Store link), then the
+     sweep ends them.
    - A space or project admin is NOT exempt, exactly as on Confluence's attachment path: release
      first, then delete.
+   - One lock per seal (`jira-seal-restoring-<id>`) serialises restore, release, extend and the
+     sweep's release; every writer re-reads under it.
 4. **Release, extend, force release.** The owner releases and extends. A steward — a Jira
    administrator (`ADMINISTER`) or an administrator of the issue's project (`ADMINISTER_PROJECTS`) —
    may extend and force-release with a typed reason, only while the site setting "Let admins
-   override seals" (`allowAdminOverride`) is on. The site setting "Signed seal actions" applies to
-   these actions as it does on Confluence.
+   override seals" (`allowAdminOverride`) is on. When the issue has moved since it was sealed, the
+   steward must ALSO administer the project the seal was set in (moving an issue into a project
+   you administer does not hand you its seals). The site setting "Signed seal actions" applies to
+   the panel's actions as it does on Confluence; the REST API, as for every Confluence op, does not
+   ask for a code (its tokens are site-admin only).
 5. **Expiry.** The site's hold policy applies (`defaultLockDuration`, the lapse reminders
-   `lapseNoticeLimit` / `lapseNoticeIntervalHours`, and the auto-release switch). Reminders are issue
-   comments mentioning the owner; after the last one the seal is released and the copy deleted. The
-   hourly index cron runs the Jira sweep (Forge allows five scheduled triggers and the app uses five).
+   `lapseNoticeLimit` / `lapseNoticeIntervalHours`, and the auto-release switch; turning auto-release
+   back on extends Jira seals by the pause like Confluence ones). Reminders are issue comments
+   mentioning the owner; a reminder Jira refuses for good (4xx) counts as given, a 5xx / 429 holds the
+   countdown. After the last one the seal is released and the copy deleted. The hourly index cron
+   runs the Jira sweep after the backup check, under one lock and a 100 s budget (Forge allows five
+   scheduled triggers and the app uses five).
 6. **Audit.** Every seal event is written to the activity log under `activity-issue-{issueId}-` and
    `activity-project-{projectKey}-`; the issue's panel shows the last ones.
 7. **Personal data.** Seal records and the activity log hold account ids only. The weekly privacy
-   sweep reads the whole store, so Jira seals are reported and erased with the rest.
+   sweep reads the whole store, so Jira seals are reported and erased with the rest, and the issue
+   history (`activity-issue-`) ages out with the history retention setting. The issue property names
+   no one. Comments the app posted on issues are Jira's data (a closed account shows as Former user).
+8. **Backup.** Seal records, the issue and owner indexes and the "not put back" rows are backed up;
+   the file COPIES are in the Object Store and are not. After a restore of the backup, a seal whose
+   copy is gone fails safe: a later delete is reported "not put back" (the SHA-256 check never
+   uploads wrong bytes). A restore that re-keys a seal schedules a backup.
 
 ## Surfaces
 
@@ -62,6 +88,19 @@ was deliberately left out.
   under ⋯, a hold-period picker and a note, and the issue's recent seal history.
 - REST: config-api content ops `seal-jira-attachment`, `release-jira-attachment`,
   `extend-jira-attachment` (the caller is the token's minter, every gate applies unchanged).
+
+## Measured after the reviews (2026-10-11)
+
+- Restores through the queue: three real deletes put back byte-identical; the fourth inside the
+  hour stopped by the breaker; Put it back restored it.
+- A restore with its copy removed: kept as "Not put back", never released by the sweep, the owner
+  let it go.
+- An issue deleted with a sealed file: the seal became an orphan, My work listed it, the owner
+  downloaded the copy byte-identical through `createPublicDownloadUrl`; someone else was refused.
+- `forge lint`: a product trigger function cannot take `timeoutSeconds` (only consumers and
+  scheduled triggers) — hence the restore queue.
+- `GET /rest/api/3/user/permission/search` (the REST path's permission read) takes `issueKey` /
+  `projectKey`, not `issueId`, and project permissions only.
 
 ## Not in 8.0, on purpose
 

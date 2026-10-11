@@ -2,6 +2,31 @@
 
 GENERATED from `src/server/shared/release-notes.js` by `scripts/render-release-notes.mjs`. Do not edit.
 
+## 8.0.0 — 2026-10-11
+
+**Seal Jira attachments: a sealed file on a Jira issue is put back if anyone else deletes it**
+
+- New: Sentinel Vault works on Jira issues. Once a site admin connects Jira (Atlassian Administration, Apps, Connected apps, Sentinel Vault, connect Jira), every issue has a Sentinel Vault section in its right-hand column listing the issue's files. Anyone who can edit the issue can seal a file for a chosen time, with an optional note; the owner can extend or release it; a Jira or project admin can extend it or force-release it with a typed reason.
+- New: Sentinel Vault keeps a copy of every sealed Jira file (files up to 25 MB). If anyone but the owner deletes a file while its seal holds, the copy is uploaded back to the same issue under the same name, the seal moves to it, and a comment on the issue tells the person who deleted it (setting Tell editors when their change is undone, on by default; at most one comment per file every 10 minutes). Jira gives the put-back file a new attachment id, and its author is Sentinel Vault.
+- New: if a sealed file cannot be put back (for example a temporary Jira error), the issue's section shows it as Not put back with a Put it back button, Sentinel Vault retries on its own (after an hour, then less often, up to 10 times), and the expiry rules never delete that copy. If something deletes the same file again each time it is put back, Sentinel Vault stops after three times within an hour and says so on the issue.
+- New: deleting an issue cannot destroy a sealed file's copy. It is kept for 30 days and its owner can download it from My work in Confluence.
+- New: these site settings apply to Jira too: Default Seal Duration, Seals expire and the overdue reminders, Sign seal actions with an authenticator code, Allow space admins to force-unseal (on Jira it covers Jira and project admins), and the comment switches Page comments that mention people, Tell editors when their change is undone, and Expiry and release notices. Each issue's seal history is shown in its section and follows Delete old history.
+- New: three REST content operations, seal-jira-attachment, extend-jira-attachment and release-jira-attachment, and an issue property, sentinel-vault-seals, that lists an issue's live seals without naming anyone.
+- New permissions: this update asks a site admin to approve read:jira-work, write:jira-work and read:jira-user, used only to read an issue's files, put a deleted sealed file back, comment on the issue, keep the sentinel-vault-seals issue property up to date, read people's names, and check Jira permissions. Nothing happens on Jira until Jira is connected.
+- Changed: times read today, yesterday and tomorrow in words instead of a weekday, and a time a full week away shows its date.
+
+Fixed:
+- Purging or restoring a deleted file, and a space admin's force release, are now checked against the space the file is in, never the space the person is looking at.
+- Clearing someone else's lapsed seal from space settings now needs its owner, a space admin of the file's space, or someone who can edit its page (before, anyone could), and it cleans up everything the seal left behind.
+- Releasing one of several seals on a page no longer turns off protection for the others on the same page.
+- A new version uploaded by a seal's owner is now the version the seal protects. Before, the next unauthorised change was undone back to the original file, losing the owner's update.
+- While a page's approval holds its seals, the owner can no longer end a seal by moving the file to the trash.
+- A lapsed seal on a page that was deleted is now released. Before, its reminder could not be posted, so it was retried every hour and the seal was never released. On a page in the trash, the seal now finishes its normal countdown.
+- A file deleted from the panel without a seal no longer blocks someone else from sealing it later, and its permanent deletion no longer posts a violation notice.
+- Edit requests waiting on you are listed even on sites where Seals expire is off, and space settings no longer show a file as sealed when it was only moved to the trash from the panel and never sealed.
+
+**Do this:** A site admin approves the update in Confluence administration, Apps, Manage apps. To use it on Jira, connect Jira to Sentinel Vault under Atlassian Administration, Apps, Connected apps.
+
 ## 7.1.0 — 2026-10-07
 
 **Sentinel Vault works better on phones, tablets and smaller laptop screens**
