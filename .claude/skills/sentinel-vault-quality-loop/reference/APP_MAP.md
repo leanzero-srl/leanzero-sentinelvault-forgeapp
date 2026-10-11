@@ -58,7 +58,7 @@ One shared `@forge/resolver` (`action-router`, `src/server/registry.js`) serves 
 
 | Capsule (`src/server/capsules/…`) | Resolver actions (key ones) | Non-resolver entry points |
 |---|---|---|
-| **sealing** | `seal-artifact` (re-seals over expired records, SV-M8; duration payload → space → global → 48h baseline), `unseal-artifact`, `enumerate-doc-artifacts`, `enumerate-operator-seals` (full scan ≤10×100, prunes stale), `enumerate-page-seals` (KVS fast-path), `check-seal-stamp` (frontend polling), `restore-sealed-artifact` (gated `allowSealRestore`), `purge-seal-record` (gated `allowSealPurge`) | `logic.js`: `computeSealStatus`/`breakSeal` (lazy expiry), `touchSealTimestamp`, content-prop write/remove; `confluence-sync.js`: realm index write, `purgeAllSealState` |
+| **sealing** | `seal-artifact` (re-seals over expired records, SV-M8; duration payload → space → global → 48h baseline), `unseal-artifact`, `enumerate-doc-artifacts`, `enumerate-operator-seals` (full scan ≤10×100, prunes stale), `enumerate-page-seals` (KVS fast-path), `check-seal-stamp` (frontend polling), `restore-sealed-artifact` (gated `allowSealRestore`), `purge-seal-record` (gated `allowSealPurge`) | `logic.js`: `pageHasOtherLiveSeals`/`releaseSealContentPropIfLast` (the one door for the one-per-page property), `touchSealTimestamp`, content-prop write/remove; `confluence-sync.js`: realm index write, `purgeAllSealState` |
 | **policies** | `load-policy` / `store-policy` (global+space unified; pause/resume timer-extension lives here), `enumerate-realm-rulesets` (legacy `*-ruleset` load/store/discard actions REMOVED 2026-09-05 — unused; `load-global-ruleset` was ungated and returned the steward roster) | `logic.js` duration/auto-unseal helpers (naming: "realm" = space) |
 | **realms** | `identify-realm`, `enumerate-realm-seals` (cursor-paged index read), `launch-realm-audit` / `check-audit-status`, `steward-unseal`, `check-user-role`, steward-request workflow (`request/check/list/approve/deny-steward-request`, 48h deny cooldown) | `scan-worker.js`: `realmScanConsumer` (queue), `sealIndexCron` (scheduled) |
 | **operators** | `identify-operator`, `search-operators`, `current-operator`, `enumerate-operators`, `enumerate-teams` — all asUser read-only | — |
@@ -80,7 +80,7 @@ One shared `@forge/resolver` (`action-router`, `src/server/registry.js`) serves 
 | `infra/json-salvage.js` | `parseAIJson` tolerant LLM-output parser (fences, prose, truncation) |
 | `infra/notice-composer.js` / `infra/notice-blueprints.js` / `infra/outbound-notify.js` | `dispatchNotice` → 11 comment layouts (XML-escaped, `<ri:user>` mentions) → v2 footer-comment POST, retry ×3 on 429/5xx; toggle-gated |
 | `infra/validation-blueprints.js` | Advisory/reverted validation comments |
-| `infra/artifact-fetch.js` | `fetchArtifactMetadata`, `downloadArtifactBinary`, `resolveArtifactPreview` (live); contains a LEGACY parallel event handler (`artifactEventHandler`/`rollbackArtifact`) NOT wired in the manifest — live path is `triggers.js` |
+| `infra/artifact-fetch.js` | `resolveArtifactPreview` (live). The legacy unwired event handler and its helpers were deleted 2026-10-11 — live path is `triggers.js` |
 | `shared/steward-checks.js` | `isOperatorSteward` (site/org admin OR space ADMINISTER OR configured users/groups), `authorizeSteward` (adds `allowAdminOverride` gate) |
 | `shared/bulletin-flags.js` | `resolveBulletinToggles` from `admin-settings-global` (legacy field names preserved) |
 
@@ -179,7 +179,7 @@ Errors: 400 missing params / unknown `what`/`fn`; 500 `{error}` on exception. No
 ## 6. Known quirks (do not "fix" blindly)
 
 - `halfway-check-task`: declared function, deliberately unwired no-op (merged into expiry sweep) — kept for manifest stability.
-- `infra/artifact-fetch.js` contains a legacy unwired event handler; the live attachment path is `triggers.js`. Its fetch/preview helpers ARE live.
+- `infra/artifact-fetch.js` holds only the live preview helper (legacy handler deleted 2026-10-11); the live attachment path is `triggers.js`.
 - `overlay` static resource is manifest-orphaned by design (opened via Modal at runtime).
 - Docs drift: README/user-guide still carry legacy Resend-email wording — `notifications.md`/`settings-reference.md` are the truth (native comment-with-mention, no egress); architecture's "7 capsules / 57 actions" list predates v4.0.0 (10 capsules now); README's "re-insert at original position" for media protection is optimistic — content-protection-surgery.md documents append-fallback behavior; default seal duration UI 24h vs code baseline 48h is intentional.
 - Frontend known issues (pre-existing, tracked): realm-console `setError` ReferenceError (index.jsx:1136), N+1 resolver fan-out on card lists, triple 5 s stamp polling per open page, token-block duplication across ~9 CSS files.

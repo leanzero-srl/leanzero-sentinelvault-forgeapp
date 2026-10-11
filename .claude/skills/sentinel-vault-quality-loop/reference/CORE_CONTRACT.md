@@ -10,7 +10,7 @@ Source of truth verified against `manifest.yml`, `src/boot.js`, `src/server/trig
 
 **T1. The app never reacts to its own writes: both product-event triggers compare the event actor to the cached `app-account-id` and return immediately on match.**
 WHY: every restore (attachment re-upload, page-body write, section restore) re-fires the same Confluence event; without this guard the app reverts its own reverts forever. The manifest declares NO `filter`/`ignoreSelf` — suppression lives entirely in code, so removing this check has no safety net.
-Files: `src/server/triggers.js` (`artifactEventTrigger`, `pageContentTrigger`, `resolveAppAccountId`), `src/server/infra/artifact-fetch.js` (`shouldIgnoreEvent`), KVS key `app-account-id`.
+Files: `src/server/triggers.js` (`artifactEventTrigger`, `pageContentTrigger`, `resolveAppAccountId`), KVS key `app-account-id`.
 
 **T2. If the app's own account id cannot be resolved, `pageContentTrigger` fails CLOSED — it skips all body-mutating work rather than risking a revert loop.**
 WHY: a mutating pass without a working loop guard is worse than doing nothing (SV-M3).
@@ -55,8 +55,8 @@ KNOWN GAP: only permanent delete (`handleSealedArtifactDeleted`) sweeps grants/r
 
 **S4. Owner edits always pass — including REMOVALS (stabilization hunt 2026-08-14): an owner (or active grantee) removing their own sealed embed from the page re-baselines the seal to `embedded:false` (baseline dropped), so future absence is sanctioned and never re-spliced or blamed on a later editor; an expired-but-unswept seal never blocks a re-seal by another user (SV-M8) and expired records are lazily deleted on touch.**
 WHY: expiry deletion is lazy by design (see §6) — treating a stale record as an active lock would let dead seals deny service.
-Files: `src/server/capsules/sealing/actions.js` (`sealArtifact` re-seal path), `src/server/capsules/sealing/logic.js` (`computeSealStatus`).
-NOTE: `breakSeal` (sealing/logic.js:212) is DEAD CODE — zero callers anywhere in src/. Do not cite it as an implementing surface, and do not wire it up as-is: its expired path omits `removeSealContentProp`, which would violate K3.
+Files: `src/server/capsules/sealing/actions.js` (`sealArtifact` re-seal path), `src/server/triggers.js` (`expirySweepTask`, F5 auto-release).
+NOTE: `breakSeal` and `computeSealStatus` were dead code (zero callers) and were deleted 2026-10-11.
 
 **S5. Every seal mutation touches `protections-last-modified` and keeps the triad in sync: KVS record `protection-{id}`, realm index `space-protection-{spaceId}-{id}`, and the page content property `protection-`.**
 WHY: frontend 5s polling (`check-seal-stamp`), the cron change-gate, steward listings, and the trigger fast-path all read different legs of this triad; a mutation that updates only one leg desyncs the product.
@@ -148,15 +148,15 @@ Files: `src/server/infra/forge-llm.js` (`isForgeLlmModelAllowed`), `src/server/c
 
 ## 6. Expiry semantics
 
-**E1. The hourly sweep ONLY notifies (expiry notice, halfway reminder, each once) — it never deletes seals; actual unsealing on expiry is lazy, performed on read/interaction (`computeSealStatus` via panel/overlay/console reads, `stewardUnseal`, the SV-M8 re-seal path).**
+**E1 (superseded by F5, 2026-08-27): the hourly sweep reminds a lapsed seal's owner up to `lapseNoticeLimit` times, then releases it through `releaseSeal`. Since 2026-10-11 a seal on a purged page is released without notice (not under limit 0) and a reminder for a trashed page is counted undeliverable. There is no lazy delete-on-read.**
 WHY: notify-only + lazy deletion is the deliberate design; code that "fixes" the sweep to delete changes user-visible semantics ("Overdue" seals, watcher notifications on release) everywhere.
 Files: `src/server/triggers.js:846+` (`expirySweepTask`), `src/server/capsules/sealing/logic.js`.
-KNOWN GAPS: (a) the ATTACHMENT trigger handlers (`handleSealedArtifactEdit`, `handleSealedArtifactTrash`) never read `expiresAt` — an expired-but-unswept attachment seal keeps reverting non-owner edits and un-trashing the file until some UI read hits `computeSealStatus`; sections got the inert-when-expired check (X5), attachments have no equivalent. `breakSeal` is dead code (see S4) — neither it nor "the artifact handler" is a real lazy-unseal site. (b) The sweep's ≤100-record no-cursor scan is a SCALE LIMITATION, not a design commitment — instances with >100 `protection-` keys never get expiry notices for the tail; adding cursor pagination is a semantics-preserving fix. What is contractual is NOTIFY-ONLY.
+KNOWN GAPS: (a) the ATTACHMENT trigger handlers (`handleSealedArtifactEdit`, `handleSealedArtifactTrash`) never read `expiresAt` — an expired-but-unswept attachment seal keeps reverting non-owner edits and un-trashing the file until some UI read hits `computeSealStatus` (deleted 2026-10-11); sections got the inert-when-expired check (X5), attachments have no equivalent. `breakSeal` is dead code (see S4) — neither it nor "the artifact handler" is a real lazy-unseal site. (b) The sweep's ≤100-record no-cursor scan is a SCALE LIMITATION, not a design commitment — instances with >100 `protection-` keys never get expiry notices for the tail; adding cursor pagination is a semantics-preserving fix. What is contractual is NOTIFY-ONLY.
 
 **E2. Disabling auto-unlock pauses all timers (stamps `autoUnlockPausedAt`); re-enabling extends every seal's `expiresAt` by the pause duration and clears the stamp; with auto-unlock off, the daily nudge posts banner-only periodic reminders on the `reminderIntervalDays` cadence.**
 WHY: pausing must not silently burn seal lifetime, and periodic reminders are deliberately banner-only (no comment spam).
 Files: `src/server/capsules/policies/actions.js` (`storePolicy`), `src/server/triggers.js` (`recurringNudgeTask`).
-KNOWN GAPS: pause is only honored by the sweep and `stewardUnseal` — the LAZY expiry paths (`computeSealStatus` on any panel/overlay/console read, and the SV-M8 re-seal path) delete "expired" seals unconditionally, so a seal whose nominal expiry passes mid-pause is permanently destroyed by any read before resume-time extension can rescue it. Also the resume extension rewrites seal `expiresAt` but not grant TTLs (see G1) and only touches the first 100 `protection-` keys (no cursor).
+KNOWN GAPS: pause is only honored by the sweep and `stewardUnseal` — the LAZY expiry paths (`computeSealStatus` (deleted 2026-10-11) on any panel/overlay/console read, and the SV-M8 re-seal path) delete "expired" seals unconditionally, so a seal whose nominal expiry passes mid-pause is permanently destroyed by any read before resume-time extension can rescue it. Also the resume extension rewrites seal `expiresAt` but not grant TTLs (see G1) and only touches the first 100 `protection-` keys (no cursor).
 
 ---
 

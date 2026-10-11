@@ -9,9 +9,9 @@ import {
   mailEditorReverted,
 } from "./infra/notice-composer.js";
 
-import { recordDispatch, postDocFootnote } from "./capsules/bulletins/logic.js";
+import { recordDispatch, postDocFootnote, sweepWatchers } from "./capsules/bulletins/logic.js";
 import { resolveBulletinToggles } from "./shared/bulletin-flags.js";
-import { touchSealTimestamp, removeSealContentProp } from "./capsules/sealing/logic.js";
+import { touchSealTimestamp, releaseSealContentPropIfLast } from "./capsules/sealing/logic.js";
 import { releaseSeal } from "./capsules/sealing/release.js";
 import { releaseSectionSeal } from "./capsules/section-seals/release.js"; // SEC-7 (d): the sweep hands lapsed sections back too
 import { adoptInsertedSection, insertIntentKey } from "./capsules/section-seals/adopt.js"; // SEC-4 (a): seal on insert
@@ -48,7 +48,7 @@ import { decideSectionRetry, nextRetryMarker, sectionRetryKey, SECTION_RETRY_PRE
 // F5 (owner feedback 2026-08-27): a lapsed seal gets a bounded run of reminders and is then
 // released automatically. The decision is time-based, so it lives in a pure zero-import module
 // that unit tests can hand clocks to rather than waiting three days for a live sweep.
-import { decideLapseAction, resolveLapsePolicy, priorNoticeCount, lapseSubject } from "./shared/lapse-policy.js";
+import { decideLapseAction, resolveLapsePolicy, priorNoticeCount, lapseSubject, decideLapseDelivery } from "./shared/lapse-policy.js";
 import { decideAnnounce, decideRelease, confirmClaim, decideClear } from "./shared/notice-dedup.js";
 import { randomUUID } from "node:crypto";
 // A1: the activity record. Written ONLY on a CONFIRMED outcome (after the successful page
@@ -57,6 +57,7 @@ import { randomUUID } from "node:crypto";
 import { recordActivity } from "./infra/activity-log.js";
 import { refreshByline } from "./capsules/page-details/byline.js"; // 5.0 byline chip — refreshed once per page save, after the restore passes
 import { isWorkflowHeld, mayEditInside } from "./shared/seal-authority.js"; // SEC-2
+import { isLiveAttachmentSeal, advancesSealedVersion } from "./shared/live-seal.js";
 import { workflowPrivilegeForPage } from "./capsules/workflow/privilege.js";
 
 // --- Fix 3 (CORE T6 extension): cross-run violation-comment dedup ---
@@ -255,7 +256,8 @@ export async function artifactEventTrigger(event) {
 
     // S7: trashedOnly TRACKING records are NOT seals — they must never trigger edit-revert or
     // trash-restore (vet finding: a panel-deleted unsealed attachment would get un-deleted).
-    // Permanent delete still cleans the dangling record up.
+    // Permanent delete still cleans the dangling record up — silently (handleSealedArtifactDeleted
+    // posts no notice for a stub: it was never a seal).
     if (sealRecord.trashedOnly && eventType !== "avi:confluence:deleted:attachment") {
       return;
     }
@@ -628,7 +630,9 @@ async function collectMediaSealsForPage(pageId) {
 async function rebaselineSealNotEmbedded(seal, who) {
   if (!seal.attachmentId) return;
   try {
-    const fresh = (await kvs.get(`protection-${seal.attachmentId}`)) || seal;
+    // Never resurrect: `|| seal` used to re-create a seal released while this save was in flight.
+    const fresh = await kvs.get(`protection-${seal.attachmentId}`);
+    if (!isLiveAttachmentSeal(fresh)) return;
     await kvs.set(`protection-${seal.attachmentId}`, { ...fresh, embedded: false, mediaBaseline: null });
     seal.embedded = false;
     seal.mediaBaseline = null;
@@ -664,7 +668,9 @@ async function restoreMediaPass(ctx, sealFileMap, probeCache = new Map()) {
         // copy is canonical). Hunt F5: merge onto a FRESH read of the record — the attachment
         // trigger's grant re-baseline can race this write; patch only mediaBaseline here.
         const current = capturePresentation(nodes[0]);
-        const fresh = (await kvs.get(`protection-${seal.attachmentId}`)) || seal;
+        // Never resurrect: `|| seal` used to re-create a seal released while this save was in flight.
+        const fresh = await kvs.get(`protection-${seal.attachmentId}`);
+        if (!isLiveAttachmentSeal(fresh)) continue;
         await kvs.set(`protection-${seal.attachmentId}`, { ...fresh, mediaBaseline: current });
         seal.mediaBaseline = current;
         await touchSealTimestamp(); // hunt H2-F5: S5 — every seal mutation touches the stamp
@@ -1847,6 +1853,61 @@ async function sendSectionViolationNotifications(seal, pageId, actor, kind, reve
   await postDedupedFootnote(bulletinToggles, pageId, seal.sectionId, markerClass, seal.lockedBy, actor, title, verb, { targetKind: "section", revertedVersion });
 }
 
+// --- A sanctioned new version of a sealed file becomes the seal's baseline ---
+// Sanctioned = the seal owner's upload while the seal is personal, an active grantee's, or (SEC-2)
+// the workflow's privileged set while the page holds it. One re-baseline for all three (it was
+// written for grantees only; the owner and the held+privileged path returned without one).
+async function rebaselineSanctionedEdit(sealRecord, artifactId, pageId, currentVersion, atlassianId, who) {
+  try {
+    // Never resurrect and never move backwards. The old `(await kvs.get(…)) || sealRecord`
+    // re-created a seal released while this event was in flight; and the trigger is at-least-once
+    // and unordered, so a redelivered OLDER upload must not pull the baseline back under a newer one.
+    const before = await kvs.get(`protection-${artifactId}`);
+    if (!isLiveAttachmentSeal(before)) return;
+    if (!advancesSealedVersion(before.sealedVersion, currentVersion)) {
+      console.warn(`[EDIT-GRANT] ${who} edit of ${artifactId} at v${currentVersion} does not advance the baseline (v${before.sealedVersion}) — skipped`);
+      return;
+    }
+    let newFileId = before.sealedFileId || sealRecord.sealedFileId || null;
+    const attRes = await asApp().requestConfluence(
+      route`/wiki/api/v2/attachments/${artifactId}`,
+    );
+    if (attRes.ok) {
+      const attData = await attRes.json();
+      newFileId = attData.fileId || newFileId;
+    }
+    // Hunt F6: the approved upload replaced the binary — the OLD file's presentation
+    // baseline is stale (new natural dimensions surface as attr drift that would later be
+    // "restored" onto the new image, distorting it and accusing an innocent editor).
+    // Refresh from a fresh server read against the NEW fileId; on any failure keep NO
+    // baseline (attr protection off until the next authorized change beats stale-revert).
+    let newBaseline = null;
+    if (pageId && newFileId) {
+      try {
+        const { adfDoc } = await readDocBody(pageId);
+        newBaseline = capturePresentation(findSealedMediaSingle(adfDoc, newFileId));
+      } catch (_) { /* null baseline — fail toward no attr protection */ }
+    }
+    // Hunt F5: merge onto a FRESH record — the page trigger's attr-pass re-baseline can race
+    // this write (one grantee save fires both events); patch only the fields this path owns
+    // (sealedVersion/sealedFileId/mediaBaseline), never persist the trigger-entry snapshot.
+    const fresh = await kvs.get(`protection-${artifactId}`);
+    if (!isLiveAttachmentSeal(fresh) || !advancesSealedVersion(fresh.sealedVersion, currentVersion)) return;
+    await kvs.set(`protection-${artifactId}`, {
+      ...fresh,
+      sealedVersion: currentVersion || fresh.sealedVersion,
+      sealedFileId: newFileId,
+      mediaBaseline: newBaseline,
+    });
+    await touchSealTimestamp();
+    console.warn(
+      `[EDIT-GRANT] Allowed ${who} edit of ${artifactId} by ${atlassianId} — re-baselined seal to v${currentVersion}`,
+    );
+  } catch (e) {
+    console.error(`[EDIT-GRANT] Failed to re-baseline seal after ${who} edit:`, e);
+  }
+}
+
 // --- Handle unauthorized edit of a sealed artifact ---
 async function handleSealedArtifactEdit(sealRecord, artifactId, contentId, atlassianId, attachment) {
   let currentVersion = attachment.version?.number;
@@ -1857,11 +1918,32 @@ async function handleSealedArtifactEdit(sealRecord, artifactId, contentId, atlas
   // grantee may not, exactly as sections already do (mayEditInside, grants frozen). Before this,
   // an "Edit now" grant still let its holder replace a file on an Approved page.
   const held = isWorkflowHeld(sealRecord);
+  // Hunt F9 (Fix-2 parity): a degraded updated:attachment event can omit container/version —
+  // the trash handler completes those from a probe, this handler built a download route with
+  // "undefined" and failed open. Fill the gaps the same way before proceeding. (Before the
+  // sanctioned-edit check now: a sanctioned edit needs the version to re-baseline to.)
+  const fillGaps = async () => {
+    if (!pageId || !currentVersion) {
+      const probe = await probeAttachmentStatus(artifactId);
+      pageId = pageId || probe.pageId;
+      currentVersion = currentVersion || probe.version;
+    }
+  };
+  let sanctionedBy = null;
   if (held) {
     const p = await workflowPrivilegeForPage(pageId, atlassianId).catch(() => ({ privileged: false }));
-    if (p.privileged) return;
+    if (p.privileged) sanctionedBy = "workflow-privileged";
   } else if (sealRecord.lockedBy === atlassianId) {
     // Allow the seal owner to edit their own sealed artifact
+    sanctionedBy = "owner";
+  }
+  if (sanctionedBy) {
+    // The owner's (or, while held, the workflow's) new version IS the seal's content from now
+    // on. This used to return without re-baselining, so the seal still pointed at the ORIGINAL
+    // sealed version: the next unauthorized upload was reverted to that, silently discarding the
+    // owner's update. Same re-baseline the grantee path below has always done.
+    await fillGaps();
+    await rebaselineSanctionedEdit(sealRecord, artifactId, pageId, currentVersion, atlassianId, sanctionedBy);
     return;
   }
 
@@ -1872,58 +1954,14 @@ async function handleSealedArtifactEdit(sealRecord, artifactId, contentId, atlas
     return;
   }
 
-  // Hunt F9 (Fix-2 parity): a degraded updated:attachment event can omit container/version —
-  // the trash handler completes those from a probe, this handler built a download route with
-  // "undefined" and failed open. Fill the gaps the same way before proceeding.
-  if (!pageId || !currentVersion) {
-    const probe = await probeAttachmentStatus(artifactId);
-    pageId = pageId || probe.pageId;
-    currentVersion = currentVersion || probe.version;
-  }
+  await fillGaps();
 
   // Allow approved editors (Edit Requests) to edit without reverting. Re-baseline
   // the seal to the new version + fileId so future reverts target the edited
   // content, and pageContentTrigger's media-presence check keeps matching.
   const grant = held ? null : await getActiveEditGrant(artifactId, atlassianId); // frozen while held
   if (grant) {
-    try {
-      let newFileId = sealRecord.sealedFileId || null;
-      const attRes = await asApp().requestConfluence(
-        route`/wiki/api/v2/attachments/${artifactId}`,
-      );
-      if (attRes.ok) {
-        const attData = await attRes.json();
-        newFileId = attData.fileId || newFileId;
-      }
-      // Hunt F6: the approved upload replaced the binary — the OLD file's presentation
-      // baseline is stale (new natural dimensions surface as attr drift that would later be
-      // "restored" onto the new image, distorting it and accusing an innocent editor).
-      // Refresh from a fresh server read against the NEW fileId; on any failure keep NO
-      // baseline (attr protection off until the next authorized change beats stale-revert).
-      let newBaseline = null;
-      if (pageId && newFileId) {
-        try {
-          const { adfDoc } = await readDocBody(pageId);
-          newBaseline = capturePresentation(findSealedMediaSingle(adfDoc, newFileId));
-        } catch (_) { /* null baseline — fail toward no attr protection */ }
-      }
-      // Hunt F5: merge onto a FRESH record — the page trigger's attr-pass re-baseline can race
-      // this write (one grantee save fires both events); patch only the fields this path owns
-      // (sealedVersion/sealedFileId/mediaBaseline), never persist the trigger-entry snapshot.
-      const fresh = (await kvs.get(`protection-${artifactId}`)) || sealRecord;
-      await kvs.set(`protection-${artifactId}`, {
-        ...fresh,
-        sealedVersion: currentVersion || fresh.sealedVersion,
-        sealedFileId: newFileId,
-        mediaBaseline: newBaseline,
-      });
-      await touchSealTimestamp();
-      console.warn(
-        `[EDIT-GRANT] Allowed approved edit of ${artifactId} by ${atlassianId} — re-baselined seal to v${currentVersion}`,
-      );
-    } catch (e) {
-      console.error("[EDIT-GRANT] Failed to re-baseline seal after approved edit:", e);
-    }
+    await rebaselineSanctionedEdit(sealRecord, artifactId, pageId, currentVersion, atlassianId, "grantee");
     return;
   }
 
@@ -2057,29 +2095,46 @@ export async function handleSealedArtifactTrash(sealRecord, artifactId, contentI
   // to an inert S7 trashedOnly TRACKING record (the restore UI already handles those) instead
   // of returning with the live seal intact. A live seal left behind means the NEXT non-owner
   // page save un-trashes the owner's deliberate delete and publicly blames that bystander.
-  if (sealRecord.lockedBy === atlassianId) {
+  //
+  // SEC-2: while the workflow HOLDS the seal (the page is Approved) it is not the owner's to end.
+  // The edit path refuses the owner then and lets only the workflow's privileged set (approvers ∩
+  // live, or a space admin) change the file; trashing is a change, so the same rule decides here.
+  // A held trash by anyone else falls through to the restore below like any unauthorized trash.
+  const held = isWorkflowHeld(sealRecord);
+  let sanctioned = false;
+  if (held) {
+    const p = await workflowPrivilegeForPage(contentId || sealRecord.contentId, atlassianId).catch(() => ({ privileged: false }));
+    sanctioned = p.privileged === true;
+  } else {
+    sanctioned = sealRecord.lockedBy === atlassianId;
+  }
+  if (sanctioned) {
     try {
       // F5 discipline: merge onto a fresh read (the panel's own delete-artifact conversion can
-      // race this event); this path owns only trashedOnly.
+      // race this event); this path owns only trashedOnly (and ends a hold with the seal — a stub
+      // that still read as held would never be handed back by seal-custody).
       const fresh = (await kvs.get(`protection-${artifactId}`)) || sealRecord;
-      await kvs.set(`protection-${artifactId}`, { ...fresh, trashedOnly: true, trashedBy: atlassianId, trashedAt: new Date().toISOString() });
+      const { workflowHeld: _endedHold, ...ended } = fresh;
+      await kvs.set(`protection-${artifactId}`, { ...ended, trashedOnly: true, trashedBy: atlassianId, trashedAt: new Date().toISOString() });
       await touchSealTimestamp();
       // Review F2: same teardown discipline as every other seal end (release, purge, re-seal).
       await sweepEditAccess(artifactId).catch((e) => console.warn("[TRASH-RESTORE] edit-access sweep failed:", e));
-      console.warn(`[TRASH-RESTORE] owner ${atlassianId} trashed their own sealed ${artifactId} — seal released (trashedOnly tracking record)`);
+      console.warn(`[TRASH-RESTORE] ${held ? "workflow-privileged" : "owner"} ${atlassianId} trashed sealed ${artifactId} — seal released (trashedOnly tracking record)`);
       // A1: the seal ended here (owner intent, S3) — a feed that shows "sealed" and then nothing
       // while the file sits in the trash would be lying by omission (A1 review F6).
       await recordActivity({
         type: "seal.released",
         pageId: contentId || sealRecord.contentId || null,
         spaceKey: sealRecord.spaceKey || null,
-        actor: { accountId: atlassianId, name: sealRecord.lockedByName || null },
+        actor: { accountId: atlassianId, name: sealRecord.lockedBy === atlassianId ? (sealRecord.lockedByName || null) : null },
         target: { kind: "attachment", id: artifactId, name: sealRecord.attachmentName || attachment?.title || null },
-        details: { reason: "owner-trashed", via: "trash-event" },
+        details: sealRecord.lockedBy === atlassianId
+          ? { reason: "owner-trashed", via: "trash-event" }
+          : { reason: "workflow-trashed", via: "trash-event", forced: true, ownerAccountId: sealRecord.lockedBy || null },
         version: null,
       });
     } catch (e) {
-      console.error(`[TRASH-RESTORE] failed to release seal on owner trash of ${artifactId}:`, e);
+      console.error(`[TRASH-RESTORE] failed to release seal on sanctioned trash of ${artifactId}:`, e);
     }
     return;
   }
@@ -2170,12 +2225,20 @@ export async function handleSealedArtifactDeleted(sealRecord, artifactId, conten
   // record purge below. Previously an unguarded throw here (e.g. postDocFootnote 4xx/5xx on a since-gone
   // page) skipped every kvs.delete, leaving protection-*/space-protection-*/edit-grant-* ORPHANED with
   // no retry — so the (now-deleted) attachment read as "still sealed" forever. Wrap it; always clean up.
-  try {
-    // Fix 1 copy: its own verb — the generic "delete" layout claimed "has been restored",
-    // false on THIS (permanent) path.
-    await sendViolationNotifications(sealRecord, artifactId, pageId, atlassianId, artifactName, "permanently-deleted");
-  } catch (e) {
-    console.error("[SEAL-DELETED] final notice failed (continuing cleanup):", e);
+  //
+  // S7: a trashedOnly TRACKING record was never a seal (a deleted file the app keeps
+  // discoverable, or a seal that already ended when its owner trashed the file). Purging the file
+  // is the end of the stub, not a violation: no "permanently deleted" notice to its "owner" (the
+  // person who trashed it), no dispatch — a silent cleanup. The seal.deleted activity row below
+  // still records it, flagged trashedOnly.
+  if (!sealRecord.trashedOnly) {
+    try {
+      // Fix 1 copy: its own verb — the generic "delete" layout claimed "has been restored",
+      // false on THIS (permanent) path.
+      await sendViolationNotifications(sealRecord, artifactId, pageId, atlassianId, artifactName, "permanently-deleted");
+    } catch (e) {
+      console.error("[SEAL-DELETED] final notice failed (continuing cleanup):", e);
+    }
   }
 
   // Clean up KVS records since attachment is gone
@@ -2192,46 +2255,31 @@ export async function handleSealedArtifactDeleted(sealRecord, artifactId, conten
     version: null,
   });
   if (sealRecord.spaceId) {
-    await kvs.delete(`space-protection-${sealRecord.spaceId}-${artifactId}`);
+    // Best effort like the rest of the tail: an unguarded throw here skipped the edit-access sweep
+    // and the stamp below, orphaning grants on a file that no longer exists.
+    await kvs.delete(`space-protection-${sealRecord.spaceId}-${artifactId}`).catch((e) =>
+      console.warn("[SEAL-DELETED] index row delete failed (continuing cleanup):", e?.message || e));
   }
 
   // Remove content property — ONLY when this was the page's last live seal (vet F2: the
   // `protection-` property is ONE per page and gates the media fast path; removing it while
-  // other seals still point at this page silently disables their protection).
-  if (pageId) {
-    try {
-      if (!(await pageHasOtherLiveSeals(pageId, artifactId))) {
-        await removeSealContentProp(pageId);
-      } else {
-        console.warn(`[SEAL-DELETED] keeping the protection- content property on ${pageId} — other seals still target this page`);
-      }
-    } catch (_) { /* best effort */ }
-  }
+  // other seals still point at this page silently disables their protection). The check used to
+  // be a private copy here; it is now the one every remover shares (sealing/logic.js).
+  if (pageId) await releaseSealContentPropIfLast(pageId, artifactId);
 
   // Clear any Edit Requests / grants tied to this seal
-  await sweepEditAccess(artifactId);
+  await sweepEditAccess(artifactId).catch((e) => console.warn("[SEAL-DELETED] edit-access sweep failed:", e?.message || e));
+  // The file is gone for good: its "notify me when unsealed" watches and the sweep's reminder
+  // counters have nothing left to describe (parity with purge-seal-record / releaseSeal). Not the
+  // whole releaseSeal: that also rewrites the page body for the panel, and this runs from inside
+  // the page pipeline's media pass, whose own write would then race it.
+  await sweepWatchers(artifactId).catch(() => {});
+  await kvs.delete(`expiry-notified-${artifactId}`).catch(() => {});
+  await kvs.delete(`fifty-percent-reminder-sent-${artifactId}`).catch(() => {});
+  await kvs.delete(`reminder-sent-${artifactId}`).catch(() => {});
 
   await touchSealTimestamp();
   console.warn(`[SEAL-DELETED] Cleaned up seal records for ${artifactName} (${artifactId})`);
-}
-
-// Vet F2 helper: does any OTHER protection record still target this page? Excludes the record
-// being deleted by id (the KVS query is eventually consistent and may still return it) and
-// trashedOnly tracking records (S7 — they are not seals and don't need the fast-path gate).
-async function pageHasOtherLiveSeals(pageId, excludeArtifactId) {
-  let query = kvs.query().where("key", WhereConditions.beginsWith("protection-")).limit(100);
-  let iters = 0;
-  do {
-    const { results, nextCursor } = await query.getMany();
-    for (const entry of results || []) {
-      const v = entry.value;
-      if (v?.contentId === pageId && v?.lockedBy && !v?.trashedOnly && v?.attachmentId !== excludeArtifactId) {
-        return true;
-      }
-    }
-    if (!nextCursor || ++iters >= 50) return false;
-    query = kvs.query().where("key", WhereConditions.beginsWith("protection-")).limit(100).cursor(nextCursor);
-  } while (true);
 }
 
 // --- Shared violation notification logic ---
@@ -2532,7 +2580,48 @@ async function sweepSectionRestoreRetries() {
 }
 
 // --- Expiry Sweep Task (Scheduled Job) ---
+// The hourly job is two jobs: the seal sweep below (section-restore retries, reminders, lapse
+// releases — which returns early when auto-unseal is OFF or no seal exists) and the K1 backfill of
+// the edit-request owner index behind "edit requests waiting on me". The backfill used to sit at
+// the END of the seal sweep, so every early return skipped it: on a site with auto-unseal off the
+// index was never backfilled at all. It now runs after the seal sweep, whatever that returned.
 export async function expirySweepTask() {
+  const result = await expirySweepSeals();
+  // K1: the owner index behind "edit requests waiting on me" is backfilled hourly.
+  let editreqIndex = { backfilled: 0 };
+  try { editreqIndex = await sweepEditRequestIndex(); } catch (e) { console.error("[EXPIRY-SWEEP] editreq index", e); }
+  try {
+    const body = JSON.parse(result?.body || "{}");
+    body.editreqIndexBackfilled = editreqIndex?.backfilled ?? 0;
+    return { ...result, body: JSON.stringify(body) };
+  } catch (_) {
+    return result;
+  }
+}
+
+// Confirm a page the batched lookup reported `missing` before the sweep acts on it: the batch
+// only knows PAGES (a blog post always reads as missing there), so ask for the id directly as a
+// page and as a blog post. "missing" only when both answer 404; a trashed copy reads as trashed;
+// any other answer is "unknown" — an unproven negative must not release anything.
+async function confirmContainerStatus(id) {
+  let sawOnly404 = true;
+  for (const coll of ["pages", "blogposts"]) {
+    try {
+      const res = await asApp().requestConfluence(
+        coll === "pages" ? route`/wiki/api/v2/pages/${id}` : route`/wiki/api/v2/blogposts/${id}`,
+        { headers: { Accept: "application/json" } },
+      );
+      if (res.ok) {
+        const body = await res.json().catch(() => null);
+        return body?.status === "trashed" ? "trashed" : "current";
+      }
+      if (res.status !== 404) sawOnly404 = false;
+    } catch (_) { sawOnly404 = false; }
+  }
+  return sawOnly404 ? "missing" : "unknown";
+}
+
+async function expirySweepSeals() {
   try {
     // GAP 2 (req 2.3): section-restore retries run FIRST and regardless of the auto-unseal policy
     // below — a restore that lost its 409 race has nothing to do with expiry.
@@ -2600,6 +2689,34 @@ export async function expirySweepTask() {
     let halfwayAlertsSent = 0;
     let autoReleasedCount = 0;
 
+    // Where each page that may get a notice this run IS (2026-10-11): a seal on a trashed or
+    // purged page used to retry its notice every hour forever (404 "Could not find container",
+    // counter never advanced, never released). One batched lookup for the pages of the lapsed and
+    // halfway-due seals; a `missing` answer is re-checked per page (confirmContainerStatus) before
+    // anything is released on it. decideLapseDelivery (pure, shared/lapse-policy.js) decides.
+    const statusPageIds = new Set();
+    for (const s of subjects) {
+      if (!s.pageId) continue;
+      const exp = new Date(s.value.expiresAt).getTime();
+      const start = new Date(s.value.timestamp).getTime();
+      const halfwayDue = sendHalfwayAlerts && Number.isFinite(start) && now.getTime() >= start + (exp - start) * 0.5;
+      if (now.getTime() >= exp || halfwayDue) statusPageIds.add(String(s.pageId));
+    }
+    let batchedStatuses = new Map();
+    try { batchedStatuses = await fetchPageStatuses([...statusPageIds]); }
+    catch (e) { console.warn("[EXPIRY-SWEEP] page status lookup failed — delivering as before:", e?.message || e); }
+    const confirmedStatuses = new Map();
+    const deliveryFor = async (pageId) => {
+      if (!pageId) return "deliver";
+      const key = String(pageId);
+      if (!confirmedStatuses.has(key)) {
+        let st = batchedStatuses.get(key)?.status || "unknown";
+        if (st === "missing") st = await confirmContainerStatus(key);
+        confirmedStatuses.set(key, st);
+      }
+      return decideLapseDelivery(confirmedStatuses.get(key));
+    };
+
     for (const subject of subjects) {
       const { kind, id: artifactId, name, pageId: subjectPageId, spaceKey: subjectSpaceKey, ownerAccountId, dedupKey, halfwayKey, value } = subject;
       const isSection = kind === "section";
@@ -2609,6 +2726,29 @@ export async function expirySweepTask() {
 
         // --- Lapsed seal: remind, then release (F5) ---
         if (now >= expiresAt) {
+          // The page is gone for good (confirmed): nothing left to protect and nowhere to post.
+          // Release now, without a notice — whatever the reminder countdown says. Not when the
+          // policy never auto-releases (limit 0): "gone" is two 404s, and a page the app can no
+          // longer SEE answers the same way, so a site that chose never to release keeps the seal;
+          // its one reminder is counted as undeliverable instead (below) and the retries stop.
+          let delivery = await deliveryFor(subjectPageId);
+          if (delivery === "release-silently" && !(lapseNoticeLimit > 0)) delivery = "undeliverable";
+          if (delivery === "release-silently") {
+            const sentSoFar = priorNoticeCount(await kvs.get(dedupKey));
+            const autoRelease = { reason: "page-deleted", noticeCount: sentSoFar, noticeLimit: lapseNoticeLimit };
+            const released = isSection
+              ? await releaseSectionSeal(artifactId, value, { autoRelease })
+              : await releaseSeal(artifactId, value, { autoRelease, notify: false });
+            if (!released.success) {
+              console.error(`[EXPIRY-SWEEP] release of ${kind} ${artifactId} on deleted page ${subjectPageId} failed: ${released.reason}`);
+              continue;
+            }
+            autoReleasedCount++;
+            console.warn(`[EXPIRY-SWEEP] released ${kind} ${artifactId} without notice — its page ${subjectPageId} no longer exists`);
+            continue;
+          }
+          const noticeDeliverable = delivery === "deliver";
+
           const prior = await kvs.get(dedupKey);
           const priorCount = priorNoticeCount(prior);
           const lastSentMs = prior?.sentAt ? new Date(prior.sentAt).getTime() : 0;
@@ -2634,7 +2774,8 @@ export async function expirySweepTask() {
             const autoRelease = { reason: "lapse-policy", noticeCount: priorCount, noticeLimit: lapseNoticeLimit };
             const released = isSection
               ? await releaseSectionSeal(artifactId, value, { autoRelease })
-              : await releaseSeal(artifactId, value, { autoRelease });
+              // A trashed page refuses comments: the watchers' release notice would only fail.
+              : await releaseSeal(artifactId, value, { autoRelease, notify: noticeDeliverable });
             if (!released.success) {
               console.error(`[EXPIRY-SWEEP] auto-release of ${kind} ${artifactId} failed: ${released.reason}`);
               continue;
@@ -2642,7 +2783,7 @@ export async function expirySweepTask() {
             autoReleasedCount++;
             console.warn(`[EXPIRY-SWEEP] auto-released ${kind} ${artifactId} after ${priorCount} reminder(s)`);
 
-            if (bulletinToggles.ENABLE_NATIVE_NOTIFICATIONS && bulletinToggles.ENABLE_EXPIRY_NOTICE && subjectPageId) {
+            if (noticeDeliverable && bulletinToggles.ENABLE_NATIVE_NOTIFICATIONS && bulletinToggles.ENABLE_EXPIRY_NOTICE && subjectPageId) {
               try {
                 await mailAutoReleaseNotice(
                   ownerAccountId,
@@ -2679,7 +2820,14 @@ export async function expirySweepTask() {
             bulletinToggles.ENABLE_NATIVE_NOTIFICATIONS &&
             bulletinToggles.ENABLE_EXPIRY_NOTICE &&
             subjectPageId;
-          if (noticeWanted) {
+          // 2026-10-11: the page is in the TRASH — Confluence refuses the comment (404 "Could not
+          // find container"), and that is not transient: holding the counter on it meant retrying
+          // every hour forever and never releasing. The reminder is counted as undeliverable so
+          // the lapse policy completes (the release follows after the last one, as for any seal).
+          if (noticeWanted && !noticeDeliverable) {
+            noticePosted = true;
+            console.warn(`[EXPIRY-SWEEP] lapse notice ${noticeNumber}/${lapseNoticeLimit} for ${kind} ${artifactId} is undeliverable — page ${subjectPageId} is ${confirmedStatuses.get(String(subjectPageId)) || "unavailable"}; counted, not posted`);
+          } else if (noticeWanted) {
             try {
               const dateOpts = { year: "numeric", month: "long", day: "numeric" };
               // With auto-release off there is no deadline to name, and the countdown wording
@@ -2764,6 +2912,14 @@ export async function expirySweepTask() {
           if (previouslySent) {
             continue;
           }
+          // A page in the trash (or gone) refuses the comment every hour until the seal lapses —
+          // mark the halfway reminder handled instead (as a suppressed one is); the lapse branch
+          // above takes it from there.
+          if ((await deliveryFor(subjectPageId)) !== "deliver") {
+            await setUntil(halfwayKey, { sentAt: now.toISOString(), undeliverable: true }, expiresAt.getTime() + 7 * 86400000);
+            console.warn(`[EXPIRY-SWEEP] halfway reminder for ${kind} ${artifactId} is undeliverable — page ${subjectPageId} is trashed or gone`);
+            continue;
+          }
 
           try {
             const expiryDate = expiresAt.toLocaleDateString("en-US", {
@@ -2808,13 +2964,11 @@ export async function expirySweepTask() {
     if (notifiedCount > 0 || halfwayAlertsSent > 0 || autoReleasedCount > 0) {
       console.warn(`[EXPIRY-SWEEP] ${notifiedCount} expiry notifications, ${halfwayAlertsSent} reminders sent, ${autoReleasedCount} auto-released`);
     }
-    // K1: the owner index behind "edit requests waiting on me" is backfilled hourly.
-    let editreqIndex = { backfilled: 0 };
-    try { editreqIndex = await sweepEditRequestIndex(); } catch (e) { console.error("[EXPIRY-SWEEP] editreq index", e); }
+    // (The K1 edit-request index backfill runs in expirySweepTask, after this, on every path.)
     return {
       statusCode: 200,
       headers: {},
-      body: JSON.stringify({ notifiedCount, fiftyPctReminders: halfwayAlertsSent, autoReleasedCount, editreqIndexBackfilled: editreqIndex.backfilled }),
+      body: JSON.stringify({ notifiedCount, fiftyPctReminders: halfwayAlertsSent, autoReleasedCount }),
     };
   } catch (error) {
     console.error("Error in expiry sweep task:", error);
