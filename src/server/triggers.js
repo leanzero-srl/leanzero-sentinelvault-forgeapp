@@ -48,7 +48,7 @@ import { decideSectionRetry, nextRetryMarker, sectionRetryKey, SECTION_RETRY_PRE
 // F5 (owner feedback 2026-08-27): a lapsed seal gets a bounded run of reminders and is then
 // released automatically. The decision is time-based, so it lives in a pure zero-import module
 // that unit tests can hand clocks to rather than waiting three days for a live sweep.
-import { decideLapseAction, resolveLapsePolicy, priorNoticeCount, lapseSubject } from "./shared/lapse-policy.js";
+import { decideLapseAction, resolveLapsePolicy, priorNoticeCount, lapseSubject, decideLapseDelivery } from "./shared/lapse-policy.js";
 import { decideAnnounce, decideRelease, confirmClaim, decideClear } from "./shared/notice-dedup.js";
 import { randomUUID } from "node:crypto";
 // A1: the activity record. Written ONLY on a CONFIRMED outcome (after the successful page
@@ -2580,7 +2580,48 @@ async function sweepSectionRestoreRetries() {
 }
 
 // --- Expiry Sweep Task (Scheduled Job) ---
+// The hourly job is two jobs: the seal sweep below (section-restore retries, reminders, lapse
+// releases — which returns early when auto-unseal is OFF or no seal exists) and the K1 backfill of
+// the edit-request owner index behind "edit requests waiting on me". The backfill used to sit at
+// the END of the seal sweep, so every early return skipped it: on a site with auto-unseal off the
+// index was never backfilled at all. It now runs after the seal sweep, whatever that returned.
 export async function expirySweepTask() {
+  const result = await expirySweepSeals();
+  // K1: the owner index behind "edit requests waiting on me" is backfilled hourly.
+  let editreqIndex = { backfilled: 0 };
+  try { editreqIndex = await sweepEditRequestIndex(); } catch (e) { console.error("[EXPIRY-SWEEP] editreq index", e); }
+  try {
+    const body = JSON.parse(result?.body || "{}");
+    body.editreqIndexBackfilled = editreqIndex?.backfilled ?? 0;
+    return { ...result, body: JSON.stringify(body) };
+  } catch (_) {
+    return result;
+  }
+}
+
+// Confirm a page the batched lookup reported `missing` before the sweep acts on it: the batch
+// only knows PAGES (a blog post always reads as missing there), so ask for the id directly as a
+// page and as a blog post. "missing" only when both answer 404; a trashed copy reads as trashed;
+// any other answer is "unknown" — an unproven negative must not release anything.
+async function confirmContainerStatus(id) {
+  let sawOnly404 = true;
+  for (const coll of ["pages", "blogposts"]) {
+    try {
+      const res = await asApp().requestConfluence(
+        coll === "pages" ? route`/wiki/api/v2/pages/${id}` : route`/wiki/api/v2/blogposts/${id}`,
+        { headers: { Accept: "application/json" } },
+      );
+      if (res.ok) {
+        const body = await res.json().catch(() => null);
+        return body?.status === "trashed" ? "trashed" : "current";
+      }
+      if (res.status !== 404) sawOnly404 = false;
+    } catch (_) { sawOnly404 = false; }
+  }
+  return sawOnly404 ? "missing" : "unknown";
+}
+
+async function expirySweepSeals() {
   try {
     // GAP 2 (req 2.3): section-restore retries run FIRST and regardless of the auto-unseal policy
     // below — a restore that lost its 409 race has nothing to do with expiry.
@@ -2648,6 +2689,34 @@ export async function expirySweepTask() {
     let halfwayAlertsSent = 0;
     let autoReleasedCount = 0;
 
+    // Where each page that may get a notice this run IS (2026-10-11): a seal on a trashed or
+    // purged page used to retry its notice every hour forever (404 "Could not find container",
+    // counter never advanced, never released). One batched lookup for the pages of the lapsed and
+    // halfway-due seals; a `missing` answer is re-checked per page (confirmContainerStatus) before
+    // anything is released on it. decideLapseDelivery (pure, shared/lapse-policy.js) decides.
+    const statusPageIds = new Set();
+    for (const s of subjects) {
+      if (!s.pageId) continue;
+      const exp = new Date(s.value.expiresAt).getTime();
+      const start = new Date(s.value.timestamp).getTime();
+      const halfwayDue = sendHalfwayAlerts && Number.isFinite(start) && now.getTime() >= start + (exp - start) * 0.5;
+      if (now.getTime() >= exp || halfwayDue) statusPageIds.add(String(s.pageId));
+    }
+    let batchedStatuses = new Map();
+    try { batchedStatuses = await fetchPageStatuses([...statusPageIds]); }
+    catch (e) { console.warn("[EXPIRY-SWEEP] page status lookup failed — delivering as before:", e?.message || e); }
+    const confirmedStatuses = new Map();
+    const deliveryFor = async (pageId) => {
+      if (!pageId) return "deliver";
+      const key = String(pageId);
+      if (!confirmedStatuses.has(key)) {
+        let st = batchedStatuses.get(key)?.status || "unknown";
+        if (st === "missing") st = await confirmContainerStatus(key);
+        confirmedStatuses.set(key, st);
+      }
+      return decideLapseDelivery(confirmedStatuses.get(key));
+    };
+
     for (const subject of subjects) {
       const { kind, id: artifactId, name, pageId: subjectPageId, spaceKey: subjectSpaceKey, ownerAccountId, dedupKey, halfwayKey, value } = subject;
       const isSection = kind === "section";
@@ -2657,6 +2726,26 @@ export async function expirySweepTask() {
 
         // --- Lapsed seal: remind, then release (F5) ---
         if (now >= expiresAt) {
+          // The page is gone for good (confirmed): nothing left to protect and nowhere to post.
+          // Release now, without a notice — whatever the reminder countdown says, and even when
+          // the policy never auto-releases (limit 0): a seal on a purged page guards nothing.
+          const delivery = await deliveryFor(subjectPageId);
+          if (delivery === "release-silently") {
+            const sentSoFar = priorNoticeCount(await kvs.get(dedupKey));
+            const autoRelease = { reason: "page-deleted", noticeCount: sentSoFar, noticeLimit: lapseNoticeLimit };
+            const released = isSection
+              ? await releaseSectionSeal(artifactId, value, { autoRelease })
+              : await releaseSeal(artifactId, value, { autoRelease, notify: false });
+            if (!released.success) {
+              console.error(`[EXPIRY-SWEEP] release of ${kind} ${artifactId} on deleted page ${subjectPageId} failed: ${released.reason}`);
+              continue;
+            }
+            autoReleasedCount++;
+            console.warn(`[EXPIRY-SWEEP] released ${kind} ${artifactId} without notice — its page ${subjectPageId} no longer exists`);
+            continue;
+          }
+          const noticeDeliverable = delivery === "deliver";
+
           const prior = await kvs.get(dedupKey);
           const priorCount = priorNoticeCount(prior);
           const lastSentMs = prior?.sentAt ? new Date(prior.sentAt).getTime() : 0;
@@ -2682,7 +2771,8 @@ export async function expirySweepTask() {
             const autoRelease = { reason: "lapse-policy", noticeCount: priorCount, noticeLimit: lapseNoticeLimit };
             const released = isSection
               ? await releaseSectionSeal(artifactId, value, { autoRelease })
-              : await releaseSeal(artifactId, value, { autoRelease });
+              // A trashed page refuses comments: the watchers' release notice would only fail.
+              : await releaseSeal(artifactId, value, { autoRelease, notify: noticeDeliverable });
             if (!released.success) {
               console.error(`[EXPIRY-SWEEP] auto-release of ${kind} ${artifactId} failed: ${released.reason}`);
               continue;
@@ -2690,7 +2780,7 @@ export async function expirySweepTask() {
             autoReleasedCount++;
             console.warn(`[EXPIRY-SWEEP] auto-released ${kind} ${artifactId} after ${priorCount} reminder(s)`);
 
-            if (bulletinToggles.ENABLE_NATIVE_NOTIFICATIONS && bulletinToggles.ENABLE_EXPIRY_NOTICE && subjectPageId) {
+            if (noticeDeliverable && bulletinToggles.ENABLE_NATIVE_NOTIFICATIONS && bulletinToggles.ENABLE_EXPIRY_NOTICE && subjectPageId) {
               try {
                 await mailAutoReleaseNotice(
                   ownerAccountId,
@@ -2727,7 +2817,14 @@ export async function expirySweepTask() {
             bulletinToggles.ENABLE_NATIVE_NOTIFICATIONS &&
             bulletinToggles.ENABLE_EXPIRY_NOTICE &&
             subjectPageId;
-          if (noticeWanted) {
+          // 2026-10-11: the page is in the TRASH — Confluence refuses the comment (404 "Could not
+          // find container"), and that is not transient: holding the counter on it meant retrying
+          // every hour forever and never releasing. The reminder is counted as undeliverable so
+          // the lapse policy completes (the release follows after the last one, as for any seal).
+          if (noticeWanted && !noticeDeliverable) {
+            noticePosted = true;
+            console.warn(`[EXPIRY-SWEEP] lapse notice ${noticeNumber}/${lapseNoticeLimit} for ${kind} ${artifactId} is undeliverable — page ${subjectPageId} is in the trash; counted, not posted`);
+          } else if (noticeWanted) {
             try {
               const dateOpts = { year: "numeric", month: "long", day: "numeric" };
               // With auto-release off there is no deadline to name, and the countdown wording
@@ -2812,6 +2909,14 @@ export async function expirySweepTask() {
           if (previouslySent) {
             continue;
           }
+          // A page in the trash (or gone) refuses the comment every hour until the seal lapses —
+          // mark the halfway reminder handled instead (as a suppressed one is); the lapse branch
+          // above takes it from there.
+          if ((await deliveryFor(subjectPageId)) !== "deliver") {
+            await setUntil(halfwayKey, { sentAt: now.toISOString(), undeliverable: true }, expiresAt.getTime() + 7 * 86400000);
+            console.warn(`[EXPIRY-SWEEP] halfway reminder for ${kind} ${artifactId} is undeliverable — page ${subjectPageId} is trashed or gone`);
+            continue;
+          }
 
           try {
             const expiryDate = expiresAt.toLocaleDateString("en-US", {
@@ -2856,13 +2961,11 @@ export async function expirySweepTask() {
     if (notifiedCount > 0 || halfwayAlertsSent > 0 || autoReleasedCount > 0) {
       console.warn(`[EXPIRY-SWEEP] ${notifiedCount} expiry notifications, ${halfwayAlertsSent} reminders sent, ${autoReleasedCount} auto-released`);
     }
-    // K1: the owner index behind "edit requests waiting on me" is backfilled hourly.
-    let editreqIndex = { backfilled: 0 };
-    try { editreqIndex = await sweepEditRequestIndex(); } catch (e) { console.error("[EXPIRY-SWEEP] editreq index", e); }
+    // (The K1 edit-request index backfill runs in expirySweepTask, after this, on every path.)
     return {
       statusCode: 200,
       headers: {},
-      body: JSON.stringify({ notifiedCount, fiftyPctReminders: halfwayAlertsSent, autoReleasedCount, editreqIndexBackfilled: editreqIndex.backfilled }),
+      body: JSON.stringify({ notifiedCount, fiftyPctReminders: halfwayAlertsSent, autoReleasedCount }),
     };
   } catch (error) {
     console.error("Error in expiry sweep task:", error);

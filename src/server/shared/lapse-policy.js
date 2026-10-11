@@ -125,3 +125,30 @@ export function lapseSubject(kind, key, value) {
     dedupKey: `expiry-notified-${id}`, halfwayKey: `fifty-percent-reminder-sent-${id}`,
   };
 }
+
+/**
+ * PURE. What the sweep can do about a notice for a seal, given where the seal's PAGE is.
+ *
+ * Observed live on dev (2026-10-11): a seal whose page had been trashed or purged was retried
+ * every hour forever — the notice comment failed with 404 "Could not find container", a failed
+ * post does not advance the counter (H1-F6, rightly, for a TRANSIENT failure), so the countdown
+ * never completed and the seal was never released: 59 failed posts in 4 hours, the same pages
+ * several times per run. A page that is not there is not a transient failure.
+ *
+ * `pageStatus` is the CONFIRMED status (shared/page-status.js vocabulary):
+ *   "missing" — gone for good: both page lookups succeeded and neither returned it, AND a direct
+ *               read of it as a page and as a blog post both answered 404 (the batched lookup only
+ *               knows pages, so a blog post reads as missing there). Nothing left to protect and
+ *               nowhere to post → "release-silently".
+ *   "trashed" — Confluence keeps the page but refuses a comment on it → "undeliverable": the
+ *               reminder is counted as sent (logged) so the normal lapse policy runs to its end,
+ *               and the page can still be restored with its seal intact until then.
+ *   anything else ("current", "archived", "unknown", null) → "deliver", exactly as before: an
+ *               unproven negative never changes what the sweep does.
+ * @returns {"deliver"|"undeliverable"|"release-silently"}
+ */
+export function decideLapseDelivery(pageStatus) {
+  if (pageStatus === "missing") return "release-silently";
+  if (pageStatus === "trashed") return "undeliverable";
+  return "deliver";
+}

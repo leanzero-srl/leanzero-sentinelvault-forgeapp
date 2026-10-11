@@ -5,6 +5,7 @@ import {
   LAPSE_NOTICE_LIMIT_DEFAULT,
   LAPSE_NOTICE_INTERVAL_MS_DEFAULT,
   lapseSubject,
+  decideLapseDelivery,
 } from "../src/server/shared/lapse-policy.js";
 import { eq, ok, report } from "./_assert.mjs";
 
@@ -136,5 +137,14 @@ ok("no owner → skipped", lapseSubject("section", "section-protection-s1", { ..
 ok("a section record without a sectionId is not a seal", lapseSubject("section", "section-protection-s1", { ...sec, sectionId: undefined }) === null);
 ok("null → null", lapseSubject("section", "k", null) === null);
 eq("a section without a title still has a name", lapseSubject("section", "section-protection-s2", { ...sec, sectionId: "s2", sectionTitle: "" }).name, "Sealed section");
+
+// --- 2026-10-11: a seal on a trashed / purged page must not loop forever on a 404 notice -------
+eq("purged page (confirmed missing) → release now, no notice", decideLapseDelivery("missing"), "release-silently");
+eq("trashed page → the notice is undeliverable, the countdown still advances", decideLapseDelivery("trashed"), "undeliverable");
+eq("current page → deliver", decideLapseDelivery("current"), "deliver");
+eq("archived page → deliver (unchanged)", decideLapseDelivery("archived"), "deliver");
+eq("unknown (a lookup failed) → deliver: an unproven negative changes nothing", decideLapseDelivery("unknown"), "deliver");
+eq("no status → deliver", decideLapseDelivery(null), "deliver");
+eq("undefined → deliver", decideLapseDelivery(undefined), "deliver");
 
 report("lapse-policy");
