@@ -222,6 +222,11 @@ export const RESTORE_QUEUE = "jira-restore-queue";
 /** The queue consumer: one restore per event (duplicates are absorbed by the seal's lock). */
 export async function jiraRestoreConsumer(event) {
   const body = event?.body || event?.payload || {};
+  if (body.kind === "issue-deleted") {
+    const r = await handleJiraIssueDeleted({ issue: { id: body.issueId }, atlassianId: body.atlassianId, attempt: body.attempt });
+    console.warn(`[JIRA-SEAL] issue ${body.issueId} deleted (retry ${body.attempt}): ${JSON.stringify(r)}`);
+    return;
+  }
   const attId = normId(body.attachmentId);
   if (!attId) return;
   const r = await restoreWithClaim(attId, body.actorId || null);
@@ -237,6 +242,7 @@ export async function handleJiraIssueDeleted(event) {
   const issueId = normId(event?.issue?.id);
   if (!issueId) return { orphaned: 0 };
   let orphaned = 0;
+  let busy = 0;
   const nowMs = Date.now();
   for (const rec of await sealsOfIssue(issueId)) {
     const r = await withSealLock(rec.attachmentId, async () => {
@@ -250,12 +256,25 @@ export async function handleJiraIssueDeleted(event) {
       await kvs.delete(jiraLostKey(fresh.attachmentId)).catch(() => {});
       return true;
     });
-    if (!r.busy && r.value) {
+    if (r.busy) busy++;
+    else if (r.value) {
       orphaned++;
       await activity(rec, ACTIVITY.ENDED, event?.atlassianId || null, { why: "issue-deleted" });
     }
   }
-  return { orphaned };
+  // A seal whose lock was held (a put-back still running when the issue went) must not be left
+  // un-orphaned: the owner could then never download its copy. Come back for it through the queue
+  // (300 s consumer, so it can wait out the lock); every pass is idempotent.
+  const attempt = Number(event?.attempt) || 0;
+  if (busy && attempt < 10) {
+    try {
+      await new Queue({ key: RESTORE_QUEUE }).push({
+        body: { kind: "issue-deleted", issueId, atlassianId: event?.atlassianId || null, attempt: attempt + 1 },
+        delayInSeconds: 30,
+      });
+    } catch (e) { console.error(`[JIRA-SEAL] issue ${issueId}: could not queue the busy seals' retry:`, e?.message || e); }
+  }
+  return { orphaned, busy };
 }
 
 export async function jiraAttachmentEventTrigger(event) {
