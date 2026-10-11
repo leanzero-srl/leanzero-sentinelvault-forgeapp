@@ -30,9 +30,62 @@ export const COMPONENTS = {
   A: "Activity report",
   G: "Layout and accessibility",
   I: "App permissions and updates",
+  J: "Jira issue attachments",
 };
+// Every Jira row works only once a site admin has connected Jira (8.0.0's action); rows whose note
+// line does not say so carry this sentence in their description.
+const JIRA_ON = "It works once a site admin has connected Jira to Sentinel Vault in Atlassian Administration.";
 
 export const ENTRIES = {
+  // 8.1.0 (2026-10-11)
+  "25bcb0f4e2594cfb": ["A security update to a bundled library", "I", {
+    d: "The prosemirror-view library, which comes with Atlassian's own packages, is updated to 1.42.6 to close a published security advisory (GHSA-c8x8-7fp4-3x9w). Sentinel Vault's screens do not contain the affected code, so nothing about how the app works changes.",
+  }],
+
+  // 8.0.0 (2026-10-11). The security fixes are worded as what a person sees now (this file is public),
+  // never as how protection could be got round before.
+  // Review 2026-10-11: the admins' extend and force release depend on the site setting; the note line
+  // did not say so.
+  "10453af12a85f805": ["Seal the files attached to Jira issues", "J", {
+    d: "Sentinel Vault works on Jira issues. Once a site admin connects Jira (Atlassian Administration, Apps, Sites, your site, Connected apps, Sentinel Vault, then on the Connections tab connect Jira, listed as Jira Apps), every issue has a Sentinel Vault section in its right-hand column listing the issue's files. Anyone who can edit the issue can seal a file for a chosen time, with an optional note; the owner can extend or release it; while the site setting Allow space admins to force-unseal is on, a Jira or project admin can extend it or force-release it with a typed reason.",
+  }],
+  "41aab197332ac705": ["A sealed Jira file deleted by someone else is put back from Sentinel Vault's copy", "J", {
+    d: "Sentinel Vault keeps a copy of every sealed Jira file (files up to 25 MB). If anyone but the owner deletes a file while its seal holds, the copy is uploaded back to the same issue under the same name, the seal moves to it, and a comment on the issue tells the person who deleted it (setting Tell editors when their change is undone, on by default; at most one comment per file every 10 minutes). Jira gives the put-back file a new attachment id, and its author is Sentinel Vault. " + JIRA_ON,
+  }],
+  // The note's loop threshold is left out: the public line says what happens, not how many deletes.
+  "0ee905800f9e746c": ["A sealed Jira file that could not be put back stays listed and is tried again", "J", {
+    d: "If a sealed file cannot be put back (for example a temporary Jira error), the issue's Sentinel Vault section shows it as Not put back with a Put it back button, Sentinel Vault tries again on its own (after an hour, then less often, up to 10 times), and the expiry rules never delete that copy. If a rule or another app deletes the same file again each time it is put back, Sentinel Vault stops putting it back, keeps the copy and says so on the issue; once the cause is fixed, anyone who can edit the issue puts it back with Put it back. " + JIRA_ON,
+  }],
+  "490e7e9399367b13": ["Deleting a Jira issue keeps its sealed files' copies for 30 days", "J", {
+    d: "Deleting an issue cannot destroy a sealed file's copy. It is kept for 30 days and its owner can download it from My work in Confluence. " + JIRA_ON,
+  }],
+  "3976fbfc75fd979c": ["The site's seal settings apply to Jira too", "J", {
+    d: "These site settings apply to Jira too: Default Seal Duration, Seals expire and the overdue reminders, Sign seal actions with an authenticator code, Allow space admins to force-unseal (on Jira it covers Jira and project admins), and the comment switches Page comments that mention people, Tell editors when their change is undone, and Expiry and release notices. Each issue's seal history is shown in its Sentinel Vault section and follows Delete old history. " + JIRA_ON,
+  }],
+  "adb91d44f9e91990": ["REST API operations for Jira seals, and an issue property that lists them", "R", {
+    d: "Three REST content operations, seal-jira-attachment, extend-jira-attachment and release-jira-attachment, and an issue property, sentinel-vault-seals, that lists an issue's live seals without naming anyone. " + JIRA_ON,
+  }],
+  "429df114b278fcfd": ["The 8.0.0 update asks for three Jira permissions", "I", {
+    d: "The 8.0.0 update asks a site admin to approve three new permissions, read:jira-work, write:jira-work and read:jira-user, used only to read an issue's files, put a deleted sealed file back, comment on the issue, keep the sentinel-vault-seals issue property up to date, read people's names, and check Jira permissions. Until it is approved the site stays on the previous version, and nothing happens on Jira until Jira is connected. A site admin approves the update in Confluence administration, Apps, Manage apps.",
+  }],
+  "145c96bc4f8badb6": ["Times read today, yesterday and tomorrow in words", "G"],
+  "8155941a5721bc75": ["Purge, restore and force release are checked against the file's own space", "S", {
+    d: "Purging or restoring a deleted file, and a space admin's force release, are checked against the space the file is in.",
+  }],
+  "09df2c3de21a70f3": ["Clearing someone else's lapsed seal needs its owner, a space admin or an editor of its page", "C", {
+    d: "Clearing someone else's lapsed seal from space settings needs its owner, a space admin of the file's space, or someone who can edit the page the file is on, and it cleans up everything the seal left behind.",
+  }],
+  "4d7af2e2e33c52fd": ["Releasing one of several seals on a page keeps the others protected", "S"],
+  "23792d6675c7c318": ["A new version uploaded by a seal's owner becomes the version the seal protects", "S"],
+  "30ab95dfdfa9e559": ["While an approval holds a page's seals, their owner can no longer end one by moving the file to the trash", "W"],
+  // Review 2026-10-11: with Overdue reminders before release at 0 the site holds lapsed seals, and a
+  // deleted page's seal is held too (its reminder counts as given); the note line did not say so.
+  "81f69068660bb7e8": ["A lapsed seal on a deleted page was retried every hour and never released", "S", {
+    d: "A lapsed seal on a page that was deleted is now released. Before, its reminder could not be posted, so it was retried every hour and the seal was never released. On a site where Overdue reminders before release is 0 (seals are held, not released), the seal stays and its reminder is counted as given, so the hourly retries stop. On a page in the trash, the seal finishes its normal countdown.",
+  }],
+  "f35395a7a5288a69": ["A file deleted from the panel without a seal could not be sealed by someone else later", "S"],
+  "abf9170f4cbcf5c2": ["Edit requests waiting on you were missing when Seals expire was off", "E"],
+
   // 7.1.0 (2026-10-07)
   bb738ac5493e0004: ["File cards no longer cut a file's name short to fit their buttons", "S"],
   "1b1796693e630826": ["The page banner fits a phone, with fewer chips on narrow screens", "P"],
@@ -137,7 +190,8 @@ export const ENTRIES = {
 };
 
 // KNOWN, OPEN bugs a person using Sentinel Vault can meet today. Each was checked against the code
-// at the 7.1.0 release (2026-10-09); `affects` is the version it was confirmed on. Keyed by a stable
+// at the 7.1.0 release (2026-10-09), and again at 8.1.0 (2026-10-11: none of the code behind them
+// changed between 7.1.0 and 8.1.0, so all six stay open); `affects` is the version it was confirmed on. Keyed by a stable
 // slug. `why` (optional) says when the cause is Confluence's, not the app's.
 // Open items that would describe how protection can be got round are NOT written here (this file is
 // public); they go to the owner privately and are fixed instead.
