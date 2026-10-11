@@ -14,7 +14,7 @@ GENERATED from `src/server/shared/release-notes.js` by `scripts/render-release-n
 
 **Seal Jira attachments: a sealed file on a Jira issue is put back if anyone else deletes it**
 
-- New: Sentinel Vault works on Jira issues. Once a site admin connects Jira (Atlassian Administration, Apps, Connected apps, Sentinel Vault, connect Jira), every issue has a Sentinel Vault section in its right-hand column listing the issue's files. Anyone who can edit the issue can seal a file for a chosen time, with an optional note; the owner can extend or release it; a Jira or project admin can extend it or force-release it with a typed reason.
+- New: Sentinel Vault works on Jira issues. Once a site admin connects Jira (Atlassian Administration, Apps, Sites, your site, Connected apps, Sentinel Vault, then on the Connections tab connect Jira, listed as Jira Apps), every issue has a Sentinel Vault section in its right-hand column listing the issue's files. Anyone who can edit the issue can seal a file for a chosen time, with an optional note; the owner can extend or release it; a Jira or project admin can extend it or force-release it with a typed reason.
 - New: Sentinel Vault keeps a copy of every sealed Jira file (files up to 25 MB). If anyone but the owner deletes a file while its seal holds, the copy is uploaded back to the same issue under the same name, the seal moves to it, and a comment on the issue tells the person who deleted it (setting Tell editors when their change is undone, on by default; at most one comment per file every 10 minutes). Jira gives the put-back file a new attachment id, and its author is Sentinel Vault.
 - New: if a sealed file cannot be put back (for example a temporary Jira error), the issue's section shows it as Not put back with a Put it back button, Sentinel Vault retries on its own (after an hour, then less often, up to 10 times), and the expiry rules never delete that copy. If something deletes the same file again each time it is put back, Sentinel Vault stops after three times within an hour and says so on the issue.
 - New: deleting an issue cannot destroy a sealed file's copy. It is kept for 30 days and its owner can download it from My work in Confluence.
@@ -33,7 +33,7 @@ Fixed:
 - A file deleted from the panel without a seal no longer blocks someone else from sealing it later, and its permanent deletion no longer posts a violation notice.
 - Edit requests waiting on you are listed even on sites where Seals expire is off, and space settings no longer show a file as sealed when it was only moved to the trash from the panel and never sealed.
 
-**Do this:** A site admin approves the update in Confluence administration, Apps, Manage apps. To use it on Jira, connect Jira to Sentinel Vault under Atlassian Administration, Apps, Connected apps.
+**Do this:** A site admin approves the update in Confluence administration, Apps, Manage apps. To use it on Jira, connect it in Atlassian Administration: Apps, Sites, your site, Connected apps, Sentinel Vault, and on the Connections tab connect Jira (listed as Jira Apps).
 
 ## 7.1.0 — 2026-10-07
 
