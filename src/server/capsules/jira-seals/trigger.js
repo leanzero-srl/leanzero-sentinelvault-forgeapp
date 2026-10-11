@@ -21,13 +21,14 @@ import { kvs, WhereConditions } from "@forge/kvs";
 import { Queue } from "@forge/events";
 
 import {
-  ACTIVITY, JIRA_INTENT_PREFIX, JIRA_LOST_PREFIX, JIRA_ORPHAN_KEEP_MS, commentRefusalIsFinal, decideDeletion, isExpired,
+  ACTIVITY, JIRA_COPY_GC_PREFIX, JIRA_INTENT_PREFIX, JIRA_LOST_PREFIX, JIRA_SWEEP_CURSOR_KEY, JIRA_ORPHAN_KEEP_MS, commentRefusalIsFinal, decideDeletion, isExpired,
   jiraIntentKey, jiraIssueIndexKey, jiraLapseKey, jiraLostKey, jiraNoticeKey, jiraSealKey, lapseCommentAdf, loopTripped,
   movedRecord, nextRetryAt, noticeDue, normId, restoreCommentAdf, restoreNoticePlan, sealIdOf,
 } from "./logic.js";
 import { acquireLock, releaseLock } from "../../shared/kvs-lock.js";
 import {
-  allSeals, appAccountId, dropSeal, getSeal, postIssueComment, putSeal, readCopy, readIssue, sealsOfIssue, syncIssueProperty, uploadToIssue,
+  appAccountId, deleteCopy, dropSeal, getSeal, postIssueComment, putSeal, readCopy, readIssue, sealsOfIssue, syncIssueProperty, uploadToIssue,
+  sealPage,
 } from "./store.js";
 import { recordActivity } from "../../infra/activity-log.js";
 import { resolveBulletinToggles } from "../../shared/bulletin-flags.js";
@@ -294,7 +295,7 @@ async function* scanPrefix(prefix, maxPages = 20) {
  *      whose issue is gone is never released by the lapse policy.
  */
 export async function jiraSealSweep({ budgetMs = 100000 } = {}) {
-  const out = { retried: 0, restored: 0, orphansEnded: 0, checked: 0, reminded: 0, released: 0 };
+  const out = { retried: 0, restored: 0, orphansEnded: 0, checked: 0, reminded: 0, released: 0, copiesDeleted: 0 };
   const t0 = Date.now();
   const left = () => Date.now() - t0 < budgetMs;
   const lock = token();
@@ -328,37 +329,39 @@ export async function jiraSealSweep({ budgetMs = 100000 } = {}) {
     const { limit, intervalMs } = resolveLapsePolicy(settings);
     const flags = await resolveBulletinToggles(settings);
     const noticeOn = flags.ENABLE_NATIVE_NOTIFICATIONS && flags.ENABLE_EXPIRY_NOTICE;
-    for await (const { key } of allSeals()) {
-      if (!left()) break;
+    // The seal list is read a page at a time from where the last run stopped (a site with more
+    // seals than one run's budget is covered over several runs instead of always from the top).
+    // A page cut short by the budget is read again next time: every step below is idempotent.
+    const visit = async (key) => {
       const rec = await kvs.get(key);
-      if (!rec?.lockedBy) continue;
+      if (!rec?.lockedBy) return;
       if (rec.issueDeletedAt) {
         if (Date.parse(rec.orphanUntil) <= now) {
           const r = await withSealLock(rec.attachmentId, () => dropSeal(rec));
           if (!r.busy && r.value?.ok) out.orphansEnded++;
         }
-        continue;
+        return;
       }
-      if (!lapseOn || !isExpired(rec, now)) continue;
-      if (await kvs.get(jiraLostKey(rec.attachmentId))) continue; // its file is not on the issue
+      if (!lapseOn || !isExpired(rec, now)) return;
+      if (await kvs.get(jiraLostKey(rec.attachmentId))) return; // its file is not on the issue
       out.checked++;
       const sid = sealIdOf(rec);
       const prior = await kvs.get(jiraLapseKey(sid));
       const priorCount = priorNoticeCount(prior);
       const decision = decideLapseAction({ priorCount, lastSentMs: Date.parse(prior?.sentAt || "") || 0, nowMs: now, limit, intervalMs });
-      if (decision.action === "wait") continue;
+      if (decision.action === "wait") return;
       if (decision.action === "release") {
         const r = await withSealLock(rec.attachmentId, async () => {
           const fresh = await getSeal(rec.attachmentId);
           if (!fresh?.lockedBy || !isExpired(fresh, Date.now())) return { ok: false }; // extended meanwhile
           return dropSeal(fresh);
         });
-        if (r.busy || !r.value?.ok) continue;
+        if (r.busy || !r.value?.ok) return;
         await syncIssueProperty(rec.issueId, { removeId: rec.attachmentId });
         out.released++;
         await activity(rec, ACTIVITY.AUTO_RELEASED, null, { noticeCount: priorCount, noticeLimit: limit });
         if (noticeOn) await postIssueComment(rec.issueId, lapseCommentAdf({ ownerId: rec.lockedBy, fileName: rec.attachmentName, noticeLimit: limit, released: true }));
-        continue;
+        return;
       }
       // A refusal Jira will repeat (no permission to comment, issue not editable, issue gone: 4xx)
       // counts like comments switched off — the countdown advances. Only a 5xx / 429 / network
@@ -377,12 +380,51 @@ export async function jiraSealSweep({ budgetMs = 100000 } = {}) {
           sentAt: new Date(now).toISOString(), count: decision.noticeNumber, attachmentId: rec.attachmentId,
         }, now + (Math.max(limit, 1) + 1) * intervalMs + 7 * 86400000);
       }
+    };
+    let cursor = (await kvs.get(JIRA_SWEEP_CURSOR_KEY).catch(() => null))?.cursor || undefined;
+    for (let pages = 0; pages < 500 && left(); pages++) {
+      let page;
+      try { page = await sealPage(cursor); }
+      catch (e) {
+        if (!cursor) throw e;
+        console.warn("[JIRA-SEAL] sweep cursor refused, starting from the top:", e?.message || e);
+        cursor = undefined;
+        continue;
+      }
+      let whole = true;
+      for (const { key } of page.results || []) {
+        if (!left()) { whole = false; break; }
+        await visit(key);
+      }
+      if (!whole) break; // keep `cursor` at this page's start
+      cursor = page.nextCursor || undefined;
+      if (!cursor) break;
     }
+    if (cursor) await kvs.set(JIRA_SWEEP_CURSOR_KEY, { cursor, at: new Date().toISOString() }).catch(() => {});
+    else await kvs.delete(JIRA_SWEEP_CURSOR_KEY).catch(() => {});
+
+    // 4. copies whose delete failed: retried, never one a live seal still uses (under its lock).
+    for await (const { key } of scanPrefix(JIRA_COPY_GC_PREFIX)) {
+      if (!left()) break;
+      const row = await kvs.get(key);
+      if (!row?.copyKey) { await kvs.delete(key).catch(() => {}); continue; }
+      const origId = String(row.copyKey).replace(/^jira-seal\//, "");
+      const r = await withSealLock(origId, async () => {
+        const live = await getSeal(origId);
+        if (live?.lockedBy && live.copyKey === row.copyKey) {
+          await kvs.delete(key).catch(() => {}); // the copy is a live seal's again: never delete it
+          return "kept";
+        }
+        return (await deleteCopy(row.copyKey)) ? "deleted" : "failed";
+      });
+      if (!r.busy && r.value === "deleted") out.copiesDeleted++;
+    }
+
   } catch (e) {
     console.error("[JIRA-SEAL] sweep failed:", e);
   } finally {
     await releaseLock("jira-seal-sweep-lock", lock);
   }
-  if (out.retried || out.checked || out.orphansEnded) console.warn(`[JIRA-SEAL] sweep: ${JSON.stringify(out)}`);
+  if (out.retried || out.checked || out.orphansEnded || out.copiesDeleted) console.warn(`[JIRA-SEAL] sweep: ${JSON.stringify(out)}`);
   return out;
 }
