@@ -50,7 +50,17 @@ export const SITE_ACTIVITY_CATEGORIES = Object.freeze([
     "backup.location-set", "backup.deleted", "backup.automations-resumed",
   ]) },
 ]);
-const ALL_CATEGORIES = [...ACTIVITY_CATEGORIES, ...SITE_ACTIVITY_CATEGORIES];
+/**
+ * 8.0 — Jira attachment seals. Written to the issue and project legs only (capsules/jira-seals), so,
+ * like the site categories, they never appear as a chip on a Confluence page or space report.
+ */
+export const JIRA_ACTIVITY_CATEGORIES = Object.freeze([
+  { id: "jira", label: "Jira files", types: Object.freeze([
+    "jira.sealed", "jira.released", "jira.forced", "jira.extended", "jira.restored", "jira.restore-failed",
+    "jira.auto-released", "jira.ended",
+  ]) },
+]);
+const ALL_CATEGORIES = [...ACTIVITY_CATEGORIES, ...SITE_ACTIVITY_CATEGORIES, ...JIRA_ACTIVITY_CATEGORIES];
 
 /** Every known type, flat, in category order. */
 export const ACTIVITY_TYPES = Object.freeze(ALL_CATEGORIES.flatMap((c) => c.types));
@@ -418,6 +428,31 @@ export function formatActivity(entry) {
       return { ...base, label: "Backup deleted", glyph: "unlock", tone: "caution", sentence: `${who} deleted the backup`, detail: "" };
     case "backup.automations-resumed":
       return { ...base, label: "Automations back on", glyph: "clock", tone: "info", sentence: `${who} turned ${Array.isArray(d.resumed) ? d.resumed.length : "the"} paused automation${Array.isArray(d.resumed) && d.resumed.length === 1 ? "" : "s"} back on`, detail: d.failed ? `${d.failed} could not be turned on` : "" };
+
+    // ── Jira files (8.0) ──
+    case "jira.sealed":
+      return { ...base, label: "File sealed", glyph: "lock", tone: "seal", sentence: `${who} sealed ${file()}` };
+    case "jira.released":
+      return { ...base, label: "File released", glyph: "unlock", tone: "neutral", sentence: `${who} released the seal on ${file()}` };
+    case "jira.forced":
+      return { ...base, label: "Seal removed by an admin", glyph: "unlock", tone: "caution",
+        sentence: `${who} removed the seal on ${file()} as an admin`, detail: d.reason ? `reason: ${d.reason}` : "" };
+    case "jira.extended":
+      return { ...base, label: "Seal extended", glyph: "clock", tone: "seal",
+        sentence: d.expiresAt ? `Seal on ${file()} extended to ${formatAbsolute(d.expiresAt)} by ${who}` : `Seal on ${file()} extended by ${who}` };
+    case "jira.restored":
+      return { ...base, label: "Deleted file put back", glyph: "undo", tone: "caution",
+        sentence: `${who} deleted sealed file ${file()} — ${APP_NAME} put it back` };
+    case "jira.restore-failed":
+      return { ...base, label: "Restore failed", glyph: "alert", tone: "critical",
+        sentence: `${who} deleted sealed file ${file()} and ${APP_NAME} could not put it back`, detail: d.error ? String(d.error) : "" };
+    case "jira.auto-released":
+      return { ...base, label: "Seal lapsed", glyph: "hourglass", tone: "neutral", sentence: `Seal on ${file()} lapsed and was released automatically` };
+    case "jira.ended":
+      return { ...base, label: "Seal ended", glyph: "trash", tone: "neutral",
+        sentence: d.why === "owner-deleted" ? `${who} deleted their own sealed file ${file()}, which ended the seal`
+          : d.why === "issue-deleted" ? `The issue holding ${file()} was deleted, so its seal ended`
+            : `The seal on ${file()} ended` };
 
     // ── Validation ──
     case "validation.reverted": {
