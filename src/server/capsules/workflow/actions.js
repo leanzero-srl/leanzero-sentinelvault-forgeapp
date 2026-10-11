@@ -126,7 +126,8 @@ const getWorkflow = async (req) => {
   // Flag which available transitions require approval (enforce state + approvers
   // configured) so the ribbon can say "Request approval" instead of "Move to".
   if (result?.assigned && Array.isArray(result.available)) {
-    const settings = await getSpaceWorkflowSettings(result.record?.spaceKey || spaceKeyOf(req));
+    // The PAGE's space settings — the caller's payload/context space describes somewhere else.
+    const settings = await getSpaceWorkflowSettings(result.record?.spaceKey || await resolvePageSpaceKey(pageId));
     const hasApprovers = !!extractApprovalConfig(settings.approval);
     result.available = result.available.map((s) => ({ ...s, requiresApproval: !!(s.enforce && hasApprovers) }));
     // A4: the ribbon's "changed since approval" line says what happens to the edit; that is the
@@ -224,7 +225,10 @@ export const requestTransition = async (req) => {
   // space Y). A transition requires the page to already have a workflow.
   const current = await readPageWorkflow(pageId);
   if (!current) return { success: false, reason: "Page has no workflow assigned" };
-  const spaceKey = current.spaceKey || spaceKeyOf(req);
+  // A record without a spaceKey falls back to the PAGE's own space — never spaceKeyOf(req), which
+  // is the payload/context and reopened the confused deputy above for exactly those records
+  // (the steward gates below for leaving or entering an enforce state read this key).
+  const spaceKey = current.spaceKey || await resolvePageSpaceKey(pageId);
 
   // SV-SEC-1. The space was already derived correctly (above), but nothing checked the CALLER
   // against the page at all — so any logged-in user could move any workflow-assigned page to any
