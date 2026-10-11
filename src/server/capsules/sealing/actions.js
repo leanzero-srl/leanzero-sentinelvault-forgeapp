@@ -1194,7 +1194,8 @@ export const restoreSealedArtifact = async (req) => {
   // same mistake one step removed: it names where the caller stands, not where the file lives.
   // The trashed attachment's v2 body carries its page (attachment-status.js decision table), and
   // the seal record names the page it was sealed on — only the object decides.
-  const pageId = probeData.pageId || sealRecord?.contentId || null;
+  // (A blog post's attachment names its container as blogPostId — the context used to cover it.)
+  const pageId = probeData.pageId || probeData.blogPostId || sealRecord?.contentId || null;
 
   if (!pageId) {
     return { success: false, reason: "Cannot determine parent page — unable to restore" };
@@ -1283,7 +1284,7 @@ export const purgeSealRecord = async (req) => {
   }
   // The attachment's own container first: a trashedOnly record's contentId can be a display hint
   // written from the deleter's context when the attachment read failed (panels deleteArtifact).
-  const objectPageId = probeData?.pageId || sealRecord?.contentId || null;
+  const objectPageId = probeData?.pageId || probeData?.blogPostId || sealRecord?.contentId || null;
 
   // audit C2: the owner/steward gate now covers the NO-SEAL path too. Purge is a PERMANENT,
   // unrecoverable delete (`?purge=true` below). Previously this block was wrapped in
