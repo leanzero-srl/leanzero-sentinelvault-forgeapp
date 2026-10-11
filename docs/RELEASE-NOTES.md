@@ -8,6 +8,8 @@ GENERATED from `src/server/shared/release-notes.js` by `scripts/render-release-n
 
 - Changed: prosemirror-view, a library that comes with Atlassian's own packages, is updated to 1.42.6 to close a published security advisory (GHSA-c8x8-7fp4-3x9w). Sentinel Vault's screens do not contain the affected code, so nothing about how the app works changes.
 
+**Do this:** Nothing to do if your site already runs 8.0.0. A site on an earlier version gets this update after a site admin approves the 8.0.0 update in Confluence administration, Apps, Manage apps.
+
 ## 8.0.0 — 2026-10-11
 
 **Seal Jira attachments: a sealed file on a Jira issue is put back if anyone else deletes it**
