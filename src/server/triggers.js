@@ -11,7 +11,7 @@ import {
 
 import { recordDispatch, postDocFootnote } from "./capsules/bulletins/logic.js";
 import { resolveBulletinToggles } from "./shared/bulletin-flags.js";
-import { touchSealTimestamp, removeSealContentProp } from "./capsules/sealing/logic.js";
+import { touchSealTimestamp, releaseSealContentPropIfLast } from "./capsules/sealing/logic.js";
 import { releaseSeal } from "./capsules/sealing/release.js";
 import { releaseSectionSeal } from "./capsules/section-seals/release.js"; // SEC-7 (d): the sweep hands lapsed sections back too
 import { adoptInsertedSection, insertIntentKey } from "./capsules/section-seals/adopt.js"; // SEC-4 (a): seal on insert
@@ -2197,41 +2197,15 @@ export async function handleSealedArtifactDeleted(sealRecord, artifactId, conten
 
   // Remove content property — ONLY when this was the page's last live seal (vet F2: the
   // `protection-` property is ONE per page and gates the media fast path; removing it while
-  // other seals still point at this page silently disables their protection).
-  if (pageId) {
-    try {
-      if (!(await pageHasOtherLiveSeals(pageId, artifactId))) {
-        await removeSealContentProp(pageId);
-      } else {
-        console.warn(`[SEAL-DELETED] keeping the protection- content property on ${pageId} — other seals still target this page`);
-      }
-    } catch (_) { /* best effort */ }
-  }
+  // other seals still point at this page silently disables their protection). The check used to
+  // be a private copy here; it is now the one every remover shares (sealing/logic.js).
+  if (pageId) await releaseSealContentPropIfLast(pageId, artifactId);
 
   // Clear any Edit Requests / grants tied to this seal
   await sweepEditAccess(artifactId);
 
   await touchSealTimestamp();
   console.warn(`[SEAL-DELETED] Cleaned up seal records for ${artifactName} (${artifactId})`);
-}
-
-// Vet F2 helper: does any OTHER protection record still target this page? Excludes the record
-// being deleted by id (the KVS query is eventually consistent and may still return it) and
-// trashedOnly tracking records (S7 — they are not seals and don't need the fast-path gate).
-async function pageHasOtherLiveSeals(pageId, excludeArtifactId) {
-  let query = kvs.query().where("key", WhereConditions.beginsWith("protection-")).limit(100);
-  let iters = 0;
-  do {
-    const { results, nextCursor } = await query.getMany();
-    for (const entry of results || []) {
-      const v = entry.value;
-      if (v?.contentId === pageId && v?.lockedBy && !v?.trashedOnly && v?.attachmentId !== excludeArtifactId) {
-        return true;
-      }
-    }
-    if (!nextCursor || ++iters >= 50) return false;
-    query = kvs.query().where("key", WhereConditions.beginsWith("protection-")).limit(100).cursor(nextCursor);
-  } while (true);
 }
 
 // --- Shared violation notification logic ---

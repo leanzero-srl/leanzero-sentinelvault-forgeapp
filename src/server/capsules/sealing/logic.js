@@ -1,9 +1,10 @@
-import { kvs } from "@forge/kvs";
+import { kvs, WhereConditions } from "@forge/kvs";
 import { asApp, route } from "@forge/api";
 import { authorizeSteward } from "../../shared/steward-checks.js";
 import { BASELINE_HOLD_SPAN, sanitizeHoldDuration } from "../../shared/baseline.js";
 import { notifyWatchers } from "../bulletins/logic.js";
 import { sealPropertyValue } from "./seal-property.js";
+import { isOtherSealOnPage } from "../../shared/live-seal.js";
 
 /**
  * Resolve the effective seal hold period, in seconds, for a space.
@@ -181,6 +182,60 @@ export async function removeSealContentProp(contentId) {
     }
   } catch (error) {
     console.error(`[SEAL-PROPERTY] Error deleting seal property:`, error);
+  }
+}
+
+/**
+ * Does any OTHER attachment seal still target this page?
+ *
+ * The `protection-` content property is ONE per page and gates the media fast path
+ * (triggers.js collectMediaSealsForPage), and the inline panel is one per page as well. This
+ * used to live in triggers.js (vet F2) while releaseSeal carried its own first-100-rows copy and
+ * three other removers did not ask at all — so releasing one seal switched page-body protection
+ * off for every other seal on the page. One copy now, cursor-paginated (a single limit(100)
+ * misses the page's seals once the site holds more than 100), and every remover asks it.
+ * What counts is the pure rule in shared/live-seal.js (isOtherSealOnPage).
+ *
+ * Fails toward TRUE (keep the property / panel): a scan that throws, or one that hits the
+ * iteration cap without finishing, has not proven the page is empty.
+ */
+export async function pageHasOtherLiveSeals(pageId, excludeAttachmentId) {
+  if (!pageId) return false;
+  try {
+    let query = kvs.query().where("key", WhereConditions.beginsWith("protection-")).limit(100);
+    for (let iters = 0; iters < 50; iters++) {
+      const { results, nextCursor } = await query.getMany();
+      if ((results || []).some((row) => isOtherSealOnPage(row, pageId, excludeAttachmentId))) return true;
+      if (!nextCursor) return false;
+      query = kvs.query().where("key", WhereConditions.beginsWith("protection-")).limit(100).cursor(nextCursor);
+    }
+  } catch (e) {
+    console.warn(`[SEAL-PROPERTY] other-seal scan for page ${pageId} failed — keeping the property:`, e?.message || e);
+  }
+  return true;
+}
+
+/**
+ * Remove the page's `protection-` content property ONLY when the seal on `excludeAttachmentId`
+ * was the page's last one. The single door every seal remover goes through (releaseSeal,
+ * purgeAllSealState, the permanent-delete handler). Best effort; never throws.
+ * `hasOthers`: the caller's own answer from pageHasOtherLiveSeals for the same page and
+ * exclusion (releaseSeal needs it for the panel too) — saves a second full scan.
+ * @returns {Promise<boolean>} true when the property was removed
+ */
+export async function releaseSealContentPropIfLast(pageId, excludeAttachmentId, { hasOthers } = {}) {
+  if (!pageId) return false;
+  try {
+    const others = typeof hasOthers === "boolean" ? hasOthers : await pageHasOtherLiveSeals(pageId, excludeAttachmentId);
+    if (others) {
+      console.warn(`[SEAL-PROPERTY] keeping the protection- property on ${pageId} — other seals still target this page`);
+      return false;
+    }
+    await removeSealContentProp(pageId);
+    return true;
+  } catch (e) {
+    console.warn(`[SEAL-PROPERTY] conditional removal on ${pageId} failed:`, e?.message || e);
+    return false;
   }
 }
 
