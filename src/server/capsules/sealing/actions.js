@@ -38,6 +38,7 @@ import { refreshByline, writeBylineFor } from "../page-details/byline.js"; // 5.
 // the viewer's waiting-on-me numbers for THIS page and the first seal the viewer does not own.
 import { getClassificationProvider, classificationActiveForPage } from "../classification/provider.js";
 import { heldRefusal, isWorkflowHeld } from "../../shared/seal-authority.js"; // SEC-2
+import { isLiveAttachmentSeal } from "../../shared/live-seal.js"; // a trashedOnly stub is not a seal
 import { getActiveEditGrant, getActiveSectionEditGrant, listPendingRequestsForOwner, listPendingSectionRequestsForOwner, resolveEditCooldownMs } from "../editreq/logic.js";
 import { retryAtFor } from "../../shared/edit-cooldown.js"; // SEC-8: the ribbon's declined state
 import { listMyApprovals, describeWorkflowForPage } from "../workflow/approvals.js";
@@ -207,11 +208,23 @@ const sealArtifact = async (req) => {
   const operatorAccountId = req.context.accountId;
 
   // Guard: reject if already sealed by a DIFFERENT user — but treat an EXPIRED seal as
-  // absent (SV-M8). The expiry sweep only notifies and never deletes, so an expired-but-
-  // unswept seal would otherwise block a legitimate re-seal until the sweep runs.
+  // absent (SV-M8). The expiry sweep reminds the owner and releases the seal only after its
+  // reminders run out (F5), so an expired-but-unreleased seal would otherwise block a
+  // legitimate re-seal for days.
+  //
+  // An S7 trashedOnly TRACKING record is absent too: it is not a seal (its lockedBy is whoever
+  // trashed the file, and it has no expiry), so a file restored outside the app — the record left
+  // behind — used to read as "already sealed by another user" forever.
+  //
+  // Nothing is torn down HERE: the replaced record is only remembered, and its teardown runs
+  // after the permission gate below. Deleting first let a caller who may not edit the file wipe
+  // someone's lapsed seal (and its edit access) and only then be refused.
   const existingSeal = await kvs.get(`protection-${attachmentId}`);
+  let staleSeal = null;
   let staleRealmIndexId = null;
-  if (existingSeal && existingSeal.lockedBy && existingSeal.lockedBy !== operatorAccountId) {
+  if (existingSeal?.trashedOnly) {
+    staleSeal = existingSeal;
+  } else if (isLiveAttachmentSeal(existingSeal) && existingSeal.lockedBy !== operatorAccountId) {
     const expired = existingSeal.expiresAt && new Date(existingSeal.expiresAt) < new Date();
     if (!expired) {
       return {
@@ -219,16 +232,7 @@ const sealArtifact = async (req) => {
         reason: "Attachment is already sealed by another user",
       };
     }
-    // Expired and not yet swept — clear it AND sweep the prior owner's edit-access records (it55;
-    // parity with every other teardown — unseal/purge). editreq records carry no TTL, so without
-    // this a stale denied/pending edit-request from the old owner leaks into the new owner's fresh
-    // seal (blocking a requester, or surfacing a phantom request the new owner could approve).
-    await kvs.delete(`protection-${attachmentId}`).catch(() => {});
-    await sweepEditAccess(attachmentId).catch(() => {});
-    // Hunt H2-F5b: remember the old seal's space so its index leg can be dropped below once
-    // the NEW seal's space is resolved — otherwise a stale row (previous owner's name/expiry)
-    // survives whenever the new seal lands in a different space or resolves no space at all.
-    staleRealmIndexId = existingSeal.spaceId || null;
+    staleSeal = existingSeal;
   }
 
   let realmKey =
@@ -324,6 +328,19 @@ const sealArtifact = async (req) => {
     const p = await workflowPrivilegeForPage(contentId, operatorAccountId).catch(() => ({ enforced: false }));
     if (p.enforced && !p.privileged) return { success: false, reason: ENFORCED_SEAL_REFUSAL };
   }
+  // The caller has passed every gate — only now is the record this seal replaces torn down.
+  if (staleSeal) {
+    // Sweep the prior owner's edit-access records (it55; parity with every other teardown —
+    // unseal/purge). editreq records carry no TTL, so without this a stale denied/pending
+    // edit-request from the old owner leaks into the new owner's fresh seal (blocking a
+    // requester, or surfacing a phantom request the new owner could approve). The record itself
+    // is overwritten by the write below.
+    await sweepEditAccess(attachmentId).catch(() => {});
+    // Hunt H2-F5b: remember the old seal's space so its index leg can be dropped below once
+    // the NEW seal's space is resolved — otherwise a stale row (previous owner's name/expiry)
+    // survives whenever the new seal lands in a different space or resolves no space at all.
+    staleRealmIndexId = staleSeal.spaceId || null;
+  }
   // No panel context (the config API consumer, the hook), or a file that lives on another page
   // than the one the caller stands on: the space is a property of the page the file LIVES on,
   // derived from the object itself — never from a caller-supplied context.
@@ -399,12 +416,20 @@ const sealArtifact = async (req) => {
     note: typeof req.payload.note === "string" && req.payload.note.trim() ? req.payload.note.trim().slice(0, 300) : null, // 5.0 seal action: the optional note
   };
 
-  // Hunt H2-F5b: the expired-other-user re-seal above removed `protection-{id}` but not the
-  // old space index leg — drop it now that the new space is known, unless the new index write
-  // below will overwrite the very same key.
+  // Hunt H2-F5b: the write below replaces the old record (an expired seal of another user, or a
+  // trashedOnly stub) but not its space index leg — drop it now that the new space is known,
+  // unless the new index write below will overwrite the very same key.
   if (staleRealmIndexId && String(staleRealmIndexId) !== String(realmId || "")) {
     await kvs.delete(`space-protection-${staleRealmIndexId}-${attachmentId}`).catch(() => {});
   }
+
+  // A fresh seal starts a fresh lapse cycle. The sweep's counters are keyed by the attachment, not
+  // by the seal: left from a previous seal on the same file (a lapsed one this replaces, or the
+  // owner's own lapsed seal re-sealed), they would start the new seal's countdown part-way
+  // through — fewer reminders than the policy promises before the auto-release.
+  await kvs.delete(`expiry-notified-${attachmentId}`).catch(() => {});
+  await kvs.delete(`fifty-percent-reminder-sent-${attachmentId}`).catch(() => {});
+  await kvs.delete(`reminder-sent-${attachmentId}`).catch(() => {});
 
   // Store seal record
   await kvs.set(`protection-${attachmentId}`, sealPayload);
