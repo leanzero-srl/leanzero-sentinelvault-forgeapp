@@ -1,6 +1,6 @@
-import { kvs, WhereConditions } from "@forge/kvs";
+import { kvs } from "@forge/kvs";
 
-import { removeSealContentProp, touchSealTimestamp } from "./logic.js";
+import { pageHasOtherLiveSeals, releaseSealContentPropIfLast, touchSealTimestamp } from "./logic.js";
 import { notifyWatchers, sweepWatchers } from "../bulletins/logic.js";
 import { sweepEditAccess } from "../editreq/logic.js";
 import { triggerPanelEmbed, removePanelNode } from "../../infra/doc-surgery.js";
@@ -20,7 +20,9 @@ import { listSectionSealRecordsForPage } from "../section-seals/logic.js";
  * What a seal actually consists of, all of which has to go:
  *   protection-{id}                          the seal itself
  *   space-protection-{spaceId}-{id}          the space index row the consoles list from
- *   the `protection-` page content property   the CQL/fast-path marker
+ *   the `protection-` page content property   the CQL/fast-path marker — ONE per page, so it is
+ *                                             removed only with the page's LAST seal
+ *                                             (releaseSealContentPropIfLast)
  *   notify-request-{id}-*                     watchers waiting for the release
  *   edit-request-* / edit-grant-*             the seal's edit-access sidecars
  *   the inline panel node                     removed when the page has no seals left
@@ -68,9 +70,14 @@ export async function releaseSeal(attachmentId, sealRecord, { fallbackSpaceKey =
     });
   }
 
+  // The page property and the panel are ONE per page: both stay while any other seal still
+  // targets it (the property gates the media fast path for those seals). One paginated scan
+  // answers both — pageHasOtherLiveSeals fails toward "yes", i.e. toward keeping them.
+  const otherSealsOnPage = sealRecord.contentId
+    ? await pageHasOtherLiveSeals(sealRecord.contentId, attachmentId)
+    : false;
   if (sealRecord.contentId) {
-    await removeSealContentProp(sealRecord.contentId).catch((e) =>
-      console.warn("[RELEASE] content property removal failed:", e));
+    await releaseSealContentPropIfLast(sealRecord.contentId, attachmentId, { hasOthers: otherSealsOnPage });
   }
 
   if (sealRecord.spaceId) {
@@ -103,21 +110,12 @@ export async function releaseSeal(attachmentId, sealRecord, { fallbackSpaceKey =
   if (sealRecord.contentId) {
     try {
       const spaceKeyForPanel = sealRecord.spaceKey || fallbackSpaceKey;
-      const { results: remainingSeals } = await kvs
-        .query()
-        .where("key", WhereConditions.beginsWith("protection-"))
-        .limit(100)
-        .getMany();
-      // Mirrors pageHasOtherLiveSeals in triggers.js: exclude the record we just deleted
-      // (kvs.query is eventually consistent and will happily still return it), skip S7
-      // trashedOnly tracking records, and require a real owner.
-      const pageHasSeals = (remainingSeals || []).some(
-        ({ value }) => value
-          && value.contentId === sealRecord.contentId
-          && value.lockedBy
-          && !value.trashedOnly
-          && value.attachmentId !== attachmentId,
-      );
+      // The shared, cursor-paginated pageHasOtherLiveSeals (computed above): it excludes the
+      // record we just deleted (kvs.query is eventually consistent and will happily still return
+      // it), skips S7 trashedOnly tracking records and requires a real owner. This used to read
+      // only the first 100 protection-* rows of the whole site, so on a busy site the panel was
+      // removed from a page that still carried seals.
+      const pageHasSeals = otherSealsOnPage;
 
       // Tester report 2026-09-19: releasing the last ATTACHMENT seal removed the panel although a
       // SECTION was still sealed — and the Sealed Sections group lives only inside that panel.
