@@ -113,5 +113,6 @@ was deliberately left out.
 ## Installing
 
 Production admins accept the 8.0 permissions on Confluence, then connect Jira under Atlassian
-Administration → Apps → Connected apps (Sentinel Vault → Connect Jira). Without that step nothing
+Administration → Apps → Sites → the site → Connected apps → Sentinel Vault → Connections tab, where Jira is
+listed as "Jira Apps" next to Confluence (Required); checked on leanzero-demo 2026-10-11. Without that step nothing
 Jira-side runs and nothing else changes.
