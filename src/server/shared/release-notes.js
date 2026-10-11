@@ -51,7 +51,7 @@ export const RELEASE_NOTES = Object.freeze([
       "Releasing one of several seals on a page no longer turns off protection for the others on the same page.",
       "A new version uploaded by a seal's owner is now the version the seal protects. Before, the next unauthorised change was undone back to the original file, losing the owner's update.",
       "While a page's approval holds its seals, the owner can no longer end a seal by moving the file to the trash.",
-      "A lapsed seal on a page that was deleted is now released. Before, its reminder could not be posted, so it was retried every hour and the seal was never released. On a page in the trash, the seal now finishes its normal countdown.",
+      "A lapsed seal on a page that was deleted is now released, unless Overdue reminders before release is set to 0, which keeps seals. Before, its reminder could not be posted, so it was retried every hour and the seal was never released. On a page in the trash, the seal now finishes its normal countdown.",
       "A file deleted from the panel without a seal no longer blocks someone else from sealing it later, and its permanent deletion no longer posts a violation notice.",
       "Edit requests waiting on you are listed even on sites where Seals expire is off, and space settings no longer show a file as sealed when it was only moved to the trash from the panel and never sealed.",
     ],

@@ -46,7 +46,7 @@ was deliberately left out.
      person lets it go: the owner, or an admin with a reason.
    - Delete-loop breaker: a fourth restore of one seal inside an hour is not made (an Automation
      rule that deletes a file type would otherwise loop for ever); the seal is "lost / loop" and the
-     owner puts it back by hand after fixing the cause.
+     file is put back by hand (Put it back, open to anyone who can edit the issue) after fixing the cause.
    - The issue itself is deleted → nothing can be restored (Jira deletes the issue's attachments
      without one event each); the seals become orphans: record and copy are kept 30 days, the owner
      sees them on My work and can download the copy (a short-lived Object Store link), then the
