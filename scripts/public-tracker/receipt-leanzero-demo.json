@@ -14,7 +14,8 @@
     "My work": "10126",
     "Activity report": "10127",
     "Layout and accessibility": "10128",
-    "App permissions and updates": "10129"
+    "App permissions and updates": "10129",
+    "Jira issue attachments": "10178"
   },
   "versions": {
     "6.4.0": "10111",
@@ -25,7 +26,9 @@
     "6.10.0": "10116",
     "6.11.0": "10117",
     "7.0.0": "10118",
-    "7.1.0": "10119"
+    "7.1.0": "10119",
+    "8.0.0": "10394",
+    "8.1.0": "10395"
   },
   "issues": {
     "02dc09e3ae3c6c5a": {
@@ -219,6 +222,74 @@
     "known-reminder-over-heading-phone": {
       "key": "SVT-48",
       "id": "26858"
+    },
+    "10453af12a85f805": {
+      "key": "SVT-49",
+      "id": "27612"
+    },
+    "41aab197332ac705": {
+      "key": "SVT-50",
+      "id": "27613"
+    },
+    "0ee905800f9e746c": {
+      "key": "SVT-51",
+      "id": "27614"
+    },
+    "490e7e9399367b13": {
+      "key": "SVT-52",
+      "id": "27615"
+    },
+    "3976fbfc75fd979c": {
+      "key": "SVT-53",
+      "id": "27616"
+    },
+    "adb91d44f9e91990": {
+      "key": "SVT-54",
+      "id": "27617"
+    },
+    "429df114b278fcfd": {
+      "key": "SVT-55",
+      "id": "27618"
+    },
+    "145c96bc4f8badb6": {
+      "key": "SVT-56",
+      "id": "27619"
+    },
+    "8155941a5721bc75": {
+      "key": "SVT-57",
+      "id": "27620"
+    },
+    "09df2c3de21a70f3": {
+      "key": "SVT-58",
+      "id": "27621"
+    },
+    "4d7af2e2e33c52fd": {
+      "key": "SVT-59",
+      "id": "27622"
+    },
+    "23792d6675c7c318": {
+      "key": "SVT-60",
+      "id": "27623"
+    },
+    "30ab95dfdfa9e559": {
+      "key": "SVT-61",
+      "id": "27624"
+    },
+    "81f69068660bb7e8": {
+      "key": "SVT-62",
+      "id": "27625"
+    },
+    "f35395a7a5288a69": {
+      "key": "SVT-63",
+      "id": "27626"
+    },
+    "abf9170f4cbcf5c2": {
+      "key": "SVT-64",
+      "id": "27627"
+    },
+    "25bcb0f4e2594cfb": {
+      "key": "SVT-65",
+      "id": "27628"
     }
   },
   "permissionScheme": {
@@ -231,7 +302,7 @@
     ],
     "assigned": true
   },
-  "updatedAt": "2026-10-09T14:47:22.100Z",
+  "updatedAt": "2026-10-11T11:33:11.904Z",
   "projectId": "10278",
   "issueTypeScheme": {
     "id": "10636",
@@ -268,21 +339,22 @@
     "undo": "DELETE /rest/api/3/permissionscheme/10265/permission/11703",
     "proof": {
       "GET /rest/api/3/issue/SVT-1": 200,
-      "GET /rest/api/3/issue/SVT-48": 200,
+      "GET /rest/api/3/issue/SVT-65": 200,
       "GET /rest/api/3/issue/ATLAS-2361": 404,
       "GET /rest/api/3/issue/CRBAK-1": 404,
       "GET /rest/api/3/issue/CRD-30": 404,
       "GET /rest/api/3/issue/CRS-9": 404,
-      "GET /rest/api/3/issue/CRT-317": 200,
+      "GET /rest/api/3/issue/CRT-377": 200,
       "GET /rest/api/3/issue/CS-1223": 404,
-      "GET /rest/api/3/issue/DACC-6": 404,
+      "GET /rest/api/3/issue/DACC-5": 404,
       "GET /rest/api/3/issue/DESIGN-1225": 404,
       "GET /rest/api/3/issue/GROWTH-1226": 404,
-      "GET /rest/api/3/issue/GUARD-3": 404,
+      "GET /rest/api/3/issue/GUARD-4": 404,
       "GET /rest/api/3/issue/HELIOS-1724": 404,
       "GET /rest/api/3/issue/ITHELP-1223": 404,
       "GET /rest/api/3/issue/KAN-1": 404,
-      "GET /rest/api/3/issue/LEDGER-1225": 404,
+      "GET /rest/api/3/issue/LEDGER-1226": 404,
+      "GET /rest/api/3/issue/LICW-32": 404,
       "GET /rest/api/3/issue/LZMT-307": 200,
       "GET /rest/api/3/issue/ORBIT-91": 404,
       "GET /rest/api/3/issue/PLATSUP-1222": 404,
@@ -290,17 +362,17 @@
       "GET /rest/api/3/issue/SEC-1225": 404,
       "GET /rest/api/3/issue/VOY-1992": 404,
       "anonymous site-wide search (bounded, all pages): issues per project": {
-        "CRT": 317,
-        "LZMT": 307,
-        "SVT": 48
+        "SVT": 65,
+        "CRT": 377,
+        "LZMT": 307
       },
-      "anonymous listing of SVT": "48 issues (receipt holds 48; 已完成 42, Backlog 6)",
+      "anonymous listing of SVT": "65 issues (receipt holds 65; 已完成 59, Backlog 6)",
       "other projects whose scheme lets anyone browse": "CRT,LZMT",
       "public trackers (allowlist)": "CRT,SVT,LZMT",
       "negative control": "13 fake broken answers, each failed the verdict",
       "GET /jira/software/c/projects/SVT/issues": 200
     },
-    "provenAt": "2026-10-09T14:47:22.100Z",
+    "provenAt": "2026-10-11T11:33:11.904Z",
     "proofFailures": []
   }
 }
