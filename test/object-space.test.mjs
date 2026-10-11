@@ -19,7 +19,7 @@ eq("a non-object → null", await objectSpaceKeyOf("ENG"), null);
 const here = dirname(fileURLToPath(import.meta.url));
 const src = (p) => readFileSync(resolve(here, "../src/server", p), "utf8")
   .split("\n").map((l, i) => ({ where: `${p}:${i + 1}`, l })).filter(({ l }) => !/^\s*(\/\/|\*)/.test(l));
-const FILES = ["capsules/sealing/actions.js", "capsules/realms/actions.js", "capsules/panels/actions.js", "capsules/workflow/actions.js"];
+const FILES = ["capsules/sealing/actions.js", "capsules/realms/actions.js", "capsules/panels/actions.js", "capsules/workflow/actions.js", "capsules/section-seals/actions.js"];
 // `<record>.spaceKey || <realmKey | spaceKey | contextSpaceKey | spaceKeyOf(req) | req.…>`
 const SHAPE = /\b(sealRecord|sealData|record|current|existingSeal)\??\.spaceKey\s*\|\|\s*(realmKey|spaceKey\b|contextSpaceKey|spaceKeyOf\(req\)|req\.)/;
 for (const f of FILES) {
