@@ -55,6 +55,14 @@ export const JIRA_COPY_GC_PREFIX = "jira-seal-copy-gc-";
 export const jiraCopyGcKey = (copyKey) => `${JIRA_COPY_GC_PREFIX}${String(copyKey).replace(/^jira-seal\//, "")}`;
 /** Where the hourly sweep stopped in the seal list, so a large site is covered over several runs. */
 export const JIRA_SWEEP_CURSOR_KEY = "jira-seal-sweep-cursor";
+/**
+ * Written by the delete trigger when it queues a put-back (10 min TTL), removed when the consumer
+ * finishes: the panel shows such a file as "Being put back" instead of "Not put back" (the 2026-10-11
+ * video showed "Not put back" with a Put it back button for the ~6 s a queued restore takes).
+ */
+export const JIRA_QUEUED_PREFIX = "jira-seal-queued-";
+export const jiraQueuedKey = (attachmentId) => `${JIRA_QUEUED_PREFIX}${attachmentId}`;
+export const JIRA_QUEUED_TTL_MS = 10 * 60 * 1000;
 
 /** Jira ids are digits. Anything else is refused before it reaches a route or a key. */
 export const isJiraId = (v) => typeof v === "string" ? /^\d{1,18}$/.test(v) : Number.isSafeInteger(v) && v > 0;
@@ -210,10 +218,13 @@ export function viewerPowers(permissions, { allowAdminOverride = true } = {}) {
  *              anyone who may edit the issue can try again; the owner or an admin may let it go
  *   expired  — no longer protected: an editor may seal it anew (the server replaces a lapsed seal)
  */
-export function rowFor({ record, viewerId, powers, nowMs, lost = false }) {
+export function rowFor({ record, viewerId, powers, nowMs, lost = false, restoring = false }) {
   if (!record || !record.lockedBy) {
     return { state: "open", primary: powers.canEdit ? "seal" : null, menu: [] };
   }
+  // A put-back is queued or running: nothing to do but wait (a second "Put it back" would only queue
+  // behind the seal's lock, and releasing now would race the upload).
+  if (lost && restoring) return { state: "restoring", primary: null, menu: [] };
   const mine = record.lockedBy === viewerId;
   if (lost) {
     const menu = [];

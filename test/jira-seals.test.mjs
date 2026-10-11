@@ -133,6 +133,14 @@ ok("id: refuses paths", !isJiraId("147/../1") && !isJiraId("") && !isJiraId("att
 eq("normId", [normId("12"), normId(12), normId("x")], ["12", "12", null]);
 ok("issue ref: key or id", isIssueRef("SVJ-1") && isIssueRef("45526") && !isIssueRef("svj-1") && !isIssueRef("SVJ-1/../x"));
 ok("expired: no date is not expired", !isExpired({}, NOW));
+// ── a queued or running put-back is "restoring": no button, no menu (the 2026-10-11 video's 6 s window) ──
+{
+  const P = { canEdit: true, isSteward: true };
+  eq("restoring: own seal", rowFor({ record: rec, viewerId: OWNER, powers: P, nowMs: NOW, lost: true, restoring: true }), { state: "restoring", primary: null, menu: [] });
+  eq("restoring: steward on someone else's", rowFor({ record: rec, viewerId: OTHER, powers: P, nowMs: NOW, lost: true, restoring: true }), { state: "restoring", primary: null, menu: [] });
+  eq("lost without a put-back running keeps Put it back", rowFor({ record: rec, viewerId: OTHER, powers: P, nowMs: NOW, lost: true }).primary, "retry");
+  eq("restoring only applies to a lost row", rowFor({ record: rec, viewerId: OWNER, powers: P, nowMs: NOW, restoring: true }).state, "mine");
+}
 // ── a failed copy delete is remembered under a KVS-safe key (no "/") and maps back to its seal ──
 eq("copy gc: key from the copy key", jiraCopyGcKey(jiraCopyKey("14731")), "jira-seal-copy-gc-14731");
 ok("copy gc: a legal KVS key", /^[a-zA-Z0-9:._\s#-]+$/.test(jiraCopyGcKey(jiraCopyKey("14731"))));

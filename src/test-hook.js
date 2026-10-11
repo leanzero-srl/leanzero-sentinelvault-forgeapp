@@ -239,6 +239,12 @@ export async function testStateTrigger(req) {
         const { jiraSealSweep } = await import("./server/capsules/jira-seals/trigger.js");
         return json(200, { invoked: fn, result: await jiraSealSweep() });
       }
+      if (fn === "jiraPanel") {
+        const m = await import("./server/capsules/jira-seals/actions.js");
+        const p = q(req, "powers") || "edit";
+        const powers = { canSee: p !== "none", canEdit: p === "edit" || p === "steward", isSteward: p === "steward" };
+        return json(200, { invoked: fn, result: await m.issueSealsView({ issueId: q(req, "issueId"), viewerId: q(req, "actor"), powers }) });
+      }
       if (fn === "jiraSeal" || fn === "jiraRelease" || fn === "jiraExtend") {
         const m = await import("./server/capsules/jira-seals/actions.js");
         const core = fn === "jiraSeal" ? m.sealJiraAttachment : fn === "jiraRelease" ? m.releaseJiraAttachment : m.extendJiraAttachment;
