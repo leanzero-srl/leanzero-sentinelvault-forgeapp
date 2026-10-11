@@ -56,11 +56,18 @@ html[data-color-mode="dark"], html[data-color-mode="dark"] body { color-scheme: 
 body { font-family: var(--sv-font-family); color: var(--sv-text-primary); font-size: 13px; line-height: 1.4; }
 * { box-sizing: border-box; }
 
-.jv-root { padding: 4px 2px 12px; }
+.jv-root { padding: 4px 8px 12px; }
 .jv-loading { padding: 12px 4px; color: var(--sv-text-secondary); font-weight: 600; }
-.jv-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+.jv-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
 .jv-count { font-size: 13px; font-weight: 800; }
-.jv-link { font: inherit; font-size: 12px; font-weight: 700; color: var(--sv-interactive-primary); background: none; border: 0; padding: 4px 2px; cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
+.jv-sub { font-size: 12px; color: var(--sv-text-secondary); margin-top: 2px; }
+.jv-hint-top { margin: 0 0 8px; font-weight: 600; }
+.jv-note-k { font-style: normal; font-weight: 700; color: var(--sv-text-secondary); }
+.jv-ev-detail { display: block; color: var(--sv-text-secondary); font-weight: 500; }
+.jv-reason-label { display: block; margin-top: 12px; }
+.jv-btn-onfail { align-self: flex-start; background: #FFFFFF; color: #7F1D1D; border-color: #FFFFFF; }
+html[data-color-mode="dark"] .jv-btn-onfail { background: #0F172A; color: #FFFFFF; border-color: #0F172A; }
+.jv-link { font: inherit; font-size: 12.5px; font-weight: 700; color: var(--sv-interactive-primary); background: none; border: 0; padding: 8px 6px; min-height: 32px; cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
 .jv-link:focus-visible, .jv-btn:focus-visible, .jv-dd:focus-visible, .jv-input:focus-visible, .jv-dd-opt:focus-visible { outline: 2px solid var(--sv-border-focus); outline-offset: 2px; }
 
 .jv-flash { margin: 0 0 8px; padding: 8px 10px; border-radius: 8px; font-weight: 700; font-size: 12.5px; color: #FFFFFF; background: var(--jv-ok); }
@@ -99,7 +106,7 @@ html[data-color-mode="dark"] .jv-fail { background: #F87171; color: #0F172A; }
 .jv-form { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--sv-border-primary); display: flex; flex-direction: column; gap: 6px; }
 .jv-label { font-size: 12px; font-weight: 700; color: var(--sv-text-secondary); }
 .jv-input { width: 100%; font: inherit; font-size: 13px; padding: 7px 9px; border-radius: 8px; border: 1.5px solid var(--sv-border-secondary); background: var(--sv-bg-primary); color: var(--sv-text-primary); }
-.jv-reason { margin-top: 10px; resize: vertical; }
+.jv-reason { margin-top: 4px; resize: vertical; }
 .jv-form-actions { display: flex; gap: 8px; margin-top: 4px; }
 .jv-hint { font-size: 12px; color: var(--sv-text-secondary); margin: 6px 0 0; }
 
