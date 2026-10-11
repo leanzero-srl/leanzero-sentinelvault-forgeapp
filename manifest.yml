@@ -1,40 +1,22 @@
-# UI Kit 2 configuration for Sentinel Vault app
 app:
   id: ari:cloud:ecosystem::app/c30bf71e-4287-4872-954d-db49cc68f0ff
   runtime:
     name: nodejs22.x
-  # 8.0 (2026-10-11): Jira is an OPTIONAL Atlassian app of this one installation (Forge multi-app
-  # compatibility). Confluence stays required; an admin connects Jira under Connected apps.
   compatibility:
     confluence:
       required: true
     jira:
       required: false
-  # Paid-via-Atlassian licensing. When true, Forge populates context.license (in the
-  # PRODUCTION Marketplace listing only — it stays undefined in dev/custom envs, so the
-  # dev install keeps working). check-license (entitlements/actions.js) reads
-  # context.license.active biased fail-open, and the app SOFT-DEGRADES (a nag banner) when
-  # unlicensed — a content-protection app must never hard-block and stop protecting content.
-  # NOTE: the actual price/tiers are set in the Marketplace Partner portal, not here.
   licensing:
     enabled: true
-
 modules:
-  # Atlassian-hosted LLM (Forge LLMs) — powers Semantic AI Validations with no
-  # external egress, so the app keeps its "Runs on Atlassian" badge. Adding this
-  # module triggers a major version bump + admin re-consent.
   llm:
     - key: sentinel-vault-llm
       model:
         - claude
-
-  # 8.0 — the copies of sealed Jira files (Jira has no trash: a deleted file is gone unless the app
-  # kept its own copy). Forge-hosted, so the app keeps its "Runs on Atlassian" badge.
   objectStore:
     - key: sv-store
       storageClass: standard
-
-  # 8.0 — Jira attachment seals on the issue view: the issue's files, seal / release / extend.
   jira:issueContext:
     - key: sentinel-vault-issue
       resource: jira-issue
@@ -42,8 +24,6 @@ modules:
         function: action-router
       title: Sentinel Vault
       label: Sealed files
-
-  # Macro module — inline seal status panel on page content
   macro:
     - key: sentinel-vault-panel
       resource: inline-panel-ui
@@ -58,9 +38,6 @@ modules:
         resource: panel-setup-ui
         openOnInsert: false
         viewportSize: medium
-
-    # Bodied macro — wraps a sealed page section. Carries a stable app-issued
-    # sectionId so the page-content trigger can detect tampering and restore it.
     - key: sentinel-vault-sealed-section
       resource: section-setup-ui
       resolver:
@@ -74,11 +51,6 @@ modules:
         resource: section-setup-ui
         openOnInsert: true
         viewportSize: medium
-
-  # 5.0 — the classification chip under every page title (always present). Confluence renders
-  # title / icon / tooltip from the content property `sentinel-byline` (written by the seal,
-  # section and classification resolvers — no resolver call on render); the click opens the
-  # page-details modal, the page-level hub that replaces "Manage Attachments".
   confluence:contentBylineItem:
     - key: sentinel-vault-byline
       resource: page-details-ui
@@ -89,9 +61,6 @@ modules:
       contentPropertyKey: sentinel-byline
       viewportContainer: modal
       viewportSize: large
-
-  # 5.0 — "Seal attachments…" in the page ⋯ menu: the primary way to protect a file. The macro
-  # becomes an optional dashboard, not the gate.
   confluence:contentAction:
     - key: sentinel-vault-seal-action
       resource: page-details-ui
@@ -99,21 +68,12 @@ modules:
         function: action-router
       title: Seal attachments…
       viewportSize: large
-
-  # Page ribbon for seal and classification notifications
   confluence:pageBanner:
     - key: sentinel-vault-ribbon
       resource: doc-ribbon
       resolver:
         function: action-router
-
-  # DEV-ONLY harness test-state endpoint (gated by HARNESS_SECRET; 404 in prod).
   webtrigger:
-    - key: harness-test-state
-      function: testStateFn
-    # Config REST API (docs/REST-CONFIG-API.md). STATIC response on purpose: a static trigger
-    # cannot egress anything the manifest did not spell out, which keeps "Runs on Atlassian".
-    # The job id is the caller's Idempotency-Key; the receipt is read from Confluence properties.
     - key: config-api
       function: config-api-fn
       urlFormat: v2
@@ -148,16 +108,9 @@ modules:
             statusCode: 429
             contentType: application/json
             body: '{"status":"busy"}'
-
-  # Backend resolver functions
   function:
-    - key: testStateFn
-      handler: boot.testStateTrigger
     - key: jira-attachment-trigger
       handler: boot.jiraAttachmentEventTrigger
-    # The restore itself (download the copy, upload up to 25 MB, move the seal) runs here, out of
-    # the trigger's short default limit (a trigger cannot take a custom timeout). Crash-safe anyway:
-    # the intent row lets the hourly sweep adopt an upload whose seal move never ran.
     - key: jira-restore-fn
       handler: boot.jiraRestoreConsumer
       timeoutSeconds: 300
@@ -176,11 +129,9 @@ modules:
       timeoutSeconds: 900
     - key: seal-index-cron-fn
       handler: boot.sealIndexCron
-      # 8.0: also runs the Jira seal sweep (retries, orphans, lapse) inside a 100 s budget.
       timeoutSeconds: 300
     - key: workflow-sweep-fn
       handler: boot.workflowSweep
-    # Judges pages that carry a live seal ahead of their (often late) page event.
     - key: page-guard-sweep-fn
       handler: boot.pageGuardSweep
     - key: page-content-trigger
@@ -192,47 +143,32 @@ modules:
       handler: boot.configApiTrigger
     - key: config-api-consumer-fn
       handler: boot.configApiConsumer
-      # 900 s: the REST backup / restore / import / export ops run here (pillar 12).
       timeoutSeconds: 900
-    # Pillar 12 — backup and restore (docs/BACKUP-AND-RESTORE.md). The consumer runs every backup,
-    # restore, import and move. The hourly check rides seal-index-cron (Forge allows 5 scheduled
-    # triggers and this app has 5): it only queues a backup when something changed or a day passed.
     - key: backup-fn
       handler: boot.backupConsumer
       timeoutSeconds: 900
-    # Privacy sweep (capsules/privacy): history retention + Atlassian's Personal Data Reporting
-    # API, weekly. Queued by the daily recurring-nudge trigger (no free scheduled-trigger slot).
     - key: privacy-fn
       handler: boot.privacyConsumer
       timeoutSeconds: 900
-
-  # Queue consumer for async realm admin scanning
   consumer:
     - key: realm-audit-queue
       queue: realm-audit-queue
       function: realm-scan-consumer-fn
-    # Async consumer for long-running Semantic AI validation (LLM call > 25s
-    # resolver limit). Mirrors the realm-audit-queue pattern.
     - key: ai-validation-queue
       queue: ai-validation-queue
       function: ai-validation-fn
-    # Config REST API jobs (a bundle can outlive the 25 s web-trigger limit).
     - key: config-api-queue
       queue: config-api-queue
       function: config-api-consumer-fn
-    # Pillar 12: backup / restore / import / move jobs and the debounced backup after a save.
     - key: backup-queue
       queue: backup-queue
       function: backup-fn
     - key: privacy-queue
       queue: privacy-queue
       function: privacy-fn
-    # 8.0 — put a deleted sealed Jira file back (capsules/jira-seals/trigger.js).
     - key: jira-restore-queue
       queue: jira-restore-queue
       function: jira-restore-fn
-
-  # Attachment events trigger
   trigger:
     - key: attachment-events
       function: artifact-trigger
@@ -250,16 +186,11 @@ modules:
       events:
         - avi:forge:installed:app
         - avi:forge:uninstalled:app
-
-    # 8.0 — Jira attachment seals (docs/JIRA-SEALS.md): a sealed file deleted by anyone but its
-    # owner is put back from the app's copy; a deleted issue ends its seals.
     - key: jira-attachment-events
       function: jira-attachment-trigger
       events:
         - avi:jira:deleted:attachment
         - avi:jira:deleted:issue
-
-  # Scheduled triggers for automated tasks
   scheduledTrigger:
     - key: expiry-sweep-scheduled
       function: expiry-sweep-task
@@ -276,39 +207,28 @@ modules:
     - key: page-guard-sweep-scheduled
       function: page-guard-sweep-fn
       interval: fiveMinute
-
-  # Sentinel Vault admin configuration module (Custom UI)
   confluence:globalSettings:
     - key: steward-console
-      title: "Sentinel Vault — Site settings"
+      title: Sentinel Vault — Site settings
       resource: steward-console
       resolver:
         function: action-router
-
-  # A7: one page, every space — what Sentinel Vault is waiting on the current user for
-  # (approvals, edit requests on their sealed files) and the files they hold sealed.
-  # Composes list-my-approvals / list-my-edit-requests / enumerate-operator-seals, all
-  # scoped to req.context.accountId. No new scope; a module without one is a minor version.
   confluence:globalPage:
     - key: my-work
-      title: "Sentinel Vault — My work"
+      title: Sentinel Vault — My work
       route: my-work
       resource: my-work
       resolver:
         function: action-router
-      icon: "static/steward-console/assets/icon.png"
-
-  # Realm-level administration (Custom UI)
-  # Only visible to space administrators
+      icon: static/steward-console/assets/icon.png
   confluence:spacePage:
     - key: realm-console
-      title: "Sentinel Vault"
+      title: Sentinel Vault
       route: realm-console
       resource: realm-console
       resolver:
         function: action-router
-      icon: "static/steward-console/assets/icon.png"
-
+      icon: static/steward-console/assets/icon.png
 resources:
   - key: overlay
     path: static/overlay
@@ -330,20 +250,13 @@ resources:
     path: static/page-details
   - key: jira-issue
     path: static/jira-issue
-
 permissions:
   scopes:
-    # JSM Assets (2026-09-19, owner go): classification levels imported from an Assets object
-    # type. Read-only; called asUser from the steward console only (asApp answers 401 on the
-    # Assets API — see docs/CLASSIFICATION-ASSETS-DESIGN.md). Workspace id comes from JSM.
     - read:servicedesk-request
     - read:cmdb-schema:jira
     - read:cmdb-type:jira
     - read:cmdb-object:jira
     - read:cmdb-attribute:jira
-    # 8.0 — Jira attachment seals (docs/JIRA-SEALS.md): read the issue and its files, the caller's own
-    # permissions (mypermissions) and user names; upload a deleted sealed file back and comment on
-    # the issue. Required by the avi:jira:*:attachment / deleted:issue events as well.
     - read:jira-work
     - write:jira-work
     - read:jira-user
@@ -365,14 +278,9 @@ permissions:
     - delete:attachment:confluence
     - write:comment:confluence
     - read:label:confluence
-    # 5.0 — data classification through Confluence's own API (Atlassian Guard levels):
-    # read:configuration reads the site's levels, write:space sets a space's default level.
     - read:configuration:confluence
     - write:space:confluence
     - storage:app
-    # 7.0 — Atlassian's Personal Data Reporting API (privacy.reportPersonalData, the weekly privacy
-    # sweep in capsules/privacy). Without it report-accounts answers 401 (measured on wolfaenpak
-    # 2026-10-04) and closed accounts are never erased. A new scope is a major version.
     - report:personal-data
   content:
     styles:
