@@ -7,7 +7,7 @@ import { BASELINE_HOLD_SPAN, sanitizeHoldDuration } from "../../shared/baseline.
 import { keysetPage, encodeKeysetCursor, decodeKeysetCursor } from "../../shared/pagination.js";
 import { restampIfEnforced } from "../workflow/logic.js";
 import { authorizeSteward } from "../../shared/steward-checks.js";
-import { canEditPage, canReadPage, mustVerify, resolvePageSpaceKey } from "../../shared/content-access.js";
+import { canEditPage, canReadPage, mustVerify, resolvePageSpaceKey, objectSpaceKeyOf } from "../../shared/content-access.js";
 import { resolveBulletinToggles } from "../../shared/bulletin-flags.js";
 import { setUntil } from "../../shared/kvs-ttl.js";
 
@@ -310,6 +310,11 @@ const sealArtifact = async (req) => {
   // presentation baseline and the panel embed would all be filed against the wrong page.
   if (artifactPageId && String(artifactPageId) !== String(contentId || "")) {
     contentId = String(artifactPageId);
+    // ...and so does its SPACE. The context's space describes where the caller is standing, not
+    // the file: keeping it would stamp the seal with a spaceKey the steward gates (unseal, purge,
+    // restore, extend) then trust as the object's own. Re-derived from the page just below.
+    realmKey = null;
+    realmId = null;
   }
   // SEC-2 (tester 2026-09-25): on an Approved page nothing is sealed except by the workflow's
   // privileged set — a new personal seal would hand one person control of a file on a page that
@@ -319,8 +324,9 @@ const sealArtifact = async (req) => {
     const p = await workflowPrivilegeForPage(contentId, operatorAccountId).catch(() => ({ enforced: false }));
     if (p.enforced && !p.privileged) return { success: false, reason: ENFORCED_SEAL_REFUSAL };
   }
-  // No panel context (the config API consumer, the hook): the space is a property of the page
-  // the file LIVES on, derived from the object itself — never from a caller-supplied context.
+  // No panel context (the config API consumer, the hook), or a file that lives on another page
+  // than the one the caller stands on: the space is a property of the page the file LIVES on,
+  // derived from the object itself — never from a caller-supplied context.
   if (!realmKey && contentId) {
     realmKey = await resolvePageSpaceKey(contentId);
     if (realmKey && !realmId) {
@@ -519,22 +525,27 @@ const unsealArtifact = async (req) => {
   let canRelease = false;
   let releaseReason = "";
   let forcedReason = null; // Part 3.5: the typed break-glass reason (steward path only)
+  // The space the SEAL lives in: its own spaceKey, else its page's. Never the caller's context —
+  // that is only used below where nothing is authorized by it (the panel re-embed's fallback).
+  const objectSpaceKey = await objectSpaceKeyOf(sealRecord);
 
   if (sealRecord.lockedBy === operatorAccountId && !adminOverride) {
     // SEC-2: while the page is Approved the seal is the workflow's — the owner cannot release it.
     { const held = heldRefusal(sealRecord, "release"); if (held) return { success: false, reason: held }; }
     canRelease = true;
     releaseReason = "owner unlock";
-  } else if (adminOverride && (sealRecord.spaceKey || realmKey)) {
+  } else if (adminOverride && objectSpaceKey) {
     // SV-SEC-1 (confused deputy). This used to ask "is the caller a steward of the space they
     // are STANDING IN", while acting on a seal named by a payload attachmentId that carries its
     // own spaceKey. Administering one space — a personal space is enough — therefore granted force-unseal
     // over every sealed file on the site, and the teardown below drives an asApp body rewrite on
-    // the victim's page. Authorize against the space the SEAL lives in; the caller's context is
-    // only a fallback for records that never recorded one.
+    // the victim's page. Authorize against the space the SEAL lives in. The caller's context used
+    // to be the fallback for records that never recorded one, which reopened the same hole for
+    // exactly those records; the fallback is now the record's PAGE's space (objectSpaceKeyOf),
+    // and a record whose space cannot be resolved is refused.
     const hasStewardAccess = await authorizeSteward(
       operatorAccountId,
-      sealRecord.spaceKey || realmKey,
+      objectSpaceKey,
     );
     if (hasStewardAccess) {
       // Part 3.5: same rule as unseal-section / steward-unseal — shared/release-reason.js.
@@ -555,7 +566,7 @@ const unsealArtifact = async (req) => {
     // The teardown itself lives in ./release.js so the expiry sweep's auto-release (F5)
     // runs the SAME one — six key families have to be cleaned in step, and two copies of
     // that list is how they end up disagreeing.
-    const released = await releaseSeal(attachmentId, sealRecord, { fallbackSpaceKey: realmKey });
+    const released = await releaseSeal(attachmentId, sealRecord, { fallbackSpaceKey: objectSpaceKey || realmKey });
     if (!released.success) return released;
 
     // A1: the seal is gone from this point — owner release and steward force are different
@@ -563,7 +574,7 @@ const unsealArtifact = async (req) => {
     await recordActivity({
       type: releaseReason === "admin override" ? "seal.forced" : "seal.released",
       pageId: sealRecord.contentId || null,
-      spaceKey: sealRecord.spaceKey || realmKey || null,
+      spaceKey: objectSpaceKey || null, // the seal's space — a row in the caller's space's report would misfile it
       actor: {
         accountId: operatorAccountId,
         name: releaseReason === "admin override" ? null : (sealRecord.lockedByName || null),
@@ -631,10 +642,6 @@ export const extendSeal = async (req) => {
   const operatorAccountId = req.context.accountId;
   if (!attachmentId) return { success: false, reason: "Missing attachment" };
 
-  const contextSpaceKey =
-    req.context.extension?.content?.space?.key ||
-    req.context.extension?.space?.key;
-
   const sealRecord = await kvs.get(`protection-${attachmentId}`);
   if (!sealRecord || !sealRecord.lockedBy) {
     return { success: false, reason: "This file is not sealed" };
@@ -644,12 +651,16 @@ export const extendSeal = async (req) => {
     return { success: false, reason: "This file is in the trash — restore it before extending the seal" };
   }
 
+  // Review: the record's own space, or its page's — never the caller's context space (a steward
+  // of any space could otherwise extend a spaceKey-less seal anywhere). The same key picks the
+  // hold-period policy and files the activity row: the caller's context used to do both, so a
+  // steward standing in another space extended by THAT space's policy and logged it there.
+  let objectSpaceKey = null;
+  try { objectSpaceKey = await objectSpaceKeyOf(sealRecord); } catch (_) { objectSpaceKey = null; }
+
   let authorized = sealRecord.lockedBy === operatorAccountId;
   if (!authorized) {
     try {
-      // Review: the record's own space, or its page's — never the caller's context space
-      // (a steward of any space could otherwise extend a spaceKey-less seal anywhere).
-      const objectSpaceKey = sealRecord.spaceKey || (sealRecord.contentId ? await resolvePageSpaceKey(sealRecord.contentId) : null);
       authorized = !!objectSpaceKey && await authorizeSteward(operatorAccountId, objectSpaceKey);
     } catch (_) { authorized = false; }
   }
@@ -663,7 +674,7 @@ export const extendSeal = async (req) => {
   // would otherwise produce an expiry in the PAST, i.e. an "extension" that expires the seal.
   let addSeconds = sanitizeHoldDuration(additionalSeconds, 0);
   if (!addSeconds) {
-    addSeconds = await resolveSealHoldPeriod(sealRecord.spaceKey || contextSpaceKey);
+    addSeconds = await resolveSealHoldPeriod(objectSpaceKey);
   }
   addSeconds = sanitizeHoldDuration(addSeconds, BASELINE_HOLD_SPAN);
 
@@ -689,7 +700,7 @@ export const extendSeal = async (req) => {
   await recordActivity({
     type: "seal.extended",
     pageId: sealRecord.contentId || null,
-    spaceKey: sealRecord.spaceKey || contextSpaceKey || null,
+    spaceKey: objectSpaceKey || null,
     actor: {
       accountId: operatorAccountId,
       name: sealRecord.lockedBy === operatorAccountId ? (sealRecord.lockedByName || null) : null,
@@ -1151,12 +1162,14 @@ export const restoreSealedArtifact = async (req) => {
     return { success: false, reason: `Unexpected attachment status: ${probeData.status}` };
   }
 
-  // Determine page ID from seal record or attachment container
+  // Determine page ID from the attachment's own container, then the seal record.
   const sealRecord = await kvs.get(`protection-${attachmentId}`);
   // SV-SEC-1: req.payload.pageId used to sit in this chain, so a caller could name the page the
-  // asApp PUT below would restore onto. Only the seal's own record or the caller's genuine
-  // context may decide that.
-  const pageId = sealRecord?.contentId || req.context.extension?.content?.id;
+  // asApp PUT below would restore onto. The caller's context was the last fallback, which is the
+  // same mistake one step removed: it names where the caller stands, not where the file lives.
+  // The trashed attachment's v2 body carries its page (attachment-status.js decision table), and
+  // the seal record names the page it was sealed on — only the object decides.
+  const pageId = probeData.pageId || sealRecord?.contentId || null;
 
   if (!pageId) {
     return { success: false, reason: "Cannot determine parent page — unable to restore" };
@@ -1167,11 +1180,10 @@ export const restoreSealedArtifact = async (req) => {
   // feature, any logged-in user could resurrect any deleted attachment anywhere on the site —
   // including files removed deliberately — on a page they cannot read. Same bar as purge:
   // the seal's owner, or a steward of the space the SEAL lives in, evaluated against the object.
+  // The space is the record's own, else its page's — never the caller's context (a steward of the
+  // space they stand in used to clear every record that carried no spaceKey, site-wide).
   const operatorAccountId = req.context.accountId;
-  const restoreRealmKey = sealRecord?.spaceKey
-    || req.context.extension?.content?.space?.key
-    || req.context.extension?.space?.key
-    || null;
+  const restoreRealmKey = sealRecord?.spaceKey || await resolvePageSpaceKey(pageId);
   const restoreIsOwner = !!sealRecord?.lockedBy && sealRecord.lockedBy === operatorAccountId;
   if (!restoreIsOwner) {
     const stewardOk = restoreRealmKey
@@ -1222,9 +1234,6 @@ export const restoreSealedArtifact = async (req) => {
 export const purgeSealRecord = async (req) => {
   const { attachmentId } = req.payload;
   const operatorAccountId = req.context.accountId;
-  const realmKey =
-    req.context.extension?.content?.space?.key ||
-    req.context.extension?.space?.key;
 
   if (!attachmentId) {
     return { success: false, reason: "Missing attachmentId" };
@@ -1238,30 +1247,43 @@ export const purgeSealRecord = async (req) => {
 
   const sealRecord = await kvs.get(`protection-${attachmentId}`);
 
+  // Where the file LIVES, read before anything is decided (a read-only asApp GET). The trashed
+  // attachment's v2 body names its page; the seal record names the page it was sealed on.
+  let probeData = null;
+  try {
+    const probeRes = await asApp().requestConfluence(route`/wiki/api/v2/attachments/${attachmentId}`);
+    if (probeRes.ok) probeData = await probeRes.json();
+  } catch (err) {
+    console.warn(`[PURGE] probe of ${attachmentId} failed:`, err);
+  }
+  // The attachment's own container first: a trashedOnly record's contentId can be a display hint
+  // written from the deleter's context when the attachment read failed (panels deleteArtifact).
+  const objectPageId = probeData?.pageId || sealRecord?.contentId || null;
+
   // audit C2: the owner/steward gate now covers the NO-SEAL path too. Purge is a PERMANENT,
   // unrecoverable delete (`?purge=true` below). Previously this block was wrapped in
   // `if (sealRecord && sealRecord.lockedBy)`, so when no seal record existed the ONLY gate was the
   // global allowSealPurge toggle → ANY user could permanently purge ANY attachment by id (it46).
-  // Require owner-or-steward UNCONDITIONALLY. realmKey falls back to the seal record's own spaceKey
-  // when the calling surface lacks page/space context, so a legitimate steward isn't wrongly denied.
+  // Require owner-or-steward UNCONDITIONALLY.
   //
   // SV-SEC-1 follow-on: the precedence here was inverted. It read the CALLER's context space
   // first and fell back to the seal's, which is the confused deputy again — a steward of any one
-  // space could purge a seal belonging to another. The object's own space is authoritative;
-  // context is the fallback, which is what the paragraph above always meant.
-  const effectiveRealmKey = sealRecord?.spaceKey || realmKey || null;
+  // space could purge a seal belonging to another. The object's own space is authoritative.
+  // The caller's context then survived as the FALLBACK for records without a spaceKey — and the
+  // panel's delete writes exactly such records (trashedOnly, contentId only) — so a steward of any
+  // space could still purge every one of them. The fallback is now the OBJECT's page's space
+  // (record.contentId, else the attachment's own container); the caller's context is never read.
+  const effectiveRealmKey = sealRecord?.spaceKey || (objectPageId ? await resolvePageSpaceKey(objectPageId) : null);
   const isOwner = !!sealRecord?.lockedBy && sealRecord.lockedBy === operatorAccountId;
   if (!isOwner) {
-    const hasStewardAccess = effectiveRealmKey
-      ? await authorizeSteward(operatorAccountId, effectiveRealmKey)
-      : false;
-    if (!hasStewardAccess) {
-      return { success: false, reason: "Only the seal owner or a space admin can purge" };
-    }
-    // With no seal record there is no trustworthy space for the TARGET at all, so the steward
-    // check above can only ever have been about somewhere else. Purge is permanent and
-    // unrecoverable, so in that case also require rights on the attachment itself.
-    if (!sealRecord && !(await canEditPage(operatorAccountId, attachmentId))) {
+    if (effectiveRealmKey) {
+      if (!(await authorizeSteward(operatorAccountId, effectiveRealmKey))) {
+        return { success: false, reason: "Only the seal owner or a space admin can purge" };
+      }
+    } else if (!objectPageId || !(await canEditPage(operatorAccountId, objectPageId))) {
+      // No space resolves for the object, so no steward check can be about it. Purge is permanent
+      // and unrecoverable: require rights on the PAGE the file lives on. (This used to ask about
+      // the attachment id itself, and a permission check on a TRASHED attachment denies everyone.)
       return { success: false, reason: "You do not have permission to purge this file" };
     }
   }
@@ -1269,11 +1291,7 @@ export const purgeSealRecord = async (req) => {
   // Permanently delete the attachment from Confluence (if it still exists)
   try {
     // First check if attachment is trashed — must trash before purging
-    const probeRes = await asApp().requestConfluence(
-      route`/wiki/api/v2/attachments/${attachmentId}`,
-    );
-    if (probeRes.ok) {
-      const probeData = await probeRes.json();
+    if (probeData) {
       if (probeData.status === "current") {
         // Trash it first
         const trashRes = await asUser().requestConfluence(
@@ -1305,7 +1323,7 @@ export const purgeSealRecord = async (req) => {
     await recordActivity({
       type: "seal.deleted",
       pageId: sealRecord.contentId || null,
-      spaceKey: sealRecord.spaceKey || null,
+      spaceKey: effectiveRealmKey || null,
       actor: { accountId: req.context?.accountId || null, name: null },
       target: { kind: "attachment", id: attachmentId, name: sealRecord.attachmentName || null },
       details: { via: "purge", ownerAccountId: sealRecord.lockedBy || null },
