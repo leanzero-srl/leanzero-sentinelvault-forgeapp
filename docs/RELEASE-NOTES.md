@@ -2,6 +2,12 @@
 
 GENERATED from `src/server/shared/release-notes.js` by `scripts/render-release-notes.mjs`. Do not edit.
 
+## 8.1.0 — 2026-10-11
+
+**A security update to a bundled library**
+
+- Changed: prosemirror-view, a library that comes with Atlassian's own packages, is updated to 1.42.6 to close a published security advisory (GHSA-c8x8-7fp4-3x9w). Sentinel Vault's screens do not contain the affected code, so nothing about how the app works changes.
+
 ## 8.0.0 — 2026-10-11
 
 **Seal Jira attachments: a sealed file on a Jira issue is put back if anyone else deletes it**
