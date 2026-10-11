@@ -35,7 +35,8 @@ eq("activity-site is retained but 'activity-xyz' is not", retainedFamily("activi
 eq("days 0 keeps everything", isPastRetention(k.pageKey, {}, now, 0), false);
 eq("days NaN keeps everything", isPastRetention(k.pageKey, {}, now, "x"), false);
 eq("the edge: exactly at the cutoff is kept", isPastRetention(`workflow-log-9-${now - 730 * DAY}`, {}, now, 730), false);
-eq("families", RETAINED_FAMILIES.length, 5);
+eq("families", RETAINED_FAMILIES.length, 6);
+eq("8.0: the Jira issue history ages out like the rest", retainedFamily("activity-issue-45526-8208288081193-d4rra9"), "activity");
 
 // The setting.
 eq("default 730", POLICY_DEFAULTS.historyRetentionDays, 730);

@@ -155,6 +155,12 @@ modules:
       handler: boot.testStateTrigger
     - key: jira-attachment-trigger
       handler: boot.jiraAttachmentEventTrigger
+    # The restore itself (download the copy, upload up to 25 MB, move the seal) runs here, out of
+    # the trigger's short default limit (a trigger cannot take a custom timeout). Crash-safe anyway:
+    # the intent row lets the hourly sweep adopt an upload whose seal move never ran.
+    - key: jira-restore-fn
+      handler: boot.jiraRestoreConsumer
+      timeoutSeconds: 300
     - key: action-router
       handler: boot.actionRouter
     - key: artifact-trigger
@@ -170,6 +176,8 @@ modules:
       timeoutSeconds: 900
     - key: seal-index-cron-fn
       handler: boot.sealIndexCron
+      # 8.0: also runs the Jira seal sweep (retries, orphans, lapse) inside a 100 s budget.
+      timeoutSeconds: 300
     - key: workflow-sweep-fn
       handler: boot.workflowSweep
     # Judges pages that carry a live seal ahead of their (often late) page event.
@@ -219,6 +227,10 @@ modules:
     - key: privacy-queue
       queue: privacy-queue
       function: privacy-fn
+    # 8.0 — put a deleted sealed Jira file back (capsules/jira-seals/trigger.js).
+    - key: jira-restore-queue
+      queue: jira-restore-queue
+      function: jira-restore-fn
 
   # Attachment events trigger
   trigger:

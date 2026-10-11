@@ -19,7 +19,7 @@ export function effectiveRetentionDays(enabled, days) {
   return d > 0 ? d : 0;
 }
 
-export const RETAINED_FAMILIES = Object.freeze(["activity-page-", "activity-space-", "activity-site-", "workflow-log-", "read-ack-"]);
+export const RETAINED_FAMILIES = Object.freeze(["activity-page-", "activity-space-", "activity-site-", "activity-issue-", "workflow-log-", "read-ack-"]);
 const DAY_MS = 86400000;
 const TS_CEILING = 9999999999999; // activity-log.js invertedTs
 
