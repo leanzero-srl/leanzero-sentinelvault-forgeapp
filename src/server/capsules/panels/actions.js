@@ -2,7 +2,7 @@ import { isWorkflowHeld } from "../../shared/seal-authority.js"; // SEC-2 (zero-
 import { asUser, asApp, route } from "@forge/api";
 import { kvs } from "@forge/kvs";
 import { withinUploadSizeLimit, MAX_UPLOAD_LABEL } from "../../shared/upload-limits.js";
-import { canEditPage, canReadPage, mustVerify } from "../../shared/content-access.js";
+import { canEditPage, canReadPage, mustVerify, resolvePageSpace } from "../../shared/content-access.js";
 import { recordActivity } from "../../infra/activity-log.js";
 import { isOperatorSiteAdmin } from "../../shared/steward-checks.js";
 
@@ -261,6 +261,7 @@ export const deleteArtifact = async (req) => {
 
     // For unsealed items, fetch metadata before trashing so we can create a tracking record
     let attTitle = "Unknown Attachment";
+    let attPageId = null;
     const isUnsealed = !sealData;
     if (isUnsealed) {
       try {
@@ -270,6 +271,7 @@ export const deleteArtifact = async (req) => {
         if (attRes.ok) {
           const attData = await attRes.json();
           attTitle = attData.title || attTitle;
+          attPageId = attData.pageId || null;
         }
       } catch (_) { /* best effort */ }
     }
@@ -282,13 +284,21 @@ export const deleteArtifact = async (req) => {
     if (response.ok || response.status === 204) {
       // For unsealed items, create a tracking record so trashed item is discoverable
       if (isUnsealed) {
-        const contentId = req.context.extension?.content?.id;
-        const spaceId = req.context.extension?.content?.space?.id || null;
+        // The page and space the FILE lives in, not where the caller stands: purge and restore
+        // authorize stewards against this record's space, and a record with no spaceKey used to
+        // fall back to the CALLER's context there — so a steward of any one space could purge
+        // every file deleted this way. Derived from the attachment's own container. The context
+        // page is kept only as a display hint when the attachment read failed (so the trashed row
+        // still lists on the page it was deleted from) — no space is stamped from it, and purge /
+        // restore prefer the attachment's own container over the record's contentId.
+        const contentId = attPageId || req.context.extension?.content?.id || null;
+        const space = attPageId ? await resolvePageSpace(attPageId) : null;
         await kvs.set(`protection-${attachmentId}`, {
           lockedBy: req.context.accountId,
           timestamp: new Date().toISOString(),
           contentId,
-          spaceId,
+          spaceId: space?.spaceId || null,
+          spaceKey: space?.spaceKey || null,
           attachmentId,
           attachmentName: attTitle,
           trashedOnly: true,
