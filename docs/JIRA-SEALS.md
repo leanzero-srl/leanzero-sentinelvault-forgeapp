@@ -70,8 +70,8 @@ was deliberately left out.
    countdown. After the last one the seal is released and the copy deleted. The hourly index cron
    runs the Jira sweep after the backup check, under one lock and a 100 s budget (Forge allows five
    scheduled triggers and the app uses five).
-6. **Audit.** Every seal event is written to the activity log under `activity-issue-{issueId}-` and
-   `activity-project-{projectKey}-`; the issue's panel shows the last ones.
+6. **Audit.** Every seal event is written to the activity log under `activity-issue-{issueId}-` (the
+   project leg was dropped in review: nothing read it); the issue's panel shows the last ones.
 7. **Personal data.** Seal records and the activity log hold account ids only. The weekly privacy
    sweep reads the whole store, so Jira seals are reported and erased with the rest, and the issue
    history (`activity-issue-`) ages out with the history retention setting. The issue property names
