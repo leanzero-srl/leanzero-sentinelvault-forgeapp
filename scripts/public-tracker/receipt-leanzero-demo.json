@@ -28,7 +28,11 @@
     "7.0.0": "10118",
     "7.1.0": "10119",
     "8.0.0": "10394",
-    "8.1.0": "10395"
+    "8.1.0": "10395",
+    "8.2.0": "10396",
+    "8.3.0": "10397",
+    "8.4.0": "10398",
+    "8.5.0": "10399"
   },
   "issues": {
     "02dc09e3ae3c6c5a": {
@@ -255,25 +259,9 @@
       "key": "SVT-56",
       "id": "27619"
     },
-    "8155941a5721bc75": {
-      "key": "SVT-57",
-      "id": "27620"
-    },
-    "09df2c3de21a70f3": {
-      "key": "SVT-58",
-      "id": "27621"
-    },
-    "4d7af2e2e33c52fd": {
-      "key": "SVT-59",
-      "id": "27622"
-    },
     "23792d6675c7c318": {
       "key": "SVT-60",
       "id": "27623"
-    },
-    "30ab95dfdfa9e559": {
-      "key": "SVT-61",
-      "id": "27624"
     },
     "81f69068660bb7e8": {
       "key": "SVT-62",
@@ -290,6 +278,42 @@
     "25bcb0f4e2594cfb": {
       "key": "SVT-65",
       "id": "27628"
+    },
+    "e434066a94d2691e": {
+      "key": "SVT-66",
+      "id": "27635"
+    },
+    "4ba4e94148db2588": {
+      "key": "SVT-67",
+      "id": "27636"
+    },
+    "c1381ac869ea1a31": {
+      "key": "SVT-68",
+      "id": "27637"
+    },
+    "5d81e0936e24c393": {
+      "key": "SVT-69",
+      "id": "27638"
+    },
+    "1bf78eaff8cdaca3": {
+      "key": "SVT-70",
+      "id": "27639"
+    },
+    "8c4d2a841c687774": {
+      "key": "SVT-71",
+      "id": "27640"
+    },
+    "481b17194d495e48": {
+      "key": "SVT-72",
+      "id": "27641"
+    },
+    "fd44b05748dac282": {
+      "key": "SVT-73",
+      "id": "27642"
+    },
+    "284985d5400474dc": {
+      "key": "SVT-74",
+      "id": "27643"
     }
   },
   "permissionScheme": {
@@ -302,7 +326,7 @@
     ],
     "assigned": true
   },
-  "updatedAt": "2026-10-11T11:33:11.904Z",
+  "updatedAt": "2026-10-11T13:27:32.527Z",
   "projectId": "10278",
   "issueTypeScheme": {
     "id": "10636",
@@ -330,6 +354,11 @@
       "version": "7.0.0",
       "into": "43a02b2d24c9bcde",
       "key": "SVT-33"
+    },
+    "c650448437dc24aa": {
+      "version": "8.2.0",
+      "into": "10453af12a85f805",
+      "key": "SVT-49"
     }
   },
   "public": {
@@ -339,7 +368,7 @@
     "undo": "DELETE /rest/api/3/permissionscheme/10265/permission/11703",
     "proof": {
       "GET /rest/api/3/issue/SVT-1": 200,
-      "GET /rest/api/3/issue/SVT-65": 200,
+      "GET /rest/api/3/issue/SVT-74": 200,
       "GET /rest/api/3/issue/ATLAS-2361": 404,
       "GET /rest/api/3/issue/CRBAK-1": 404,
       "GET /rest/api/3/issue/CRD-30": 404,
@@ -353,7 +382,7 @@
       "GET /rest/api/3/issue/HELIOS-1724": 404,
       "GET /rest/api/3/issue/ITHELP-1223": 404,
       "GET /rest/api/3/issue/KAN-1": 404,
-      "GET /rest/api/3/issue/LEDGER-1226": 404,
+      "GET /rest/api/3/issue/LEDGER-1225": 404,
       "GET /rest/api/3/issue/LICW-32": 404,
       "GET /rest/api/3/issue/LZMT-307": 200,
       "GET /rest/api/3/issue/ORBIT-91": 404,
@@ -362,17 +391,17 @@
       "GET /rest/api/3/issue/SEC-1225": 404,
       "GET /rest/api/3/issue/VOY-1992": 404,
       "anonymous site-wide search (bounded, all pages): issues per project": {
-        "SVT": 65,
+        "SVT": 70,
         "CRT": 377,
         "LZMT": 307
       },
-      "anonymous listing of SVT": "65 issues (receipt holds 65; 已完成 59, Backlog 6)",
+      "anonymous listing of SVT": "70 issues (receipt holds 70; 已完成 64, Backlog 6)",
       "other projects whose scheme lets anyone browse": "CRT,LZMT",
       "public trackers (allowlist)": "CRT,SVT,LZMT",
       "negative control": "13 fake broken answers, each failed the verdict",
       "GET /jira/software/c/projects/SVT/issues": 200
     },
-    "provenAt": "2026-10-11T11:33:11.904Z",
+    "provenAt": "2026-10-11T13:27:32.527Z",
     "proofFailures": []
   }
 }
