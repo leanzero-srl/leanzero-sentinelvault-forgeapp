@@ -15,7 +15,7 @@
 import { kvs } from "@forge/kvs";
 
 import {
-  ACTIVITY, JIRA_SEAL_MAX_BYTES, buildSealRecord, forcedCommentAdf, isExpired, jiraCopyKey, jiraLapseKey, jiraLostKey, normId, rowFor, sealIdOf, viewerPowers,
+  ACTIVITY, JIRA_SEAL_MAX_BYTES, buildSealRecord, forcedCommentAdf, isExpired, jiraCopyKey, jiraIntentKey, jiraLapseKey, jiraLostKey, jiraQueuedKey, normId, rowFor, sealIdOf, viewerPowers,
 } from "./logic.js";
 import {
   callerPermissions, copyDownloadUrl, downloadAttachment, dropSeal, getSeal, postIssueComment, putSeal, readIssue, sealsOfIssue, sealsOwnedBy, sha256Hex, storeCopy, syncIssueProperty, userName,
@@ -216,11 +216,14 @@ const issueSeals = async (req) => {
   for (const seal of await sealsOfIssue(issue.id)) {
     if (listed.has(seal.attachmentId)) continue;
     const info = await kvs.get(jiraLostKey(seal.attachmentId)).catch(() => null);
+    // No failure recorded and a put-back queued or running: "Being put back", not "Not put back".
+    const restoring = !info && !!((await kvs.get(jiraQueuedKey(seal.attachmentId)).catch(() => null))
+      || (await kvs.get(jiraIntentKey(sealIdOf(seal))).catch(() => null)));
     rows.push({
-      id: seal.attachmentId, filename: seal.attachmentName, size: seal.size, mimeType: seal.mimeType, lost: true,
+      id: seal.attachmentId, filename: seal.attachmentName, size: seal.size, mimeType: seal.mimeType, lost: true, restoring,
       lostInfo: info ? { reason: info.reason, error: info.error || null, nextAt: info.nextAt || null, attempts: info.attempts || 0 } : null,
       seal: { lockedBy: seal.lockedBy, lockedByName: seal.lockedByName, timestamp: seal.timestamp, expiresAt: seal.expiresAt, note: seal.note, restoreCount: seal.restoreCount || 0, lastRestoredAt: seal.lastRestoredAt || null },
-      row: rowFor({ record: seal, viewerId, powers, nowMs: now, lost: true }),
+      row: rowFor({ record: seal, viewerId, powers, nowMs: now, lost: true, restoring }),
       tooLarge: false,
     });
   }

@@ -126,6 +126,7 @@ export const FAMILIES = Object.freeze([
   { prefix: "jira-seal-sweep-lock", cls: "runtime" },
   { prefix: "jira-seal-sweep-cursor", cls: "runtime" },
   { prefix: "jira-seal-copy-gc-", cls: "runtime" },
+  { prefix: "jira-seal-queued-", cls: "runtime" },
   // A seal whose file could not be put back: config (it is what tells the owner, and what the sweep
   // retries) — a restore of the backup brings back the retry, never a false "sealed".
   { prefix: "jira-seal-lost-", cls: "config", group: "seals", index: true, label: "Sealed Jira files not put back yet" },
