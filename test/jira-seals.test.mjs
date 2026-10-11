@@ -3,7 +3,7 @@
 import { eq, ok, report } from "./_assert.mjs";
 import {
   buildSealRecord, decideDeletion, movedRecord, noticeDue, restoreNoticePlan, restoreCommentAdf, lapseCommentAdf,
-  viewerPowers, rowFor, forcedCommentAdf, isJiraId, normId, isIssueRef, sealIdOf, jiraCopyKey, isExpired, JIRA_NOTICE_WINDOW_MS,
+  viewerPowers, rowFor, forcedCommentAdf, loopTripped, withRestore, nextRetryAt, commentRefusalIsFinal, isJiraId, normId, isIssueRef, sealIdOf, jiraCopyKey, isExpired, JIRA_NOTICE_WINDOW_MS,
 } from "../src/server/capsules/jira-seals/logic.js";
 
 const NOW = Date.parse("2026-10-11T10:00:00Z");
@@ -106,6 +106,26 @@ eq("row: lost, editor → Try again only", rowFor({ record: rec, viewerId: OTHER
 eq("row: lost, steward → Try again + Force", rowFor({ record: rec, viewerId: OTHER, powers: steward, nowMs: NOW, lost: true }), { state: "lost", primary: "retry", menu: ["force-release"] });
 eq("row: lost, viewer → nothing", rowFor({ record: rec, viewerId: OTHER, powers: viewer, nowMs: NOW, lost: true }).primary, null);
 eq("row: a steward on their own seal gets no Force", rowFor({ record: rec, viewerId: OWNER, powers: steward, nowMs: NOW }).menu, ["extend"]);
+
+// ── delete-loop breaker ──
+{
+  const t = (m) => new Date(NOW - m * 60000).toISOString();
+  ok("loop: none yet", !loopTripped([], NOW));
+  ok("loop: two in the hour is fine", !loopTripped([t(5), t(10)], NOW));
+  ok("loop: three in the hour trips", loopTripped([t(5), t(10), t(50)], NOW));
+  ok("loop: old restores do not count", !loopTripped([t(61), t(90), t(5)], NOW));
+  ok("loop: garbage ignored", !loopTripped(["x", null, t(1)], NOW));
+  eq("restores list is bounded to 10", withRestore(Array.from({ length: 12 }, (_, i) => t(i)), NOW).length, 10);
+  eq("the move records the restore", movedRecord(rec, { id: "9" }, { actorId: OTHER, nowMs: NOW }).restores, [new Date(NOW).toISOString()]);
+}
+// ── retry backoff ──
+eq("retry: 1 h after the first failure", nextRetryAt(1, NOW) - NOW, 2 * 3600000);
+eq("retry: first", nextRetryAt(0, NOW) - NOW, 3600000);
+eq("retry: capped at 24 h", nextRetryAt(9, NOW) - NOW, 24 * 3600000);
+eq("retry: stops after the limit", nextRetryAt(10, NOW), null);
+// ── comment refusals ──
+ok("comment: 403 / 404 / 400 are final", [400, 401, 403, 404].every(commentRefusalIsFinal));
+ok("comment: 5xx, 429 and no status hold", ![500, 503, 429, null, undefined].some(commentRefusalIsFinal));
 
 // ── ids ──
 ok("id: digits", isJiraId("14731") && isJiraId(14731));

@@ -13,16 +13,25 @@ import { objectStore } from "@forge/object-store";
 import { createHash } from "node:crypto";
 
 import {
-  JIRA_SEAL_PREFIX, jiraSealKey, jiraIssueIndexKey, jiraIssueIndexPrefix, jiraLapseKey, jiraNoticeKey, jiraOwnerIndexKey, jiraOwnerIndexPrefix, normId, sealIdOf,
+  JIRA_SEAL_PREFIX, jiraSealKey, jiraIssueIndexKey, jiraIssueIndexPrefix, jiraLapseKey, jiraLostKey, jiraNoticeKey, jiraOwnerIndexKey, jiraOwnerIndexPrefix, normId, sealIdOf,
 } from "./logic.js";
 
 const asJsonHeaders = { Accept: "application/json", "Content-Type": "application/json" };
 
 export const getSeal = (attachmentId) => kvs.get(jiraSealKey(attachmentId));
 
-/** Write the seal, its per-issue index row and its owner's index row (keyed by the seal's identity). */
-export async function putSeal(record) {
-  await kvs.set(jiraSealKey(record.attachmentId), record);
+/**
+ * Write the seal, its per-issue index row and its owner's index row (keyed by the seal's identity).
+ * `create: true` (a NEW seal) refuses to overwrite one written a moment ago by someone else:
+ * returns false, and the caller tells the user.
+ */
+export async function putSeal(record, { create = false } = {}) {
+  if (create) {
+    try { await kvs.set(jiraSealKey(record.attachmentId), record, { keyPolicy: "FAIL_IF_EXISTS" }); }
+    catch (_) { return false; }
+  } else {
+    await kvs.set(jiraSealKey(record.attachmentId), record);
+  }
   await kvs.set(jiraIssueIndexKey(record.issueId, record.attachmentId), {
     attachmentId: record.attachmentId, lockedBy: record.lockedBy, expiresAt: record.expiresAt,
   });
@@ -30,6 +39,7 @@ export async function putSeal(record) {
     attachmentId: record.attachmentId, issueId: record.issueId, issueKey: record.issueKey,
     attachmentName: record.attachmentName, expiresAt: record.expiresAt,
   }).catch((e) => console.warn("[JIRA-SEAL] owner index write failed:", e?.message || e));
+  return true;
 }
 
 /** The caller's own Jira seals, newest first; every row confirmed against its seal (a stale row is removed). */
@@ -38,10 +48,13 @@ export async function sealsOwnedBy(accountId) {
   let query = kvs.query().where("key", WhereConditions.beginsWith(jiraOwnerIndexPrefix(accountId))).limit(100);
   for (let i = 0; i < 10; i++) {
     const { results, nextCursor } = await query.getMany();
-    for (const { key, value } of results || []) {
-      const rec = value?.attachmentId ? await getSeal(value.attachmentId) : null;
+    for (const { key } of results || []) {
+      // The query is eventually consistent: read the row by key before trusting (or deleting) it —
+      // after a restore moved the seal, a stale listed value still names the dead attachment.
+      const row = await kvs.get(key);
+      const rec = row?.attachmentId ? await getSeal(row.attachmentId) : null;
       if (rec?.lockedBy === accountId) out.push(rec);
-      else await kvs.delete(key).catch(() => {});
+      else if (row && !rec) await kvs.delete(key).catch(() => {});
     }
     if (!nextCursor) break;
     query = kvs.query().where("key", WhereConditions.beginsWith(jiraOwnerIndexPrefix(accountId))).limit(100).cursor(nextCursor);
@@ -50,7 +63,8 @@ export async function sealsOwnedBy(accountId) {
 }
 
 /** Remove the seal, its index row and its bookkeeping; the copy only when asked (a move keeps it). */
-export async function dropSeal(record, { keepCopy = false } = {}) {
+export async function dropSeal(record, opts = {}) {
+  let keepCopy = opts.keepCopy === true;
   const id = record.attachmentId;
   await kvs.delete(jiraSealKey(id));
   const still = await kvs.get(jiraSealKey(id));
@@ -59,8 +73,17 @@ export async function dropSeal(record, { keepCopy = false } = {}) {
   // A MOVE (a restore re-keying the seal onto the re-uploaded file) keeps the seal's bookkeeping and
   // copy: both are keyed by the seal's first attachment id, so they follow the seal, and dropping the
   // notice marker here would reopen the comment window a delete loop must not reopen.
+  // A stale twin (the dead id a restore moved away from, brought back by a backup restore or read
+  // from a lagging query) must not take the live seal's copy and bookkeeping with it: the owner row
+  // names the record that currently holds the seal.
   if (!keepCopy) {
     const sid = sealIdOf(record);
+    const holder = await kvs.get(jiraOwnerIndexKey(record.lockedBy, sid)).catch(() => null);
+    if (holder?.attachmentId && holder.attachmentId !== record.attachmentId) keepCopy = true;
+  }
+  if (!keepCopy) {
+    const sid = sealIdOf(record);
+    await kvs.delete(jiraLostKey(record.attachmentId)).catch(() => {});
     await kvs.delete(jiraOwnerIndexKey(record.lockedBy, sid)).catch(() => {});
     await kvs.delete(jiraLapseKey(sid)).catch(() => {});
     await kvs.delete(jiraNoticeKey(sid)).catch(() => {});
@@ -104,8 +127,9 @@ export async function* allSeals(maxPages = 50) {
 
 /**
  * The read side over Jira's own REST (the Confluence `protection-` content property's twin): the
- * issue property `sentinel-vault-seals` lists the issue's live seals — ids, owner account id and
- * times only (anyone who can see the issue can read it; no name, no note). Best-effort: a failed
+ * issue property `sentinel-vault-seals` lists the issue's live seals — ids and times only. Anyone
+ * who can see the issue can read it, so it names NO person (no account id, no name, no note): an
+ * account id there would outlive the person's erasure, which only rewrites the app's own storage. Best-effort: a failed
  * write never fails the seal, and the next change rewrites the whole list.
  */
 export async function syncIssueProperty(issueId, { add = null, removeId = null } = {}) {
@@ -117,7 +141,7 @@ export async function syncIssueProperty(issueId, { add = null, removeId = null }
     if (add?.attachmentId) byId.set(add.attachmentId, add);
     const seals = [...byId.values()].map((r) => ({
       attachmentId: r.attachmentId, originalAttachmentId: r.originalAttachmentId || r.attachmentId,
-      lockedBy: r.lockedBy, sealedAt: r.timestamp, expiresAt: r.expiresAt, restoreCount: r.restoreCount || 0,
+      sealedAt: r.timestamp, expiresAt: r.expiresAt, restoreCount: r.restoreCount || 0,
     }));
     const path = route`/rest/api/3/issue/${issueId}/properties/sentinel-vault-seals`;
     const res = seals.length
@@ -153,10 +177,12 @@ export async function readIssue(issueRef) {
  * The CALLER's permissions on one issue, asked of Jira as the caller (a resolver only — a trigger or
  * queue consumer has no user). Fails closed: any non-200 reads as "no permission".
  */
-export async function callerPermissions(issueId) {
+export async function callerPermissions(issueId, { projectId = null } = {}) {
   const keys = "BROWSE_PROJECTS,EDIT_ISSUES,ADMINISTER_PROJECTS,ADMINISTER";
   try {
-    const res = await api.asUser().requestJira(route`/rest/api/3/mypermissions?issueId=${issueId}&permissions=${keys}`, { headers: { Accept: "application/json" } });
+    const res = projectId
+      ? await api.asUser().requestJira(route`/rest/api/3/mypermissions?projectId=${projectId}&permissions=${keys}`, { headers: { Accept: "application/json" } })
+      : await api.asUser().requestJira(route`/rest/api/3/mypermissions?issueId=${issueId}&permissions=${keys}`, { headers: { Accept: "application/json" } });
     if (!res.ok) { console.warn(`[JIRA-SEAL] mypermissions answered ${res.status}`); return {}; }
     return (await res.json())?.permissions || {};
   } catch (e) {
@@ -171,14 +197,16 @@ export async function callerPermissions(issueId) {
  * measured 2026-10-11), so this asks, per permission, "is this account among the users holding X
  * on this issue" (GET /rest/api/3/user/permission/search). Fails closed: any non-200 is "no".
  */
-export async function permissionsForAccount(accountId, issueKey) {
+export async function permissionsForAccount(accountId, issueKey, { projectKey = null } = {}) {
   const out = {};
   // Measured 2026-10-11: the search takes issueKey (issueId → 400 "No project, issue key or issue
   // ID was provided") and project permissions only (ADMINISTER → 400 "Invalid permission name");
   // a Jira administrator is listed under ADMINISTER_PROJECTS on every project.
   for (const key of ["BROWSE_PROJECTS", "EDIT_ISSUES", "ADMINISTER_PROJECTS"]) {
     try {
-      const res = await api.asApp().requestJira(route`/rest/api/3/user/permission/search?accountId=${accountId}&issueKey=${issueKey}&permissions=${key}&maxResults=1`, { headers: { Accept: "application/json" } });
+      const res = projectKey
+        ? await api.asApp().requestJira(route`/rest/api/3/user/permission/search?accountId=${accountId}&projectKey=${projectKey}&permissions=${key}&maxResults=1`, { headers: { Accept: "application/json" } })
+        : await api.asApp().requestJira(route`/rest/api/3/user/permission/search?accountId=${accountId}&issueKey=${issueKey}&permissions=${key}&maxResults=1`, { headers: { Accept: "application/json" } });
       if (!res.ok) { console.warn(`[JIRA-SEAL] permission search ${key} answered ${res.status}`); out[key] = { havePermission: false }; continue; }
       const list = await res.json();
       out[key] = { havePermission: Array.isArray(list) && list.some((u) => u?.accountId === accountId) };
@@ -241,10 +269,10 @@ export async function postIssueComment(issueId, adf) {
       console.warn(`[JIRA-SEAL] comment on ${issueId} refused ${res.status}: ${t.slice(0, 200)}`);
       return { ok: false, status: res.status };
     }
-    return { ok: true };
+    return { ok: true, status: res.status };
   } catch (e) {
     console.warn("[JIRA-SEAL] comment failed:", e?.message || e);
-    return { ok: false };
+    return { ok: false, status: null };
   }
 }
 
@@ -273,6 +301,25 @@ export async function readCopy(copyKey, expectedSha256) {
   const bytes = Buffer.from(await res.arrayBuffer());
   if (expectedSha256 && sha256Hex(bytes) !== expectedSha256) throw new Error("The copy does not match the sealed file");
   return bytes;
+}
+
+/** A short-lived address the owner's browser can download the kept copy from (a deleted issue's file). */
+export async function copyDownloadUrl(copyKey) {
+  const r = await objectStore.createPublicDownloadUrl(copyKey);
+  return r?.url || null;
+}
+
+/** Add `ms` to every Jira seal's expiry (the auto-unseal pause being lifted). Returns how many. */
+export async function extendAllSealsBy(ms) {
+  let n = 0;
+  for await (const { key } of allSeals(200)) {
+    const rec = await kvs.get(key);
+    if (!rec?.expiresAt) continue;
+    const next = { ...rec, expiresAt: new Date(Date.parse(rec.expiresAt) + ms).toISOString() };
+    await putSeal(next);
+    n++;
+  }
+  return n;
 }
 
 /** The app's own account id (cached by the Confluence side under the same key). */

@@ -79,7 +79,7 @@ export const READ_ACTIONS = Object.freeze([
   // the privacy sweep's doors: the sweep itself schedules a backup when it deleted anything
   "privacy-status", "privacy-run-now",
   // 8.0 — Jira attachment seals
-  "jira-issue-seals", "list-my-jira-seals",
+  "jira-issue-seals", "list-my-jira-seals", "jira-copy-download",
 ]);
 
 /**

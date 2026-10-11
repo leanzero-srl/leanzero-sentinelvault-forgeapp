@@ -15,15 +15,16 @@
 import { kvs } from "@forge/kvs";
 
 import {
-  ACTIVITY, JIRA_SEAL_MAX_BYTES, buildSealRecord, forcedCommentAdf, isExpired, jiraCopyKey, jiraLapseKey, normId, rowFor, sealIdOf, viewerPowers,
+  ACTIVITY, JIRA_SEAL_MAX_BYTES, buildSealRecord, forcedCommentAdf, isExpired, jiraCopyKey, jiraLapseKey, jiraLostKey, normId, rowFor, sealIdOf, viewerPowers,
 } from "./logic.js";
 import {
-  callerPermissions, downloadAttachment, dropSeal, getSeal, postIssueComment, putSeal, readIssue, sealsOfIssue, sealsOwnedBy, sha256Hex, storeCopy, syncIssueProperty, userName,
+  callerPermissions, copyDownloadUrl, downloadAttachment, dropSeal, getSeal, postIssueComment, putSeal, readIssue, sealsOfIssue, sealsOwnedBy, sha256Hex, storeCopy, syncIssueProperty, userName,
 } from "./store.js";
 import { resolveSealHoldPeriod } from "../sealing/logic.js";
 import { sanitizeHoldDuration } from "../../shared/baseline.js";
 import { validateReleaseReason } from "../../shared/release-reason.js";
 import { resolveBulletinToggles } from "../../shared/bulletin-flags.js";
+import { withSealLock } from "./trigger.js";
 import { recordActivity, readActivity, activityIssuePrefix } from "../../infra/activity-log.js";
 
 const nowMs = () => Date.now();
@@ -41,12 +42,27 @@ async function powersOn(issueId, settings) {
 const issueActivity = (rec, type, actor, details = {}) => recordActivity({
   type,
   issueId: rec.issueId,
-  projectKey: rec.projectKey,
   actor: actor ? { accountId: actor, name: null } : null,
   target: { kind: "jira-attachment", id: rec.attachmentId, name: rec.attachmentName },
   details: { issueKey: rec.issueKey || null, ownerAccountId: rec.lockedBy, ...details },
   version: null,
 });
+
+const BUSY = "Sentinel Vault is putting this file back right now — try again in a moment";
+
+/**
+ * A non-owner's steward power over a seal. `powers` is the caller's power on the issue AS IT IS;
+ * when the issue has since moved to another project, the caller must ALSO be an admin of the project
+ * the seal was set in (review 2026-10-11, D4): otherwise moving an issue into a project you
+ * administer would hand you the seals of the project it left.
+ */
+async function isStewardOfSeal(record, powers, stewardOfProject) {
+  if (!powers.isSteward) return false;
+  if (!record.projectId || typeof stewardOfProject !== "function") return true;
+  const issue = await readIssue(record.issueId).catch(() => null);
+  if (!issue?.project?.id || issue.project.id === record.projectId) return true;
+  return (await stewardOfProject(record.projectId, record.projectKey)) === true;
+}
 
 // ── cores (shared by the resolvers and the config REST API) ───────────────────────────────────
 
@@ -68,8 +84,16 @@ export async function sealJiraAttachment({ accountId, issueId, attachmentId, loc
     if (existing.lockedBy === accountId) return { success: false, reason: "You already hold this file sealed" };
     if (!isExpired(existing, nowMs())) return { success: false, reason: "This file is already sealed by someone else" };
     // A lapsed seal held by someone else: the caller passed the edit gate above, so the old seal
-    // goes (and its copy — a fresh one is taken below).
-    await dropSeal(existing);
+    // goes (and its copy — a fresh one is taken below), recorded as ended.
+    const r = await withSealLock(attId, async () => {
+      const fresh = await getSeal(attId);
+      if (fresh?.lockedBy && !isExpired(fresh, nowMs())) return { ok: false, extended: true };
+      return fresh ? dropSeal(fresh) : { ok: true };
+    });
+    if (r.busy) return { success: false, reason: BUSY };
+    if (r.value?.extended) return { success: false, reason: "This file is already sealed by someone else" };
+    if (!r.value?.ok) return { success: false, reason: r.value?.reason || "Could not end the lapsed seal" };
+    await issueActivity(existing, ACTIVITY.ENDED, accountId, { why: "replaced-after-expiry" });
   }
 
   const holdSeconds = await resolveSealHoldPeriod(null, lockDuration);
@@ -86,13 +110,14 @@ export async function sealJiraAttachment({ accountId, issueId, attachmentId, loc
     owner: { accountId, name: await userName(accountId) },
     holdSeconds, sha256: sha256Hex(bytes), copyKey, note, nowMs: nowMs(),
   });
-  await putSeal(record);
+  // FAIL_IF_EXISTS: two people sealing the same file at once must not both be told "sealed".
+  if (!(await putSeal(record, { create: true }))) return { success: false, reason: "Someone sealed this file a moment ago — refresh to see who" };
   await syncIssueProperty(record.issueId, { add: record });
   await issueActivity(record, ACTIVITY.SEALED, accountId, { holdSeconds, size: record.size });
   return { success: true, seal: record };
 }
 
-export async function releaseJiraAttachment({ accountId, issueId, attachmentId, reason, powers }) {
+export async function releaseJiraAttachment({ accountId, issueId, attachmentId, reason, powers, stewardOfProject }) {
   const attId = normId(attachmentId);
   const record = attId ? await getSeal(attId) : null;
   if (!record?.lockedBy) return { success: false, reason: "This file is not sealed" };
@@ -100,12 +125,18 @@ export async function releaseJiraAttachment({ accountId, issueId, attachmentId, 
   const isOwner = record.lockedBy === accountId;
   let forcedReason = null;
   if (!isOwner) {
-    if (!powers.isSteward) return { success: false, reason: "Only the person who sealed this file, or a project admin, can release it" };
+    if (!(await isStewardOfSeal(record, powers, stewardOfProject))) return { success: false, reason: "Only the person who sealed this file, or a project admin, can release it" };
     const v = validateReleaseReason(reason);
     if (!v.ok) return { success: false, reason: v.error };
     forcedReason = v.reason;
   }
-  const dropped = await dropSeal(record);
+  const locked = await withSealLock(attId, async () => {
+    const fresh = await getSeal(attId);
+    if (!fresh?.lockedBy || fresh.lockedBy !== record.lockedBy) return { ok: false, reason: "This file is not sealed" };
+    return dropSeal(fresh);
+  });
+  if (locked.busy) return { success: false, reason: BUSY };
+  const dropped = locked.value;
   if (!dropped.ok) return { success: false, reason: dropped.reason };
   await syncIssueProperty(record.issueId, { removeId: record.attachmentId });
   await issueActivity(record, isOwner ? ACTIVITY.RELEASED : ACTIVITY.FORCED, accountId, forcedReason ? { forced: true, reason: forcedReason } : {});
@@ -120,24 +151,32 @@ export async function releaseJiraAttachment({ accountId, issueId, attachmentId, 
   return { success: true };
 }
 
-export async function extendJiraAttachment({ accountId, issueId, attachmentId, lockDuration, powers }) {
+export async function extendJiraAttachment({ accountId, issueId, attachmentId, lockDuration, powers, stewardOfProject }) {
   const attId = normId(attachmentId);
   const record = attId ? await getSeal(attId) : null;
   if (!record?.lockedBy) return { success: false, reason: "This file is not sealed" };
   if (record.issueId !== String(issueId)) return { success: false, reason: "That seal belongs to another issue" };
-  if (record.lockedBy !== accountId && !powers.isSteward) {
+  if (record.lockedBy !== accountId && !(await isStewardOfSeal(record, powers, stewardOfProject))) {
     return { success: false, reason: "Only the person who sealed this file, or a project admin, can extend it" };
   }
   const add = sanitizeHoldDuration(lockDuration, 0) || (await resolveSealHoldPeriod(null, null));
-  const base = Math.max(nowMs(), Date.parse(record.expiresAt || "") || 0);
-  const next = {
-    ...record,
-    expiresAt: new Date(base + add * 1000).toISOString(),
-    extendedAt: new Date().toISOString(),
-    extendedBy: accountId,
-    extensionCount: (Number(record.extensionCount) || 0) + 1,
-  };
-  await putSeal(next);
+  const locked = await withSealLock(attId, async () => {
+    const fresh = await getSeal(attId);
+    if (!fresh?.lockedBy) return null;
+    const base = Math.max(nowMs(), Date.parse(fresh.expiresAt || "") || 0);
+    const next = {
+      ...fresh,
+      expiresAt: new Date(base + add * 1000).toISOString(),
+      extendedAt: new Date().toISOString(),
+      extendedBy: accountId,
+      extensionCount: (Number(fresh.extensionCount) || 0) + 1,
+    };
+    await putSeal(next);
+    return next;
+  });
+  if (locked.busy) return { success: false, reason: BUSY };
+  const next = locked.value;
+  if (!next) return { success: false, reason: "This file is not sealed" };
   await syncIssueProperty(next.issueId, { add: next });
   await kvs.delete(jiraLapseKey(sealIdOf(record))).catch(() => {});
   await issueActivity(next, ACTIVITY.EXTENDED, accountId, { addedSeconds: add, expiresAt: next.expiresAt });
@@ -176,8 +215,10 @@ const issueSeals = async (req) => {
   const listed = new Set(issue.attachments.map((a) => a.id));
   for (const seal of await sealsOfIssue(issue.id)) {
     if (listed.has(seal.attachmentId)) continue;
+    const info = await kvs.get(jiraLostKey(seal.attachmentId)).catch(() => null);
     rows.push({
       id: seal.attachmentId, filename: seal.attachmentName, size: seal.size, mimeType: seal.mimeType, lost: true,
+      lostInfo: info ? { reason: info.reason, error: info.error || null, nextAt: info.nextAt || null, attempts: info.attempts || 0 } : null,
       seal: { lockedBy: seal.lockedBy, lockedByName: seal.lockedByName, timestamp: seal.timestamp, expiresAt: seal.expiresAt, note: seal.note, restoreCount: seal.restoreCount || 0, lastRestoredAt: seal.lastRestoredAt || null },
       row: rowFor({ record: seal, viewerId, powers, nowMs: now, lost: true }),
       tooLarge: false,
@@ -203,6 +244,7 @@ const withPowers = (core) => async (req) => {
   return core({
     accountId: req.context.accountId, issueId, attachmentId: p.attachmentId,
     lockDuration: p.lockDuration, note: p.note, reason: p.reason, powers,
+    stewardOfProject: async (projectId) => viewerPowers(await callerPermissions(null, { projectId }), { allowAdminOverride: settings?.allowAdminOverride }).isSteward,
   });
 };
 
@@ -230,11 +272,28 @@ const myJiraSeals = async (req) => {
   const accountId = req?.context?.accountId;
   if (!accountId) return { success: false, reason: "Not signed in" };
   const now = nowMs();
-  const seals = (await sealsOwnedBy(accountId)).slice(0, 200).map((r) => ({
-    attachmentId: r.attachmentId, attachmentName: r.attachmentName, issueKey: r.issueKey, issueId: r.issueId,
-    expiresAt: r.expiresAt, expired: isExpired(r, now), restoreCount: r.restoreCount || 0,
-  }));
+  const seals = [];
+  for (const r of (await sealsOwnedBy(accountId)).slice(0, 200)) {
+    const lost = r.issueDeletedAt ? null : await kvs.get(jiraLostKey(r.attachmentId)).catch(() => null);
+    seals.push({
+      attachmentId: r.attachmentId, attachmentName: r.attachmentName, issueKey: r.issueKey, issueId: r.issueId,
+      expiresAt: r.expiresAt, expired: isExpired(r, now), restoreCount: r.restoreCount || 0,
+      issueDeletedAt: r.issueDeletedAt || null, orphanUntil: r.orphanUntil || null, lost: !!lost,
+    });
+  }
   return { success: true, seals };
+};
+
+// The kept copy of a sealed file whose ISSUE was deleted (an orphan): its owner may download it.
+// Owner only — there is no issue left to read anyone else's permission on.
+const copyDownload = async (req) => {
+  const accountId = req?.context?.accountId;
+  const rec = await getSeal(normId(req?.payload?.attachmentId) || "x");
+  if (!rec?.lockedBy || rec.lockedBy !== accountId) return { success: false, reason: "Only the person who sealed this file can download its copy" };
+  if (!rec.issueDeletedAt) return { success: false, reason: "The file is still on its issue — download it from there" };
+  const url = await copyDownloadUrl(rec.copyKey).catch(() => null);
+  if (!url) return { success: false, reason: "The copy could not be found" };
+  return { success: true, url, fileName: rec.attachmentName };
 };
 
 const sealOnIssue = withPowers(sealJiraAttachment);
@@ -245,6 +304,7 @@ const retryOnIssue = withPowers(retryJiraRestore);
 export const actions = [
   ["jira-issue-seals", issueSeals],
   ["list-my-jira-seals", myJiraSeals],
+  ["jira-copy-download", copyDownload],
   ["jira-seal-attachment", sealOnIssue],
   ["jira-release-attachment", releaseOnIssue],
   ["jira-extend-attachment", extendOnIssue],

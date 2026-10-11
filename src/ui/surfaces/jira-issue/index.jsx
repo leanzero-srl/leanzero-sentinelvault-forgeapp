@@ -102,7 +102,12 @@ function SealForm({ att, defaults, onSeal, onCancel, busy }) {
 /** The row's one sentence: who holds it, until when, and what that means for this viewer. */
 function sealLine(att, viewerId, maxBytes) {
   const s = att.seal;
-  if (att.lost) return `Deleted, and Sentinel Vault could not put it back. It still holds the copy.`;
+  if (att.lost) {
+    const i = att.lostInfo;
+    if (i?.reason === "loop") return "Deleted again each time it was put back, so Sentinel Vault stopped. It still holds the copy.";
+    if (i?.nextAt) return `Deleted and not put back yet${i.error ? ` (${i.error})` : ""}. Sentinel Vault tries again ${when(new Date(i.nextAt).toISOString())} and still holds the copy.`;
+    return "Deleted and not put back. Sentinel Vault still holds the copy.";
+  }
   if (!s) return att.tooLarge ? `Too large to seal (${mb(maxBytes)} limit)` : "";
   const mine = s.lockedBy === viewerId;
   const owner = s.lockedByName || "its owner";

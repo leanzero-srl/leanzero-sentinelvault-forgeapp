@@ -92,7 +92,10 @@ async function runJiraStep(resolverKey, payload, accountId) {
   const settings = (await kvs.get("admin-settings-global")) || {};
   const powers = viewerPowers(await permissionsForAccount(accountId, issue.key), { allowAdminOverride: settings.allowAdminOverride });
   if (!powers.canSee) return { status: "refused", reason: `You cannot see ${issue.key}` };
-  const args = { accountId, issueId: issue.id, attachmentId: payload.attachmentId, lockDuration: payload.lockDuration, note: payload.note, reason: payload.reason, powers };
+  const stewardOfProject = async (_projectId, projectKey) => projectKey
+    ? viewerPowers(await permissionsForAccount(accountId, null, { projectKey }), { allowAdminOverride: settings.allowAdminOverride }).isSteward
+    : false;
+  const args = { accountId, issueId: issue.id, attachmentId: payload.attachmentId, lockDuration: payload.lockDuration, note: payload.note, reason: payload.reason, powers, stewardOfProject };
   if (resolverKey === "jira-seal-attachment") {
     // Re-run safety, as for Confluence seals: a file already held by the minter is a no-op.
     const held = await getSeal(payload.attachmentId);
