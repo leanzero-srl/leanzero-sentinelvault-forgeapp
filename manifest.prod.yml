@@ -1,0 +1,287 @@
+app:
+  id: ari:cloud:ecosystem::app/c30bf71e-4287-4872-954d-db49cc68f0ff
+  runtime:
+    name: nodejs22.x
+  compatibility:
+    confluence:
+      required: true
+    jira:
+      required: false
+  licensing:
+    enabled: true
+modules:
+  llm:
+    - key: sentinel-vault-llm
+      model:
+        - claude
+  objectStore:
+    - key: sv-store
+      storageClass: standard
+  jira:issueContext:
+    - key: sentinel-vault-issue
+      resource: jira-issue
+      resolver:
+        function: action-router
+      title: Sentinel Vault
+      label: Sealed files
+  macro:
+    - key: sentinel-vault-panel
+      resource: inline-panel-ui
+      resolver:
+        function: action-router
+      title: Sentinel Vault
+      description: Shows seal status for every file on this page
+      layout: block
+      categories:
+        - admin
+      config:
+        resource: panel-setup-ui
+        openOnInsert: false
+        viewportSize: medium
+    - key: sentinel-vault-sealed-section
+      resource: section-setup-ui
+      resolver:
+        function: action-router
+      title: Sentinel Vault Sealed Section
+      description: Locks the content inside this section against unauthorized edits
+      layout: bodied
+      categories:
+        - admin
+      config:
+        resource: section-setup-ui
+        openOnInsert: true
+        viewportSize: medium
+  confluence:contentBylineItem:
+    - key: sentinel-vault-byline
+      resource: page-details-ui
+      resolver:
+        function: action-router
+      title: Sentinel Vault
+      tooltip: Classification and seals on this page
+      contentPropertyKey: sentinel-byline
+      viewportContainer: modal
+      viewportSize: large
+  confluence:contentAction:
+    - key: sentinel-vault-seal-action
+      resource: page-details-ui
+      resolver:
+        function: action-router
+      title: Seal attachments…
+      viewportSize: large
+  confluence:pageBanner:
+    - key: sentinel-vault-ribbon
+      resource: doc-ribbon
+      resolver:
+        function: action-router
+  webtrigger:
+    - key: config-api
+      function: config-api-fn
+      urlFormat: v2
+      response:
+        type: static
+        outputs:
+          - key: accepted
+            statusCode: 202
+            contentType: application/json
+            body: '{"status":"accepted"}'
+          - key: invalid
+            statusCode: 400
+            contentType: application/json
+            body: '{"status":"invalid"}'
+          - key: unauthorized
+            statusCode: 401
+            contentType: application/json
+            body: '{"status":"unauthorized"}'
+          - key: forbidden
+            statusCode: 403
+            contentType: application/json
+            body: '{"status":"forbidden"}'
+          - key: not-allowed
+            statusCode: 405
+            contentType: application/json
+            body: '{"status":"not-allowed"}'
+          - key: conflict
+            statusCode: 409
+            contentType: application/json
+            body: '{"status":"conflict"}'
+          - key: busy
+            statusCode: 429
+            contentType: application/json
+            body: '{"status":"busy"}'
+  function:
+    - key: jira-attachment-trigger
+      handler: boot.jiraAttachmentEventTrigger
+    - key: jira-restore-fn
+      handler: boot.jiraRestoreConsumer
+      timeoutSeconds: 300
+    - key: action-router
+      handler: boot.actionRouter
+    - key: artifact-trigger
+      handler: boot.artifactEventTrigger
+    - key: lifecycle-trigger
+      handler: boot.lifecycleTrigger
+    - key: expiry-sweep-task
+      handler: boot.expirySweepTask
+    - key: recurring-nudge-task
+      handler: boot.recurringNudgeTask
+    - key: realm-scan-consumer-fn
+      handler: boot.realmScanConsumer
+      timeoutSeconds: 900
+    - key: seal-index-cron-fn
+      handler: boot.sealIndexCron
+      timeoutSeconds: 300
+    - key: workflow-sweep-fn
+      handler: boot.workflowSweep
+    - key: page-guard-sweep-fn
+      handler: boot.pageGuardSweep
+    - key: page-content-trigger
+      handler: boot.pageContentTrigger
+    - key: ai-validation-fn
+      handler: boot.aiValidationConsumer
+      timeoutSeconds: 120
+    - key: config-api-fn
+      handler: boot.configApiTrigger
+    - key: config-api-consumer-fn
+      handler: boot.configApiConsumer
+      timeoutSeconds: 900
+    - key: backup-fn
+      handler: boot.backupConsumer
+      timeoutSeconds: 900
+    - key: privacy-fn
+      handler: boot.privacyConsumer
+      timeoutSeconds: 900
+  consumer:
+    - key: realm-audit-queue
+      queue: realm-audit-queue
+      function: realm-scan-consumer-fn
+    - key: ai-validation-queue
+      queue: ai-validation-queue
+      function: ai-validation-fn
+    - key: config-api-queue
+      queue: config-api-queue
+      function: config-api-consumer-fn
+    - key: backup-queue
+      queue: backup-queue
+      function: backup-fn
+    - key: privacy-queue
+      queue: privacy-queue
+      function: privacy-fn
+    - key: jira-restore-queue
+      queue: jira-restore-queue
+      function: jira-restore-fn
+  trigger:
+    - key: attachment-events
+      function: artifact-trigger
+      events:
+        - avi:confluence:updated:attachment
+        - avi:confluence:trashed:attachment
+        - avi:confluence:deleted:attachment
+    - key: page-content-events
+      function: page-content-trigger
+      events:
+        - avi:confluence:updated:page
+        - avi:confluence:created:page
+    - key: app-lifecycle-events
+      function: lifecycle-trigger
+      events:
+        - avi:forge:installed:app
+        - avi:forge:uninstalled:app
+    - key: jira-attachment-events
+      function: jira-attachment-trigger
+      events:
+        - avi:jira:deleted:attachment
+        - avi:jira:deleted:issue
+  scheduledTrigger:
+    - key: expiry-sweep-scheduled
+      function: expiry-sweep-task
+      interval: hour
+    - key: recurring-nudge-scheduled
+      function: recurring-nudge-task
+      interval: day
+    - key: seal-index-cron
+      function: seal-index-cron-fn
+      interval: hour
+    - key: workflow-sweep-scheduled
+      function: workflow-sweep-fn
+      interval: hour
+    - key: page-guard-sweep-scheduled
+      function: page-guard-sweep-fn
+      interval: fiveMinute
+  confluence:globalSettings:
+    - key: steward-console
+      title: Sentinel Vault — Site settings
+      resource: steward-console
+      resolver:
+        function: action-router
+  confluence:globalPage:
+    - key: my-work
+      title: Sentinel Vault — My work
+      route: my-work
+      resource: my-work
+      resolver:
+        function: action-router
+      icon: static/steward-console/assets/icon.png
+  confluence:spacePage:
+    - key: realm-console
+      title: Sentinel Vault
+      route: realm-console
+      resource: realm-console
+      resolver:
+        function: action-router
+      icon: static/steward-console/assets/icon.png
+resources:
+  - key: overlay
+    path: static/overlay
+  - key: steward-console
+    path: static/steward-console
+  - key: realm-console
+    path: static/realm-console
+  - key: doc-ribbon
+    path: static/doc-ribbon
+  - key: inline-panel-ui
+    path: static/inline-panel
+  - key: panel-setup-ui
+    path: static/panel-setup
+  - key: section-setup-ui
+    path: static/section-setup
+  - key: my-work
+    path: static/my-work
+  - key: page-details-ui
+    path: static/page-details
+  - key: jira-issue
+    path: static/jira-issue
+permissions:
+  scopes:
+    - read:servicedesk-request
+    - read:cmdb-schema:jira
+    - read:cmdb-type:jira
+    - read:cmdb-object:jira
+    - read:cmdb-attribute:jira
+    - read:jira-work
+    - write:jira-work
+    - read:jira-user
+    - read:confluence-content.all
+    - read:confluence-content.summary
+    - write:confluence-content
+    - write:confluence-file
+    - readonly:content.attachment:confluence
+    - read:space:confluence
+    - write:confluence-props
+    - read:confluence-content.permission
+    - read:confluence-user
+    - read:confluence-groups
+    - search:confluence
+    - read:content-details:confluence
+    - read:page:confluence
+    - write:page:confluence
+    - read:attachment:confluence
+    - delete:attachment:confluence
+    - write:comment:confluence
+    - read:label:confluence
+    - read:configuration:confluence
+    - write:space:confluence
+    - storage:app
+    - report:personal-data
+  content:
+    styles:
+      - unsafe-inline
