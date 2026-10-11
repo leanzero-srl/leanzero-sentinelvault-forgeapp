@@ -99,6 +99,12 @@ eq("row: mine → Release, Extend", rowFor({ record: rec, viewerId: OWNER, power
 eq("row: someone else's, editor → no action", rowFor({ record: rec, viewerId: OTHER, powers: editor, nowMs: NOW }), { state: "held", primary: null, menu: [] });
 eq("row: someone else's, steward → Extend + Force", rowFor({ record: rec, viewerId: OTHER, powers: steward, nowMs: NOW }), { state: "held", primary: null, menu: ["extend", "force-release"] });
 eq("row: my lapsed seal", rowFor({ record: rec, viewerId: OWNER, powers: editor, nowMs: NOW + 9e6 }).state, "expired");
+eq("row: someone else's LAPSED seal, editor → Seal anew (the server replaces it)", rowFor({ record: rec, viewerId: OTHER, powers: editor, nowMs: NOW + 9e6 }), { state: "expired", primary: "seal", menu: [] });
+eq("row: someone else's lapsed seal, viewer → nothing", rowFor({ record: rec, viewerId: OTHER, powers: viewer, nowMs: NOW + 9e6 }).primary, null);
+eq("row: lost, owner → Try again + let it go", rowFor({ record: rec, viewerId: OWNER, powers: editor, nowMs: NOW, lost: true }), { state: "lost", primary: "retry", menu: ["release"] });
+eq("row: lost, editor → Try again only", rowFor({ record: rec, viewerId: OTHER, powers: editor, nowMs: NOW, lost: true }), { state: "lost", primary: "retry", menu: [] });
+eq("row: lost, steward → Try again + Force", rowFor({ record: rec, viewerId: OTHER, powers: steward, nowMs: NOW, lost: true }), { state: "lost", primary: "retry", menu: ["force-release"] });
+eq("row: lost, viewer → nothing", rowFor({ record: rec, viewerId: OTHER, powers: viewer, nowMs: NOW, lost: true }).primary, null);
 eq("row: a steward on their own seal gets no Force", rowFor({ record: rec, viewerId: OWNER, powers: steward, nowMs: NOW }).menu, ["extend"]);
 
 // ── ids ──

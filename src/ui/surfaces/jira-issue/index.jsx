@@ -40,7 +40,9 @@ const CHIP = {
   mine: { text: "Sealed by you", cls: "mine" },
   held: { text: "Sealed", cls: "held" },
   expired: { text: "Expired", cls: "expired" },
+  lost: { text: "Not put back", cls: "expired" },
 };
+const mb = (bytes) => `${Math.round((Number(bytes) || 0) / 1048576)} MB`;
 
 function DurationPicker({ value, defaultSeconds, onChange, disabled, allowDefault = true }) {
   const [open, setOpen] = useState(false);
@@ -49,7 +51,7 @@ function DurationPicker({ value, defaultSeconds, onChange, disabled, allowDefaul
   const place = useVisiblePlacement(open, menuRef);
   useEffect(() => (open ? listenOutside({ refs: [ref], onClose: () => setOpen(false) }) : undefined), [open]);
   const options = [
-    ...(allowDefault ? [{ label: `Site default${defaultSeconds ? ` (${humanSeconds(defaultSeconds)})` : ""}`, seconds: null }] : []),
+    ...(allowDefault ? [{ label: defaultSeconds ? `${humanSeconds(defaultSeconds)} (default)` : "Default", seconds: null }] : []),
     ...DURATIONS,
   ];
   const current = options.find((o) => o.seconds === value) || options[0];
@@ -85,42 +87,46 @@ function SealForm({ att, defaults, onSeal, onCancel, busy }) {
       <DurationPicker value={duration} defaultSeconds={defaults?.holdSeconds} onChange={setDuration} disabled={busy} />
       <label className="jv-label" htmlFor={`jv-note-${att.id}`}>Note (optional)</label>
       <input id={`jv-note-${att.id}`} className="jv-input" maxLength={300} value={note} onChange={(e) => setNote(e.target.value)}
-        placeholder="Why this file is sealed" disabled={busy} data-testid="jv-note" />
+        placeholder="Why it is sealed (everyone on the issue sees this)" disabled={busy} data-testid="jv-note" />
+      <p className="jv-hint">Sentinel Vault keeps a copy of the file. If anyone but you deletes it, the copy is put back on this issue.</p>
       <div className="jv-form-actions">
         <button type="button" className="jv-btn jv-btn-primary" disabled={busy} onClick={() => onSeal({ duration, note })} data-testid="jv-seal-confirm">
           {busy ? "Sealing…" : "Seal file"}
         </button>
         <button type="button" className="jv-btn jv-btn-quiet" disabled={busy} onClick={onCancel}>Cancel</button>
       </div>
-      <p className="jv-hint">Sentinel Vault keeps a copy of the file. If anyone but you deletes it, the copy is put back on this issue.</p>
     </div>
   );
 }
 
-function sealLine(att, viewerId) {
+/** The row's one sentence: who holds it, until when, and what that means for this viewer. */
+function sealLine(att, viewerId, maxBytes) {
   const s = att.seal;
-  if (!s) return att.tooLarge ? "Too large to seal (the copy is limited)" : "Anyone who can edit the issue can delete it";
-  const who = s.lockedBy === viewerId ? "you" : (s.lockedByName || "someone");
-  const expired = att.row.state === "expired";
-  return expired ? `Sealed by ${who} · expired ${when(s.expiresAt)}` : `Sealed by ${who} · until ${when(s.expiresAt)}`;
+  if (att.lost) return `Deleted, and Sentinel Vault could not put it back. It still holds the copy.`;
+  if (!s) return att.tooLarge ? `Too large to seal (${mb(maxBytes)} limit)` : "";
+  const mine = s.lockedBy === viewerId;
+  const owner = s.lockedByName || "its owner";
+  if (att.row.state === "expired") return `Expired ${when(s.expiresAt)}, no longer protected${mine ? "" : ` (sealed by ${owner})`}`;
+  if (mine) return `until ${when(s.expiresAt)}`;
+  return `${owner} · until ${when(s.expiresAt)} · only ${owner} or an admin can release it`;
 }
 
 function Row({ att, viewer, defaults, run, busyId, setOpenForm, openForm }) {
   const chip = CHIP[att.row.state] || CHIP.open;
-  const menu = (att.row.menu || []).map((id) => (id === "extend"
-    ? { id, label: "Extend the seal…" }
-    : { id, label: "Force release…", danger: true }));
+  const LABELS = { extend: "Extend the seal…", "force-release": "Force release…", release: "Let it go (delete the copy)…" };
+  const menu = (att.row.menu || []).map((id) => ({ id, label: LABELS[id] || id, danger: id !== "extend" }));
   const busy = busyId === att.id;
+  const line = sealLine(att, viewer.accountId, defaults?.maxBytes);
   return (
     <li className={`jv-row is-${chip.cls}`} data-testid={`jv-row-${att.id}`} data-state={att.row.state}>
       <div className="jv-row-main">
-        <span className={`jv-chip ${chip.cls}`} role="status" aria-label={chip.text}>{chip.text}</span>
+        <span className={`jv-chip ${chip.cls}`}>{chip.text}</span>
         <div className="jv-row-text">
           <div className="jv-name" title={att.filename}>{att.filename}</div>
-          <div className="jv-meta">{fileSize(att.size)} · {sealLine(att, viewer.accountId)}</div>
-          {att.seal?.note && <div className="jv-note">“{att.seal.note}”</div>}
-          {att.seal?.restoreCount > 0 && (
-            <div className="jv-restored">Put back {att.seal.restoreCount === 1 ? "once" : `${att.seal.restoreCount} times`} after a delete{att.seal.lastRestoredAt ? ` · last ${when(att.seal.lastRestoredAt)}` : ""}</div>
+          <div className="jv-meta">{fileSize(att.size)}{line ? ` · ${line}` : ""}</div>
+          {att.seal?.note && <div className="jv-note"><span className="jv-note-k">Note:</span> {att.seal.note}</div>}
+          {att.seal?.restoreCount > 0 && !att.lost && (
+            <div className="jv-restored">Deleted {att.seal.restoreCount === 1 ? "once" : `${att.seal.restoreCount} times`} and put back{att.seal.lastRestoredAt ? ` · last ${when(att.seal.lastRestoredAt)}` : ""}</div>
           )}
         </div>
         <div className="jv-row-actions">
@@ -130,6 +136,11 @@ function Row({ att, viewer, defaults, run, busyId, setOpenForm, openForm }) {
           {att.row.primary === "release" && (
             <button type="button" className="jv-btn jv-btn-quiet" disabled={busy} onClick={() => run("release", att)} data-testid={`jv-release-${att.id}`}>
               {busy ? "Working…" : "Release"}
+            </button>
+          )}
+          {att.row.primary === "retry" && (
+            <button type="button" className="jv-btn jv-btn-primary" disabled={busy} onClick={() => run("retry", att)} data-testid={`jv-retry-${att.id}`}>
+              {busy ? "Working…" : "Put it back"}
             </button>
           )}
           <ActionMenu items={menu} label={`More actions for ${att.filename}`} testId={`jv-kebab-${att.id}`} onPick={(id) => run(id, att)} />
@@ -142,13 +153,15 @@ function Row({ att, viewer, defaults, run, busyId, setOpenForm, openForm }) {
   );
 }
 
+const fail = "Could not reach Sentinel Vault. Try again.";
+
 function App() {
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
   const [busyId, setBusyId] = useState(null);
   const [openForm, setOpenForm] = useState(null);
   const [flash, setFlash] = useState(null); // { kind: "ok"|"err", text }
-  const [confirm, setConfirm] = useState(null); // release confirmation
+  const [confirm, setConfirm] = useState(null); // { att, lost } release confirmation
   const [force, setForce] = useState(null); // { att, reason }
   const [extend, setExtend] = useState(null); // { att, seconds }
   const { signedInvoke, signatureDialog } = useSignedInvoke();
@@ -158,55 +171,58 @@ function App() {
       const r = await invoke("jira-issue-seals", {});
       if (!r?.success) { setError(r?.reason || "Sentinel Vault could not read this issue."); return; }
       setError(null); setData(r);
-    } catch (_) { setError("Sentinel Vault could not load this issue's files. The list may not be empty."); }
+    } catch (_) { setError("Sentinel Vault could not load this issue's files. Your files may still be sealed."); }
   }, []);
 
   useEffect(() => {
     enablePaletteSync();
     load();
     let sub = null;
-    try { sub = events.on("JIRA_ISSUE_CHANGED", () => load()); } catch (_) { /* older hosts: the Refresh button */ }
+    try { sub = events.on("JIRA_ISSUE_CHANGED", () => { setFlash(null); load(); }); } catch (_) { /* older hosts: the Refresh button */ }
     return () => { Promise.resolve(sub).then((s) => s?.unsubscribe?.()).catch(() => {}); };
   }, [load]);
+  // A confirmation is news for a few seconds, not a banner that outlives the next event.
+  useEffect(() => {
+    if (!flash || flash.kind !== "ok") return undefined;
+    const t = setTimeout(() => setFlash(null), 6000);
+    return () => clearTimeout(t);
+  }, [flash]);
 
+  // The list is re-read BEFORE the confirmation shows, so the flash never sits above a stale row.
   const finish = async (r, okText) => {
-    // The list is re-read BEFORE the confirmation shows, so the flash never sits above a stale row.
     if (r?.success) { setOpenForm(null); await load(); setFlash({ kind: "ok", text: okText }); }
     else if (!r?.cancelled) setFlash({ kind: "err", text: r?.reason || "That did not work. Try again." });
+  };
+  const act = async (att, fn) => {
+    setBusyId(att.id);
+    try { await fn(); } catch (_) { setFlash({ kind: "err", text: fail }); } finally { setBusyId(null); }
   };
 
   const run = async (what, att, opts = {}) => {
     setFlash(null);
-    if (what === "release") { setConfirm(att); return; }
+    if (what === "release") { setConfirm({ att, lost: !!att.lost }); return; }
     if (what === "force-release") { setForce({ att, reason: "" }); return; }
     if (what === "extend") { setExtend({ att, seconds: 7 * DAY }); return; }
+    if (what === "retry") {
+      await act(att, async () => finish(await invoke("jira-retry-restore", { attachmentId: att.id }), `“${att.filename}” is back on the issue`));
+      return;
+    }
     if (what === "seal") {
-      setBusyId(att.id);
-      try {
-        const r = await signedInvoke("jira-seal-attachment", { attachmentId: att.id, ...(opts.duration ? { lockDuration: opts.duration } : {}), ...(opts.note?.trim() ? { note: opts.note.trim() } : {}) });
-        await finish(r, `“${att.filename}” is sealed`);
-      } catch (_) { setFlash({ kind: "err", text: "Could not reach Sentinel Vault. Try again." }); }
-      finally { setBusyId(null); }
+      await act(att, async () => finish(await signedInvoke("jira-seal-attachment", { attachmentId: att.id, ...(opts.duration ? { lockDuration: opts.duration } : {}), ...(opts.note?.trim() ? { note: opts.note.trim() } : {}) }), `“${att.filename}” is sealed`));
     }
   };
 
   const doRelease = async () => {
-    const att = confirm; setConfirm(null); setBusyId(att.id);
-    try { await finish(await signedInvoke("jira-release-attachment", { attachmentId: att.id }), `“${att.filename}” is released`); }
-    catch (_) { setFlash({ kind: "err", text: "Could not reach Sentinel Vault. Try again." }); }
-    finally { setBusyId(null); }
+    const { att } = confirm; setConfirm(null);
+    await act(att, async () => finish(await signedInvoke("jira-release-attachment", { attachmentId: att.id }), `“${att.filename}” is released`));
   };
   const doForce = async () => {
-    const { att, reason } = force; setForce(null); setBusyId(att.id);
-    try { await finish(await signedInvoke("jira-release-attachment", { attachmentId: att.id, reason }), `The seal on “${att.filename}” is removed`); }
-    catch (_) { setFlash({ kind: "err", text: "Could not reach Sentinel Vault. Try again." }); }
-    finally { setBusyId(null); }
+    const { att, reason } = force; setForce(null);
+    await act(att, async () => finish(await signedInvoke("jira-release-attachment", { attachmentId: att.id, reason }), `“${att.filename}” is released`));
   };
   const doExtend = async () => {
-    const { att, seconds } = extend; setExtend(null); setBusyId(att.id);
-    try { await finish(await signedInvoke("jira-extend-attachment", { attachmentId: att.id, lockDuration: seconds }), `The seal on “${att.filename}” is extended`); }
-    catch (_) { setFlash({ kind: "err", text: "Could not reach Sentinel Vault. Try again." }); }
-    finally { setBusyId(null); }
+    const { att, seconds } = extend; setExtend(null);
+    await act(att, async () => finish(await signedInvoke("jira-extend-attachment", { attachmentId: att.id, lockDuration: seconds }), `The seal on “${att.filename}” is extended`));
   };
 
   if (error) {
@@ -214,23 +230,37 @@ function App() {
       <div className="jv-root">
         <div className="jv-fail" role="alert" data-testid="jv-error">
           <span>{error}</span>
-          <button type="button" className="jv-btn jv-btn-quiet" onClick={() => { setError(null); setData(null); load(); }}>Retry</button>
+          <button type="button" className="jv-btn jv-btn-onfail" onClick={() => { setError(null); setData(null); load(); }}>Retry</button>
         </div>
       </div>
     );
   }
   if (!data) return <div className="jv-root"><div className="jv-loading" aria-busy="true" data-testid="jv-loading">Loading the issue's files…</div></div>;
 
-  const sealed = data.attachments.filter((a) => a.seal).length;
+  const now = Date.now();
+  const files = data.attachments.filter((a) => !a.lost);
+  const sealed = files.filter((a) => a.seal && Date.parse(a.seal.expiresAt) > now).length;
+  const viewerId = data.viewer.accountId;
+  // The viewer's own name in the history reads "You", like the rows.
+  const asViewer = (e) => (e?.actor?.accountId && e.actor.accountId === viewerId ? { ...e, actor: { ...e.actor, name: "You" } } : e);
+  const newEnd = extend ? new Date(Math.max(now, Date.parse(extend.att.seal?.expiresAt || "") || 0) + extend.seconds * 1000).toISOString() : null;
   return (
     <div className="jv-root" data-testid="jv-ready">
-      <div className="jv-head">
-        <span className="jv-count" data-testid="jv-count">{sealed} of {data.attachments.length} file{data.attachments.length === 1 ? "" : "s"} sealed</span>
-        <button type="button" className="jv-link" onClick={load} data-testid="jv-refresh">Refresh</button>
-      </div>
+      {files.length > 0 && (
+        <div className="jv-head">
+          <div>
+            <div className="jv-count" data-testid="jv-count">{sealed} of {files.length} file{files.length === 1 ? "" : "s"} sealed</div>
+            <div className="jv-sub">Sealed files are put back if anyone else deletes them.</div>
+          </div>
+          <button type="button" className="jv-link" onClick={() => { setFlash(null); load(); }} data-testid="jv-refresh">Refresh</button>
+        </div>
+      )}
+      {!data.viewer.canEdit && files.length > 0 && (
+        <p className="jv-hint jv-hint-top">You can view seals here. Sealing a file needs permission to edit this issue.</p>
+      )}
       {flash && <div className={`jv-flash ${flash.kind}`} role={flash.kind === "err" ? "alert" : "status"} data-testid="jv-flash">{flash.text}</div>}
       {data.attachments.length === 0 ? (
-        <p className="jv-empty" data-testid="jv-empty">This issue has no files. Attach one, then seal it here to protect it from being deleted.</p>
+        <p className="jv-empty" data-testid="jv-empty">This issue has no files. Attach one, then seal it here so it is put back if anyone else deletes it.</p>
       ) : (
         <ul className="jv-list">
           {data.attachments.map((att) => (
@@ -238,32 +268,40 @@ function App() {
           ))}
         </ul>
       )}
-      {!data.viewer.canEdit && data.attachments.length > 0 && (
-        <p className="jv-hint">You can see these seals; sealing a file needs permission to edit the issue.</p>
-      )}
       {data.history?.length > 0 && (
         <section className="jv-history" aria-label="Recent seal activity" data-testid="jv-history">
           <h3 className="jv-h3">Recent activity</h3>
           <ul>
             {data.history.map((e) => {
-              const f = formatActivity(e);
-              return <li key={e.id} className={`jv-ev tone-${f.tone}`}><span className="jv-ev-text">{f.sentence}</span><span className="jv-ev-when">{relativeTime(e.ts)}</span></li>;
+              const f = formatActivity(asViewer(e));
+              return (
+                <li key={e.id} className={`jv-ev tone-${f.tone}`}>
+                  <span className="jv-ev-text">{f.sentence}{f.detail ? <span className="jv-ev-detail">{f.detail}</span> : null}</span>
+                  <span className="jv-ev-when">{relativeTime(e.ts)}</span>
+                </li>
+              );
             })}
           </ul>
         </section>
       )}
       {confirm && (
-        <ConfirmDialog title="Release this seal?" danger={false} confirmLabel="Release" testId="jv-release-dialog"
-          message={`Anyone who can edit the issue will be able to delete “${confirm.filename}”, and Sentinel Vault will no longer put it back. Its copy is deleted.`}
+        <ConfirmDialog title={confirm.lost ? "Let this file go?" : "Release this seal?"} danger={confirm.lost} confirmLabel={confirm.lost ? "Delete the copy" : "Release"} testId="jv-release-dialog"
+          message={confirm.lost
+            ? `“${confirm.att.filename}” was deleted from the issue and could not be put back. Sentinel Vault's copy is the last one it holds; letting it go deletes that copy for good.`
+            : `Anyone who can edit the issue will be able to delete “${confirm.att.filename}”, and Sentinel Vault will no longer put it back. The file stays on the issue; only Sentinel Vault's backup copy is deleted.`}
           onConfirm={doRelease} onCancel={() => setConfirm(null)} />
       )}
       {force && (
         <Dialog title="Force release" danger onClose={() => setForce(null)} testId="jv-force-dialog">
-          <div className="sv-dialog-body">“{force.att.filename}” is sealed by {force.att.seal?.lockedByName || "someone else"}. The reason is kept in this issue's seal history, and the owner is mentioned in a comment when Sentinel Vault comments are on for the site.</div>
-          <textarea className="jv-input jv-reason" rows={3} maxLength={300} placeholder="Why the seal must go (required)" value={force.reason}
-            onChange={(e) => setForce({ ...force, reason: e.target.value })} aria-label="Reason" data-testid="jv-force-reason" />
+          <div className="sv-dialog-body">
+            {force.att.seal?.lockedByName || "Someone else"} sealed “{force.att.filename}”. Once released, anyone who can edit the issue can delete it and it will not be put back. {force.att.seal?.lockedByName || "The owner"} is mentioned in a comment if Sentinel Vault comments are on.
+          </div>
+          <label className="jv-label jv-reason-label" htmlFor="jv-force-reason">Reason (kept in this issue's seal history)</label>
+          <textarea id="jv-force-reason" className="jv-input jv-reason" rows={3} maxLength={300} value={force.reason}
+            onChange={(e) => setForce({ ...force, reason: e.target.value })} data-testid="jv-force-reason" />
+          <span className="jv-hint">At least 3 characters.</span>
           <div className="sv-dialog-actions">
-            <button type="button" className="jv-btn jv-btn-danger" disabled={force.reason.trim().length < 3} onClick={doForce} data-testid="jv-force-confirm">Remove the seal</button>
+            <button type="button" className="jv-btn jv-btn-danger" disabled={force.reason.trim().length < 3} onClick={doForce} data-testid="jv-force-confirm">Force release</button>
             <button type="button" className="jv-btn jv-btn-quiet" onClick={() => setForce(null)}>Cancel</button>
           </div>
         </Dialog>
@@ -272,6 +310,7 @@ function App() {
         <Dialog title="Extend the seal" onClose={() => setExtend(null)} testId="jv-extend-dialog">
           <div className="sv-dialog-body">“{extend.att.filename}” is sealed until {when(extend.att.seal?.expiresAt)}. Add:</div>
           <div className="jv-extend-pick"><DurationPicker value={extend.seconds} allowDefault={false} onChange={(s) => setExtend({ ...extend, seconds: s })} /></div>
+          <div className="jv-hint" data-testid="jv-extend-result">New end: {when(newEnd)}</div>
           <div className="sv-dialog-actions">
             <button type="button" className="jv-btn jv-btn-primary" onClick={doExtend} data-testid="jv-extend-confirm">Extend</button>
             <button type="button" className="jv-btn jv-btn-quiet" onClick={() => setExtend(null)}>Cancel</button>

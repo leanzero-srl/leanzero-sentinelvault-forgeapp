@@ -12,6 +12,7 @@
 // Copy rules: Confluence-native words only (space, page, file, section, group) — never realm /
 // guild / artifact / operator in anything a user reads.
 import { looksLikeAccountId } from "../../server/shared/account-id.js";
+import { when } from "./status-language.js";
 
 /** Report filter chips, in display order. `types` is what the server-side `types` filter takes. */
 export const ACTIVITY_CATEGORIES = Object.freeze([
@@ -435,17 +436,17 @@ export function formatActivity(entry) {
     case "jira.released":
       return { ...base, label: "File released", glyph: "unlock", tone: "neutral", sentence: `${who} released the seal on ${file()}` };
     case "jira.forced":
-      return { ...base, label: "Seal removed by an admin", glyph: "unlock", tone: "caution",
-        sentence: `${who} removed the seal on ${file()} as an admin`, detail: d.reason ? `reason: ${d.reason}` : "" };
+      return { ...base, label: "Seal force-released by an admin", glyph: "unlock", tone: "caution",
+        sentence: `${who} force-released the seal on ${file()}`, detail: d.reason ? `Reason: ${d.reason}` : "" };
     case "jira.extended":
       return { ...base, label: "Seal extended", glyph: "clock", tone: "seal",
-        sentence: d.expiresAt ? `Seal on ${file()} extended to ${formatAbsolute(d.expiresAt)} by ${who}` : `Seal on ${file()} extended by ${who}` };
+        sentence: d.expiresAt ? `${who} extended the seal on ${file()} to ${when(d.expiresAt)}` : `${who} extended the seal on ${file()}` };
     case "jira.restored":
       return { ...base, label: "Deleted file put back", glyph: "undo", tone: "caution",
         sentence: `${who} deleted sealed file ${file()} — ${APP_NAME} put it back` };
     case "jira.restore-failed":
       return { ...base, label: "Restore failed", glyph: "alert", tone: "critical",
-        sentence: `${who} deleted sealed file ${file()} and ${APP_NAME} could not put it back`, detail: d.error ? String(d.error) : "" };
+        sentence: `${who} deleted sealed file ${file()} and ${APP_NAME} could not put it back`, detail: d.error ? `Error: ${String(d.error)}` : "" };
     case "jira.auto-released":
       return { ...base, label: "Seal lapsed", glyph: "hourglass", tone: "neutral", sentence: `Seal on ${file()} lapsed and was released automatically` };
     case "jira.ended":
