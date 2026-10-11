@@ -51,14 +51,19 @@ was deliberately left out.
      without one event each); the seals become orphans: record and copy are kept 30 days, the owner
      sees them on My work and can download the copy (a short-lived Object Store link), then the
      sweep ends them.
+   - A copy whose delete fails is not forgotten: `deleteCopy` leaves `jira-seal-copy-gc-<id>` and
+     the hourly sweep retries it under the seal's lock, never deleting a copy a live seal uses again.
+     The sweep keeps its place in the seal list (`jira-seal-sweep-cursor`), so a site with more seals
+     than one run's 100 s budget is covered over several runs instead of always from the top.
+     Deleted Object Store objects stay recoverable by Atlassian for 21 days (Forge's own policy).
    - A space or project admin is NOT exempt, exactly as on Confluence's attachment path: release
      first, then delete.
    - One lock per seal (`jira-seal-restoring-<id>`) serialises restore, release, extend and the
      sweep's release; every writer re-reads under it.
 4. **Release, extend, force release.** The owner releases and extends. A steward — a Jira
    administrator (`ADMINISTER`) or an administrator of the issue's project (`ADMINISTER_PROJECTS`) —
-   may extend and force-release with a typed reason, only while the site setting "Let admins
-   override seals" (`allowAdminOverride`) is on. When the issue has moved since it was sealed, the
+   may extend and force-release with a typed reason, only while the site setting "Allow space admins
+   to force-unseal" (`allowAdminOverride`) is on. When the issue has moved since it was sealed, the
    steward must ALSO administer the project the seal was set in (moving an issue into a project
    you administer does not hand you its seals). The site setting "Signed seal actions" applies to
    the panel's actions as it does on Confluence; the REST API, as for every Confluence op, does not
@@ -72,7 +77,8 @@ was deliberately left out.
    scheduled triggers and the app uses five).
 6. **Audit.** Every seal event is written to the activity log under `activity-issue-{issueId}-` (the
    project leg was dropped in review: nothing read it); the issue's panel shows the last ones.
-7. **Personal data.** Seal records and the activity log hold account ids only. The weekly privacy
+7. **Personal data.** A seal record holds its owner's account id and display name (`lockedByName`,
+   refreshed or erased by the privacy sweep); the activity log holds account ids only. The weekly privacy
    sweep reads the whole store, so Jira seals are reported and erased with the rest, and the issue
    history (`activity-issue-`) ages out with the history retention setting. The issue property names
    no one. Comments the app posted on issues are Jira's data (a closed account shows as Former user).

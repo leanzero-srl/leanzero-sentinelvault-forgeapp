@@ -3,7 +3,7 @@
 import { eq, ok, report } from "./_assert.mjs";
 import {
   buildSealRecord, decideDeletion, movedRecord, noticeDue, restoreNoticePlan, restoreCommentAdf, lapseCommentAdf,
-  viewerPowers, rowFor, forcedCommentAdf, loopTripped, withRestore, nextRetryAt, commentRefusalIsFinal, isJiraId, normId, isIssueRef, sealIdOf, jiraCopyKey, isExpired, JIRA_NOTICE_WINDOW_MS,
+  viewerPowers, rowFor, forcedCommentAdf, loopTripped, withRestore, nextRetryAt, commentRefusalIsFinal, isJiraId, normId, isIssueRef, sealIdOf, jiraCopyKey, jiraCopyGcKey, isExpired, JIRA_NOTICE_WINDOW_MS,
 } from "../src/server/capsules/jira-seals/logic.js";
 
 const NOW = Date.parse("2026-10-11T10:00:00Z");
@@ -133,5 +133,8 @@ ok("id: refuses paths", !isJiraId("147/../1") && !isJiraId("") && !isJiraId("att
 eq("normId", [normId("12"), normId(12), normId("x")], ["12", "12", null]);
 ok("issue ref: key or id", isIssueRef("SVJ-1") && isIssueRef("45526") && !isIssueRef("svj-1") && !isIssueRef("SVJ-1/../x"));
 ok("expired: no date is not expired", !isExpired({}, NOW));
+// ── a failed copy delete is remembered under a KVS-safe key (no "/") and maps back to its seal ──
+eq("copy gc: key from the copy key", jiraCopyGcKey(jiraCopyKey("14731")), "jira-seal-copy-gc-14731");
+ok("copy gc: a legal KVS key", /^[a-zA-Z0-9:._\s#-]+$/.test(jiraCopyGcKey(jiraCopyKey("14731"))));
 
 report("jira-seals");
