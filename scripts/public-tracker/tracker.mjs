@@ -57,7 +57,7 @@ const PROP = "svt.tracker";
 const FIRST_VERSION = [6, 4, 0];
 // The newest version the tracker records. Raise it deliberately when a new release's lines are to be
 // published (each needs an entries.mjs row first); main may already carry later notes.
-const LAST_VERSION = [7, 1, 0];
+const LAST_VERSION = [8, 1, 0];
 // RELEASED = listed as "public" by the Marketplace's own versions endpoint (no login), and released in
 // Jira on the Marketplace's release date. Sentinel Vault has no deploy ledger, so the Marketplace is
 // the source; there is no hand-set constant to forget to raise or to raise too early (review
