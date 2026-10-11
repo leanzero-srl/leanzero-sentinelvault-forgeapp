@@ -34,6 +34,8 @@ export const WRITE_ACTIONS = Object.freeze([
   "store-doc-panel-prefs", "store-policy", "store-space-workflow", "store-validation-config", "store-workflow-config",
   "unlabel-artifact", "unseal-artifact", "unseal-section", "unwatch-artifact", "upload-artifact", "validate-page-now",
   "watch-artifact", "withdraw-approval",
+  // 8.0 — Jira attachment seals
+  "jira-seal-attachment", "jira-release-attachment", "jira-extend-attachment",
 ]);
 
 /**
@@ -76,6 +78,8 @@ export const READ_ACTIONS = Object.freeze([
   "backup-resume-automations", "backup-history",
   // the privacy sweep's doors: the sweep itself schedules a backup when it deleted anything
   "privacy-status", "privacy-run-now",
+  // 8.0 — Jira attachment seals
+  "jira-issue-seals",
 ]);
 
 /**

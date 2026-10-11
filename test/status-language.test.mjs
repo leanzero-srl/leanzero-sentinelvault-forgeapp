@@ -15,6 +15,15 @@ const L = "en-GB";
 eq("nothing → empty", when(null, now, L), "");
 eq("garbage → empty", when("nope", now, L), "");
 ok("inside the week → weekday + 24-h time", /^[A-Za-z]{3} \d{2}:\d{2}$/.test(when("2026-09-22T20:57:00.000Z", now, L)));
+// 2026-10-11: a time one week away (minus an hour) carries TODAY's weekday — it must get its date.
+{
+  const sun = new Date(2026, 9, 11, 11, 52).getTime(); // a Sunday, local time
+  const nextSun = new Date(2026, 9, 18, 10, 52).toISOString();
+  ok("one week away (same weekday as today) → a date, never the bare weekday", /^\d{1,2} [A-Za-z]{3} \d{2}:\d{2}$/.test(when(nextSun, sun, L)));
+  ok("six days away → still the weekday", /^[A-Za-z]{3} \d{2}:\d{2}$/.test(when(new Date(2026, 9, 17, 9, 0).toISOString(), sun, L)));
+  ok("later today → the weekday", /^[A-Za-z]{3} \d{2}:\d{2}$/.test(when(new Date(2026, 9, 11, 18, 0).toISOString(), sun, L)));
+  ok("a week ago (same weekday) → a date", /^\d{1,2} [A-Za-z]{3} \d{2}:\d{2}$/.test(when(new Date(2026, 9, 4, 12, 30).toISOString(), sun, L)));
+}
 ok("beyond the week, same year → day month + time", /^\d{1,2} [A-Za-z]{3} \d{2}:\d{2}$/.test(when("2026-10-05T09:00:00.000Z", now, L)));
 ok("another year → day month year + time", /^\d{1,2} [A-Za-z]{3} 2027 \d{2}:\d{2}$/.test(when("2027-02-16T09:00:00.000Z", now, L)));
 ok("never a 12-hour clock", !/AM|PM|am|pm/.test(when("2026-09-22T20:57:00.000Z", now, "en-US")));

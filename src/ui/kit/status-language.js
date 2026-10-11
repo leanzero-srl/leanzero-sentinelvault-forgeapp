@@ -40,7 +40,12 @@ export function when(iso, now = Date.now(), locale = undefined) {
   if (!Number.isFinite(ms)) return "";
   const d = new Date(ms);
   const time = d.toLocaleTimeString(locale, { hour: "2-digit", minute: "2-digit", hour12: false });
-  if (Math.abs(ms - now) < WEEK_MS) return `${d.toLocaleDateString(locale, { weekday: "short" })} ${time}`;
+  // A weekday alone names a day only inside the six calendar days either side of today: a time a
+  // full week away carries TODAY's weekday ("until Sun 12:52" read on a Sunday meant next Sunday —
+  // found on the Jira panel 2026-10-11, the default 1-week seal), so it gets its date.
+  const startOf = (t) => { const x = new Date(t); x.setHours(0, 0, 0, 0); return x.getTime(); };
+  const dayDiff = Math.round((startOf(ms) - startOf(now)) / 86400000);
+  if (Math.abs(ms - now) < WEEK_MS && Math.abs(dayDiff) <= 6) return `${d.toLocaleDateString(locale, { weekday: "short" })} ${time}`;
   const sameYear = d.getFullYear() === new Date(now).getFullYear();
   const day = d.toLocaleDateString(locale, sameYear ? { day: "numeric", month: "short" } : { day: "numeric", month: "short", year: "numeric" });
   return `${day} ${time}`;
