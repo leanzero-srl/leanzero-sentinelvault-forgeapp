@@ -8,7 +8,7 @@
 // test-harness/scripts/public-tracker/tracker.mjs (project CRT); the method is in the
 // leanzero-forge-app-baseline skill, references/public-tracker.md.
 //
-//   node scripts/public-tracker/tracker.mjs plan [--check-site]  # lint + review file, NO writes
+//   node scripts/public-tracker/tracker.mjs plan [--check-site]  # lint + review file, NO writes (--check-site: + read-only diff vs the site)
 //   node scripts/public-tracker/tracker.mjs apply                # create what is missing (idempotent)
 //   node scripts/public-tracker/tracker.mjs verify               # re-read every issue, counts, review file
 //   node scripts/public-tracker/tracker.mjs public               # grant BROWSE_PROJECTS to anyone on SVT's OWN scheme, prove it
@@ -24,7 +24,11 @@
 // layer in entries.mjs (titles, components, public-safe rewrites, withheld and folded lines) and
 // entries.mjs KNOWN (open bugs). Every issue is keyed by the first 16 hex of sha256(note line) (or
 // the KNOWN slug), recorded in receipt-<site>.json AND as the issue property `svt.tracker`, so a
-// rerun with a lost receipt adopts what exists instead of duplicating it.
+// rerun with a lost receipt adopts what exists instead of duplicating it. A note line reworded after
+// its issue exists gets a NEW hash: its entries.mjs row is keyed by the new hash and carries
+// `id: "<old hash>"`, so it keeps the old issue (receipt and property both hold the old hash).
+// `plan --check-site` reads each issue (read-only) and says, per issue, create / adopt / update (which
+// fields) / unchanged, by the same rule `apply` writes by.
 //
 // It NEVER edits anything it did not create: no shared scheme, no other project, no global setting.
 // Credentials: JIRA_ADMIN_EMAIL + JIRA_API_TOKEN from the file named by PUBLIC_TRACKER_ENV, default
@@ -32,6 +36,7 @@
 // plan --check-site read them.
 
 import { createHash } from "node:crypto";
+import { execFileSync } from "node:child_process";
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -57,12 +62,17 @@ const PROP = "svt.tracker";
 const FIRST_VERSION = [6, 4, 0];
 // The newest version the tracker records. Raise it deliberately when a new release's lines are to be
 // published (each needs an entries.mjs row first); main may already carry later notes.
-const LAST_VERSION = [8, 1, 0];
+// Raise it only to a version that is DEPLOYED TO PRODUCTION: an unlisted version's issues say it is
+// waiting for Marketplace approval, which is true only of a production build.
+const LAST_VERSION = [8, 3, 0];
 // RELEASED = listed as "public" by the Marketplace's own versions endpoint (no login), and released in
 // Jira on the Marketplace's release date. Sentinel Vault has no deploy ledger, so the Marketplace is
 // the source; there is no hand-set constant to forget to raise or to raise too early (review
-// 2026-10-09). A version the Marketplace does not list as public reads "in testing" and its Jira
-// version stays unreleased. If the endpoint cannot be read, every mode refuses to run.
+// 2026-10-09). A version the Marketplace does not list as public reads "waiting for Marketplace
+// approval" (it is in production; a Forge app's version waits for approval before the Marketplace
+// lists it) and its Jira version stays unreleased. Until 2026-10-11 it read "in testing, not yet in
+// the Marketplace version", which was false for a production build. If the endpoint cannot be read,
+// every mode refuses to run.
 const MARKETPLACE_VERSIONS = "https://marketplace.atlassian.com/rest/2/addons/com.leanzero.confluence.sentinelvault/versions?limit=100";
 // A Forge MAJOR (6.0.0 added the Assets read scopes, 7.0.0 the personal-data reporting scope) is not
 // installed automatically: a site below it stays there until a site admin approves the update. So every
@@ -200,6 +210,10 @@ export async function desired() {
       status: STATUS.known, known: true, text: [k.see, k.where, k.workaround, k.why || ""].join(" ").trim(),
     });
   }
+  // Two rows on one issue id (an `id` alias pointing at a hash that is still a live row, or a slug
+  // reused) would make apply write one issue twice with different text.
+  const idCount = issues.reduce((m, i) => ((m[i.id] = (m[i.id] || 0) + 1), m), {});
+  for (const [id, n] of Object.entries(idCount)) if (n > 1) problems.push(`${n} rows share the issue id ${id}`);
   const byId = Object.fromEntries(issues.map((i) => [i.id, i]));
   for (const [target, f] of Object.entries(folds)) {
     if (!byId[target]) problems.push(`note line ${f.h} folds into ${target}, which is not an issue on the tracker`);
@@ -223,7 +237,7 @@ const p = (...content) => ({ type: "paragraph", content });
 const t = (text, strong) => ({ type: "text", text, ...(strong ? { marks: [{ type: "strong" }] } : {}) });
 function tailSentence(i) {
   const verb = i.type === "Improvement" ? "Added" : "Fixed";
-  if (!inProduction(i.version)) return `${verb} in ${APP} ${i.version}, which is in testing and not yet in the Marketplace version.`;
+  if (!inProduction(i.version)) return `${verb} in ${APP} ${i.version}, which is waiting for Marketplace approval and is not yet listed on the Marketplace.`;
   const base = `${verb} in ${APP} ${i.version}.`;
   // A site below this version's Forge major gets it only once a site admin approves the update.
   const major = vparts(i.version)[0];
@@ -249,6 +263,19 @@ const plainText = (i) => paragraphs(i).map(([label, body]) => `${label}${body}`)
 
 // ADF as Jira stores it may carry extra attrs; compare text + marks only.
 const stripAdf = (n) => (n && typeof n === "object" ? { t: n.type, x: n.text || "", m: (n.marks || []).map((m) => m.type), c: (n.content || []).map(stripAdf) } : n);
+
+/** The one rule for "this existing issue needs a write": `apply` writes by it, `plan --check-site`
+ *  reports by it. `cur` is GET issue with fields summary, description, fixVersions; `versionIds` maps a
+ *  version name to its Jira id. Returns the drifted field names (empty = unchanged) and the wanted ids. */
+function issueDrift(cur, i, versionIds) {
+  const wantFix = i.version ? [String(versionIds[i.version])] : [];
+  const curFix = (cur.fields.fixVersions || []).map((v) => String(v.id));
+  const fields = [];
+  if (cur.fields.summary !== i.summary) fields.push("summary");
+  if (JSON.stringify(stripAdf(cur.fields.description)) !== JSON.stringify(stripAdf(adf(i)))) fields.push("description");
+  if (curFix.join() !== wantFix.join()) fields.push("fixVersion");
+  return { fields, wantFix };
+}
 
 // ---------- receipt ----------
 function readReceipt() {
@@ -363,7 +390,7 @@ async function ensureComponents(rc) {
 
 const versionWant = (v) => (v.released
   ? { description: `${APP} ${v.name}`, released: true, releaseDate: v.date }
-  : { description: `${APP} ${v.name} (in testing, not yet in the Marketplace version)`, released: false });
+  : { description: `${APP} ${v.name} (waiting for Marketplace approval)`, released: false });
 
 async function ensureVersions(rc, versions) {
   const list = must(await jira(`/rest/api/3/project/${KEY}/versions`), "versions");
@@ -437,11 +464,9 @@ async function apply() {
     } else {
       // Keep an existing issue's wording in step with the desired state, without notifying anyone.
       const cur = must(await jira(`/rest/api/3/issue/${rc.issues[i.id].key}?fields=summary,description,fixVersions`), `read ${rc.issues[i.id].key}`);
-      const wantAdf = adf(i);
-      const wantFix = i.version ? [String(rc.versions[i.version])] : [];
-      const curFix = (cur.fields.fixVersions || []).map((v) => String(v.id));
-      if (cur.fields.summary !== i.summary || JSON.stringify(stripAdf(cur.fields.description)) !== JSON.stringify(stripAdf(wantAdf)) || curFix.join() !== wantFix.join()) {
-        must(await jira(`/rest/api/3/issue/${rc.issues[i.id].key}?notifyUsers=false`, "PUT", { fields: { summary: i.summary, description: wantAdf, fixVersions: wantFix.map((id) => ({ id })) } }), `update ${rc.issues[i.id].key}`);
+      const { fields: drift, wantFix } = issueDrift(cur, i, rc.versions);
+      if (drift.length) {
+        must(await jira(`/rest/api/3/issue/${rc.issues[i.id].key}?notifyUsers=false`, "PUT", { fields: { summary: i.summary, description: adf(i), fixVersions: wantFix.map((id) => ({ id })) } }), `update ${rc.issues[i.id].key}`);
         updated++;
         console.log(`updated ${rc.issues[i.id].key} ${i.summary}`);
       }
@@ -455,7 +480,7 @@ async function apply() {
 }
 
 // ---------- plan (no writes to Jira) ----------
-function reviewMarkdown(want, siteCheck) {
+function reviewMarkdown(want, siteCheck, diff) {
   const done = want.issues.filter((i) => !i.known);
   const known = want.issues.filter((i) => i.known);
   const by = (list, f) => list.reduce((m, i) => ((m[f(i)] = (m[f(i)] || 0) + 1), m), {});
@@ -473,7 +498,9 @@ function reviewMarkdown(want, siteCheck) {
     `- Done by type: ${fmt(by(done, (i) => i.type))}. By version: ${fmt(by(done, (i) => i.version))}.`,
     `- By component: ${fmt(by(want.issues, (i) => i.component))}.`,
     ...(siteCheck ? [`- Site check (read-only): ${siteCheck}`] : []),
+    ...(diff ? [`- Against the site (read-only, by apply's own rule): issues ${fmt(diff.counts)}; versions ${fmt(diff.versionCounts)}.`] : []),
     "",
+    ...(diff ? diffMarkdown(diff) : []),
     "## Versions",
     "",
     "| Version | Jira state | Release date (Marketplace) | Note date | Description |",
@@ -504,6 +531,81 @@ function reviewMarkdown(want, siteCheck) {
   return out.join("\n");
 }
 
+function diffMarkdown(diff) {
+  const out = ["## What apply would change (read-only check against the site)", ""];
+  out.push("| Version | Action | Fields | Jira now | Planned description |", "|---|---|---|---|---|");
+  for (const v of diff.versions) out.push(`| ${v.name} | ${v.action} | ${(v.fields || []).join(", ") || "-"} | ${v.now || "-"} | ${v.want.description} |`);
+  out.push("", "| Issue | Action | Fields | Planned title |", "|---|---|---|---|");
+  for (const d of diff.issues) out.push(`| ${d.key || "(new)"} | ${d.action}${d.status ? ` (status ${d.status} -> ${statusNames(d.i.status)[0]})` : ""} | ${(d.fields || []).join(", ") || "-"} | ${d.i.summary} |`);
+  out.push("");
+  const renamed = diff.issues.filter((d) => d.fields && d.fields.includes("summary"));
+  if (renamed.length) {
+    out.push("Titles that change:", "");
+    for (const d of renamed) out.push(`- ${d.key}: "${d.was}" -> "${d.i.summary}"`);
+    out.push("");
+  }
+  if (diff.unwanted.length) out.push("Issues on the site that no planned row maps to (apply leaves them as they are):", "", ...diff.unwanted.map((u) => `- ${u}`), "");
+  return out;
+}
+
+// Read-only: what apply would do to every wanted version and issue, decided by apply's own rules
+// (versionWant, the receipt-then-property adoption, issueDrift). Also proves each receipt entry and
+// the issue's svt.tracker property name the same row, and lists site issues no row maps to (an alias
+// that failed would show up here as the old issue left behind next to a new one).
+async function siteDiff(want, rc) {
+  const jv = must(await jira(`/rest/api/3/project/${KEY}/versions`), "versions");
+  const versionIds = Object.fromEntries(jv.map((v) => [v.name, String(v.id)]));
+  const versions = want.versions.map((v) => {
+    const w = versionWant(v);
+    const f = jv.find((x) => x.name === v.name);
+    if (!f) return { name: v.name, action: "create", want: w };
+    const fields = [];
+    if (f.released !== w.released) fields.push("released");
+    if ((f.releaseDate || undefined) !== w.releaseDate) fields.push("releaseDate");
+    if ((f.description || "") !== w.description) fields.push("description");
+    return { name: v.name, action: fields.length ? "update" : "unchanged", fields, now: `${f.released ? `released ${f.releaseDate}` : "unreleased"}, "${f.description || ""}"`, want: w };
+  });
+  const byProp = await existingByProperty();
+  const problems = [];
+  const issues = [];
+  for (const i of want.issues) {
+    let ref = rc.issues[i.id];
+    let adopt = false;
+    if (!ref && byProp[i.id]) { ref = byProp[i.id]; adopt = true; }
+    if (!ref) { issues.push({ i, action: "create" }); continue; }
+    const r = must(await jira(`/rest/api/3/issue/${ref.key}?fields=summary,description,fixVersions,status&properties=${PROP}`), `read ${ref.key}`);
+    const prop = r.properties && r.properties[PROP] && r.properties[PROP].id;
+    if (prop !== i.id) problems.push(`${ref.key}: receipt says row ${i.id}, its ${PROP} property says ${prop || "(none)"}`);
+    const { fields } = issueDrift(r, i, versionIds);
+    const status = statusNames(i.status).includes(r.fields.status.name) ? null : r.fields.status.name;
+    issues.push({ i, key: ref.key, action: `${adopt ? "adopt + " : ""}${fields.length ? "update" : "unchanged"}`, fields, status, was: r.fields.summary });
+  }
+  const wantedIds = new Set(want.issues.map((i) => i.id));
+  const unwanted = Object.entries(byProp).filter(([id]) => !wantedIds.has(id)).map(([id, x]) => `${x.key} (row ${id})`);
+  let projectTotal = 0;
+  for (let next, first = true; first || next; first = false) {
+    const r = must(await jira("/rest/api/3/search/jql", "POST", { jql: `project = ${KEY} ORDER BY key ASC`, fields: ["summary"], maxResults: 100, ...(next ? { nextPageToken: next } : {}) }), "count");
+    projectTotal += (r.issues || []).length;
+    next = r.nextPageToken;
+  }
+  if (projectTotal !== Object.keys(byProp).length) problems.push(`${KEY} holds ${projectTotal} issues but ${Object.keys(byProp).length} carry the ${PROP} property`);
+  const tally = (list, f) => list.reduce((m, x) => ((m[f(x)] = (m[f(x)] || 0) + 1), m), {});
+  return {
+    versions, issues, unwanted, problems, projectTotal,
+    counts: tally(issues, (d) => d.action), versionCounts: tally(versions, (v) => v.action),
+  };
+}
+
+// review-<date>.md, unless that name is already a COMMITTED review (the record of what a gate passed):
+// then the next free review-<date>-<n>.md. An uncommitted one is a draft and is overwritten.
+function reviewPath(date) {
+  const tracked = (f) => { try { execFileSync("git", ["ls-files", "--error-unmatch", f], { cwd: HERE, stdio: "ignore" }); return true; } catch { return false; } };
+  for (let n = 1; ; n++) {
+    const name = n === 1 ? `review-${date}.md` : `review-${date}-${n}.md`;
+    if (!existsSync(join(HERE, name)) || !tracked(name)) return join(HERE, name);
+  }
+}
+
 async function siteCheck() {
   const proj = await jira(`/rest/api/3/project/${KEY}`);
   const schemes = await jira("/rest/api/3/permissionscheme");
@@ -529,9 +631,17 @@ async function plan() {
   for (const w of want.withheld) console.log(`WITHHELD ${w.version} ${w.kind} ${w.h}: ${w.why}`);
   const check = process.argv.includes("--check-site") ? await siteCheck() : null;
   if (check) console.log(`site check (read-only): ${check}`);
+  const diff = check ? await siteDiff(want, rc) : null;
+  if (diff) {
+    console.log("against the site (read-only): issues", diff.counts, "versions", diff.versionCounts, `project holds ${diff.projectTotal}`);
+    for (const v of diff.versions) if (v.action !== "unchanged") console.log(`  version ${v.name}: ${v.action} ${(v.fields || []).join(",")} -> "${v.want.description}"`);
+    for (const d of diff.issues) if (d.action !== "unchanged") console.log(`  ${(d.key || "(new)").padEnd(7)} ${d.action.padEnd(9)} ${(d.fields || []).join(",").padEnd(32)} ${d.i.version || ""} ${d.i.summary}`);
+    for (const u of diff.unwanted) console.log(`  NOT WANTED (left as is): ${u}`);
+    want.problems.push(...diff.problems);
+  }
   const date = new Date().toISOString().slice(0, 10);
-  const file = join(HERE, `review-${date}.md`);
-  writeFileSync(file, reviewMarkdown(want, check) + "\n");
+  const file = reviewPath(date);
+  writeFileSync(file, reviewMarkdown(want, check, diff) + "\n");
   console.log(`review file ${file}`);
   if (want.problems.length) { console.log("PROBLEMS:\n" + want.problems.join("\n")); process.exitCode = 1; }
 }
