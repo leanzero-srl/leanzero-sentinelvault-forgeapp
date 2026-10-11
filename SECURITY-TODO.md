@@ -1,5 +1,18 @@
 # Security items
 
+## ✅ GHSA-c8x8-7fp4-3x9w — prosemirror-view paste XSS (high) — **FIXED ON main 2026-10-11, not yet released**
+
+`npm audit --omit=dev` on main reported 5 high: prosemirror-view 1.41.5, pinned exactly by
+`@atlaskit/editor-prosemirror` and reached only through `@forge/bridge` 7 -> `@atlaskit/adf-schema`
+(the 2026-10-04 "audit 0" predates the advisory). Fix: `overrides` `"prosemirror-view": "1.42.6"`
+(the same fix Cost Slasher took, lz-license-manager 37bbf67); the lockfile moves prosemirror-view
+1.41.5 -> 1.42.6 and adds a nested prosemirror-model 1.25.12, nothing else. `npm audit --omit=dev`
+now reports 0. Shipped bytes: a production webpack build before and after (same build-info) gives
+39 byte-identical files under `static/`, so no prosemirror code is in the app's UI bundles; the change
+is advisory hygiene, not a behaviour change. Guard: CI now runs `npm audit --omit=dev --audit-level=high`
+as a gate (`.github/workflows/ci.yml`, pinned by `test/ci-workflow.test.mjs`), so the next advisory
+against a shipped dependency turns the badge red instead of waiting for a Marketplace scanner ticket.
+
 ## ✅ AMS-62653 — lodash CVE-2021-23337 / CVE-2026-4800 (Ecoscanner, Forge Dependency Scanner) — **SHIPPED 2026-08-20 (4.1.0); ticket is against the UNPUBLISHED 4.0.0 build 2002030**
 
 The ticket (created 2026-08-14, `App Version Visibility: Unpublished`, build 2002030 = the 4.0.0 approval
