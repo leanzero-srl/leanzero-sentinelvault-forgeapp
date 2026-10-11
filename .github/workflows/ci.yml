@@ -1,0 +1,62 @@
+# CI: unit tests, lint and the production build on every push to main, and on demand.
+#
+# RUNS ON THE SELF-HOSTED WORKHORSE RUNNER (Mac Studio, runner workhorse-sv, label `sentinelvault`),
+# never on a GitHub-hosted runner: Actions billing is off on leanzero-srl, so GitHub-hosted jobs die
+# in ~3 s. Runner: ~/actions-runner-sv on the workhorse, a launchd service (./svc.sh status).
+#
+# THIS REPO IS PUBLIC, AND A SELF-HOSTED RUNNER MUST NEVER RUN CODE FROM A FORK:
+#  - triggers are push to main + workflow_dispatch ONLY. Never add pull_request or
+#    pull_request_target: a fork PR would then run its own code on the workhorse.
+#  - the job also refuses unless the repo is this one and the actor is the owner.
+#  - repo settings (2026-10-11): fork PR workflows need approval for ALL external contributors,
+#    only GitHub-owned actions are allowed, and SHA pinning is required.
+#  - checkout does not persist the token into .git/config on the persistent runner.
+# test/ci-workflow.test.mjs pins all of this (it runs as a step below).
+#
+# NEVER DEPLOYS. No Forge or Atlassian credentials; every check is static or runs against stubs.
+# No actions/cache and no upload-artifact (both use GitHub storage; the runner is a persistent machine).
+# Standard: ~/.claude/skills/leanzero-forge-app-baseline/references/ci-pipeline.md
+name: ci
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: '22'
+
+jobs:
+  unit:
+    name: unit tests, lint, build
+    if: github.repository == 'leanzero-srl/leanzero-sentinelvault-forgeapp' && github.actor == 'leanzero-srl'
+    runs-on: [self-hosted, sentinelvault]
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - name: npm cache on the runner
+        run: |
+          mkdir -p "$HOME/ci-tools/npm-cache"
+          echo "npm_config_cache=$HOME/ci-tools/npm-cache" >> "$GITHUB_ENV"
+      - name: install (from the lockfile)
+        run: npm ci --no-audit --no-fund
+      - name: workflow pin (self-hosted label, push-only triggers, fork guard)
+        run: node test/ci-workflow.test.mjs
+      - name: unit tests
+        run: npm test
+      - name: lint
+        run: npm run lint
+      - name: production build
+        run: npm run build
