@@ -193,7 +193,9 @@ export async function handleJiraAttachmentDeleted(event) {
     await activity(record, ACTIVITY.RESTORE_FAILED, actorId, { error: "deleted again each time it was put back, so Sentinel Vault stopped" });
     const flags = await resolveBulletinToggles();
     if (flags.ENABLE_NATIVE_NOTIFICATIONS || flags.NOTIFY_EDITOR_ON_REVERT) {
-      await postOnce(sealIdOf(record), record.issueId, { type: "doc", version: 1, content: [{ type: "paragraph", content: [
+      // Its own comment window: the restore comments of the loop just used the seal's, and this is
+      // the one message that explains why the file stays gone.
+      await postOnce(`${sealIdOf(record)}-loop`, record.issueId, { type: "doc", version: 1, content: [{ type: "paragraph", content: [
         ...(actorId ? [{ type: "mention", attrs: { id: actorId } }, { type: "text", text: " " }] : []),
         { type: "text", text: `"${record.attachmentName}" is sealed in Sentinel Vault and was deleted again each time it was put back, so Sentinel Vault stopped putting it back. If an automation deletes it, exclude this file. ` },
         ...(flags.ENABLE_NATIVE_NOTIFICATIONS

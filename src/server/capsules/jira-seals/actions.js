@@ -224,7 +224,10 @@ const issueSeals = async (req) => {
       tooLarge: false,
     });
   }
-  let history = [];  return {
+  let history = [];
+  try { history = (await readActivity(activityIssuePrefix(issue.id), { limit: 8 })).entries; }
+  catch (e) { console.warn("[JIRA-SEAL] history read failed:", e?.message || e); }
+  return {
     success: true,
     issue: { id: issue.id, key: issue.key },
     viewer: { accountId: viewerId, ...powers },
