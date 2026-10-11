@@ -1,9 +1,10 @@
 import { kvs, WhereConditions } from "@forge/kvs";
 import { asApp, route } from "@forge/api";
-import { authorizeSteward } from "../../shared/steward-checks.js";
 import { BASELINE_HOLD_SPAN, sanitizeHoldDuration } from "../../shared/baseline.js";
-import { notifyWatchers } from "../bulletins/logic.js";
 import { sealPropertyValue } from "./seal-property.js";
+// 2026-10-11: computeSealStatus / breakSeal (a lazy "delete the expired seal on read" and an
+// owner-or-steward release with partial teardowns) lived here with zero callers; deleted. Releases
+// go through release.js releaseSeal; lapsed seals through the expiry sweep (F5).
 import { isOtherSealOnPage } from "../../shared/live-seal.js";
 
 /**
@@ -237,150 +238,6 @@ export async function releaseSealContentPropIfLast(pageId, excludeAttachmentId, 
     console.warn(`[SEAL-PROPERTY] conditional removal on ${pageId} failed:`, e?.message || e);
     return false;
   }
-}
-
-/**
- * Check if an artifact is sealed and if the seal has expired
- * Returns computed seal status accounting for expiry
- *
- * @param {string} artifactId - The artifact ID
- * @param {string} operatorAccountId - The current operator's account ID
- * @returns {Promise<Object>} Object with lockStatus, lockedByAccountId, and expiresAt
- */
-export async function computeSealStatus(artifactId, operatorAccountId) {
-  const sealRecord = await readSealRecord(artifactId);
-
-  let computedSealState = "OPEN";
-  let expiresAt = null;
-  let heldByAccountId = null;
-
-  if (sealRecord) {
-    // Check if seal has expired
-    if (sealRecord.expiresAt && new Date(sealRecord.expiresAt) < new Date()) {
-      await kvs.delete(`protection-${artifactId}`);
-      await touchSealTimestamp();
-      // Also delete the seal property from the parent page for CQL searchability
-      if (sealRecord.contentId) {
-        await removeSealContentProp(sealRecord.contentId);
-      }
-      // Clean up realm-seal index key
-      if (sealRecord.spaceId) {
-        try {
-          await kvs.delete(`space-protection-${sealRecord.spaceId}-${artifactId}`);
-        } catch (e) {
-          /* best effort */
-        }
-      }
-      await notifyWatchers(artifactId, {
-        attachmentName: sealRecord.attachmentName,
-        contentId: sealRecord.contentId,
-      });
-      computedSealState = "OPEN";
-    } else {
-      // Seal is still valid
-      if (sealRecord.lockedBy === operatorAccountId) {
-        computedSealState = "HELD_BY_ACTOR";
-        heldByAccountId = operatorAccountId;
-      } else {
-        computedSealState = "HELD";
-        heldByAccountId = sealRecord.lockedBy;
-      }
-      expiresAt = sealRecord.expiresAt;
-    }
-  }
-
-  return { lockStatus: computedSealState, lockedByAccountId: heldByAccountId, expiresAt };
-}
-
-/**
- * Break a seal on an artifact
- *
- * @param {string} artifactId - The artifact ID
- * @param {string} operatorAccountId - The operator's account ID
- * @param {string} [realmKey] - Optional realm key for steward check
- * @param {boolean} [stewardOverride=false] - Whether this is a steward override
- * @returns {Promise<{success: boolean, reason: string}>} Result object
- */
-export async function breakSeal(
-  artifactId,
-  operatorAccountId,
-  realmKey,
-  stewardOverride = false,
-) {
-  const sealRecord = await readSealRecord(artifactId);
-
-  if (!sealRecord) {
-    return { success: false, reason: "Attachment is not locked" };
-  }
-
-  // Check if seal has expired - auto-unseal without permission check
-  if (sealRecord.expiresAt && new Date(sealRecord.expiresAt) < new Date()) {
-    await kvs.delete(`protection-${artifactId}`);
-    await touchSealTimestamp();
-    if (sealRecord.spaceId) {
-      try {
-        await kvs.delete(`space-protection-${sealRecord.spaceId}-${artifactId}`);
-      } catch (e) {
-        /* best effort */
-      }
-    }
-    return { success: true, reason: "lock expired" };
-  }
-
-  let canRelease = false;
-  let releaseReason = "";
-
-  // Check if operator owns the seal
-  if (sealRecord.lockedBy === operatorAccountId) {
-    canRelease = true;
-    releaseReason = "owner unlock";
-  }
-  // Check steward override capability
-  else if (stewardOverride && realmKey) {
-    const hasStewardPermission = await authorizeSteward(
-      operatorAccountId,
-      realmKey,
-    );
-    if (hasStewardPermission) {
-      canRelease = true;
-      releaseReason = "admin override";
-    } else {
-      return {
-        success: false,
-        reason: "Admin override denied - insufficient permissions",
-      };
-    }
-  }
-  // Unauthorized unseal attempt
-  else {
-    return {
-      success: false,
-      reason: "You do not have permission to unlock this attachment",
-    };
-  }
-
-  if (canRelease) {
-    await kvs.delete(`protection-${artifactId}`);
-    await touchSealTimestamp();
-
-    // Also delete the seal property from the parent page for CQL searchability
-    if (sealRecord?.contentId) {
-      await removeSealContentProp(sealRecord.contentId);
-    }
-
-    // Clean up realm-seal index key
-    if (sealRecord?.spaceId) {
-      try {
-        await kvs.delete(`space-protection-${sealRecord.spaceId}-${artifactId}`);
-      } catch (e) {
-        /* best effort */
-      }
-    }
-
-    return { success: true, reason: releaseReason };
-  }
-
-  return { success: false, reason: "Unlock failed" };
 }
 
 /**
