@@ -13,7 +13,7 @@ import { objectStore } from "@forge/object-store";
 import { createHash } from "node:crypto";
 
 import {
-  JIRA_SEAL_PREFIX, jiraSealKey, jiraIssueIndexKey, jiraIssueIndexPrefix, jiraLapseKey, jiraLostKey, jiraNoticeKey, jiraOwnerIndexKey, jiraOwnerIndexPrefix, normId, sealIdOf,
+  JIRA_SEAL_PREFIX, jiraCopyGcKey, jiraSealKey, jiraIssueIndexKey, jiraIssueIndexPrefix, jiraLapseKey, jiraLostKey, jiraNoticeKey, jiraOwnerIndexKey, jiraOwnerIndexPrefix, normId, sealIdOf,
 } from "./logic.js";
 
 const asJsonHeaders = { Accept: "application/json", "Content-Type": "application/json" };
@@ -93,9 +93,30 @@ export async function dropSeal(record, opts = {}) {
   return { ok: true };
 }
 
+/**
+ * Deletes a seal's copy. A failure is not only logged: it leaves a jira-seal-copy-gc- row that the
+ * hourly sweep retries (retryCopyDeletes), because nothing else could ever find the copy again.
+ */
 export async function deleteCopy(copyKey) {
-  try { await objectStore.delete(copyKey); }
-  catch (e) { console.warn(`[JIRA-SEAL] copy ${copyKey} delete failed:`, e?.message || e); }
+  try {
+    await objectStore.delete(copyKey);
+    await kvs.delete(jiraCopyGcKey(copyKey)).catch(() => {});
+    return true;
+  } catch (e) {
+    console.warn(`[JIRA-SEAL] copy ${copyKey} delete failed, the sweep retries it:`, e?.message || e);
+    const prev = await kvs.get(jiraCopyGcKey(copyKey)).catch(() => null);
+    await kvs.set(jiraCopyGcKey(copyKey), {
+      copyKey, attempts: (prev?.attempts || 0) + 1, firstAt: prev?.firstAt || new Date().toISOString(), lastError: String(e?.message || e).slice(0, 200),
+    }).catch(() => {});
+    return false;
+  }
+}
+
+/** One page of Jira seals from a cursor (the hourly sweep keeps its place between runs). */
+export async function sealPage(cursor) {
+  let query = kvs.query().where("key", WhereConditions.beginsWith(JIRA_SEAL_PREFIX)).limit(100);
+  if (cursor) query = query.cursor(cursor);
+  return query.getMany();
 }
 
 /** Every seal row of one issue (the index), confirmed against the seal by key. */

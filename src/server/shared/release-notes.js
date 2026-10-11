@@ -12,6 +12,17 @@ const note = (n) => Object.freeze({ ...n, changes: Object.freeze([...(n.changes 
 
 export const RELEASE_NOTES = Object.freeze([
   note({
+    version: "8.2.0",
+    date: "2026-10-11",
+    headline: "Copies of sealed Jira files are always cleaned up",
+    fixes: [
+      "If deleting the copy of a sealed Jira file failed, for example because of a temporary error, the copy was left behind. Sentinel Vault now tries again every hour until it is gone, and never deletes a copy a seal still uses.",
+      "On a site with thousands of sealed Jira files, the hourly check could stop before reaching every seal, so some reminders, releases and clean-ups of copies kept after an issue was deleted were never reached. Each check now continues from where the last one stopped.",
+      "The 8.0.0 note gave a shortened path for connecting Jira. It now reads: Atlassian Administration, Apps, Sites, your site, Connected apps, Sentinel Vault, and on the Connections tab connect Jira (listed as Jira Apps).",
+    ],
+    action: "Nothing to do if your site already runs 8.0.0. A site on an earlier version gets this update after a site admin approves the 8.0.0 update in Confluence administration, Apps, Manage apps.",
+  }),
+  note({
     version: "8.1.0",
     date: "2026-10-11",
     headline: "A security update to a bundled library",
