@@ -12,6 +12,14 @@ const note = (n) => Object.freeze({ ...n, changes: Object.freeze([...(n.changes 
 
 export const RELEASE_NOTES = Object.freeze([
   note({
+    version: "8.1.0",
+    date: "2026-10-11",
+    headline: "A security update to a bundled library",
+    changes: [
+      "Changed: prosemirror-view, a library that comes with Atlassian's own packages, is updated to 1.42.6 to close a published security advisory (GHSA-c8x8-7fp4-3x9w). Sentinel Vault's screens do not contain the affected code, so nothing about how the app works changes.",
+    ],
+  }),
+  note({
     version: "8.0.0",
     date: "2026-10-11",
     headline: "Seal Jira attachments: a sealed file on a Jira issue is put back if anyone else deletes it",
