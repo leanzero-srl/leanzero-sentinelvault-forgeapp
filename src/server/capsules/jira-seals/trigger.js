@@ -19,7 +19,7 @@ import {
 } from "./logic.js";
 import { acquireLock, releaseLock } from "../../shared/kvs-lock.js";
 import {
-  allSeals, appAccountId, dropSeal, getSeal, postIssueComment, putSeal, readCopy, readIssue, sealsOfIssue, uploadToIssue,
+  allSeals, appAccountId, dropSeal, getSeal, postIssueComment, putSeal, readCopy, readIssue, sealsOfIssue, syncIssueProperty, uploadToIssue,
 } from "./store.js";
 import { recordActivity } from "../../infra/activity-log.js";
 import { resolveBulletinToggles } from "../../shared/bulletin-flags.js";
@@ -61,6 +61,7 @@ export async function restoreSealedFile(record, actorId) {
   await putSeal(next);
   // The old id's record and index row go; the copy stays (it is keyed by the first attachment id).
   await dropSeal(record, { keepCopy: true });
+  await syncIssueProperty(next.issueId, { add: next, removeId: record.attachmentId });
   await activity(next, ACTIVITY.RESTORED, actorId, { from: record.attachmentId, to: next.attachmentId, restoreCount: next.restoreCount });
 
   const flags = await resolveBulletinToggles();
@@ -98,6 +99,7 @@ export async function handleJiraAttachmentDeleted(event) {
   if (decision === "release-owner" || decision === "release-expired") {
     const r = await dropSeal(record);
     if (r.ok) {
+      await syncIssueProperty(record.issueId, { removeId: record.attachmentId });
       await activity(record, decision === "release-owner" ? ACTIVITY.ENDED : ACTIVITY.AUTO_RELEASED, decision === "release-owner" ? actorId : null,
         { why: decision === "release-owner" ? "owner-deleted" : "expired-and-deleted" });
     }
@@ -183,6 +185,7 @@ export async function jiraSealSweep() {
       if (decision.action === "wait") continue;
       if (decision.action === "release") {
         if (!(await dropSeal(rec)).ok) continue;
+        await syncIssueProperty(rec.issueId, { removeId: rec.attachmentId });
         out.released++;
         await activity(rec, ACTIVITY.AUTO_RELEASED, null, { noticeCount: priorCount, noticeLimit: limit });
         if (noticeOn) await postIssueComment(rec.issueId, lapseCommentAdf({ ownerId: rec.lockedBy, fileName: rec.attachmentName, noticeLimit: limit, released: true }));
