@@ -13,19 +13,40 @@ import { objectStore } from "@forge/object-store";
 import { createHash } from "node:crypto";
 
 import {
-  JIRA_SEAL_PREFIX, jiraSealKey, jiraIssueIndexKey, jiraIssueIndexPrefix, jiraLapseKey, jiraNoticeKey, normId, sealIdOf,
+  JIRA_SEAL_PREFIX, jiraSealKey, jiraIssueIndexKey, jiraIssueIndexPrefix, jiraLapseKey, jiraNoticeKey, jiraOwnerIndexKey, jiraOwnerIndexPrefix, normId, sealIdOf,
 } from "./logic.js";
 
 const asJsonHeaders = { Accept: "application/json", "Content-Type": "application/json" };
 
 export const getSeal = (attachmentId) => kvs.get(jiraSealKey(attachmentId));
 
-/** Write the seal and its per-issue index row. */
+/** Write the seal, its per-issue index row and its owner's index row (keyed by the seal's identity). */
 export async function putSeal(record) {
   await kvs.set(jiraSealKey(record.attachmentId), record);
   await kvs.set(jiraIssueIndexKey(record.issueId, record.attachmentId), {
     attachmentId: record.attachmentId, lockedBy: record.lockedBy, expiresAt: record.expiresAt,
   });
+  await kvs.set(jiraOwnerIndexKey(record.lockedBy, sealIdOf(record)), {
+    attachmentId: record.attachmentId, issueId: record.issueId, issueKey: record.issueKey,
+    attachmentName: record.attachmentName, expiresAt: record.expiresAt,
+  }).catch((e) => console.warn("[JIRA-SEAL] owner index write failed:", e?.message || e));
+}
+
+/** The caller's own Jira seals, newest first; every row confirmed against its seal (a stale row is removed). */
+export async function sealsOwnedBy(accountId) {
+  const out = [];
+  let query = kvs.query().where("key", WhereConditions.beginsWith(jiraOwnerIndexPrefix(accountId))).limit(100);
+  for (let i = 0; i < 10; i++) {
+    const { results, nextCursor } = await query.getMany();
+    for (const { key, value } of results || []) {
+      const rec = value?.attachmentId ? await getSeal(value.attachmentId) : null;
+      if (rec?.lockedBy === accountId) out.push(rec);
+      else await kvs.delete(key).catch(() => {});
+    }
+    if (!nextCursor) break;
+    query = kvs.query().where("key", WhereConditions.beginsWith(jiraOwnerIndexPrefix(accountId))).limit(100).cursor(nextCursor);
+  }
+  return out.sort((a, b) => String(b.timestamp).localeCompare(String(a.timestamp)));
 }
 
 /** Remove the seal, its index row and its bookkeeping; the copy only when asked (a move keeps it). */
@@ -40,6 +61,7 @@ export async function dropSeal(record, { keepCopy = false } = {}) {
   // notice marker here would reopen the comment window a delete loop must not reopen.
   if (!keepCopy) {
     const sid = sealIdOf(record);
+    await kvs.delete(jiraOwnerIndexKey(record.lockedBy, sid)).catch(() => {});
     await kvs.delete(jiraLapseKey(sid)).catch(() => {});
     await kvs.delete(jiraNoticeKey(sid)).catch(() => {});
     if (record.copyKey) await deleteCopy(record.copyKey);
@@ -80,6 +102,33 @@ export async function* allSeals(maxPages = 50) {
   }
 }
 
+/**
+ * The read side over Jira's own REST (the Confluence `protection-` content property's twin): the
+ * issue property `sentinel-vault-seals` lists the issue's live seals — ids, owner account id and
+ * times only (anyone who can see the issue can read it; no name, no note). Best-effort: a failed
+ * write never fails the seal, and the next change rewrites the whole list.
+ */
+export async function syncIssueProperty(issueId, { add = null, removeId = null } = {}) {
+  try {
+    // kvs.query is eventually consistent: the row just written may not be listed yet, and the one
+    // just deleted may still be. The caller names both, so the property never lags its own change.
+    const byId = new Map((await sealsOfIssue(issueId)).map((r) => [r.attachmentId, r]));
+    if (removeId) byId.delete(String(removeId));
+    if (add?.attachmentId) byId.set(add.attachmentId, add);
+    const seals = [...byId.values()].map((r) => ({
+      attachmentId: r.attachmentId, originalAttachmentId: r.originalAttachmentId || r.attachmentId,
+      lockedBy: r.lockedBy, sealedAt: r.timestamp, expiresAt: r.expiresAt, restoreCount: r.restoreCount || 0,
+    }));
+    const path = route`/rest/api/3/issue/${issueId}/properties/sentinel-vault-seals`;
+    const res = seals.length
+      ? await api.asApp().requestJira(path, { method: "PUT", headers: asJsonHeaders, body: JSON.stringify({ version: 1, seals }) })
+      : await api.asApp().requestJira(path, { method: "DELETE" });
+    if (!res.ok && res.status !== 404) console.warn(`[JIRA-SEAL] issue property on ${issueId} answered ${res.status}`);
+  } catch (e) {
+    console.warn("[JIRA-SEAL] issue property sync failed:", e?.message || e);
+  }
+}
+
 // ── Jira REST ─────────────────────────────────────────────────────────────────────────────────
 
 /** The issue with its attachments, as the app. null when it does not exist. */
@@ -114,6 +163,30 @@ export async function callerPermissions(issueId) {
     console.warn("[JIRA-SEAL] mypermissions failed:", e?.message || e);
     return {};
   }
+}
+
+/**
+ * ANOTHER person's permissions on one issue, asked as the app — for callers with no user session
+ * (the config REST API's queue consumer). Jira refuses the app the bulk permissions/check (403,
+ * measured 2026-10-11), so this asks, per permission, "is this account among the users holding X
+ * on this issue" (GET /rest/api/3/user/permission/search). Fails closed: any non-200 is "no".
+ */
+export async function permissionsForAccount(accountId, issueKey) {
+  const out = {};
+  // Measured 2026-10-11: the search takes issueKey (issueId → 400 "No project, issue key or issue
+  // ID was provided") and project permissions only (ADMINISTER → 400 "Invalid permission name");
+  // a Jira administrator is listed under ADMINISTER_PROJECTS on every project.
+  for (const key of ["BROWSE_PROJECTS", "EDIT_ISSUES", "ADMINISTER_PROJECTS"]) {
+    try {
+      const res = await api.asApp().requestJira(route`/rest/api/3/user/permission/search?accountId=${accountId}&issueKey=${issueKey}&permissions=${key}&maxResults=1`, { headers: { Accept: "application/json" } });
+      if (!res.ok) { console.warn(`[JIRA-SEAL] permission search ${key} answered ${res.status}`); out[key] = { havePermission: false }; continue; }
+      const list = await res.json();
+      out[key] = { havePermission: Array.isArray(list) && list.some((u) => u?.accountId === accountId) };
+    } catch (e) {
+      out[key] = { havePermission: false };
+    }
+  }
+  return out;
 }
 
 export async function userName(accountId) {

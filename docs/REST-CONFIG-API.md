@@ -202,6 +202,27 @@ record stays on the `sentinel-vault-workflow` property as before. The **full** e
 gated `export-space-config` (steward of that space) / `export-site-config` (site admin) resolver,
 i.e. the Export button in the console.
 
+## Jira attachment seals (8.0, docs/JIRA-SEALS.md)
+
+Three content ops act on a Jira issue's files once Jira is connected to the installation:
+
+```json
+{ "version": 1, "content": [
+  { "op": "seal-jira-attachment", "issueKey": "ABC-123", "attachmentId": "14731", "lockDuration": 604800, "note": "Signed copy" },
+  { "op": "extend-jira-attachment", "issueKey": "ABC-123", "attachmentId": "14731", "additionalSeconds": 86400 },
+  { "op": "release-jira-attachment", "issueKey": "ABC-123", "attachmentId": "14731", "reason": "Superseded by v2" }
+] }
+```
+
+`issueKey` is required (a key, `ABC-123`), `attachmentId` is Jira's numeric id. The token acts as its
+minter, as everywhere: the minter's permissions on that issue are read from Jira (`EDIT_ISSUES` to
+seal; the seal's owner, or an `ADMINISTER_PROJECTS` holder with a `reason`, to release; the owner or
+a project admin to extend). A seal the minter already holds is a no-op on a re-run. A deleted file
+is put back under a NEW attachment id. The read side is Jira's own REST: the issue property
+`sentinel-vault-seals` (`GET /rest/api/3/issue/ABC-123/properties/sentinel-vault-seals`) lists the
+issue's live seals — `attachmentId` (current), `originalAttachmentId`, `lockedBy`, `sealedAt`,
+`expiresAt`, `restoreCount` — and is removed when the last seal ends.
+
 ## What stays in the UI
 
 - Token minting/revocation and the endpoint URL (Site settings → API access), with the recipe.

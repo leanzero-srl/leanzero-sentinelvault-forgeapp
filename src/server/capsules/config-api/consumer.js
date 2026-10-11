@@ -52,6 +52,7 @@ async function runStep(step, accountId) {
       if (!spaceId) return { status: "skipped", reason: `Space ${payload.spaceKey} not found` };
       return interpretResult(await invoke(resolverKey, { spaceId, levelId: payload.levelId, reason: payload.reason }, accountId));
     }
+    if (needs === "jira") return await runJiraStep(resolverKey, payload, accountId);
     if (needs === "headingIndex") {
       const h = await invoke("list-page-headings", { pageId: payload.pageId }, accountId);
       const headingIndex = findHeadingIndex(h?.headings, payload.headingText);
@@ -75,6 +76,32 @@ async function runStep(step, accountId) {
     console.error(`[CONFIG-API] step ${step.path} (${resolverKey}) threw:`, e);
     return { status: "failed", reason: String(e?.message || e).slice(0, 300) };
   }
+}
+
+/**
+ * 8.0 — a Jira content op. The Jira resolvers read the caller's permissions from Jira AS THE
+ * CALLER, which a queue consumer cannot do; here the minter's permissions on the named issue are
+ * read as the app (user/permission/search), then the SAME core the panel's resolver calls runs.
+ */
+async function runJiraStep(resolverKey, payload, accountId) {
+  const { readIssue, permissionsForAccount, getSeal } = await import("../jira-seals/store.js");
+  const { viewerPowers } = await import("../jira-seals/logic.js");
+  const cores = await import("../jira-seals/actions.js");
+  const issue = await readIssue(payload.issueKey);
+  if (!issue) return { status: "skipped", reason: `Issue ${payload.issueKey} not found` };
+  const settings = (await kvs.get("admin-settings-global")) || {};
+  const powers = viewerPowers(await permissionsForAccount(accountId, issue.key), { allowAdminOverride: settings.allowAdminOverride });
+  if (!powers.canSee) return { status: "refused", reason: `You cannot see ${issue.key}` };
+  const args = { accountId, issueId: issue.id, attachmentId: payload.attachmentId, lockDuration: payload.lockDuration, note: payload.note, reason: payload.reason, powers };
+  if (resolverKey === "jira-seal-attachment") {
+    // Re-run safety, as for Confluence seals: a file already held by the minter is a no-op.
+    const held = await getSeal(payload.attachmentId);
+    if (held?.lockedBy === accountId && held.issueId === issue.id && Date.parse(held.expiresAt) > Date.now()) return { status: "applied", reason: "already sealed by you — no-op" };
+    return interpretResult(await cores.sealJiraAttachment(args));
+  }
+  if (resolverKey === "jira-release-attachment") return interpretResult(await cores.releaseJiraAttachment(args));
+  if (resolverKey === "jira-extend-attachment") return interpretResult(await cores.extendJiraAttachment(args));
+  return { status: "failed", reason: `No Jira op "${resolverKey}"` };
 }
 
 export async function runJob(jobId) {

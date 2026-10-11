@@ -8,6 +8,8 @@
 export const JIRA_SEAL_PREFIX = "jira-protection-";
 /** Per-issue index row: lets an issue deletion find its seals without a site-wide scan. */
 export const JIRA_ISSUE_INDEX_PREFIX = "jira-seal-issue-";
+/** Per-owner index row (K1: a per-caller listing reads a per-caller prefix): My work's Jira card. */
+export const JIRA_OWNER_INDEX_PREFIX = "jira-seal-owner-";
 /** Comment dedup: one restore comment per seal per window (a delete loop cannot flood the issue). */
 export const JIRA_NOTICE_PREFIX = "jira-seal-noticed-";
 /** Lapse reminder counter (the Confluence sweep's `expiry-notified-` shape, Jira's own family). */
@@ -19,6 +21,8 @@ export const JIRA_SEAL_MAX_BYTES = 25 * 1024 * 1024;
 export const jiraSealKey = (attachmentId) => `${JIRA_SEAL_PREFIX}${attachmentId}`;
 export const jiraIssueIndexKey = (issueId, attachmentId) => `${JIRA_ISSUE_INDEX_PREFIX}${issueId}-${attachmentId}`;
 export const jiraIssueIndexPrefix = (issueId) => `${JIRA_ISSUE_INDEX_PREFIX}${issueId}-`;
+export const jiraOwnerIndexPrefix = (accountId) => `${JIRA_OWNER_INDEX_PREFIX}${accountId}-`;
+export const jiraOwnerIndexKey = (accountId, sealId) => `${JIRA_OWNER_INDEX_PREFIX}${accountId}-${sealId}`;
 export const jiraNoticeKey = (attachmentId) => `${JIRA_NOTICE_PREFIX}${attachmentId}`;
 export const jiraLapseKey = (attachmentId) => `${JIRA_LAPSE_PREFIX}${attachmentId}`;
 /** A seal's stable identity across restores (the attachment id changes each time it is put back). */
