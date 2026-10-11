@@ -117,6 +117,15 @@ export const canReadPage = (accountId, pageId) =>
  * than growing a second that can drift.
  */
 export async function resolvePageSpaceKey(pageId) {
+  return (await resolvePageSpace(pageId))?.spaceKey || null;
+}
+
+/**
+ * The same page → space walk, returning both halves: `{ spaceId, spaceKey }`, or null on any
+ * failure (deny). For writers that stamp a record with the space it lives in (the index row is
+ * keyed by the id, the steward gate by the key) and must take both from the OBJECT.
+ */
+export async function resolvePageSpace(pageId) {
   if (!pageId) return null;
   try {
     const pres = await asApp().requestConfluence(route`/wiki/api/v2/pages/${pageId}`);
@@ -125,7 +134,22 @@ export async function resolvePageSpaceKey(pageId) {
     if (!spaceId) return null;
     const sres = await asApp().requestConfluence(route`/wiki/api/v2/spaces/${spaceId}`);
     if (!sres.ok) return null;
-    return (await sres.json())?.key || null;
+    const spaceKey = (await sres.json())?.key || null;
+    return spaceKey ? { spaceId: String(spaceId), spaceKey } : null;
   } catch (_) { /* deny on failure */ }
   return null;
+}
+
+/**
+ * The space a seal-shaped record LIVES in, for an authorization decision: the record's own
+ * `spaceKey`, else the space of the page it names (`contentId` for attachment seals, `pageId` for
+ * section seals). NEVER the caller's context or payload — that is the confused deputy CLAUDE.md
+ * describes: a record with no spaceKey would otherwise be authorized against whatever space the
+ * caller is standing in, so administering any one space reached seals site-wide. null = deny.
+ */
+export async function objectSpaceKeyOf(record) {
+  if (!record || typeof record !== "object") return null;
+  if (record.spaceKey) return record.spaceKey;
+  const pageId = record.contentId || record.pageId || null;
+  return pageId ? resolvePageSpaceKey(pageId) : null;
 }

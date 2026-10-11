@@ -5,17 +5,15 @@ import { Queue } from "@forge/events";
 
 import { authorizeSteward, isOperatorSteward, isOperatorSiteAdmin, isOperatorRealmSteward, isOperatorInStewardCohorts } from "../../shared/steward-checks.js";
 import { probeAttachmentStatus } from "../../infra/attachment-status.js";
-import { removeSealContentProp, touchSealTimestamp } from "../sealing/logic.js";
-import { notifyWatchers, sweepWatchers } from "../bulletins/logic.js";
-import { sweepEditAccess, writeSpaceIndex, listSpacesWithPendingStewardRequests, listPendingStewardRequestsInSpace } from "../editreq/logic.js";
+import { releaseSeal } from "../sealing/release.js"; // the ONE attachment-seal teardown
+import { writeSpaceIndex, listSpacesWithPendingStewardRequests, listPendingStewardRequestsInSpace } from "../editreq/logic.js";
 import {
   mailStewardOverrideNotice,
   fetchOperatorProfile,
 } from "../../infra/notice-composer.js";
 import { recordActivity } from "../../infra/activity-log.js";
-import { resolvePageSpaceKey } from "../../shared/content-access.js";
+import { canEditPage, objectSpaceKeyOf } from "../../shared/content-access.js";
 import { validateReleaseReason } from "../../shared/release-reason.js";
-import { refreshByline } from "../page-details/byline.js"; // 5.0 byline chip
 
 // Queue for background realm scanning
 // it57: realm-audit-queue is constructed lazily at push time (see launch-realm-audit) so this module
@@ -244,7 +242,9 @@ const checkAuditStatus = async (req) => {
  * Unseal an artifact as realm steward (steward override)
  */
 const stewardUnseal = async (req) => {
-  const { attachmentId, spaceKey, spaceId, reason: rawReason } = req.payload;
+  // The payload's spaceKey / spaceId are NOT read: everything here is decided by the seal the
+  // attachmentId resolves to (CLAUDE.md — derive the space from the OBJECT).
+  const { attachmentId, reason: rawReason } = req.payload;
   const operatorAccountId = req.context.accountId;
   const sealRecord = await kvs.get(`protection-${attachmentId}`);
 
@@ -252,9 +252,9 @@ const stewardUnseal = async (req) => {
     return { success: false, reason: "Attachment is not locked" };
   }
 
-  // Part 3.5: this console action releases someone ELSE's seal on both branches below (the
-  // lapsed one has no steward gate, the live one does). Unless the caller happens to own it, a
-  // typed reason is required and lands in the trail. ONE rule — shared/release-reason.js.
+  // Part 3.5: this console action releases someone ELSE's seal on both branches below. Unless
+  // the caller happens to own it, a typed reason is required and lands in the trail. ONE rule —
+  // shared/release-reason.js.
   const isOwner = !!sealRecord.lockedBy && sealRecord.lockedBy === operatorAccountId;
   let forcedReason = null;
   if (!isOwner) {
@@ -263,20 +263,11 @@ const stewardUnseal = async (req) => {
     forcedReason = v.reason;
   }
 
-  // SV-SEC-1: the seal's OWN space id first. This used to prefer the payload's, so a caller
-  // could steer which realm-index key the expired-seal branch below deletes.
-  let resolvedRealmId = sealRecord.spaceId || spaceId || null;
-  if (!resolvedRealmId && spaceKey) {
-    try {
-      const sanitizedRealmKey = spaceKey.replace(/[^a-zA-Z0-9:._\s-#]/g, "_");
-      const realmPolicy = await kvs.get(
-        `admin-settings-space-${sanitizedRealmKey}`,
-      );
-      resolvedRealmId = realmPolicy?.spaceId || null;
-    } catch (e) {
-      // ignore
-    }
-  }
+  // SV-SEC-1 (confused deputy). The space the SEAL lives in: its own spaceKey, else its page's.
+  // The payload's spaceKey used to be the fallback for records that never recorded one, which
+  // let a steward of the space they named force-unseal exactly those records anywhere on the
+  // site; it is no longer read. null = no steward gate can pass.
+  const objectSpaceKey = await objectSpaceKeyOf(sealRecord);
 
   // Check if auto-unseal is enabled before auto-deleting expired seals
   const globalPolicy = await kvs.get("admin-settings-global");
@@ -284,32 +275,37 @@ const stewardUnseal = async (req) => {
 
   if (sealRecord.expiresAt && new Date(sealRecord.expiresAt) < new Date()) {
     if (autoUnsealActive) {
-      await kvs.delete(`protection-${attachmentId}`);
-      await touchSealTimestamp();
-      if (sealRecord.contentId) {
-        await removeSealContentProp(sealRecord.contentId);
+      // A lapsed seal used to be deletable by ANY logged-in user here — no check at all — and
+      // with a partial teardown (no edit-access sweep, no panel, no reminder counters). The bar
+      // is now the one the section-seal lapsed release already uses (section-seals/actions.js
+      // unsealSection): the owner, a steward of the seal's own space, or — because the seal has
+      // lapsed — anyone who may edit the page it lives on.
+      let allowed = isOwner;
+      if (!allowed && objectSpaceKey) {
+        try { allowed = await authorizeSteward(operatorAccountId, objectSpaceKey); } catch (_) { allowed = false; }
+      }
+      if (!allowed && sealRecord.contentId) {
+        try { allowed = await canEditPage(operatorAccountId, sealRecord.contentId); } catch (_) { allowed = false; }
+      }
+      if (!allowed) {
+        return { success: false, reason: "Only the seal owner, a space admin or an editor of its page can release this lapsed seal" };
       }
 
-      // Remove realm-seal index key
-      if (resolvedRealmId) {
-        try {
-          await kvs.delete(`space-protection-${resolvedRealmId}-${attachmentId}`);
-        } catch (indexError) {
-          console.warn(
-            `[STEWARD-UNSEAL] Failed to delete realm-seal index:`,
-            indexError,
-          );
-        }
-      }
+      // ONE teardown with unseal-artifact and the expiry sweep (sealing/release.js): the seal,
+      // its index row, the page property (only if it was the page's last seal), edit access,
+      // reminder counters, watchers (notified once, there), the panel and the byline.
+      const released = await releaseSeal(attachmentId, sealRecord, { fallbackSpaceKey: objectSpaceKey });
+      if (!released.success) return released;
+      await dropUnrecordedIndexRow(attachmentId, sealRecord, objectSpaceKey);
 
-      // A1: a lapsed seal cleared by whoever clicked — not a force (no steward gate ran on this
-      // branch) and not the sweep's auto-release; the details say which it was.
+      // A1: a lapsed seal cleared by whoever clicked — not the sweep's auto-release; the
+      // details say which it was.
       await recordActivity({
         type: "seal.released",
         pageId: sealRecord.contentId || null,
-        // Not the payload's spaceKey: this branch runs with no steward gate, so an attacker-chosen
-        // key would land a row in another space's report (A1 review F2). The object's own space.
-        spaceKey: sealRecord.spaceKey || (sealRecord.contentId ? await resolvePageSpaceKey(sealRecord.contentId) : null) || null,
+        // Not the payload's spaceKey: an attacker-chosen key would land a row in another space's
+        // report (A1 review F2). The object's own space.
+        spaceKey: objectSpaceKey || null,
         actor: { accountId: operatorAccountId, name: null },
         target: { kind: "attachment", id: attachmentId, name: sealRecord.attachmentName || null },
         details: {
@@ -320,12 +316,6 @@ const stewardUnseal = async (req) => {
         version: null,
       });
 
-      await notifyWatchers(attachmentId, {
-        attachmentName: sealRecord.attachmentName,
-        contentId: sealRecord.contentId,
-      });
-
-      if (sealRecord.contentId) await refreshByline(sealRecord.contentId).catch((e) => console.warn("[BYLINE] steward-unseal (expired) refresh failed:", e?.message || e));
       return { success: true, reason: "lock expired" };
     }
   }
@@ -333,9 +323,8 @@ const stewardUnseal = async (req) => {
   // SV-SEC-1 (confused deputy). The gate named the PAYLOAD's spaceKey while the action tears
   // down the seal named by the payload's attachmentId — two different objects. Administering any
   // single space therefore granted force-unseal over every sealed file on the site. Authorize
-  // against the space the SEAL is in; the payload's key is only a fallback for records that
-  // never recorded one.
-  const effectiveRealmKey = sealRecord.spaceKey || spaceKey || null;
+  // against the space the SEAL is in (objectSpaceKey above — the record's, else its page's).
+  const effectiveRealmKey = objectSpaceKey;
   const hasStewardAccess = effectiveRealmKey
     ? await authorizeSteward(operatorAccountId, effectiveRealmKey)
     : false;
@@ -346,18 +335,14 @@ const stewardUnseal = async (req) => {
     };
   }
 
-  await kvs.delete(`protection-${attachmentId}`);
+  // The shared teardown (sealing/release.js) — it deletes the seal, re-verifies the delete
+  // before anything else, and cleans every key family the inline copy here used to (and the
+  // ones it missed: the reminder counters and the panel). Watchers are notified once, there.
+  const released = await releaseSeal(attachmentId, sealRecord, { fallbackSpaceKey: effectiveRealmKey });
+  if (!released.success) return released;
+  await dropUnrecordedIndexRow(attachmentId, sealRecord, effectiveRealmKey);
 
-  // Re-verify the seal was actually removed before proceeding
-  const verifyDeleted = await kvs.get(`protection-${attachmentId}`);
-  if (verifyDeleted) {
-    return { success: false, reason: "Seal removal could not be confirmed" };
-  }
-
-  await touchSealTimestamp();
-
-  // A1: the seal is confirmed gone (verified read-back above); the rest of the teardown is
-  // best-effort and must not stand between the fact and its record.
+  // A1: the seal is confirmed gone (releaseSeal's verified read-back); the record follows.
   await recordActivity({
     type: "seal.forced",
     pageId: sealRecord.contentId || null,
@@ -371,37 +356,6 @@ const stewardUnseal = async (req) => {
     },
     version: null,
   });
-
-  if (sealRecord.contentId) {
-    await removeSealContentProp(sealRecord.contentId);
-  }
-
-  // Remove realm-seal index key
-  if (resolvedRealmId) {
-    try {
-      await kvs.delete(`space-protection-${resolvedRealmId}-${attachmentId}`);
-      console.log(
-        `[STEWARD-UNSEAL] Removed realm-seal index key for artifact ${attachmentId} in realm ${resolvedRealmId}`,
-      );
-    } catch (indexError) {
-      console.warn(
-        `[STEWARD-UNSEAL] Failed to delete realm-seal index:`,
-        indexError,
-      );
-    }
-  }
-
-  // Clear any Edit Requests / grants tied to this seal
-  await sweepEditAccess(attachmentId);
-
-  // Notify watchers, then sweep whatever a failed notice left behind (never before —
-  // the sweep used to run first under a prefix nothing wrote, which is the only reason
-  // watchers were ever notified at all).
-  await notifyWatchers(attachmentId, {
-    attachmentName: sealRecord.attachmentName,
-    contentId: sealRecord.contentId,
-  });
-  await sweepWatchers(attachmentId);
 
   // Notify seal owner that a steward forcefully unsealed their artifact
   if (sealRecord.lockedBy && sealRecord.contentId) {
@@ -422,7 +376,7 @@ const stewardUnseal = async (req) => {
         sealRecord.attachmentName || "Unknown Attachment",
         sealRecord.contentId,
         unsealDate,
-        sealRecord.spaceKey || null, // P1-4: the seal's own space → quiet mode without a page lookup
+        effectiveRealmKey || null, // P1-4: the seal's own space → quiet mode without a page lookup
         forcedReason,
       );
     } catch (noticeError) {
@@ -433,9 +387,24 @@ const stewardUnseal = async (req) => {
     }
   }
 
-  if (sealRecord.contentId) await refreshByline(sealRecord.contentId).catch((e) => console.warn("[BYLINE] steward-unseal refresh failed:", e?.message || e));
   return { success: true, reason: "admin override" };
 };
+
+/**
+ * releaseSeal drops the index row keyed by the record's own spaceId. A record that never carried
+ * one can still have a row the console lists from (written by the realm scan under the space's
+ * id), so resolve that id from the OBJECT's space — never from the payload's spaceId, which used to
+ * let the caller pick which index row this deleted. Best effort.
+ */
+async function dropUnrecordedIndexRow(attachmentId, sealRecord, objectSpaceKey) {
+  if (sealRecord?.spaceId || !objectSpaceKey) return;
+  try {
+    const sid = await resolveRealmIdFromKey(objectSpaceKey);
+    if (sid) await kvs.delete(`space-protection-${sid}-${attachmentId}`);
+  } catch (e) {
+    console.warn("[STEWARD-UNSEAL] index row cleanup failed:", e?.message || e);
+  }
+}
 
 /**
  * Check if the current user is a steward for the given space.
