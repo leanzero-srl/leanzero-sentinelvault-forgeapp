@@ -103,6 +103,17 @@ const inProduction = (v) => {
   return !!(m && m.status === "public" && m.date);
 };
 const marketDate = (v) => (MARKET && MARKET.get(v) ? MARKET.get(v).date : null);
+// A production version the Marketplace never lists (2026-10-14: it made 8.0.0 and 8.5.0 public and left 8.1.0-8.4.0
+// out) reaches customers in the first LATER version it does list, so its lines are released with that version, on
+// that version's date, and say which listed version carries them. Before 2026-10-14 they kept reading "waiting for
+// Marketplace approval", which was false once 8.5.0 was listed.
+const reachedIn = (v) => {
+  if (inProduction(v)) return v;
+  const later = [...MARKET.keys()].filter((n) => /^\d+\.\d+\.\d+$/.test(n) && inProduction(n) && !vge(vparts(v), vparts(n))
+    && vge(LAST_VERSION, vparts(n)));
+  later.sort((a, b) => (vge(vparts(a), vparts(b)) ? 1 : -1));
+  return later[0] || null;
+};
 export const hashOf = (line) => createHash("sha256").update(line).digest("hex").slice(0, 16);
 
 // ---------- credentials (lazy: plan without --check-site needs none) ----------
@@ -197,7 +208,7 @@ export async function desired() {
         issues.push({
           id: over.id || h, type, version: n.version, date: n.date, component: COMPONENTS[code],
           summary: title, text: over.d || plainLine(line), sanitized: !!over.d, line,
-          status: STATUS.released, released: inProduction(n.version),
+          status: STATUS.released, released: !!reachedIn(n.version),
         });
       }
     }
@@ -227,7 +238,7 @@ export async function desired() {
     if (i.summary.length > 200) problems.push(`${i.id}: summary too long`);
     if (i.known && !KNOWN_VERSION_OK(i.affects, notes)) problems.push(`${i.id}: affects ${i.affects} is not a tracked version`);
   }
-  const versions = notes.map((n) => ({ name: n.version, date: inProduction(n.version) ? marketDate(n.version) : null, noteDate: n.date, released: inProduction(n.version) }));
+  const versions = notes.map((n) => { const r = reachedIn(n.version); return { name: n.version, date: r ? marketDate(r) : null, noteDate: n.date, released: !!r, via: r && r !== n.version ? r : null }; });
   return { issues, withheld, problems, versions, folds, notes };
 }
 const KNOWN_VERSION_OK = (v, notes) => notes.some((n) => n.version === v);
@@ -237,8 +248,10 @@ const p = (...content) => ({ type: "paragraph", content });
 const t = (text, strong) => ({ type: "text", text, ...(strong ? { marks: [{ type: "strong" }] } : {}) });
 function tailSentence(i) {
   const verb = i.type === "Improvement" ? "Added" : "Fixed";
-  if (!inProduction(i.version)) return `${verb} in ${APP} ${i.version}, which is waiting for Marketplace approval and is not yet listed on the Marketplace.`;
-  const base = `${verb} in ${APP} ${i.version}.`;
+  const r = reachedIn(i.version);
+  if (!r) return `${verb} in ${APP} ${i.version}, which is waiting for Marketplace approval and is not yet listed on the Marketplace.`;
+  const base = r === i.version ? `${verb} in ${APP} ${i.version}.`
+    : `${verb} in ${APP} ${i.version}, which the Marketplace does not list; it comes with ${r}.`;
   // A site below this version's Forge major gets it only once a site admin approves the update.
   const major = vparts(i.version)[0];
   if (major > 1 && !/Manage apps/.test(i.text)) {
@@ -389,7 +402,7 @@ async function ensureComponents(rc) {
 }
 
 const versionWant = (v) => (v.released
-  ? { description: `${APP} ${v.name}`, released: true, releaseDate: v.date }
+  ? { description: v.via ? `${APP} ${v.name} (not listed on the Marketplace; comes with ${v.via})` : `${APP} ${v.name}`, released: true, releaseDate: v.date }
   : { description: `${APP} ${v.name} (waiting for Marketplace approval)`, released: false });
 
 async function ensureVersions(rc, versions) {
