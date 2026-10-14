@@ -1,6 +1,6 @@
 # Sentinel Vault Public Tracker - verify file
 
-Generated 2026-10-11T13:27:10.264Z by scripts/public-tracker/tracker.mjs verify.
+Generated 2026-10-14T16:35:09.245Z by scripts/public-tracker/tracker.mjs verify.
 Site https://leanzero-demo.atlassian.net. Project SVT (id 10278), permission scheme "Sentinel Vault Public Tracker permissions" (id 10265, used by: SVT), anonymous grants: BROWSE_PROJECTS.
 Issues checked: 70 of 70. Verification failures: 0. Withheld release-note lines: 1.
 
@@ -10,7 +10,7 @@ Issues checked: 70 of 70. Verification failures: 0. Withheld release-note lines:
 - version: 6.4.0 5; 6.5.0 1; 6.6.0 6; 6.7.0 8; 6.9.0 4; 6.10.0 4; 6.11.0 1; 7.0.0 5; 7.1.0 8; 8.0.0 16; 8.1.0 1; 8.2.0 2; 8.3.0 1; 8.4.0 1; 8.5.0 1; open, affects 7.1.0 6
 - component: Classification 1; Sealed files and sections 11; Edit requests and access 2; REST API 3; Backup and restore 13; Layout and accessibility 4; Privacy and personal data 8; Space and site settings 6; Workflow and approvals 2; App permissions and updates 4; Page banner and Sentinel Vault window 4; Activity report 1; Jira issue attachments 10; My work 1
 - type: Improvement 38; Bug 32
-- versions in Jira: 6.4.0 released 2026-09-30, 6.5.0 released 2026-09-30, 6.6.0 released 2026-10-02, 6.7.0 released 2026-10-04, 6.9.0 released 2026-10-04, 6.10.0 released 2026-10-04, 6.11.0 released 2026-10-04, 7.0.0 released 2026-10-05, 7.1.0 released 2026-10-07, 8.0.0 unreleased, 8.1.0 unreleased, 8.2.0 unreleased, 8.3.0 unreleased, 8.4.0 unreleased, 8.5.0 unreleased
+- versions in Jira: 6.4.0 released 2026-09-30, 6.5.0 released 2026-09-30, 6.6.0 released 2026-10-02, 6.7.0 released 2026-10-04, 6.9.0 released 2026-10-04, 6.10.0 released 2026-10-04, 6.11.0 released 2026-10-04, 7.0.0 released 2026-10-05, 7.1.0 released 2026-10-09, 8.0.0 released 2026-10-14, 8.1.0 released 2026-10-14, 8.2.0 released 2026-10-14, 8.3.0 released 2026-10-14, 8.4.0 released 2026-10-14, 8.5.0 released 2026-10-14
 
 ## Issues
 
@@ -369,152 +369,152 @@ Issues checked: 70 of 70. Verification failures: 0. Withheld release-note lines:
 - type: Improvement; status: Done (Done); fixVersion: 8.0.0; component: Jira issue attachments
 
 > Sentinel Vault works on Jira issues. Once a site admin connects Jira (Atlassian Administration, Apps, Sites, your site, Connected apps, Sentinel Vault, then on the Connections tab connect Jira, listed as Jira Apps), every issue has a Sentinel Vault section in its right-hand column listing the issue's files. Anyone who can edit the issue can seal a file for a chosen time, with an optional note; the owner can extend or release it; while the site setting Allow space admins to force-unseal is on, a Jira or project admin can extend it or force-release it with a typed reason.
-> Added in Sentinel Vault 8.0.0, which is waiting for Marketplace approval and is not yet listed on the Marketplace.
+> Added in Sentinel Vault 8.0.0. A site still on version 7 or earlier gets it once a site admin approves the update in Confluence administration, Apps, Manage apps.
 
 ### SVT-50 - A sealed Jira file deleted by someone else is put back from Sentinel Vault's copy
 
 - type: Improvement; status: Done (Done); fixVersion: 8.0.0; component: Jira issue attachments
 
 > Sentinel Vault keeps a copy of every sealed Jira file (files up to 25 MB). If anyone but the owner deletes a file while its seal holds, the copy is uploaded back to the same issue under the same name, the seal moves to it, and a comment on the issue tells the person who deleted it (setting Tell editors when their change is undone, on by default; at most one comment per file every 10 minutes). Jira gives the put-back file a new attachment id, and its author is Sentinel Vault. It works once a site admin has connected Jira to Sentinel Vault in Atlassian Administration.
-> Added in Sentinel Vault 8.0.0, which is waiting for Marketplace approval and is not yet listed on the Marketplace.
+> Added in Sentinel Vault 8.0.0. A site still on version 7 or earlier gets it once a site admin approves the update in Confluence administration, Apps, Manage apps.
 
 ### SVT-51 - A sealed Jira file that could not be put back stays listed and is tried again
 
 - type: Improvement; status: Done (Done); fixVersion: 8.0.0; component: Jira issue attachments
 
 > If a sealed file cannot be put back (for example a temporary Jira error), the issue's Sentinel Vault section shows it as Not put back with a Put it back button, Sentinel Vault tries again on its own (after an hour, then less often, up to 10 times), and the expiry rules never delete that copy. If the same file keeps being deleted each time it is put back, for example by an automation rule, Sentinel Vault stops putting it back, keeps the copy, shows the file as Not put back and says so on the issue; anyone who can edit the issue puts it back with Put it back. It works once a site admin has connected Jira to Sentinel Vault in Atlassian Administration.
-> Added in Sentinel Vault 8.0.0, which is waiting for Marketplace approval and is not yet listed on the Marketplace.
+> Added in Sentinel Vault 8.0.0. A site still on version 7 or earlier gets it once a site admin approves the update in Confluence administration, Apps, Manage apps.
 
 ### SVT-52 - Deleting a Jira issue keeps its sealed files' copies for 30 days
 
 - type: Improvement; status: Done (Done); fixVersion: 8.0.0; component: Jira issue attachments
 
 > Deleting an issue cannot destroy a sealed file's copy. It is kept for 30 days and its owner can download it from My work in Confluence. It works once a site admin has connected Jira to Sentinel Vault in Atlassian Administration.
-> Added in Sentinel Vault 8.0.0, which is waiting for Marketplace approval and is not yet listed on the Marketplace.
+> Added in Sentinel Vault 8.0.0. A site still on version 7 or earlier gets it once a site admin approves the update in Confluence administration, Apps, Manage apps.
 
 ### SVT-53 - The site's seal settings apply to Jira too
 
 - type: Improvement; status: Done (Done); fixVersion: 8.0.0; component: Jira issue attachments
 
 > These site settings apply to Jira too: Default Seal Duration, Seals expire and the overdue reminders, Sign seal actions with an authenticator code, Allow space admins to force-unseal (on Jira it covers Jira and project admins), and the comment switches Page comments that mention people, Tell editors when their change is undone, and Expiry and release notices. Each issue's seal history is shown in its Sentinel Vault section and follows Delete old history. It works once a site admin has connected Jira to Sentinel Vault in Atlassian Administration.
-> Added in Sentinel Vault 8.0.0, which is waiting for Marketplace approval and is not yet listed on the Marketplace.
+> Added in Sentinel Vault 8.0.0. A site still on version 7 or earlier gets it once a site admin approves the update in Confluence administration, Apps, Manage apps.
 
 ### SVT-54 - REST API operations for Jira seals, and an issue property that lists them
 
 - type: Improvement; status: Done (Done); fixVersion: 8.0.0; component: REST API
 
 > Three REST content operations, seal-jira-attachment, extend-jira-attachment and release-jira-attachment, and an issue property, sentinel-vault-seals, that lists an issue's live seals without naming anyone. It works once a site admin has connected Jira to Sentinel Vault in Atlassian Administration.
-> Added in Sentinel Vault 8.0.0, which is waiting for Marketplace approval and is not yet listed on the Marketplace.
+> Added in Sentinel Vault 8.0.0. A site still on version 7 or earlier gets it once a site admin approves the update in Confluence administration, Apps, Manage apps.
 
 ### SVT-55 - The 8.0.0 update asks for three Jira permissions
 
 - type: Improvement; status: Done (Done); fixVersion: 8.0.0; component: App permissions and updates
 
 > The 8.0.0 update asks a site admin to approve three new permissions, read:jira-work, write:jira-work and read:jira-user, used only to read an issue's files, put a deleted sealed file back, comment on the issue, keep the sentinel-vault-seals issue property up to date, read people's names, and check Jira permissions. Until it is approved the site stays on the previous version, and nothing happens on Jira until Jira is connected. A site admin approves the update in Confluence administration, Apps, Manage apps.
-> Added in Sentinel Vault 8.0.0, which is waiting for Marketplace approval and is not yet listed on the Marketplace.
+> Added in Sentinel Vault 8.0.0.
 
 ### SVT-56 - Times read today, yesterday and tomorrow in words
 
 - type: Improvement; status: Done (Done); fixVersion: 8.0.0; component: Layout and accessibility
 
 > Times read today, yesterday and tomorrow in words instead of a weekday, and a time a full week away shows its date.
-> Added in Sentinel Vault 8.0.0, which is waiting for Marketplace approval and is not yet listed on the Marketplace.
+> Added in Sentinel Vault 8.0.0. A site still on version 7 or earlier gets it once a site admin approves the update in Confluence administration, Apps, Manage apps.
 
 ### SVT-60 - A new version uploaded by a seal's owner becomes the version the seal protects
 
 - type: Bug; status: Done (Done); fixVersion: 8.0.0; component: Sealed files and sections
 
 > A new version uploaded by a seal's owner is now the version the seal protects. Before, the next unauthorised change was undone back to the original file, losing the owner's update.
-> Fixed in Sentinel Vault 8.0.0, which is waiting for Marketplace approval and is not yet listed on the Marketplace.
+> Fixed in Sentinel Vault 8.0.0. A site still on version 7 or earlier gets it once a site admin approves the update in Confluence administration, Apps, Manage apps.
 
 ### SVT-62 - A lapsed seal on a deleted page was retried every hour and never released
 
 - type: Bug; status: Done (Done); fixVersion: 8.0.0; component: Sealed files and sections
 
 > A lapsed seal on a page that was deleted is now released. Before, its reminder could not be posted, so it was retried every hour and the seal was never released. On a site where Overdue reminders before release is 0 (seals are held, not released), the seal stays and its reminder is counted as given, so the hourly retries stop. On a page in the trash, the seal finishes its normal countdown.
-> Fixed in Sentinel Vault 8.0.0, which is waiting for Marketplace approval and is not yet listed on the Marketplace.
+> Fixed in Sentinel Vault 8.0.0. A site still on version 7 or earlier gets it once a site admin approves the update in Confluence administration, Apps, Manage apps.
 
 ### SVT-63 - A file deleted from the panel without a seal could not be sealed by someone else later
 
 - type: Bug; status: Done (Done); fixVersion: 8.0.0; component: Sealed files and sections
 
 > A file deleted from the panel without a seal no longer blocks someone else from sealing it later, and its permanent deletion no longer posts a violation notice.
-> Fixed in Sentinel Vault 8.0.0, which is waiting for Marketplace approval and is not yet listed on the Marketplace.
+> Fixed in Sentinel Vault 8.0.0. A site still on version 7 or earlier gets it once a site admin approves the update in Confluence administration, Apps, Manage apps.
 
 ### SVT-64 - Edit requests waiting on you were missing when Seals expire was off
 
 - type: Bug; status: Done (Done); fixVersion: 8.0.0; component: Edit requests and access
 
 > Edit requests waiting on you are listed even on sites where Seals expire is off, and space settings no longer show a file as sealed when it was only moved to the trash from the panel and never sealed.
-> Fixed in Sentinel Vault 8.0.0, which is waiting for Marketplace approval and is not yet listed on the Marketplace.
+> Fixed in Sentinel Vault 8.0.0. A site still on version 7 or earlier gets it once a site admin approves the update in Confluence administration, Apps, Manage apps.
 
 ### SVT-65 - A security update to a bundled library
 
 - type: Improvement; status: Done (Done); fixVersion: 8.1.0; component: App permissions and updates
 
 > The prosemirror-view library, which comes with Atlassian's own packages, is updated to 1.42.6 to close a published security advisory (GHSA-c8x8-7fp4-3x9w). Sentinel Vault's screens do not contain the affected code, so nothing about how the app works changes.
-> Added in Sentinel Vault 8.1.0, which is waiting for Marketplace approval and is not yet listed on the Marketplace.
+> Added in Sentinel Vault 8.1.0, which the Marketplace does not list; it comes with 8.5.0. A site still on version 7 or earlier gets it once a site admin approves the update in Confluence administration, Apps, Manage apps.
 
 ### SVT-66 - Stricter permission checks on purge, restore and force release
 
 - type: Bug; status: Done (Done); fixVersion: 8.0.0; component: Sealed files and sections
 
 > The permission checks on purging or restoring a deleted file, and on a space admin's force release, are stricter.
-> Fixed in Sentinel Vault 8.0.0, which is waiting for Marketplace approval and is not yet listed on the Marketplace.
+> Fixed in Sentinel Vault 8.0.0. A site still on version 7 or earlier gets it once a site admin approves the update in Confluence administration, Apps, Manage apps.
 
 ### SVT-67 - Clearing a lapsed seal from space settings cleans up everything it left behind
 
 - type: Bug; status: Done (Done); fixVersion: 8.0.0; component: Space and site settings
 
 > Clearing a lapsed seal from space settings now cleans up everything the seal left behind, and who may clear it is checked more strictly.
-> Fixed in Sentinel Vault 8.0.0, which is waiting for Marketplace approval and is not yet listed on the Marketplace.
+> Fixed in Sentinel Vault 8.0.0. A site still on version 7 or earlier gets it once a site admin approves the update in Confluence administration, Apps, Manage apps.
 
 ### SVT-68 - Each seal on a page stays in force until it is itself released
 
 - type: Bug; status: Done (Done); fixVersion: 8.0.0; component: Sealed files and sections
 
 > Each seal on a page keeps its own file protected until that seal is released or expires.
-> Fixed in Sentinel Vault 8.0.0, which is waiting for Marketplace approval and is not yet listed on the Marketplace.
+> Fixed in Sentinel Vault 8.0.0. A site still on version 7 or earlier gets it once a site admin approves the update in Confluence administration, Apps, Manage apps.
 
 ### SVT-69 - Seals held by an approval stay in force until the approval ends
 
 - type: Bug; status: Done (Done); fixVersion: 8.0.0; component: Workflow and approvals
 
 > While a page's approval holds its seals, they stay in force until the approval ends: a sealed file moved to the trash by anyone other than the page's approvers or a space admin is put back.
-> Fixed in Sentinel Vault 8.0.0, which is waiting for Marketplace approval and is not yet listed on the Marketplace.
+> Fixed in Sentinel Vault 8.0.0. A site still on version 7 or earlier gets it once a site admin approves the update in Confluence administration, Apps, Manage apps.
 
 ### SVT-70 - A copy of a sealed Jira file could be left behind when deleting it failed
 
 - type: Bug; status: Done (Done); fixVersion: 8.2.0; component: Jira issue attachments
 
 > If deleting the copy of a sealed Jira file failed, for example because of a temporary error, the copy was left behind. Sentinel Vault now tries again every hour until it is gone, and never deletes a copy a seal still uses.
-> Fixed in Sentinel Vault 8.2.0, which is waiting for Marketplace approval and is not yet listed on the Marketplace.
+> Fixed in Sentinel Vault 8.2.0, which the Marketplace does not list; it comes with 8.5.0. A site still on version 7 or earlier gets it once a site admin approves the update in Confluence administration, Apps, Manage apps.
 
 ### SVT-71 - On a site with thousands of sealed Jira files, some reminders, releases and clean-ups were never reached
 
 - type: Bug; status: Done (Done); fixVersion: 8.2.0; component: Jira issue attachments
 
 > On a site with thousands of sealed Jira files, the hourly check could stop before reaching every seal, so some reminders, releases and clean-ups of copies kept after an issue was deleted were never reached. Each check now continues from where the last one stopped.
-> Fixed in Sentinel Vault 8.2.0, which is waiting for Marketplace approval and is not yet listed on the Marketplace.
+> Fixed in Sentinel Vault 8.2.0, which the Marketplace does not list; it comes with 8.5.0. A site still on version 7 or earlier gets it once a site admin approves the update in Confluence administration, Apps, Manage apps.
 
 ### SVT-72 - A deleted issue's sealed file could not be downloaded if it was being put back at that moment
 
 - type: Bug; status: Done (Done); fixVersion: 8.3.0; component: Jira issue attachments
 
 > If a sealed Jira file was being put back at the moment its issue was deleted, its copy could not be downloaded from My work afterwards. Sentinel Vault now comes back for it once the put-back has finished, so its copy is kept for 30 days and its owner can download it from My work in Confluence, like the copies from any other deleted issue.
-> Fixed in Sentinel Vault 8.3.0, which is waiting for Marketplace approval and is not yet listed on the Marketplace.
+> Fixed in Sentinel Vault 8.3.0, which the Marketplace does not list; it comes with 8.5.0. A site still on version 7 or earlier gets it once a site admin approves the update in Confluence administration, Apps, Manage apps.
 
 ### SVT-73 - A sealed Jira file being put back showed as Not put back with a Put it back button
 
 - type: Bug; status: Done (Done); fixVersion: 8.4.0; component: Jira issue attachments
 
 > For the few seconds between someone deleting a sealed Jira file and Sentinel Vault putting it back, the issue's Sentinel Vault section showed the file as Not put back with a Put it back button. It now reads Being put back, offers no button, and refreshes on its own for up to a minute, so the file shows as back without reloading the page. Not put back is kept for a file that really could not be put back.
-> Fixed in Sentinel Vault 8.4.0, which is waiting for Marketplace approval and is not yet listed on the Marketplace.
+> Fixed in Sentinel Vault 8.4.0, which the Marketplace does not list; it comes with 8.5.0. A site still on version 7 or earlier gets it once a site admin approves the update in Confluence administration, Apps, Manage apps.
 
 ### SVT-74 - Sealing a Jira file again keeps the new seal's copy safe
 
 - type: Bug; status: Done (Done); fixVersion: 8.5.0; component: Jira issue attachments
 
 > When a Jira file is sealed again, Sentinel Vault first clears any clean-up still pending for an earlier seal's copy of that file, so the new seal's copy is never removed by it.
-> Fixed in Sentinel Vault 8.5.0, which is waiting for Marketplace approval and is not yet listed on the Marketplace.
+> Fixed in Sentinel Vault 8.5.0. A site still on version 7 or earlier gets it once a site admin approves the update in Confluence administration, Apps, Manage apps.
 
