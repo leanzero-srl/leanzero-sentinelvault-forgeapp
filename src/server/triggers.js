@@ -59,6 +59,7 @@ import { refreshByline } from "./capsules/page-details/byline.js"; // 5.0 byline
 import { isWorkflowHeld, mayEditInside } from "./shared/seal-authority.js"; // SEC-2
 import { isLiveAttachmentSeal, advancesSealedVersion } from "./shared/live-seal.js";
 import { workflowPrivilegeForPage } from "./capsules/workflow/privilege.js";
+import { enforceModeOf, eventPredatesBaseline, contentProtectionEnabled } from "./capsules/workflow/enforce-rules.js"; // 2026-10-16: one home per enforcement rule
 
 // --- Fix 3 (CORE T6 extension): cross-run violation-comment dedup ---
 // K1: `violation-noticed-{pageId}-{targetId}-{class}`, TTL 24h, claimed BEFORE the footer
@@ -1276,6 +1277,12 @@ export async function collectWorkflowEnforcementForPage(pageId, atlassianId, eve
   if (!record?.enforce) return null;
   const def = await resolveWorkflowDef(record.spaceKey, record.workflowId);
   if (!findState(def, record.stateId)?.enforce) return null;
+  // 2b. A late event for a version the approval already covers (the requester's own last save
+  //     before the approval, delivered ~10 min after it) is not an edit to the Approved page.
+  //     Revert mode was safe by accident (Pass 0 compares the LIVE version); demote mode acted on
+  //     the event alone and sent a freshly approved page back to Draft. Nothing to enforce, and
+  //     nothing to reconcile: the baseline already covers it.
+  if (eventPredatesBaseline(eventVersion, record.approvedVersion)) return null;
 
   // 3. Privileged? snapshot ∩ live-config approvers, OR live steward (§0.D/§0.E).
   //    If live group-expansion FAILED (outage), trust the snapshot rather than reverting a
