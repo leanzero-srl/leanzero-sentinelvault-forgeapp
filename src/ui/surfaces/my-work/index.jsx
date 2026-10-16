@@ -2,6 +2,9 @@ import { useDeclineReason } from "../../kit/DeclineReason";
 import React, { useCallback, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { useSignedInvoke } from "../../kit/SignedInvoke";
+import { ConfirmDialog } from "../../kit/Dialog";
+import { orphanLetGoCopy } from "../../kit/jira-release-copy.js";
+import { assembleCopy } from "../../kit/jira-copy-download.js";
 import { invoke, router } from "@forge/bridge";
 import { enablePaletteSync } from "../../kit/palette-sync";
 import { when, sealSentence, WORDS } from "../../kit/status-language.js"; // SEC-3: one vocabulary, one clock
@@ -413,18 +416,47 @@ const MySeals = () => {
 // Only drawn when there is something to show: a site that never connected Jira sees no Jira card.
 const MyJiraSeals = () => {
   const { items, error, reload } = useList("list-my-jira-seals", pickJiraSeals);
-  const [dl, setDl] = useState(null); // { id, msg }
+  const [dl, setDl] = useState(null); // { id, msg, progress }
+  const [letGo, setLetGo] = useState(null); // the row whose copy is about to be deleted
+  const [busyGo, setBusyGo] = useState(null);
+  const { signedInvoke, signatureDialog } = useSignedInvoke();
   if (error) return <section className="mw-card" data-testid="mw-jira-seals"><LoadError what="your sealed Jira files" onRetry={reload} testId="mw-jira-seals-error" /></section>;
   if (!items || items.length === 0) return null;
   // An orphan (its issue was deleted): the copy is kept 30 days and only its owner can download it.
+  // 8.6: the store's own link saves a nameless, extension-less file (measured), so the copy is read in
+  // parts, checked against the seal's SHA-256 and saved under the sealed file's own name and type.
   const download = async (s) => {
-    setDl({ id: s.attachmentId, msg: null });
+    setDl({ id: s.attachmentId, msg: null, progress: null });
     try {
-      const r = await invoke("jira-copy-download", { attachmentId: s.attachmentId });
-      if (!r?.success || !r.url) { setDl({ id: s.attachmentId, msg: r?.reason || "The copy could not be found" }); return; }
-      await router.open(r.url);
+      const head = await invoke("jira-copy-download", { attachmentId: s.attachmentId });
+      if (!head?.success) { setDl({ id: s.attachmentId, msg: head?.reason || "The copy could not be found" }); return; }
+      const parts = [];
+      for (let i = 0; i < head.parts; i++) {
+        if (head.parts > 1) setDl({ id: s.attachmentId, msg: null, progress: `${i + 1} of ${head.parts}` });
+        const p = await invoke("jira-copy-part", { attachmentId: s.attachmentId, index: i });
+        if (!p?.success) { setDl({ id: s.attachmentId, msg: p?.reason || "The copy could not be read" }); return; }
+        parts.push(p.data);
+      }
+      const file = await assembleCopy(parts, head);
+      if (!file.ok) { setDl({ id: s.attachmentId, msg: file.reason }); return; }
+      const url = URL.createObjectURL(new Blob([file.bytes], { type: head.mimeType || "application/octet-stream" }));
+      const a = document.createElement("a");
+      a.href = url; a.download = head.fileName || s.attachmentName || "file";
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 10000);
       setDl(null);
     } catch (_) { setDl({ id: s.attachmentId, msg: "Could not reach Sentinel Vault. Try again." }); }
+  };
+  // 8.6: the owner can let the copy go before its 30 days run out (the issue panel is gone with the issue).
+  const doLetGo = async () => {
+    const s = letGo; setLetGo(null);
+    setBusyGo(s.attachmentId); setDl(null);
+    try {
+      const r = await signedInvoke("jira-copy-letgo", { attachmentId: s.attachmentId });
+      if (r?.success) { await reload(); return; }
+      if (!r?.cancelled) setDl({ id: s.attachmentId, msg: r?.reason || "The copy could not be deleted. Try again." });
+    } catch (_) { setDl({ id: s.attachmentId, msg: "Could not reach Sentinel Vault. Try again." }); }
+    finally { setBusyGo(null); }
   };
   const pill = (s) => {
     if (s.issueDeletedAt) return <span className="mw-pill mw-pill-stale">Issue deleted</span>;
@@ -432,6 +464,7 @@ const MyJiraSeals = () => {
     if (s.expired) return <span className="mw-pill mw-pill-overdue">{WORDS.expired}</span>;
     return <span className="mw-pill mw-pill-live">Sealed</span>;
   };
+  const goCopy = letGo ? orphanLetGoCopy({ fileName: letGo.attachmentName, issueKey: letGo.issueKey }) : null;
   return (
     <section className="mw-card" data-testid="mw-jira-seals">
       <div className="mw-card-head">
@@ -439,30 +472,45 @@ const MyJiraSeals = () => {
         <span className="mw-count mw-count-seals">{items.length}</span>
       </div>
       <ul className="mw-list">
-        {items.map((s) => (
-          <li key={s.attachmentId} className="mw-row" data-testid="mw-jira-seal-row">
-            <div className="mw-row-info">
-              <span className="mw-row-main">{s.attachmentName}</span>
-              <span className="mw-row-meta">
-                {s.issueDeletedAt
-                  ? `${s.issueKey || "The issue"} was deleted ${when(s.issueDeletedAt)} · the copy is kept until ${when(s.orphanUntil)}`
-                  : <>
-                    {s.issueKey ? <a className="mw-link" href={`/browse/${s.issueKey}`} onClick={go(`/browse/${s.issueKey}`)}>{s.issueKey}</a> : ""}
-                    {s.lost ? " · deleted and not put back yet: open the issue to put it back" : ` · ${s.expired ? `expired ${when(s.expiresAt)}` : `until ${when(s.expiresAt)}`}`}
-                    {s.restoreCount && !s.lost ? ` · put back ${s.restoreCount === 1 ? "once" : `${s.restoreCount} times`}` : ""}
-                  </>}
-              </span>
-              {dl?.id === s.attachmentId && dl.msg && <span className="mw-row-meta" role="alert">{dl.msg}</span>}
-            </div>
-            <div className="mw-row-actions">
-              {s.issueDeletedAt && (
-                <button type="button" className="mw-btn mw-btn-more" disabled={dl?.id === s.attachmentId && !dl.msg} onClick={() => download(s)} data-testid="mw-jira-copy-download">Download the copy</button>
-              )}
-              {pill(s)}
-            </div>
-          </li>
-        ))}
+        {items.map((s) => {
+          const downloading = dl?.id === s.attachmentId && !dl.msg;
+          return (
+            <li key={s.attachmentId} className="mw-row" data-testid="mw-jira-seal-row" data-attachment-id={s.attachmentId}>
+              <div className="mw-row-info">
+                <span className="mw-row-main">{s.attachmentName}</span>
+                <span className="mw-row-meta">
+                  {s.issueDeletedAt
+                    ? `${s.issueKey || "The issue"} was deleted ${when(s.issueDeletedAt)} · the copy is kept until ${when(s.orphanUntil)}`
+                    : <>
+                      {s.issueKey ? <a className="mw-link" href={`/browse/${s.issueKey}`} onClick={go(`/browse/${s.issueKey}`)}>{s.issueKey}</a> : ""}
+                      {s.lost ? " · deleted and not put back yet: open the issue to put it back" : ` · ${s.expired ? `expired ${when(s.expiresAt)}` : `until ${when(s.expiresAt)}`}`}
+                      {s.restoreCount && !s.lost ? ` · put back ${s.restoreCount === 1 ? "once" : `${s.restoreCount} times`}` : ""}
+                    </>}
+                </span>
+                {dl?.id === s.attachmentId && dl.msg && <span className="mw-row-meta" role="alert" data-testid="mw-jira-copy-error">{dl.msg}</span>}
+              </div>
+              <div className="mw-row-actions">
+                {s.issueDeletedAt && (
+                  <>
+                    <button type="button" className="mw-btn mw-btn-more" disabled={downloading || busyGo === s.attachmentId} onClick={() => download(s)} data-testid="mw-jira-copy-download">
+                      {downloading ? (dl.progress ? `Downloading ${dl.progress}…` : "Downloading…") : "Download the copy"}
+                    </button>
+                    <button type="button" className="mw-btn mw-btn-deny" disabled={downloading || busyGo === s.attachmentId} onClick={() => setLetGo(s)} data-testid="mw-jira-copy-letgo">
+                      {busyGo === s.attachmentId ? "Deleting…" : "Let it go…"}
+                    </button>
+                  </>
+                )}
+                {pill(s)}
+              </div>
+            </li>
+          );
+        })}
       </ul>
+      {goCopy && (
+        <ConfirmDialog title={goCopy.title} message={goCopy.message} confirmLabel={goCopy.confirmLabel} danger testId="mw-jira-letgo-dialog"
+          onConfirm={doLetGo} onCancel={() => setLetGo(null)} />
+      )}
+      {signatureDialog}
     </section>
   );
 };

@@ -434,26 +434,40 @@ export function formatActivity(entry) {
     case "jira.sealed":
       return { ...base, label: "File sealed", glyph: "lock", tone: "seal", sentence: `${who} sealed ${file()}` };
     case "jira.released":
-      return { ...base, label: "File released", glyph: "unlock", tone: "neutral", sentence: `${who} released the seal on ${file()}` };
+      return { ...base, label: "File released", glyph: "unlock", tone: "neutral",
+        sentence: d.copyDeleted ? `${who} let go of ${file()}, which was not on the issue, and its copy was deleted` : `${who} released the seal on ${file()}` };
     case "jira.forced":
       return { ...base, label: "Seal force-released by an admin", glyph: "unlock", tone: "caution",
-        sentence: `${who} force-released the seal on ${file()}`, detail: d.reason ? `Reason: ${d.reason}` : "" };
+        sentence: d.copyDeleted ? `${who} force-released the seal on ${file()}, which was not on the issue, and its copy was deleted` : `${who} force-released the seal on ${file()}`,
+        detail: d.reason ? `Reason: ${d.reason}` : "" };
     case "jira.extended":
       return { ...base, label: "Seal extended", glyph: "clock", tone: "seal",
         sentence: d.expiresAt ? `${who} extended the seal on ${file()} to ${when(d.expiresAt)}` : `${who} extended the seal on ${file()}` };
+    // 8.6: a put-back someone ASKED for ("Put it back") is written with them as the actor and
+    // `requested: true` — they did not delete the file. With no actor, nobody is known to have deleted it.
     case "jira.restored":
+      if (d.requested) {
+        return { ...base, label: "Deleted file put back", glyph: "undo", tone: "positive",
+          sentence: `${who} had ${APP_NAME} put back sealed file ${file()}`, detail: "It had been deleted and was not put back on its own" };
+      }
       return { ...base, label: "Deleted file put back", glyph: "undo", tone: "caution",
-        sentence: `${who} deleted sealed file ${file()} — ${APP_NAME} put it back` };
+        sentence: entry?.actor?.accountId || entry?.actor?.name ? `${who} deleted sealed file ${file()} — ${APP_NAME} put it back` : `Sealed file ${file()} was deleted — ${APP_NAME} put it back` };
     case "jira.restore-failed":
+      if (d.requested) {
+        return { ...base, label: "Restore failed", glyph: "alert", tone: "critical",
+          sentence: `${who} asked ${APP_NAME} to put back sealed file ${file()}, and it still could not`, detail: d.error ? `Error: ${String(d.error)}` : "" };
+      }
       return { ...base, label: "Restore failed", glyph: "alert", tone: "critical",
-        sentence: `${who} deleted sealed file ${file()} and ${APP_NAME} could not put it back`, detail: d.error ? `Error: ${String(d.error)}` : "" };
+        sentence: entry?.actor?.accountId || entry?.actor?.name ? `${who} deleted sealed file ${file()} and ${APP_NAME} could not put it back` : `Sealed file ${file()} was deleted and ${APP_NAME} could not put it back`,
+        detail: d.error ? `Error: ${String(d.error)}` : "" };
     case "jira.auto-released":
       return { ...base, label: "Seal lapsed", glyph: "hourglass", tone: "neutral", sentence: `Seal on ${file()} lapsed and was released automatically` };
     case "jira.ended":
       return { ...base, label: "Seal ended", glyph: "trash", tone: "neutral",
         sentence: d.why === "owner-deleted" ? `${who} deleted their own sealed file ${file()}, which ended the seal`
           : d.why === "issue-deleted" ? `The issue holding ${file()} was deleted, so its seal ended`
-            : `The seal on ${file()} ended` };
+            : d.why === "owner-let-go" ? `${who} let go of the kept copy of ${file()} after its issue was deleted, and the copy was deleted`
+              : `The seal on ${file()} ended` };
 
     // ── Validation ──
     case "validation.reverted": {

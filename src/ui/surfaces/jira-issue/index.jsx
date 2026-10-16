@@ -19,6 +19,7 @@ import { listenOutside } from "../../kit/outside-close.js";
 import { useVisiblePlacement } from "../../kit/visible-placement.js";
 import { when } from "../../kit/status-language.js";
 import { formatActivity, relativeTime } from "../../kit/activity-format.js";
+import { forceReleaseCopy, ownerReleaseCopy } from "../../kit/jira-release-copy.js";
 
 const DAY = 86400;
 const DURATIONS = [
@@ -103,7 +104,12 @@ function SealForm({ att, defaults, onSeal, onCancel, busy }) {
 /** The row's one sentence: who holds it, until when, and what that means for this viewer. */
 function sealLine(att, viewerId, maxBytes) {
   const s = att.seal;
-  if (att.lost && att.row.state === "restoring") return "Deleted just now. Sentinel Vault is putting it back from its copy.";
+  if (att.lost && att.row.state === "restoring") {
+    // `pending`: the delete is too fresh for the trigger to have said anything yet. The owner may
+    // have deleted it themselves (that ends the seal), so the owner's line does not promise it back.
+    if (att.pending && s?.lockedBy === viewerId) return "Deleted just now. Sentinel Vault is putting it back from its copy, unless you deleted it yourself.";
+    return "Deleted just now. Sentinel Vault is putting it back from its copy.";
+  }
   if (att.lost) {
     const i = att.lostInfo;
     if (i?.reason === "loop") return "Deleted again each time it was put back, so Sentinel Vault stopped. It still holds the copy.";
@@ -188,13 +194,14 @@ function App() {
     try { sub = events.on("JIRA_ISSUE_CHANGED", () => { setFlash(null); load(); }); } catch (_) { /* older hosts: the Refresh button */ }
     return () => { Promise.resolve(sub).then((s) => s?.unsubscribe?.()).catch(() => {}); };
   }, [load]);
-  // While a put-back is queued or running, re-read every 3 s (for at most a minute) so the row turns
-  // into the restored file on its own.
+  // While a put-back is queued or running, re-read every 3 s (for at most two minutes, past the
+  // server's 90 s grace for a delete nothing has been recorded about yet) so the row turns into the
+  // restored file, or into "Not put back", on its own.
   const restoringCount = (data?.attachments || []).filter((a) => a.row?.state === "restoring").length;
   const polls = useRef(0);
   useEffect(() => {
     if (!restoringCount) { polls.current = 0; return undefined; }
-    if (polls.current >= 20) return undefined;
+    if (polls.current >= 40) return undefined;
     const t = setTimeout(() => { polls.current += 1; load(); }, 3000);
     return () => clearTimeout(t);
   }, [restoringCount, data, load]);
@@ -231,11 +238,11 @@ function App() {
 
   const doRelease = async () => {
     const { att } = confirm; setConfirm(null);
-    await act(att, async () => finish(await signedInvoke("jira-release-attachment", { attachmentId: att.id }), `“${att.filename}” is released`));
+    await act(att, async () => finish(await signedInvoke("jira-release-attachment", { attachmentId: att.id }), att.lost ? `The copy of “${att.filename}” is deleted` : `“${att.filename}” is released`));
   };
   const doForce = async () => {
     const { att, reason } = force; setForce(null);
-    await act(att, async () => finish(await signedInvoke("jira-release-attachment", { attachmentId: att.id, reason }), `“${att.filename}” is released`));
+    await act(att, async () => finish(await signedInvoke("jira-release-attachment", { attachmentId: att.id, reason }), att.lost ? `The seal is released and the copy of “${att.filename}” is deleted` : `“${att.filename}” is released`));
   };
   const doExtend = async () => {
     const { att, seconds } = extend; setExtend(null);
@@ -301,28 +308,27 @@ function App() {
           </ul>
         </section>
       )}
-      {confirm && (
-        <ConfirmDialog title={confirm.lost ? "Let this file go?" : "Release this seal?"} danger={confirm.lost} confirmLabel={confirm.lost ? "Delete the copy" : "Release"} testId="jv-release-dialog"
-          message={confirm.lost
-            ? `“${confirm.att.filename}” was deleted from the issue and could not be put back. Sentinel Vault's copy is the last one it holds; letting it go deletes that copy for good.`
-            : `Anyone who can edit the issue will be able to delete “${confirm.att.filename}”, and Sentinel Vault will no longer put it back. The file stays on the issue; only Sentinel Vault's backup copy is deleted.`}
-          onConfirm={doRelease} onCancel={() => setConfirm(null)} />
-      )}
-      {force && (
-        <Dialog title="Force release" danger onClose={() => setForce(null)} testId="jv-force-dialog">
-          <div className="sv-dialog-body">
-            {force.att.seal?.lockedByName || "Someone else"} sealed “{force.att.filename}”. Once released, anyone who can edit the issue can delete it and it will not be put back. {force.att.seal?.lockedByName || "The owner"} is mentioned in a comment if Sentinel Vault comments are on.
-          </div>
+      {confirm && (() => {
+        const c = ownerReleaseCopy({ fileName: confirm.att.filename, lost: confirm.lost });
+        return <ConfirmDialog title={c.title} danger={c.danger} confirmLabel={c.confirmLabel} testId="jv-release-dialog" message={c.message}
+          onConfirm={doRelease} onCancel={() => setConfirm(null)} />;
+      })()}
+      {force && (() => {
+        const c = forceReleaseCopy({ fileName: force.att.filename, ownerName: force.att.seal?.lockedByName, lost: !!force.att.lost });
+        return (
+        <Dialog title={c.title} danger onClose={() => setForce(null)} testId="jv-force-dialog">
+          <div className="sv-dialog-body" data-testid="jv-force-message">{c.message}</div>
           <label className="jv-label jv-reason-label" htmlFor="jv-force-reason">Reason (kept in this issue's seal history)</label>
           <textarea id="jv-force-reason" className="jv-input jv-reason" rows={3} maxLength={300} value={force.reason}
             onChange={(e) => setForce({ ...force, reason: e.target.value })} data-testid="jv-force-reason" />
           <span className="jv-hint">At least 3 characters.</span>
           <div className="sv-dialog-actions">
-            <button type="button" className="jv-btn jv-btn-danger" disabled={force.reason.trim().length < 3} onClick={doForce} data-testid="jv-force-confirm">Force release</button>
+            <button type="button" className="jv-btn jv-btn-danger" disabled={force.reason.trim().length < 3} onClick={doForce} data-testid="jv-force-confirm">{c.confirmLabel}</button>
             <button type="button" className="jv-btn jv-btn-quiet" onClick={() => setForce(null)}>Cancel</button>
           </div>
         </Dialog>
-      )}
+        );
+      })()}
       {extend && (
         <Dialog title="Extend the seal" onClose={() => setExtend(null)} testId="jv-extend-dialog">
           <div className="sv-dialog-body">“{extend.att.filename}” is sealed until {when(extend.att.seal?.expiresAt)}. Add:</div>
