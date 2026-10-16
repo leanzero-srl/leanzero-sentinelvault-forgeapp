@@ -17,6 +17,7 @@ import { syncStateLabel } from "./label-sync.js";
 import { sanitizeReadConfirmation } from "./read-acks.js";
 import { fetchPageLabels } from "../../infra/labels.js";
 import { touchByline } from "../page-details/byline-touch.js"; // WF-6 (dynamic inside: no cycle)
+import { enforceModeOf } from "./enforce-rules.js";
 
 export const WORKFLOW_STATE_PROP = "sentinel-vault-workflow";
 
@@ -731,7 +732,7 @@ export async function setSpaceWorkflowSettings(spaceKey, settings) {
     workflowId: settings?.workflowId || "default",
     // #44: how an unapproved edit to an enforced Approved page is handled. Default DEMOTE
     // (provably non-destructive); "revert" (byte-freeze) is opt-in.
-    enforceMode: settings?.enforceMode === "revert" ? "revert" : "demote",
+    enforceMode: enforceModeOf(settings),
     // #45: re-review an Approved page after N days (null = use the workflow default). The
     // sweep auto-transitions overdue Approved pages to Expired.
     // A5: this legacy field stays the ENFORCE-state override (see resolveReviewAfterDays).

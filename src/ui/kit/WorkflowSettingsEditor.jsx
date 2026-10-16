@@ -428,6 +428,7 @@ export const cleanSettingsForSave = (settings, def) => ({ ...settings, demoteTo:
 export default function WorkflowSettingsEditor({ spaceKey = null, defRev = 0, onEditStates = null }) {
   const [settings, setSettings] = useState({ enabled: false, autoAssignNew: false, workflowId: "default", approval: null, enforceMode: "demote", demoteTo: "initial", reviewAfterDays: null, reviewAfterDaysByState: {}, entryConditions: {}, syncLabels: false, readConfirmation: null, requireSignature: false });
   const [def, setDef] = useState(null);
+  const [protectionOff, setProtectionOff] = useState(false); // the site switch has enforcement off
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [applying, setApplying] = useState(false);
@@ -440,6 +441,7 @@ export default function WorkflowSettingsEditor({ spaceKey = null, defRev = 0, on
         const r = await invoke("get-space-workflow-settings", { spaceKey });
         if (r?.settings) setSettings(settingsFromServer(r));
         if (r?.def) setDef(r.def);
+        setProtectionOff(r?.protectionOff === true);
       } catch (e) {
         console.error("Load workflow settings failed:", e);
       } finally {
@@ -506,7 +508,7 @@ export default function WorkflowSettingsEditor({ spaceKey = null, defRev = 0, on
   return (
     <div className="settings-panel">
       {/* WF-11: what the settings below add up to, as one sentence — read it, then change it. */}
-      <p className="wf-rule" data-testid="wf-rule">{workflowRuleSentence(settings, def)}</p>
+      <p className="wf-rule" data-testid="wf-rule">{workflowRuleSentence(settings, def, { protectionOff })}</p>
       <SettingsRow
         label="Enable document workflow"
         description="Track a review/approval state on pages in this space. When on, pages carry a workflow state shown on the Sentinel Vault ribbon, and approvers and space admins move it along the workflow."

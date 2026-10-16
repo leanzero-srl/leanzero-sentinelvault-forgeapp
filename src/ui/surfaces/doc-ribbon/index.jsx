@@ -134,7 +134,7 @@ const WorkflowDetails = ({ workflow, siteUrl, pageId, isSteward, host, onSaved, 
   const enforceMode = workflow.enforceMode || null;
   // The mode the space chose is what the engine does (enforce-rules.js enforceModeOf) — with or
   // without named approvers since 2026-10-16 (the old CL-5 downgrade to demote is gone).
-  const consequence = enforceMode === "revert" ? "reverted" : enforceMode ? "moved back for review" : "handled";
+  const consequence = enforceMode === "revert" ? "reverted" : enforceMode === "demote" ? "moved back for review" : null;
   const outcomeWord = ar?.outcome === "denied" ? "Denied" : "Approved";
   let summary = null;
   if (enforced) {
@@ -277,7 +277,9 @@ const WorkflowDetails = ({ workflow, siteUrl, pageId, isSteward, host, onSaved, 
               )}
               {changedSince && (
                 <div className="wf-evidence-stale" data-testid="wf-evidence-stale">
-                  This page changed after approval (now v{live}). An edit by anyone who is not an approver or space admin is {consequence} automatically.
+                  {enforceMode === "off"
+                    ? <>This page changed after approval (now v{live}). Approved-page protection is switched off on this site, so the change stays.</>
+                    : <>This page changed after approval (now v{live}). An edit by anyone who is not an approver or space admin is {consequence || "handled"} automatically.</>}
                 </div>
               )}
             </section>
