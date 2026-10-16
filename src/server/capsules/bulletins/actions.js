@@ -2,6 +2,34 @@ import { kvs, WhereConditions } from "@forge/kvs";
 import { resolveBulletinToggles } from "../../shared/bulletin-flags.js";
 import { setWithTtl } from "../../shared/kvs-ttl.js";
 import { canReadPage } from "../../shared/content-access.js";
+import { resolveActorName } from "../../infra/activity-log.js";
+
+// The banner sentences that NAME a person (doc-ribbon alertSentence): "An edit to this Approved page
+// by {editor} …" for the approver, and the legacy SEAL_CONFLICT line. The dispatch records carry
+// account ids only — a name is personal data that would go stale in a stored record and is not
+// covered by the privacy sweep there — so the name is looked up here, when a reader who may read
+// the page asks, through the same app-side lookup the activity feed uses. Until 2026-10-16 nothing
+// set it and the approver read "by someone outside the approvers".
+const NAMES_EDITOR = new Set(["workflow-reverted", "workflow-demoted", "SEAL_CONFLICT"]);
+const NAMES_OWNER = new Set(["SEAL_CONFLICT"]);
+const MAX_NAME_LOOKUPS = 10;
+async function withDisplayNames(events) {
+  const want = new Set();
+  for (const e of events) {
+    if (NAMES_EDITOR.has(e?.type) && e.editorAccountId) want.add(e.editorAccountId);
+    if (NAMES_OWNER.has(e?.type) && e.ownerAccountId) want.add(e.ownerAccountId);
+  }
+  if (!want.size) return events;
+  const names = new Map();
+  for (const id of [...want].slice(0, MAX_NAME_LOOKUPS)) names.set(id, await resolveActorName(id).catch(() => null));
+  return events.map((e) => {
+    const editorName = NAMES_EDITOR.has(e?.type) ? names.get(e.editorAccountId) : null;
+    const ownerName = NAMES_OWNER.has(e?.type) ? names.get(e.ownerAccountId) : null;
+    return editorName || ownerName
+      ? { ...e, ...(editorName ? { editorDisplayName: editorName } : {}), ...(ownerName ? { ownerDisplayName: ownerName } : {}) }
+      : e;
+  });
+}
 
 /**
  * Get bulletin toggle flags
@@ -34,7 +62,7 @@ export const recentDispatches = async (req) => {
       if (!(await canReadPage(requesterAccountId, pageId))) {
         return { success: true, notifications: [] };
       }
-      events = events.filter((event) => event.pageId === pageId);
+      events = await withDisplayNames(events.filter((event) => event.pageId === pageId));
     } else {
       // Hunt H1-F8: without a pageId this would hand any authenticated user the
       // instance-wide feed (names, page ids, accountIds). Scope to the requester's
