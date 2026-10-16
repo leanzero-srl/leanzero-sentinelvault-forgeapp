@@ -553,9 +553,15 @@ export async function pageContentTrigger(event) {
     } catch (e) {
       console.error("[WORKFLOW] auto-assign phase error:", e);
     }
+    // What this run did to the page's workflow state, for the callers that run the pipeline
+    // themselves (guardPageNow, the hook): a demote writes no page version, so without this the
+    // banner that asked had no way to know the page left Approved (2026-10-16). Forge ignores the
+    // return value of the event trigger.
+    return { workflowAction: enforcement?.action || null, demoted: enforcement?.action === "demote" && enforcement.applied === true };
   } catch (error) {
     console.error("[PAGE-PROTECT] Error in page content trigger:", error);
   }
+  return { workflowAction: null, demoted: false };
 }
 
 // --- Pipeline: gather media seals applicable to a page (cheap, no ADF read) ---
@@ -1333,8 +1339,10 @@ export async function collectWorkflowEnforcementForPage(pageId, atlassianId, eve
     // #7: the default workflow has an Approved->Draft edge; a custom workflow that lacks one
     // would leave the page enforced-but-not-demoted — surface it rather than fail silently.
     else console.error(`[WORKFLOW-ENFORCE] demote of ${pageId} did not apply: ${res.reason}`);
+    // `applied`: the state really moved — the guard tells the banner to refresh on it.
+    return { action: "demote", applied: !!res.success };
   } catch (e) { console.error("[WORKFLOW-ENFORCE] demote error:", e); }
-  return { action: "demote" };
+  return { action: "demote", applied: false };
 }
 
 // WF-2 (UX critique 2026-09-19): the ONE place a workflow enforcement is announced to the person it
@@ -2429,7 +2437,7 @@ async function readLiveVersion(pageId) {
 }
 
 /**
- * @returns {{ checked: boolean, restored: boolean, reason?: string, version?: number, authorId?: string|null, restoredVersion?: number }}
+ * @returns {{ checked: boolean, restored: boolean, workflowChanged?: boolean, reason?: string, version?: number, authorId?: string|null, restoredVersion?: number }}
  */
 export async function guardPageNow(pageId, source = "view") {
   const systemAccountId = await resolveAppAccountId();
@@ -2442,10 +2450,15 @@ export async function guardPageNow(pageId, source = "view") {
     // A page with several sealed sections mounts several macros; all but the first land here.
     // For a short window they are told what the first caller's run restored, so the macro whose
     // section it was can say so (and the others stay silent).
+    // The same echo for a demote: the banner and a section macro race for the first call, and the
+    // banner must still learn the page left Approved when the macro's call ran the pipeline.
     const r = seen.restored;
-    if (r && Date.now() - new Date(r.at).getTime() < PAGE_GUARD_ECHO_MS) {
-      return { checked: false, restored: true, version: r.from, authorId: r.authorId, restoredVersion: seen.version, sectionIds: r.sectionIds || [] };
+    const fresh = (at) => !!at && Date.now() - new Date(at).getTime() < PAGE_GUARD_ECHO_MS;
+    const wfEcho = fresh(seen.workflowChanged?.at);
+    if (r && fresh(r.at)) {
+      return { checked: false, restored: true, workflowChanged: wfEcho, version: r.from, authorId: r.authorId, restoredVersion: seen.version, sectionIds: r.sectionIds || [] };
     }
+    if (wfEcho) return { checked: false, restored: false, workflowChanged: true, reason: "version already judged", version: live.number };
     return { checked: false, restored: false, reason: "version already judged", version: live.number };
   }
   const startedAt = Date.now();
@@ -2456,13 +2469,16 @@ export async function guardPageNow(pageId, source = "view") {
 
   const intentBefore = await kvs.get(insertIntentKey(pageId)).catch(() => null); // SEC-4 (a)
   console.info(`[PAGE-GUARD] ${source}: judging page=${pageId} v=${live.number} by=${live.authorId || "?"} ahead of its event`);
-  await pageContentTrigger({
+  const run = await pageContentTrigger({
     eventType: "avi:confluence:updated:page",
     atlassianId: live.authorId,
     content: { id: String(pageId), version: { number: live.number } },
   });
   const after = await readLiveVersion(pageId);
   const restored = !!(after?.number > live.number && after.authorId === systemAccountId);
+  // A demote moves the page out of Approved WITHOUT a page write, so `restored` stays false; the
+  // banner re-reads the workflow on this flag (else it showed "Approved vN" until a reload).
+  const workflowChanged = run?.demoted === true;
   // SEC-4 (a): an insert marker consumed by this run means the publish's wrapper was sealed now.
   const adoptedOnPublish = !!(intentBefore && !(await kvs.get(insertIntentKey(pageId)).catch(() => null)));
   let sectionIds = [];
@@ -2475,12 +2491,16 @@ export async function guardPageNow(pageId, source = "view") {
         .filter((e) => String(e.pageId) === String(pageId) && e.sectionId && new Date(e.timestamp).getTime() >= startedAt - 1000)
         .map((e) => e.sectionId))];
     } catch (_) { /* the notice is a courtesy; the restore already happened */ }
+  }
+  if (restored || workflowChanged) {
+    const at = new Date().toISOString();
     await setWithTtl(key, {
-      version: after.number, at: new Date().toISOString(), source,
-      restored: { from: live.number, authorId: live.authorId, sectionIds, at: new Date().toISOString() },
+      version: restored ? after.number : live.number, at, source,
+      ...(restored ? { restored: { from: live.number, authorId: live.authorId, sectionIds, at } } : {}),
+      ...(workflowChanged ? { workflowChanged: { at } } : {}),
     }, PAGE_GUARD_TTL_MS);
   }
-  return { checked: true, restored, version: live.number, authorId: live.authorId, restoredVersion: restored ? after.number : undefined, sectionIds, adoptedOnPublish };
+  return { checked: true, restored, workflowChanged, version: live.number, authorId: live.authorId, restoredVersion: restored ? after.number : undefined, sectionIds, adoptedOnPublish };
 }
 
 // Pages that carry a live seal whose PAGE BODY the app protects: sealed sections, and sealed

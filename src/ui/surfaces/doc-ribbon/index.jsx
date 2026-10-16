@@ -23,6 +23,7 @@ import { useActionMenu } from "../../kit/ActionMenu";
 import DatePicker, { toYmd, fromYmd } from "../../kit/DatePicker";
 import { decideRibbon, untilLabel } from "../../kit/ribbon-rules";
 import { alertWord, refusalText, when } from "../../kit/status-language.js"; // SEC-3: one vocabulary, one clock
+import { guardReevaluateReason, isGuardFollowUp } from "../../kit/guard-outcome.js"; // re-run on a restore AND on a demote
 import { sourcePhrase } from "../../../server/capsules/classification/logic.js"; // P3: "from space default" / "set on this page"
 import BusyVeil from "../../kit/BusyVeil";
 import { detailsModalSize } from "../../kit/modal-size.js";
@@ -1005,9 +1006,11 @@ const DocumentRibbon = () => {
       // Every page, not only sealed ones: validation rules and enforced workflow states ride the
       // same pipeline and were waiting on the same late event (2026-09-19). A page with nothing
       // to judge exits in one KVS read.
-      if (why !== "guard restored" && sum) {
+      // A demote writes no page version, so the guard says `workflowChanged` instead of `restored` —
+      // either one re-reads the chip, the alerts and the pill (2026-10-16: the chip kept "Approved vN").
+      if (!isGuardFollowUp(why) && sum) {
         invoke("guard-page-now", {})
-          .then((g) => { if (g?.restored && pageIdRef.current === ctxPageId) evaluateRef.current?.("guard restored"); })
+          .then((g) => { const again = guardReevaluateReason(g); if (again && pageIdRef.current === ctxPageId) evaluateRef.current?.(again); })
           .catch((e) => console.info("[ribbon] guard-page-now failed", e?.message || e));
       }
 
