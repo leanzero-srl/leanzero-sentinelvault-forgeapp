@@ -161,6 +161,9 @@ const SectionMacro = () => {
               if (!wasDismissed(key)) setUndone({ key, mine: g.mine === true, fresh: g.fresh === true, revertedVersion: g.revertedVersion || null, pageId: context?.extension?.content?.id || null, location: context?.extension?.location || null });
             }
             if (!sectionId && g?.adoptedOnPublish) setAdopted(true);
+            // The guard moved the page out of Approved (a demote — no page write): the workflow
+            // handed this seal back, so "Locked by the approval of this page" is stale. Re-read it.
+            if (sectionId && g?.workflowChanged === true) fetchSealStatus(sectionId).then(setSeal).catch(() => {});
           }).catch((e) => console.warn("[SECTION-UI] guard-page-now failed:", e?.message));
         }
 

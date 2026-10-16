@@ -500,6 +500,9 @@ const guardPageNowAction = async (req) => {
       checked: !!r.checked,
       restored: !!r.restored || mineEvents.length > 0,
       fresh: !!r.restored, // put back during THIS view: the body on screen is stale → offer Reload
+      // The page left Approved during this view (a demote writes no version): the banner and the
+      // section macros re-read the workflow and the seals on this, without a reload (2026-10-16).
+      workflowChanged: r.workflowChanged === true,
       mine: guardMine || mineEvents.length > 0,
       revertedVersion: mineEvents[0]?.revertedVersion || (r.restored ? r.version : null),
       sectionIds: [...new Set([...(r.restored ? (r.sectionIds || []) : []), ...mineEvents.map((e) => e.sectionId)])],
