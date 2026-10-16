@@ -63,6 +63,78 @@ export const JIRA_SWEEP_CURSOR_KEY = "jira-seal-sweep-cursor";
 export const JIRA_QUEUED_PREFIX = "jira-seal-queued-";
 export const jiraQueuedKey = (attachmentId) => `${JIRA_QUEUED_PREFIX}${attachmentId}`;
 export const JIRA_QUEUED_TTL_MS = 10 * 60 * 1000;
+/**
+ * The panel can read the issue BEFORE the delete trigger has written the queued marker (8.6 fix: the
+ * row flashed "Not put back" with a Put it back button for that second). A sealed file missing from
+ * the issue with no record of what happened is "Being put back" for this grace, measured from the
+ * first time a reader saw it missing (jira-seal-missing-<id>, written by the panel's read, 1 day TTL).
+ * Only after it, with still no queued marker and no lost row, does it read "Not put back".
+ */
+export const JIRA_MISSING_PREFIX = "jira-seal-missing-";
+export const jiraMissingKey = (attachmentId) => `${JIRA_MISSING_PREFIX}${attachmentId}`;
+export const JIRA_MISSING_GRACE_MS = 90 * 1000;
+export const JIRA_MISSING_TTL_MS = 86400000;
+
+/**
+ * PURE. What the panel shows for a sealed file that is NOT on its issue (8.6, bug 3).
+ *   "lost"      — a lost row exists (a failed put-back, the loop breaker), or the grace is over
+ *   "restoring" — a put-back is queued or running, or the delete is too fresh to judge (pending)
+ *   "hidden"    — a LAPSED seal with nothing pending: the delete ends it, nothing is put back
+ * `firstSeenMs` is when a reader first saw the file missing (null = this read is the first).
+ */
+export function missingFileState({ lost, queued, intent, expired, firstSeenMs, nowMs, graceMs = JIRA_MISSING_GRACE_MS }) {
+  if (lost) return { state: "lost", pending: false };
+  if (queued || intent) return { state: "restoring", pending: false };
+  if (expired) return { state: "hidden", pending: false };
+  const seen = Number.isFinite(firstSeenMs) ? firstSeenMs : nowMs;
+  if (nowMs - seen < graceMs) return { state: "restoring", pending: true };
+  return { state: "lost", pending: false };
+}
+
+/**
+ * PURE. Who a put-back is about (8.6, bug 1). The DELETER is the person whose delete is being undone:
+ * the delete event's actor, or — for "Put it back" and the sweep's retries, which run long after the
+ * delete — the one recorded on the lost row. The person who clicked "Put it back" is never the deleter;
+ * they are `requestedBy`.
+ */
+export function restoreActors({ eventDeleter = null, lost = null, requestedBy = null } = {}) {
+  return { deletedBy: eventDeleter || lost?.deletedBy || null, requestedBy: requestedBy || null };
+}
+
+/**
+ * PURE. The activity record of a put-back (or a failed one). A put-back someone ASKED for is THEIR
+ * act: they are the actor and the deleter is kept in the details. An automatic one is written, as
+ * before, with the deleter as the actor ("Someone deleted sealed file X — Sentinel Vault put it back").
+ */
+export function restoreActivityParts({ deletedBy = null, requestedBy = null } = {}) {
+  if (requestedBy) return { actorId: requestedBy, details: { requested: true, deletedBy: deletedBy || null } };
+  return { actorId: deletedBy || null, details: {} };
+}
+
+/** A copy is handed to the browser in parts: a front-end invocation answers at most 5 MB, base64 adds a third. */
+export const JIRA_COPY_PART_BYTES = 2 * 1024 * 1024;
+export const copyPartCount = (size) => Math.max(1, Math.ceil((Number(size) || 0) / JIRA_COPY_PART_BYTES));
+/** PURE. The byte range [start, end] (inclusive) of part `index`, or null when there is no such part. */
+export function copyPartRange(index, size) {
+  const n = Number(index);
+  const total = Math.max(0, Number(size) || 0);
+  if (!Number.isInteger(n) || n < 0 || n >= copyPartCount(total)) return null;
+  const start = n * JIRA_COPY_PART_BYTES;
+  return { start, end: Math.max(start, Math.min(total, start + JIRA_COPY_PART_BYTES) - 1), length: Math.min(total, start + JIRA_COPY_PART_BYTES) - start };
+}
+/** PURE. A Content-Type safe to hand the store and the browser (Jira's own value when well formed). */
+export const safeMimeType = (t) => (/^[\w.+-]+\/[\w.+-]+$/.test(String(t || "")) ? String(t) : "application/octet-stream");
+
+/**
+ * PURE. May this caller touch the kept copy of a seal whose ISSUE was deleted (an orphan)? Only its
+ * owner: there is no issue left to read anyone else's permission on (CLAUDE.md: the caller must be
+ * able to do it themselves — here, only the person who sealed it holds anything over the copy).
+ */
+export function orphanCopyAccess(record, accountId) {
+  if (!record?.lockedBy || !accountId || record.lockedBy !== accountId) return { ok: false, reason: "Only the person who sealed this file can download or delete its copy" };
+  if (!record.issueDeletedAt) return { ok: false, reason: "The file is still on its issue — use the Sentinel Vault panel there" };
+  return { ok: true };
+}
 
 /** Jira ids are digits. Anything else is refused before it reaches a route or a key. */
 export const isJiraId = (v) => typeof v === "string" ? /^\d{1,18}$/.test(v) : Number.isSafeInteger(v) && v > 0;
@@ -117,8 +189,12 @@ export function decideDeletion({ record, actorId, selfGenerated, appAccountId, n
   return "restore";
 }
 
-/** PURE. The record after a restore moved the seal to the re-uploaded attachment. */
-export function movedRecord(record, created, { actorId, nowMs }) {
+/**
+ * PURE. The record after a restore moved the seal to the re-uploaded attachment. `actorId` is the
+ * person whose DELETE was undone (null when unknown); `requestedBy` the person who clicked "Put it
+ * back", if anyone did — never written as the deleter (8.6, bug 1).
+ */
+export function movedRecord(record, created, { actorId, requestedBy = null, nowMs }) {
   return {
     ...record,
     restores: withRestore(record.restores, nowMs),
@@ -127,6 +203,7 @@ export function movedRecord(record, created, { actorId, nowMs }) {
     restoreCount: (Number(record.restoreCount) || 0) + 1,
     lastRestoredAt: new Date(nowMs).toISOString(),
     lastDeletedBy: actorId || null,
+    lastPutBackBy: requestedBy || null,
   };
 }
 
@@ -183,10 +260,15 @@ export function restoreCommentAdf({ actorId, ownerId, ownerName, fileName, menti
 }
 
 /** PURE. The ADF comment telling an owner an admin removed their seal, and why. */
-export function forcedCommentAdf({ ownerId, actorId, fileName, reason }) {
+export function forcedCommentAdf({ ownerId, actorId, fileName, reason, copyDeleted = false }) {
+  // A file that was not on the issue (deleted, not put back): releasing it deleted the LAST copy, and
+  // the owner must hear that, not only that the seal is gone (8.6, bug 2).
+  const what = copyDeleted
+    ? ` removed your seal on "${fileName}" in Sentinel Vault and deleted its copy. The file was not on the issue, so it can no longer be put back.`
+    : ` removed your seal on "${fileName}" in Sentinel Vault.`;
   return { type: "doc", version: 1, content: [{ type: "paragraph", content: [
     mention(ownerId), text(" "), mention(actorId),
-    text(` removed your seal on "${fileName}" in Sentinel Vault. Reason: ${String(reason || "").slice(0, 300)}`),
+    text(`${what} Reason: ${String(reason || "").slice(0, 300)}`),
   ] }] };
 }
 
@@ -228,6 +310,9 @@ export function rowFor({ record, viewerId, powers, nowMs, lost = false, restorin
   const mine = record.lockedBy === viewerId;
   if (lost) {
     const menu = [];
+    // Kept for a steward (8.6, bug 2 — decided, not dropped): a lost seal is never released by the
+    // lapse rules, so without it a seal whose owner has left would keep its copy for ever. The panel's
+    // dialog for it says plainly that this deletes the last copy and the file cannot be put back.
     if (!mine && powers.isSteward) menu.push("force-release");
     return { state: "lost", primary: powers.canEdit ? "retry" : null, menu: mine ? ["release"] : menu };
   }

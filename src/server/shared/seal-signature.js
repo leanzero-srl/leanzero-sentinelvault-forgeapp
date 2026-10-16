@@ -18,6 +18,8 @@ export const SIGNED_SEAL_ACTION_KEYS = Object.freeze([
   "grant-edit-access", "grant-section-edit", "revoke-edit-grant", "revoke-section-edit-grant",
   // 8.0 — Jira attachment seals: the same acts, the same signature.
   "jira-seal-attachment", "jira-release-attachment", "jira-extend-attachment",
+  // 8.6 — My work's "Let it go" on a deleted issue's copy is the same act as the panel's release.
+  "jira-copy-letgo",
 ]);
 
 /** PURE: does this site sign seal actions? Opt-in. */
