@@ -235,6 +235,26 @@ export async function testStateTrigger(req) {
         const m = await import("./server/capsules/jira-seals/actions.js");
         return json(200, { invoked: fn, result: await m.retryJiraRestore({ accountId: q(req, "actor"), issueId: q(req, "issueId"), attachmentId: q(req, "att"), powers: { canSee: true, canEdit: true, isSteward: false } }) });
       }
+      // EXPERIMENT (bug 4, 2026-10-16; removed before merge): what the Object Store keeps of a PUT's
+      // headers and what its download URLs answer, for a key and Content-Type the caller names.
+      if (fn === "osProbe") {
+        const { objectStore } = await import("@forge/object-store");
+        const { createHash } = await import("node:crypto");
+        const key = q(req, "key");
+        if (q(req, "del") === "1") { await objectStore.delete(key).catch(() => {}); return json(200, { deleted: key }); }
+        const bytes = Buffer.from(q(req, "body") || "%PDF-1.4\n%%EOF\n");
+        const checksum = createHash("sha256").update(bytes).digest("base64");
+        let up = null, upErr = null;
+        try { up = await objectStore.createUploadUrl({ key, length: bytes.length, checksum, checksumType: "SHA256", overwrite: true }); } catch (e) { upErr = String(e?.message || e); }
+        if (!up?.url) return json(200, { upErr });
+        const headers = { "content-type": q(req, "ctype") || "application/octet-stream" };
+        if (q(req, "disp")) headers["content-disposition"] = q(req, "disp");
+        const put = await fetch(up.url, { method: "PUT", headers, body: bytes });
+        const meta = await objectStore.get(key).catch((e) => ({ err: String(e?.message || e) }));
+        const pub = await objectStore.createPublicDownloadUrl(key).catch((e) => ({ err: String(e?.message || e) }));
+        const priv = await objectStore.createDownloadUrl(key).catch((e) => ({ err: String(e?.message || e) }));
+        return json(200, { uploadUrlHost: new URL(up.url).host, uploadUrlPath: new URL(up.url).pathname, putStatus: put.status, putBody: (await put.text()).slice(0, 300), meta, pub, priv });
+      }
       if (fn === "jiraSweep") {
         const { jiraSealSweep } = await import("./server/capsules/jira-seals/trigger.js");
         return json(200, { invoked: fn, result: await jiraSealSweep() });
