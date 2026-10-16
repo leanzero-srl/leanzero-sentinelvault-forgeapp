@@ -1,0 +1,13 @@
+import { shouldPoll, POLL_FOR_MS } from "../src/ui/kit/my-work-refresh.js";
+let pass = 0, fail = 0;
+const t = (name, got, want) => { if (got === want) pass++; else { fail++; console.error(`FAIL ${name}: got ${got}, want ${want}`); } };
+const live = { attachmentId: "1", issueKey: "A-1" }, gone = { attachmentId: "2", issueDeletedAt: "2026-10-16T10:42:00Z" };
+t("no items", shouldPoll([], 0, 1000), false);
+t("null items", shouldPoll(null, 0, 1000), false);
+t("a live seal, fresh page", shouldPoll([live], 0, 1000), true);
+t("only deleted-issue rows", shouldPoll([gone], 0, 1000), false);
+t("mixed rows", shouldPoll([gone, live], 0, 1000), true);
+t("page older than the window", shouldPoll([live], 0, POLL_FOR_MS), false);
+t("just inside the window", shouldPoll([live], 0, POLL_FOR_MS - 1), true);
+console.log(`my-work-refresh: ${pass} passed, ${fail} failed`);
+if (fail) process.exit(1);
