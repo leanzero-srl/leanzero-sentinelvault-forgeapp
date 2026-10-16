@@ -145,4 +145,51 @@ ok("expired: no date is not expired", !isExpired({}, NOW));
 eq("copy gc: key from the copy key", jiraCopyGcKey(jiraCopyKey("14731")), "jira-seal-copy-gc-14731");
 ok("copy gc: a legal KVS key", /^[a-zA-Z0-9:._\s#-]+$/.test(jiraCopyGcKey(jiraCopyKey("14731"))));
 
+// ── 8.6 ──
+{
+  const L = await import("../src/server/capsules/jira-seals/logic.js");
+  const fn = (n) => (typeof L[n] === "function" ? L[n] : () => ({}));
+  // bug 1: who a put-back is about
+  const restoreActors = fn("restoreActors"), restoreActivityParts = fn("restoreActivityParts");
+  eq("actors: the delete event names the deleter", restoreActors({ eventDeleter: OTHER }), { deletedBy: OTHER, requestedBy: null });
+  eq("actors: Put it back takes the deleter from the lost row, the clicker is the requester", restoreActors({ lost: { deletedBy: OTHER }, requestedBy: OWNER }), { deletedBy: OTHER, requestedBy: OWNER });
+  eq("actors: an old lost row (no deleter) leaves the deleter unknown, never the clicker", restoreActors({ lost: { reason: "failed" }, requestedBy: OWNER }), { deletedBy: null, requestedBy: OWNER });
+  eq("activity: an asked-for put-back is the asker's act", restoreActivityParts({ deletedBy: OTHER, requestedBy: OWNER }), { actorId: OWNER, details: { requested: true, deletedBy: OTHER } });
+  eq("activity: an automatic one is the deleter's", restoreActivityParts({ deletedBy: OTHER }), { actorId: OTHER, details: {} });
+  const m2 = movedRecord(rec, { id: "9" }, { actorId: OTHER, requestedBy: OWNER, nowMs: NOW });
+  eq("move: deleter and requester kept apart", [m2.lastDeletedBy, m2.lastPutBackBy], [OTHER, OWNER]);
+  // bug 2: the admin's comment after deleting the last copy
+  const fcLost = JSON.stringify(forcedCommentAdf({ ownerId: OWNER, actorId: OTHER, fileName: "f.pdf", reason: "gone", copyDeleted: true }));
+  ok("forced comment on a lost file says the copy was deleted", fcLost.includes("deleted its copy") && fcLost.includes("can no longer be put back"));
+  ok("forced comment on a live file does not", !JSON.stringify(forcedCommentAdf({ ownerId: OWNER, actorId: OTHER, fileName: "f.pdf", reason: "x" })).includes("deleted its copy"));
+  // bug 3: a missing file with nothing recorded
+  const mfs = fn("missingFileState");
+  const G = 90000;
+  eq("missing: nothing recorded, first sighting → restoring (pending)", mfs({ firstSeenMs: null, nowMs: NOW }), { state: "restoring", pending: true });
+  eq("missing: inside the grace → restoring", mfs({ firstSeenMs: NOW - G + 1, nowMs: NOW }), { state: "restoring", pending: true });
+  eq("missing: grace over → lost", mfs({ firstSeenMs: NOW - G, nowMs: NOW }), { state: "lost", pending: false });
+  eq("missing: a lost row wins over everything", mfs({ lost: true, queued: true, firstSeenMs: NOW, nowMs: NOW }), { state: "lost", pending: false });
+  eq("missing: queued → restoring", mfs({ queued: true, firstSeenMs: NOW - 10 * G, nowMs: NOW }), { state: "restoring", pending: false });
+  eq("missing: intent → restoring", mfs({ intent: true, nowMs: NOW }), { state: "restoring", pending: false });
+  eq("missing: a lapsed seal with nothing pending is not shown", mfs({ expired: true, nowMs: NOW }), { state: "hidden", pending: false });
+  // bug 4: parts of the copy
+  const range = fn("copyPartRange"), count = fn("copyPartCount");
+  const PB = L.JIRA_COPY_PART_BYTES;
+  eq("parts: an empty file is one empty part", [count(0), range(0, 0)?.length], [1, 0]);
+  eq("parts: exactly one part", count(PB), 1);
+  eq("parts: one byte over is two", count(PB + 1), 2);
+  eq("parts: the last part's range", range(1, PB + 1), { start: PB, end: PB, length: 1 });
+  eq("parts: no part past the end / negative / not an integer", [range(2, PB + 1), range(-1, 10), range(0.5, 10), range("x", 10)], [null, null, null, null]);
+  ok("parts: base64 of a part fits a 5 MB answer", Math.ceil(PB / 3) * 4 < 5 * 1024 * 1024 - 1024);
+  eq("mime: Jira's type kept, junk refused", [fn("safeMimeType")("application/pdf"), fn("safeMimeType")("text/html\r\nX: y"), fn("safeMimeType")(null)], ["application/pdf", "application/octet-stream", "application/octet-stream"]);
+  // bug 4 + 6: who may touch a deleted issue's copy
+  const access = fn("orphanCopyAccess");
+  const orphan = { ...rec, issueDeletedAt: new Date(NOW).toISOString() };
+  eq("orphan copy: its owner", access(orphan, OWNER).ok, true);
+  eq("orphan copy: anyone else refused", access(orphan, OTHER).ok, false);
+  eq("orphan copy: no caller refused", access(orphan, null).ok, false);
+  eq("orphan copy: a seal whose issue exists is refused (the panel handles it)", access(rec, OWNER).ok, false);
+  eq("orphan copy: no record refused", access(null, OWNER).ok, false);
+}
+
 report("jira-seals");
