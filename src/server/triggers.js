@@ -1296,10 +1296,9 @@ export async function collectWorkflowEnforcementForPage(pageId, atlassianId, eve
     || await isAccountStewardAsApp(atlassianId, record.spaceKey);
   if (privileged) return { action: "privileged", record }; // reconciliation (§2.5) advances the baseline
 
-  // 4. Not privileged -> revert (opt-in) or demote (default). CL-5: empty approver set
-  //    + revert downgrades to demote (a misconfig must not blank every non-steward edit).
-  let mode = settings?.enforceMode === "revert" ? "revert" : "demote";
-  if (mode === "revert" && (!Array.isArray(record.approvers) || record.approvers.length === 0)) mode = "demote";
+  // 4. Not privileged -> revert (opt-in) or demote (default) — the mode the space admin chose, with
+  //    or without named approvers (enforce-rules.js enforceModeOf says why the old CL-5 downgrade went).
+  const mode = enforceModeOf(settings);
   if (mode === "revert") return { action: "revert", record, spaceKey: record.spaceKey };
 
   // DEMOTE inline (§2.6) — no body write, no ADF read, no ping-pong surface.
@@ -1593,9 +1592,9 @@ export async function workflowSweep() {
           await kvs.delete(`workflow-integrity-notified-${idx.pageId}`).catch(() => {});
           continue;
         }
-        const mode = settings?.enforceMode || "demote";
+        const mode = enforceModeOf(settings); // the event path's rule (no approver-count downgrade)
         const alreadyNotified = await kvs.get(`workflow-integrity-notified-${idx.pageId}`);
-        if (mode === "revert" && record.approvers.length > 0) { // CL-5
+        if (mode === "revert") {
           const ok = await sweepRevertToApproved(idx.pageId, record);
           if (ok) {
             reverted++;
