@@ -20,7 +20,7 @@ Fixed:
 - With Protect Sealed Attachments in Page Body turned off, the hourly check still moved Approved pages back or undid edits. It now leaves them alone, and the Workflow settings, page banner, page details and approval dialog say Approved pages are not protected while it is off.
 - After an edit moved an Approved page back for review, the page banner kept showing Approved until the page was reloaded. It now updates on its own.
 - The approver's page banner said an edit was made by someone outside the approvers. It now names the person.
-- In rare cases, when page edits reached Sentinel Vault out of order, a change someone made inside another person's sealed section could be kept as if the seal owner had made it. Each edit is now judged for the person who made it.
+- Stricter checks on edits inside sealed sections.
 
 **Do this:** Nothing to do if your site already runs 8.0.0. A site on an earlier version gets this update after a site admin approves the 8.0.0 update in Confluence administration, Apps, Manage apps.
 
