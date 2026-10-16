@@ -16,6 +16,7 @@ was deliberately left out.
 | `avi:jira:created:attachment` for the app's own upload | `selfGenerated: true`, author = the app's account | A restore can never loop on its own event. |
 | Download from a backend | `GET /rest/api/3/attachment/content/{id}?redirect=false` → 200 with the bytes | |
 | Object Store from a backend | `createUploadUrl` → host `tdp-os.services.atlassian.com`; global `fetch` PUT → 201; download identical byte for byte; no egress entry needed | |
+| Object Store download headers (2026-10-16) | the PUT's `Content-Type` is kept (`get().contentType`) and served back; a `Content-Disposition` on the PUT is NOT kept; a `response-content-disposition` query parameter is ignored; the download path is `/fos/app/download/<id>/<hash of the key>` whatever the key (a key ending in the file name changes nothing) | The store cannot carry a file NAME. Copies are stored with the file's own type (8.6); My work saves the copy under its sealed name by reading it in parts through `jira-copy-part` (2 MiB ranges, a front-end invocation answers ≤ 5 MB) and checking the SHA-256 in the browser. |
 | Upload from a backend | a hand-built `multipart/form-data` body (field `file`) on `POST /rest/api/3/issue/{key}/attachments` with `X-Atlassian-Token: no-check` → 200, author = the app | A restored file gets a NEW attachment id. The seal follows it. |
 | `requestConfluence` from a Jira-side invocation | 200 | Shared helpers (user names, activity) work from either side. |
 | `POST /rest/api/3/permissions/check` as the app | 403 "Only Jira administrators and Connect apps can perform this operation" | The app cannot check another person's Jira permissions. Resolvers ask Jira AS THE CALLER (`GET /rest/api/3/mypermissions?issueId=…`). |
@@ -43,14 +44,26 @@ was deliberately left out.
    - A restore that fails (Jira error, missing copy) is never final: the seal is kept on the dead id
      (`jira-seal-lost-<id>`), the panel shows it as "Not put back" with "Put it back", the hourly
      sweep retries (1 h, doubling to 24 h, 10 tries), and the lapse rules never release it. Only a
-     person lets it go: the owner, or an admin with a reason.
+     person lets it go: the owner, or an admin with a reason. The lost row keeps who DELETED the file
+     (`deletedBy`); "Put it back" is recorded as the clicker's request (`lastPutBackBy`, history
+     "X had Sentinel Vault put back…", `requested: true`) and never as their delete (8.6). An admin's
+     force release on such a row is offered on purpose (a lost seal is never released by the lapse
+     rules, so an owner who has left would otherwise keep the copy for ever); its dialog says it
+     deletes the last copy and the file cannot be put back, and the record and comment say so.
+   - Between a delete and the trigger's first write the panel can read the issue first. A sealed file
+     missing with nothing recorded (no lost row, no queued marker, no intent) reads "Being put back"
+     for 90 s from the first read that saw it (`jira-seal-missing-<id>`, 1 day TTL), the panel polling
+     every 3 s up to 40 times; after that it reads "Not put back". A lapsed seal missing with nothing
+     pending is not listed (its delete ends it) (8.6).
    - Delete-loop breaker: a fourth restore of one seal inside an hour is not made (an Automation
      rule that deletes a file type would otherwise loop for ever); the seal is "lost / loop" and the
      file is put back by hand (Put it back, open to anyone who can edit the issue) after fixing the cause.
    - The issue itself is deleted → nothing can be restored (Jira deletes the issue's attachments
      without one event each); the seals become orphans: record and copy are kept 30 days, the owner
-     sees them on My work and can download the copy (a short-lived Object Store link), then the
-     sweep ends them.
+     sees them on My work and can download the copy (under its own name and type, assembled from
+     `jira-copy-part` and checked against the seal's SHA-256) or let it go early ("Let it go…",
+     `jira-copy-letgo`: owner only, signed like a release, deletes the seal and the copy), then the
+     sweep ends them. Nobody else is told: the issue's history is unreachable once the issue is gone.
    - A copy whose delete fails is not forgotten: `deleteCopy` leaves `jira-seal-copy-gc-<id>` and
      the hourly sweep retries it under the seal's lock, never deleting a copy a live seal uses again.
      The sweep keeps its place in the seal list (`jira-seal-sweep-cursor`), so a site with more seals
