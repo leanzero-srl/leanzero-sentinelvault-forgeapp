@@ -171,8 +171,14 @@ try {
     eq("[3] guard demoted the page", await stateOf(), "draft");
     eq("[3] guard reports the workflow change", g.workflowChanged, true);
     eq("[3] guard wrote nothing to the body (demote mode)", g.restored, false);
+    // The banner and a section macro race for the first call: the loser is told too (echo window).
     const again = await triggers.guardPageNow(PAGE, "view");
-    eq("[3] a second view of the same version reports nothing new", again.workflowChanged ?? false, false);
+    eq("[3] a concurrent caller on the same version gets the echo", [again.checked, again.workflowChanged], [false, true]);
+    const claim = await kvs.get(`page-guard-${PAGE}`);
+    await kvs.set(`page-guard-${PAGE}`, { ...claim, workflowChanged: { at: new Date(Date.now() - 10 * 60 * 1000).toISOString() } });
+    const later = await triggers.guardPageNow(PAGE, "view");
+    eq("[3] after the echo window a view of the same version reports nothing new", later.workflowChanged ?? false, false);
+    eq("[3] the demote was announced once", w.comments.length, 1);
   }
   {
     const w = await approvedPage({ enforceMode: "demote" });
