@@ -1283,13 +1283,6 @@ export async function collectWorkflowEnforcementForPage(pageId, atlassianId, eve
   if (!record?.enforce) return null;
   const def = await resolveWorkflowDef(record.spaceKey, record.workflowId);
   if (!findState(def, record.stateId)?.enforce) return null;
-  // 2b. A late event for a version the approval already covers (the requester's own last save
-  //     before the approval, delivered ~10 min after it) is not an edit to the Approved page.
-  //     Revert mode was safe by accident (Pass 0 compares the LIVE version); demote mode acted on
-  //     the event alone and sent a freshly approved page back to Draft. Nothing to enforce, and
-  //     nothing to reconcile: the baseline already covers it.
-  if (eventPredatesBaseline(eventVersion, record.approvedVersion)) return null;
-
   // 3. Privileged? snapshot ∩ live-config approvers, OR live steward (§0.D/§0.E).
   //    If live group-expansion FAILED (outage), trust the snapshot rather than reverting a
   //    real approver's edit — revocation is only honored when expansion actually succeeds.
@@ -1301,6 +1294,16 @@ export async function collectWorkflowEnforcementForPage(pageId, atlassianId, eve
     (Array.isArray(record.approvers) && record.approvers.includes(atlassianId) && (liveApprovers.includes(atlassianId) || liveUnresolved))
     || await isAccountStewardAsApp(atlassianId, record.spaceKey);
   if (privileged) return { action: "privileged", record }; // reconciliation (§2.5) advances the baseline
+
+  // 3b. A late event for a version the approval already covers (the requester's own last save
+  //     before the approval, delivered ~10 min after it — or the guard judging that version on the
+  //     first view after the approval) is not an edit to the Approved page. Revert mode was safe by
+  //     accident (Pass 0 compares the LIVE version); demote mode acted on the event alone and sent a
+  //     freshly approved page back to Draft. Checked AFTER the privileged test so an approver's or
+  //     steward's late event keeps its "privileged" answer for the seal passes, exactly as before;
+  //     for everyone else the answer is "predates-approval": no enforcement, and — like the old
+  //     demote/revert answers — not privileged inside held seals and no adoption of new wrappers.
+  if (eventPredatesBaseline(eventVersion, record.approvedVersion)) return { action: "predates-approval", record };
 
   // 4. Not privileged -> revert (opt-in) or demote (default) — the mode the space admin chose, with
   //    or without named approvers (enforce-rules.js enforceModeOf says why the old CL-5 downgrade went).

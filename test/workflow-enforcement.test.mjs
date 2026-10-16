@@ -89,7 +89,9 @@ try {
     await triggers.pageContentTrigger(event(PLAIN, 1)); // an even older one
     eq("[2] late event for v1 (< approvedVersion): page stays Approved", await stateOf(), "approved");
     const r = await triggers.collectWorkflowEnforcementForPage(PAGE, PLAIN, 2, APP);
-    eq("[2] probe answers nothing to enforce for a version at the baseline", r?.action ?? null, null);
+    eq("[2] probe answers predates-approval (no enforcement) for a version at the baseline", r?.action, "predates-approval");
+    const ra = await triggers.collectWorkflowEnforcementForPage(PAGE, APPROVER, 2, APP);
+    eq("[2] an approver's late event stays privileged (seal passes unchanged)", ra?.action, "privileged");
     // Control: a REAL post-approval edit by the same non-approver still demotes.
     const v3 = w.edit(PAGE, PLAIN, "changed after approval");
     await triggers.pageContentTrigger(event(PLAIN, v3));
