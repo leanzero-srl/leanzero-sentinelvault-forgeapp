@@ -22,8 +22,8 @@ export const RELEASE_NOTES = Object.freeze([
       "Changed: the Sentinel Vault — My work link in Confluence's Apps menu and the space's Sentinel Vault page now show the app's icon instead of a broken image.",
     ],
     fixes: [
-      "Put it back on a Jira file recorded the person who clicked it as the person who deleted the file. The history and the issue comment now keep who really deleted it and say who asked for it to be put back.",
-      "For the first moment after a sealed Jira file was deleted, the issue's Sentinel Vault section could still show it as Not put back with a Put it back button. It now reads Being put back until Sentinel Vault has finished, and Not put back only when the file really could not be put back.",
+      "Put it back on a Jira file recorded the person who clicked it as the person who deleted the file. The history and the issue comment now keep who really deleted it, and the history says who asked for it to be put back.",
+      "For the first moment after a sealed Jira file was deleted, the issue's Sentinel Vault section could still show it as Not put back with a Put it back button. It now reads Being put back while Sentinel Vault puts it back, and Not put back only if that fails or the file is still not back after about a minute and a half.",
       "When a Jira or project admin force-released a file that could not be put back, the dialog did not say that this deletes Sentinel Vault's last copy. It now says so, the button reads Delete the copy, and the seal's history records it.",
       "In a space set to undo edits to Approved pages but with no approvers named, an edit to an Approved page moved it back to Draft instead of being undone, although the Workflow settings said it would be undone. It is now undone.",
       "A page approved right after its last edit could move back to Draft on its own a few minutes later, and its author was told their edit had moved it. An edit made before the approval no longer counts as a change to the approved page.",
