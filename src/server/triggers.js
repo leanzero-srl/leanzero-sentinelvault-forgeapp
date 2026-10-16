@@ -313,7 +313,7 @@ export async function pageContentTrigger(event) {
     }
 
     const globalPolicy = await kvs.get("admin-settings-global");
-    const contentProtectionOn = globalPolicy?.enableContentProtection !== false;
+    const contentProtectionOn = contentProtectionEnabled(globalPolicy);
 
     // --- Gather applicable body-protection work via cheap probes (no ADF read) ---
     const sealFileMap = contentProtectionOn
@@ -1464,6 +1464,7 @@ export async function workflowSweep() {
   if (!systemAccountId) return { body: JSON.stringify({ swept: 0, reason: "no app account" }) };
   let reverted = 0, demoted = 0, healed = 0, expired = 0, overdue = 0, skippedTrashed = 0, purgedPages = 0;
   const nowMs = Date.now();
+  const protectionOn = contentProtectionEnabled(await kvs.get("admin-settings-global").catch(() => null));
   const defCache = new Map(); // per-space def cache — most pages in a space share one workflow
   const settingsCache = new Map(); // per-space settings (B4 label sync reads them per row)
   let labelsSynced = 0;
@@ -1566,6 +1567,11 @@ export async function workflowSweep() {
         }
         if (!record?.enforce) continue;
         if (!findState(def, record.stateId)?.enforce) continue;
+        // "Protect Sealed Attachments in Page Body" off switches Approved-page enforcement off —
+        // the event path always honoured it, the sweep did not and still demoted / reverted.
+        // Nothing here is touched while it is off: no enforcement, no baseline re-stamp (that would
+        // record an unreviewed edit as the approved version), no comment.
+        if (!protectionOn) continue;
         const live = await fetchLivePageVersion(idx.pageId);
         if (live == null) continue;
         // Gap B: a null baseline on an enforced page is a hole — self-heal, don't skip.
@@ -2353,7 +2359,7 @@ export async function runSectionRestoreForPage(pageId) {
   const systemAccountId = await resolveAppAccountId();
   if (!systemAccountId) return { clean: false, reason: "app account unresolved" };
   const globalPolicy = await kvs.get("admin-settings-global");
-  if (globalPolicy?.enableContentProtection === false) return { clean: true, reason: "content protection off" };
+  if (!contentProtectionEnabled(globalPolicy)) return { clean: true, reason: "content protection off" };
   const sectionSeals = await collectSectionSealsForPage(pageId);
   if (sectionSeals.length === 0) return { clean: true, reason: "no section seals" };
 
@@ -2527,7 +2533,7 @@ export async function pageGuardSweep() {
   const started = Date.now();
   try {
     const globalPolicy = await kvs.get("admin-settings-global");
-    if (globalPolicy?.enableContentProtection === false) return { pages: 0, judged: 0, restored: 0 };
+    if (!contentProtectionEnabled(globalPolicy)) return { pages: 0, judged: 0, restored: 0 };
     const guarded = await collectGuardedPageIds();
     const recent = await collectRecentlyEditedPagesForValidation();
     // Recently edited pages go FIRST (their verdict is what someone is waiting for); the rotating
