@@ -7,7 +7,7 @@ GENERATED from `src/server/shared/release-notes.js` by `scripts/render-release-n
 **A deleted Jira issue's sealed file downloads under its own name, and Approved pages are protected exactly as the settings say**
 
 - New: on My work, the person who sealed a file on a Jira issue that was later deleted can now delete the kept copy themselves with Let it go, instead of waiting for the 30 days to run out.
-- Changed: Download the copy on My work now saves the file of a deleted Jira issue under its own name and file type. Before, it arrived without a name or extension.
+- Changed: Download the copy on My work now saves the file of a deleted Jira issue under its own name and file type. Before, it arrived without a name or extension. Sentinel Vault checks the copy against the file you sealed before saving it, and the row then says it was saved and that it is identical.
 - Changed: the Sentinel Vault — My work link in Confluence's Apps menu and the space's Sentinel Vault page now show the app's icon instead of a broken image.
 
 Fixed:
