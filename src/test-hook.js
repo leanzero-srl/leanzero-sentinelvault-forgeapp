@@ -467,12 +467,13 @@ export async function testStateTrigger(req) {
       // itself is authored by the harness user. Dev-only, stripped from production with the hook.
       if (fn === "pageEvent") {
         const ver = parseInt(q(req, "version"), 10);
-        await pageContentTrigger({
+        const out = await pageContentTrigger({
           eventType: q(req, "eventType") || "avi:confluence:updated:page",
           atlassianId: q(req, "actor"),
           content: { id: String(q(req, "pageId")), version: { number: Number.isFinite(ver) ? ver : undefined } },
         });
-        return json(200, { invoked: fn, result: { ran: true } });
+        // { workflowAction, demoted } — what the run did to the workflow (2026-10-16).
+        return json(200, { invoked: fn, result: { ran: true, ...(out || {}) } });
       }
       if (fn === "expirySweep") {
         const r = await expirySweepTask();
