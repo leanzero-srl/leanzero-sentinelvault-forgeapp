@@ -296,7 +296,7 @@ modules:
       resource: my-work
       resolver:
         function: action-router
-      icon: "static/steward-console/assets/icon.png"
+      icon: "resource:my-work;assets/icon.png"
 
   # Realm-level administration (Custom UI)
   # Only visible to space administrators
@@ -307,7 +307,7 @@ modules:
       resource: realm-console
       resolver:
         function: action-router
-      icon: "static/steward-console/assets/icon.png"
+      icon: "resource:realm-console;assets/icon.png"
 
 resources:
   - key: overlay
