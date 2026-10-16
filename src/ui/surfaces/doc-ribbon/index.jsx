@@ -24,6 +24,7 @@ import DatePicker, { toYmd, fromYmd } from "../../kit/DatePicker";
 import { decideRibbon, untilLabel } from "../../kit/ribbon-rules";
 import { alertWord, refusalText, when } from "../../kit/status-language.js"; // SEC-3: one vocabulary, one clock
 import { guardReevaluateReason, isGuardFollowUp } from "../../kit/guard-outcome.js"; // re-run on a restore AND on a demote
+import { freezeSentence } from "../../kit/freeze-sentence.js"; // SEC-2 (d), truthful while content protection is off
 import { sourcePhrase } from "../../../server/capsules/classification/logic.js"; // P3: "from space default" / "set on this page"
 import BusyVeil from "../../kit/BusyVeil";
 import { detailsModalSize } from "../../kit/modal-size.js";
@@ -411,14 +412,7 @@ const WorkflowControl = ({ workflow, approvals, operatorId, pageId, spaceKey, si
     invoke("workflow-seals-to-freeze", { pageId }).then((r) => { if (alive) setFreeze(r || null); }).catch(() => { if (alive) setFreeze(null); });
     return () => { alive = false; };
   }, [panelOpen, pendingApproval, pageId]);
-  const freezeLine = (() => {
-    if (!freeze) return null;
-    const secs = Array.isArray(freeze.sections) ? freeze.sections : [];
-    const atts = Array.isArray(freeze.attachments) ? freeze.attachments : [];
-    if (!secs.length && !atts.length) return null;
-    const part = (n, word, list) => `${n} sealed ${word}${n === 1 ? "" : "s"}${list.length ? ` (${list.slice(0, 3).map((x) => `${x.name || "untitled"}${x.owner ? ` — ${x.owner}` : ""}`).join("; ")}${list.length > 3 ? "; …" : ""})` : ""}`;
-    return `Approving freezes this page, including ${[secs.length ? part(secs.length, "section", secs) : "", atts.length ? part(atts.length, "file", atts) : ""].filter(Boolean).join(" and ")} — their owners cannot release or extend them and nobody outside the approvers can edit inside them until the page leaves Approved.`;
-  })();
+  const freezeLine = freezeSentence(freeze);
   // WF-1/WF-4: a one-line notice next to the chip that OUTLIVES the popover — a decision that
   // closed the request (approved, denied, stale) unmounts the approval panel, so the outcome is
   // said here. Success notices clear themselves; a stale/blocked one stays until the next change.

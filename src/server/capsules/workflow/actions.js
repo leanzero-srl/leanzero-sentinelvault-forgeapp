@@ -34,7 +34,7 @@ import {
   storeSpaceWorkflow,
   deleteSpaceWorkflow, restoreSpaceDefaultWorkflow } from "./logic.js";
 import { runBundle } from "./bundle.js"; // WF-11
-import { shownEnforcement } from "./enforce-rules.js"; // 2026-10-16: the words follow what the engine does
+import { shownEnforcement, contentProtectionEnabled } from "./enforce-rules.js"; // 2026-10-16: the words follow what the engine does
 import {
   extractApprovalConfig,
   resolveApproverIds,
@@ -790,7 +790,10 @@ const sealsToFreezeAction = async (req) => {
   if (!(await callerMayReadPage(req, pageId))) return { sections: [], attachments: [] };
   try {
     const { describeSealsToFreeze } = await import("./seal-custody.js");
-    return await describeSealsToFreeze(pageId);
+    // The dialog's "nobody outside the approvers can edit inside them" is the page-body guard, off
+    // while the site's content-protection switch is off (2026-10-16).
+    const protectionOff = !contentProtectionEnabled(await kvs.get("admin-settings-global").catch(() => null));
+    return { ...(await describeSealsToFreeze(pageId)), protectionOff };
   } catch (e) { console.warn("[SEAL-CUSTODY] seals-to-freeze failed:", e?.message || e); return { sections: [], attachments: [] }; }
 };
 

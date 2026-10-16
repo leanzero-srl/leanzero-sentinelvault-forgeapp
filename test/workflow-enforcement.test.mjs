@@ -230,6 +230,11 @@ try {
     await kvs.set("admin-settings-global", { enableContentProtection: true });
     const wfOn = await wfActions.get("get-page-workflow")({ payload: { pageId: PAGE }, context: ctx });
     eq("[4w] control: protection on → the chosen mode", wfOn.enforceMode, "revert");
+    const fzOn = await wfActions.get("workflow-seals-to-freeze")({ payload: { pageId: PAGE }, context: ctx });
+    eq("[4w] approval dialog freeze answer: protection on", fzOn.protectionOff, false);
+    await kvs.set("admin-settings-global", { enableContentProtection: false });
+    const fzOff = await wfActions.get("workflow-seals-to-freeze")({ payload: { pageId: PAGE }, context: ctx });
+    eq("[4w] approval dialog freeze answer: protection off", fzOff.protectionOff, true);
   }
 } finally {
   loud();
