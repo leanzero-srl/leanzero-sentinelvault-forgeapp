@@ -217,6 +217,8 @@ body { margin: 0; background: var(--sv-bg-primary); color: var(--sv-text-primary
 .mw-row-main a:hover, .mw-link:hover { text-decoration: underline; }
 .mw-row-meta { font-size: 12px; color: var(--sv-text-secondary); }
 .mw-row-reason { font-size: 12px; color: var(--sv-text-primary); font-style: italic; }
+.mw-row-saved { color: #15803D; font-weight: 700; } /* 8.6: a checked copy was saved — the approvals green */
+html[data-color-mode="dark"] .mw-row-saved { color: #4ADE80; }
 .mw-row-actions { display: flex; gap: 8px; flex-shrink: 0; }
 .mw-btn { border: 0; border-radius: 8px; padding: 7px 12px; font-size: 12px; font-weight: 800; color: #fff; cursor: pointer; }
 .mw-btn-approve { background: #15803d; } /* same green as the approvals inbox — one meaning, one colour */
