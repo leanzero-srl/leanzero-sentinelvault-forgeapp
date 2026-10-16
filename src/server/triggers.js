@@ -348,6 +348,7 @@ export async function pageContentTrigger(event) {
     let enforceObservedEqual = false; // #44: the revert pass CONFIRMED content-equality (no write needed)
     let sectionChanged = false; // GAP 2: the last attempt's section pass had a restore pending
     const adoptedSections = []; // SEC-4 (a): wrappers this run sealed on publish (record written, id stamped)
+    let sealPassesSkipped = false; // a late event met a newer version by someone else (see below)
 
     for (let attempt = 0; hasBodyWork && attempt < MAX_RETRIES; attempt++) {
       let ctx;
@@ -381,13 +382,25 @@ export async function pageContentTrigger(event) {
         break;
       }
 
+      // A LATE event (2026-10-16): the passes below judge the LIVE body but take the editor from the
+      // event. When the live version is newer than the event's and someone else saved it, the event's
+      // author would be credited with that person's edit — a seal owner's late event re-baselined a
+      // non-owner's change inside the owner's sealed section, and the newer save's own event then
+      // found nothing to restore (test/section-late-event.test.mjs). The event is judged only for the
+      // version it describes: the seal passes stand down and the newer version is judged by its own
+      // event, the view guard or the five-minute page-guard sweep, all with its real author. Pass 0
+      // compares versions, not people, and still runs.
+      const eventVersion = content?.version?.number;
+      const lateForLiveBody = typeof eventVersion === "number" && typeof ctx.currentVersion === "number"
+        && ctx.currentVersion > eventVersion && !!ctx.readAuthorId && ctx.readAuthorId !== atlassianId;
+      if (lateForLiveBody) sealPassesSkipped = true;
       // Pass 0 (#44): enforced-state whole-page revert — runs FIRST, short-circuits A/B (who-wins).
       if (enforcement?.action === "revert") {
         try { await enforceApprovedStatePass(ctx, enforcement); }
         catch (e) { console.error("[WORKFLOW-ENFORCE] pass error:", e); }
       }
       // Pass A: sealed-section restore (suppressed while enforcing — who-wins + SV-M5 suppression)
-      if (!ctx.enforcedRevert && sectionSeals.length > 0) {
+      if (!ctx.enforcedRevert && !lateForLiveBody && sectionSeals.length > 0) {
         try { await restoreSealedSectionsPass(ctx, sectionSeals, mediaProbeCache); }
         catch (e) { console.error("[PAGE-PROTECT] section pass error:", e); }
       }
@@ -398,12 +411,12 @@ export async function pageContentTrigger(event) {
       // Pass A2 (SEC-4 (a)): a Sealed Section wrapper with no record — inserted in the editor and
       // published — is sealed to the person who published it. Not while an enforce-revert is
       // rewriting the body (the wrapper may not survive it); the next publish adopts it then.
-      if (!ctx.enforcedRevert && (insertIntent || sectionSeals.length > 0)) {
+      if (!ctx.enforcedRevert && !lateForLiveBody && (insertIntent || sectionSeals.length > 0)) {
         try { await adoptInsertedSectionsPass(ctx, sectionSeals, adoptedSections, enforcement); }
         catch (e) { console.error("[SECTION-ADOPT] pass error:", e); }
       }
       // Pass B: sealed-media restore
-      if (!ctx.enforcedRevert && sealFileMap.length > 0) {
+      if (!ctx.enforcedRevert && !lateForLiveBody && sealFileMap.length > 0) {
         try { await restoreMediaPass(ctx, sealFileMap, mediaProbeCache); }
         catch (e) { console.error("[PAGE-PROTECT] media pass error:", e); }
       }
@@ -453,7 +466,7 @@ export async function pageContentTrigger(event) {
 
     // GAP 2 (req 2.3): every attempt 409'd/errored with a section restore pending → the tamper is
     // still on the page. Leave a marker so the hourly sweep retries; clear it on a clean run.
-    if (sectionSeals.length > 0) {
+    if (sectionSeals.length > 0 && !sealPassesSkipped) { // a skipped late event says nothing about the live body
       try {
         if (decideSectionRetry({ sectionChanged, anyChange })) {
           const prev = await kvs.get(sectionRetryKey(pageId));
@@ -487,7 +500,7 @@ export async function pageContentTrigger(event) {
         console.warn(`[SECTION-ADOPT] page ${pageId}: sealed on publish ${adoptedSections.map((a) => `${a.sectionId} (${a.sectionTitle})`).join(", ")} for ${atlassianId}`);
       } catch (e) { console.error("[SECTION-ADOPT] post-write:", e); }
     }
-    if (insertIntent) await kvs.delete(insertIntentKey(pageId)).catch(() => {});
+    if (insertIntent && !sealPassesSkipped) await kvs.delete(insertIntentKey(pageId)).catch(() => {}); // a skipped late event adopted nothing
     await refreshByline(pageId).catch((e) => console.warn("[BYLINE] trigger refresh failed:", e?.message || e));
 
     // #44: the enforce-revert notice — only after a CONFIRMED write (SV-M2).
