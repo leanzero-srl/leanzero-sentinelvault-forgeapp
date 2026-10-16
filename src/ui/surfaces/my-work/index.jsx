@@ -444,7 +444,9 @@ const MyJiraSeals = () => {
       a.href = url; a.download = head.fileName || s.attachmentName || "file";
       document.body.appendChild(a); a.click(); a.remove();
       setTimeout(() => URL.revokeObjectURL(url), 10000);
-      setDl(null);
+      // 8.6: say what happened: the browser's own download bubble sits outside the page, and the bytes were
+      // just checked against the SHA-256 taken when the file was sealed (assembleCopy refuses anything else).
+      setDl({ id: s.attachmentId, msg: null, saved: a.download, verified: !!head.sha256 });
     } catch (_) { setDl({ id: s.attachmentId, msg: "Could not reach Sentinel Vault. Try again." }); }
   };
   // 8.6: the owner can let the copy go before its 30 days run out (the issue panel is gone with the issue).
@@ -473,7 +475,7 @@ const MyJiraSeals = () => {
       </div>
       <ul className="mw-list">
         {items.map((s) => {
-          const downloading = dl?.id === s.attachmentId && !dl.msg;
+          const downloading = dl?.id === s.attachmentId && !dl.msg && !dl.saved;
           return (
             <li key={s.attachmentId} className="mw-row" data-testid="mw-jira-seal-row" data-attachment-id={s.attachmentId}>
               <div className="mw-row-info">
@@ -488,6 +490,11 @@ const MyJiraSeals = () => {
                     </>}
                 </span>
                 {dl?.id === s.attachmentId && dl.msg && <span className="mw-row-meta" role="alert" data-testid="mw-jira-copy-error">{dl.msg}</span>}
+                {dl?.id === s.attachmentId && dl.saved && (
+                  <span className="mw-row-meta mw-row-saved" role="status" data-testid="mw-jira-copy-saved">
+                    {`Saved as ${dl.saved}${dl.verified ? ", identical to the file you sealed" : ""}`}
+                  </span>
+                )}
               </div>
               <div className="mw-row-actions">
                 {s.issueDeletedAt && (
