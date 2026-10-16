@@ -44,6 +44,7 @@ import { getActiveEditGrant, getActiveSectionEditGrant, resolveEditCooldownMs } 
 // WF-6: the Workflow block reads through the same helper the byline uses.
 import { describeWorkflowForPage, extractApprovalConfig } from "../workflow/approvals.js";
 import { getSpaceWorkflowSettings } from "../workflow/logic.js";
+import { shownEnforcement } from "../workflow/enforce-rules.js"; // 2026-10-16
 import { readStatus, readConfirmationRequired } from "../workflow/read-acks.js";
 import { retryAtFor } from "../../shared/edit-cooldown.js";
 import { getPageActivity } from "../activity/actions.js";
@@ -228,7 +229,7 @@ export const pageDetailsSummary = async (req) => {
         // A space admin may take the page out — not while Approved/enforced or an approval waits
         // (the server refuses those too: workflow/logic.js removeRefusal).
         canRemove: isSpaceAdmin && !record.enforce && !wf.pending,
-        enforceMode: settings?.enforceMode === "revert" ? "revert" : "demote",
+        enforceMode: shownEnforcement(settings, await kvs.get("admin-settings-global").catch(() => null)), // "off" while content protection is off
         reviewedVersion,
         baselineVersion: record.approvedVersion ?? null,
         approvalSummary: wf.approvalSummary,

@@ -2,7 +2,7 @@
 // guard answer (kit/guard-outcome.js). The end-to-end behaviour is in workflow-enforcement.test.mjs;
 // this file pins the rules themselves and that each has ONE home in the code.
 import { readFileSync } from "node:fs";
-import { enforceModeOf, eventPredatesBaseline, contentProtectionEnabled } from "../src/server/capsules/workflow/enforce-rules.js";
+import { enforceModeOf, eventPredatesBaseline, contentProtectionEnabled, shownEnforcement } from "../src/server/capsules/workflow/enforce-rules.js";
 import { guardReevaluateReason, isGuardFollowUp, GUARD_REEVALUATE_REASONS } from "../src/ui/kit/guard-outcome.js";
 import { eq, ok, report } from "./_assert.mjs";
 
@@ -32,6 +32,11 @@ eq("absent key → on", contentProtectionEnabled({}), true);
 eq("true → on", contentProtectionEnabled({ enableContentProtection: true }), true);
 eq("false → off", contentProtectionEnabled({ enableContentProtection: false }), false);
 
+// --- shownEnforcement: what the sentences may promise ---
+eq("protection on → the chosen mode (revert)", shownEnforcement({ enforceMode: "revert" }, {}), "revert");
+eq("protection on → the chosen mode (demote)", shownEnforcement({}, null), "demote");
+eq("protection off → off, whatever the mode", shownEnforcement({ enforceMode: "revert" }, { enableContentProtection: false }), "off");
+
 // --- guard answer → banner re-run ---
 eq("restored → re-run", guardReevaluateReason({ restored: true }), "guard restored");
 eq("demoted (no write) → re-run", guardReevaluateReason({ restored: false, workflowChanged: true }), "guard workflow changed");
@@ -53,5 +58,9 @@ ok("the banner re-runs on the guard's answer through guardReevaluateReason", /gu
 const sweepAt = triggers.indexOf("export async function workflowSweep");
 const sweepBody = triggers.slice(sweepAt, triggers.indexOf("\n}\n", sweepAt));
 ok("the hourly sweep reads the content-protection switch", /contentProtectionEnabled\(/.test(sweepBody) && /if \(!protectionOn\) continue;/.test(sweepBody));
+
+const homes = ["../src/server/capsules/workflow/actions.js", "../src/server/capsules/page-details/actions.js", "../src/server/capsules/workflow/logic.js"]
+  .map((f) => readFileSync(new URL(f, import.meta.url), "utf8"));
+eq("no server module re-derives the mode from settings.enforceMode by hand", homes.filter((src) => /settings\?\.enforceMode === "revert"/.test(src)).length, 0);
 
 report("workflow-enforce-rules");

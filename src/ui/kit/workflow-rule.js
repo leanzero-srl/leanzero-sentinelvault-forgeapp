@@ -12,7 +12,7 @@ const isEnforce = (s) => !!s?.enforce || s?.id === "approved";
 const names = (list) => list.map((a) => a?.name || a?.id).filter(Boolean);
 const join = (arr) => (arr.length <= 1 ? arr.join("") : `${arr.slice(0, -1).join(", ")} and ${arr[arr.length - 1]}`);
 
-export function workflowRuleSentence(settings = {}, def = null) {
+export function workflowRuleSentence(settings = {}, def = null, { protectionOff = false } = {}) {
   if (!settings || settings.enabled === false) return "The workflow is off in this space: pages carry no state.";
   const states = Array.isArray(def?.states) ? def.states : [];
   const first = states.find((s) => s.initial) || states[0] || null;
@@ -34,7 +34,11 @@ export function workflowRuleSentence(settings = {}, def = null) {
     const consequence = settings.enforceMode === "revert"
       ? "is undone (the approved version is restored)"
       : `moves the page back to ${back || first?.name || "the first state"}`;
-    parts.push(`${enforce.name} pages are protected: an edit by anyone who is not an approver or a space admin ${consequence}.`);
+    // The site switch "Protect Sealed Attachments in Page Body" off switches enforcement off for
+    // every space (2026-10-16: the tab said "protected" while the engine did nothing).
+    parts.push(protectionOff
+      ? `${enforce.name} pages are not protected right now: the site setting “Protect Sealed Attachments in Page Body” is off, so edits stay and the page keeps its state.`
+      : `${enforce.name} pages are protected: an edit by anyone who is not an approver or a space admin ${consequence}.`);
     const days = Number(settings.reviewAfterDays) > 0 ? Number(settings.reviewAfterDays) : Number(enforce.reviewAfterDays) > 0 ? Number(enforce.reviewAfterDays) : 150;
     parts.push(`Re-review after ${days} days.`);
   }

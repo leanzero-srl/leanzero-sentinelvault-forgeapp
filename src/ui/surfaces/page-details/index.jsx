@@ -447,7 +447,7 @@ const WorkflowBlock = ({ wf, pageId, onChanged }) => {
   let line;
   if (wf.reviewOverdue) line = `The review period elapsed on ${fmtDueDay(wf.reviewDueAt)} — review this page and move it on, or set a new date.`;
   else if (wf.pending) line = `${wf.pending.requestedByName || "Someone"} asked to move this page to ${wf.pending.toStateName}${wf.pending.requestedAt ? ` on ${fmtDay(wf.pending.requestedAt)}` : ""} · ${wf.pending.decided} of ${wf.pending.required} decision${wf.pending.required === 1 ? "" : "s"} so far.${wf.pending.iCanDecide ? " Waiting for your decision — approve or deny from the workflow chip on the page's ribbon." : ""}`;
-  else if (wf.enforced) line = `${(wf.recordForSummary ? approvalSummary(wf.recordForSummary) : null) || wf.approvalSummary || ""} Edits by anyone but the approvers are ${wf.enforceMode === "revert" ? "reverted" : "moved back for review"}.`;
+  else if (wf.enforced) line = `${(wf.recordForSummary ? approvalSummary(wf.recordForSummary) : null) || wf.approvalSummary || ""} ${wf.enforceMode === "off" ? "Approved-page protection is switched off on this site, so edits by anyone are kept." : `Edits by anyone but the approvers are ${wf.enforceMode === "revert" ? "reverted" : "moved back for review"}.`}`;
   else if (wf.lastDecision) line = `${wf.lastDecision.kind === "denied" ? "Declined" : "Request closed"} by ${wf.lastDecision.byName || "an approver"} on ${fmtDay(wf.lastDecision.at)}${wf.lastDecision.reason ? ` — “${wf.lastDecision.reason}”` : ""}.`;
   else line = wf.canMove ? "Move it on when it is ready." : "Waiting for someone who can move it on.";
   const meta = [];

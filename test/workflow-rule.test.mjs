@@ -20,4 +20,12 @@ ok("the setting's clock wins", /Re-review after 90 days/.test(workflowRuleSenten
 ok("not auto-started → 'Pages start'", /^Pages start in Draft\./.test(workflowRuleSentence({ enabled: true, autoAssignNew: false }, DEFAULT_WORKFLOW)));
 ok("no definition → no crash", /Pages start at the workflow's first state\./.test(workflowRuleSentence({ enabled: true }, null)));
 
+// 2026-10-16: the sentence and the engine agree.
+ok("revert with approval on and nobody named still says undone (the engine reverts since 2026-10-16)",
+  /is undone \(the approved version is restored\)/.test(workflowRuleSentence({ enabled: true, enforceMode: "revert", approval: { approvers: [], mode: "any" } }, DEFAULT_WORKFLOW)));
+const off = workflowRuleSentence({ enabled: true, enforceMode: "revert", approval: { approvers: [mihai], mode: "any" } }, DEFAULT_WORKFLOW, { protectionOff: true });
+ok("site content protection off → the tab says Approved pages are not protected", /Approved pages are not protected right now: the site setting “Protect Sealed Attachments in Page Body” is off/.test(off));
+ok("…and never claims an undo", !/is undone|moves the page back/.test(off));
+ok("protection on (the default) keeps the protected sentence", /Approved pages are protected:/.test(workflowRuleSentence({ enabled: true }, DEFAULT_WORKFLOW)));
+
 report("workflow-rule");

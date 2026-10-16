@@ -44,3 +44,13 @@ export function eventPredatesBaseline(eventVersion, approvedVersion) {
 export function contentProtectionEnabled(globalPolicy) {
   return globalPolicy?.enableContentProtection !== false;
 }
+
+/**
+ * What the app will DO to an unapproved edit of an enforced page, for the sentences that tell people:
+ * "revert", "demote", or "off" when the site switch above has switched enforcement off. The banner,
+ * the page details and the Workflow tab said "reverted" / "moved back" while the switch was off and
+ * the engine did nothing (2026-10-16) — the same words-vs-behaviour gap as the old CL-5 downgrade.
+ */
+export function shownEnforcement(settings, globalPolicy) {
+  return contentProtectionEnabled(globalPolicy) ? enforceModeOf(settings) : "off";
+}
