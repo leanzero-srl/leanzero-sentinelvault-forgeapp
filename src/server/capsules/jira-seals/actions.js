@@ -15,11 +15,13 @@
 import { kvs } from "@forge/kvs";
 
 import {
-  ACTIVITY, JIRA_SEAL_MAX_BYTES, buildSealRecord, forcedCommentAdf, isExpired, jiraCopyGcKey, jiraCopyKey, jiraIntentKey, jiraLapseKey, jiraLostKey, jiraQueuedKey, normId, rowFor, sealIdOf, viewerPowers,
+  ACTIVITY, JIRA_COPY_PART_BYTES, JIRA_MISSING_TTL_MS, JIRA_SEAL_MAX_BYTES, buildSealRecord, copyPartCount, forcedCommentAdf, isExpired, jiraCopyGcKey, jiraCopyKey, jiraIntentKey, jiraLapseKey, jiraLostKey,
+  jiraMissingKey, jiraQueuedKey, missingFileState, normId, orphanCopyAccess, rowFor, safeMimeType, sealIdOf, viewerPowers,
 } from "./logic.js";
 import {
-  callerPermissions, copyDownloadUrl, downloadAttachment, dropSeal, getSeal, postIssueComment, putSeal, readIssue, sealsOfIssue, sealsOwnedBy, sha256Hex, storeCopy, syncIssueProperty, userName,
+  callerPermissions, copyDownloadUrl, downloadAttachment, dropSeal, getSeal, postIssueComment, putSeal, readCopyPart, readIssue, sealsOfIssue, sealsOwnedBy, sha256Hex, storeCopy, syncIssueProperty, userName,
 } from "./store.js";
+import { setUntil } from "../../shared/kvs-ttl.js";
 import { resolveSealHoldPeriod } from "../sealing/logic.js";
 import { sanitizeHoldDuration } from "../../shared/baseline.js";
 import { validateReleaseReason } from "../../shared/release-reason.js";
@@ -108,7 +110,7 @@ export async function sealJiraAttachment({ accountId, issueId, attachmentId, loc
   // it can never delete the copy this seal is about to rely on (independent review, 2026-10-11).
   const locked = await withSealLock(attId, async () => {
     await kvs.delete(jiraCopyGcKey(copyKey));
-    try { await storeCopy(copyKey, bytes); }
+    try { await storeCopy(copyKey, bytes, att.mimeType); }
     catch (e) { return { reason: `Could not keep a copy of the file, so it was not sealed: ${e.message}` }; }
     const rec = buildSealRecord({
       attachment: att, issue, project: issue.project,
@@ -140,6 +142,10 @@ export async function releaseJiraAttachment({ accountId, issueId, attachmentId, 
     if (!v.ok) return { success: false, reason: v.error };
     forcedReason = v.reason;
   }
+  // A file that is not on the issue (deleted and not put back): releasing it deletes the LAST copy.
+  // The record and the comment say so (8.6, bug 2); the panel's dialog warned before the click.
+  const copyDeleted = !!record.issueDeletedAt || !!(await kvs.get(jiraLostKey(attId)).catch(() => null))
+    || !!(await readIssue(record.issueId).then((i) => i && !i.attachments.some((a) => a.id === attId)).catch(() => false));
   const locked = await withSealLock(attId, async () => {
     const fresh = await getSeal(attId);
     if (!fresh?.lockedBy || fresh.lockedBy !== record.lockedBy) return { ok: false, reason: "This file is not sealed" };
@@ -149,16 +155,18 @@ export async function releaseJiraAttachment({ accountId, issueId, attachmentId, 
   const dropped = locked.value;
   if (!dropped.ok) return { success: false, reason: dropped.reason };
   await syncIssueProperty(record.issueId, { removeId: record.attachmentId });
-  await issueActivity(record, isOwner ? ACTIVITY.RELEASED : ACTIVITY.FORCED, accountId, forcedReason ? { forced: true, reason: forcedReason } : {});
+  await issueActivity(record, isOwner ? ACTIVITY.RELEASED : ACTIVITY.FORCED, accountId, {
+    ...(forcedReason ? { forced: true, reason: forcedReason } : {}), ...(copyDeleted ? { copyDeleted: true } : {}),
+  });
   // The Confluence force release tells the owner (mailStewardOverrideNotice); so does this one, on
   // the issue, when the site posts Sentinel Vault comments at all.
   if (forcedReason) {
     const flags = await resolveBulletinToggles();
     if (flags.ENABLE_NATIVE_NOTIFICATIONS) {
-      await postIssueComment(record.issueId, forcedCommentAdf({ ownerId: record.lockedBy, actorId: accountId, fileName: record.attachmentName, reason: forcedReason }));
+      await postIssueComment(record.issueId, forcedCommentAdf({ ownerId: record.lockedBy, actorId: accountId, fileName: record.attachmentName, reason: forcedReason, copyDeleted }));
     }
   }
-  return { success: true };
+  return { success: true, copyDeleted };
 }
 
 export async function extendJiraAttachment({ accountId, issueId, attachmentId, lockDuration, powers, stewardOfProject }) {
@@ -230,11 +238,25 @@ export async function issueSealsView({ issueId, viewerId, powers }) {
   for (const seal of await sealsOfIssue(issue.id)) {
     if (listed.has(seal.attachmentId)) continue;
     const info = await kvs.get(jiraLostKey(seal.attachmentId)).catch(() => null);
-    // No failure recorded and a put-back queued or running: "Being put back", not "Not put back".
-    const restoring = !info && !!((await kvs.get(jiraQueuedKey(seal.attachmentId)).catch(() => null))
-      || (await kvs.get(jiraIntentKey(sealIdOf(seal))).catch(() => null)));
+    const queued = info ? null : await kvs.get(jiraQueuedKey(seal.attachmentId)).catch(() => null);
+    const intent = info || queued ? null : await kvs.get(jiraIntentKey(sealIdOf(seal))).catch(() => null);
+    // Nothing recorded yet: the panel may have read the issue before the delete trigger wrote its
+    // marker. Remember when a reader first saw the file missing; inside the grace it is "Being put
+    // back" (the panel keeps polling), after it "Not put back" (8.6, bug 3).
+    let firstSeenMs = null;
+    if (!info && !queued && !intent) {
+      const seen = await kvs.get(jiraMissingKey(seal.attachmentId)).catch(() => null);
+      firstSeenMs = Date.parse(seen?.at || "");
+      if (!Number.isFinite(firstSeenMs)) {
+        firstSeenMs = now;
+        await setUntil(jiraMissingKey(seal.attachmentId), { at: new Date(now).toISOString() }, now + JIRA_MISSING_TTL_MS).catch(() => {});
+      }
+    }
+    const m = missingFileState({ lost: !!info, queued: !!queued, intent: !!intent, expired: isExpired(seal, now), firstSeenMs, nowMs: now });
+    if (m.state === "hidden") continue; // a lapsed seal: its delete ends it, nothing is put back
+    const restoring = m.state === "restoring";
     rows.push({
-      id: seal.attachmentId, filename: seal.attachmentName, size: seal.size, mimeType: seal.mimeType, lost: true, restoring,
+      id: seal.attachmentId, filename: seal.attachmentName, size: seal.size, mimeType: seal.mimeType, lost: true, restoring, pending: m.pending,
       lostInfo: info ? { reason: info.reason, error: info.error || null, nextAt: info.nextAt || null, attempts: info.attempts || 0 } : null,
       seal: { lockedBy: seal.lockedBy, lockedByName: seal.lockedByName, timestamp: seal.timestamp, expiresAt: seal.expiresAt, note: seal.note, restoreCount: seal.restoreCount || 0, lastRestoredAt: seal.lastRestoredAt || null },
       row: rowFor({ record: seal, viewerId, powers, nowMs: now, lost: true, restoring }),
@@ -280,7 +302,8 @@ export async function retryJiraRestore({ accountId, issueId, attachmentId, power
   if (!issue) return { success: false, reason: "This issue no longer exists" };
   if (issue.attachments.some((a) => a.id === attId)) return { success: false, reason: "The file is already on the issue" };
   const { restoreWithClaim } = await import("./trigger.js");
-  const r = await restoreWithClaim(attId, accountId);
+  // The clicker ASKED for the put-back; the deleter is the one on the lost row (8.6, bug 1).
+  const r = await restoreWithClaim(attId, { requestedBy: accountId });
   if (r.outcome === "restored") return { success: true, attachmentId: r.attachmentId };
   if (r.outcome === "in-progress") return { success: false, reason: "Sentinel Vault is putting it back right now — refresh in a moment" };
   if (r.outcome === "already-handled") return { success: true };
@@ -305,15 +328,56 @@ const myJiraSeals = async (req) => {
 };
 
 // The kept copy of a sealed file whose ISSUE was deleted (an orphan): its owner may download it.
-// Owner only — there is no issue left to read anyone else's permission on.
+// Owner only — there is no issue left to read anyone else's permission on (orphanCopyAccess).
+// The store cannot carry a file name (store.js storeCopy, measured), so the browser assembles the
+// copy from `jira-copy-part` and saves it under the sealed file's own name and type; `url` stays for
+// REST-style callers and names nothing.
 const copyDownload = async (req) => {
   const accountId = req?.context?.accountId;
   const rec = await getSeal(normId(req?.payload?.attachmentId) || "x");
-  if (!rec?.lockedBy || rec.lockedBy !== accountId) return { success: false, reason: "Only the person who sealed this file can download its copy" };
-  if (!rec.issueDeletedAt) return { success: false, reason: "The file is still on its issue — download it from there" };
+  const gate = orphanCopyAccess(rec, accountId);
+  if (!gate.ok) return { success: false, reason: gate.reason };
   const url = await copyDownloadUrl(rec.copyKey).catch(() => null);
   if (!url) return { success: false, reason: "The copy could not be found" };
-  return { success: true, url, fileName: rec.attachmentName };
+  return {
+    success: true, url, fileName: rec.attachmentName, mimeType: safeMimeType(rec.mimeType), size: Number(rec.size) || 0,
+    sha256: rec.sha256 || null, parts: copyPartCount(rec.size), partBytes: JIRA_COPY_PART_BYTES,
+  };
+};
+
+// One part of that copy, base64 (a front-end invocation answers at most 5 MB). Same gate, every call.
+const copyPart = async (req) => {
+  const accountId = req?.context?.accountId;
+  const rec = await getSeal(normId(req?.payload?.attachmentId) || "x");
+  const gate = orphanCopyAccess(rec, accountId);
+  if (!gate.ok) return { success: false, reason: gate.reason };
+  const index = Number(req?.payload?.index);
+  try {
+    const bytes = await readCopyPart(rec.copyKey, index, rec.size);
+    return { success: true, index, data: bytes.toString("base64") };
+  } catch (e) {
+    return { success: false, reason: `The copy could not be read: ${String(e?.message || e).slice(0, 160)}` };
+  }
+};
+
+// Let go of that copy before its 30 days run out: only its owner, only for a deleted issue (the issue
+// panel's "Let it go" cannot be reached once the issue is gone). Deletes the seal and the copy.
+const copyLetGo = async (req) => {
+  const accountId = req?.context?.accountId;
+  const attId = normId(req?.payload?.attachmentId);
+  const rec = attId ? await getSeal(attId) : null;
+  const gate = orphanCopyAccess(rec, accountId);
+  if (!gate.ok) return { success: false, reason: gate.reason };
+  const locked = await withSealLock(attId, async () => {
+    const fresh = await getSeal(attId);
+    const again = orphanCopyAccess(fresh, accountId);
+    if (!again.ok) return { ok: false, reason: again.reason };
+    return dropSeal(fresh);
+  });
+  if (locked.busy) return { success: false, reason: BUSY };
+  if (!locked.value?.ok) return { success: false, reason: locked.value?.reason || "Could not let the copy go" };
+  await issueActivity(rec, ACTIVITY.ENDED, accountId, { why: "owner-let-go", issueDeletedAt: rec.issueDeletedAt });
+  return { success: true };
 };
 
 const sealOnIssue = withPowers(sealJiraAttachment);
@@ -325,6 +389,8 @@ export const actions = [
   ["jira-issue-seals", issueSeals],
   ["list-my-jira-seals", myJiraSeals],
   ["jira-copy-download", copyDownload],
+  ["jira-copy-part", copyPart],
+  ["jira-copy-letgo", copyLetGo],
   ["jira-seal-attachment", sealOnIssue],
   ["jira-release-attachment", releaseOnIssue],
   ["jira-extend-attachment", extendOnIssue],
