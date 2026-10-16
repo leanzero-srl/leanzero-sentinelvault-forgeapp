@@ -1,16 +1,16 @@
 # Sentinel Vault Public Tracker - verify file
 
-Generated 2026-10-14T16:35:09.245Z by scripts/public-tracker/tracker.mjs verify.
+Generated 2026-10-16T13:53:07.962Z by scripts/public-tracker/tracker.mjs verify.
 Site https://leanzero-demo.atlassian.net. Project SVT (id 10278), permission scheme "Sentinel Vault Public Tracker permissions" (id 10265, used by: SVT), anonymous grants: BROWSE_PROJECTS.
-Issues checked: 70 of 70. Verification failures: 0. Withheld release-note lines: 1.
+Issues checked: 83 of 83. Verification failures: 0. Withheld release-note lines: 1.
 
 ## Counts
 
-- status: Done 64; Backlog 6
-- version: 6.4.0 5; 6.5.0 1; 6.6.0 6; 6.7.0 8; 6.9.0 4; 6.10.0 4; 6.11.0 1; 7.0.0 5; 7.1.0 8; 8.0.0 16; 8.1.0 1; 8.2.0 2; 8.3.0 1; 8.4.0 1; 8.5.0 1; open, affects 7.1.0 6
-- component: Classification 1; Sealed files and sections 11; Edit requests and access 2; REST API 3; Backup and restore 13; Layout and accessibility 4; Privacy and personal data 8; Space and site settings 6; Workflow and approvals 2; App permissions and updates 4; Page banner and Sentinel Vault window 4; Activity report 1; Jira issue attachments 10; My work 1
-- type: Improvement 38; Bug 32
-- versions in Jira: 6.4.0 released 2026-09-30, 6.5.0 released 2026-09-30, 6.6.0 released 2026-10-02, 6.7.0 released 2026-10-04, 6.9.0 released 2026-10-04, 6.10.0 released 2026-10-04, 6.11.0 released 2026-10-04, 7.0.0 released 2026-10-05, 7.1.0 released 2026-10-09, 8.0.0 released 2026-10-14, 8.1.0 released 2026-10-14, 8.2.0 released 2026-10-14, 8.3.0 released 2026-10-14, 8.4.0 released 2026-10-14, 8.5.0 released 2026-10-14
+- status: Done 77; Backlog 6
+- version: 6.4.0 5; 6.5.0 1; 6.6.0 6; 6.7.0 8; 6.9.0 4; 6.10.0 4; 6.11.0 1; 7.0.0 5; 7.1.0 8; 8.0.0 16; 8.1.0 1; 8.2.0 2; 8.3.0 1; 8.4.0 1; 8.5.0 1; 8.6.0 13; open, affects 7.1.0 6
+- component: Classification 1; Sealed files and sections 12; Edit requests and access 2; REST API 3; Backup and restore 13; Layout and accessibility 5; Privacy and personal data 8; Space and site settings 6; Workflow and approvals 5; App permissions and updates 4; Page banner and Sentinel Vault window 6; Activity report 1; Jira issue attachments 13; My work 4
+- type: Improvement 42; Bug 41
+- versions in Jira: 6.4.0 released 2026-09-30, 6.5.0 released 2026-09-30, 6.6.0 released 2026-10-02, 6.7.0 released 2026-10-04, 6.9.0 released 2026-10-04, 6.10.0 released 2026-10-04, 6.11.0 released 2026-10-04, 7.0.0 released 2026-10-05, 7.1.0 released 2026-10-09, 8.0.0 released 2026-10-14, 8.1.0 released 2026-10-14, 8.2.0 released 2026-10-14, 8.3.0 released 2026-10-14, 8.4.0 released 2026-10-14, 8.5.0 released 2026-10-14, 8.6.0 released 2026-10-16
 
 ## Issues
 
@@ -517,4 +517,95 @@ Issues checked: 70 of 70. Verification failures: 0. Withheld release-note lines:
 
 > When a Jira file is sealed again, Sentinel Vault first clears any clean-up still pending for an earlier seal's copy of that file, so the new seal's copy is never removed by it.
 > Fixed in Sentinel Vault 8.5.0. A site still on version 7 or earlier gets it once a site admin approves the update in Confluence administration, Apps, Manage apps.
+
+### SVT-75 - Let it go deletes a deleted issue's kept copy before the 30 days run out
+
+- type: Improvement; status: Done (Done); fixVersion: 8.6.0; component: My work
+
+> On My work, the person who sealed a file on a Jira issue that was later deleted can delete the kept copy themselves with Let it go, instead of waiting for the 30 days to run out. It works once a site admin has connected Jira to Sentinel Vault in Atlassian Administration.
+> Added in Sentinel Vault 8.6.0. A site still on version 7 or earlier gets it once a site admin approves the update in Confluence administration, Apps, Manage apps.
+
+### SVT-76 - Download the copy saves a deleted issue's file under its own name and type
+
+- type: Improvement; status: Done (Done); fixVersion: 8.6.0; component: My work
+
+> Download the copy on My work saves the file of a deleted Jira issue under its own name and file type. Sentinel Vault checks the copy against the file you sealed before saving it, and the row then says it was saved and that it is identical. It works once a site admin has connected Jira to Sentinel Vault in Atlassian Administration.
+> Added in Sentinel Vault 8.6.0. A site still on version 7 or earlier gets it once a site admin approves the update in Confluence administration, Apps, Manage apps.
+
+### SVT-77 - My work notices a Jira issue deleted after the page was opened
+
+- type: Improvement; status: Done (Done); fixVersion: 8.6.0; component: My work
+
+> My work reads its Jira list again when you come back to the tab and, for the first few minutes, every 15 seconds while it shows a live seal, so a file whose issue has just been deleted shows as Issue deleted without reloading the page. It works once a site admin has connected Jira to Sentinel Vault in Atlassian Administration.
+> Added in Sentinel Vault 8.6.0. A site still on version 7 or earlier gets it once a site admin approves the update in Confluence administration, Apps, Manage apps.
+
+### SVT-78 - The My work link and the space's Sentinel Vault page show the app's icon
+
+- type: Improvement; status: Done (Done); fixVersion: 8.6.0; component: Layout and accessibility
+
+> The Sentinel Vault — My work link in Confluence's Apps menu and the space's Sentinel Vault page now show the app's icon instead of a broken image.
+> Added in Sentinel Vault 8.6.0. A site still on version 7 or earlier gets it once a site admin approves the update in Confluence administration, Apps, Manage apps.
+
+### SVT-79 - Put it back keeps who really deleted a Jira file
+
+- type: Bug; status: Done (Done); fixVersion: 8.6.0; component: Jira issue attachments
+
+> When someone uses Put it back on a deleted Jira file, the seal's history says they asked for it to be put back, and neither the history nor the issue comment names them as the person who deleted it.
+> Fixed in Sentinel Vault 8.6.0. A site still on version 7 or earlier gets it once a site admin approves the update in Confluence administration, Apps, Manage apps.
+
+### SVT-80 - A sealed Jira file deleted a moment ago reads Being put back
+
+- type: Bug; status: Done (Done); fixVersion: 8.6.0; component: Jira issue attachments
+
+> For the first moment after a sealed Jira file is deleted, the issue's Sentinel Vault section shows it as Being put back, with no Put it back button. It shows Not put back only after a put-back has failed, or if the file is still not back after about a minute and a half.
+> Fixed in Sentinel Vault 8.6.0. A site still on version 7 or earlier gets it once a site admin approves the update in Confluence administration, Apps, Manage apps.
+
+### SVT-81 - Force-releasing a Jira file that was not put back says it deletes the last copy
+
+- type: Bug; status: Done (Done); fixVersion: 8.6.0; component: Jira issue attachments
+
+> When a Jira or project admin force-released a file that could not be put back, the dialog did not say that this deletes Sentinel Vault's last copy. It now says so, the button reads Delete the copy, and the seal's history records it.
+> Fixed in Sentinel Vault 8.6.0. A site still on version 7 or earlier gets it once a site admin approves the update in Confluence administration, Apps, Manage apps.
+
+### SVT-82 - Edits to Approved pages are undone as set, with or without named approvers
+
+- type: Bug; status: Done (Done); fixVersion: 8.6.0; component: Workflow and approvals
+
+> In a space set to undo edits to Approved pages, an edit by anyone who is not an approver or a space admin is undone, as the Workflow settings say, also when the space names no approvers.
+> Fixed in Sentinel Vault 8.6.0. A site still on version 7 or earlier gets it once a site admin approves the update in Confluence administration, Apps, Manage apps.
+
+### SVT-83 - A page approved right after its last edit stays Approved
+
+- type: Bug; status: Done (Done); fixVersion: 8.6.0; component: Workflow and approvals
+
+> An edit made before a page was approved no longer counts as a change to the approved page, so the page stays Approved and its author is not told that their edit moved it.
+> Fixed in Sentinel Vault 8.6.0. A site still on version 7 or earlier gets it once a site admin approves the update in Confluence administration, Apps, Manage apps.
+
+### SVT-84 - Edits to Approved pages are kept while Protect Sealed Attachments in Page Body is off
+
+- type: Bug; status: Done (Done); fixVersion: 8.6.0; component: Workflow and approvals
+
+> With Protect Sealed Attachments in Page Body turned off, Sentinel Vault no longer undoes edits to Approved pages or moves them back for review, and the Workflow settings, page banner, page details and approval dialog say Approved pages are not protected while it is off.
+> Fixed in Sentinel Vault 8.6.0. A site still on version 7 or earlier gets it once a site admin approves the update in Confluence administration, Apps, Manage apps.
+
+### SVT-85 - The page banner leaves Approved as soon as an edit moves the page back
+
+- type: Bug; status: Done (Done); fixVersion: 8.6.0; component: Page banner and Sentinel Vault window
+
+> After an edit moves an Approved page back for review, the page banner updates on its own instead of showing Approved until the page is reloaded.
+> Fixed in Sentinel Vault 8.6.0. A site still on version 7 or earlier gets it once a site admin approves the update in Confluence administration, Apps, Manage apps.
+
+### SVT-86 - The approver's page banner names the person who edited the page
+
+- type: Bug; status: Done (Done); fixVersion: 8.6.0; component: Page banner and Sentinel Vault window
+
+> The approver's page banner said an edit was made by someone outside the approvers. It now names the person.
+> Fixed in Sentinel Vault 8.6.0. A site still on version 7 or earlier gets it once a site admin approves the update in Confluence administration, Apps, Manage apps.
+
+### SVT-87 - Stricter checks on edits inside sealed sections
+
+- type: Bug; status: Done (Done); fixVersion: 8.6.0; component: Sealed files and sections
+
+> Stricter checks on edits inside sealed sections.
+> Fixed in Sentinel Vault 8.6.0. A site still on version 7 or earlier gets it once a site admin approves the update in Confluence administration, Apps, Manage apps.
 
