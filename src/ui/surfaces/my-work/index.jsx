@@ -5,6 +5,7 @@ import { useSignedInvoke } from "../../kit/SignedInvoke";
 import { ConfirmDialog } from "../../kit/Dialog";
 import { orphanLetGoCopy } from "../../kit/jira-release-copy.js";
 import { assembleCopy } from "../../kit/jira-copy-download.js";
+import { shouldPoll, POLL_MS } from "../../kit/my-work-refresh.js";
 import { invoke, router } from "@forge/bridge";
 import { enablePaletteSync } from "../../kit/palette-sync";
 import { when, sealSentence, WORDS } from "../../kit/status-language.js"; // SEC-3: one vocabulary, one clock
@@ -420,6 +421,20 @@ const MyJiraSeals = () => {
   const [letGo, setLetGo] = useState(null); // the row whose copy is about to be deleted
   const [busyGo, setBusyGo] = useState(null);
   const { signedInvoke, signatureDialog } = useSignedInvoke();
+  // 8.6: read again when the person comes back to this tab (they deleted the issue in Jira's tab) and, while a live
+  // seal is listed, every POLL_MS for the first minutes: Jira's issue-deleted event can arrive after the page loaded.
+  const [openedAt] = useState(() => Date.now());
+  useEffect(() => {
+    const onShow = () => { if (document.visibilityState === "visible") reload(); };
+    document.addEventListener("visibilitychange", onShow);
+    window.addEventListener("focus", onShow);
+    return () => { document.removeEventListener("visibilitychange", onShow); window.removeEventListener("focus", onShow); };
+  }, [reload]);
+  useEffect(() => {
+    if (!shouldPoll(items, openedAt, Date.now())) return undefined;
+    const id = setTimeout(() => { if (document.visibilityState === "visible") reload(); }, POLL_MS);
+    return () => clearTimeout(id);
+  }, [items, openedAt, reload]);
   if (error) return <section className="mw-card" data-testid="mw-jira-seals"><LoadError what="your sealed Jira files" onRetry={reload} testId="mw-jira-seals-error" /></section>;
   if (!items || items.length === 0) return null;
   // An orphan (its issue was deleted): the copy is kept 30 days and only its owner can download it.
