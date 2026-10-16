@@ -131,10 +131,9 @@ const WorkflowDetails = ({ workflow, siteUrl, pageId, isSteward, host, onSaved, 
   const live = typeof workflow.liveVersion === "number" ? workflow.liveVersion : null;
   const changedSince = live != null && typeof baselineVersion === "number" && live > baselineVersion;
   const enforceMode = workflow.enforceMode || null;
-  // CL-5: revert is downgraded to demote when the approver snapshot is empty — say what the app
-  // will actually do, not what the setting says.
-  const hasApproverSnapshot = Array.isArray(record.approvers) && record.approvers.length > 0;
-  const consequence = enforceMode === "revert" && hasApproverSnapshot ? "reverted" : enforceMode ? "moved back for review" : "handled";
+  // The mode the space chose is what the engine does (enforce-rules.js enforceModeOf) — with or
+  // without named approvers since 2026-10-16 (the old CL-5 downgrade to demote is gone).
+  const consequence = enforceMode === "revert" ? "reverted" : enforceMode ? "moved back for review" : "handled";
   const outcomeWord = ar?.outcome === "denied" ? "Denied" : "Approved";
   let summary = null;
   if (enforced) {
