@@ -23,7 +23,7 @@ import { Queue } from "@forge/events";
 import {
   ACTIVITY, JIRA_COPY_GC_PREFIX, JIRA_INTENT_PREFIX, JIRA_LOST_PREFIX, JIRA_SWEEP_CURSOR_KEY, JIRA_ORPHAN_KEEP_MS, commentRefusalIsFinal, decideDeletion, isExpired,
   JIRA_QUEUED_TTL_MS, jiraCopyGcKey, jiraIntentKey, jiraIssueIndexKey, jiraQueuedKey, jiraLapseKey, jiraLostKey, jiraNoticeKey, jiraSealKey, lapseCommentAdf, loopTripped,
-  movedRecord, nextRetryAt, noticeDue, normId, restoreCommentAdf, restoreNoticePlan, sealIdOf,
+  movedRecord, nextRetryAt, noticeDue, normId, restoreActivityParts, restoreActors, restoreCommentAdf, restoreNoticePlan, sealIdOf,
 } from "./logic.js";
 import { acquireLock, releaseLock } from "../../shared/kvs-lock.js";
 import {
@@ -73,8 +73,11 @@ async function postOnce(sealId, issueId, adf) {
   if (!r.ok) await kvs.delete(claim).catch(() => {});
 }
 
-/** Record (or update) a seal whose file is not on its issue. */
-async function markLost(record, { reason, error = null, retryable }) {
+/**
+ * Record (or update) a seal whose file is not on its issue. `deletedBy` is the person whose delete
+ * left it gone; a later attempt that does not know it (the sweep, "Put it back") keeps the first.
+ */
+async function markLost(record, { reason, error = null, retryable, deletedBy = null }) {
   const key = jiraLostKey(record.attachmentId);
   const prev = (await kvs.get(key).catch(() => null)) || {};
   const attempts = (Number(prev.attempts) || 0) + (reason === "failed" ? 1 : 0);
@@ -83,6 +86,7 @@ async function markLost(record, { reason, error = null, retryable }) {
     attachmentId: record.attachmentId, sealId: sealIdOf(record), issueId: record.issueId, issueKey: record.issueKey || null,
     reason, error: error ? String(error).slice(0, 200) : null, attempts, since: prev.since || new Date(nowMs).toISOString(),
     nextAt: retryable ? nextRetryAt(Math.max(0, attempts - 1), nowMs) : null, // first retry an hour after the first failure
+    deletedBy: deletedBy || prev.deletedBy || null,
   });
 }
 
@@ -90,8 +94,12 @@ async function markLost(record, { reason, error = null, retryable }) {
  * Put a deleted sealed file back from the copy; move the seal onto the new attachment. Crash-safe:
  * an intent row is written before the upload, so a retry after a crash ADOPTS the file the dead run
  * uploaded (same name and size, the app's account, after the intent) instead of uploading another.
+ * `deletedBy` is the person whose delete is undone (null when unknown); `requestedBy` the person who
+ * clicked "Put it back" — recorded as such, never as the deleter (8.6, bug 1).
  */
-export async function restoreSealedFile(record, actorId) {
+export async function restoreSealedFile(record, { deletedBy = null, requestedBy = null } = {}) {
+  const actorId = deletedBy || null;
+  const told = restoreActivityParts({ deletedBy, requestedBy });
   const nowMs = Date.now();
   const sid = sealIdOf(record);
   let created = null;
@@ -117,8 +125,8 @@ export async function restoreSealedFile(record, actorId) {
   } catch (e) {
     const error = String(e?.message || e).slice(0, 200);
     console.error(`[JIRA-SEAL] restore of ${record.attachmentId} on issue ${record.issueId} failed:`, error);
-    await markLost(record, { reason: "failed", error, retryable: true });
-    await activity(record, ACTIVITY.RESTORE_FAILED, actorId, { error });
+    await markLost(record, { reason: "failed", error, retryable: true, deletedBy });
+    await activity(record, ACTIVITY.RESTORE_FAILED, told.actorId, { ...told.details, error });
     const flags = await resolveBulletinToggles();
     if (flags.ENABLE_NATIVE_NOTIFICATIONS) {
       await postOnce(sid, record.issueId, { type: "doc", version: 1, content: [{ type: "paragraph", content: [
@@ -128,7 +136,7 @@ export async function restoreSealedFile(record, actorId) {
     }
     return { ok: false, error };
   }
-  const next = movedRecord(record, created, { actorId, nowMs });
+  const next = movedRecord(record, created, { actorId, requestedBy, nowMs });
   await putSeal(next);
   // The old id's record and index row go; the copy stays (it is keyed by the first attachment id).
   const moved = await dropSeal(record, { keepCopy: true });
@@ -139,7 +147,7 @@ export async function restoreSealedFile(record, actorId) {
   // under the FIRST id, which a move leaves behind, so the row is cleared here as well as at sealing.
   await kvs.delete(jiraCopyGcKey(record.copyKey)).catch(() => {});
   await syncIssueProperty(next.issueId, { add: next, removeId: record.attachmentId });
-  await activity(next, ACTIVITY.RESTORED, actorId, { from: record.attachmentId, to: next.attachmentId, restoreCount: next.restoreCount });
+  await activity(next, ACTIVITY.RESTORED, told.actorId, { ...told.details, from: record.attachmentId, to: next.attachmentId, restoreCount: next.restoreCount });
   await scheduleBackup("jira-restore"); // the seal now lives under a new id: the backup must learn it
 
   const flags = await resolveBulletinToggles();
@@ -157,12 +165,15 @@ export async function restoreSealedFile(record, actorId) {
  * Put the file of the seal recorded under `attId` back, holding the seal's lock. Delivery is
  * at-least-once and duplicates can arrive together: the winner re-reads the seal (a finished twin
  * has already moved it off this id). Also the panel's "Put it back" and the sweep's retries.
+ * `who.deletedBy` is the delete event's actor (the queue); "Put it back" passes `who.requestedBy`
+ * and the sweep nothing — both then take the deleter from the lost row.
  */
-export async function restoreWithClaim(attId, actorId) {
+export async function restoreWithClaim(attId, who = {}) {
   const r = await withSealLock(attId, async () => {
     const fresh = await getSeal(attId);
     if (!fresh?.lockedBy || fresh.issueDeletedAt) return { outcome: "already-handled" };
-    const res = await restoreSealedFile(fresh, actorId);
+    const lost = who?.deletedBy ? null : await kvs.get(jiraLostKey(attId)).catch(() => null);
+    const res = await restoreSealedFile(fresh, restoreActors({ eventDeleter: who?.deletedBy, lost, requestedBy: who?.requestedBy }));
     return { outcome: res.ok ? "restored" : "restore-failed", attachmentId: res.attachmentId || null, error: res.error || null };
   });
   return r.busy ? { outcome: "in-progress" } : r.value;
@@ -193,7 +204,7 @@ export async function handleJiraAttachmentDeleted(event) {
   // Delete-loop breaker (review 2026-10-11, D3): an Automation rule that deletes a file type would
   // otherwise meet each restore with another delete, forever — each round a full download and upload.
   if (loopTripped(record.restores, nowMs)) {
-    await markLost(record, { reason: "loop", retryable: false });
+    await markLost(record, { reason: "loop", retryable: false, deletedBy: actorId });
     await activity(record, ACTIVITY.RESTORE_FAILED, actorId, { error: "deleted again each time it was put back, so Sentinel Vault stopped" });
     const flags = await resolveBulletinToggles();
     if (flags.ENABLE_NATIVE_NOTIFICATIONS || flags.NOTIFY_EDITOR_ON_REVERT) {
@@ -217,7 +228,7 @@ export async function handleJiraAttachmentDeleted(event) {
     return { outcome: "queued" };
   } catch (e) {
     console.error("[JIRA-SEAL] restore queue push failed, restoring inline:", e?.message || e);
-    const r = await restoreWithClaim(attId, actorId);
+    const r = await restoreWithClaim(attId, { deletedBy: actorId });
     await kvs.delete(jiraQueuedKey(attId)).catch(() => {});
     return r;
   }
@@ -235,7 +246,7 @@ export async function jiraRestoreConsumer(event) {
   }
   const attId = normId(body.attachmentId);
   if (!attId) return;
-  const r = await restoreWithClaim(attId, body.actorId || null);
+  const r = await restoreWithClaim(attId, { deletedBy: body.actorId || null });
   // "in-progress": a twin holds the lock and clears it when IT finishes.
   const twinHoldsIt = r.outcome === "in-progress";
   if (!twinHoldsIt) await kvs.delete(jiraQueuedKey(attId)).catch(() => {});
@@ -336,7 +347,7 @@ export async function jiraSealSweep({ budgetMs = 100000 } = {}) {
       const lost = await kvs.get(key);
       if (!lost || lost.reason !== "failed" || !lost.nextAt || lost.nextAt > now) continue;
       out.retried++;
-      const r = await restoreWithClaim(lost.attachmentId, null);
+      const r = await restoreWithClaim(lost.attachmentId);
       if (r.outcome === "restored") out.restored++;
       const settled = r.outcome === "already-handled"; // the seal is gone or moved: nothing left to retry
       if (settled) await kvs.delete(key).catch(() => {});
@@ -348,7 +359,7 @@ export async function jiraSealSweep({ budgetMs = 100000 } = {}) {
       const rec = await getSeal(intent.fromAttachmentId);
       if (!rec?.lockedBy) { await kvs.delete(key).catch(() => {}); continue; }
       out.retried++;
-      if ((await restoreWithClaim(intent.fromAttachmentId, null)).outcome === "restored") out.restored++;
+      if ((await restoreWithClaim(intent.fromAttachmentId)).outcome === "restored") out.restored++;
     }
 
     // 2 + 3
