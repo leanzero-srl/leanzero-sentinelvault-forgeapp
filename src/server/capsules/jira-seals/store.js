@@ -13,7 +13,7 @@ import { objectStore } from "@forge/object-store";
 import { createHash } from "node:crypto";
 
 import {
-  JIRA_SEAL_PREFIX, jiraCopyGcKey, jiraSealKey, jiraIssueIndexKey, jiraIssueIndexPrefix, jiraLapseKey, jiraLostKey, jiraNoticeKey, jiraOwnerIndexKey, jiraOwnerIndexPrefix, normId, sealIdOf,
+  JIRA_SEAL_PREFIX, copyPartRange, jiraCopyGcKey, safeMimeType, jiraSealKey, jiraIssueIndexKey, jiraIssueIndexPrefix, jiraLapseKey, jiraLostKey, jiraNoticeKey, jiraOwnerIndexKey, jiraOwnerIndexPrefix, normId, sealIdOf,
 } from "./logic.js";
 
 const asJsonHeaders = { Accept: "application/json", "Content-Type": "application/json" };
@@ -302,12 +302,18 @@ export async function postIssueComment(issueId, adf) {
 
 export const sha256Hex = (bytes) => createHash("sha256").update(bytes).digest("hex");
 
-/** Store the copy; verify the store holds exactly these bytes before the seal may rely on it. */
-export async function storeCopy(copyKey, bytes) {
+/**
+ * Store the copy; verify the store holds exactly these bytes before the seal may rely on it. The PUT's
+ * Content-Type is the file's own (measured on wolfaenpak 2026-10-16: the store keeps the PUT's
+ * Content-Type and serves it back; it keeps NO Content-Disposition, ignores a
+ * response-content-disposition parameter, and its download path is a hash of the key, so a file NAME
+ * cannot travel with the object — the owner's download gets the name from the seal record instead).
+ */
+export async function storeCopy(copyKey, bytes, mimeType = "application/octet-stream") {
   const checksum = createHash("sha256").update(bytes).digest("base64");
   const up = await objectStore.createUploadUrl({ key: copyKey, length: bytes.length, checksum, checksumType: "SHA256", overwrite: true });
   if (!up?.url) throw new Error("The copy store gave no upload address");
-  const put = await fetch(up.url, { method: "PUT", headers: { "content-type": "application/octet-stream" }, body: bytes });
+  const put = await fetch(up.url, { method: "PUT", headers: { "content-type": safeMimeType(mimeType) }, body: bytes });
   if (put.status >= 300) throw new Error(`The copy store refused the file (${put.status})`);
   const meta = await objectStore.get(copyKey);
   if (!meta || Number(meta.size) !== bytes.length || meta.checksum !== checksum) throw new Error("The copy could not be confirmed");
@@ -322,6 +328,26 @@ export async function readCopy(copyKey, expectedSha256) {
   if (!res.ok) throw new Error(`The copy store answered ${res.status}`);
   const bytes = Buffer.from(await res.arrayBuffer());
   if (expectedSha256 && sha256Hex(bytes) !== expectedSha256) throw new Error("The copy does not match the sealed file");
+  return bytes;
+}
+
+/**
+ * One part of the copy (copyPartRange), for the owner's download in the browser. Asks the store for
+ * the byte range only (identity encoding, so the range is of the file and not of a gzip stream); a
+ * store that answers the whole object instead is sliced. Every byte is checked by the browser against
+ * the seal's SHA-256 once all parts are in.
+ */
+export async function readCopyPart(copyKey, index, size) {
+  const range = copyPartRange(index, size);
+  if (!range) throw new Error("There is no such part of the copy");
+  if (range.length === 0) return Buffer.alloc(0); // an empty file: nothing to ask the store for
+  const d =await objectStore.createDownloadUrl(copyKey);
+  if (!d?.url) throw new Error("The copy is missing");
+  const res = await fetch(d.url, { headers: { Range: `bytes=${range.start}-${range.end}`, "Accept-Encoding": "identity" } });
+  if (!res.ok) throw new Error(`The copy store answered ${res.status}`);
+  let bytes = Buffer.from(await res.arrayBuffer());
+  if (res.status !== 206) bytes = bytes.subarray(range.start, range.start + range.length);
+  if (bytes.length !== range.length) throw new Error("The copy store answered a part of the wrong size");
   return bytes;
 }
 
