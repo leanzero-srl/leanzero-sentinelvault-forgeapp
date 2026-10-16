@@ -842,6 +842,14 @@ const alertSentence = (a, operatorId) => {
 // the `ribbon-summary` answer — an object is returned as-is, a function is awaited, and
 // `{ throw: true }` throws — because the resolver's failure branches (asApp() attachment
 // listing 5xx, a thrown listing) cannot be provoked from a browser against a healthy tenant.
+// The same kind of seam for `guard-page-now` (2026-10-16): a demote by the guard can only be
+// provoked by a non-privileged editor viewing their own publish, and every account the harness can
+// drive a browser with is a site admin (privileged). A function stub stands in for the guard's
+// answer so the banner's reaction to it is proven against the real workflow state.
+const readGuardStub = () => {
+  try { const s = window.__svGuardStub; return typeof s === "function" ? s : null; } catch (_) { return null; }
+};
+
 const readSummaryStub = () => {
   try { const s = window.__svRibbonSummaryStub; return s && (typeof s === "object" || typeof s === "function") ? s : null; } catch (_) { return null; }
 };
@@ -1011,7 +1019,8 @@ const DocumentRibbon = () => {
       // A demote writes no page version, so the guard says `workflowChanged` instead of `restored` —
       // either one re-reads the chip, the alerts and the pill (2026-10-16: the chip kept "Approved vN").
       if (!isGuardFollowUp(why) && sum) {
-        invoke("guard-page-now", {})
+        const guardStub = readGuardStub();
+        (guardStub ? Promise.resolve().then(guardStub) : invoke("guard-page-now", {}))
           .then((g) => { const again = guardReevaluateReason(g); if (again && pageIdRef.current === ctxPageId) evaluateRef.current?.(again); })
           .catch((e) => console.info("[ribbon] guard-page-now failed", e?.message || e));
       }
