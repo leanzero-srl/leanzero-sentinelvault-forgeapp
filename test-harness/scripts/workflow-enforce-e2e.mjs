@@ -88,9 +88,14 @@ try {
   // Revocation (Gap E): record still lists acc-A but live config no longer does.
   await kvsSet(`workflow-settings-${spaceKey}`, { enabled: true, autoAssignNew: false, workflowId: "default", enforceMode: "revert", approval: { approvers: [{ type: "user", id: "acc-B" }], mode: "any", min: 1 } });
   check("revoked approver loses privilege (snapshot ∩ live fails)", (await hook({ what: "invoke", fn: "enforceDecision", pageId: pC.id, actor: "acc-A" })).result?.action === "revert");
-  // Empty approver set + revert → engine downgrades to demote (CL-5).
+  // Empty approver set + revert → REVERT (2026-10-16: the CL-5 downgrade to demote is gone — the
+  // space admin's direct approval pinned the baseline; enforce-rules.js enforceModeOf says why).
   await seedApproved("revert", []);
-  check("empty approver set + revert → downgraded to demote", (await hook({ what: "invoke", fn: "enforceDecision", pageId: pC.id, actor: "acc-STRANGER" })).result?.action === "demote");
+  check("empty approver set + revert → revert (no silent demote)", (await hook({ what: "invoke", fn: "enforceDecision", pageId: pC.id, actor: "acc-STRANGER" })).result?.action === "revert");
+  check("the page stays Approved (the decision alone writes nothing)", (await rec(pC.id))?.stateId === "approved");
+  // Demote mode still demotes.
+  await seedApproved("demote", []);
+  check("empty approver set + demote → demote", (await hook({ what: "invoke", fn: "enforceDecision", pageId: pC.id, actor: "acc-STRANGER" })).result?.action === "demote");
   check("demote actually dropped the page to Draft", (await rec(pC.id))?.stateId === "draft");
 
   // --- D. revert MECHANISM (sweepRevert) reverts body to approvedVersion ---
