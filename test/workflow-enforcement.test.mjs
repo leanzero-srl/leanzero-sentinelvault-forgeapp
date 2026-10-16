@@ -19,6 +19,8 @@ const triggers = await import("../src/server/triggers.js");
 const logic = await import("../src/server/capsules/workflow/logic.js");
 const { kvs } = await import("@forge/kvs");
 const { recentDispatches } = await import("../src/server/capsules/bulletins/actions.js");
+const wfActions = new Map((await import("../src/server/capsules/workflow/actions.js")).actions);
+const { pageDetailsSummary } = await import("../src/server/capsules/page-details/actions.js");
 
 const APP = "app-account";
 const APPROVER = "acct-approver";
@@ -209,6 +211,23 @@ try {
     w.readers.clear(); w.readers.add(APPROVER);
     const refused = await recentDispatches({ payload: { pageId: PAGE }, context: { accountId: "acct-stranger" } });
     eq("[5] a caller who cannot read the page gets no dispatches", refused.notifications, []);
+  }
+
+  // ---------------------------------------------------------------------------------------------
+  // 4 (the words): while protection is off, the banner, the page details and the Workflow tab must
+  // not promise a revert / move-back the engine will not do.
+  {
+    await approvedPage({ enforceMode: "revert", contentProtection: false });
+    const ctx = { accountId: ADMIN, extension: { content: { id: PAGE } } };
+    const wf = await wfActions.get("get-page-workflow")({ payload: { pageId: PAGE }, context: ctx });
+    eq("[4w] banner: enforceMode reads off", wf.enforceMode, "off");
+    const pd = await pageDetailsSummary({ payload: { pageId: PAGE }, context: ctx });
+    eq("[4w] page details: enforceMode reads off", pd?.workflow?.enforceMode, "off");
+    const tab = await wfActions.get("get-space-workflow-settings")({ payload: { spaceKey: SPACE }, context: { accountId: ADMIN, extension: { space: { key: SPACE } } } });
+    eq("[4w] Workflow tab: protectionOff", tab.protectionOff, true);
+    await kvs.set("admin-settings-global", { enableContentProtection: true });
+    const wfOn = await wfActions.get("get-page-workflow")({ payload: { pageId: PAGE }, context: ctx });
+    eq("[4w] control: protection on → the chosen mode", wfOn.enforceMode, "revert");
   }
 } finally {
   loud();

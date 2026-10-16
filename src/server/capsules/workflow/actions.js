@@ -34,6 +34,7 @@ import {
   storeSpaceWorkflow,
   deleteSpaceWorkflow, restoreSpaceDefaultWorkflow } from "./logic.js";
 import { runBundle } from "./bundle.js"; // WF-11
+import { shownEnforcement } from "./enforce-rules.js"; // 2026-10-16: the words follow what the engine does
 import {
   extractApprovalConfig,
   resolveApproverIds,
@@ -130,9 +131,9 @@ const getWorkflow = async (req) => {
     const settings = await getSpaceWorkflowSettings(result.record?.spaceKey || await resolvePageSpaceKey(pageId));
     const hasApprovers = !!extractApprovalConfig(settings.approval);
     result.available = result.available.map((s) => ({ ...s, requiresApproval: !!(s.enforce && hasApprovers) }));
-    // A4: the ribbon's "changed since approval" line says what happens to the edit; that is the
-    // space's enforce mode, which the settings read above already holds.
-    result.enforceMode = settings?.enforceMode === "revert" ? "revert" : "demote";
+    // A4: the ribbon's "changed since approval" line says what happens to the edit: the space's
+    // enforce mode, or "off" while the site's content-protection switch has enforcement off.
+    result.enforceMode = shownEnforcement(settings, await kvs.get("admin-settings-global").catch(() => null));
     // A5: the ribbon turns the "Review due" chip into a button only for someone set-review-due
     // would accept — a steward of the page's own space (the edit check runs on the write).
     result.canSetReviewDue = !!(req.context?.accountId && result.record?.spaceKey)
@@ -661,7 +662,10 @@ const getSpaceSettings = async (req) => {
   }
   const settings = await getSpaceWorkflowSettings(spaceKey);
   const def = await resolveWorkflowDef(spaceKey);
-  return { settings, def }; // def.states power the read-only preview chips in the config UI
+  // The tab's rule sentence says Approved pages are protected; that is only true while the site's
+  // "Protect Sealed Attachments in Page Body" is on (2026-10-16).
+  const enforcement = shownEnforcement(settings, await kvs.get("admin-settings-global").catch(() => null));
+  return { settings, def, protectionOff: enforcement === "off" }; // def.states power the read-only preview chips in the config UI
 };
 
 const setSpaceSettings = async (req) => {
