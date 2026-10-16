@@ -42,6 +42,37 @@ export const COMPONENTS = {
 const JIRA_ON = "It works once a site admin has connected Jira to Sentinel Vault in Atlassian Administration.";
 
 export const ENTRIES = {
+  // 8.6.0 (2026-10-16). Fixes worded as what holds now (this file is public).
+  f2a8e80362c1cd57: ["Let it go deletes a deleted issue's kept copy before the 30 days run out", "M", {
+    d: "On My work, the person who sealed a file on a Jira issue that was later deleted can delete the kept copy themselves with Let it go, instead of waiting for the 30 days to run out. " + JIRA_ON,
+  }],
+  c46e4629e1db2f01: ["Download the copy saves a deleted issue's file under its own name and type", "M", {
+    d: "Download the copy on My work saves the file of a deleted Jira issue under its own name and file type. Sentinel Vault checks the copy against the file you sealed before saving it, and the row then says it was saved and that it is identical. " + JIRA_ON,
+  }],
+  "1cf7359d40e2d50b": ["My work notices a Jira issue deleted after the page was opened", "M", {
+    d: "My work reads its Jira list again when you come back to the tab and, for the first few minutes, every 15 seconds while it shows a live seal, so a file whose issue has just been deleted shows as Issue deleted without reloading the page. " + JIRA_ON,
+  }],
+  "3ff564bbde29d621": ["The My work link and the space's Sentinel Vault page show the app's icon", "G"],
+  d9073740cb8917c2: ["Put it back keeps who really deleted a Jira file", "J", {
+    d: "When someone asks Sentinel Vault to put a deleted Jira file back, the seal's history and the issue comment keep who really deleted the file and say who asked for it to be put back.",
+  }],
+  "83f88c744031a3b9": ["A deleted sealed Jira file reads Being put back until it is back", "J"],
+  "9070423bc40990c5": ["Force-releasing a Jira file that was not put back says it deletes the last copy", "J"],
+  cd48502460c66bf7: ["Edits to Approved pages are undone as set, with or without named approvers", "W", {
+    d: "In a space set to undo edits to Approved pages, an edit to an Approved page is undone, as the Workflow settings say, also when the space names no approvers.",
+  }],
+  eac256227cbe218f: ["A page approved right after its last edit stays Approved", "W", {
+    d: "An edit made before a page was approved no longer counts as a change to the approved page, so the page stays Approved and its author is not told that their edit moved it.",
+  }],
+  cc540dc77a2d7f4b: ["Approved pages are left alone while Protect Sealed Attachments in Page Body is off", "W", {
+    d: "With Protect Sealed Attachments in Page Body turned off, Sentinel Vault leaves Approved pages alone, and the Workflow settings, page banner, page details and approval dialog say Approved pages are not protected while it is off.",
+  }],
+  d5852f7374984940: ["The page banner leaves Approved as soon as an edit moves the page back", "P", {
+    d: "After an edit moves an Approved page back for review, the page banner updates on its own instead of showing Approved until the page is reloaded.",
+  }],
+  a3033bc73e596a50: ["The approver's page banner names the person who edited the page", "P"],
+  "0ead3c943cd7cd8f": ["Stricter checks on edits inside sealed sections", "S"],
+
   // 8.5.0 (2026-10-11). Worded as what holds now, not as the old overlap.
   "284985d5400474dc": ["Sealing a Jira file again keeps the new seal's copy safe", "J", {
     d: "When a Jira file is sealed again, Sentinel Vault first clears any clean-up still pending for an earlier seal's copy of that file, so the new seal's copy is never removed by it.",
