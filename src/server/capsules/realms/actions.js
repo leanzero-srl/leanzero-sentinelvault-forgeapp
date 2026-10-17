@@ -221,22 +221,36 @@ const launchRealmAudit = async (req) => {
  * Get the status of a background realm scan job.
  */
 const checkAuditStatus = async (req) => {
-  const { spaceId, spaceKey } = req.payload;
-
+  // The space to authorize against is the scan record's own space (CLAUDE.md: derive the space
+  // from the object being read).
+  const { spaceId } = req.payload || {};
   if (!spaceId) {
     throw new Error("Space ID is required");
   }
-
-  // SV-SEC-1 (minor disclosure): the job record names the space and its scan statistics. The
-  // caller may only see it for a space they steward. spaceKey is what the console has to hand;
-  // when it is absent the record's own spaceKey is the thing to authorize against.
   const status = await kvs.get(`space-scan-status-${spaceId}`);
-  const realmKey = spaceKey || status?.spaceKey || null;
+  if (!status) return { status: "none" };
+  const realmKey = await scanRecordSpaceKey(status, spaceId);
   if (!realmKey || !(await isOperatorSteward(req.context.accountId, realmKey))) {
     return { status: "none" };
   }
-  return status || { status: "none" };
+  return status;
 };
+
+/**
+ * The space a scan record belongs to: the record's own spaceKey (written with the record, from a
+ * key the starting steward was authorized on), else the key Confluence gives for the record's
+ * space id. Never a key from the request. null when neither resolves (the caller then denies).
+ */
+export async function scanRecordSpaceKey(status, spaceId) {
+  if (status?.spaceKey) return String(status.spaceKey);
+  const id = status?.spaceId ?? spaceId;
+  if (!/^\d+$/.test(String(id || ""))) return null;
+  try {
+    const res = await asApp().requestConfluence(route`/wiki/api/v2/spaces/${String(id)}`, { headers: { Accept: "application/json" } });
+    if (!res.ok) return null;
+    return (await res.json())?.key || null;
+  } catch (_) { return null; }
+}
 
 /**
  * Unseal an artifact as realm steward (steward override)
