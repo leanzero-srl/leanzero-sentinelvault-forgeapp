@@ -16,6 +16,7 @@ import { readDocBody } from "../../infra/doc-surgery.js";
 import { evaluateRules } from "../../infra/rules-engine.js";
 import {
   loadValidationConfig,
+  isFullValidationConfig,
   storeValidationConfig,
   readValidationState,
   writeValidationState,
@@ -82,6 +83,9 @@ const loadConfig = async (req) => {
 const storeConfig = async (req) => {
   const { scope, key, data } = req.payload || {};
   if (!data) return { success: false, reason: "No data" };
+  // A refused read or the site-rules-only view handed back as settings (a re-posted export, a
+  // merge over a refused read) would replace the stored config with the refusal.
+  if (!isFullValidationConfig(data)) return { success: false, reason: "These are not validation settings." };
   // it17 (authz): gate config writes — this ruleset drives org-wide compliance (incl. the C6
   // block-severity floor) and the AI budget/prompt, so an ungated write let any reader rewrite
   // or disable it. Mirrors store-policy (audit A1): global config → site admin; space config →

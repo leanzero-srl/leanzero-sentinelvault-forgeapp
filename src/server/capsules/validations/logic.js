@@ -31,6 +31,13 @@ export const DEFAULT_VALIDATION_CONFIG = {
   },
 };
 
+// PURE. A stored validation config, as opposed to a refused read ({ success:false, reason }) or the
+// site-rules-only view a space admin gets of the site settings. Neither of those may ever be
+// written back as a config.
+export function isFullValidationConfig(v) {
+  return !!v && typeof v === "object" && !Array.isArray(v) && v.success !== false && v.siteRulesOnly !== true;
+}
+
 export async function loadValidationConfig(scope, key) {
   const storeKey = scope === "space" && key
     ? `validation-config-space-${sanitize(key)}`
