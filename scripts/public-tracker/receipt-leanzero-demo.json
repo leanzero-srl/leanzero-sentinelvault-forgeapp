@@ -367,6 +367,10 @@
     "0ead3c943cd7cd8f": {
       "key": "SVT-87",
       "id": "27970"
+    },
+    "known-workflow-banner-stale": {
+      "key": "SVT-88",
+      "id": "28036"
     }
   },
   "permissionScheme": {
@@ -379,7 +383,7 @@
     ],
     "assigned": true
   },
-  "updatedAt": "2026-10-16T13:53:45.377Z",
+  "updatedAt": "2026-10-17T14:37:42.030Z",
   "projectId": "10278",
   "issueTypeScheme": {
     "id": "10636",
@@ -421,7 +425,7 @@
     "undo": "DELETE /rest/api/3/permissionscheme/10265/permission/11703",
     "proof": {
       "GET /rest/api/3/issue/SVT-1": 200,
-      "GET /rest/api/3/issue/SVT-87": 200,
+      "GET /rest/api/3/issue/SVT-88": 200,
       "GET /rest/api/3/issue/ATLAS-2361": 404,
       "GET /rest/api/3/issue/CRBAK-1": 404,
       "GET /rest/api/3/issue/CRD-30": 404,
@@ -436,7 +440,7 @@
       "GET /rest/api/3/issue/ITHELP-1223": 404,
       "GET /rest/api/3/issue/KAN-1": 404,
       "GET /rest/api/3/issue/LEDGER-1225": 404,
-      "GET /rest/api/3/issue/LICW-37": 404,
+      "GET /rest/api/3/issue/LICW-38": 404,
       "GET /rest/api/3/issue/LZMT-307": 200,
       "GET /rest/api/3/issue/ORBIT-91": 404,
       "GET /rest/api/3/issue/PLATSUP-1222": 404,
@@ -445,17 +449,17 @@
       "GET /rest/api/3/issue/SEC-1225": 404,
       "GET /rest/api/3/issue/VOY-1992": 404,
       "anonymous site-wide search (bounded, all pages): issues per project": {
-        "SVT": 83,
+        "SVT": 84,
         "CRT": 377,
         "LZMT": 307
       },
-      "anonymous listing of SVT": "83 issues (receipt holds 83; 已完成 77, Backlog 6)",
+      "anonymous listing of SVT": "84 issues (receipt holds 84; 已完成 77, Backlog 6, Selected for Development 1)",
       "other projects whose scheme lets anyone browse": "CRT,LZMT",
       "public trackers (allowlist)": "CRT,SVT,LZMT",
       "negative control": "13 fake broken answers, each failed the verdict",
       "GET /jira/software/c/projects/SVT/issues": 200
     },
-    "provenAt": "2026-10-16T13:53:45.377Z",
+    "provenAt": "2026-10-17T14:37:42.030Z",
     "proofFailures": []
   }
 }

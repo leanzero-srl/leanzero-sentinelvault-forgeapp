@@ -258,6 +258,9 @@ export const ENTRIES = {
 // changed between 7.1.0 and 8.1.0, so all six stay open; 8.2.0 to 8.5.0 changed only the Jira seal
 // code, which none of them is in); `affects` is the version it was confirmed on. Keyed by a stable
 // slug. `why` (optional) says when the cause is Confluence's, not the app's.
+// `fix: "scheduled"` puts the row in Selected for Development and its text says "fix scheduled"; when
+// the fix ships, the release-note line that fixes it takes the row over (`id: "<slug>"`) and moves
+// it to Done. 2026-10-17: known-workflow-banner-stale added, reproduced on the 8.6.0 production build.
 // Open items that would describe how protection can be got round are NOT written here (this file is
 // public); they go to the owner privately and are fixed instead.
 export const KNOWN = [
@@ -304,5 +307,12 @@ export const KNOWN = [
     see: "On a phone narrower than about 355 px, after you change a validation setting, the Not applied yet reminder can cover the Enforcement heading's text. It does not cover a button or a field.",
     where: "Space settings or Site settings, Validations tab, on a phone narrower than about 355 px.",
     workaround: "Scroll a little to read the heading. The reminder goes away once you press Apply or Discard.",
+  },
+  {
+    k: "known-workflow-banner-stale", c: "W", affects: "8.6.0", fix: "scheduled",
+    t: "The page banner can keep showing the old workflow state after the page is moved in another tab",
+    see: "If the page is moved to another workflow state after you opened it, for example from Draft to In Review in another browser tab, the Sentinel Vault banner on the page you already had open can keep showing the old state, Draft in that example. Choosing In Review from that banner then shows Already in that state, and the banner still shows Draft.",
+    where: "The Sentinel Vault banner at the top of a page, in a space that uses a Sentinel Vault workflow.",
+    workaround: "Reload the page. The banner then shows the page's current state.",
   },
 ];
