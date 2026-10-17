@@ -1,15 +1,15 @@
 # Sentinel Vault Public Tracker - verify file
 
-Generated 2026-10-17T14:37:15.444Z by scripts/public-tracker/tracker.mjs verify.
+Generated 2026-10-17T16:22:15.439Z by scripts/public-tracker/tracker.mjs verify.
 Site https://leanzero-demo.atlassian.net. Project SVT (id 10278), permission scheme "Sentinel Vault Public Tracker permissions" (id 10265, used by: SVT), anonymous grants: BROWSE_PROJECTS.
-Issues checked: 84 of 84. Verification failures: 0. Withheld release-note lines: 1.
+Issues checked: 85 of 85. Verification failures: 0. Withheld release-note lines: 1.
 
 ## Counts
 
-- status: Done 77; Backlog 6; Selected for Development 1
-- version: 6.4.0 5; 6.5.0 1; 6.6.0 6; 6.7.0 8; 6.9.0 4; 6.10.0 4; 6.11.0 1; 7.0.0 5; 7.1.0 8; 8.0.0 16; 8.1.0 1; 8.2.0 2; 8.3.0 1; 8.4.0 1; 8.5.0 1; 8.6.0 13; open, affects 7.1.0 6; open, affects 8.6.0 1
-- component: Classification 1; Sealed files and sections 12; Edit requests and access 2; REST API 3; Backup and restore 13; Layout and accessibility 5; Privacy and personal data 8; Space and site settings 6; Workflow and approvals 6; App permissions and updates 4; Page banner and Sentinel Vault window 6; Activity report 1; Jira issue attachments 13; My work 4
-- type: Improvement 42; Bug 42
+- status: Done 77; Backlog 6; Selected for Development 2
+- version: 6.4.0 5; 6.5.0 1; 6.6.0 6; 6.7.0 8; 6.9.0 4; 6.10.0 4; 6.11.0 1; 7.0.0 5; 7.1.0 8; 8.0.0 16; 8.1.0 1; 8.2.0 2; 8.3.0 1; 8.4.0 1; 8.5.0 1; 8.6.0 13; open, affects 7.1.0 6; open, affects 8.6.0 2
+- component: Classification 1; Sealed files and sections 12; Edit requests and access 2; REST API 3; Backup and restore 13; Layout and accessibility 5; Privacy and personal data 8; Space and site settings 7; Workflow and approvals 6; App permissions and updates 4; Page banner and Sentinel Vault window 6; Activity report 1; Jira issue attachments 13; My work 4
+- type: Improvement 42; Bug 43
 - versions in Jira: 6.4.0 released 2026-09-30, 6.5.0 released 2026-09-30, 6.6.0 released 2026-10-02, 6.7.0 released 2026-10-04, 6.9.0 released 2026-10-04, 6.10.0 released 2026-10-04, 6.11.0 released 2026-10-04, 7.0.0 released 2026-10-05, 7.1.0 released 2026-10-09, 8.0.0 released 2026-10-14, 8.1.0 released 2026-10-14, 8.2.0 released 2026-10-14, 8.3.0 released 2026-10-14, 8.4.0 released 2026-10-14, 8.5.0 released 2026-10-14, 8.6.0 released 2026-10-17
 
 ## Issues
@@ -616,5 +616,14 @@ Issues checked: 84 of 84. Verification failures: 0. Withheld release-note lines:
 > What you see: If the page is moved to another workflow state after you opened it, for example from Draft to In Review in another browser tab, the Sentinel Vault banner on the page you already had open can keep showing the old state, Draft in that example. Choosing In Review from that banner then shows Already in that state, and the banner still shows Draft.
 > Where: The Sentinel Vault banner at the top of a page, in a space that uses a Sentinel Vault workflow.
 > Workaround: Reload the page. The banner then shows the page's current state.
+> Confirmed on Sentinel Vault 8.6.0. Status: open, fix scheduled.
+
+### SVT-89 - A space admin is treated as an ordinary user unless they are also a site or Confluence admin or listed under Space admins in Sentinel Vault
+
+- type: Bug; status: Selected for Development; affects: 8.6.0; component: Space and site settings
+
+> What you see: Sentinel Vault does not recognise someone who is an admin of a space only through the space's own permissions, for example through the space's Admin role. On the space's Sentinel Vault page they are asked to request admin access, they cannot approve as a space admin or use the other space admin actions, and an edit they make to an Approved page moves the page back out of Approved or is undone, as an ordinary editor's would be.
+> Where: Spaces whose admins are not also site or Confluence admins and are not listed under Space admins in Sentinel Vault.
+> Workaround: On the space's Sentinel Vault page the space admin presses Request admin access, and a site admin approves it in the Access Control tab of that page. Sentinel Vault then lists them under Space admins and treats them as a space admin. The list does not follow Confluence: remove them there if they stop being a space admin.
 > Confirmed on Sentinel Vault 8.6.0. Status: open, fix scheduled.
 
