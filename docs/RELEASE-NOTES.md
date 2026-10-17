@@ -2,6 +2,16 @@
 
 GENERATED from `src/server/shared/release-notes.js` by `scripts/render-release-notes.mjs`. Do not edit.
 
+## 8.6.1 — 2026-10-17
+
+**Stricter checks on who can see a space's scan status**
+
+
+Fixed:
+- Stricter checks on who can see a space's scan status.
+
+**Do this:** Nothing to do if your site already runs 8.0.0. A site on an earlier version gets this update after a site admin approves the 8.0.0 update in Confluence administration, Apps, Manage apps.
+
 ## 8.6.0 — 2026-10-16
 
 **A deleted Jira issue's sealed file downloads under its own name, and Approved pages are protected exactly as the settings say**
