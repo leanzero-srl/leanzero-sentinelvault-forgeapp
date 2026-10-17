@@ -14,10 +14,23 @@ cd "$REPO"
 APPROVE_MAJOR=0
 for a in "$@"; do [[ "$a" == "--approve-major" ]] && APPROVE_MAJOR=1; done
 set -- $(for a in "$@"; do [[ "$a" != "--approve-major" ]] && printf '%s ' "$a"; done)
+# The guard exists for the FIRST deploy that turns licensing on. Once an EARLIER release tag (vX.Y.Z, cut after
+# every production deploy) already shipped `licensing.enabled: true`, the paid plan is live and the flag adds
+# nothing, so the door accepts the deploy without it. Turning licensing on (the last tag had it off) still needs it.
+# --no-contains HEAD: a tag on the commit being deployed (or a later one) proves nothing about what production ran.
+licensing_live_in_prod_tag() {
+  local tag
+  tag="$(git tag --list 'v[0-9]*.[0-9]*.[0-9]*' --no-contains HEAD --sort=-v:refname | head -1)"
+  [[ -n "$tag" ]] || return 1
+  git show "$tag:manifest.yml" 2>/dev/null | sed -n '/^  licensing:/,/^  [a-z]/p' | grep -qE '^\s*enabled:\s*true' || return 1
+  LICENSING_LIVE_TAG="$tag"
+}
 if grep -qE '^\s*enabled:\s*true' <(sed -n '/^  licensing:/,/^  [a-z]/p' manifest.yml) ; then
   if [[ "${1:-}" == "--licensing-live" ]]; then
     shift
     echo "==> Licensing guard acknowledged (--licensing-live): the paid plan is live in the Partner portal."
+  elif licensing_live_in_prod_tag; then
+    echo "==> Licensing guard: production already runs with licensing (release ${LICENSING_LIVE_TAG}); no flag needed."
   else
     echo "ABORT: manifest has app.licensing.enabled: true."
     echo "Publish the paid pricing plan in the Partner portal FIRST, then re-run with:"
@@ -83,5 +96,16 @@ fi
 echo "==> Deploying to production"
 if [[ "$APPROVE_MAJOR" == "1" ]]; then forge deploy -e production --approve MAJOR_VERSION_RULE "$@"; else forge deploy -e production "$@"; fi
 
+# Rule zero: a production deploy that loses the Runs on Atlassian badge is a FAILED deploy. The check used to end in
+# `|| true`, so an ineligible production version still exited 0 and every caller reported success.
 echo "==> Verifying Runs-on-Atlassian eligibility"
-forge eligibility -e production || true   # -e: non-TTY
+set +e
+ELIG_OUT="$(forge eligibility -e production 2>&1)"; ELIG_RC=$?   # -e: non-TTY
+set -e
+echo "$ELIG_OUT"
+if [[ $ELIG_RC -ne 0 ]] || ! grep -q "is eligible for the Runs on Atlassian" <<<"$ELIG_OUT" || grep -qi "not eligible" <<<"$ELIG_OUT"; then
+  echo "FAILED: production was deployed but is NOT eligible for Runs on Atlassian (forge eligibility rc=${ELIG_RC})."
+  echo "The reason is in the output above. Redeploy the last good release tag through this script, then fix the cause."
+  exit 1
+fi
+echo "==> Eligible for Runs on Atlassian"
