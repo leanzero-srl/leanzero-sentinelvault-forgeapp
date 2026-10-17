@@ -147,8 +147,9 @@ between is built and verified on dev but not shipped:
   ~1 run in 3) are closed — a clean save re-arms the comment only when a user authored it, and a
   comment claim is confirmed by token after a settle interval. Restores were never affected.
 
-Shipping requires the paid plan to be live in the Partner portal (`deploy-prod.sh` refuses
-without `--licensing-live`) and is a minor bump — none of it61–it66 adds a scope; the
+Shipping requires the paid plan to be live in the Partner portal (`deploy-prod.sh` refused
+without `--licensing-live` at the time; since the prod-door change it asks for the flag only on the deploy that
+turns licensing on) and is a minor bump — none of it61–it66 adds a scope; the
 `confluence:globalPage` module was proven a minor bump on dev (6.97 → 6.100, no re-consent).
 Last full-suite verdict on the dev build: PASS, 79/79 specs (`sv-it68-final`, commit 269d63f, UX pass included); GRADE PASS.
 
