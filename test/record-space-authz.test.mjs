@@ -22,6 +22,7 @@ const editreq = byKey((await import("../src/server/capsules/editreq/actions.js")
 const realms = byKey((await import("../src/server/capsules/realms/actions.js")).actions);
 const { workflowPrivilegeForPage } = await import("../src/server/capsules/workflow/privilege.js");
 const { collectWorkflowEnforcementForPage } = await import("../src/server/triggers.js");
+const { applyAiVerdict } = await import("../src/server/capsules/workflow/approvals.js");
 const { DEFAULT_WORKFLOW } = await import("../src/server/capsules/workflow/logic.js");
 const { recordActivity, activitySpacePrefix } = await import("../src/server/infra/activity-log.js");
 console.warn = () => {}; console.error = () => {}; console.info = () => {};
@@ -272,7 +273,7 @@ eq("remove-workflow, page lookup failing, admin of the stored space: refused", (
 
 // ── more record paths (each in its own world) ─────────────────────────────────────────────────
 await world(); await pendingOn(MOVED);
-ok("rerequest-approval, moved page, admin of the old space: refused", said(await as(workflow.get("rerequest-approval"), ADMIN_A, { pageId: MOVED }), "Only an approver, the requester or a space admin"));
+{ const r = await as(workflow.get("rerequest-approval"), ADMIN_A, { pageId: MOVED }); ok("rerequest-approval, moved page, admin of the old space: refused", r?.success === false); }
 await world(); await pendingOn(MOVED);
 ok("rerequest-approval, moved page, admin of both: allowed", !said(await as(workflow.get("rerequest-approval"), ADMIN_AB, { pageId: MOVED }), "Only an approver, the requester or a space admin"));
 await world(); await pendingOn(MOVED);
@@ -332,10 +333,67 @@ eq("page trigger, unmoved page whose space unlocked Approved: not enforced (cont
 // ── a failed lookup never demotes or undoes a steward's edit ─────────────────────────────────
 const outage = () => onConfluence((method, rawPath) => (/^\/wiki\/api\/v2\/(pages|blogposts)\/\d+$/.test(decodeURIComponent(rawPath).split("?")[0]) ? { status: 503, body: {} } : undefined));
 await world({ stateId: APPROVED }); outage();
-eq("page trigger, lookup failing, steward edits the unmoved Approved page: not judged (no demote)", await collectWorkflowEnforcementForPage(STAY, ADMIN_A, 4, "app-account"), null);
+eq("page trigger, lookup failing, steward edits the unmoved Approved page: not judged (no demote)", (await collectWorkflowEnforcementForPage(STAY, ADMIN_A, 4, "app-account"))?.action, "unknown");
 eq("page trigger, lookup failing: the page is still Approved", (await kvs.get(`workflow-state-${STAY}`))?.stateId, APPROVED);
 await world({ stateId: APPROVED }); outage();
 eq("page trigger, lookup failing but the event names the space: a privileged edit", (await collectWorkflowEnforcementForPage(STAY, ADMIN_A, 4, "app-account", "AAA"))?.action, "privileged");
+
+
+// ── round 2: nothing moves a moved page's workflow; outages never cost an approver ────────────
+const HOLD = "moved to another space after its workflow started";
+// A request opened in the old space before the move, decided after it by a LISTED approver.
+await world(); await pendingOn(MOVED);
+{ const r = await as(workflow.get("decide-approval"), "acct-listed", { pageId: MOVED, decision: "approved" }); ok("decide-approval, moved page, a listed approver approves: held", said(r, HOLD)); }
+ok("decide-approval, moved page, a listed approver approves: the page did not move", (await kvs.get(`workflow-state-${MOVED}`))?.stateId === DRAFT);
+await world(); await pendingOn(MOVED);
+ok("decide-approval, moved page, a listed approver declines: a no is still taken", !said(await as(workflow.get("decide-approval"), "acct-listed", { pageId: MOVED, decision: "denied", reason: "no" }), HOLD));
+await world(); await pendingOn(STAY);
+ok("decide-approval, unmoved page, a listed approver approves: not held (control)", !said(await as(workflow.get("decide-approval"), "acct-listed", { pageId: STAY, decision: "approved" }), HOLD));
+await world(); await pendingOn(MOVED);
+ok("rerequest-approval, moved page, a listed approver: held", said(await as(workflow.get("rerequest-approval"), "acct-listed", { pageId: MOVED }), HOLD));
+// An AI verdict completing the request after the move.
+await world(); await pendingOn(MOVED);
+{ const p = await kvs.get(`workflow-pending-${MOVED}`); await kvs.set(`workflow-pending-${MOVED}`, { ...p, approvers: [], aiGate: { required: true, status: "pending" } }); }
+{ const rec = await kvs.get(`workflow-state-${MOVED}`); await kvs.set(`workflow-state-${MOVED}`, { ...rec, stateId: "in_review" }); }
+const ai = await applyAiVerdict(MOVED, 3, "passed", "ok");
+ok("AI verdict on a moved page: does not move it", ai?.transitioned !== true && (await kvs.get(`workflow-state-${MOVED}`))?.stateId === "in_review");
+await world(); await pendingOn(STAY);
+{ const p = await kvs.get(`workflow-pending-${STAY}`); await kvs.set(`workflow-pending-${STAY}`, { ...p, approvers: [], aiGate: { required: true, status: "pending" } }); const rec = await kvs.get(`workflow-state-${STAY}`); await kvs.set(`workflow-state-${STAY}`, { ...rec, stateId: "in_review" }); }
+eq("AI verdict on an unmoved page: completes (control)", (await applyAiVerdict(STAY, 3, "passed", "ok"))?.transitioned, true);
+// A proposal accepted after the move (the page is Approved, the seal held by the approval).
+await world({ stateId: APPROVED });
+{ const sr = await kvs.get("protection-att-moved"); await kvs.set("protection-att-moved", { ...sr, workflowHeld: { pageId: MOVED, stateId: APPROVED } }); }
+await kvs.set("edit-request-att-moved-" + REQUESTER, { requesterAccountId: REQUESTER, requesterName: "Req", status: "pending", proposal: true, approvers: ["acct-listed"], requestedAt: "2026-10-02T00:00:00.000Z" });
+ok("approve-edit-request (a proposal), moved page, a listed approver: held", said(await as(editreq.get("approve-edit-request"), "acct-listed", { attachmentId: "att-moved", requesterAccountId: REQUESTER }), HOLD));
+ok("approve-edit-request (a proposal), moved page: still Approved", (await kvs.get(`workflow-state-${MOVED}`))?.stateId === APPROVED);
+// The old space empties Approved's exits (demote cannot apply): a moved page is reverted instead.
+await world({ stateId: APPROVED });
+await kvs.set("workflow-def-space-AAA", { ...DEFAULT_WORKFLOW, states: DEFAULT_WORKFLOW.states.map((st) => (st.id === APPROVED ? { ...st, transitions: [] } : st)) });
+eq("page trigger, moved Approved page, an editor's edit: reverted, whatever the old space's mode", (await collectWorkflowEnforcementForPage(MOVED, PLAIN, 4, "app-account"))?.action, "revert");
+// An outage of the page lookup never costs an approver; a steward is "unknown" (nothing done).
+async function approvedWithApprover(pageId) {
+  const r = await kvs.get(`workflow-state-${pageId}`); await kvs.set(`workflow-state-${pageId}`, { ...r, approvers: ["acct-listed"] });
+  await kvs.set("workflow-settings-AAA", { enabled: true, approval: { approvers: [{ id: "acct-listed", type: "user", name: "Listed" }], mode: "any" } });
+}
+await world({ stateId: APPROVED }); await approvedWithApprover(STAY); outage();
+eq("page trigger, lookup failing, a listed approver's edit: privileged", (await collectWorkflowEnforcementForPage(STAY, "acct-listed", 4, "app-account"))?.action, "privileged");
+eq("privilege, lookup failing, a listed approver: privileged", (await workflowPrivilegeForPage(STAY, "acct-listed"))?.privileged, true);
+eq("privilege, lookup failing, a steward: not privileged (cannot be judged)", (await workflowPrivilegeForPage(STAY, ADMIN_A))?.privileged, false);
+// Re-assigning is refused while Approved or while a request waits (it would strand the held seals).
+await world({ stateId: APPROVED });
+eq("assign-workflow, Approved page, admin of both: refused (move it out of Approved first)", (await as(workflow.get("assign-workflow"), ADMIN_AB, { pageId: MOVED }))?.success, false);
+await world({ stateId: APPROVED });
+eq("assign-workflow, unmoved Approved page, admin of its space: refused too", (await as(workflow.get("assign-workflow"), ADMIN_A, { pageId: STAY }))?.success, false);
+await world(); await pendingOn(MOVED);
+eq("assign-workflow, open request, admin of both: refused", (await as(workflow.get("assign-workflow"), ADMIN_AB, { pageId: MOVED }))?.success, false);
+// The banner offers no move on a held page.
+await world();
+{ const g = await as(workflow.get("get-page-workflow"), PLAIN, { pageId: MOVED }, onMoved); ok("get-page-workflow, moved page, an editor: no moves offered", g?.movedHold === true && (g?.available || []).length === 0); }
+{ const g = await as(workflow.get("get-page-workflow"), ADMIN_AB, { pageId: MOVED }, onMoved); ok("get-page-workflow, moved page, admin of both: moves offered", (g?.available || []).length > 0); }
+// A failed read of where a seal's file is denies the steward arm (never the record's page alone).
+await world();
+onConfluence((method, rawPath) => (decodeURIComponent(rawPath).split("?")[0] === "/wiki/api/v2/attachments/att-moved" ? { status: 503, body: {} } : undefined));
+ok("extend-seal, file read failing, admin of both: refused (cannot be judged)", said(await as(sealing.get("extend-seal"), ADMIN_AB, { attachmentId: "att-moved", additionalSeconds: 3600 }), "Only the seal owner or a space admin"));
 
 // ── the old space's Seals tab and new activity ───────────────────────────────────────────────
 await world();
