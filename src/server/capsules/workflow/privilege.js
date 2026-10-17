@@ -9,6 +9,7 @@ import { asApp, route } from "@forge/api";
 import { readPageWorkflow, resolveWorkflowDef, findState, getSpaceWorkflowSettings } from "./logic.js";
 import { resolveApproverIds } from "./approvals.js";
 import { isAccountStewardAsApp } from "../../shared/steward-checks.js";
+import { recordAuthority, isStewardOfSpaces } from "../../shared/content-access.js";
 
 /** @returns {Promise<{ enforced: boolean, privileged: boolean, record?: object }>} */
 export async function workflowPrivilegeForPage(pageId, accountId) {
@@ -21,14 +22,18 @@ export async function workflowPrivilegeForPage(pageId, accountId) {
   if (!prop || prop.enforce !== true) return { enforced: false, privileged: false };
   const record = await readPageWorkflow(pageId);
   if (!record?.enforce) return { enforced: false, privileged: false };
+  // Same as the trigger's probe: where the page is now decides who is a steward, a moved page keeps
+  // the protection it was approved under, and a failed lookup is enforced-and-not-privileged.
+  const auth = await recordAuthority({ contentId: pageId, storedKey: record.spaceKey || null });
+  if (!auth.known) return { enforced: true, privileged: false, record };
   const def = await resolveWorkflowDef(record.spaceKey, record.workflowId);
-  if (!findState(def, record.stateId)?.enforce) return { enforced: false, privileged: false };
+  if (!findState(def, record.stateId)?.enforce && !(auth.moved && record.enforce === true)) return { enforced: false, privileged: false };
   const settings = await getSpaceWorkflowSettings(record.spaceKey);
   const liveSpec = await resolveApproverIds(settings.approval);
   const liveApprovers = liveSpec?.approvers || [];
   const privileged =
     (Array.isArray(record.approvers) && record.approvers.includes(accountId) && (liveApprovers.includes(accountId) || !!liveSpec?.unresolved))
-    || await isAccountStewardAsApp(accountId, record.spaceKey);
+    || await isStewardOfSpaces(isAccountStewardAsApp, accountId, auth.spaces);
   return { enforced: true, privileged: !!privileged, record };
 }
 

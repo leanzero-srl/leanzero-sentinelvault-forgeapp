@@ -7,7 +7,7 @@ import { BASELINE_HOLD_SPAN, sanitizeHoldDuration } from "../../shared/baseline.
 import { keysetPage, encodeKeysetCursor, decodeKeysetCursor } from "../../shared/pagination.js";
 import { restampIfEnforced } from "../workflow/logic.js";
 import { authorizeSteward } from "../../shared/steward-checks.js";
-import { canEditPage, canReadPage, mustVerify, resolvePageSpaceKey, objectSpaceKeyOf } from "../../shared/content-access.js";
+import { canEditPage, canReadPage, mustVerify, resolvePageSpaceKey, objectSpaceKeyOf, isStewardOfRecord } from "../../shared/content-access.js";
 import { resolveBulletinToggles } from "../../shared/bulletin-flags.js";
 import { setUntil } from "../../shared/kvs-ttl.js";
 
@@ -199,6 +199,16 @@ const enumerateDocArtifacts = async (req) => {
     };
   }
 };
+
+/**
+ * Steward power over an attachment seal: an admin of the space the file's page is in NOW and, if
+ * the page moved since it was sealed, of the seal's own space too (content-access.js
+ * recordAuthoritySpaces). The seal's stored space alone left the old space's admins able to force,
+ * extend, purge or restore the file of a page that had left them. Never the caller's context.
+ */
+function stewardOfAttachmentSeal(check, accountId, sealRecord) {
+  return isStewardOfRecord(check, accountId, { contentId: sealRecord?.contentId || null, storedKey: sealRecord?.spaceKey || null });
+}
 
 /**
  * Seal an artifact for the specified duration
@@ -568,10 +578,9 @@ const unsealArtifact = async (req) => {
     // to be the fallback for records that never recorded one, which reopened the same hole for
     // exactly those records; the fallback is now the record's PAGE's space (objectSpaceKeyOf),
     // and a record whose space cannot be resolved is refused.
-    const hasStewardAccess = await authorizeSteward(
-      operatorAccountId,
-      objectSpaceKey,
-    );
+    // A steward of the space the file's page is in NOW and, if the page moved since it was sealed,
+    // of the seal's own space as well (content-access.js recordAuthoritySpaces).
+    const hasStewardAccess = await stewardOfAttachmentSeal(authorizeSteward, operatorAccountId, sealRecord);
     if (hasStewardAccess) {
       // Part 3.5: same rule as unseal-section / steward-unseal — shared/release-reason.js.
       const v = validateReleaseReason(rawReason);
@@ -685,9 +694,7 @@ export const extendSeal = async (req) => {
 
   let authorized = sealRecord.lockedBy === operatorAccountId;
   if (!authorized) {
-    try {
-      authorized = !!objectSpaceKey && await authorizeSteward(operatorAccountId, objectSpaceKey);
-    } catch (_) { authorized = false; }
+    authorized = !!objectSpaceKey && await stewardOfAttachmentSeal(authorizeSteward, operatorAccountId, sealRecord);
   }
   if (!authorized) {
     return { success: false, reason: "Only the seal owner or a space admin can extend this seal" };
@@ -1209,12 +1216,10 @@ export const restoreSealedArtifact = async (req) => {
   // The space is the record's own, else its page's — never the caller's context (a steward of the
   // space they stand in used to clear every record that carried no spaceKey, site-wide).
   const operatorAccountId = req.context.accountId;
-  const restoreRealmKey = sealRecord?.spaceKey || await resolvePageSpaceKey(pageId);
+  // The steward arm: the space the file's page is in now and, if it moved, the seal's own.
   const restoreIsOwner = !!sealRecord?.lockedBy && sealRecord.lockedBy === operatorAccountId;
   if (!restoreIsOwner) {
-    const stewardOk = restoreRealmKey
-      ? await authorizeSteward(operatorAccountId, restoreRealmKey)
-      : false;
+    const stewardOk = await isStewardOfRecord(authorizeSteward, operatorAccountId, { contentId: pageId, storedKey: sealRecord?.spaceKey || null });
     // No record, or not a steward of its space: fall back to the caller's own rights on the page
     // the file would land on. That keeps the legitimate "restore a file I could have deleted"
     // case working without handing out the app's site-wide reach.
@@ -1303,7 +1308,8 @@ export const purgeSealRecord = async (req) => {
   const isOwner = !!sealRecord?.lockedBy && sealRecord.lockedBy === operatorAccountId;
   if (!isOwner) {
     if (effectiveRealmKey) {
-      if (!(await authorizeSteward(operatorAccountId, effectiveRealmKey))) {
+      // The space the file's page is in now and, if it moved since it was sealed, the seal's own.
+      if (!(await isStewardOfRecord(authorizeSteward, operatorAccountId, { contentId: objectPageId, storedKey: sealRecord?.spaceKey || null }))) {
         return { success: false, reason: "Only the seal owner or a space admin can purge" };
       }
     } else if (!objectPageId || !(await canEditPage(operatorAccountId, objectPageId))) {

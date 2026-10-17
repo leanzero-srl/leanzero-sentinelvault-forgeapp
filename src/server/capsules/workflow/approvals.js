@@ -31,6 +31,7 @@ import { touchByline } from "../page-details/byline-touch.js"; // WF-6
 import { notifyApprovalRequested, notifyApprovalResolved } from "../../infra/approval-blueprints.js";
 import { recordActivity } from "../../infra/activity-log.js";
 import { isAccountStewardAsApp } from "../../shared/steward-checks.js";
+import { isStewardOfRecord } from "../../shared/content-access.js";
 import { verifySignature } from "./signature.js";
 
 const APPROVAL_ID = "approval"; // v1 single default round; schema carries the segment for future named rounds
@@ -477,7 +478,9 @@ export async function decideApproval({ pageId, approverAccountId, decision, reas
     // it off). The record is made now and the admin is added to the request's decider list, so
     // every read, the evidence snapshot and the cleanup see it.
     const adminsMay = spaceSettings?.approval?.adminsCanApprove !== false;
-    const isAdmin = adminsMay && await isAccountStewardAsApp(approverAccountId, pending.spaceKey).catch(() => false);
+    // An admin of the space the page is in NOW and, if it moved since the request, of the space the
+    // request was made in (content-access.js recordAuthoritySpaces) — never the stored space alone.
+    const isAdmin = adminsMay && await isStewardOfRecord(isAccountStewardAsApp, approverAccountId, { contentId: pageId, storedKey: pending.spaceKey || null });
     if (!isAdmin) return { success: false, reason: "You are not an approver for this transition" };
     record = { approverAccountId, status: "pending", admin: true, approverName: actorName || null, createdAt: new Date().toISOString() };
     await kvs.set(key, record);

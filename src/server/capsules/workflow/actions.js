@@ -9,7 +9,7 @@ import { currentUserProfile } from "../../shared/user-or-app.js";
 import { kvs, WhereConditions } from "@forge/kvs";
 
 import { authorizeSteward, isOperatorSiteAdmin, isOperatorSteward, isAccountStewardAsApp } from "../../shared/steward-checks.js";
-import { canEditPage, canReadPage, mustVerify, resolvePageSpaceKey } from "../../shared/content-access.js";
+import { canEditPage, canReadPage, mustVerify, resolvePageSpaceKey, isStewardOfRecord, isStewardOfSpaces, recordAuthority } from "../../shared/content-access.js";
 import { fetchPageStatuses } from "../../shared/page-status.js";
 import {
   resolveWorkflowDef,
@@ -114,6 +114,22 @@ async function callerMayReadPage(req, pageId) {
   return canReadPage(req.context?.accountId, pageId);
 }
 
+// The space Confluence put in the resolver context, when the caller is on THIS page: where the page
+// is now, with no lookup. null otherwise (the steward check below then asks Confluence).
+function ctxSpaceKeyFor(req, pageId) {
+  const ctxPageId = ctxPageIdOf(req);
+  if (!ctxPageId || !pageId || String(ctxPageId) !== String(pageId)) return null;
+  return req.context?.extension?.content?.space?.key || req.context?.extension?.space?.key || null;
+}
+
+// Steward power over a page's workflow record (its state, its approval request): a steward of the
+// space the page is in NOW and, if the page moved since the record was made, of the record's space
+// too (shared/content-access.js recordAuthoritySpaces). A record keeps the space it was made in, so
+// trusting it alone left the old space's admins in charge of a page that had left them.
+function stewardOfPageRecord(check, req, pageId, storedKey) {
+  return isStewardOfRecord(check, req.context?.accountId, { contentId: pageId, storedKey, liveKey: ctxSpaceKeyFor(req, pageId) });
+}
+
 async function actorName(accountId) {
   try { return (await currentUserProfile(accountId)).displayName || null; }
   catch (_) { return null; }
@@ -144,7 +160,7 @@ const getWorkflow = async (req) => {
     // A5: the ribbon turns the "Review due" chip into a button only for someone set-review-due
     // would accept — a steward of the page's own space (the edit check runs on the write).
     result.canSetReviewDue = !!(req.context?.accountId && result.record?.spaceKey)
-      && await authorizeSteward(req.context.accountId, result.record.spaceKey);
+      && await isStewardOfRecord(authorizeSteward, req.context.accountId, { contentId: pageId, storedKey: result.record.spaceKey, liveKey: pageSpaceKey });
     // B2: whether this page asks its readers to confirm; the counts come from get-read-status.
     result.readConfirmation = readConfirmationRequired(settings, result.record)
       ? { required: true, version: requiredVersion(result.record), canReport: result.canSetReviewDue }
@@ -184,10 +200,14 @@ const assignWorkflow = async (req) => {
   // that powers approved-page protection. requestTransition below already states the doctrine:
   // the authoritative space is the PAGE's own, never a caller-supplied one. Same here — and the
   // resolved key is what gets stored, so the index row cannot be filed under a foreign space.
-  const spaceKey = (await readPageWorkflow(pageId))?.spaceKey || await resolvePageSpaceKey(pageId);
+  // The page's space NOW is the one the new record is filed under. When the page moved after an
+  // earlier record was made, the caller must administer that record's space as well
+  // (stewardOfPageRecord): this is how a moved page is brought under its new space.
+  const prevSpaceKey = (await readPageWorkflow(pageId))?.spaceKey || null;
+  const spaceKey = ctxSpaceKeyFor(req, pageId) || await resolvePageSpaceKey(pageId);
   if (!spaceKey) return { success: false, reason: "Could not resolve this page's space" };
   // Assigning a workflow is a steward act in v1 (per-page-owner assignment arrives with #43).
-  if (!(await authorizeSteward(actorAccountId, spaceKey))) {
+  if (!(await isStewardOfSpaces(authorizeSteward, actorAccountId, [...new Set([spaceKey, prevSpaceKey].filter(Boolean))]))) {
     return { success: false, reason: "Only a space admin can assign a workflow" };
   }
   return assignPageWorkflow({
@@ -204,9 +224,10 @@ const removeWorkflow = async (req) => {
   const pageId = pageIdOf(req);
   const actorAccountId = req.context?.accountId;
   if (!pageId) return { success: false, reason: "No page context" };
-  const spaceKey = (await readPageWorkflow(pageId))?.spaceKey || await resolvePageSpaceKey(pageId);
+  const storedKey = (await readPageWorkflow(pageId))?.spaceKey || null;
+  const spaceKey = storedKey || await resolvePageSpaceKey(pageId);
   if (!spaceKey) return { success: false, reason: "Could not resolve this page's space" };
-  if (!(await authorizeSteward(actorAccountId, spaceKey))) {
+  if (!(await stewardOfPageRecord(authorizeSteward, req, pageId, storedKey))) {
     return { success: false, reason: "Only a space admin can take a page out of the workflow" };
   }
   const name = await actorName(actorAccountId);
@@ -237,6 +258,12 @@ export const requestTransition = async (req) => {
   // is the payload/context and reopened the confused deputy above for exactly those records
   // (the steward gates below for leaving or entering an enforce state read this key).
   const spaceKey = current.spaceKey || await resolvePageSpaceKey(pageId);
+  // Who may act as a steward on THIS page: the space it is in now, and the record's own if it moved
+  // (stewardOfPageRecord). `spaceKey` above still picks the workflow's rules — the definition and
+  // settings the page was put under — never who holds authority over it. Asked at most once.
+  const auth = await recordAuthority({ contentId: pageId, storedKey: current.spaceKey || null, liveKey: ctxSpaceKeyFor(req, pageId) });
+  let stewardAnswer = null;
+  const isSteward = async () => (stewardAnswer ??= await isStewardOfSpaces(authorizeSteward, actorAccountId, auth.spaces));
 
   // SV-SEC-1. The space was already derived correctly (above), but nothing checked the CALLER
   // against the page at all — so any logged-in user could move any workflow-assigned page to any
@@ -244,6 +271,14 @@ export const requestTransition = async (req) => {
   // able to change the page.
   if (!(await canEditPage(actorAccountId, pageId))) {
     return { success: false, reason: "You do not have permission to change this page's state" };
+  }
+  if (!auth.known) return { success: false, reason: "Could not check where this page is right now — please retry." };
+  // A page that moved to another space after its workflow started runs on the rules of the space it
+  // left (its definition, approvers, conditions), which that space's admins can change and this
+  // page's new space cannot see. It holds still until an admin of both spaces, or a site admin,
+  // assigns its workflow again (assign-workflow files it under the new space).
+  if (auth.moved && !(await isSteward())) {
+    return { success: false, moved: true, reason: "This page moved to another space after its workflow started. An admin of both spaces, or a site admin, needs to assign its workflow again before it can change state." };
   }
 
   // Entering an `enforce`-marked state (e.g. Approved): if the space has approvers
@@ -258,7 +293,7 @@ export const requestTransition = async (req) => {
   // The exit deserves the same authority as the entry.
   const from = findState(def, current.stateId);
   if (from?.enforce && !target?.enforce
-    && !(await authorizeSteward(actorAccountId, spaceKey))) {
+    && !(await isSteward())) {
     return { success: false, reason: `Only a space admin can move a page out of ${from.name}` }; // WF-10
   }
 
@@ -283,7 +318,7 @@ export const requestTransition = async (req) => {
     // #46 authority: the AI axis AUGMENTS, never replaces, enforce-state authority. An
     // enforce target with no human approvers still requires the requester to be a steward —
     // otherwise turning on "require AI review" would DOWNGRADE the gate to "anyone + AI".
-    if (target?.enforce && !(spec?.approvers?.length) && !(await authorizeSteward(actorAccountId, spaceKey))) {
+    if (target?.enforce && !(spec?.approvers?.length) && !(await isSteward())) {
       return { success: false, reason: `Only a space admin can move a page into ${target?.name || toStateId} when no approvers are set` }; // WF-10
     }
     // Review #2: an approver GROUP that could not be expanded must not open a request that
@@ -299,7 +334,7 @@ export const requestTransition = async (req) => {
     }
     // Don't let a re-request silently discard approvers' / the AI's in-flight review.
     const existing = await getPageApprovalStatus(pageId);
-    if (existing?.pending && existing.requestedBy !== actorAccountId && !(await authorizeSteward(actorAccountId, spaceKey))) {
+    if (existing?.pending && existing.requestedBy !== actorAccountId && !(await isSteward())) {
       return { success: false, reason: "An approval is already pending for this page" };
     }
     const pinnedVersion = await fetchLivePageVersion(pageId);
@@ -339,7 +374,7 @@ export const requestTransition = async (req) => {
   if (target?.enforce) {
     // enforce, no approvers, no AI → #42/#44 direct steward gate. The steward IS the reviewing
     // authority acting on what they see now: capture approvedVersion, fail CLOSED on null.
-    if (!(await authorizeSteward(actorAccountId, spaceKey))) {
+    if (!(await isSteward())) {
       return { success: false, reason: `Only a space admin can move a page into ${target.name} when no approvers are set` }; // WF-10
     }
     const approvedVersion = await fetchLivePageVersion(pageId);
@@ -392,7 +427,7 @@ const setReviewDue = async (req) => {
   const current = await readPageWorkflow(pageId);
   if (!current) return { success: false, reason: "Page has no workflow assigned" };
   const spaceKey = current.spaceKey || await resolvePageSpaceKey(pageId);
-  if (!spaceKey || !(await authorizeSteward(actorAccountId, spaceKey))) {
+  if (!spaceKey || !(await stewardOfPageRecord(authorizeSteward, req, pageId, current.spaceKey || null))) {
     return { success: false, reason: "Only a space admin can change the review date" };
   }
   const r = await setPageReviewDue({
@@ -437,7 +472,7 @@ const getReadReportAction = async (req) => {
   const record = await readPageWorkflow(pageId);
   if (!record) return { required: false, readers: [] };
   const spaceKey = record.spaceKey || await resolvePageSpaceKey(pageId);
-  if (!spaceKey || !(await authorizeSteward(req.context?.accountId, spaceKey))) return { required: false, readers: [], reason: "Only a space admin can see who has read this page" };
+  if (!spaceKey || !(await stewardOfPageRecord(authorizeSteward, req, pageId, record.spaceKey || null))) return { required: false, readers: [], reason: "Only a space admin can see who has read this page" };
   const settings = await getSpaceWorkflowSettings(spaceKey);
   return readReport({ pageId, record, settings });
 };
@@ -463,7 +498,7 @@ const rerequestApprovalAction = async (req) => {
   if (!pageId) return { success: false, reason: "No page context" };
   if (!(await callerMayReadPage(req, pageId))) return { success: false, reason: "You do not have access to this page" };
   const spaceKey = (await readPageWorkflow(pageId))?.spaceKey || null;
-  const isSteward = spaceKey ? await authorizeSteward(actorAccountId, spaceKey) : false;
+  const isSteward = spaceKey ? await stewardOfPageRecord(authorizeSteward, req, pageId, spaceKey) : false;
   const r = await rerequestApproval({ pageId, actorAccountId, actorName: await actorName(actorAccountId), isSteward });
   if (r.success && r.changed && r.aiGate) {
     const wfSettings = await getSpaceWorkflowSettings(spaceKey);
@@ -481,7 +516,7 @@ const withdrawApprovalAction = async (req) => {
   if (!pageId) return { success: false, reason: "No page context" };
   if (!(await callerMayReadPage(req, pageId))) return { success: false, reason: "You do not have access to this page" };
   const spaceKey = (await readPageWorkflow(pageId))?.spaceKey || null;
-  const isSteward = spaceKey ? await isAccountStewardAsApp(actorAccountId, spaceKey).catch(() => false) : false;
+  const isSteward = spaceKey ? await stewardOfPageRecord(isAccountStewardAsApp, req, pageId, spaceKey) : false;
   return withdrawApproval({ pageId, actorAccountId, actorName: await actorName(actorAccountId), isSteward });
 };
 
@@ -505,7 +540,7 @@ const getPageApprovals = async (req) => {
       // failed with NEEDS_AUTHENTICATION for an admin without user consent, and followed the
       // force-release toggle — so the ribbon hid Approve/Deny from an admin the server would accept
       // (tester 2026-09-30).
-      status.adminCanDecide = await isAccountStewardAsApp(me, spaceKey).catch(() => false);
+      status.adminCanDecide = await stewardOfPageRecord(isAccountStewardAsApp, req, pageId, spaceKey || null);
     }
     if (status.requireSignature) status.signatureEnrolled = (await signatureStatus(req.context?.accountId)).enrolled;
   }
@@ -771,7 +806,20 @@ export const getWorkflowDashboard = async (req) => {
   // used to cost its own request for the title alone.
   const status = await fetchPageStatuses(entries.map((e) => e.pageId));
   const placeOf = (e) => status.get(String(e.pageId))?.status || "unknown";
-  const shown = entries.filter((e) => !["trashed", "missing"].includes(placeOf(e)));
+  // A page that has since moved to another space keeps its row here (the row is filed under the
+  // space the record was made in). It is that other space's page now: not listed, and its title is
+  // not read out to this space's admins.
+  let ownSpaceId = null;
+  try {
+    const sres = await asApp().requestConfluence(route`/wiki/api/v2/spaces?keys=${spaceKey}`);
+    if (sres.ok) ownSpaceId = (await sres.json())?.results?.[0]?.id ?? null;
+  } catch (_) { ownSpaceId = null; }
+  if (ownSpaceId == null) return { error: "Could not read this space right now — try again in a moment" };
+  const movedAway = (e) => {
+    const sid = status.get(String(e.pageId))?.spaceId;
+    return sid != null && String(sid) !== String(ownSpaceId);
+  };
+  const shown = entries.filter((e) => !["trashed", "missing"].includes(placeOf(e)) && !movedAway(e));
   const inTrash = entries.filter((e) => placeOf(e) === "trashed").length;
   const missing = entries.filter((e) => placeOf(e) === "missing").length;
   const counts = {};

@@ -37,7 +37,7 @@
  */
 import { asApp, route } from "@forge/api";
 import { kvs, WhereConditions } from "@forge/kvs";
-import { canEditPage, canReadPage, mustVerify } from "../../shared/content-access.js";
+import { canEditPage, canReadPage, mustVerify, isStewardOfSpaces } from "../../shared/content-access.js";
 import { authorizeSteward, isAccountStewardAsApp } from "../../shared/steward-checks.js";
 import { getClassificationProvider, resolveClassificationActive } from "../classification/provider.js";
 import { getActiveEditGrant, getActiveSectionEditGrant, resolveEditCooldownMs } from "../editreq/logic.js";
@@ -148,8 +148,20 @@ export const pageDetailsSummary = async (req) => {
   let attachmentsAll = [];
   // SEC-2 (e): who may decide a proposal on this page — listed on it, or a space admin (the same
   // rule approve-edit-request applies, so the window never offers a button the server refuses).
-  const proposalAdmin = spaceKey ? await isAccountStewardAsApp(accountId, spaceKey).catch(() => false) : false;
-  const decider = { accountId, may: (v) => (v.approvers || []).includes(accountId) || proposalAdmin === true };
+  // A seal made before its page moved here keeps the space it was made in; deciding on it needs an
+  // admin of both (content-access.js recordAuthoritySpaces) — the same answer the server gives.
+  const adminOfMemo = new Map();
+  const adminOf = (check, keys) => {
+    const spaces = [...new Set(keys.filter(Boolean))];
+    const memoKey = `${check === authorizeSteward ? "s" : "a"}:${spaces.sort().join("|")}`;
+    if (!adminOfMemo.has(memoKey)) adminOfMemo.set(memoKey, isStewardOfSpaces(check, accountId, spaces).catch(() => false));
+    return adminOfMemo.get(memoKey);
+  };
+  const deciderFor = async (record) => {
+    const admin = spaceKey ? await adminOf(isAccountStewardAsApp, [spaceKey, record?.spaceKey]) : false;
+    return { accountId, may: (v) => (v.approvers || []).includes(accountId) || admin === true };
+  };
+  const storedSealSpaces = new Set();
   let sealError = null;
   try {
     const { attachments, sections, all } = await collectPageSeals(pageId, meta.type);
@@ -165,7 +177,8 @@ export const pageDetailsSummary = async (req) => {
         // SEC-2 (e): on a held seal the owner can propose too (their own state is read), and the rows
         // carry the proposals THIS viewer may decide — never the owner's personal inbox.
         const mine = isMine && !held ? { status: "none", expiresAt: null } : await myEditStatusFor({ grant, requestKey: `edit-request-${id}-${accountId}` });
-        const pendingRequests = held ? await pendingRequestsFor(`edit-request-${id}-`, decider) : isMine ? await pendingRequestsFor(`edit-request-${id}-`) : [];
+        if (record.spaceKey) storedSealSpaces.add(record.spaceKey);
+        const pendingRequests = held ? await pendingRequestsFor(`edit-request-${id}-`, await deciderFor(record)) : isMine ? await pendingRequestsFor(`edit-request-${id}-`) : [];
         return {
           kind: "attachment", id, name: record.attachmentName || "Unknown file",
           ownerAccountId: record.lockedBy, ownerName: record.lockedByName || null,
@@ -181,7 +194,8 @@ export const pageDetailsSummary = async (req) => {
         const grant = isMine ? null : await getActiveSectionEditGrant(id, accountId);
         const held = isWorkflowHeld(record);
         const mine = isMine && !held ? { status: "none", expiresAt: null } : await myEditStatusFor({ grant, requestKey: `section-edit-request-${id}-${accountId}` });
-        const pendingRequests = held ? await pendingRequestsFor(`section-edit-request-${id}-`, decider) : isMine ? await pendingRequestsFor(`section-edit-request-${id}-`) : [];
+        if (record.spaceKey) storedSealSpaces.add(record.spaceKey);
+        const pendingRequests = held ? await pendingRequestsFor(`section-edit-request-${id}-`, await deciderFor(record)) : isMine ? await pendingRequestsFor(`section-edit-request-${id}-`) : [];
         return {
           kind: "section", id, name: record.sectionTitle || "Sealed section",
           ownerAccountId: record.lockedBy, ownerName: record.lockedByName || null,
@@ -214,6 +228,9 @@ export const pageDetailsSummary = async (req) => {
       const settings = await getSpaceWorkflowSettings(wf.record?.spaceKey || spaceKey);
       const hasApprovers = !!extractApprovalConfig(settings?.approval);
       const record = wf.record || {};
+      // A record made before the page moved here: admin actions on it need an admin of both spaces.
+      const wfAdmin = record.spaceKey && record.spaceKey !== spaceKey ? await adminOf(authorizeSteward, [spaceKey, record.spaceKey]) : isSpaceAdmin;
+      const wfDecideAdmin = spaceKey ? await adminOf(isAccountStewardAsApp, [spaceKey, record.spaceKey]) : false;
       const ar = record.approvalRecord || null;
       const reviewedVersion = (typeof ar?.pinnedVersion === "number" ? ar.pinnedVersion : null) ?? record.approvedVersion ?? null;
       const dueMs = record.reviewDueAt ? new Date(record.reviewDueAt).getTime() : NaN;
@@ -228,7 +245,7 @@ export const pageDetailsSummary = async (req) => {
         enforced: !!record.enforce && record.approvedVersion != null,
         // A space admin may take the page out — not while Approved/enforced or an approval waits
         // (the server refuses those too: workflow/logic.js removeRefusal).
-        canRemove: isSpaceAdmin && !record.enforce && !wf.pending,
+        canRemove: wfAdmin && !record.enforce && !wf.pending,
         enforceMode: shownEnforcement(settings, await kvs.get("admin-settings-global").catch(() => null)), // "off" while content protection is off
         reviewedVersion,
         baselineVersion: record.approvedVersion ?? null,
@@ -246,11 +263,11 @@ export const pageDetailsSummary = async (req) => {
           decided: wf.pendingDecided, required: wf.pending.mode === "any" ? 1 : (wf.pending.min || (wf.pending.approvers || []).length), mode: wf.pending.mode || null,
           iCanDecide: wf.pending.requestedBy !== accountId && (
             (Array.isArray(wf.pending.approvers) && wf.pending.approvers.includes(accountId))
-            || (isSpaceAdmin && settings?.approval?.adminsCanApprove !== false)), // admins may decide too
+            || (wfDecideAdmin && settings?.approval?.adminsCanApprove !== false)), // admins may decide too
         } : null,
         available: (wf.available || []).filter(Boolean).map((s) => ({ id: s.id, name: s.name, color: s.color || "neutral", requiresApproval: !!(s.enforce && hasApprovers) })),
         canMove: canEdit && (wf.available || []).length > 0 && !wf.pending,
-        canSetReviewDue: isSpaceAdmin,
+        canSetReviewDue: wfAdmin,
         readers: readers?.required ? { acked: readers.ackedCount ?? 0, audience: readers.audienceCount ?? 0, mine: !!readers.acked } : null,
       };
     }
@@ -278,7 +295,9 @@ export const pageDetailsSummary = async (req) => {
 
   return {
     ok: true, pageId, title: meta.title, contentType: meta.type, spaceKey,
-    viewer: { accountId, canEditPage: canEdit, isSpaceAdmin, canForceRelease: isSpaceAdmin }, // isSpaceAdmin = authorizeSteward: the force-unseal switch is in it
+    // isSpaceAdmin = authorizeSteward: the force-unseal switch is in it. Force release on a seal made
+    // before the page moved here needs an admin of that space too.
+    viewer: { accountId, canEditPage: canEdit, isSpaceAdmin, canForceRelease: isSpaceAdmin && (storedSealSpaces.size === 0 || [...storedSealSpaces].every((k) => k === spaceKey) || await adminOf(authorizeSteward, [spaceKey, ...storedSealSpaces])) },
     classification, workflow, seals, sealError, waitingOnMe, activity, attachments, sealDefaults,
   };
 };
