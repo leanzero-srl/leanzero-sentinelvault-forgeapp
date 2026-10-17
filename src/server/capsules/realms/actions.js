@@ -3,7 +3,8 @@ import { kvs, WhereConditions } from "@forge/kvs";
 import { resolveRealm } from "./logic.js";
 import { Queue } from "@forge/events";
 
-import { authorizeSteward, isOperatorSteward, isOperatorSiteAdmin, isOperatorRealmSteward, isOperatorInStewardCohorts } from "../../shared/steward-checks.js";
+import { authorizeSteward, isOperatorSteward, isOperatorSiteAdmin, isOperatorRealmSteward, isOperatorInStewardCohorts, newStewardMemo } from "../../shared/steward-checks.js";
+import { mapLimited } from "../../shared/map-limited.js";
 import { probeAttachmentStatus } from "../../infra/attachment-status.js";
 import { releaseSeal } from "../sealing/release.js"; // the ONE attachment-seal teardown
 import { writeSpaceIndex, listSpacesWithPendingStewardRequests, listPendingStewardRequestsInSpace } from "../editreq/logic.js";
@@ -618,12 +619,13 @@ export async function listMyStewardRequestsCore(accountId) {
   }
   const spaces = (await listSpacesWithPendingStewardRequests()).slice(0, 25);
   const requests = [];
-  for (const spaceKey of spaces) {
-    let allowed = siteAdmin;
-    if (!allowed) {
-      try { allowed = (await isOperatorRealmSteward(accountId, spaceKey)) || (await isOperatorInStewardCohorts(accountId, spaceKey)); }
-      catch (_) { allowed = false; }
-    }
+  const memo = newStewardMemo(); // the caller's groups are read once for all the spaces
+  const allowedBySpace = siteAdmin ? spaces.map(() => true) : await mapLimited(spaces, 5, async (spaceKey) => {
+    try { return (await isOperatorRealmSteward(accountId, spaceKey, { memo })) || (await isOperatorInStewardCohorts(accountId, spaceKey)); }
+    catch (_) { return false; }
+  });
+  for (const [i, spaceKey] of spaces.entries()) {
+    const allowed = allowedBySpace[i] === true;
     if (!allowed) continue;
     eligible = true;
     for (const r of await listPendingStewardRequestsInSpace(spaceKey)) {

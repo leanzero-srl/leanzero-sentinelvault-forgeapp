@@ -26,11 +26,11 @@ for (const d of DEAD) {
   eq(`no ${d.name}`, hits, []);
 }
 
-// Known 401, kept on purpose and reported (an authorization arm; changing it grants rights):
-// POST /wiki/rest/api/space/{key}/permission/check. It fails CLOSED. Pin the count so a NEW
-// use is a deliberate decision, not a copy-paste.
+// v1 POST /space/{key}/permission/check never existed (405 on every method, 2026-10-17; not in the
+// v1 spec). It was the app's space-admin arm, so nobody was recognised through it. Its replacement
+// is shared/steward-checks.js isSpaceAdministrator (v2 /spaces/{id}/permissions).
 const spaceCheck = lines.filter(({ l }) => /\/wiki\/rest\/api\/space\/\$\{[^}]+\}\/permission\/check/.test(l)).map(({ where }) => where);
-eq("space permission/check stays at its two known, fail-closed uses", spaceCheck.length, 2);
+eq("no v1 space permission/check (405: Confluence has no such endpoint)", spaceCheck, []);
 
 eq("att prefix ignored", sameAttachmentId("att123", "123"), true);
 eq("same with prefix", sameAttachmentId("att123", "att123"), true);
