@@ -123,6 +123,23 @@ eq("memo: the group list is read once", fake.calls.filter((c) => c.path.startsWi
 eq("spaceId given: no key lookup", fake.calls.filter((c) => c.path.startsWith("/wiki/api/v2/spaces?")).length, 0);
 world();
 eq("without spaceId the key is looked up", (await sc.isAccountStewardAsApp(ROLE_ADMIN, SPACE.key), fake.calls.filter((c) => c.path.startsWith("/wiki/api/v2/spaces?")).length), 1);
+// A failed read is not memoized: the next space asks again.
+{
+  resetFake();
+  let groupCalls = 0;
+  onConfluence((method, rawPath) => {
+    const [base] = decodeURIComponent(rawPath).split("?");
+    if (base === "/wiki/rest/api/user") return { status: 500, body: {} };
+    if (base === "/wiki/rest/api/user/memberof") { groupCalls++; return groupCalls === 1 ? { status: 429, body: {} } : { body: { results: [{ name: "policy-owners", id: "gid-policy-owners" }] } }; }
+    if (/\/wiki\/api\/v2\/spaces\/77\/permissions$/.test(base)) return { body: { results: [row("group", "gid-policy-owners")], _links: {} } };
+    return undefined;
+  });
+  const m2 = sc.newStewardMemo ? sc.newStewardMemo() : null;
+  const first = await sc.isAccountStewardAsApp(GROUP_ADMIN, SPACE.key, { memo: m2, spaceId: SPACE.id });
+  const second = await sc.isAccountStewardAsApp(GROUP_ADMIN, SPACE.key, { memo: m2, spaceId: SPACE.id });
+  eq("memo: a 429 on the group read is not kept: the next read retries and the group admin is recognised", [first, second], [true, true]);
+  eq("memo: two group reads (the failed one, then one shared by everything after)", groupCalls, 2);
+}
 // mapLimited (the one shared copy)
 const { mapLimited } = await import("../src/server/shared/map-limited.js");
 let inFlight = 0, peak = 0;
