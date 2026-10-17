@@ -99,4 +99,31 @@ eq("site admin: any space", (await call(SITE_ADMIN, { scope: "space", key: B }))
 await kvs.delete(`validation-config-space-${A}`);
 eq("admin of A: unconfigured space", await call(ADMIN_A, { scope: "space", key: A }), { rules: [], modes: null, ai: null });
 
+// Never written back: a refusal or the rules-only view handed in as settings is refused.
+await world();
+const store = new Map(validations.actions).get("store-validation-config");
+const refusedStore = await store({ payload: { scope: "global", data: { success: false, reason: "Not authorized", modes: { revert: true } } }, context: { accountId: SITE_ADMIN, extension: {} } });
+eq("store: a refusal is not settings", refusedStore?.success, false);
+eq("store: the site config is untouched", (await kvs.get("validation-config-global"))?.rules?.map((r) => r.id), ["g1"]);
+const rulesOnlyStore = await store({ payload: { scope: "space", key: A, data: { rules: [], siteRulesOnly: true } }, context: { accountId: ADMIN_A, extension: {} } });
+eq("store: the rules-only view is not settings", rulesOnlyStore?.success, false);
+
+// The config API merges a bundle into the CURRENT settings. When that read is refused (here: the
+// site-admin lookup fails twice, then answers), the step is refused and nothing is stored.
+await world();
+let flaky = 2;
+onConfluence((method, rawPath) => {
+  const base = decodeURIComponent(rawPath).split("?")[0];
+  if (base === "/wiki/rest/api/user" && flaky > 0) { flaky--; return { status: 500, body: {} }; }
+  return undefined;
+});
+const { runJob } = await import("../src/server/capsules/config-api/consumer.js");
+await kvs.set("api-job-flaky1", { id: "flaky1", op: "apply", status: "queued", submittedBy: SITE_ADMIN, role: "admin", submittedAt: new Date().toISOString(), bundle: { version: 1, site: { validation: { modes: { revert: true } } } } });
+await runJob("flaky1");
+const afterJob = await kvs.get("validation-config-global");
+ok("config API: a refused read is never stored as the settings", afterJob?.success !== false && !("reason" in (afterJob || {})));
+eq("config API: the site rules survive", afterJob?.rules?.map((r) => r.id), ["g1"]);
+const receipt = await kvs.get("api-job-flaky1");
+eq("config API: the step is reported refused", receipt?.results?.find((x) => x.path === "site.validation")?.status, "refused");
+
 report("validation-config-authz");
