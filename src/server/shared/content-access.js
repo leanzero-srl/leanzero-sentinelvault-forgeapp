@@ -211,6 +211,32 @@ export async function recordAuthority({ contentId = null, storedKey = null, live
   return { known: true, spaces: [...new Set([live, ...stored].filter(Boolean))], live, moved: !!live && stored.some((k) => k !== live) };
 }
 
+/**
+ * The page or blog post a seal is about NOW. An attachment seal asks Confluence where its file is
+ * (the file can be moved to another page, and a seal made before 8.9.0 could name the page the
+ * sealer was viewing instead of the file's own); the record's page answers when that read fails.
+ * A section seal names its page.
+ */
+export async function sealContainerId(seal) {
+  if (!seal || typeof seal !== "object") return null;
+  if (seal.attachmentId) {
+    try {
+      const res = await asApp().requestConfluence(route`/wiki/api/v2/attachments/${seal.attachmentId}`);
+      if (res.ok) {
+        const a = await res.json();
+        const container = a?.pageId || a?.blogPostId || null;
+        if (container) return String(container);
+      }
+    } catch (_) { /* the record's page below */ }
+  }
+  return seal.contentId || seal.pageId || null;
+}
+
+/** Steward power over a seal: isStewardOfRecord on the seal's page now (sealContainerId). */
+export async function isStewardOfSeal(check, accountId, seal) {
+  return isStewardOfRecord(check, accountId, { contentId: await sealContainerId(seal), storedKey: seal?.spaceKey || null });
+}
+
 /** Does `check(accountId, spaceKey)` pass for EVERY space in `spaces`? [] never passes. */
 export async function isStewardOfSpaces(check, accountId, spaces) {
   if (!accountId || !Array.isArray(spaces) || !spaces.length) return false;

@@ -7,7 +7,7 @@ import { BASELINE_HOLD_SPAN, sanitizeHoldDuration } from "../../shared/baseline.
 import { keysetPage, encodeKeysetCursor, decodeKeysetCursor } from "../../shared/pagination.js";
 import { restampIfEnforced } from "../workflow/logic.js";
 import { authorizeSteward } from "../../shared/steward-checks.js";
-import { canEditPage, canReadPage, mustVerify, resolvePageSpaceKey, objectSpaceKeyOf, isStewardOfRecord } from "../../shared/content-access.js";
+import { canEditPage, canReadPage, mustVerify, resolvePageSpaceKey, objectSpaceKeyOf, isStewardOfRecord, isStewardOfSeal } from "../../shared/content-access.js";
 import { resolveBulletinToggles } from "../../shared/bulletin-flags.js";
 import { setUntil } from "../../shared/kvs-ttl.js";
 
@@ -207,7 +207,7 @@ const enumerateDocArtifacts = async (req) => {
  * extend, purge or restore the file of a page that had left them. Never the caller's context.
  */
 function stewardOfAttachmentSeal(check, accountId, sealRecord) {
-  return isStewardOfRecord(check, accountId, { contentId: sealRecord?.contentId || null, storedKey: sealRecord?.spaceKey || null });
+  return isStewardOfSeal(check, accountId, sealRecord);
 }
 
 /**
