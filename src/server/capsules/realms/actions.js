@@ -457,14 +457,15 @@ export function stewardRequestCooldownActive(existing, now = Date.now()) {
 }
 
 // The space a request names, as Confluence knows it: the space the caller is standing in, or a key
-// Confluence answers for. null when there is no such space.
+// Confluence answers for AS THE CALLER (so the answer never tells anyone about a space they cannot
+// see). null when there is no such space for them.
 async function resolveRequestedSpaceKey(req) {
   const ctxKey = req.context.extension?.space?.key || req.context.extension?.content?.space?.key || null;
   const asked = req.payload?.spaceKey || ctxKey;
   if (!asked) return null;
   if (ctxKey && asked === ctxKey) return ctxKey;
   try {
-    const res = await asApp().requestConfluence(route`/wiki/api/v2/spaces?keys=${asked}&limit=1`, { headers: { Accept: "application/json" } });
+    const res = await asUser().requestConfluence(route`/wiki/api/v2/spaces?keys=${asked}&limit=1`, { headers: { Accept: "application/json" } });
     if (!res.ok) return null;
     const found = (await res.json())?.results?.[0]?.key || null;
     return found && found === asked ? found : null;

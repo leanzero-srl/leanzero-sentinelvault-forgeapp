@@ -853,7 +853,8 @@ export async function testStateTrigger(req) {
         return json(200, { invoked: fn, result: r });
       }
       if (fn === "getValidationJob") {
-        const r = await getValidationJob({ payload: { taskId: q(req, "task") } });
+        // The job row answers only the person who started the review: pass the same actor.
+        const r = await getValidationJob({ payload: { taskId: q(req, "task") }, context: { accountId: q(req, "actor") } });
         return json(200, { invoked: fn, result: r });
       }
       if (fn === "getAiFindings") {
