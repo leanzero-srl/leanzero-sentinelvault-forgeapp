@@ -55,9 +55,9 @@ promise about a limit. Ship the enforcement first, then price it.
 5. A defined behaviour at the ceiling — degrade to a warning, or hard-stop, per
    tier. Decide it deliberately.
 
-## Update 2026-10-17 — the site switch and budget are a hard ceiling (Sentinel Vault 8.7.0)
+## Update 2026-10-17 — the site switch and budget are a hard ceiling (Sentinel Vault 8.8.0)
 
-Owner decision 2026-10-17, shipped with 8.7.0 (which also lets every space admin, personal-space owners
+Owner decision 2026-10-17, ships with 8.8.0 (which also lets every space admin, personal-space owners
 included, edit a space's AI settings): `validations/logic.js` `capAiConfig` / `checkAiSpend` are the ONE
 home. Site `ai.enabled !== true` (a missing site config is the shipped default, off) => AI is off in every
 space; a site budget N => no space budget above N (a space 0/unlimited is capped to N). Enforced on every
