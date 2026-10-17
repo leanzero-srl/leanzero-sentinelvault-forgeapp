@@ -14,7 +14,6 @@ import {
   readDocBody,
   triggerPanelEmbed,
   resolveExtensionKey,
-  deriveExtensionKeyFromContext,
 } from "../../infra/doc-surgery.js";
 import { resolveArtifactPreview } from "../../infra/artifact-fetch.js";
 
@@ -571,7 +570,8 @@ const uploadArtifact = async (req) => {
 };
 
 /**
- * Discover the panel's extensionKey by reading the page ADF.
+ * Make sure the site-wide panel key is stored: the app's own (resolveExtensionKey). Called by the
+ * panel when it loads; the name is historical — the key is no longer read from the page.
  */
 const discoverPanelKey = async (req) => {
   const ctxPageId = req.context.extension?.content?.id;
@@ -581,8 +581,9 @@ const discoverPanelKey = async (req) => {
     return { success: false, reason: "Missing pageId" };
   }
 
-  // SV-SEC-1: reads the page ADF via asApp(), and what it finds is written to the same
-  // tenant-global key registerPanelKey guards. A payload-named page gets a read check.
+  // SV-SEC-1: a payload-named page gets a read check. Nothing is read from the page any more, but
+  // the resolver keeps answering only for a page the caller can read (its callers and live spec
+  // rely on that contract).
   if (mustVerify(req.payload?.pageId, ctxPageId)
     && !(await canReadPage(req.context.accountId, pageId))) {
     return { success: false, reason: "Not authorized" };
