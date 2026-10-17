@@ -21,6 +21,11 @@ import {
   writeValidationState,
   resolveEffectiveConfig,
   resolveAiConfig,
+  checkAiSpend,
+  aiGateRefusal,
+  capAiConfig,
+  aiCapNote,
+  budgetOf,
   getMonthlyTokenUsage,
   getLatestFindings,
   getFindingStates,
@@ -51,9 +56,29 @@ export async function resolveRules(spaceKey) {
   return mergeEffectiveRules(global.rules, space?.rules);
 }
 
+// The effective AI of a space under the site ceiling, as the settings editors, the save answer
+// and the config export report it. Switch and budget only: the prompts stay where they are.
+function effectiveAiView(effective) {
+  const c = effective?.ceiling || {};
+  return {
+    enabled: effective?.enabled === true,
+    monthlyTokenBudget: budgetOf(effective?.monthlyTokenBudget),
+    siteEnabled: c.siteEnabled === true,
+    siteBudget: budgetOf(c.siteBudget),
+    capped: Array.isArray(c.capped) ? [...c.capped] : [],
+  };
+}
+
 const loadConfig = async (req) => {
   const { scope, key } = req.payload || {};
-  return await loadValidationConfig(scope || "global", key);
+  const cfg = await loadValidationConfig(scope || "global", key);
+  // A space's editor (and the export) also learns what the site allows: the effective, capped AI.
+  // The site scope IS the ceiling, so it carries none.
+  if (scope === "space" && key && cfg && typeof cfg === "object") {
+    const global = (await kvs.get("validation-config-global")) || {};
+    return { ...cfg, effectiveAi: effectiveAiView(capAiConfig(global.ai, cfg.ai)) };
+  }
+  return cfg;
 };
 
 const storeConfig = async (req) => {
@@ -81,7 +106,38 @@ const storeConfig = async (req) => {
   if (data.ai && data.ai.model && !isForgeLlmModelAllowed(data.ai.model)) {
     data.ai.model = FORGE_LLM_DEFAULT_MODEL;
   }
-  return await storeValidationConfig(scope || "global", key, data);
+  // `effectiveAi` is derived on every load (loadConfig) and comes back in an exported bundle or a
+  // round-tripped editor state; storing it would only leave a stale copy behind.
+  const { effectiveAi: _derived, ...toStore } = data;
+  const isSpace = scope === "space" && !!key;
+  const before = isSpace && toStore.ai ? await loadValidationConfig("space", key) : null;
+  const saved = await storeValidationConfig(scope || "global", key, toStore);
+  if (!isSpace || !saved?.success) return saved;
+  // The site AI ceiling (logic.js capAiConfig): the space's own values are stored as given, and
+  // the answer says what will actually RUN, and that it was capped — the UI and the REST receipt
+  // both show that sentence.
+  const global = (await kvs.get("validation-config-global")) || {};
+  const effective = capAiConfig(global.ai, toStore.ai);
+  const view = effectiveAiView(effective);
+  const note = aiCapNote(effective);
+  if (view.capped.length && toStore.ai) {
+    const prev = before?.ai || {};
+    const asked = toStore.ai;
+    const changed = (prev.enabled === true) !== (asked.enabled === true) || budgetOf(prev.monthlyTokenBudget) !== budgetOf(asked.monthlyTokenBudget);
+    // Audit: a save that ASKED for more AI than the site allows (switched it on, or set a budget
+    // above the site's). Re-saving an unchanged AI section (a rules-only save) records nothing.
+    if (changed) {
+      await recordActivity({
+        type: "validation.ai-capped",
+        pageId: null,
+        spaceKey: key,
+        actor: caller ? { accountId: caller, name: null } : null,
+        target: { kind: "space", id: key, name: null },
+        details: { capped: view.capped, asked: { enabled: asked.enabled === true, monthlyTokenBudget: budgetOf(asked.monthlyTokenBudget) }, effective: { enabled: view.enabled, monthlyTokenBudget: view.monthlyTokenBudget }, siteBudget: view.siteBudget },
+      });
+    }
+  }
+  return { ...saved, effectiveAi: view, capped: view.capped, ...(note ? { note } : {}) };
 };
 
 // The space whose rules apply is a property of the page, not of the caller. Context first (it is
@@ -272,18 +328,10 @@ export const enqueuePageValidation = async (req) => {
   try { allowed = !!spaceKey && await authorizeSteward(accountId, spaceKey); } catch (_) { /* deny */ }
   if (!allowed) return { success: false, reason: "Only an admin of this page's space can run an AI review" };
 
-  const ai = await resolveAiConfig(spaceKey);
-  if (!ai || ai.enabled !== true) {
-    return { success: false, reason: "AI validation is not enabled. An admin can turn it on in Sentinel Vault settings." };
-  }
-
-  // Monthly token budget guard (0 = unlimited).
-  if (ai.monthlyTokenBudget && ai.monthlyTokenBudget > 0) {
-    const used = await getMonthlyTokenUsage(spaceKey);
-    if (used >= ai.monthlyTokenBudget) {
-      return { success: false, reason: "This space has reached its monthly AI token budget." };
-    }
-  }
+  // The site ceiling, the space switch and the monthly budget (logic.js checkAiSpend). The queue
+  // consumer asks again right before the model call.
+  const spend = await checkAiSpend(spaceKey);
+  if (!spend.ok) return { success: false, reason: spend.reason, siteOff: spend.siteOff === true };
 
   const taskId = `aival_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
   await setWithTtl(`ai-validation-status-${taskId}`, { status: "queued", pageId }, 3600000);
@@ -296,20 +344,12 @@ export const enqueuePageValidation = async (req) => {
 // (AI disabled → skip; budget exhausted → block/allow per onBudgetExhausted). The caller then
 // applies that verdict to the pending aiGate immediately.
 export async function enqueueAiGate({ pageId, spaceKey, pinnedVersion, threshold, onBudgetExhausted }) {
-  const ai = await resolveAiConfig(spaceKey);
-  if (!ai || ai.enabled !== true) {
-    return { enqueued: false, verdict: "passed", reason: "AI review isn't enabled — condition skipped." };
-  }
-  if (ai.monthlyTokenBudget && ai.monthlyTokenBudget > 0) {
-    const used = await getMonthlyTokenUsage(spaceKey);
-    if (used >= ai.monthlyTokenBudget) {
-      return onBudgetExhausted === "allow"
-        ? { enqueued: false, verdict: "passed", reason: "AI budget exhausted — allowed with a warning." }
-        : { enqueued: false, verdict: "failed", reason: "This space has reached its monthly AI budget." };
-    }
-  }
+  const spend = await checkAiSpend(spaceKey);
+  if (!spend.ok) return aiGateRefusal(spend, onBudgetExhausted);
   const taskId = `aigate_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-  await new Queue({ key: "ai-validation-queue" }).push({ body: { taskId, pageId, spaceKey, realmKey: spaceKey, mode: "gate", pinnedVersion, threshold } });
+  // onBudgetExhausted rides along: the consumer checks the budget again right before the model
+  // call and must apply the space's choice there too.
+  await new Queue({ key: "ai-validation-queue" }).push({ body: { taskId, pageId, spaceKey, realmKey: spaceKey, mode: "gate", pinnedVersion, threshold, onBudgetExhausted: onBudgetExhausted === "allow" ? "allow" : "block" } });
   return { enqueued: true, taskId };
 }
 

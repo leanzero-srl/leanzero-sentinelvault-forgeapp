@@ -214,5 +214,42 @@ eq("REST receipt: no note, no field", "note" in P.interpretResult({ success: tru
 const merged = P.mergeValidationConfig({ ai: { enabled: false } }, { ai: { enabled: true }, effectiveAi: { enabled: true } });
 eq("REST bundle: an exported effectiveAi posted back is dropped by the merge", merged.effectiveAi, undefined);
 
+// The Confluence-side REST read (sentinel-vault-config space property): whether AI RUNS and what
+// capped it; budgets, usage and prompts stay out.
+const mirrored = P.redactConfigForMirror({ policy: {}, validation: { enabled: true, modes: null, ai: { enabled: true, rules: "secret prompt", monthlyTokenBudget: 0 }, effectiveAi: { enabled: false, monthlyTokenBudget: 1000, siteEnabled: false, siteBudget: 1000, capped: ["site-off"] } } }, "space");
+eq("REST mirror: the effective switch and the cap reason", [mirrored.validation.aiEnabled, mirrored.validation.aiCapped], [false, ["site-off"]]);
+ok("REST mirror: no prompt, no budget", !JSON.stringify(mirrored).includes("secret prompt") && !JSON.stringify(mirrored).includes("1000"));
+
+// The audit line reads as a sentence on every surface that shows the space's activity.
+const { formatActivity } = await import("../src/ui/kit/activity-format.js");
+const row = (details) => formatActivity({ id: "x", ts: new Date().toISOString(), type: "validation.ai-capped", pageId: null, spaceKey: SPACE.key, actor: { accountId: STEWARD, name: "Alice Stone" }, target: { kind: "space", id: SPACE.key, name: null }, details });
+eq("activity: site off", row({ capped: ["site-off"], asked: { enabled: true, monthlyTokenBudget: 0 } }).sentence, "Alice Stone turned on AI review for this space, but AI is turned off for this site by a site admin, so it stays off");
+eq("activity: budget", [row({ capped: ["site-budget"], asked: { enabled: true, monthlyTokenBudget: 0 }, siteBudget: 1000 }).sentence, row({ capped: ["site-budget"], asked: { enabled: true, monthlyTokenBudget: 0 }, siteBudget: 1000 }).detail], ["Alice Stone set this space's AI budget above the site's, so the site's 1,000 tokens a month applies", "asked for no limit"]);
+
+// ── no path around the ceiling ─────────────────────────────────────────────────────────────────
+// The model is called from exactly one module, and that module asks the spend gate in each of
+// its two branches; the AI queue is fed only by the two enqueue paths, each behind the gate. A new
+// caller of the Forge LLM, or a new push onto the queue, fails here until it goes through
+// checkAiSpend.
+const { readFileSync, readdirSync, statSync } = await import("node:fs");
+const { join } = await import("node:path");
+const walk = (d) => readdirSync(d).flatMap((f) => { const p = join(d, f); return statSync(p).isDirectory() ? walk(p) : (/\.(js|jsx|mjs)$/.test(f) ? [p] : []); });
+const SRC = new URL("../src/", import.meta.url).pathname;
+const files = walk(SRC).map((p) => [p.slice(SRC.length), readFileSync(p, "utf8")]);
+const llmCallers = files.filter(([p, t]) => p !== "server/infra/forge-llm.js" && /\b(runForgeLlmJson|callForgeLlmChat)\s*\(/.test(t)).map(([p]) => p);
+eq("the Forge LLM is called from the AI queue consumer only", llmCallers, ["server/capsules/validations/ai-worker.js"]);
+eq("nothing but the wrapper imports @forge/llm", files.filter(([p, t]) => /from\s+["']@forge\/llm["']/.test(t)).map(([p]) => p), ["server/infra/forge-llm.js"]);
+const worker = files.find(([p]) => p === "server/capsules/validations/ai-worker.js")[1];
+eq("the consumer asks the spend gate in both branches, each before its model call", worker.split("checkAiSpend(").length - 1, 2);
+ok("…and never reads the raw AI config", !/resolveAiConfig\(|validation-config-/.test(worker));
+const pushers = files.filter(([, t]) => /["']ai-validation-queue["']/.test(t) && /\.push\(/.test(t)).map(([p]) => p);
+eq("only the validations actions push onto the AI queue", pushers, ["server/capsules/validations/actions.js"]);
+const actionsSrc = files.find(([p]) => p === "server/capsules/validations/actions.js")[1];
+eq("…two pushes, two spend gates", [actionsSrc.split('key: "ai-validation-queue"').length - 1, actionsSrc.split("checkAiSpend(").length - 1], [2, 2]);
+// A raw site or space `ai` object may only be handed to capAiConfig (which applies the ceiling).
+const rawAiReaders = files.filter(([p, t]) => p !== "server/capsules/validations/logic.js" && p.startsWith("server/capsules/validations/")
+  && /\b(space|global)\??\.ai\b/.test(t.replace(/capAiConfig\([^)]*\)/g, ""))).map(([p]) => p);
+eq("no validations module but logic.js reads a raw site or space ai object except through capAiConfig", rawAiReaders, []);
+
 console.log = say;
 report("ai-ceiling");

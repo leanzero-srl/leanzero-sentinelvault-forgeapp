@@ -55,6 +55,18 @@ promise about a limit. Ship the enforcement first, then price it.
 5. A defined behaviour at the ceiling — degrade to a warning, or hard-stop, per
    tier. Decide it deliberately.
 
+## Update 2026-10-17 — the site switch and budget are a hard ceiling (Sentinel Vault 8.7.0)
+
+Owner decision 2026-10-17, shipped with 8.7.0 (which also lets every space admin, personal-space owners
+included, edit a space's AI settings): `validations/logic.js` `capAiConfig` / `checkAiSpend` are the ONE
+home. Site `ai.enabled !== true` (a missing site config is the shipped default, off) => AI is off in every
+space; a site budget N => no space budget above N (a space 0/unlimited is capped to N). Enforced on every
+path: manual review, workflow AI gate, and the queue consumer right before the Forge LLM call (this closes
+leak 2 below: queued jobs no longer spend past the switch or the budget). `test/ai-ceiling.test.mjs` pins
+each path and fails if a new module calls the Forge LLM or pushes onto the AI queue without the gate.
+Still open: leak 1 (the budget counter is per space, so the site budget is a PER-SPACE ceiling, not an
+installation-wide total), leak 3 (default 0 = unlimited at site level), leak 4 (usage not shown in the UI).
+
 ## The three apps, and where each one stands
 
 | App | Vendor-billed path | Ceiling today |
