@@ -21,7 +21,7 @@ const sections = byKey((await import("../src/server/capsules/section-seals/actio
 const editreq = byKey((await import("../src/server/capsules/editreq/actions.js")).actions);
 const realms = byKey((await import("../src/server/capsules/realms/actions.js")).actions);
 const { workflowPrivilegeForPage } = await import("../src/server/capsules/workflow/privilege.js");
-const { collectWorkflowEnforcementForPage } = await import("../src/server/triggers.js");
+const { collectWorkflowEnforcementForPage, workflowSweep } = await import("../src/server/triggers.js");
 const { applyAiVerdict } = await import("../src/server/capsules/workflow/approvals.js");
 const { DEFAULT_WORKFLOW } = await import("../src/server/capsules/workflow/logic.js");
 const { recordActivity, activitySpacePrefix } = await import("../src/server/infra/activity-log.js");
@@ -394,6 +394,32 @@ await world();
 await world();
 onConfluence((method, rawPath) => (decodeURIComponent(rawPath).split("?")[0] === "/wiki/api/v2/attachments/att-moved" ? { status: 503, body: {} } : undefined));
 ok("extend-seal, file read failing, admin of both: refused (cannot be judged)", said(await as(sealing.get("extend-seal"), ADMIN_AB, { attachmentId: "att-moved", additionalSeconds: 3600 }), "Only the seal owner or a space admin"));
+
+// ── round 3: the words follow the engine; nothing strands held seals; outages consume nothing ──
+await world({ stateId: APPROVED });
+eq("get-page-workflow, moved Approved page: says edits are undone (the engine reverts a moved page)", (await as(workflow.get("get-page-workflow"), PLAIN, { pageId: MOVED }, onMoved))?.enforceMode, "revert");
+await world({ stateId: APPROVED });
+eq("get-page-workflow, unmoved Approved page: the space's own mode (control)", (await as(workflow.get("get-page-workflow"), PLAIN, { pageId: STAY }, { content: { id: STAY, space: { key: "AAA" } } }))?.enforceMode, "demote");
+await world({ stateId: APPROVED });
+await kvs.set("workflow-def-space-AAA", { ...DEFAULT_WORKFLOW, states: DEFAULT_WORKFLOW.states.map((st) => ({ ...st, enforce: false })) });
+eq("remove-workflow, Approved record whose definition was unlocked since, admin of both: refused", (await as(workflow.get("remove-workflow"), ADMIN_AB, { pageId: MOVED }))?.success, false);
+await world({ stateId: APPROVED });
+await kvs.set("workflow-def-space-AAA", { ...DEFAULT_WORKFLOW, states: DEFAULT_WORKFLOW.states.map((st) => ({ ...st, enforce: false })) });
+eq("remove-workflow, unmoved Approved record whose definition was unlocked since: refused too", (await as(workflow.get("remove-workflow"), ADMIN_A, { pageId: STAY }))?.success, false);
+await world(); await pendingOn(STAY);
+{ const p = await kvs.get(`workflow-pending-${STAY}`); await kvs.set(`workflow-pending-${STAY}`, { ...p, approvers: [], aiGate: { required: true, status: "pending" } }); const rec = await kvs.get(`workflow-state-${STAY}`); await kvs.set(`workflow-state-${STAY}`, { ...rec, stateId: "in_review" }); }
+onConfluence((method, rawPath) => (/^\/wiki\/api\/v2\/spaces\/\d+$/.test(decodeURIComponent(rawPath).split("?")[0]) ? { status: 503, body: {} } : undefined));
+const aiOut = await applyAiVerdict(STAY, 3, "passed", "ok");
+ok("AI verdict during a space-read outage: not applied", aiOut?.applied === false);
+eq("AI verdict during a space-read outage: the request still waits for it", (await kvs.get(`workflow-pending-${STAY}`))?.aiGate?.status, "pending");
+async function overdue(pageId) { const r = await kvs.get(`workflow-state-${pageId}`); await kvs.set(`workflow-state-${pageId}`, { ...r, reviewDueAt: "2026-01-01T00:00:00.000Z" }); }
+await world({ stateId: APPROVED }); await overdue(MOVED); await overdue(STAY);
+await workflowSweep();
+eq("hourly sweep, moved Approved page past its review date: not moved", (await kvs.get(`workflow-state-${MOVED}`))?.stateId, APPROVED);
+ok("hourly sweep, unmoved Approved page past its review date: expired (control)", (await kvs.get(`workflow-state-${STAY}`))?.stateId !== APPROVED);
+
+{ const trig = readFileSync(new URL("../src/server/triggers.js", import.meta.url), "utf8");
+  ok("page trigger: an \"unknown\" probe stands the seal passes down (no write carries an unjudged version)", /judgeLater = lateForLiveBody \|\| enforcement\?\.action === "unknown"/.test(trig) && (trig.match(/!judgeLater &&/g) || []).length === 3 && !/!lateForLiveBody &&/.test(trig)); }
 
 // ── the old space's Seals tab and new activity ───────────────────────────────────────────────
 await world();
