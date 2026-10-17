@@ -446,12 +446,49 @@ export const checkUserRole = async (req) => {
 /**
  * User requests to become a steward for a space.
  */
+// A declined steward request can be made again 48 hours after it was declined. ONE rule for the
+// write (request-steward-access) and the read (check-steward-request). PURE.
+export const STEWARD_REQUEST_COOLDOWN_MS = 48 * 60 * 60 * 1000;
+export function stewardRequestCooldownActive(existing, now = Date.now()) {
+  if (existing?.status !== "denied") return false;
+  const deniedAt = existing.deniedAt ? new Date(existing.deniedAt).getTime() : NaN;
+  if (!Number.isFinite(deniedAt)) return true; // a decline with no date is still a decline
+  return now - deniedAt < STEWARD_REQUEST_COOLDOWN_MS;
+}
+
+// The space a request names, as Confluence knows it: the space the caller is standing in, or a key
+// Confluence answers for AS THE CALLER (so the answer never tells anyone about a space they cannot
+// see). null when there is no such space for them.
+async function resolveRequestedSpaceKey(req) {
+  const ctxKey = req.context.extension?.space?.key || req.context.extension?.content?.space?.key || null;
+  const asked = req.payload?.spaceKey || ctxKey;
+  if (!asked) return null;
+  if (ctxKey && asked === ctxKey) return ctxKey;
+  try {
+    const res = await asUser().requestConfluence(route`/wiki/api/v2/spaces?keys=${asked}&limit=1`, { headers: { Accept: "application/json" } });
+    if (!res.ok) return null;
+    const found = (await res.json())?.results?.[0]?.key || null;
+    return found && found === asked ? found : null;
+  } catch (_) { return null; }
+}
+
 export const requestStewardAccess = async (req) => {
   const accountId = req.context.accountId;
-  const spaceKey = req.payload?.spaceKey;
-  if (!spaceKey || !accountId) return { success: false, reason: "Missing context" };
+  const asked = req.payload?.spaceKey || req.context.extension?.space?.key || req.context.extension?.content?.space?.key;
+  if (!asked || !accountId) return { success: false, reason: "Missing context" };
+  const spaceKey = await resolveRequestedSpaceKey(req);
+  if (!spaceKey) return { success: false, reason: "That space could not be found" };
 
   try {
+    const key = `steward-request-${skKey(spaceKey)}-${accountId}`;
+    const existing = await kvs.get(key);
+    // A declined request stays declined for 48 hours (the screen says so); an open one is not
+    // re-filed, so asking again does not move it back to the top of the admins' list.
+    if (stewardRequestCooldownActive(existing)) {
+      return { success: false, status: "denied", deniedAt: existing.deniedAt || null, reason: "Your request was declined. You can ask again 48 hours after it was declined." };
+    }
+    if (existing?.status === "pending") return { success: true, alreadyPending: true };
+
     // Get user display name for the request
     let displayName = "Unknown User";
     try {
@@ -465,7 +502,7 @@ export const requestStewardAccess = async (req) => {
       }
     } catch (e) { /* ignore */ }
 
-    await kvs.set(`steward-request-${skKey(spaceKey)}-${accountId}`, {
+    await kvs.set(key, {
       accountId,
       displayName,
       spaceKey,
@@ -473,7 +510,7 @@ export const requestStewardAccess = async (req) => {
       status: "pending",
     });
     // P1-3: the space joins the "someone is waiting" index with the record (read back by key).
-    await writeSpaceIndex(await kvs.get(`steward-request-${skKey(spaceKey)}-${accountId}`)).catch((e) => console.warn("[REQUEST-STEWARD] space index", e));
+    await writeSpaceIndex(await kvs.get(key)).catch((e) => console.warn("[REQUEST-STEWARD] space index", e));
     return { success: true };
   } catch (e) {
     console.error("[REQUEST-STEWARD] Error:", e);
@@ -493,9 +530,7 @@ export const checkStewardRequest = async (req) => {
     if (!existing) return { status: "none" };
     if (existing.status === "pending") return { status: "pending" };
     if (existing.status === "denied") {
-      const deniedAt = existing.deniedAt ? new Date(existing.deniedAt) : null;
-      const cooldownMs = 48 * 60 * 60 * 1000; // 48 hours
-      if (deniedAt && (Date.now() - deniedAt.getTime()) >= cooldownMs) {
+      if (!stewardRequestCooldownActive(existing)) {
         // Cooldown elapsed — clear the denied record so user can retry
         await kvs.delete(`steward-request-${skKey(spaceKey)}-${accountId}`);
         await listPendingStewardRequestsInSpace(spaceKey).catch(() => {}); // heals the space index row

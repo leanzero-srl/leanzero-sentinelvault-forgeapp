@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { asApp, route } from "@forge/api";
 import { kvs } from "@forge/kvs";
 import { Queue } from "@forge/events";
@@ -366,8 +367,9 @@ export const enqueuePageValidation = async (req) => {
   const spend = await checkAiSpend(spaceKey);
   if (!spend.ok) return { success: false, reason: spend.reason, siteOff: spend.siteOff === true };
 
-  const taskId = `aival_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-  await setWithTtl(`ai-validation-status-${taskId}`, { status: "queued", pageId }, 3600000);
+  // The job's progress row is the requester's: get-validation-job answers only them.
+  const taskId = `aival_${randomUUID()}`;
+  await setWithTtl(`ai-validation-status-${taskId}`, { status: "queued", pageId, requestedBy: accountId }, 3600000);
   await new Queue({ key: "ai-validation-queue" }).push({ body: { taskId, pageId, spaceKey, realmKey: spaceKey, requestedBy: accountId } });
   return { success: true, taskId };
 };
@@ -389,11 +391,22 @@ export async function enqueueAiGate({ pageId, spaceKey, pinnedVersion, threshold
 /**
  * Poll an AI validation job; deletes the status row once terminal.
  */
+// PURE. Is this the person who started the job? A row written before rows carried their requester
+// (at most an hour old: the row's TTL) answers as before.
+export function isJobOwner(row, accountId) {
+  if (!row || typeof row !== "object") return false;
+  if (row.requestedBy == null) return true;
+  return !!accountId && row.requestedBy === accountId;
+}
+
 export const getValidationJob = async (req) => {
   const { taskId } = req.payload || {};
   if (!taskId) return { status: "unknown" };
   const row = await kvs.get(`ai-validation-status-${taskId}`);
   if (!row) return { status: "pending" };
+  // The result quotes the page (title, summary, excerpts): only the person who started the review
+  // reads it — and only they clear the row. Anyone else gets the same answer as "not there yet".
+  if (!isJobOwner(row, req.context?.accountId)) return { status: "pending" };
   if (row.status === "done" || row.status === "error") {
     try { await kvs.delete(`ai-validation-status-${taskId}`); } catch (_) { /* ignore */ }
   }
