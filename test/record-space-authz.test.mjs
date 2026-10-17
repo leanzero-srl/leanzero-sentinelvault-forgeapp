@@ -91,6 +91,7 @@ async function world({ stateId = DRAFT } = {}) {
       if (id === "att-blog") return { body: { id, status: "current", title: "blog.pdf", blogPostId: BLOG, fileId: "f-blog", version: { number: 1, authorId: PLAIN } } };
       if (id === "att-custom") return { body: { id, status: "current", title: "custom.pdf", customContentId: "8001", fileId: "f-c", version: { number: 1 } } };
       if (id === "att-moved") return { body: { id, status: "current", title: "moved.pdf", pageId: MOVED, fileId: "f-m", version: { number: 1 } } };
+      if (id === "att-misfiled") return { body: { id, status: "current", title: "misfiled.pdf", pageId: MOVED, fileId: "f-x", version: { number: 1 } } };
       if (id === "att-trashed") return { body: { id, status: "trashed", title: "trashed.pdf", pageId: MOVED, fileId: "f-t", version: { number: 2 } } };
       if (id === "att-stay") return { body: { id, status: "current", title: "stay.pdf", pageId: STAY, fileId: "f-s", version: { number: 1 } } };
       return { status: 404 };
@@ -115,6 +116,8 @@ async function world({ stateId = DRAFT } = {}) {
   await kvs.set("protection-att-stay", { lockedBy: OWNER, lockedByName: "Owner", spaceKey: "AAA", spaceId: "101", contentId: STAY, attachmentId: "att-stay", attachmentName: "stay.pdf", expiresAt: future, timestamp: "2026-10-01T00:00:00.000Z" });
   await kvs.set("edit-request-att-moved-" + REQUESTER, { requesterAccountId: REQUESTER, requesterName: "Req", status: "pending", requestedAt: "2026-10-02T00:00:00.000Z" });
   await kvs.set("edit-request-att-stay-" + REQUESTER, { requesterAccountId: REQUESTER, requesterName: "Req", status: "pending", requestedAt: "2026-10-02T00:00:00.000Z" });
+  // A seal whose record names the wrong page (made before 8.9.0 while viewing another page): the file is on MOVED.
+  await kvs.set("protection-att-misfiled", { lockedBy: OWNER, lockedByName: "Owner", spaceKey: "AAA", spaceId: "101", contentId: STAY, attachmentId: "att-misfiled", attachmentName: "misfiled.pdf", expiresAt: future, timestamp: "2026-10-01T00:00:00.000Z" });
   await kvs.set("protection-att-trashed", { lockedBy: OWNER, lockedByName: "Owner", spaceKey: "AAA", spaceId: "101", contentId: MOVED, attachmentId: "att-trashed", attachmentName: "trashed.pdf", expiresAt: future, timestamp: "2026-10-01T00:00:00.000Z" });
   await kvs.set("section-edit-request-sec-moved-" + REQUESTER, { requesterAccountId: REQUESTER, requesterName: "Req", status: "pending", requestedAt: "2026-10-02T00:00:00.000Z" });
   await kvs.set("space-protection-101-att-moved", { attachmentId: "att-moved", attachmentName: "moved.pdf", contentId: MOVED, spaceKey: "AAA", pageTitle: "Moved page", lockedBy: OWNER });
@@ -295,6 +298,12 @@ await world();
 ok("list-section-edit-requests, moved page, admin of the old space: refused", said(await as(editreq.get("list-section-edit-requests"), ADMIN_A, { sectionId: "sec-moved" }), "Not authorized"));
 await world();
 ok("approve-section-edit, moved page, admin of both: allowed", !said(await as(editreq.get("approve-section-edit"), ADMIN_AB, { sectionId: "sec-moved", requesterAccountId: REQUESTER }), "Not the section owner"));
+
+// A seal's page is the one its file is on NOW, not the page its record names.
+await world();
+ok("extend-seal, record names another page, file on the moved page, admin of the old space: refused", said(await as(sealing.get("extend-seal"), ADMIN_A, { attachmentId: "att-misfiled", additionalSeconds: 3600 }), "Only the seal owner or a space admin"));
+await world();
+ok("extend-seal, record names another page, file on the moved page, admin of both: allowed", !said(await as(sealing.get("extend-seal"), ADMIN_AB, { attachmentId: "att-misfiled", additionalSeconds: 3600 }), "Only the seal owner or a space admin"));
 
 // ── a moved page's workflow holds still; its rules are the old space's ──────────────────────
 const FROZEN = "moved to another space after its workflow started";

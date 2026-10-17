@@ -13,7 +13,7 @@ import {
   fetchOperatorProfile,
 } from "../../infra/notice-composer.js";
 import { recordActivity } from "../../infra/activity-log.js";
-import { canEditPage, objectSpaceKeyOf, isStewardOfRecord } from "../../shared/content-access.js";
+import { canEditPage, objectSpaceKeyOf, isStewardOfSeal } from "../../shared/content-access.js";
 import { validateReleaseReason } from "../../shared/release-reason.js";
 
 // Queue for background realm scanning
@@ -305,7 +305,7 @@ const stewardUnseal = async (req) => {
       // lapsed — anyone who may edit the page it lives on.
       let allowed = isOwner;
       if (!allowed && objectSpaceKey) {
-        allowed = await isStewardOfRecord(authorizeSteward, operatorAccountId, { contentId: sealRecord.contentId || null, storedKey: sealRecord.spaceKey || null });
+        allowed = await isStewardOfSeal(authorizeSteward, operatorAccountId, sealRecord);
       }
       if (!allowed && sealRecord.contentId) {
         try { allowed = await canEditPage(operatorAccountId, sealRecord.contentId); } catch (_) { allowed = false; }
@@ -351,7 +351,7 @@ const stewardUnseal = async (req) => {
   // ...and, when the page moved since it was sealed, BOTH spaces (content-access.js
   // recordAuthoritySpaces): the record's stored space alone kept the old space's admins in charge.
   const hasStewardAccess = effectiveRealmKey
-    ? await isStewardOfRecord(authorizeSteward, operatorAccountId, { contentId: sealRecord.contentId || null, storedKey: sealRecord.spaceKey || null })
+    ? await isStewardOfSeal(authorizeSteward, operatorAccountId, sealRecord)
     : false;
   if (!hasStewardAccess) {
     return {

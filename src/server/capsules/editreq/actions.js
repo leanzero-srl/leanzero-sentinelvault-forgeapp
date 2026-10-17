@@ -22,7 +22,7 @@ import { retryAtFor } from "../../shared/edit-cooldown.js";
 import { DECLINED_REASON } from "../../../ui/kit/status-language.js";
 import { listMyStewardRequestsCore } from "../realms/actions.js";
 import { listMyApprovals } from "../workflow/approvals.js";
-import { canReadPage, isStewardOfRecord } from "../../shared/content-access.js";
+import { canReadPage, isStewardOfSeal } from "../../shared/content-access.js";
 import { recordActivity } from "../../infra/activity-log.js";
 
 // The wait after a declined request is the site setting `editRequestCooldownHours`
@@ -52,7 +52,7 @@ async function loadSealForOwnerAction(attachmentId, accountId) {
  * admins deciding edit access on a page that had left them. Never the caller's context.
  */
 function stewardOfSeal(check, accountId, seal) {
-  return isStewardOfRecord(check, accountId, { contentId: seal?.contentId || seal?.pageId || null, storedKey: seal?.spaceKey || null });
+  return isStewardOfSeal(check, accountId, seal);
 }
 
 /**
