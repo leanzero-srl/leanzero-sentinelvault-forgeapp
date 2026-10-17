@@ -361,11 +361,15 @@ export async function clearPageApprovals(pageId, stateId, approvers) {
 // full #44 anchor rule (fail-closed on null / stale version) so it can't be bypassed.
 const completingKey = (pageId) => `workflow-completing-${pageId}`;
 
-async function finalizeApprovedTransition(pageId, stateId, pending, actorAccountId, actorName, voteSummary) {
+async function finalizeApprovedTransition(pageId, stateId, pending, actorAccountId, actorName, voteSummary, { holdChecked = false } = {}) {
   // The backstop for every completion (the last vote, an AI verdict): a page that moved to another
-  // space since the request does not move (moved-hold.js); the request stays open.
-  const hold = await movedPageHold(pageId, { actorAccountId, storedKey: pending?.spaceKey || null });
-  if (hold) return { success: false, reason: hold.reason, moved: !!hold.moved, transitioned: false };
+  // space since the request does not move (moved-hold.js); the request stays open. A caller that
+  // asked already (decide-approval before the vote was recorded, the AI verdict before it was
+  // consumed) says so: one lookup, and never a vote or verdict used up by a second failed lookup.
+  if (!holdChecked) {
+    const hold = await movedPageHold(pageId, { actorAccountId, storedKey: pending?.spaceKey || null });
+    if (hold) return { success: false, reason: hold.reason, moved: !!hold.moved, transitioned: false };
+  }
   const approvers = deciderIds(pending); // records to snapshot and clear: listed + admins who decided
   // One-shot completion CLAIM (dedup concurrent finalizers: duplicate AI delivery, and the
   // AI-verdict-vs-last-human-vote race). KVS has no CAS, so this narrows the window; the
@@ -448,6 +452,12 @@ export async function applyAiVerdict(pageId, reviewedVersion, status, reason) {
   if (pending.aiGate.status !== "pending") return { applied: false, reason: "already resolved" }; // CAS: only from pending
   // Version pin: if the AI scored a different version than the humans reviewed, it's stale → fail.
   const stale = reviewedVersion != null && pending.pinnedVersion != null && reviewedVersion !== pending.pinnedVersion;
+  // A pass on a page that moved spaces (or whose space cannot be read right now) is not consumed:
+  // the request stays open and the page holds still (moved-hold.js).
+  if (!stale && status === "passed") {
+    const hold = await movedPageHold(pageId, { actorAccountId: pending.requestedBy || null, storedKey: pending.spaceKey || null });
+    if (hold) return { applied: false, reason: hold.reason, moved: !!hold.moved };
+  }
   pending.aiGate.status = stale ? "failed" : (status === "passed" ? "passed" : "failed");
   pending.aiGate.reviewedVersion = reviewedVersion ?? null;
   pending.aiGate.reason = stale ? "Page changed during AI review — re-request." : (reason ?? null);
@@ -461,7 +471,7 @@ export async function applyAiVerdict(pageId, reviewedVersion, status, reason) {
   const records = await readApprovalRecords(pageId, pending.toStateId, pending.approvers);
   if (!(await humanQuorumMet(pageId, pending, records))) return { applied: true, status: "passed", waiting: "humans" };
   // The AI was a CONDITION; the authority was the steward who requested the transition.
-  const res = await finalizeApprovedTransition(pageId, pending.toStateId, pending, pending.requestedBy || null, pending.requestedByName || "Sentinel Vault", "approved (AI review + approvals)");
+  const res = await finalizeApprovedTransition(pageId, pending.toStateId, pending, pending.requestedBy || null, pending.requestedByName || "Sentinel Vault", "approved (AI review + approvals)", { holdChecked: true });
   return { applied: true, status: "passed", ...res };
 }
 
@@ -581,7 +591,7 @@ export async function decideApproval({ pageId, approverAccountId, decision, reas
       return decided({ success: true, outcome: "pending-ai", transitioned: false, reason: "Approvals complete — waiting on the AI content review." });
     }
     const voteSummary = `approved (${records.filter((r) => r.status === "approved").length}/${records.length})`;
-    return decided(await finalizeApprovedTransition(pageId, stateId, freshPending, approverAccountId, actorName, voteSummary));
+    return decided(await finalizeApprovedTransition(pageId, stateId, freshPending, approverAccountId, actorName, voteSummary, { holdChecked: decision === "approved" }));
   }
   if (outcome === "denied") {
     // A4 §3: a denial used to leave NO durable trace once the records were deleted. Snapshot
