@@ -23,7 +23,11 @@ export const isAdminGroupName = (name) => /^(site-admins|administrators|system-a
 export const newStewardMemo = () => ({ user: new Map(), groups: new Map() });
 const memoized = (memo, bucket, key, load) => {
   if (!memo) return load();
-  if (!memo[bucket].has(key)) memo[bucket].set(key, load());
+  if (!memo[bucket].has(key)) {
+    // A failed read (null) is not kept: the next space asks again instead of inheriting the miss.
+    const p = load().then((v) => { if (v == null) memo[bucket].delete(key); return v; });
+    memo[bucket].set(key, p);
+  }
   return memo[bucket].get(key);
 };
 const readUserAsApp = async (accountId) => {
