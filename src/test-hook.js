@@ -672,7 +672,9 @@ export async function testStateTrigger(req) {
         return json(200, { invoked: fn, result: r });
       }
       if (fn === "requestStewardAccess") {
-        const r = await requestStewardAccess({ payload: { spaceKey: q(req, "spaceKey") }, context: { accountId: q(req, "actor") } });
+        // The realm console's call shape: the space is the one the console is in (its context), so
+        // no as-the-user lookup is needed (a webtrigger has no user to ask as).
+        const r = await requestStewardAccess({ payload: { spaceKey: q(req, "spaceKey") }, context: { accountId: q(req, "actor"), extension: { space: { key: q(req, "spaceKey") } } } });
         return json(200, { invoked: fn, result: r });
       }
       if (fn === "checkStewardRequest") {
