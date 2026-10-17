@@ -74,6 +74,10 @@ async function moveBackForProposal(pageId, approverAccountId, request) {
   const wf = await import("../workflow/logic.js");
   const record = await wf.readPageWorkflow(pageId);
   if (!record?.enforce) return { success: true, moved: false }; // already handed back
+  // Accepting moves the page out of Approved: held on a page that moved spaces (moved-hold.js).
+  const { movedPageHold } = await import("../workflow/moved-hold.js");
+  const hold = await movedPageHold(pageId, { actorAccountId: approverAccountId, storedKey: record.spaceKey || null });
+  if (hold) return { success: false, reason: hold.reason };
   const def = await wf.resolveWorkflowDef(record.spaceKey, record.workflowId);
   const settings = await wf.getSpaceWorkflowSettings(record.spaceKey);
   const target = wf.resolveDemoteTarget(def, settings, record.stateId);

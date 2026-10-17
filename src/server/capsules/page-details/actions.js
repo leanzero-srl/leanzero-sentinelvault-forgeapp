@@ -229,7 +229,8 @@ export const pageDetailsSummary = async (req) => {
       const hasApprovers = !!extractApprovalConfig(settings?.approval);
       const record = wf.record || {};
       // A record made before the page moved here: admin actions on it need an admin of both spaces.
-      const wfAdmin = record.spaceKey && record.spaceKey !== spaceKey ? await adminOf(authorizeSteward, [spaceKey, record.spaceKey]) : isSpaceAdmin;
+      // No live space (the read failed): no admin flags at all, never the record's space alone.
+      const wfAdmin = !spaceKey ? false : record.spaceKey && record.spaceKey !== spaceKey ? await adminOf(authorizeSteward, [spaceKey, record.spaceKey]) : isSpaceAdmin;
       const wfDecideAdmin = spaceKey ? await adminOf(isAccountStewardAsApp, [spaceKey, record.spaceKey]) : false;
       const ar = record.approvalRecord || null;
       const reviewedVersion = (typeof ar?.pinnedVersion === "number" ? ar.pinnedVersion : null) ?? record.approvedVersion ?? null;
@@ -266,7 +267,10 @@ export const pageDetailsSummary = async (req) => {
             || (wfDecideAdmin && settings?.approval?.adminsCanApprove !== false)), // admins may decide too
         } : null,
         available: (wf.available || []).filter(Boolean).map((s) => ({ id: s.id, name: s.name, color: s.color || "neutral", requiresApproval: !!(s.enforce && hasApprovers) })),
-        canMove: canEdit && (wf.available || []).length > 0 && !wf.pending,
+        // A page that moved spaces after its workflow started holds still for anyone but an admin
+        // of both spaces (workflow/moved-hold.js).
+        canMove: canEdit && (wf.available || []).length > 0 && !wf.pending && !(record.spaceKey && spaceKey && record.spaceKey !== spaceKey && !wfAdmin),
+        movedHold: !!(record.spaceKey && spaceKey && record.spaceKey !== spaceKey),
         canSetReviewDue: wfAdmin,
         readers: readers?.required ? { acked: readers.ackedCount ?? 0, audience: readers.audienceCount ?? 0, mine: !!readers.acked } : null,
       };

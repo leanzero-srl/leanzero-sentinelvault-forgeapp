@@ -220,21 +220,25 @@ export async function recordAuthority({ contentId = null, storedKey = null, live
 export async function sealContainerId(seal) {
   if (!seal || typeof seal !== "object") return null;
   if (seal.attachmentId) {
-    try {
-      const res = await asApp().requestConfluence(route`/wiki/api/v2/attachments/${seal.attachmentId}`);
-      if (res.ok) {
-        const a = await res.json();
-        const container = a?.pageId || a?.blogPostId || null;
-        if (container) return String(container);
-      }
-    } catch (_) { /* the record's page below */ }
+    let res = null;
+    try { res = await asApp().requestConfluence(route`/wiki/api/v2/attachments/${seal.attachmentId}`); } catch (_) { return undefined; }
+    if (res.ok) {
+      const a = await res.json().catch(() => null);
+      const container = a?.pageId || a?.blogPostId || null;
+      if (container) return String(container);
+    } else if (res.status !== 404) {
+      return undefined; // could not be read: undefined = deny (isStewardOfSeal), never the record's page
+    }
+    // 404 (file purged) or no container: the record's page below
   }
   return seal.contentId || seal.pageId || null;
 }
 
 /** Steward power over a seal: isStewardOfRecord on the seal's page now (sealContainerId). */
 export async function isStewardOfSeal(check, accountId, seal) {
-  return isStewardOfRecord(check, accountId, { contentId: await sealContainerId(seal), storedKey: seal?.spaceKey || null });
+  const contentId = await sealContainerId(seal);
+  if (contentId === undefined) return false;
+  return isStewardOfRecord(check, accountId, { contentId, storedKey: seal?.spaceKey || null });
 }
 
 /** Does `check(accountId, spaceKey)` pass for EVERY space in `spaces`? [] never passes. */
