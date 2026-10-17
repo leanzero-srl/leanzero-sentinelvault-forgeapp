@@ -9,6 +9,7 @@ import { invoke } from "./resolvers.js";
 import { spaceIdByKey } from "./mirror.js";
 import { getClassificationProvider } from "../classification/provider.js";
 import { BUNDLE_VERSION } from "./bundle.js";
+import { isFullValidationConfig } from "../validations/logic.js";
 
 const strip = (o, keys) => { if (!o || typeof o !== "object") return o; const c = { ...o }; for (const k of keys) delete c[k]; return c; };
 
@@ -33,7 +34,7 @@ export async function exportSpaceConfig(spaceKey, accountId) {
     spaceKey,
     exportedAt: new Date().toISOString(),
     policy: strip(policy, ["adminUsers", "adminGroups", "classification"]),
-    validation: validation || null,
+    validation: isFullValidationConfig(validation) ? validation : null, // never a refusal, never the rules-only view
     workflows,
     workflowSettings: ws?.settings ?? null,
     classificationDefault,
@@ -51,7 +52,7 @@ export async function exportSiteConfig(accountId) {
     version: BUNDLE_VERSION,
     exportedAt: new Date().toISOString(),
     policy: strip(policy, ["adminUsers", "adminGroups", "classificationEnabled"]),
-    validation: validation || null,
+    validation: isFullValidationConfig(validation) ? validation : null, // never a refusal, never the rules-only view
     // CLS-1: `enabled` is the site switch (a policy key, exported here so the bundle round-trips).
     classification: { enabled: provider?.enabled === true, provider: provider?.name || null, levels: provider?.levels || [] },
   };

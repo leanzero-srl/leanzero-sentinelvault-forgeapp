@@ -15,6 +15,7 @@ import { kvs } from "@forge/kvs";
 import { setWithTtl } from "../../shared/kvs-ttl.js";
 import { invoke } from "./resolvers.js";
 import { planBundle, touchedSpaceKeys } from "./bundle.js";
+import { isFullValidationConfig } from "../validations/logic.js";
 import { interpretResult, mergeValidationConfig, summarize, findHeadingIndex, isStaleRunning, staleFailureReceipt } from "./pure.js";
 import { JOB_TTL_MS, CONSUMER_TIMEOUT_MS, jobKvsKey, activeJobKvsKey } from "./admission.js";
 import { mirrorReceipt, mirrorSpaceConfig, mirrorSiteConfig, spaceIdByKey } from "./mirror.js";
@@ -31,6 +32,9 @@ async function runStep(step, accountId) {
   try {
     if (needs === "validationMerge") {
       const existing = await invoke("load-validation-config", { scope: payload.scope, key: payload.key }, accountId);
+      // A refused read (or the site-rules-only view) is not the stored config: merging into it and
+      // storing would replace the real settings with the refusal.
+      if (!isFullValidationConfig(existing)) return { status: "refused", reason: existing?.reason || "Could not read the current validation settings" };
       const data = mergeValidationConfig(existing, payload.data);
       return interpretResult(await invoke(resolverKey, { scope: payload.scope, key: payload.key, data }, accountId));
     }

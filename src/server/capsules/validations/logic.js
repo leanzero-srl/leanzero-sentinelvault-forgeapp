@@ -31,6 +31,13 @@ export const DEFAULT_VALIDATION_CONFIG = {
   },
 };
 
+// PURE. A stored validation config, as opposed to a refused read ({ success:false, reason }) or the
+// site-rules-only view a space admin gets of the site settings. Neither of those may ever be
+// written back as a config.
+export function isFullValidationConfig(v) {
+  return !!v && typeof v === "object" && !Array.isArray(v) && v.success !== false && v.siteRulesOnly !== true;
+}
+
 export async function loadValidationConfig(scope, key) {
   const storeKey = scope === "space" && key
     ? `validation-config-space-${sanitize(key)}`
@@ -102,7 +109,7 @@ export async function resolveEffectiveConfig(spaceKey) {
 }
 
 // --- The site AI ceiling (owner decision 2026-10-17) ---------------------------------------------
-// Forge LLM tokens are billed to LeanZero (AI-COST-CEILING.md), and from 8.8.0 every space admin,
+// Forge LLM tokens are billed to LeanZero (AI-COST-CEILING.md), and from 8.9.0 every space admin,
 // personal-space owners included, can edit a space's AI settings. So the SITE's AI settings are a
 // HARD CEILING over every space's:
 //   1. AI runs in a space only when the site switch is ON (`ai.enabled === true` in

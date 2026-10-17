@@ -8,7 +8,7 @@ import { asApp, asUser, route } from "@forge/api";
 import { currentUserProfile } from "../../shared/user-or-app.js";
 import { kvs, WhereConditions } from "@forge/kvs";
 
-import { authorizeSteward, isOperatorSiteAdmin, isAccountStewardAsApp } from "../../shared/steward-checks.js";
+import { authorizeSteward, isOperatorSiteAdmin, isOperatorSteward, isAccountStewardAsApp } from "../../shared/steward-checks.js";
 import { canEditPage, canReadPage, mustVerify, resolvePageSpaceKey } from "../../shared/content-access.js";
 import { fetchPageStatuses } from "../../shared/page-status.js";
 import {
@@ -123,7 +123,14 @@ const getWorkflow = async (req) => {
   const pageId = pageIdOf(req);
   if (!pageId) return { assigned: false, reason: "No page context" };
   if (!(await callerMayReadPage(req, pageId))) return { assigned: false, reason: "No page context" };
-  const result = await getPageWorkflow(pageId, spaceKeyOf(req));
+  // The definition is the PAGE's space's. A space named in the request is never used for it: that
+  // let anyone who can read one page read any other space's workflow definition.
+  const ctxPageId = ctxPageIdOf(req);
+  const ctxSpaceKey = req.context?.extension?.content?.space?.key || req.context?.extension?.space?.key || null;
+  const pageSpaceKey = (ctxPageId && ctxSpaceKey && String(ctxPageId) === String(pageId))
+    ? ctxSpaceKey
+    : await resolvePageSpaceKey(pageId);
+  const result = await getPageWorkflow(pageId, pageSpaceKey);
   // Flag which available transitions require approval (enforce state + approvers
   // configured) so the ribbon can say "Request approval" instead of "Move to".
   if (result?.assigned && Array.isArray(result.available)) {
@@ -560,10 +567,23 @@ const listMyApprovalsAction = async (req) => {
   return { approvals: out };
 };
 
+// The approver pickers search the site's people and groups AS THE APP, so they answer only the
+// people who configure approvers: an admin of the space the picker is in (the context space, or a
+// space named in the request when there is no context), or a site admin. Anyone else could
+// otherwise list people and emails the app can see and they may not.
+async function mayUseApproverPicker(req) {
+  const caller = req.context?.accountId;
+  if (!caller) return false;
+  const key = req.context?.extension?.space?.key || req.context?.extension?.content?.space?.key || req.payload?.spaceKey || null;
+  if (key && (await isOperatorSteward(caller, key))) return true;
+  return isOperatorSiteAdmin(caller);
+}
+
 // User search for the approver picker (steward config). Confluence user search.
 const searchUsers = async (req) => {
   const q = (req.payload?.query || "").trim();
   if (q.length < 2) return { users: [] };
+  if (!(await mayUseApproverPicker(req))) return { users: [] };
   try {
     const cql = `user.fullname~"${q.replace(/"/g, "")}"`;
     const res = await asApp().requestConfluence(route`/wiki/rest/api/search/user?cql=${cql}&limit=8`);
@@ -584,6 +604,7 @@ const searchUsers = async (req) => {
 const searchGroups = async (req) => {
   const q = (req.payload?.query || "").trim();
   if (q.length < 1) return { groups: [] };
+  if (!(await mayUseApproverPicker(req))) return { groups: [] };
   try {
     const res = await asApp().requestConfluence(route`/wiki/rest/api/group/picker?query=${q}&limit=8`);
     if (!res.ok) return { groups: [] };
@@ -595,9 +616,19 @@ const searchGroups = async (req) => {
   }
 };
 
+// A workflow definition is read by whoever may change it (storeConfig below): a space's by an
+// admin of THAT space (site admins included), the site's by a site admin. It used to answer anyone
+// for any space key.
 const loadConfig = async (req) => {
   const { scope, key } = req.payload || {};
-  return loadWorkflowConfig(scope || "global", key);
+  const caller = req.context?.accountId;
+  if (!caller) return null;
+  if (scope === "space") {
+    if (!key || !(await isOperatorSteward(caller, key))) return null;
+    return loadWorkflowConfig("space", key);
+  }
+  if (!(await isOperatorSiteAdmin(caller))) return null;
+  return loadWorkflowConfig("global");
 };
 
 const storeConfig = async (req) => {
