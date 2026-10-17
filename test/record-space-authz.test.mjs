@@ -421,6 +421,20 @@ ok("hourly sweep, unmoved Approved page past its review date: expired (control)"
 { const trig = readFileSync(new URL("../src/server/triggers.js", import.meta.url), "utf8");
   ok("page trigger: an \"unknown\" probe stands the seal passes down (no write carries an unjudged version)", /judgeLater = lateForLiveBody \|\| enforcement\?\.action === "unknown"/.test(trig) && (trig.match(/!judgeLater &&/g) || []).length === 3 && !/!lateForLiveBody &&/.test(trig)); }
 
+// ── round 4: a pass still waiting for the humans is recorded; an outage posts no overdue notice ──
+await world(); await pendingOn(STAY);
+{ const p = await kvs.get(`workflow-pending-${STAY}`); await kvs.set(`workflow-pending-${STAY}`, { ...p, aiGate: { required: true, status: "pending" } }); const rec = await kvs.get(`workflow-state-${STAY}`); await kvs.set(`workflow-state-${STAY}`, { ...rec, stateId: "in_review" }); }
+onConfluence((method, rawPath) => (/^\/wiki\/api\/v2\/spaces\/\d+$/.test(decodeURIComponent(rawPath).split("?")[0]) ? { status: 503, body: {} } : undefined));
+const aiWait = await applyAiVerdict(STAY, 3, "passed", "ok");
+ok("AI pass during an outage, humans still to vote: recorded and waiting", aiWait?.applied === true && aiWait?.waiting === "humans");
+eq("AI pass during an outage, humans still to vote: the gate reads passed", (await kvs.get(`workflow-pending-${STAY}`))?.aiGate?.status, "passed");
+await world({ stateId: APPROVED });
+{ const r = await kvs.get(`workflow-state-${STAY}`); await kvs.set(`workflow-state-${STAY}`, { ...r, reviewDueAt: "2026-01-01T00:00:00.000Z" }); }
+onConfluence((method, rawPath) => (/^\/wiki\/api\/v2\/spaces\/\d+$/.test(decodeURIComponent(rawPath).split("?")[0]) ? { status: 503, body: {} } : undefined));
+const sw = await workflowSweep();
+ok("hourly sweep during an outage, page past its review date: no overdue notice this tick", !(await kvs.get(`workflow-review-notified-${STAY}`)));
+eq("hourly sweep during an outage: the page is left as it was", (await kvs.get(`workflow-state-${STAY}`))?.stateId, APPROVED);
+
 // ── the old space's Seals tab and new activity ───────────────────────────────────────────────
 await world();
 const tab = await as(realms.get("enumerate-realm-seals"), ADMIN_A, { spaceKey: "AAA" });
