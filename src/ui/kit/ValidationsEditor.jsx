@@ -17,11 +17,13 @@ const SettingsRow = ({ label, description, children }) => (
   </div>
 );
 
-const Toggle = ({ checked, onChange, label }) => (
-  <label className="form-checkbox">
-    <input type="checkbox" aria-label={label} checked={checked} onChange={onChange} />
+const Toggle = ({ checked, onChange, label, disabled = false }) => (
+  <label className={`form-checkbox${disabled ? " is-disabled" : ""}`}>
+    <input type="checkbox" aria-label={label} checked={checked} onChange={onChange} disabled={disabled} />
   </label>
 );
+
+const fmtTokens = (n) => Number(n).toLocaleString("en-US");
 
 const MiniSelect = ({ value, options, onChange }) => {
   const [open, setOpen] = useState(false);
@@ -117,6 +119,10 @@ export default function ValidationsEditor({ scope = "global", spaceKey = null })
   const [saved, setSaved] = useState(null);
   const [aiModels, setAiModels] = useState([]);
   const [globalRules, setGlobalRules] = useState(null); // audit C6: for the informed-override note
+  // The site AI ceiling (space scope): what the site allows and what actually runs here. Comes from
+  // load-validation-config (server/capsules/validations/logic.js capAiConfig) — the server enforces
+  // it on every path; this only shows it.
+  const [effAi, setEffAi] = useState(null);
 
   useEffect(() => {
     (async () => {
@@ -131,6 +137,7 @@ export default function ValidationsEditor({ scope = "global", spaceKey = null })
           };
           setCfg(loaded);
           setSaved(JSON.stringify(loaded));
+          setEffAi(r.effectiveAi || null);
         } else {
           setSaved(JSON.stringify({ enabled: false, modes: { advisory: true, gate: false, revert: false }, rules: [], ai: { ...DEFAULT_AI } }));
         }
@@ -170,7 +177,12 @@ export default function ValidationsEditor({ scope = "global", spaceKey = null })
       // it16: surface a resolver rejection (returns { success:false, reason }) instead of a
       // blind "saved".
       const r = await invoke("store-validation-config", { scope, key: spaceKey, data: cfg });
-      if (r?.success) { setSaved(JSON.stringify(cfg)); setMsg({ type: "success", text: "Validation rules saved." }); }
+      if (r?.success) {
+        setSaved(JSON.stringify(cfg));
+        if (r.effectiveAi) setEffAi(r.effectiveAi);
+        // The site AI ceiling: say what the site capped, next to the confirmation.
+        setMsg({ type: "success", text: r.note ? `Validation rules saved. ${r.note}` : "Validation rules saved." });
+      }
       else setMsg({ type: "error", text: r?.reason || "Could not save validation rules." });
     } catch (e) {
       setMsg({ type: "error", text: "Could not save validation rules." });
@@ -182,6 +194,17 @@ export default function ValidationsEditor({ scope = "global", spaceKey = null })
   if (loading) return <div className="settings-panel">Loading…</div>;
   const dirty = saved !== null && JSON.stringify(cfg) !== saved;
   const discard = () => { try { setCfg(JSON.parse(saved)); } catch (_) { /* keep */ } setMsg(null); };
+
+  // Space scope only: the site's AI switch is off (no space can turn AI on), or its budget caps ours.
+  const siteAiOff = scope === "space" && !!effAi && effAi.siteEnabled !== true;
+  const siteBudget = scope === "space" && effAi ? Number(effAi.siteBudget) || 0 : 0;
+  const ownBudget = Number(cfg.ai.monthlyTokenBudget) || 0;
+  const budgetCapped = siteBudget > 0 && (ownBudget <= 0 || ownBudget > siteBudget);
+  const budgetNote = scope === "global"
+    ? "Per space, per month: a space's AI review stops for the month once it has used this many tokens. No space can set a higher budget. 0 = no limit."
+    : siteBudget > 0
+      ? `Stop AI runs for the month once this many tokens are used. The site allows at most ${fmtTokens(siteBudget)} per space; 0 or a higher number here means ${fmtTokens(siteBudget)}.`
+      : "Stop AI runs for the month once this many tokens are used. 0 = unlimited.";
 
   const scopeNote = scope === "space"
     ? "These rules apply to this space, on top of the organisation's required (blocking) global rules — which always apply. Your rules replace the advisory global rules; leave empty to inherit all global rules."
@@ -303,11 +326,17 @@ export default function ValidationsEditor({ scope = "global", spaceKey = null })
           Token usage is billed to this app's Forge account, so AI is off by default and limited to Claude Haiku.
         </p>
 
-        <SettingsRow label="Enable AI review" description="Allow on-demand AI content review from the Sentinel Vault panel ('Run AI review').">
-          <Toggle label="Enable AI review" checked={cfg.ai.enabled} onChange={(e) => updateAi({ enabled: e.target.checked })} />
+        {siteAiOff && (
+          <p className="val-ai-ceiling" role="status" data-testid="val-ai-site-off">AI is turned off for this site by a site admin.</p>
+        )}
+
+        <SettingsRow label="Enable AI review" description={scope === "global"
+          ? "Allow on-demand AI content review from the Sentinel Vault panel ('Run AI review'). This is the site switch: while it is off, AI review is off in every space."
+          : "Allow on-demand AI content review from the Sentinel Vault panel ('Run AI review')."}>
+          <Toggle label="Enable AI review" checked={!siteAiOff && cfg.ai.enabled} disabled={siteAiOff} onChange={(e) => updateAi({ enabled: e.target.checked })} />
         </SettingsRow>
 
-        {cfg.ai.enabled && (
+        {!siteAiOff && cfg.ai.enabled && (
           <div className="nested-control">
             <SettingsRow label="Model" description="Only Claude Haiku is offered to control token cost.">
               <MiniSelect
@@ -338,8 +367,9 @@ export default function ValidationsEditor({ scope = "global", spaceKey = null })
             <SettingsRow label="Severity threshold" description="Only notify for findings at or above this severity.">
               <MiniSelect value={cfg.ai.severityThreshold} options={SEVERITY_THRESHOLDS} onChange={(v) => updateAi({ severityThreshold: v })} />
             </SettingsRow>
-            <SettingsRow label="Monthly token budget" description="Stop AI runs for the month once this many tokens are used. 0 = unlimited.">
+            <SettingsRow label="Monthly token budget" description={budgetNote}>
               <input className="form-input" type="number" min="0" value={cfg.ai.monthlyTokenBudget} onChange={(e) => updateAi({ monthlyTokenBudget: parseInt(e.target.value) || 0 })} />
+              {budgetCapped && <p className="val-ai-budget-capped" data-testid="val-ai-budget-capped">Capped at {fmtTokens(siteBudget)} by the site.</p>}
             </SettingsRow>
           </div>
         )}

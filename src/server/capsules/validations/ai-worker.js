@@ -4,7 +4,8 @@ import { runForgeLlmJson, isForgeLlmModelAllowed, FORGE_LLM_DEFAULT_MODEL } from
 import { postAiFindingsComment } from "../../infra/validation-blueprints.js";
 import { applyAiVerdict } from "../workflow/approvals.js";
 import {
-  resolveAiConfig,
+  checkAiSpend,
+  aiGateRefusal,
   buildValidationPrompt,
   normalizeFindings,
   severityRank,
@@ -17,13 +18,18 @@ import {
 // Fail-closed: an LLM/parse/read failure is a terminal FAILED (retry), NEVER a swallow that
 // leaves the gate hanging forever.
 async function handleGateReview(body) {
-  const { pageId, spaceKey, realmKey, pinnedVersion, threshold } = body;
+  const { pageId, spaceKey, realmKey, pinnedVersion, threshold, onBudgetExhausted } = body;
   try {
-    const ai = await resolveAiConfig(spaceKey);
-    if (!ai || ai.enabled !== true) {
-      await applyAiVerdict(pageId, pinnedVersion, "passed", "AI review isn't enabled — condition skipped.");
+    // The spend gate again, right before the model call (logic.js checkAiSpend): the site switch
+    // may have gone off, or the budget run out, since the job was queued. Same verdict as at
+    // enqueue (aiGateRefusal). A job queued before onBudgetExhausted rode along blocks.
+    const spend = await checkAiSpend(spaceKey);
+    if (!spend.ok) {
+      const refusal = aiGateRefusal(spend, onBudgetExhausted);
+      await applyAiVerdict(pageId, pinnedVersion, refusal.verdict, refusal.reason);
       return;
     }
+    const { ai } = spend;
     let model = ai.model || FORGE_LLM_DEFAULT_MODEL;
     if (!isForgeLlmModelAllowed(model)) model = FORGE_LLM_DEFAULT_MODEL;
     const { adfDoc, pageData } = pinnedVersion
@@ -80,11 +86,14 @@ export async function aiValidationConsumer(event) {
   try {
     await setStatus({ status: "processing", pageId });
 
-    const ai = await resolveAiConfig(spaceKey);
-    if (!ai || ai.enabled !== true) {
-      await setStatus({ status: "error", error: "AI validation is not enabled", pageId });
+    // The spend gate again, right before the model call (logic.js checkAiSpend): the site switch
+    // may have gone off, or the budget run out, since the review was requested.
+    const spend = await checkAiSpend(spaceKey);
+    if (!spend.ok) {
+      await setStatus({ status: "error", error: spend.reason, pageId });
       return;
     }
+    const { ai } = spend;
 
     let model = ai.model || FORGE_LLM_DEFAULT_MODEL;
     if (!isForgeLlmModelAllowed(model)) model = FORGE_LLM_DEFAULT_MODEL; // cost backstop

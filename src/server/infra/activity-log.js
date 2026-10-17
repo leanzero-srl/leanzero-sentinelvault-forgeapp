@@ -53,6 +53,8 @@ export const ACTIVITY_TYPES = Object.freeze([
   "workflow.transition", "workflow.removed", "workflow.approval-requested", "workflow.approval-rerequested", "workflow.approval-decided", "workflow.approval-withdrawn",
   "workflow.enforced", "workflow.expired", "workflow.review-due", "workflow.read-confirmed", "workflow.seals-held", "workflow.seals-released",
   "validation.reverted", "validation.gate",
+  // The site AI ceiling capped a space's AI settings on save (validations/actions.js storeConfig).
+  "validation.ai-capped",
   "classification.page-set", "classification.space-default-set",
   // Pillar 12 (backup and restore) — site-level, written to the `activity-site-` leg.
   "backup.taken", "backup.failed", "backup.restored", "backup.restore-failed", "backup.exported", "backup.imported",

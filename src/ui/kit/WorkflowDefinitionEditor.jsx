@@ -200,7 +200,7 @@ export default function WorkflowDefinitionEditor({ spaceKey, onSaved = null, sta
           <DefinitionForm initial={initialDefault} isExtra={false} onSave={(p) => save(p, "default")} saving={saving} message={messages.default}
             renderSettings={standalone && settings ? (def) => (
               <>
-                <WorkflowApprovalSection settings={settings} setSettings={setSettings} def={def || settingsDef} />
+                <WorkflowApprovalSection settings={settings} setSettings={setSettings} def={def || settingsDef} spaceKey={spaceKey} />
                 <WorkflowProtectionSection settings={settings} setSettings={setSettings} def={def || settingsDef} />
               </>
             ) : null} />
