@@ -26,7 +26,7 @@ export const DEFAULT_VALIDATION_CONFIG = {
     rules: "",
     severityThreshold: "low", // low | medium | high
     notifyAuthor: false,
-    monthlyTokenBudget: 0, // 0 = unlimited
+    monthlyTokenBudget: 0, // 0 = unlimited; per space a month, and the site's caps every space's (capAiConfig)
     maxChars: 40000,
   },
 };
@@ -95,20 +95,132 @@ export async function resolveEffectiveConfig(spaceKey) {
 
   const rules = mergeEffectiveRules(global.rules, space?.rules);
   const modes = mergeEffectiveModes(global.modes, space?.modes);
-  const ai = space?.ai && space.ai.enabled !== undefined ? space.ai : (global.ai || {});
+  // The site's AI switch and budget are a ceiling over the space's (capAiConfig).
+  const ai = capAiConfig(global.ai, space?.ai);
 
   return { enabled: true, modes, rules, ai };
 }
 
+// --- The site AI ceiling (owner decision 2026-10-17) ---------------------------------------------
+// Forge LLM tokens are billed to LeanZero (AI-COST-CEILING.md), and from 8.8.0 every space admin,
+// personal-space owners included, can edit a space's AI settings. So the SITE's AI settings are a
+// HARD CEILING over every space's:
+//   1. AI runs in a space only when the site switch is ON (`ai.enabled === true` in
+//      validation-config-global). A missing site config is the shipped default, which is OFF.
+//   2. A space's monthly token budget can never exceed the site's. When the site sets a budget N,
+//      a space with no budget (0 = unlimited) or a bigger one gets N; a smaller one is kept.
+// This is the ONE place either rule lives. Every reader of the effective AI config (the manual
+// review, the workflow AI gate, the queue consumer right before the Forge LLM call, the panel's
+// aiEnabled flag, the settings editors, the config export) goes through resolveAiConfig /
+// checkAiSpend below; test/ai-ceiling.test.mjs pins each of them. The space's own saved values are
+// left as saved: the ceiling decides what RUNS, so a site admin turning AI off and on again does
+// not wipe any space's setup.
+
+export const AI_CAP_SITE_OFF = "site-off";
+export const AI_CAP_BUDGET = "site-budget";
+export const AI_SITE_OFF_REASON = "AI is turned off for this site by a site admin.";
+
+/** PURE. A budget as a positive whole number of tokens, or 0 for "no limit". A fraction above 0
+ *  is 1 token, never "no limit" (a REST-written 0.5 used to stop AI after the first run). */
+export function budgetOf(v) {
+  const n = Number(v);
+  return Number.isFinite(n) && n > 0 ? Math.max(1, Math.floor(n)) : 0;
+}
+
+/**
+ * PURE. The effective AI config of a space under the site ceiling.
+ * `siteAi` is validation-config-global.ai, `spaceAi` the space's own `ai` (or null/absent).
+ * Returns the config to run with plus `ceiling`: { siteEnabled, siteBudget, capped: [why...] },
+ * where `capped` lists the site rules that changed what the space asked for (empty = none).
+ */
+export function capAiConfig(siteAi, spaceAi) {
+  const site = siteAi && typeof siteAi === "object" ? siteAi : {};
+  const own = spaceAi && typeof spaceAi === "object" && spaceAi.enabled !== undefined ? spaceAi : null;
+  const siteEnabled = site.enabled === true;
+  const siteBudget = budgetOf(site.monthlyTokenBudget);
+  const { ceiling: _ignored, ...base } = own || site;
+  const effective = { ...base };
+  const capped = [];
+  if (effective.enabled === true && !siteEnabled) {
+    effective.enabled = false;
+    capped.push(AI_CAP_SITE_OFF);
+  }
+  if (siteBudget > 0) {
+    const asked = budgetOf(effective.monthlyTokenBudget);
+    if (asked === 0 || asked > siteBudget) {
+      // Reported as capped only for a space that asked for more than the site allows; the site's
+      // own config (no space override) simply IS the site budget.
+      if (own && effective.enabled === true) capped.push(AI_CAP_BUDGET);
+      effective.monthlyTokenBudget = siteBudget;
+    }
+  }
+  effective.ceiling = { siteEnabled, siteBudget, capped };
+  return effective;
+}
+
+/** PURE. One sentence for what the ceiling changed, or null when nothing was capped. */
+export function aiCapNote(effective) {
+  const c = effective?.ceiling;
+  if (!c || !Array.isArray(c.capped) || c.capped.length === 0) return null;
+  if (c.capped.includes(AI_CAP_SITE_OFF)) return `${AI_SITE_OFF_REASON} AI review stays off in this space until a site admin turns it on.`;
+  return `The site allows at most ${c.siteBudget.toLocaleString("en-US")} AI tokens a month per space, so this space's budget is capped at that.`;
+}
+
 /**
  * Resolve the effective AI config for a space, INDEPENDENT of the validation
- * master switch (AI has its own opt-in via ai.enabled).
+ * master switch (AI has its own opt-in via ai.enabled), with the site ceiling applied.
  */
 export async function resolveAiConfig(spaceKey) {
   const global = (await kvs.get("validation-config-global")) || {};
   const space = spaceKey ? await kvs.get(`validation-config-space-${sanitize(spaceKey)}`) : null;
-  if (space?.ai && space.ai.enabled !== undefined) return space.ai;
-  return global.ai || {};
+  return capAiConfig(global.ai, space?.ai);
+}
+
+/**
+ * The spend gate: may an AI review run for this space NOW? Called when a review is requested AND
+ * again by the queue consumer immediately before the Forge LLM call, so a job queued before the
+ * site switch went off, or before the budget ran out, does not spend.
+ * Returns { ok: true, ai } or { ok: false, why: "off" | "budget", siteOff, reason, ai }.
+ */
+export async function checkAiSpend(spaceKey) {
+  const ai = await resolveAiConfig(spaceKey);
+  if (ai.enabled !== true) {
+    const siteOff = ai.ceiling?.siteEnabled !== true;
+    return {
+      ok: false, why: "off", siteOff, ai,
+      reason: siteOff ? AI_SITE_OFF_REASON : "AI validation is not enabled. An admin can turn it on in Sentinel Vault settings.",
+    };
+  }
+  const budget = budgetOf(ai.monthlyTokenBudget);
+  if (budget > 0) {
+    const used = await getMonthlyTokenUsage(spaceKey);
+    if (used >= budget) return { ok: false, why: "budget", siteOff: false, ai, reason: "This space has reached its monthly AI token budget." };
+  }
+  return { ok: true, ai };
+}
+
+/**
+ * The AI gate's verdict when the review may not run (checkAiSpend said no). Shared by enqueueAiGate
+ * and the queue consumer so both ends agree.
+ *   - The SPACE has AI off: the condition is skipped, as it always was (the space's own choice).
+ *   - The space has AI on but the SITE ceiling stops it (site switch off), or the budget is spent:
+ *     the review the space requires cannot run, so the space's onBudgetExhausted decides — block
+ *     (the default) or allow with a warning. Skipping here would let a page reach Approved without
+ *     the review its space requires, only because a site admin turned AI off.
+ */
+export function aiGateRefusal(spend, onBudgetExhausted) {
+  const allow = onBudgetExhausted === "allow";
+  if (spend.why === "budget") {
+    return allow
+      ? { enqueued: false, verdict: "passed", reason: "AI budget exhausted — allowed with a warning." }
+      : { enqueued: false, verdict: "failed", reason: "This space has reached its monthly AI budget." };
+  }
+  if (spend.ai?.ceiling?.capped?.includes(AI_CAP_SITE_OFF)) {
+    return allow
+      ? { enqueued: false, verdict: "passed", reason: "AI is turned off for this site by a site admin — allowed with a warning." }
+      : { enqueued: false, verdict: "failed", reason: "AI is turned off for this site by a site admin, so the required AI review cannot run." };
+  }
+  return { enqueued: false, verdict: "passed", reason: "AI review isn't enabled — condition skipped." };
 }
 
 // --- Page validation-state content property ---
@@ -289,18 +401,22 @@ export async function setFindingState(pageId, fid, state) {
 }
 
 // --- Token usage accounting (per realm per month) ---
+// The space key as a KVS key segment: a personal space (`~7120…`) would otherwise throw on the read
+// AND the write (KVS keys accept [a-zA-Z0-9:._\s-#] only), so the budget check failed and a spent
+// call was never counted. Same regex as every other space-keyed family (sanitize above).
+const usageKey = (realmKey) => `ai-usage-${sanitize(realmKey || "global")}-${monthKey()}`;
 function monthKey() {
   const d = new Date();
   return `${d.getUTCFullYear()}${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
 }
 
 export async function getMonthlyTokenUsage(realmKey) {
-  const usage = await kvs.get(`ai-usage-${realmKey || "global"}-${monthKey()}`);
+  const usage = await kvs.get(usageKey(realmKey));
   return usage?.totalTokens || 0;
 }
 
 export async function accrueTokenUsage(realmKey, usage) {
-  const key = `ai-usage-${realmKey || "global"}-${monthKey()}`;
+  const key = usageKey(realmKey);
   const cur = (await kvs.get(key)) || { inputTokens: 0, outputTokens: 0, totalTokens: 0, runs: 0 };
   cur.inputTokens += usage?.inputTokens || 0;
   cur.outputTokens += usage?.outputTokens || 0;
