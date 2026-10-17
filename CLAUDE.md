@@ -30,6 +30,16 @@ This was found and fixed in `SECURITY-TODO.md` → SV-SEC-1 (closed 2026-08-20).
 one reported symptom, ~25 more instances of the same shape. If you are touching a resolver, assume
 the shape can recur and check for it rather than trusting that it was all caught.
 
+**Reads of settings follow the same rule (8.8.0, GHSA-hxw6-x275-9cgh).** A resolver that returns
+configuration (validation rules and AI prompts, workflow definitions, rosters) answers only someone who
+may CHANGE that configuration: read floor = write floor. A space's settings → `isOperatorSteward` of
+THAT space; the site's → `isOperatorSiteAdmin` (a space admin may get the site's validation RULES only,
+`siteRulesOnly: true`). A directory search run `asApp()` (the approver pickers) is admin-only. A page's
+workflow definition comes from the page's own space, never a payload `spaceKey`. A refused read
+(`{ success:false }`) or a partial view is never written back as settings (`isFullValidationConfig`).
+Guards: `test/validation-config-authz.test.mjs`, `test/config-read-authz.test.mjs`, and the live
+`forge-live-harness/scenarios/sentinel-vault/settings-read-authz.spec.ts`.
+
 Guards: `test/content-access.test.mjs` (pure decision core) and
 `~/Projects/forge-live-harness/scenarios/sentinel-vault/authz-content-gate.spec.ts` (live, and the
 assertions that matter are the REFUSALS — a happy-path test proves nothing about an authz fix).
