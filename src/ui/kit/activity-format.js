@@ -32,7 +32,7 @@ export const ACTIVITY_CATEGORIES = Object.freeze([
     "workflow.enforced", "workflow.expired", "workflow.review-due", "workflow.read-confirmed", "workflow.seals-held", "workflow.seals-released",
   ]) },
   { id: "validation", label: "Validation", types: Object.freeze([
-    "validation.reverted", "validation.gate",
+    "validation.reverted", "validation.gate", "validation.ai-capped",
   ]) },
   // 2026-09-30 (classification review, H): who changed a level, from what, to what, and why.
   { id: "classification", label: "Classification", types: Object.freeze([
@@ -71,6 +71,8 @@ const CATEGORY_BY_TYPE = Object.freeze(Object.fromEntries(
 ));
 
 /** Category id for a type; a type nobody registered lands in the nearest prefix or "other". */
+const budgetText = (n) => (Number(n) > 0 ? `${Number(n).toLocaleString("en-US")} tokens a month` : "no limit");
+
 export function categoryOf(type) {
   if (CATEGORY_BY_TYPE[type]) return CATEGORY_BY_TYPE[type];
   const prefix = String(type || "").split(".")[0];
@@ -475,6 +477,18 @@ export function formatActivity(entry) {
       return { ...base, label: "Validation revert", glyph: "undo", tone: "critical",
         sentence: `The page failed validation${v ? ` (${v})` : ""} — ${APP_NAME} restored the last version that passed${d.restoredTo != null ? ` (v${d.restoredTo})` : ""}`,
         detail: v };
+    }
+    // The site AI ceiling (owner decision 2026-10-17): a space admin saved AI settings the site
+    // does not allow, and the site's switch or budget applies instead.
+    case "validation.ai-capped": {
+      const capped = Array.isArray(d.capped) ? d.capped : [];
+      const fmt = (n) => Number(n).toLocaleString("en-US");
+      const siteOff = capped.includes("site-off");
+      return { ...base, label: "AI capped by the site", glyph: "shield", tone: "caution",
+        sentence: siteOff
+          ? `${who} ${d.turnedOn === false ? "changed this space's AI settings" : "turned on AI review for this space"}, but AI is turned off for this site by a site admin, so it stays off`
+          : `${who} set this space's AI budget above the site's, so the site's ${d.siteBudget ? `${fmt(d.siteBudget)} tokens a month` : "budget"} applies`,
+        detail: !siteOff && d.asked ? `asked for ${budgetText(d.asked.monthlyTokenBudget)}` : "" };
     }
     case "validation.gate": {
       const passed = d.state === "passed";

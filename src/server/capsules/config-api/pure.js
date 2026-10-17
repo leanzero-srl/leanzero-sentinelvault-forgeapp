@@ -8,7 +8,9 @@ export const RECEIPTS_KEPT = 20;
 
 /** PURE. Interpret a resolver's answer: { success|ok: true } applies; anything else refuses. */
 export function interpretResult(r) {
-  if (r && (r.success === true || r.ok === true)) return { status: "applied" };
+  // `note` carries what the resolver changed on its own, e.g. the site AI ceiling capping a
+  // space's AI settings (validations/actions.js storeConfig) — the receipt says so.
+  if (r && (r.success === true || r.ok === true)) return typeof r.note === "string" && r.note ? { status: "applied", note: r.note } : { status: "applied" };
   if (r && Array.isArray(r.results) && r.results.length && r.results.every((x) => x?.ok === true)) return { status: "applied" };
   const first = r && Array.isArray(r.results) ? r.results.find((x) => x && x.ok !== true) : null;
   const reason = r?.reason || r?.error || first?.reason || (r && typeof r === "object" && !("success" in r) && !("ok" in r) ? null : "Refused");
@@ -21,6 +23,7 @@ export function mergeValidationConfig(existing, data) {
   const out = { ...base };
   for (const [k, v] of Object.entries(data || {})) {
     if (k === "rules") continue;
+    if (k === "effectiveAi") continue; // derived on load (the site AI ceiling), never stored
     if (k === "modes" && v && typeof v === "object" && base.modes && typeof base.modes === "object") out.modes = { ...base.modes, ...v };
     else out[k] = v;
   }
@@ -88,6 +91,13 @@ export function redactConfigForMirror(config, scope = "space") {
   out.validation = v && typeof v === "object"
     ? { enabled: v.enabled ?? null, modes: v.modes && typeof v.modes === "object" ? { ...v.modes } : null }
     : null;
+  // The site AI ceiling: whether AI review RUNS in this space, and which site rule capped what the
+  // space set. Every viewer already sees the first (the panel's Run AI review); prompts, budgets
+  // and usage stay private.
+  if (out.validation && v.effectiveAi && typeof v.effectiveAi === "object") {
+    out.validation.aiEnabled = v.effectiveAi.enabled === true;
+    out.validation.aiCapped = Array.isArray(v.effectiveAi.capped) ? v.effectiveAi.capped.filter((x) => typeof x === "string") : [];
+  }
   if (scope === "site") {
     out.classification = config.classification ?? null;
   } else {

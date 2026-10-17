@@ -164,7 +164,7 @@ export async function runJob(jobId) {
       } else {
         for (const step of plan) {
           const r = await runStep(step, accountId);
-          receipt.results.push({ path: step.path, status: r.status, ...(r.reason ? { reason: r.reason } : {}), ...(r.removed ? { removed: r.removed } : {}) });
+          receipt.results.push({ path: step.path, status: r.status, ...(r.reason ? { reason: r.reason } : {}), ...(r.note ? { note: r.note } : {}), ...(r.removed ? { removed: r.removed } : {}) });
         }
         const s = summarize(receipt.results);
         receipt.summary = s.summary; receipt.status = s.status;

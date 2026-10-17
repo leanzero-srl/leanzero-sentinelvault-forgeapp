@@ -221,8 +221,29 @@ const deriveStates = (def) => {
   return { states, initialState, enforceState, demoteOpts, clockStates, enforceName, expiredName };
 };
 
-export const WorkflowApprovalSection = ({ settings, setSettings, def }) => {
+// The site AI ceiling (server/capsules/validations/logic.js capAiConfig): is AI turned off for the
+// whole site? The space's validation settings answer with the effective, capped AI. Null while
+// unknown, so nothing is disabled on a failed read (the server refuses on every path anyway).
+const useSiteAiOff = (spaceKey) => {
+  const [off, setOff] = useState(null);
+  useEffect(() => {
+    if (!spaceKey) return undefined;
+    let live = true;
+    (async () => {
+      try {
+        const r = await invoke("load-validation-config", { scope: "space", key: spaceKey });
+        if (live && r?.effectiveAi) setOff(r.effectiveAi.siteEnabled !== true);
+      } catch (_) { /* unknown: leave the control as it is */ }
+    })();
+    return () => { live = false; };
+  }, [spaceKey]);
+  return off === true;
+};
+
+export const WorkflowApprovalSection = ({ settings, setSettings, def, spaceKey = null }) => {
   const { enforceName } = deriveStates(def);
+  const siteAiOff = useSiteAiOff(spaceKey);
+  const requireAi = !!settings.entryConditions?.approved?.requireAi;
   return (
         <Section title="Approval" description={`Who signs off before a page becomes ${enforceName}, and what must be true first.`} testId="wf-section-approval">
           <SettingsRow
@@ -311,10 +332,13 @@ export const WorkflowApprovalSection = ({ settings, setSettings, def }) => {
           >
             <Toggle
               label="Require an AI content review before Approved"
-              checked={!!settings.entryConditions?.approved?.requireAi}
+              checked={requireAi}
+              /* Site AI off: the condition cannot be turned on (the review could not run); one already on can still be turned off, since it blocks Approved meanwhile. */
+              disabled={siteAiOff && !requireAi}
               onChange={(e) => setSettings((p) => ({ ...p, entryConditions: { ...p.entryConditions, approved: { requireRules: false, aiThreshold: "medium", onBudgetExhausted: "block", ...(p.entryConditions?.approved || {}), requireAi: e.target.checked } } }))}
             />
           </SettingsRow>
+          {siteAiOff && <p className="val-ai-ceiling" role="status" data-testid="wf-ai-site-off">AI is turned off for this site by a site admin.</p>}
           {settings.entryConditions?.approved?.requireAi && (
             <div className="nested-control">
               <SettingsRow label="AI review strictness" description="How strong an issue has to be to block approval.">
