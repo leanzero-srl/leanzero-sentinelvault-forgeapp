@@ -2,7 +2,7 @@
 
 GENERATED from `src/server/shared/release-notes.js` by `scripts/render-release-notes.mjs`. Do not edit.
 
-## 8.6.1 — 2026-10-17
+## 8.7.0 — 2026-10-17
 
 **Stricter checks on who can see a space's scan status**
 
