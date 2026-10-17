@@ -846,14 +846,21 @@ const RealmPolicyDashboard = () => {
   };
 
   const [stewardRequestBusy, setStewardRequestBusy] = useState(false);
+  const [stewardRequestError, setStewardRequestError] = useState(null);
 
   const handleRequestSteward = async () => {
     setStewardRequestBusy(true);
+    setStewardRequestError(null);
     try {
-      await invoke("request-steward-access", { spaceKey: realmKey });
-      setStewardRequestSent(true);
+      const r = await invoke("request-steward-access", { spaceKey: realmKey });
+      // The server can refuse: declined less than 48 hours ago (another tab, or a decision since this
+      // page loaded), or a space it cannot find. Show what it said instead of "submitted".
+      if (r?.status === "denied") { setStewardRequestStatus("denied"); setStewardRequestDeniedAt(r.deniedAt || null); }
+      else if (r?.success === false) setStewardRequestError(r.reason || "The request could not be sent. Try again in a moment.");
+      else setStewardRequestSent(true);
     } catch (e) {
       console.error("Steward request failed:", e);
+      setStewardRequestError("The request could not be sent. Try again in a moment.");
     } finally {
       setStewardRequestBusy(false);
     }
@@ -1728,6 +1735,9 @@ const RealmPolicyDashboard = () => {
                 <p style={{ margin: "4px 0 0", fontSize: "12px", color: "var(--sv-text-secondary)" }}>
                   As a space admin you can see every sealed file in this space and force-unseal it when needed.
                 </p>
+                {stewardRequestError && (
+                  <p role="alert" style={{ margin: "6px 0 0", fontSize: "12px", fontWeight: 600, color: "var(--sv-interactive-danger)" }}>{stewardRequestError}</p>
+                )}
               </div>
               <button className={`action-btn lock ${stewardRequestBusy ? "is-busy" : ""}`} onClick={handleRequestSteward} disabled={stewardRequestBusy} title="Ask a space admin to grant you admin access to Sentinel Vault in this space">
                 {stewardRequestBusy ? <>Requesting<span className="btn-busy-bar" /></> : "Request admin access"}
