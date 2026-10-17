@@ -2,6 +2,20 @@
 
 GENERATED from `src/server/shared/release-notes.js` by `scripts/render-release-notes.mjs`. Do not edit.
 
+## 8.9.0 — 2026-10-18
+
+**Stricter checks on who can act on a page's seals and workflow after it moves**
+
+- Changed: a page that was moved to another space after its workflow started now holds still: only an admin of both spaces or a site admin can change its state or approve an approval request opened before the move (anyone else can only decline or withdraw it), and an Approved page keeps its protection, with an unapproved edit undone. To hand the page to its new space, one of those admins starts its workflow again. Starting the workflow again starts the page from the first state of the new space's workflow.
+- Changed: assigning a workflow to a page again is refused while the page is Approved or an approval request is open, as taking it out of the workflow already was.
+
+Fixed:
+- Stricter checks on who can act on a page's seals, edit requests and workflow after the page moves to another space.
+- A file on a blog post is now sealed on that blog post.
+- The Sentinel Vault panel always uses the app's own macro key when it is added to a page, and a page whose panel macro carried another key gets the Sentinel Vault panel back the next time the app adds its panel there.
+
+**Do this:** Nothing to do if your site already runs 8.0.0. A site on an earlier version gets this update after a site admin approves the 8.0.0 update in Confluence administration, Apps, Manage apps. To hand a page that was moved to another space to its new space, an admin of both spaces or a site admin takes it out of the workflow in the page's Sentinel Vault details and starts it again there (an Approved page is first moved out of Approved, and an open approval request is decided or withdrawn first), or assigns its workflow again with the configuration REST API.
+
 ## 8.8.0 — 2026-10-17
 
 **Stricter checks on who can see Sentinel Vault's settings**
