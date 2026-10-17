@@ -134,6 +134,14 @@ After the consumer finishes, `api-job-<tokenId>:<key>` holds:
   "results": [ { "path": "spaces.WFH.policy", "status": "applied" }, { "path": "content[3]", "status": "refused", "reason": "You do not have permission to edit this page" } ] }
 ```
 
+A step the app applied but CHANGED on its own carries a `note`. Today that is the site AI ceiling: a
+`spaces.<KEY>.validation` step that turns AI review on while it is off for the site, or sets a budget above
+the site's, is `applied` (the space's own values are stored) with
+`"note": "AI is turned off for this site by a site admin. AI review stays off in this space until a site admin turns it on."`
+or the budget sentence, and the space's activity log records `validation.ai-capped`. The gated export
+(`export-space-config`) carries `validation.effectiveAi`: `{ enabled, monthlyTokenBudget, siteEnabled,
+siteBudget, capped }`, derived on every read and dropped if posted back.
+
 It is mirrored to the **space property** `sentinel-vault-receipt` on every space the job touched
 (last 20 receipts per space, newest first) and to the **content property** `sentinel-vault-receipt`
 on the site page named in `site.receiptPageId` (optional). The customer reads it with:
@@ -149,7 +157,11 @@ viewer of the space, and the site property by every reader of the receipt page, 
 app's own resolvers withhold from non-stewards lands there. The mirror holds:
 
 - `policy` — durations and toggles, **without** `adminUsers` / `adminGroups`;
-- `validation` — `{ enabled, modes }` only (rule text and `ai` prompts stay private);
+- `validation` — `{ enabled, modes, aiEnabled, aiCapped }` only (rule text, `ai` prompts and budgets stay
+  private). `aiEnabled` is whether AI review RUNS in the space after the site ceiling; `aiCapped` lists what
+  the site capped: `"site-off"` (AI review is off for the site, so it is off in every space whatever the
+  space set) and/or `"site-budget"` (the space's monthly budget was 0/unlimited or above the site's, so the
+  site's applies);
 - `workflows` — `[ { workflowId, name, labels, priority } ]`, no definitions; `classificationDefault`;
 - site: `classification.enabled` — the CLS-1 master switch (default **false**; `site.classification.enabled`
   in a bundle writes `classificationEnabled` through `store-policy`, planned BEFORE `levels` so one bundle
