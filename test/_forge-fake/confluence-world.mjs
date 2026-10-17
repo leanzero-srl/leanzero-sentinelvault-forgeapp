@@ -4,18 +4,20 @@
 // triggers.js (probe, Pass 0 revert, demote, sweep, guard) and the dispatch resolver.
 import { onConfluence } from "./state.mjs";
 
+const groupId = (name) => `gid-${name}`;
 const doc = (text) => ({ version: 1, type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text }] }] });
 
 export function createWorld({ appAccountId = "app-account", spaceKey = "WF", spaceId = "9001" } = {}) {
   const pages = new Map(); // id -> { id, title, status, spaceId, versions: [{ number, authorId, adf }], props: Map(key -> { id, version, value }) }
   const users = new Map(); // accountId -> { displayName, groups: [], siteAdmin }
-  const spaceAdmins = new Set();
+  const spaceAdmins = new Set(); // accountIds Confluence lists with administer/space (direct or by space role)
+  const spaceAdminGroups = new Set(); // group NAMES holding administer/space (members are admins)
   const readers = new Set(); // accountIds that may read every page ("*" = everyone)
   const comments = [];
   let propSeq = 100;
 
   const world = {
-    appAccountId, spaceKey, spaceId, pages, users, spaceAdmins, readers, comments, doc,
+    appAccountId, spaceKey, spaceId, pages, users, spaceAdmins, spaceAdminGroups, readers, comments, doc,
     addUser(accountId, { displayName = accountId, groups = [], siteAdmin = false } = {}) { users.set(accountId, { displayName, groups, siteAdmin }); return world; },
     addPage(id, { title = `Page ${id}`, versions = [] } = {}) {
       pages.set(String(id), { id: String(id), title, status: "current", spaceId, versions: versions.map((v, i) => ({ number: i + 1, authorId: v.authorId, adf: v.adf || doc(v.text || `v${i + 1}`) })), props: new Map() });
@@ -46,15 +48,33 @@ export function createWorld({ appAccountId = "app-account", spaceKey = "WF", spa
     if (base === "/wiki/rest/api/user/current") return { body: { accountId: appAccountId } };
     if (base === "/wiki/rest/api/user/memberof") {
       const u = users.get(q.accountId);
-      return u ? { body: { results: u.groups.map((name) => ({ name })) } } : { status: 404 };
+      return u ? { body: { results: u.groups.map((name) => ({ name, id: groupId(name) })) } } : { status: 404 };
     }
     if (base === "/wiki/rest/api/user") {
       const u = users.get(q.accountId);
       if (!u) return { status: 404 };
-      return { body: { accountId: q.accountId, displayName: u.displayName, publicName: u.displayName, groups: { results: u.groups.map((name) => ({ name })) }, operations: u.siteAdmin ? [{ operation: "administer", targetType: "application" }] : [] } };
+      return { body: { accountId: q.accountId, displayName: u.displayName, publicName: u.displayName, groups: { results: u.groups.map((name) => ({ name, id: groupId(name) })) }, operations: u.siteAdmin ? [{ operation: "administer", targetType: "application" }] : [] } };
     }
-    if ((m = base.match(/^\/wiki\/rest\/api\/space\/([^/]+)\/permission\/check$/)) && method === "POST") {
-      return { body: { hasPermission: m[1] === spaceKey && spaceAdmins.has(body?.subject?.identifier) } };
+    // Confluence has NO space permission/check: the path answers 405 for every method (measured
+    // 2026-10-17 on wolfaenpak and leanzero-demo). This fake used to answer it as if it worked,
+    // which hid that the app's space-admin arm never recognised anybody.
+    if (/^\/wiki\/rest\/api\/space\/[^/]+\/permission\/check$/.test(base)) return { status: 405, body: { message: "Method Not Allowed" } };
+    if (base === "/wiki/api/v2/spaces" && method === "GET") {
+      const keys = String(q.keys || "").split(",");
+      return { body: { results: keys.includes(spaceKey) ? [{ id: spaceId, key: spaceKey }] : [] } };
+    }
+    if ((m = base.match(/^\/wiki\/api\/v2\/spaces\/(\d+)\/permissions$/)) && method === "GET") {
+      if (m[1] !== spaceId) return { status: 404 };
+      // The real list mixes every operation; admins sit among the read/update rows.
+      const rows = [
+        ...[...users.keys()].map((id) => ({ id: `r-${id}`, principal: { type: "user", id }, operation: { key: "read", targetType: "space" } })),
+        ...[...spaceAdmins].map((id) => ({ id: `a-${id}`, principal: { type: "user", id }, operation: { key: "administer", targetType: "space" } })),
+        ...[...spaceAdminGroups].map((name) => ({ id: `g-${name}`, principal: { type: "group", id: groupId(name) }, operation: { key: "administer", targetType: "space" } })),
+      ];
+      const limit = Number(q.limit) || 25;
+      const from = Number(q.cursor) || 0;
+      const next = from + limit < rows.length ? `/wiki/api/v2/spaces/${spaceId}/permissions?limit=${limit}&cursor=${from + limit}` : undefined;
+      return { body: { results: rows.slice(from, from + limit), _links: next ? { next } : {} } };
     }
     if ((m = base.match(/^\/wiki\/rest\/api\/content\/(\d+)\/permission\/check$/)) && method === "POST") {
       const who = body?.subject?.identifier;

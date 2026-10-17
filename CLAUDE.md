@@ -53,6 +53,19 @@ seal there and is refused every steward-only action. Drive PLAIN through the hoo
 (no token, no browser session); `setupWorkflowPage(…, { space: PLAIN_SPACE })` builds a bed there.
 The hook seam `pageEvent` runs the whole page-content pipeline as a named editor (the page version
 itself is still authored by the harness token) — the closest thing to a non-privileged publish.
+**Space admins come from the space's own permissions** (2026-10-17): `isSpaceAdministrator` in
+`shared/steward-checks.js` reads `/wiki/api/v2/spaces/{id}/permissions` (scope `read:space:confluence`)
+and matches administer/space for the account or one of its group ids. Confluence has NO
+`/wiki/rest/api/space/{key}/permission/check` (405 on every method); the app used it for years and
+recognised nobody through it, while the test fake answered it as if it worked. A `role` principal is
+never resolved (that needs `read:space.permission:confluence`, a scope we do not hold); on both sites
+the space-role mode is ROLES_TRANSITION and the holders of a role appear as user or group rows
+(measured both ways). **Role-admin beds: spaces `SVROLE` (409370734) and `SVGROUP` (409993374)**:
+`scenarios/sentinel-vault/role-space-admin.spec.ts` gives PLAIN the space role Admin on SVROLE and the
+group `sv-harness-space-admins` (PLAIN its only member) the role on SVGROUP, and takes both away at
+the end, so outside that spec PLAIN is still a steward nowhere. Never give PLAIN anything on SVPLAIN.
+Checks that loop over spaces pass ONE `newStewardMemo()` per invocation (never module-level: a warm
+container can serve several sites and account ids repeat across them).
 
 ## Violation-comment dedup — the two races are closed (it69, 2026-09-06)
 
