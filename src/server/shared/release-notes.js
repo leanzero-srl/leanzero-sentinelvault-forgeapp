@@ -12,6 +12,16 @@ const note = (n) => Object.freeze({ ...n, changes: Object.freeze([...(n.changes 
 
 export const RELEASE_NOTES = Object.freeze([
   note({
+    version: "8.6.1",
+    date: "2026-10-17",
+    headline: "Stricter checks on who can see a space's scan status",
+    changes: [],
+    fixes: [
+      "Stricter checks on who can see a space's scan status.",
+    ],
+    action: "Nothing to do if your site already runs 8.0.0. A site on an earlier version gets this update after a site admin approves the 8.0.0 update in Confluence administration, Apps, Manage apps.",
+  }),
+  note({
     version: "8.6.0",
     date: "2026-10-16",
     headline: "A deleted Jira issue's sealed file downloads under its own name, and Approved pages are protected exactly as the settings say",
