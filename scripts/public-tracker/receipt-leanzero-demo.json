@@ -371,6 +371,10 @@
     "known-workflow-banner-stale": {
       "key": "SVT-88",
       "id": "28036"
+    },
+    "known-space-admin-not-recognised": {
+      "key": "SVT-89",
+      "id": "28037"
     }
   },
   "permissionScheme": {
@@ -383,7 +387,7 @@
     ],
     "assigned": true
   },
-  "updatedAt": "2026-10-17T14:37:42.030Z",
+  "updatedAt": "2026-10-17T16:22:41.063Z",
   "projectId": "10278",
   "issueTypeScheme": {
     "id": "10636",
@@ -425,7 +429,7 @@
     "undo": "DELETE /rest/api/3/permissionscheme/10265/permission/11703",
     "proof": {
       "GET /rest/api/3/issue/SVT-1": 200,
-      "GET /rest/api/3/issue/SVT-88": 200,
+      "GET /rest/api/3/issue/SVT-89": 200,
       "GET /rest/api/3/issue/ATLAS-2361": 404,
       "GET /rest/api/3/issue/CRBAK-1": 404,
       "GET /rest/api/3/issue/CRD-30": 404,
@@ -449,17 +453,17 @@
       "GET /rest/api/3/issue/SEC-1225": 404,
       "GET /rest/api/3/issue/VOY-1992": 404,
       "anonymous site-wide search (bounded, all pages): issues per project": {
-        "SVT": 84,
+        "SVT": 85,
         "CRT": 377,
         "LZMT": 307
       },
-      "anonymous listing of SVT": "84 issues (receipt holds 84; 已完成 77, Backlog 6, Selected for Development 1)",
+      "anonymous listing of SVT": "85 issues (receipt holds 85; 已完成 77, Backlog 6, Selected for Development 2)",
       "other projects whose scheme lets anyone browse": "CRT,LZMT",
       "public trackers (allowlist)": "CRT,SVT,LZMT",
       "negative control": "13 fake broken answers, each failed the verdict",
       "GET /jira/software/c/projects/SVT/issues": 200
     },
-    "provenAt": "2026-10-17T14:37:42.030Z",
+    "provenAt": "2026-10-17T16:22:41.063Z",
     "proofFailures": []
   }
 }
