@@ -82,7 +82,9 @@ const MARKETPLACE_VERSIONS = "https://marketplace.atlassian.com/rest/2/addons/co
 // logged-out proof further down. Anything else readable without a login is a leak and fails `public`.
 // `public --reprove` re-proves an already public tracker and refuses to add a missing grant.
 const REPROVE = process.argv.includes("--reprove");
-const STATUS = { released: "Done", known: ["Backlog", "To Do", "Open"] };
+// A KNOWN row with `fix: "scheduled"` sits in Selected for Development and says so in its text; a fix
+// is planned for a coming version, and it moves to Done with the release-note line that fixes it.
+const STATUS = { released: "Done", known: ["Backlog", "To Do", "Open"], scheduled: ["Selected for Development"] };
 
 const vparts = (v) => v.split(".").map(Number);
 const vge = (a, b) => { for (let i = 0; i < 3; i++) { if (a[i] !== b[i]) return a[i] > b[i]; } return true; };
@@ -215,10 +217,12 @@ export async function desired() {
   }
   for (const h of Object.keys(ENTRIES)) if (!seenRows.has(h)) problems.push(`entries.mjs row ${h} matches no note line in ${FIRST_VERSION.join(".")}..${LAST_VERSION.join(".")} (reworded note?)`);
   for (const k of KNOWN) {
+    if (k.fix !== undefined && k.fix !== "scheduled") problems.push(`${k.k}: fix must be "scheduled" or absent`);
+    const scheduled = k.fix === "scheduled";
     issues.push({
       id: k.k, type: "Bug", affects: k.affects, component: COMPONENTS[k.c], summary: k.t,
-      see: k.see, where: k.where, workaround: k.workaround, why: k.why || null,
-      status: STATUS.known, known: true, text: [k.see, k.where, k.workaround, k.why || ""].join(" ").trim(),
+      see: k.see, where: k.where, workaround: k.workaround, why: k.why || null, scheduled,
+      status: scheduled ? STATUS.scheduled : STATUS.known, known: true, text: [k.see, k.where, k.workaround, k.why || ""].join(" ").trim(),
     });
   }
   // Two rows on one issue id (an `id` alias pointing at a hash that is still a live row, or a slug
@@ -266,7 +270,7 @@ function paragraphs(i) {
       ["Where: ", i.where],
       ["Workaround: ", i.workaround],
       ...(i.why ? [["Why: ", i.why]] : []),
-      ["", `Confirmed on ${APP} ${i.affects}. Status: open.`],
+      ["", `Confirmed on ${APP} ${i.affects}. Status: open${i.scheduled ? ", fix scheduled" : ""}.`],
     ];
   }
   return [["", i.text], ["", tailSentence(i)]];
@@ -507,7 +511,7 @@ function reviewMarkdown(want, siteCheck, diff) {
     `- Site: ${SITE}. Project ${KEY} "${NAME}" (company-managed Kanban), description: "${DESCRIPTION}"`,
     `- Permission scheme: its own, "${PERM_SCHEME_NAME}", a copy of the default scheme's grants (internal roles only); public = one BROWSE_PROJECTS grant to "anyone", nothing else, added only by the separate public step.`,
     `- Range: ${APP} ${want.versions[0].name} to ${want.versions[want.versions.length - 1].name} (every version the in-app release notes carry; 6.8.0 has no note of its own). Released state and dates read from the Marketplace versions endpoint: ${want.versions.map((v) => `${v.name} ${v.released ? `public ${v.date}` : "NOT public"}`).join(", ")}.`,
-    `- Issues: ${want.issues.length} (${done.length} Done from release-note lines, ${known.length} open known bugs in Backlog). Withheld note lines: ${want.withheld.length}. Folded note lines: ${Object.keys(want.folds).length}.`,
+    `- Issues: ${want.issues.length} (${done.length} Done from release-note lines, ${known.length} open known bugs: ${fmt(by(known, (i) => statusNames(i.status)[0]))}). Withheld note lines: ${want.withheld.length}. Folded note lines: ${Object.keys(want.folds).length}.`,
     `- Done by type: ${fmt(by(done, (i) => i.type))}. By version: ${fmt(by(done, (i) => i.version))}.`,
     `- By component: ${fmt(by(want.issues, (i) => i.component))}.`,
     ...(siteCheck ? [`- Site check (read-only): ${siteCheck}`] : []),
@@ -524,9 +528,9 @@ function reviewMarkdown(want, siteCheck, diff) {
     "",
     ...Object.values(COMPONENTS).map((c) => `- ${c}`),
     "",
-    `## Known open bugs (Backlog, type Bug, affects version ${[...new Set(known.map((i) => i.affects))].join(", ")})`,
+    `## Known open bugs (Backlog, or Selected for Development when a fix is scheduled; type Bug, affects version ${[...new Set(known.map((i) => i.affects))].join(", ")})`,
     "",
-    ...known.flatMap((i) => [`### ${i.summary}`, "", `- id ${i.id}; component: ${i.component}; status: Backlog; affects: ${i.affects}`, "", quote(plainText(i)), ""]),
+    ...known.flatMap((i) => [`### ${i.summary}`, "", `- id ${i.id}; component: ${i.component}; status: ${statusNames(i.status)[0]}; affects: ${i.affects}`, "", quote(plainText(i)), ""]),
   ];
   for (const v of [...want.versions].reverse()) {
     const rows = done.filter((i) => i.version === v.name);
