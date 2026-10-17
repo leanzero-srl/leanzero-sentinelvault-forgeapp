@@ -9,6 +9,7 @@ import { asApp, route } from "@forge/api";
 import { readPageWorkflow, resolveWorkflowDef, findState, getSpaceWorkflowSettings } from "./logic.js";
 import { resolveApproverIds } from "./approvals.js";
 import { isAccountStewardAsApp } from "../../shared/steward-checks.js";
+import { recordAuthority, isStewardOfSpaces } from "../../shared/content-access.js";
 
 /** @returns {Promise<{ enforced: boolean, privileged: boolean, record?: object }>} */
 export async function workflowPrivilegeForPage(pageId, accountId) {
@@ -21,15 +22,20 @@ export async function workflowPrivilegeForPage(pageId, accountId) {
   if (!prop || prop.enforce !== true) return { enforced: false, privileged: false };
   const record = await readPageWorkflow(pageId);
   if (!record?.enforce) return { enforced: false, privileged: false };
+  // Same as the trigger's probe: where the page is now decides who is a steward, a moved page keeps
+  // the protection it was approved under, the approver arm needs no lookup, and a failed lookup
+  // leaves only that arm (enforced, not privileged otherwise).
+  const auth = await recordAuthority({ contentId: pageId, storedKey: record.spaceKey || null });
   const def = await resolveWorkflowDef(record.spaceKey, record.workflowId);
-  if (!findState(def, record.stateId)?.enforce) return { enforced: false, privileged: false };
+  if (!findState(def, record.stateId)?.enforce && !((auth.moved || !auth.known) && record.enforce === true)) return { enforced: false, privileged: false };
   const settings = await getSpaceWorkflowSettings(record.spaceKey);
   const liveSpec = await resolveApproverIds(settings.approval);
   const liveApprovers = liveSpec?.approvers || [];
-  const privileged =
-    (Array.isArray(record.approvers) && record.approvers.includes(accountId) && (liveApprovers.includes(accountId) || !!liveSpec?.unresolved))
-    || await isAccountStewardAsApp(accountId, record.spaceKey);
-  return { enforced: true, privileged: !!privileged, record };
+  if (Array.isArray(record.approvers) && record.approvers.includes(accountId) && (liveApprovers.includes(accountId) || !!liveSpec?.unresolved)) {
+    return { enforced: true, privileged: true, record };
+  }
+  if (!auth.known) return { enforced: true, privileged: false, unknown: true, record };
+  return { enforced: true, privileged: !!(await isStewardOfSpaces(isAccountStewardAsApp, accountId, auth.spaces)), record };
 }
 
 export const ENFORCED_SEAL_REFUSAL = "This page is Approved — only its approvers or a space admin can seal on it. Propose a change to its approvers instead.";
