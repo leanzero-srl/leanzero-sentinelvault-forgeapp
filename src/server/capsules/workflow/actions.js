@@ -32,8 +32,9 @@ import {
   sanitize,
   listSpaceWorkflows,
   storeSpaceWorkflow,
-  deleteSpaceWorkflow, restoreSpaceDefaultWorkflow } from "./logic.js";
+  deleteSpaceWorkflow, restoreSpaceDefaultWorkflow, removeRefusal } from "./logic.js";
 import { runBundle } from "./bundle.js"; // WF-11
+import { movedPageHold, MOVED_HOLD_REASON, MOVED_UNKNOWN_REASON } from "./moved-hold.js";
 import { shownEnforcement, contentProtectionEnabled } from "./enforce-rules.js"; // 2026-10-16: the words follow what the engine does
 import {
   extractApprovalConfig,
@@ -154,6 +155,13 @@ const getWorkflow = async (req) => {
     const settings = await getSpaceWorkflowSettings(result.record?.spaceKey || await resolvePageSpaceKey(pageId));
     const hasApprovers = !!extractApprovalConfig(settings.approval);
     result.available = result.available.map((s) => ({ ...s, requiresApproval: !!(s.enforce && hasApprovers) }));
+    // A page that moved spaces after its workflow started holds still (moved-hold.js): no moves are
+    // offered to anyone the server would refuse.
+    if (result.record?.spaceKey && pageSpaceKey && result.record.spaceKey !== pageSpaceKey
+      && !(req.context?.accountId && await isStewardOfSpaces(authorizeSteward, req.context.accountId, [pageSpaceKey, result.record.spaceKey]))) {
+      result.available = [];
+      result.movedHold = true;
+    }
     // A4: the ribbon's "changed since approval" line says what happens to the edit: the space's
     // enforce mode, or "off" while the site's content-protection switch has enforcement off.
     result.enforceMode = shownEnforcement(settings, await kvs.get("admin-settings-global").catch(() => null));
@@ -203,12 +211,21 @@ const assignWorkflow = async (req) => {
   // The page's space NOW is the one the new record is filed under. When the page moved after an
   // earlier record was made, the caller must administer that record's space as well
   // (stewardOfPageRecord): this is how a moved page is brought under its new space.
-  const prevSpaceKey = (await readPageWorkflow(pageId))?.spaceKey || null;
+  const prev = await readPageWorkflow(pageId);
+  const prevSpaceKey = prev?.spaceKey || null;
   const spaceKey = ctxSpaceKeyFor(req, pageId) || await resolvePageSpaceKey(pageId);
   if (!spaceKey) return { success: false, reason: "Could not resolve this page's space" };
   // Assigning a workflow is a steward act in v1 (per-page-owner assignment arrives with #43).
   if (!(await isStewardOfSpaces(authorizeSteward, actorAccountId, [...new Set([spaceKey, prevSpaceKey].filter(Boolean))]))) {
     return { success: false, reason: "Only a space admin can assign a workflow" };
+  }
+  // Assigning again starts the page from the first state. Not while it is Approved (the approval
+  // holds its seals, and nothing would hand them back) or an approval request waits on it: the
+  // same refusal as taking it out (logic.js removeRefusal).
+  if (prev) {
+    const prevDef = await resolveWorkflowDef(prev.spaceKey, prev.workflowId);
+    const refusal = removeRefusal({ record: prev, stateEnforced: !!(prev.enforce || findState(prevDef, prev.stateId)?.enforce), hasPending: !!(await kvs.get(`workflow-pending-${pageId}`)) });
+    if (refusal) return { success: false, reason: refusal };
   }
   return assignPageWorkflow({
     pageId,
@@ -272,14 +289,9 @@ export const requestTransition = async (req) => {
   if (!(await canEditPage(actorAccountId, pageId))) {
     return { success: false, reason: "You do not have permission to change this page's state" };
   }
-  if (!auth.known) return { success: false, reason: "Could not check where this page is right now — please retry." };
-  // A page that moved to another space after its workflow started runs on the rules of the space it
-  // left (its definition, approvers, conditions), which that space's admins can change and this
-  // page's new space cannot see. It holds still until an admin of both spaces, or a site admin,
-  // assigns its workflow again (assign-workflow files it under the new space).
-  if (auth.moved && !(await isSteward())) {
-    return { success: false, moved: true, reason: "This page moved to another space after its workflow started. An admin of both spaces, or a site admin, needs to assign its workflow again before it can change state." };
-  }
+  // A page that moved to another space after its workflow started holds still (moved-hold.js).
+  if (!auth.known) return { success: false, reason: MOVED_UNKNOWN_REASON };
+  if (auth.moved && !(await isSteward())) return { success: false, moved: true, reason: MOVED_HOLD_REASON };
 
   // Entering an `enforce`-marked state (e.g. Approved): if the space has approvers
   // configured (#43), open a multi-approver approval instead of transitioning now;
@@ -498,6 +510,9 @@ const rerequestApprovalAction = async (req) => {
   if (!pageId) return { success: false, reason: "No page context" };
   if (!(await callerMayReadPage(req, pageId))) return { success: false, reason: "You do not have access to this page" };
   const spaceKey = (await readPageWorkflow(pageId))?.spaceKey || null;
+  // Re-pinning moves the request to content written after a move: held like any other move.
+  const hold = await movedPageHold(pageId, { actorAccountId, storedKey: spaceKey, liveKey: ctxSpaceKeyFor(req, pageId), check: authorizeSteward });
+  if (hold) return { success: false, reason: hold.reason, moved: !!hold.moved };
   const isSteward = spaceKey ? await stewardOfPageRecord(authorizeSteward, req, pageId, spaceKey) : false;
   const r = await rerequestApproval({ pageId, actorAccountId, actorName: await actorName(actorAccountId), isSteward });
   if (r.success && r.changed && r.aiGate) {

@@ -32,6 +32,7 @@ import { notifyApprovalRequested, notifyApprovalResolved } from "../../infra/app
 import { recordActivity } from "../../infra/activity-log.js";
 import { isAccountStewardAsApp } from "../../shared/steward-checks.js";
 import { isStewardOfRecord } from "../../shared/content-access.js";
+import { movedPageHold } from "./moved-hold.js";
 import { verifySignature } from "./signature.js";
 
 const APPROVAL_ID = "approval"; // v1 single default round; schema carries the segment for future named rounds
@@ -361,6 +362,10 @@ export async function clearPageApprovals(pageId, stateId, approvers) {
 const completingKey = (pageId) => `workflow-completing-${pageId}`;
 
 async function finalizeApprovedTransition(pageId, stateId, pending, actorAccountId, actorName, voteSummary) {
+  // The backstop for every completion (the last vote, an AI verdict): a page that moved to another
+  // space since the request does not move (moved-hold.js); the request stays open.
+  const hold = await movedPageHold(pageId, { actorAccountId, storedKey: pending?.spaceKey || null });
+  if (hold) return { success: false, reason: hold.reason, moved: !!hold.moved, transitioned: false };
   const approvers = deciderIds(pending); // records to snapshot and clear: listed + admins who decided
   // One-shot completion CLAIM (dedup concurrent finalizers: duplicate AI delivery, and the
   // AI-verdict-vs-last-human-vote race). KVS has no CAS, so this narrows the window; the
@@ -493,6 +498,12 @@ export async function decideApproval({ pageId, approverAccountId, decision, reas
     return { success: false, reason: "Your decision has already been recorded" };
   }
   if (decision !== "approved" && decision !== "denied") return { success: false, reason: "Invalid decision" };
+  // An approval of a page that moved to another space since the request is held (moved-hold.js) —
+  // before anything is recorded. A "no" still closes the request.
+  if (decision === "approved") {
+    const hold = await movedPageHold(pageId, { actorAccountId: approverAccountId, storedKey: pending.spaceKey || null });
+    if (hold) return { success: false, reason: hold.reason, moved: !!hold.moved };
+  }
   // WF-1 (UX critique 2026-09-19): an approval of a version nobody reviewed is refused UP FRONT —
   // nothing recorded, the request stays open, no comment. Before this the vote was recorded, the
   // finalizer threw the whole request away as "stale" and the requester read "declined by <the

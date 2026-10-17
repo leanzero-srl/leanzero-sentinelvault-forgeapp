@@ -23,18 +23,19 @@ export async function workflowPrivilegeForPage(pageId, accountId) {
   const record = await readPageWorkflow(pageId);
   if (!record?.enforce) return { enforced: false, privileged: false };
   // Same as the trigger's probe: where the page is now decides who is a steward, a moved page keeps
-  // the protection it was approved under, and a failed lookup is enforced-and-not-privileged.
+  // the protection it was approved under, the approver arm needs no lookup, and a failed lookup
+  // leaves only that arm (enforced, not privileged otherwise).
   const auth = await recordAuthority({ contentId: pageId, storedKey: record.spaceKey || null });
-  if (!auth.known) return { enforced: true, privileged: false, record };
   const def = await resolveWorkflowDef(record.spaceKey, record.workflowId);
-  if (!findState(def, record.stateId)?.enforce && !(auth.moved && record.enforce === true)) return { enforced: false, privileged: false };
+  if (!findState(def, record.stateId)?.enforce && !((auth.moved || !auth.known) && record.enforce === true)) return { enforced: false, privileged: false };
   const settings = await getSpaceWorkflowSettings(record.spaceKey);
   const liveSpec = await resolveApproverIds(settings.approval);
   const liveApprovers = liveSpec?.approvers || [];
-  const privileged =
-    (Array.isArray(record.approvers) && record.approvers.includes(accountId) && (liveApprovers.includes(accountId) || !!liveSpec?.unresolved))
-    || await isStewardOfSpaces(isAccountStewardAsApp, accountId, auth.spaces);
-  return { enforced: true, privileged: !!privileged, record };
+  if (Array.isArray(record.approvers) && record.approvers.includes(accountId) && (liveApprovers.includes(accountId) || !!liveSpec?.unresolved)) {
+    return { enforced: true, privileged: true, record };
+  }
+  if (!auth.known) return { enforced: true, privileged: false, unknown: true, record };
+  return { enforced: true, privileged: !!(await isStewardOfSpaces(isAccountStewardAsApp, accountId, auth.spaces)), record };
 }
 
 export const ENFORCED_SEAL_REFUSAL = "This page is Approved — only its approvers or a space admin can seal on it. Propose a change to its approvers instead.";

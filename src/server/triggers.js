@@ -526,7 +526,7 @@ export async function pageContentTrigger(event) {
     // --- #44 reconciliation (§2.5): keep approvedVersion == the last version the app or
     // a privileged actor actually produced (never a pre-pass guess). Forward-only. ---
     try {
-      if (enforcement && enforcement.action !== "demote") {
+      if (enforcement && enforcement.action !== "demote" && enforcement.action !== "unknown") {
         let newBaseline = null;
         if (anyChange && writtenVersion) {
           newBaseline = writtenVersion; // app wrote (revert, or a seal restore on a privileged edit)
@@ -1295,16 +1295,13 @@ export async function collectWorkflowEnforcementForPage(pageId, atlassianId, eve
   const record = await readPageWorkflow(pageId);
   if (!record?.enforce) return null;
   // Where the page is now (the event names it: no lookup) against the space the record was made in
-  // (content-access.js recordAuthority). Unknown — Confluence could not be asked — is not judged
-  // here: a steward's edit must never be demoted or undone for a failed lookup; the page-guard and
-  // hourly sweeps judge the page again.
+  // (content-access.js recordAuthority). A page that MOVED keeps the protection it was approved
+  // under: the old space's definition no longer describes a space the page is in, so a change there
+  // (Approved no longer locking) does not switch it off. Unknown — Confluence could not be asked —
+  // is judged as enforced, and below it never demotes or undoes anything (see "unknown").
   const auth = await recordAuthority({ contentId: pageId, storedKey: record.spaceKey || null, liveKey: liveSpaceKey });
-  if (!auth.known) return null;
   const def = await resolveWorkflowDef(record.spaceKey, record.workflowId);
-  // A page that MOVED keeps the protection it was approved under: the old space's definition no
-  // longer describes a space the page is in, so a change there (e.g. Approved no longer locking)
-  // does not switch it off. The record's own enforce flag decides until the page is re-assigned.
-  if (!findState(def, record.stateId)?.enforce && !(auth.moved && record.enforce === true)) return null;
+  if (!findState(def, record.stateId)?.enforce && !((auth.moved || !auth.known) && record.enforce === true)) return null;
   // 3. Privileged? snapshot ∩ live-config approvers, OR live steward (§0.D/§0.E).
   //    If live group-expansion FAILED (outage), trust the snapshot rather than reverting a
   //    real approver's edit — revocation is only honored when expansion actually succeeds.
@@ -1312,11 +1309,16 @@ export async function collectWorkflowEnforcementForPage(pageId, atlassianId, eve
   const liveSpec = await resolveApproverIds(settings.approval);
   const liveApprovers = liveSpec?.approvers || [];
   const liveUnresolved = !!liveSpec?.unresolved;
-  const privileged =
-    (Array.isArray(record.approvers) && record.approvers.includes(atlassianId) && (liveApprovers.includes(atlassianId) || liveUnresolved))
-    // A steward of the space the page is in NOW and, if it moved, of the record's (recordAuthority).
-    || await isStewardOfSpaces(isAccountStewardAsApp, atlassianId, auth.spaces);
-  if (privileged) return { action: "privileged", record }; // reconciliation (§2.5) advances the baseline
+  // The approver arm needs no space lookup, so it answers first (an outage never costs an approver).
+  if (Array.isArray(record.approvers) && record.approvers.includes(atlassianId) && (liveApprovers.includes(atlassianId) || liveUnresolved)) {
+    return { action: "privileged", record }; // reconciliation (§2.5) advances the baseline
+  }
+  // Where the page is could not be read: the steward arm cannot be judged. "unknown" demotes and
+  // undoes nothing, advances no baseline, and is not privileged inside held seals or for adopting
+  // new wrappers; the page-guard and hourly sweeps judge the version again.
+  if (!auth.known) return { action: "unknown", record };
+  // A steward of the space the page is in NOW and, if it moved, of the record's (recordAuthority).
+  if (await isStewardOfSpaces(isAccountStewardAsApp, atlassianId, auth.spaces)) return { action: "privileged", record };
 
   // 3b. A late event for a version the approval already covers (the requester's own last save
   //     before the approval, delivered ~10 min after it — or the guard judging that version on the
@@ -1330,7 +1332,9 @@ export async function collectWorkflowEnforcementForPage(pageId, atlassianId, eve
 
   // 4. Not privileged -> revert (opt-in) or demote (default) — the mode the space admin chose, with
   //    or without named approvers (enforce-rules.js enforceModeOf says why the old CL-5 downgrade went).
-  const mode = enforceModeOf(settings);
+  // A moved page is always reverted: the old space's settings (its mode, its demote target and the
+  // definition's edges) are not the new space's, and a body revert depends on none of them.
+  const mode = auth.moved ? "revert" : enforceModeOf(settings);
   if (mode === "revert") return { action: "revert", record, spaceKey: record.spaceKey, stewardSpaces: auth.spaces };
 
   // DEMOTE inline (§2.6) — no body write, no ADF read, no ping-pong surface.
@@ -1656,7 +1660,7 @@ export async function workflowSweep() {
           await kvs.delete(`workflow-integrity-notified-${idx.pageId}`).catch(() => {});
           continue;
         }
-        const mode = enforceModeOf(settings); // the event path's rule (no approver-count downgrade)
+        const mode = auth.moved ? "revert" : enforceModeOf(settings); // the event path's rule (a moved page: revert)
         const alreadyNotified = await kvs.get(`workflow-integrity-notified-${idx.pageId}`);
         if (mode === "revert") {
           const ok = await sweepRevertToApproved(idx.pageId, record);
