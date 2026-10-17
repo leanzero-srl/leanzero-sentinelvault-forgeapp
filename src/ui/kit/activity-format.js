@@ -486,7 +486,7 @@ export function formatActivity(entry) {
       const siteOff = capped.includes("site-off");
       return { ...base, label: "AI capped by the site", glyph: "shield", tone: "caution",
         sentence: siteOff
-          ? `${who} turned on AI review for this space, but AI is turned off for this site by a site admin, so it stays off`
+          ? `${who} ${d.turnedOn === false ? "changed this space's AI settings" : "turned on AI review for this space"}, but AI is turned off for this site by a site admin, so it stays off`
           : `${who} set this space's AI budget above the site's, so the site's ${d.siteBudget ? `${fmt(d.siteBudget)} tokens a month` : "budget"} applies`,
         detail: !siteOff && d.asked ? `asked for ${budgetText(d.asked.monthlyTokenBudget)}` : "" };
     }

@@ -120,10 +120,11 @@ export const AI_CAP_SITE_OFF = "site-off";
 export const AI_CAP_BUDGET = "site-budget";
 export const AI_SITE_OFF_REASON = "AI is turned off for this site by a site admin.";
 
-/** PURE. A budget as a positive whole number of tokens, or 0 for "no limit". */
+/** PURE. A budget as a positive whole number of tokens, or 0 for "no limit". A fraction above 0
+ *  is 1 token, never "no limit" (a REST-written 0.5 used to stop AI after the first run). */
 export function budgetOf(v) {
-  const n = Math.floor(Number(v));
-  return Number.isFinite(n) && n > 0 ? n : 0;
+  const n = Number(v);
+  return Number.isFinite(n) && n > 0 ? Math.max(1, Math.floor(n)) : 0;
 }
 
 /**
@@ -199,17 +200,27 @@ export async function checkAiSpend(spaceKey) {
 }
 
 /**
- * The AI gate's verdict when the review may not run (checkAiSpend said no). AI switched off (for
- * the site or the space) skips the condition, as it always has; a spent budget blocks or allows
- * per the space's onBudgetExhausted. Shared by enqueueAiGate and the queue consumer so both ends agree.
+ * The AI gate's verdict when the review may not run (checkAiSpend said no). Shared by enqueueAiGate
+ * and the queue consumer so both ends agree.
+ *   - The SPACE has AI off: the condition is skipped, as it always was (the space's own choice).
+ *   - The space has AI on but the SITE ceiling stops it (site switch off), or the budget is spent:
+ *     the review the space requires cannot run, so the space's onBudgetExhausted decides — block
+ *     (the default) or allow with a warning. Skipping here would let a page reach Approved without
+ *     the review its space requires, only because a site admin turned AI off.
  */
 export function aiGateRefusal(spend, onBudgetExhausted) {
+  const allow = onBudgetExhausted === "allow";
   if (spend.why === "budget") {
-    return onBudgetExhausted === "allow"
+    return allow
       ? { enqueued: false, verdict: "passed", reason: "AI budget exhausted — allowed with a warning." }
       : { enqueued: false, verdict: "failed", reason: "This space has reached its monthly AI budget." };
   }
-  return { enqueued: false, verdict: "passed", reason: spend.siteOff ? "AI is turned off for this site by a site admin — condition skipped." : "AI review isn't enabled — condition skipped." };
+  if (spend.ai?.ceiling?.capped?.includes(AI_CAP_SITE_OFF)) {
+    return allow
+      ? { enqueued: false, verdict: "passed", reason: "AI is turned off for this site by a site admin — allowed with a warning." }
+      : { enqueued: false, verdict: "failed", reason: "AI is turned off for this site by a site admin, so the required AI review cannot run." };
+  }
+  return { enqueued: false, verdict: "passed", reason: "AI review isn't enabled — condition skipped." };
 }
 
 // --- Page validation-state content property ---
@@ -390,18 +401,22 @@ export async function setFindingState(pageId, fid, state) {
 }
 
 // --- Token usage accounting (per realm per month) ---
+// The space key as a KVS key segment: a personal space (`~7120…`) would otherwise throw on the read
+// AND the write (KVS keys accept [a-zA-Z0-9:._\s-#] only), so the budget check failed and a spent
+// call was never counted. Same regex as every other space-keyed family (sanitize above).
+const usageKey = (realmKey) => `ai-usage-${sanitize(realmKey || "global")}-${monthKey()}`;
 function monthKey() {
   const d = new Date();
   return `${d.getUTCFullYear()}${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
 }
 
 export async function getMonthlyTokenUsage(realmKey) {
-  const usage = await kvs.get(`ai-usage-${realmKey || "global"}-${monthKey()}`);
+  const usage = await kvs.get(usageKey(realmKey));
   return usage?.totalTokens || 0;
 }
 
 export async function accrueTokenUsage(realmKey, usage) {
-  const key = `ai-usage-${realmKey || "global"}-${monthKey()}`;
+  const key = usageKey(realmKey);
   const cur = (await kvs.get(key)) || { inputTokens: 0, outputTokens: 0, totalTokens: 0, runs: 0 };
   cur.inputTokens += usage?.inputTokens || 0;
   cur.outputTokens += usage?.outputTokens || 0;

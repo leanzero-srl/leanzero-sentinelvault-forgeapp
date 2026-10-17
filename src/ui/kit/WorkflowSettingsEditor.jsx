@@ -333,7 +333,7 @@ export const WorkflowApprovalSection = ({ settings, setSettings, def, spaceKey =
             <Toggle
               label="Require an AI content review before Approved"
               checked={requireAi}
-              /* Site AI off: the condition cannot be turned on (it would be skipped); one already on can still be turned off. */
+              /* Site AI off: the condition cannot be turned on (the review could not run); one already on can still be turned off, since it blocks Approved meanwhile. */
               disabled={siteAiOff && !requireAi}
               onChange={(e) => setSettings((p) => ({ ...p, entryConditions: { ...p.entryConditions, approved: { requireRules: false, aiThreshold: "medium", onBudgetExhausted: "block", ...(p.entryConditions?.approved || {}), requireAi: e.target.checked } } }))}
             />

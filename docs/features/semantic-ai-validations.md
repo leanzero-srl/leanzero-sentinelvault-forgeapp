@@ -56,8 +56,8 @@ Results — the **AI Review** group in the panel (HIGH/MEDIUM/LOW findings + sug
 
 ## Troubleshooting
 
-- **No "Run AI review" button** — AI is disabled for the space (default). An admin enables it in the Validations tab.
-- **"reached its monthly AI token budget"** — raise or clear the monthly budget in the config.
+- **No "Run AI review" button** — AI is off for the space or for the site (both are off by default). The site switch is a ceiling: while a site admin has AI review off in the site settings (Validations), it is off in every space, and the space's Validations tab says so. Otherwise a space admin enables it in the space's Validations tab.
+- **"reached its monthly AI token budget"** — raise or clear the monthly budget. A space's budget can never be higher than the site's (a space set to 0 or above the site's runs on the site's), so above that only a site admin can raise it.
 - **Only Haiku in the model dropdown** — intentional cost control; Sonnet/Opus are reserved for a future paid tier and are clamped at three layers.
 - **The card text still says "BYOK"** — that wording lives on the Marketplace listing / marketing site, not in this repo; update it there to "Atlassian-hosted Claude — Runs on Atlassian."
 

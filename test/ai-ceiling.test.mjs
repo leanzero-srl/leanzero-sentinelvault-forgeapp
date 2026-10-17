@@ -18,6 +18,14 @@ import { eq, ok, report } from "./_assert.mjs";
 
 const { resetFake, onConfluence, fake } = await import("./_forge-fake/state.mjs");
 const { kvs } = await import("@forge/kvs");
+// Forge KVS refuses a key outside [a-zA-Z0-9:._\s-#] (a personal space key `~7120…` raw in a key
+// throws). The shared fake accepts anything, which is how an unsanitised ai-usage key hid; here
+// the fake refuses like the real store.
+const KEY_OK = /^[a-zA-Z0-9:._\s\-#]+$/;
+for (const m of ["get", "set", "delete"]) {
+  const real = kvs[m];
+  kvs[m] = async (k, ...rest) => { if (!KEY_OK.test(String(k))) throw new Error(`invalid key ${k}`); return real(k, ...rest); };
+}
 const L = await import("../src/server/capsules/validations/logic.js");
 const A = await import("../src/server/capsules/validations/actions.js");
 const W = await import("../src/server/capsules/validations/ai-worker.js");
@@ -60,6 +68,7 @@ eq("capped reasons: none for an obedient space", cap({ enabled: true, monthlyTok
 eq("capped reasons: none when the space inherits the site", cap({ enabled: true, monthlyTokenBudget: 10 }, null).ceiling?.capped, []);
 eq("a stored `ceiling` on a space config is never trusted", cap({ enabled: false }, { enabled: true, ceiling: { siteEnabled: true, capped: [] } }).ceiling?.siteEnabled, false);
 ok("a cap note names the site admin", /turned off for this site by a site admin/i.test((fns("aiCapNote") || (() => ""))(cap({ enabled: false }, { enabled: true })) || ""));
+eq("a fractional budget is 1 token, never unlimited", [(fns("budgetOf") || (() => null))(0.5), (fns("budgetOf") || (() => null))(0), (fns("budgetOf") || (() => null))(Infinity)], [1, 0, 0]);
 eq("no note when nothing was capped", (fns("aiCapNote") || (() => "x"))(cap({ enabled: true }, { enabled: true })), null);
 
 // ── a Confluence with one page in one space, and one Sentinel Vault space admin ─────────────────
@@ -126,7 +135,12 @@ eq("manual review: under the site budget => queued (positive control)", [r.succe
 await world({ site: { enabled: false }, space: { enabled: true } });
 r = await A.enqueueAiGate({ pageId: PAGE, spaceKey: SPACE.key, pinnedVersion: 3, threshold: "medium", onBudgetExhausted: "block" });
 eq("AI gate: site off + space on => not enqueued", [r.enqueued, aiQueued()], [false, 0]);
-ok("…the condition is skipped with the site reason (AI off never blocks a move)", r.verdict === "passed" && /site admin/i.test(r.reason || ""));
+ok("…the required review cannot run, so the move is blocked with the site reason (never a silent pass)", r.verdict === "failed" && /site admin/i.test(r.reason || ""));
+r = await A.enqueueAiGate({ pageId: PAGE, spaceKey: SPACE.key, pinnedVersion: 3, threshold: "medium", onBudgetExhausted: "allow" });
+ok("AI gate: site off + space on + allow => passes with the site warning, nothing queued", r.verdict === "passed" && /site admin.*warning/i.test(r.reason || "") && aiQueued() === 0);
+await world({ site: { enabled: false }, space: { enabled: false } });
+r = await A.enqueueAiGate({ pageId: PAGE, spaceKey: SPACE.key, pinnedVersion: 3, threshold: "medium", onBudgetExhausted: "block" });
+ok("AI gate: the SPACE has AI off => skipped as it always was (the space's own choice)", r.verdict === "passed" && /isn't enabled/i.test(r.reason || "") && aiQueued() === 0);
 await world({ site: { enabled: true, monthlyTokenBudget: 1000 }, space: { enabled: true, monthlyTokenBudget: 0 }, used: 1000 });
 r = await A.enqueueAiGate({ pageId: PAGE, spaceKey: SPACE.key, pinnedVersion: 3, threshold: "medium", onBudgetExhausted: "block" });
 eq("AI gate: space unlimited, site budget used up => not enqueued, blocked", [r.enqueued, r.verdict, aiQueued()], [false, "failed", 0]);
@@ -152,7 +166,7 @@ await world({ site: { enabled: false }, space: { enabled: true }, pending: pendi
 await W.aiValidationConsumer({ body: { taskId: "g1", mode: "gate", pageId: PAGE, spaceKey: SPACE.key, realmKey: SPACE.key, pinnedVersion: 3, threshold: "medium" } });
 let gate = (await kvs.get(`workflow-pending-${PAGE}`))?.aiGate;
 eq("consumer (gate): site off + space on => no model call", fake.llmCalls.length, 0);
-ok("…the condition is skipped with the site reason", gate?.status === "passed" && /site admin/i.test(gate?.reason || ""));
+ok("…a job without onBudgetExhausted (queued before 8.7.0) blocks, with the site reason", gate?.status === "failed" && /site admin/i.test(gate?.reason || ""));
 await world({ site: { enabled: true, monthlyTokenBudget: 1000 }, space: { enabled: true, monthlyTokenBudget: 0 }, used: 1000, pending: pendingGate() });
 await W.aiValidationConsumer({ body: { taskId: "g2", mode: "gate", pageId: PAGE, spaceKey: SPACE.key, realmKey: SPACE.key, pinnedVersion: 3, threshold: "medium", onBudgetExhausted: "block" } });
 gate = (await kvs.get(`workflow-pending-${PAGE}`))?.aiGate;
@@ -164,6 +178,24 @@ eq("consumer (gate): budget used up + allow => no model call, passed with a warn
 await world({ site: { enabled: true }, space: { enabled: true }, pending: pendingGate() });
 await W.aiValidationConsumer({ body: { taskId: "g4", mode: "gate", pageId: PAGE, spaceKey: SPACE.key, realmKey: SPACE.key, pinnedVersion: 3, threshold: "medium" } });
 eq("consumer (gate): site on => one model call (positive control)", fake.llmCalls.length, 1);
+
+// ── a personal space (`~…` key): the budget is read and counted, never thrown on ─────────────────
+{
+  resetFake(); fake.queued = []; fake.llmCalls = [];
+  const PERSONAL = "~7120abcdef";
+  await kvs.set(GKEY, { ai: { enabled: true, monthlyTokenBudget: 1000 } });
+  await kvs.set(`validation-config-space-${PERSONAL.replace(/[^a-zA-Z0-9:._\s-#]/g, "_")}`, { ai: { enabled: true, monthlyTokenBudget: 0 } });
+  let threw = null, spend = null;
+  try { spend = await L.checkAiSpend(PERSONAL); } catch (e) { threw = String(e?.message || e); }
+  eq("personal space: the spend gate answers (no invalid-key throw)", [threw, spend?.ok], [null, true]);
+  try { await L.accrueTokenUsage(PERSONAL, { inputTokens: 600, outputTokens: 400, totalTokens: 1000 }); } catch (e) { threw = String(e?.message || e); }
+  eq("personal space: usage is counted", [threw, await L.getMonthlyTokenUsage(PERSONAL).catch(() => "threw")], [null, 1000]);
+  try { spend = await L.checkAiSpend(PERSONAL); } catch (e) { threw = String(e?.message || e); spend = null; }
+  eq("personal space: the site budget applies once it is used up", [threw, spend?.ok, spend?.why], [null, false, "budget"]);
+  let gateR = null;
+  try { gateR = await A.enqueueAiGate({ pageId: PAGE, spaceKey: PERSONAL, pinnedVersion: 3, threshold: "medium", onBudgetExhausted: "block" }); } catch (e) { threw = String(e?.message || e); }
+  eq("personal space: the AI gate resolves (blocked), never throws mid-request", [threw, gateR?.verdict, aiQueued()], [null, "failed", 0]);
+}
 
 // ── reporters: the panel's aiEnabled flag ──────────────────────────────────────────────────────
 await world({ site: { enabled: false }, space: { enabled: true } });
@@ -182,7 +214,7 @@ eq("…and says it was capped", r.capped, ["site-off"]);
 ok("…in words", /turned off for this site by a site admin/i.test(r.note || ""));
 const capEvents = [...fake.kvs.keys()].filter((k) => k.startsWith(`activity-space-${SPACE.key}-`)).map((k) => fake.kvs.get(k)).filter((e) => e?.type === "validation.ai-capped");
 eq("…and the space's activity log records the cap", capEvents.length, 1);
-eq("…with what was capped", capEvents[0]?.details?.capped, ["site-off"]);
+eq("…with what was capped, and that this save turned AI on", [capEvents[0]?.details?.capped, capEvents[0]?.details?.turnedOn], [["site-off"], true]);
 ok("validation.ai-capped is a known activity type", AL.ACTIVITY_TYPES.includes("validation.ai-capped"));
 eq("…and still nothing can run", (await L.resolveAiConfig(SPACE.key)).enabled, false);
 await world({ site: { enabled: true, monthlyTokenBudget: 1000 } });
@@ -223,7 +255,8 @@ ok("REST mirror: no prompt, no budget", !JSON.stringify(mirrored).includes("secr
 // The audit line reads as a sentence on every surface that shows the space's activity.
 const { formatActivity } = await import("../src/ui/kit/activity-format.js");
 const row = (details) => formatActivity({ id: "x", ts: new Date().toISOString(), type: "validation.ai-capped", pageId: null, spaceKey: SPACE.key, actor: { accountId: STEWARD, name: "Alice Stone" }, target: { kind: "space", id: SPACE.key, name: null }, details });
-eq("activity: site off", row({ capped: ["site-off"], asked: { enabled: true, monthlyTokenBudget: 0 } }).sentence, "Alice Stone turned on AI review for this space, but AI is turned off for this site by a site admin, so it stays off");
+eq("activity: site off", row({ capped: ["site-off"], turnedOn: true, asked: { enabled: true, monthlyTokenBudget: 0 } }).sentence, "Alice Stone turned on AI review for this space, but AI is turned off for this site by a site admin, so it stays off");
+eq("activity: site off, AI already on, budget changed", row({ capped: ["site-off"], turnedOn: false, asked: { enabled: true, monthlyTokenBudget: 50 } }).sentence, "Alice Stone changed this space's AI settings, but AI is turned off for this site by a site admin, so it stays off");
 eq("activity: budget", [row({ capped: ["site-budget"], asked: { enabled: true, monthlyTokenBudget: 0 }, siteBudget: 1000 }).sentence, row({ capped: ["site-budget"], asked: { enabled: true, monthlyTokenBudget: 0 }, siteBudget: 1000 }).detail], ["Alice Stone set this space's AI budget above the site's, so the site's 1,000 tokens a month applies", "asked for no limit"]);
 
 // ── no path around the ceiling ─────────────────────────────────────────────────────────────────
