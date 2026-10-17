@@ -258,8 +258,7 @@ The reds that were green are event latency, not scopes. gate-revert, revert-dest
 | server/shared/page-status.js:35 | asApp | v2 GET /pages | read:page:confluence | read:page:confluence |
 | server/shared/steward-checks.js:33 | asApp | v1 GET /wiki/rest/api/user | read:confluence-user or read:content-details:confluence | read:confluence-user |
 | server/shared/steward-checks.js:52 | asApp | v1 GET /wiki/rest/api/user/memberof | read:confluence-user or read:group:confluence+read:user:confluence | read:confluence-user |
-| server/shared/steward-checks.js:62 | asApp | v1 POST /wiki/rest/api/space/{key}/permission/check (not in the current spec; measured 401 2026-10-04, fail-closed) | (none documented) | n/a — already refused before 7.0 |
-| server/shared/steward-checks.js:78 | asUser | v1 POST /wiki/rest/api/space/{key}/permission/check (not in the current spec; measured 401 2026-10-04, fail-closed) | (none documented) | n/a — already refused before 7.0 |
+| server/shared/steward-checks.js (isSpaceAdministrator) | asApp | v2 GET /wiki/api/v2/spaces?keys= + /wiki/api/v2/spaces/{id}/permissions (replaced the dead v1 space permission/check on 2026-10-17: 405 on every method) | read:space:confluence | read:space:confluence (held) |
 | server/shared/steward-checks.js:142 | asUser | v1 GET /wiki/rest/api/user | read:confluence-user or read:content-details:confluence | read:confluence-user |
 | server/shared/steward-checks.js:176 | asUser | v1 GET /wiki/rest/api/user | read:confluence-user or read:content-details:confluence | read:confluence-user |
 | server/shared/steward-checks.js:184 | asApp | v1 GET /wiki/rest/api/user | read:confluence-user or read:content-details:confluence | read:confluence-user |

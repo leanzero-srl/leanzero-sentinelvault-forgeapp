@@ -2,6 +2,14 @@
 
 GENERATED from `src/server/shared/release-notes.js` by `scripts/render-release-notes.mjs`. Do not edit.
 
+## 8.7.0 — 2026-10-17
+
+**Space admins are recognised from the space's own permissions**
+
+
+Fixed:
+- A space admin who was not also a site or Confluence admin, or on Sentinel Vault's own admin list, was treated as an ordinary user: the space's Sentinel Vault page asked them to request admin access, they could not approve as a space admin or use the other space admin actions, and an edit they made to an Approved page was moved back or undone like anyone else's. Sentinel Vault now recognises everyone the space's permissions make an admin, directly, through a group or through the space's Admin role.
+
 ## 8.6.0 — 2026-10-16
 
 **A deleted Jira issue's sealed file downloads under its own name, and Approved pages are protected exactly as the settings say**
