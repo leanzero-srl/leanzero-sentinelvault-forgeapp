@@ -83,7 +83,11 @@ eq("admin of A in A: site rules (for the override note)", siteForA?.rules?.map((
 ok("admin of A in A: no site AI settings", !leaks(siteForA, "SITE-STYLE-SECRET", "SITE-TONE-SECRET", "SITE-COMPLIANCE-SECRET", "SITE-AI-RULES-SECRET") && !siteForA?.ai);
 ok("admin of A standing in B: site refused", refused(await call(ADMIN_A, { scope: "global" }, inSpace(B))));
 ok("admin of A, no space context: site refused", refused(await call(ADMIN_A, { scope: "global" })));
-ok("admin of A, payload key A but no context: site refused", refused(await call(ADMIN_A, { scope: "global", key: A })));
+const siteForAByKey = await call(ADMIN_A, { scope: "global", key: A });
+eq("admin of A naming A (the space editor's call): site rules", siteForAByKey?.rules?.map((r) => r.id), ["g1"]);
+ok("admin of A naming A: no site AI settings", !leaks(siteForAByKey, "SECRET") && !siteForAByKey?.ai);
+ok("admin of A naming B: site refused", refused(await call(ADMIN_A, { scope: "global", key: B })));
+ok("plain user naming A: site refused", refused(await call(PLAIN, { scope: "global", key: A })));
 
 // A site admin reads everything.
 const siteFull = await call(SITE_ADMIN, { scope: "global" });

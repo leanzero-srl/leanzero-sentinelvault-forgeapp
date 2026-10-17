@@ -51,9 +51,32 @@ export async function resolveRules(spaceKey) {
   return mergeEffectiveRules(global.rules, space?.rules);
 }
 
+// Who may READ the stored validation config. It holds the rule text and the AI review settings
+// (style guide, tone, compliance and custom-rule prompts, model, budget): a space's or the site's
+// governance settings, not page content. The read floor is the write floor (storeConfig below):
+//   space scope → an admin of THAT space (isOperatorSteward admits site admins too);
+//   site scope  → a site admin. An admin of a space (the context space, else the space the
+//                 request names — the space editor sends its own) also gets the site's RULES,
+//                 which apply to their space and which the space editor shows beside its own
+//                 (audit C6) — never the site's AI settings.
+// A space scope without a key used to fall through to the site config; it is refused now.
+const READ_DENIED = Object.freeze({ success: false, reason: "Not authorized — space admin access required." });
+
 const loadConfig = async (req) => {
   const { scope, key } = req.payload || {};
-  return await loadValidationConfig(scope || "global", key);
+  const caller = req.context?.accountId;
+  if (!caller) return { ...READ_DENIED };
+  if (scope === "space") {
+    if (!key || !(await isOperatorSteward(caller, key))) return { ...READ_DENIED };
+    return await loadValidationConfig("space", key);
+  }
+  if (await isOperatorSiteAdmin(caller)) return await loadValidationConfig("global");
+  const adminOf = req.context.extension?.space?.key || req.context.extension?.content?.space?.key || key || null;
+  if (adminOf && (await isOperatorSteward(caller, adminOf))) {
+    const site = await loadValidationConfig("global");
+    return { rules: Array.isArray(site?.rules) ? site.rules : [], siteRulesOnly: true };
+  }
+  return { ...READ_DENIED };
 };
 
 const storeConfig = async (req) => {
@@ -260,9 +283,17 @@ const listAiModels = async () => {
  * Enqueue a manual AI review of a page. Returns a taskId the UI polls.
  */
 export const enqueuePageValidation = async (req) => {
-  const pageId = req.payload?.pageId || req.context.extension?.content?.id;
+  const ctxPageId = req.context.extension?.content?.id;
+  const pageId = req.payload?.pageId || ctxPageId;
   const accountId = req.context.accountId;
   if (!pageId) return { success: false, reason: "No page" };
+
+  // The review reads the page as the app and its result quotes the page back (title, summary,
+  // excerpts), so the caller must be able to read the page themselves. Administering its space is
+  // not enough: a space admin does not see a page restricted away from them.
+  if (mustVerify(req.payload?.pageId, ctxPageId) && !(await canReadPage(accountId, pageId))) {
+    return { success: false, reason: "Only an admin of this page's space can run an AI review" };
+  }
 
   // audit B6: resolve the page's REAL space + require a steward of it — a manual AI review
   // spends the space's token budget, so it must not be triggerable by anyone against any
