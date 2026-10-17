@@ -53,7 +53,7 @@ export const allActions = [
 const withConfigMirror = (key, fn) => async (req) => {
   const result = await fn(req);
   if (result && result.success !== false && result.ok !== false) {
-    try { await refreshConfigMirror(scopeOfConfigWrite(key, req?.payload), req?.context?.accountId); }
+    try { await refreshConfigMirror(scopeOfConfigWrite(key, req?.payload, result), req?.context?.accountId); }
     catch (e) { console.warn(`[CONFIG-API] mirror after ${key} failed:`, e?.message || e); }
   }
   return result;
