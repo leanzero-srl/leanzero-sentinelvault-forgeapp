@@ -1581,9 +1581,8 @@ const ArtifactGridView = () => {
           .catch(() => {});
       }
 
-      // Discover and store extension key from page ADF (one-time discovery)
-      // Custom UI context does NOT expose extensionKey, so the backend
-      // reads the page ADF to find the panel node's extensionKey attribute.
+      // Make sure the site-wide panel key is stored (the backend stores the app's own key; it is
+      // never read from the page).
       if (!editing && pid) {
         try {
           await invoke("discover-panel-key", { pageId: pid });

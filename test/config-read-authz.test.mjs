@@ -51,7 +51,7 @@ async function world() {
   await kvs.set("workflow-def-global", { ...DEFAULT_WORKFLOW, name: "SITE-SECRET-FLOW" });
   await kvs.set("workflow-state-P1", { pageId: "P1", spaceKey: "AAA", stateId: DEFAULT_WORKFLOW.states[0].id });
   await kvs.set("validation-config-space-AAA", { enabled: true, rules: [], ai: { enabled: true, monthlyTokenBudget: 0 } });
-  // From 8.9.0 the site AI switch is a ceiling over every space: on here, so the read check is what decides.
+  // From 8.10.0 the site AI switch is a ceiling over every space: on here, so the read check is what decides.
   await kvs.set("validation-config-global", { enabled: true, rules: [], ai: { enabled: true, monthlyTokenBudget: 0 } });
 }
 const as = (fn, accountId, payload, extension = {}) => fn({ payload, context: { accountId, extension } });

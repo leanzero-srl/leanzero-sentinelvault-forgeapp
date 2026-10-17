@@ -26,6 +26,7 @@
 import { kvs, WhereConditions } from "@forge/kvs";
 import { asApp, route } from "@forge/api";
 import { accountToName, looksLikeAccountId } from "../shared/account-id.js";
+import { liveContentSpace } from "../shared/content-access.js";
 
 // Twenty-odd call sites write `actor: { accountId, name: null }` (triggers, stewards acting on
 // another owner's seal, realm actions) and the feed then read "Someone denied edit access" —
@@ -174,6 +175,22 @@ function boundDetails(details) {
  * @param {boolean} [entry.site]         also (or only) record it on the site leg `activity-site-`
  * @returns {Promise<{id:string}|null>}   the stored id, or null when nothing was written
  */
+// Where a page is now, for filing (a minute's memo: one invocation often records several events for
+// one page). null when Confluence cannot say (the caller's space is then used, as before).
+const PAGE_SPACE_TTL_MS = 60 * 1000;
+const pageSpaceMemo = new Map();
+async function currentSpaceKeyOfPage(pageId) {
+  const hit = pageSpaceMemo.get(pageId);
+  if (hit && Date.now() - hit.at < PAGE_SPACE_TTL_MS) return hit.key;
+  let key = null;
+  try { const live = await liveContentSpace(pageId); key = live.status === "found" ? live.spaceKey : null; } catch (_) { key = null; }
+  if (key) { // a failed lookup is not remembered: the next event asks again
+    if (pageSpaceMemo.size > 500) pageSpaceMemo.clear();
+    pageSpaceMemo.set(pageId, { key, at: Date.now() });
+  }
+  return key;
+}
+
 export async function recordActivity(entry) {
   try {
     if (!entry || typeof entry !== "object") return null;
@@ -184,7 +201,11 @@ export async function recordActivity(entry) {
     }
     const tsMs = Date.now();
     const pageId = entry.pageId != null && entry.pageId !== "" ? String(entry.pageId) : null;
-    const spaceKey = entry.spaceKey != null && entry.spaceKey !== "" ? String(entry.spaceKey) : null;
+    // A page's event is filed under the space the page is in NOW. Callers pass the space stored on
+    // the app's own record (seal, workflow), which stays behind when the page moves; filing by it
+    // kept sending a moved page's new events to the space it left. Its earlier history stays there.
+    const givenSpaceKey = entry.spaceKey != null && entry.spaceKey !== "" ? String(entry.spaceKey) : null;
+    const spaceKey = pageId && givenSpaceKey ? ((await currentSpaceKeyOfPage(pageId)) || givenSpaceKey) : givenSpaceKey;
     const issueId = entry.issueId != null && entry.issueId !== "" ? String(entry.issueId) : null;
     const { id, pageKey, spaceKey: spaceStoreKey, siteKey, issueKey: issueStoreKey } = buildActivityKeys({ pageId, spaceKey, tsMs, rand: randomSuffix(), site: entry.site === true, issueId });
     if (!pageKey && !spaceStoreKey && !siteKey && !issueStoreKey) {

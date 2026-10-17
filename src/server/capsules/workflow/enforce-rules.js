@@ -18,7 +18,10 @@
  * empty or unreadable baseline never blanks the page (Pass 0 CL-1, sweepRevertToApproved); and an
  * approver group that cannot be expanded refuses the request instead of producing an empty set.
  */
-export function enforceModeOf(settings) {
+export function enforceModeOf(settings, { moved = false } = {}) {
+  // A page that moved to another space after its workflow started is always reverted: the old
+  // space's mode, demote target and definition are not the new space's (workflow/moved-hold.js).
+  if (moved) return "revert";
   return settings?.enforceMode === "revert" ? "revert" : "demote";
 }
 
@@ -51,6 +54,6 @@ export function contentProtectionEnabled(globalPolicy) {
  * the page details and the Workflow tab said "reverted" / "moved back" while the switch was off and
  * the engine did nothing (2026-10-16) — the same words-vs-behaviour gap as the old CL-5 downgrade.
  */
-export function shownEnforcement(settings, globalPolicy) {
-  return contentProtectionEnabled(globalPolicy) ? enforceModeOf(settings) : "off";
+export function shownEnforcement(settings, globalPolicy, { moved = false } = {}) {
+  return contentProtectionEnabled(globalPolicy) ? enforceModeOf(settings, { moved }) : "off";
 }
