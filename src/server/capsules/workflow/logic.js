@@ -507,11 +507,14 @@ export async function clearStateLabel(pageId) {
 
 // Persist a state record: KVS record (source of truth) → by-state index → content property (best-effort).
 // `prevStateId` lets us drop the stale index entry on transition.
-async function persistState(pageId, record, prevStateId) {
+async function persistState(pageId, record, prevStateId, prevSpaceKey = record.spaceKey) {
   await kvs.set(`workflow-state-${pageId}`, record);
   const sk = sanitize(record.spaceKey || "_");
-  if (prevStateId && prevStateId !== record.stateId) {
-    await kvs.delete(`workflow-idx-${sk}-${prevStateId}-${pageId}`).catch(() => {});
+  const prevSk = sanitize(prevSpaceKey || "_");
+  // The previous row goes when the state changed, or when the record is filed under a new space
+  // (a page re-assigned after it moved): the old space's dashboard must not keep listing it.
+  if (prevStateId && (prevStateId !== record.stateId || prevSk !== sk)) {
+    await kvs.delete(`workflow-idx-${prevSk}-${prevStateId}-${pageId}`).catch(() => {});
   }
   await kvs.set(`workflow-idx-${sk}-${record.stateId}-${pageId}`, {
     pageId,
@@ -577,7 +580,9 @@ export async function unassignPageWorkflow({ pageId, actorAccountId = null, acto
   const def = record ? await resolveWorkflowDef(record.spaceKey, record.workflowId) : null;
   const refusal = removeRefusal({
     record,
-    stateEnforced: !!(record && findState(def, record.stateId)?.enforce),
+    // The record's own enforce flag counts too: a definition edited since the approval must not let
+    // the page out while its seals are still held by that approval.
+    stateEnforced: !!(record && (record.enforce || findState(def, record.stateId)?.enforce)),
     hasPending: !!(await kvs.get(`workflow-pending-${pageId}`)),
   });
   if (refusal) return { success: false, reason: refusal };
@@ -679,7 +684,7 @@ export async function assignPageWorkflow({ pageId, spaceKey, actorAccountId, act
     spaceKey: spaceKey || null,
     reviewDueAt: computeReviewDueAt(initial, resolveReviewAfterDays(initial, settings)),
   };
-  await persistState(pageId, record, prev?.stateId);
+  await persistState(pageId, record, prev?.stateId, prev?.spaceKey);
   await mirrorStateLabel(pageId, record, settings).catch(() => {});
   await appendWorkflowLog(pageId, { from: null, to: initial.id, by: actorAccountId || null, byName: actorName || null, reason: logReason || "assigned" });
   return { success: true, record, state: initial, def };

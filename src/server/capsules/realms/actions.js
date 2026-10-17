@@ -4,6 +4,7 @@ import { resolveRealm } from "./logic.js";
 import { Queue } from "@forge/events";
 
 import { authorizeSteward, isOperatorSteward, isOperatorSiteAdmin, isOperatorRealmSteward, isOperatorInStewardCohorts } from "../../shared/steward-checks.js";
+import { fetchPageStatuses } from "../../shared/page-status.js";
 import { probeAttachmentStatus } from "../../infra/attachment-status.js";
 import { releaseSeal } from "../sealing/release.js"; // the ONE attachment-seal teardown
 import { writeSpaceIndex, listSpacesWithPendingStewardRequests, listPendingStewardRequestsInSpace } from "../editreq/logic.js";
@@ -12,7 +13,7 @@ import {
   fetchOperatorProfile,
 } from "../../infra/notice-composer.js";
 import { recordActivity } from "../../infra/activity-log.js";
-import { canEditPage, objectSpaceKeyOf } from "../../shared/content-access.js";
+import { canEditPage, objectSpaceKeyOf, isStewardOfSeal } from "../../shared/content-access.js";
 import { validateReleaseReason } from "../../shared/release-reason.js";
 
 // Queue for background realm scanning
@@ -104,7 +105,15 @@ const enumerateRealmSeals = async (req) => {
       `[REALM-SEALS] Got ${results?.length || 0} results, nextCursor=${nextCursor ? "present" : "null"}`,
     );
 
-    const attachments = (results || []).map(({ key, value }) => {
+    const rows = results || [];
+    // A seal whose page has since moved to another space keeps its row here (filed under the space
+    // it was sealed in). It is that other space's now: not listed to this space's admins.
+    const placeOfPage = await fetchPageStatuses(rows.map(({ value }) => value?.contentId).filter(Boolean)).catch(() => new Map());
+    const movedAway = (value) => {
+      const sid = value?.contentId ? placeOfPage.get(String(value.contentId))?.spaceId : null;
+      return sid != null && String(sid) !== String(spaceId);
+    };
+    const attachments = rows.filter(({ value }) => !movedAway(value)).map(({ key, value }) => {
       const artifactId = key.replace(prefix, "");
       return {
         id: artifactId,
@@ -296,7 +305,7 @@ const stewardUnseal = async (req) => {
       // lapsed — anyone who may edit the page it lives on.
       let allowed = isOwner;
       if (!allowed && objectSpaceKey) {
-        try { allowed = await authorizeSteward(operatorAccountId, objectSpaceKey); } catch (_) { allowed = false; }
+        allowed = await isStewardOfSeal(authorizeSteward, operatorAccountId, sealRecord);
       }
       if (!allowed && sealRecord.contentId) {
         try { allowed = await canEditPage(operatorAccountId, sealRecord.contentId); } catch (_) { allowed = false; }
@@ -339,8 +348,10 @@ const stewardUnseal = async (req) => {
   // single space therefore granted force-unseal over every sealed file on the site. Authorize
   // against the space the SEAL is in (objectSpaceKey above — the record's, else its page's).
   const effectiveRealmKey = objectSpaceKey;
+  // ...and, when the page moved since it was sealed, BOTH spaces (content-access.js
+  // recordAuthoritySpaces): the record's stored space alone kept the old space's admins in charge.
   const hasStewardAccess = effectiveRealmKey
-    ? await authorizeSteward(operatorAccountId, effectiveRealmKey)
+    ? await isStewardOfSeal(authorizeSteward, operatorAccountId, sealRecord)
     : false;
   if (!hasStewardAccess) {
     return {

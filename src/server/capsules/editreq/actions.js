@@ -22,7 +22,7 @@ import { retryAtFor } from "../../shared/edit-cooldown.js";
 import { DECLINED_REASON } from "../../../ui/kit/status-language.js";
 import { listMyStewardRequestsCore } from "../realms/actions.js";
 import { listMyApprovals } from "../workflow/approvals.js";
-import { canReadPage, resolvePageSpaceKey } from "../../shared/content-access.js";
+import { canReadPage, isStewardOfSeal } from "../../shared/content-access.js";
 import { recordActivity } from "../../infra/activity-log.js";
 
 // The wait after a declined request is the site setting `editRequestCooldownHours`
@@ -41,11 +41,18 @@ async function loadSealForOwnerAction(attachmentId, accountId) {
   const seal = await kvs.get(`protection-${attachmentId}`);
   if (!seal || !seal.lockedBy) return { seal: null, authorized: false };
   let authorized = seal.lockedBy === accountId;
-  if (!authorized) {
-    try { authorized = await authorizeSteward(accountId, seal.spaceKey); }
-    catch (_) { /* default deny */ }
-  }
+  if (!authorized) authorized = await stewardOfSeal(authorizeSteward, accountId, seal);
   return { seal, authorized };
+}
+
+/**
+ * Steward power over a seal (attachment: `contentId`, section: `pageId`): an admin of the space its
+ * page is in NOW and, if the page moved since it was sealed, of the seal's own space too
+ * (content-access.js recordAuthoritySpaces). The seal's stored space alone left the old space's
+ * admins deciding edit access on a page that had left them. Never the caller's context.
+ */
+function stewardOfSeal(check, accountId, seal) {
+  return isStewardOfSeal(check, accountId, seal);
 }
 
 /**
@@ -67,6 +74,10 @@ async function moveBackForProposal(pageId, approverAccountId, request) {
   const wf = await import("../workflow/logic.js");
   const record = await wf.readPageWorkflow(pageId);
   if (!record?.enforce) return { success: true, moved: false }; // already handed back
+  // Accepting moves the page out of Approved: held on a page that moved spaces (moved-hold.js).
+  const { movedPageHold } = await import("../workflow/moved-hold.js");
+  const hold = await movedPageHold(pageId, { actorAccountId: approverAccountId, storedKey: record.spaceKey || null });
+  if (hold) return { success: false, reason: hold.reason };
   const def = await wf.resolveWorkflowDef(record.spaceKey, record.workflowId);
   const settings = await wf.getSpaceWorkflowSettings(record.spaceKey);
   const target = wf.resolveDemoteTarget(def, settings, record.stateId);
@@ -227,7 +238,7 @@ export const listEditRequests = async (req) => {
   const pending = (results || []).map(({ value }) => value).filter((v) => v?.status === "pending" && v.requesterAccountId !== accountId);
   if (!held) return { requests: pending };
   let admin = null;
-  const isAdmin = async () => (admin ??= await isAccountStewardAsApp(accountId, seal.spaceKey).catch(() => false));
+  const isAdmin = async () => (admin ??= await stewardOfSeal(isAccountStewardAsApp, accountId, seal));
   const requests = [];
   for (const r of pending) if (await mayDecideProposal(r, accountId, isAdmin)) requests.push(r);
   // Same answer as a refusal when there is nothing for this caller — no oracle on "is it held".
@@ -262,7 +273,7 @@ export const approveEditRequest = async (req) => {
   // SEC-2 (e): a proposal is decided by the page's approvers (or a steward, as always).
   // SEC-2 (e): a proposal is a workflow decision — the page's approvers or a space admin, never the
   // proposer, and the seal's owner only as one of those (tester 2026-09-30).
-  if (request0?.proposal) authorized = (!isWorkflowHeld(seal) && authorized) || await mayDecideProposal(request0, accountId, () => isAccountStewardAsApp(accountId, seal.spaceKey));
+  if (request0?.proposal) authorized = (!isWorkflowHeld(seal) && authorized) || await mayDecideProposal(request0, accountId, () => stewardOfSeal(isAccountStewardAsApp, accountId, seal));
   if (!authorized) return { success: false, reason: request0?.proposal ? "Only this page's approvers or a space admin can decide a proposed change" : "Not the seal owner" };
   if (isWorkflowHeld(seal)) {
     if (!request0?.proposal) { const held = heldRefusal(seal, "grant"); if (held) return { success: false, reason: held }; } // SEC-2
@@ -339,7 +350,7 @@ export const denyEditRequest = async (req) => {
   if (!seal) return { success: false, reason: "Seal not found" };
   const requestKey = `edit-request-${attachmentId}-${requesterAccountId}`;
   const existing = await kvs.get(requestKey);
-  if (existing?.proposal) authorized = (!isWorkflowHeld(seal) && authorized) || await mayDecideProposal(existing, accountId, () => isAccountStewardAsApp(accountId, seal.spaceKey)); // SEC-2 (e)
+  if (existing?.proposal) authorized = (!isWorkflowHeld(seal) && authorized) || await mayDecideProposal(existing, accountId, () => stewardOfSeal(isAccountStewardAsApp, accountId, seal)); // SEC-2 (e)
   if (!authorized) return { success: false, reason: existing?.proposal ? "Only this page's approvers or a space admin can decide a proposed change" : "Not the seal owner" };
   if (!existing?.proposal) { const held = heldRefusal(seal, "grant"); if (held) return { success: false, reason: held }; } // SEC-2
   if (!existing) return { success: false, reason: "Request not found" };
@@ -542,11 +553,8 @@ async function loadSectionForOwnerAction(sectionId, accountId) {
   if (!authorized) {
     // GAP 4 (req 2.3): the space is a property of the RECORD's page (CLAUDE.md — never the
     // caller's context space). A record sealed without a spaceKey used to refuse every steward;
-    // resolve it from the page like unsealSection does.
-    try {
-      const objectSpaceKey = seal.spaceKey || (seal.pageId ? await resolvePageSpaceKey(seal.pageId) : null);
-      authorized = !!objectSpaceKey && await authorizeSteward(accountId, objectSpaceKey);
-    } catch (_) { /* deny */ }
+    // its page's space answers. A page that moved needs both spaces (stewardOfSeal).
+    authorized = await stewardOfSeal(authorizeSteward, accountId, seal);
   }
   return { seal, authorized };
 }
@@ -651,7 +659,7 @@ export const listSectionEditRequests = async (req) => {
   if (!held) return { requests: pending };
   let admin = null;
   const isAdmin = async () => {
-    if (admin === null) { const k = seal.spaceKey || (seal.pageId ? await resolvePageSpaceKey(seal.pageId) : null); admin = !!k && await isAccountStewardAsApp(accountId, k).catch(() => false); }
+    if (admin === null) admin = await stewardOfSeal(isAccountStewardAsApp, accountId, seal);
     return admin;
   };
   const requests = [];
@@ -668,7 +676,7 @@ export const approveSectionEdit = async (req) => {
   let { seal, authorized } = await loadSectionForOwnerAction(sectionId, accountId);
   if (!seal) return { success: false, reason: "Section not found" };
   const request0 = await kvs.get(`section-edit-request-${sectionId}-${requesterAccountId}`);
-  if (request0?.proposal) authorized = (!isWorkflowHeld(seal) && authorized) || await mayDecideProposal(request0, accountId, async () => { const k = seal.spaceKey || (seal.pageId ? await resolvePageSpaceKey(seal.pageId) : null); return !!k && isAccountStewardAsApp(accountId, k); }); // SEC-2 (e)
+  if (request0?.proposal) authorized = (!isWorkflowHeld(seal) && authorized) || await mayDecideProposal(request0, accountId, () => stewardOfSeal(isAccountStewardAsApp, accountId, seal)); // SEC-2 (e)
   if (!authorized) return { success: false, reason: request0?.proposal ? "Only this page's approvers or a space admin can decide a proposed change" : "Not the section owner" };
   if (isWorkflowHeld(seal)) {
     if (!request0?.proposal) { const held = heldRefusal(seal, "grant"); if (held) return { success: false, reason: held }; } // SEC-2
@@ -724,7 +732,7 @@ export const denySectionEdit = async (req) => {
   if (!seal) return { success: false, reason: "Section not found" };
   const requestKey = `section-edit-request-${sectionId}-${requesterAccountId}`;
   const existing = await kvs.get(requestKey);
-  if (existing?.proposal) authorized = (!isWorkflowHeld(seal) && authorized) || await mayDecideProposal(existing, accountId, async () => { const k = seal.spaceKey || (seal.pageId ? await resolvePageSpaceKey(seal.pageId) : null); return !!k && isAccountStewardAsApp(accountId, k); }); // SEC-2 (e)
+  if (existing?.proposal) authorized = (!isWorkflowHeld(seal) && authorized) || await mayDecideProposal(existing, accountId, () => stewardOfSeal(isAccountStewardAsApp, accountId, seal)); // SEC-2 (e)
   if (!authorized) return { success: false, reason: existing?.proposal ? "Only this page's approvers or a space admin can decide a proposed change" : "Not the section owner" };
   if (!existing?.proposal) { const held = heldRefusal(seal, "grant"); if (held) return { success: false, reason: held }; } // SEC-2
   if (!existing) return { success: false, reason: "Request not found" };

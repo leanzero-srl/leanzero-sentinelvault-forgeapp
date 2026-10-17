@@ -23,8 +23,10 @@ export function classifyPageStatuses(ids, liveResults, trashedResults, { liveOk 
     const id = String(raw);
     const l = live.get(id);
     const t = trashed.get(id);
-    if (l) out.set(id, { status: l.status === "archived" ? "archived" : "current", title: l.title || null, url: l._links?.webui || null });
-    else if (t) out.set(id, { status: "trashed", title: t.title || null, url: t._links?.webui || null });
+    // spaceId: where the page is NOW (a workflow or seal index row keeps the space it was made in).
+    const sid = (p) => (p.spaceId != null ? { spaceId: String(p.spaceId) } : {});
+    if (l) out.set(id, { status: l.status === "archived" ? "archived" : "current", title: l.title || null, url: l._links?.webui || null, ...sid(l) });
+    else if (t) out.set(id, { status: "trashed", title: t.title || null, url: t._links?.webui || null, ...sid(t) });
     else if (liveOk && trashedOk) out.set(id, { status: "missing", title: null, url: null });
     else out.set(id, { status: "unknown", title: null, url: null });
   }
@@ -38,7 +40,7 @@ async function fetchBatch(ids, status) {
   return { ok: Array.isArray(body?.results), results: body?.results || [] };
 }
 
-// Map of String(pageId) → { status: "current"|"archived"|"trashed"|"missing"|"unknown", title, url }.
+// Map of String(pageId) → { status: "current"|"archived"|"trashed"|"missing"|"unknown", title, url, spaceId? }.
 export async function fetchPageStatuses(pageIds) {
   const ids = [...new Set((pageIds || []).map((x) => String(x)).filter((x) => /^\d+$/.test(x)))];
   const out = new Map();
