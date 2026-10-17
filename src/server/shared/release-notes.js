@@ -12,7 +12,7 @@ const note = (n) => Object.freeze({ ...n, changes: Object.freeze([...(n.changes 
 
 export const RELEASE_NOTES = Object.freeze([
   note({
-    version: "8.7.0",
+    version: "8.8.0",
     date: "2026-10-17",
     headline: "Space admins are recognised from the space's own permissions",
     changes: [
@@ -22,6 +22,16 @@ export const RELEASE_NOTES = Object.freeze([
       "A space admin who was not also a site or Confluence admin, or listed under Space admins in Sentinel Vault, was treated as an ordinary user: the space's Sentinel Vault page asked them to request admin access, they could not approve as a space admin or use the other space admin actions, and an edit they made to an Approved page moved the page back out of Approved or was undone, as an ordinary editor's would be. Sentinel Vault now reads the space's own permissions, so a space admin is recognised whether the permission is given directly, through a group or through the space's Admin role. Space admins therefore now have Sentinel Vault's space admin actions in their spaces, as people listed under Space admins already did.",
     ],
     action: "If a space uses AI review while AI review is off in the site settings, AI review stops in that space with this update, and pages in a space whose workflow requires an AI review cannot reach Approved. To keep AI review, a site admin turns it on in Sentinel Vault's site settings, Validations.",
+  }),
+  note({
+    version: "8.7.0",
+    date: "2026-10-17",
+    headline: "Stricter checks on who can see a space's scan status",
+    changes: [],
+    fixes: [
+      "Stricter checks on who can see a space's scan status.",
+    ],
+    action: "Nothing to do if your site already runs 8.0.0. A site on an earlier version gets this update after a site admin approves the 8.0.0 update in Confluence administration, Apps, Manage apps.",
   }),
   note({
     version: "8.6.0",
