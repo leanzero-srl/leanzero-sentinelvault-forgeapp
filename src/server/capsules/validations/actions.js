@@ -133,7 +133,7 @@ const storeConfig = async (req) => {
         spaceKey: key,
         actor: caller ? { accountId: caller, name: null } : null,
         target: { kind: "space", id: key, name: null },
-        details: { capped: view.capped, asked: { enabled: asked.enabled === true, monthlyTokenBudget: budgetOf(asked.monthlyTokenBudget) }, effective: { enabled: view.enabled, monthlyTokenBudget: view.monthlyTokenBudget }, siteBudget: view.siteBudget },
+        details: { capped: view.capped, turnedOn: prev.enabled !== true && asked.enabled === true, asked: { enabled: asked.enabled === true, monthlyTokenBudget: budgetOf(asked.monthlyTokenBudget) }, effective: { enabled: view.enabled, monthlyTokenBudget: view.monthlyTokenBudget }, siteBudget: view.siteBudget },
       });
     }
   }

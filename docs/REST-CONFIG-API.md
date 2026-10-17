@@ -158,7 +158,8 @@ app's own resolvers withhold from non-stewards lands there. The mirror holds:
 
 - `policy` — durations and toggles, **without** `adminUsers` / `adminGroups`;
 - `validation` — `{ enabled, modes, aiEnabled, aiCapped }` only (rule text, `ai` prompts and budgets stay
-  private). `aiEnabled` is whether AI review RUNS in the space after the site ceiling; `aiCapped` lists what
+  private). `aiEnabled` is whether AI review runs in the space after the site ceiling, as of the last config write
+  to that space (a site admin switching AI off later does not rewrite every space's mirror); `aiCapped` lists what
   the site capped: `"site-off"` (AI review is off for the site, so it is off in every space whatever the
   space set) and/or `"site-budget"` (the space's monthly budget was 0/unlimited or above the site's, so the
   site's applies);

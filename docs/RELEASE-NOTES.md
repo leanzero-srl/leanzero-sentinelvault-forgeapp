@@ -6,12 +6,12 @@ GENERATED from `src/server/shared/release-notes.js` by `scripts/render-release-n
 
 **Space admins are recognised from the space's own permissions**
 
-- Changed: the site's AI review settings now apply to every space. While AI review is turned off in the site settings, it stays off in every space, whatever the space's own setting, and no space can have a bigger monthly AI budget than the site's. A space's Validations and Workflow settings say when a site admin has turned AI off, and a save that asks for more AI than the site allows is recorded in the space's activity.
+- Changed: the site's AI review settings now apply to every space. While AI review is turned off in the site settings, it stays off in every space, whatever the space's own setting, and no space can have a bigger monthly AI budget than the site's. While AI is off for the site, a page in a space whose workflow requires an AI review before Approved cannot reach Approved, because the review cannot run; a space admin can turn that requirement off in the space's Workflow settings. A space's Validations and Workflow settings say when a site admin has turned AI off, and a save that asks for more AI than the site allows is recorded in the space's activity.
 
 Fixed:
 - A space admin who was not also a site or Confluence admin, or listed under Space admins in Sentinel Vault, was treated as an ordinary user: the space's Sentinel Vault page asked them to request admin access, they could not approve as a space admin or use the other space admin actions, and an edit they made to an Approved page moved the page back out of Approved or was undone, as an ordinary editor's would be. Sentinel Vault now reads the space's own permissions, so a space admin is recognised whether the permission is given directly, through a group or through the space's Admin role. Space admins therefore now have Sentinel Vault's space admin actions in their spaces, as people listed under Space admins already did.
 
-**Do this:** If a space uses AI review while AI review is off in the site settings, AI review stops in that space with this update. To keep it, a site admin turns AI review on in Sentinel Vault's site settings, Validations.
+**Do this:** If a space uses AI review while AI review is off in the site settings, AI review stops in that space with this update, and pages in a space whose workflow requires an AI review cannot reach Approved. To keep AI review, a site admin turns it on in Sentinel Vault's site settings, Validations.
 
 ## 8.6.0 — 2026-10-16
 
