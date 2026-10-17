@@ -8,7 +8,7 @@ GENERATED from `src/server/shared/release-notes.js` by `scripts/render-release-n
 
 
 Fixed:
-- A space admin who was not also a site or Confluence admin, or on Sentinel Vault's own admin list, was treated as an ordinary user: the space's Sentinel Vault page asked them to request admin access, they could not approve as a space admin or use the other space admin actions, and an edit they made to an Approved page was moved back or undone like anyone else's. Sentinel Vault now recognises everyone the space's permissions make an admin, directly, through a group or through the space's Admin role.
+- A space admin who was not also a site or Confluence admin, or listed under Space admins in Sentinel Vault, was treated as an ordinary user: the space's Sentinel Vault page asked them to request admin access, they could not approve as a space admin or use the other space admin actions, and an edit they made to an Approved page moved the page back out of Approved or was undone, as an ordinary editor's would be. Sentinel Vault now reads the space's own permissions, so a space admin is recognised whether the permission is given directly, through a group or through the space's Admin role. Space admins therefore now have Sentinel Vault's space admin actions in their spaces, as people listed under Space admins already did.
 
 ## 8.6.0 — 2026-10-16
 

@@ -16,6 +16,7 @@
  */
 import { asApp, route } from "@forge/api";
 import { kvs, WhereConditions } from "@forge/kvs";
+import { mapLimited } from "../../shared/map-limited.js";
 
 export const FANOUT_KIND = "byline-refresh";
 const QUEUE_KEY = "realm-audit-queue";
@@ -84,12 +85,6 @@ export async function queueBylineRefreshSiteWide(why = "") {
   return queueBylineRefresh(ids.slice(0, MAX_SITE_SPACES), why);
 }
 
-async function mapLimited(items, limit, fn) {
-  let i = 0;
-  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, async () => {
-    while (i < items.length) { const idx = i++; await fn(items[idx]); }
-  }));
-}
 
 /** The consumer half — one hop of one space. */
 export async function runBylineRefreshJob(body) {
