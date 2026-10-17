@@ -114,7 +114,7 @@ holds and is now shipped: **everyone else tracks, Sentinel Vault enforces**.
 
 ## 4. Not yet live in production (as of 2026-09-06)
 
-Production (Marketplace) is 4.1.0, deployed 2026-08-20. Dev is at commit `3c7ce48`+. Everything
+Production (Marketplace) is 4.1.0, deployed 2026-08-20. Dev is at commit `6ae3100`+. Everything
 between is built and verified on dev but not shipped:
 
 - it60, the owner's six feedback items: approve-vs-deny asymmetry on lapsed seals surfaced with a
@@ -151,7 +151,7 @@ Shipping requires the paid plan to be live in the Partner portal (`deploy-prod.s
 without `--licensing-live` at the time; since the prod-door change it asks for the flag only on the deploy that
 turns licensing on) and is a minor bump — none of it61–it66 adds a scope; the
 `confluence:globalPage` module was proven a minor bump on dev (6.97 → 6.100, no re-consent).
-Last full-suite verdict on the dev build: PASS, 79/79 specs (`sv-it68-final`, commit 269d63f, UX pass included); GRADE PASS.
+Last full-suite verdict on the dev build: PASS, 79/79 specs (`sv-it68-final`, commit a615bb1, UX pass included); GRADE PASS.
 
 ## 5. Comala-parity gap analysis — what we could add
 

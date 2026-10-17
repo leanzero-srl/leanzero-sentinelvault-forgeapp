@@ -1,6 +1,6 @@
 // Locks on Forge KVS (shared/kvs-lock.js), driven by a FAKE KVS with latency, failed reads and an
 // atomic FAIL_IF_EXISTS (the review's sv-break2/lock.mjs): B1 a failed read must mean HELD; B2 two
-// takers over one stale row must never BOTH win. Both were RED on aeb6c49 (the live lease stolen;
+// takers over one stale row must never BOTH win. Both were RED on 8fb7aa3 (the live lease stolen;
 // 33/200 double wins). Plus the measured trap behind the takeover: an expired ttl row lingers.
 import { readFileSync } from "node:fs";
 import { eq, ok, report } from "./_assert.mjs";
@@ -98,9 +98,9 @@ eq("takeover key embeds the dead token", takeoverKey("backup-lease", "DEAD"), "b
 }
 { // Round 4: an empty read followed by a refused write is ANOTHER CALLER's fresh lock — never deleted.
   // sv-break4/ghost/ghost.mjs case A (deterministic): a live holder C takes the lock between B's
-  // read and B's retry; B must not remove C's row. RED on 3d3265d (ghost clear deleted it).
+  // read and B's retry; B must not remove C's row. RED on 907f656 (ghost clear deleted it).
   const { store, kvs } = fakeKvs(); const H = 1000, K = "backup-lease";
-  store.set(`${K}:ghost`, { since: new Date(Date.now() - H - 10).toISOString(), n: 2, lastAt: new Date(Date.now() - 50).toISOString() }); // 3d3265d's sightings counter, primed
+  store.set(`${K}:ghost`, { since: new Date(Date.now() - H - 10).toISOString(), n: 2, lastAt: new Date(Date.now() - 50).toISOString() }); // 907f656's sightings counter, primed
   const L = makeLocks(kvs);
   let injected = false;
   store.set(K, { token: "A", at: new Date().toISOString() });
@@ -116,7 +116,7 @@ eq("takeover key embeds the dead token", takeoverKey("backup-lease", "DEAD"), "b
   eq("round 4: the live holder keeps its row", store.get(K)?.token, "C-LIVE");
 }
 { // Round 4: 4 polling workers × 20 trials, short hold, random latency (sv-break4/ghost/count.mjs):
-  // NEVER two holders at once. 3d3265d: 26 overlapping holds; a32e6fd and now: 0.
+  // NEVER two holders at once. 907f656: 26 overlapping holds; 43d231a and now: 0.
   let overlaps = 0, holds = 0;
   for (let trial = 0; trial < 20; trial++) {
     const { kvs, ctl } = fakeKvs(); ctl.latency = () => 2 + Math.random() * 15;

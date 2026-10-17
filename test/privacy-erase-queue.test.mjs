@@ -1,5 +1,5 @@
 // The backup's part of a privacy erasure is never LOST (review blocking, 2026-10-05; repro
-// sv-break3/pending/pending.mjs was RED on a32e6fd: a failed queue push or a busy pending lock left
+// sv-break3/pending/pending.mjs was RED on 43d231a: a failed queue push or a busy pending lock left
 // the ids nowhere — index x stamped, nothing pending, nothing re-queued). Each failure below must end
 // with the ids pending, or re-queued by the next sweep.
 import { eq, ok, report } from "./_assert.mjs";
