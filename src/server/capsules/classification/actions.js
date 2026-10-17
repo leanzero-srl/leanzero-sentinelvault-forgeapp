@@ -23,7 +23,8 @@
  */
 import { asApp, asUser, assumeTrustedRoute, route } from "@forge/api";
 import { canEditPage, canReadPage, mustVerify, resolvePageSpaceKey } from "../../shared/content-access.js";
-import { authorizeSteward, isAccountStewardAsApp, isOperatorSiteAdmin } from "../../shared/steward-checks.js";
+import { authorizeSteward, isAccountStewardAsApp, isOperatorSiteAdmin, newStewardMemo } from "../../shared/steward-checks.js";
+import { mapLimited } from "../../shared/map-limited.js";
 import { getAppProvider, getClassificationProvider, resetProviderCache, resolveClassificationActive, classificationActiveForPage, confluenceRequest } from "./provider.js";
 import {
   isContentId, validateLevels, levelsFromAssetsObjects, guessAssetsMapping, ASSETS_LINK_KVS_KEY, classificationOffReason,
@@ -67,15 +68,6 @@ async function listVisibleSpaces() {
   return out;
 }
 
-async function mapLimited(items, limit, fn) {
-  const results = new Array(items.length);
-  let i = 0;
-  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
-    while (i < items.length) { const idx = i++; results[idx] = await fn(items[idx]); }
-  });
-  await Promise.all(workers);
-  return results;
-}
 
 export const getProvider = async (req) => {
   const accountId = req.context?.accountId;
@@ -103,7 +95,10 @@ export const listSpaces = async (req) => {
     if (!siteAdmin) {
       // A steward sees the spaces they administer — each row is checked on ITS OWN key, so being
       // steward of one space never lists the defaults of another (the confused-deputy shape).
-      const keep = await mapLimited(spaces, 8, (s) => isAccountStewardAsApp(accountId, s.key));
+      // One memo for the whole list: the caller's user record and groups are read once, and each
+      // space's id comes from the same space object Confluence just listed.
+      const memo = newStewardMemo();
+      const keep = await mapLimited(spaces, 8, (s) => isAccountStewardAsApp(accountId, s.key, { memo, spaceId: s.id }));
       spaces = spaces.filter((_, i) => keep[i] === true);
       if (spaces.length === 0) return { spaces: [], reason: NOT_AUTHORIZED };
     }

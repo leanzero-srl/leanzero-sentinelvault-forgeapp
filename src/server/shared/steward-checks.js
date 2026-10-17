@@ -14,7 +14,33 @@ import { kvs } from "@forge/kvs";
 /** PURE. Confluence Cloud's built-in admin groups (site-admins, confluence-admins-<site>, …). */
 export const isAdminGroupName = (name) => /^(site-admins|administrators|system-administrators|confluence-admins(-.+)?)$/i.test(String(name || ""));
 
-export async function isAccountStewardAsApp(accountId, realmKey) {
+/**
+ * A memo for ONE invocation that checks one account against many spaces (a list of spaces, the
+ * authors of a page's versions): the account's user record and group list are read once. Create it
+ * inside the handler and drop it with the invocation. NEVER keep it at module level: a warm Forge
+ * container can serve more than one site, and account ids repeat across sites.
+ */
+export const newStewardMemo = () => ({ user: new Map(), groups: new Map() });
+const memoized = (memo, bucket, key, load) => {
+  if (!memo) return load();
+  if (!memo[bucket].has(key)) memo[bucket].set(key, load());
+  return memo[bucket].get(key);
+};
+const readUserAsApp = async (accountId) => {
+  const res = await asApp().requestConfluence(route`/wiki/rest/api/user?accountId=${accountId}&expand=groups,operations`);
+  return res.ok ? await res.json() : null;
+};
+const readGroupsAsApp = async (accountId) => {
+  const res = await asApp().requestConfluence(route`/wiki/rest/api/user/memberof?accountId=${accountId}&limit=200`);
+  return res.ok ? ((await res.json())?.results || []) : null;
+};
+
+/**
+ * `opts.memo` (newStewardMemo) shares the account reads across calls in one invocation;
+ * `opts.spaceId` skips the key → id lookup and may ONLY be passed with the id and key of the same
+ * space object the caller read from Confluence itself.
+ */
+export async function isAccountStewardAsApp(accountId, realmKey, { memo = null, spaceId = null } = {}) {
   if (!accountId) return false;
   let realmConfig = null;
   let globalConfig = null;
@@ -29,11 +55,8 @@ export async function isAccountStewardAsApp(accountId, realmKey) {
   // 2. Steward GROUP cohorts + site/org-admin — mirrors isOperatorSteward's cohort + site-admin
   //    arms, but via asApp() (no asUser context in a trigger). One user GET, expanded twice.
   try {
-    const res = await asApp().requestConfluence(
-      route`/wiki/rest/api/user?accountId=${accountId}&expand=groups,operations`,
-    );
-    if (res.ok) {
-      const data = await res.json();
+    const data = await memoized(memo, "user", accountId, () => readUserAsApp(accountId).catch(() => null));
+    if (data) {
       const stewardGroups = realmConfig?.adminGroups || globalConfig?.adminGroups || [];
       if (stewardGroups.length > 0) {
         const userGroups = (data.groups?.results || []).map((g) => g.name);
@@ -51,17 +74,17 @@ export async function isAccountStewardAsApp(accountId, realmKey) {
   //     Its ids are kept for arm 3, which matches group principals by id.
   let groupIds = null;
   try {
-    const res = await asApp().requestConfluence(route`/wiki/rest/api/user/memberof?accountId=${accountId}&limit=200`);
-    if (res.ok) {
-      const groups = (await res.json())?.results || [];
+    const groups = await memoized(memo, "groups", accountId, () => readGroupsAsApp(accountId).catch(() => null));
+    if (groups) {
       if (groups.some((g) => isAdminGroupName(g?.name))) return true;
       groupIds = groups.map((g) => g?.id).filter(Boolean);
     }
   } catch (_) { /* fall through */ }
   // 3. The space's own admins: Confluence lists the account (or one of its groups) with
-  //    administer/space on the space. Covers a space admin by direct permission, by group and by
-  //    space ROLE (Confluence expands a role into the same list).
-  return isSpaceAdministrator(accountId, realmKey, { groupIds });
+  //    administer/space on the space: a direct permission, a group's, or a space ROLE where
+  //    Confluence lists the role's holders as users and groups (it does on both measured sites).
+  //    A `role` principal itself is never resolved (see below).
+  return isSpaceAdministrator(accountId, realmKey, { groupIds, spaceId, memo });
 }
 
 // ── Space admin, as Confluence itself lists it ──────────────────────────────────────────────────
@@ -77,9 +100,11 @@ export async function isAccountStewardAsApp(accountId, realmKey) {
 // The current API: GET /wiki/api/v2/spaces/{id}/permissions (scope read:space:confluence, held)
 // lists every assignment as { principal: { type: user|group|role, id }, operation: { key,
 // targetType } }. On a site in role mode (space-role-mode ROLES_TRANSITION, both sites 2026-10-17)
-// a role holder appears there as a USER principal with administer/space. A `role` principal is
-// never resolved: that needs /spaces/{id}/role-assignments and the scope
-// read:space.permission:confluence, which this app does not hold. It grants nothing (fail closed).
+// the Admin role's holders appear there as USER or GROUP principals with administer/space (measured:
+// a user given the role, and a group given the role). A `role` principal is never resolved: that
+// needs /spaces/{id}/role-assignments and the scope read:space.permission:confluence, which this
+// app does not hold. It grants nothing (fail closed). Also "no": more than 20 pages of assignments,
+// and a group beyond the account's first 200 groups.
 
 const SPACE_PERMISSION_PAGE = 250;
 const SPACE_PERMISSION_MAX_PAGES = 20; // 5,000 assignments; beyond that the answer is "no"
@@ -126,19 +151,23 @@ export function nextCursorOf(body) {
  * Fails CLOSED on every path: unknown space, a key that does not match exactly, any non-2xx, a
  * thrown error, too many pages.
  */
-export async function isSpaceAdministrator(accountId, spaceKey, { groupIds = null } = {}) {
+export async function isSpaceAdministrator(accountId, spaceKey, { groupIds = null, spaceId = null, memo = null } = {}) {
   if (!accountId || !spaceKey) return false;
   const JH = { headers: { Accept: "application/json" } };
   try {
-    const sres = await asApp().requestConfluence(route`/wiki/api/v2/spaces?keys=${spaceKey}&limit=1`, JH);
-    if (!sres.ok) {
-      console.warn(`[AUTHZ] space lookup ${spaceKey} → ${sres.status}; not a space admin`);
-      return false;
+    let space = spaceId ? { id: String(spaceId), key: spaceKey } : null;
+    if (!space) {
+      const sres = await asApp().requestConfluence(route`/wiki/api/v2/spaces?keys=${spaceKey}&limit=1`, JH);
+      if (!sres.ok) {
+        console.warn(`[AUTHZ] space lookup ${spaceKey} → ${sres.status}; not a space admin`);
+        return false;
+      }
+      space = (await sres.json())?.results?.[0];
+      if (!space?.id || space.key !== spaceKey) return false;
     }
-    const space = (await sres.json())?.results?.[0];
-    if (!space?.id || space.key !== spaceKey) return false;
     let ids = groupIds;
     let cursor = null;
+    const seen = new Set();
     for (let page = 0; page < SPACE_PERMISSION_MAX_PAGES; page++) {
       const res = await asApp().requestConfluence(
         cursor
@@ -154,11 +183,12 @@ export async function isSpaceAdministrator(accountId, spaceKey, { groupIds = nul
       const rows = body?.results || [];
       if (grantsSpaceAdminister(rows, accountId)) return true;
       if (hasGroupSpaceAdmin(rows)) {
-        if (ids == null) ids = await groupIdsOf(accountId);
+        if (ids == null) ids = await groupIdsOf(accountId, memo);
         if (grantsSpaceAdminister(rows, accountId, ids)) return true;
       }
       cursor = nextCursorOf(body);
-      if (!cursor) return false;
+      if (!cursor || seen.has(cursor)) return false; // the end, or a cursor that does not advance
+      seen.add(cursor);
     }
     console.warn(`[AUTHZ] space permissions ${spaceKey}: more than ${SPACE_PERMISSION_MAX_PAGES} pages; not a space admin`);
     return false;
@@ -169,11 +199,10 @@ export async function isSpaceAdministrator(accountId, spaceKey, { groupIds = nul
 }
 
 /** The account's group ids (asApp, subject named). [] on any failure: no group then grants. */
-async function groupIdsOf(accountId) {
+async function groupIdsOf(accountId, memo = null) {
   try {
-    const res = await asApp().requestConfluence(route`/wiki/rest/api/user/memberof?accountId=${accountId}&limit=200`);
-    if (!res.ok) return [];
-    return ((await res.json())?.results || []).map((g) => g?.id).filter(Boolean);
+    const groups = await memoized(memo, "groups", accountId, () => readGroupsAsApp(accountId).catch(() => null));
+    return (groups || []).map((g) => g?.id).filter(Boolean);
   } catch (_) { return []; }
 }
 
@@ -182,8 +211,8 @@ async function groupIdsOf(accountId) {
  * the operator named (isSpaceAdministrator). It used to ask asUser() the dead space
  * permission/check endpoint (see above), which answered "no" for everyone.
  */
-export async function isOperatorRealmSteward(operatorAccountId, realmKey) {
-  return isSpaceAdministrator(operatorAccountId, realmKey);
+export async function isOperatorRealmSteward(operatorAccountId, realmKey, opts = {}) {
+  return isSpaceAdministrator(operatorAccountId, realmKey, opts);
 }
 
 /**
