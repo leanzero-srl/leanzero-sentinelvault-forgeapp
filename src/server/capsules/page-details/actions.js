@@ -247,7 +247,7 @@ export const pageDetailsSummary = async (req) => {
         // A space admin may take the page out — not while Approved/enforced or an approval waits
         // (the server refuses those too: workflow/logic.js removeRefusal).
         canRemove: wfAdmin && !record.enforce && !wf.pending,
-        enforceMode: shownEnforcement(settings, await kvs.get("admin-settings-global").catch(() => null)), // "off" while content protection is off
+        enforceMode: shownEnforcement(settings, await kvs.get("admin-settings-global").catch(() => null), { moved: !!(record.spaceKey && spaceKey && record.spaceKey !== spaceKey) }), // "off" while content protection is off
         reviewedVersion,
         baselineVersion: record.approvedVersion ?? null,
         approvalSummary: wf.approvalSummary,

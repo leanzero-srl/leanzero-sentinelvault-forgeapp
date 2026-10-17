@@ -393,14 +393,18 @@ export async function pageContentTrigger(event) {
       const eventVersion = content?.version?.number;
       const lateForLiveBody = typeof eventVersion === "number" && typeof ctx.currentVersion === "number"
         && ctx.currentVersion > eventVersion && !!ctx.readAuthorId && ctx.readAuthorId !== atlassianId;
-      if (lateForLiveBody) sealPassesSkipped = true;
+      // "unknown" (who may edit an Approved page could not be judged): the seal passes stand down too,
+      // so the app writes nothing that would carry this version's other changes into the page; the
+      // sweeps judge it again.
+      const judgeLater = lateForLiveBody || enforcement?.action === "unknown";
+      if (judgeLater) sealPassesSkipped = true;
       // Pass 0 (#44): enforced-state whole-page revert — runs FIRST, short-circuits A/B (who-wins).
       if (enforcement?.action === "revert") {
         try { await enforceApprovedStatePass(ctx, enforcement); }
         catch (e) { console.error("[WORKFLOW-ENFORCE] pass error:", e); }
       }
       // Pass A: sealed-section restore (suppressed while enforcing — who-wins + SV-M5 suppression)
-      if (!ctx.enforcedRevert && !lateForLiveBody && sectionSeals.length > 0) {
+      if (!ctx.enforcedRevert && !judgeLater && sectionSeals.length > 0) {
         try { await restoreSealedSectionsPass(ctx, sectionSeals, mediaProbeCache); }
         catch (e) { console.error("[PAGE-PROTECT] section pass error:", e); }
       }
@@ -411,12 +415,12 @@ export async function pageContentTrigger(event) {
       // Pass A2 (SEC-4 (a)): a Sealed Section wrapper with no record — inserted in the editor and
       // published — is sealed to the person who published it. Not while an enforce-revert is
       // rewriting the body (the wrapper may not survive it); the next publish adopts it then.
-      if (!ctx.enforcedRevert && !lateForLiveBody && (insertIntent || sectionSeals.length > 0)) {
+      if (!ctx.enforcedRevert && !judgeLater && (insertIntent || sectionSeals.length > 0)) {
         try { await adoptInsertedSectionsPass(ctx, sectionSeals, adoptedSections, enforcement); }
         catch (e) { console.error("[SECTION-ADOPT] pass error:", e); }
       }
       // Pass B: sealed-media restore
-      if (!ctx.enforcedRevert && !lateForLiveBody && sealFileMap.length > 0) {
+      if (!ctx.enforcedRevert && !judgeLater && sealFileMap.length > 0) {
         try { await restoreMediaPass(ctx, sealFileMap, mediaProbeCache); }
         catch (e) { console.error("[PAGE-PROTECT] media pass error:", e); }
       }
@@ -1334,7 +1338,7 @@ export async function collectWorkflowEnforcementForPage(pageId, atlassianId, eve
   //    or without named approvers (enforce-rules.js enforceModeOf says why the old CL-5 downgrade went).
   // A moved page is always reverted: the old space's settings (its mode, its demote target and the
   // definition's edges) are not the new space's, and a body revert depends on none of them.
-  const mode = auth.moved ? "revert" : enforceModeOf(settings);
+  const mode = enforceModeOf(settings, { moved: auth.moved });
   if (mode === "revert") return { action: "revert", record, spaceKey: record.spaceKey, stewardSpaces: auth.spaces };
 
   // DEMOTE inline (§2.6) — no body write, no ADF read, no ping-pong surface.
@@ -1549,6 +1553,9 @@ export async function workflowSweep() {
         const record = await readPageWorkflow(idx.pageId);
         if (!record) continue;
         const def = await defFor(record.spaceKey, record.workflowId);
+        // Where the page is now (content-access.js recordAuthority; the batch above named its space):
+        // a page that moved spaces holds still (workflow/moved-hold.js) — no review expiry moves it.
+        const auth = await recordAuthority({ contentId: idx.pageId, storedKey: record.spaceKey || null, liveKey: await liveKeyOfSpaceId(places.get(String(idx.pageId))?.spaceId) });
         // B4: label backfill / removal. On → any row whose stamp lags its state gets the label
         // (covers "enabled after pages existed"); off → rows still stamped lose their state
         // labels. One label round-trip per lagging row, none for rows already in step.
@@ -1577,7 +1584,7 @@ export async function workflowSweep() {
         // an hourly sweep must not comment hourly). A page already in Expired has nowhere to go.
         if (record.reviewDueAt && record.stateId !== "expired" && new Date(record.reviewDueAt).getTime() < nowMs) {
           const fromName = findState(def, record.stateId)?.name || record.stateId;
-          const canExpire = !!findState(def, "expired") && validateTransition(def, record.stateId, "expired").ok;
+          const canExpire = auth.known && !auth.moved && !!findState(def, "expired") && validateTransition(def, record.stateId, "expired").ok;
           if (canExpire) {
             const res = await transitionPageWorkflow({
               activity: false, // the dedicated row below records this event (A1 review F5)
@@ -1624,9 +1631,8 @@ export async function workflowSweep() {
           // fall through: an overdue enforced page is still enforced
         }
         if (!record?.enforce) continue;
-        // Where the page is now (content-access.js recordAuthority): unknown -> next run; a moved
-        // page keeps the protection it was approved under (see collectWorkflowEnforcementForPage).
-        const auth = await recordAuthority({ contentId: idx.pageId, storedKey: record.spaceKey || null, liveKey: await liveKeyOfSpaceId(places.get(String(idx.pageId))?.spaceId) });
+        // Unknown (see auth above) -> next run; a moved page keeps the protection it was approved
+        // under (see collectWorkflowEnforcementForPage).
         if (!auth.known) continue;
         if (!findState(def, record.stateId)?.enforce && !(auth.moved && record.enforce === true)) continue;
         // "Protect Sealed Attachments in Page Body" off switches Approved-page enforcement off —
@@ -1660,7 +1666,7 @@ export async function workflowSweep() {
           await kvs.delete(`workflow-integrity-notified-${idx.pageId}`).catch(() => {});
           continue;
         }
-        const mode = auth.moved ? "revert" : enforceModeOf(settings); // the event path's rule (a moved page: revert)
+        const mode = enforceModeOf(settings, { moved: auth.moved }); // the event path's rule (a moved page: revert)
         const alreadyNotified = await kvs.get(`workflow-integrity-notified-${idx.pageId}`);
         if (mode === "revert") {
           const ok = await sweepRevertToApproved(idx.pageId, record);

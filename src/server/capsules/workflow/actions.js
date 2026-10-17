@@ -164,7 +164,8 @@ const getWorkflow = async (req) => {
     }
     // A4: the ribbon's "changed since approval" line says what happens to the edit: the space's
     // enforce mode, or "off" while the site's content-protection switch has enforcement off.
-    result.enforceMode = shownEnforcement(settings, await kvs.get("admin-settings-global").catch(() => null));
+    const movedSpace = !!(result.record?.spaceKey && pageSpaceKey && result.record.spaceKey !== pageSpaceKey);
+    result.enforceMode = shownEnforcement(settings, await kvs.get("admin-settings-global").catch(() => null), { moved: movedSpace });
     // A5: the ribbon turns the "Review due" chip into a button only for someone set-review-due
     // would accept — a steward of the page's own space (the edit check runs on the write).
     result.canSetReviewDue = !!(req.context?.accountId && result.record?.spaceKey)

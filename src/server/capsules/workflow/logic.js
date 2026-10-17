@@ -580,7 +580,9 @@ export async function unassignPageWorkflow({ pageId, actorAccountId = null, acto
   const def = record ? await resolveWorkflowDef(record.spaceKey, record.workflowId) : null;
   const refusal = removeRefusal({
     record,
-    stateEnforced: !!(record && findState(def, record.stateId)?.enforce),
+    // The record's own enforce flag counts too: a definition edited since the approval must not let
+    // the page out while its seals are still held by that approval.
+    stateEnforced: !!(record && (record.enforce || findState(def, record.stateId)?.enforce)),
     hasPending: !!(await kvs.get(`workflow-pending-${pageId}`)),
   });
   if (refusal) return { success: false, reason: refusal };
