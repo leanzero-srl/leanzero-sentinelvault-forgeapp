@@ -1555,7 +1555,9 @@ export async function workflowSweep() {
         const def = await defFor(record.spaceKey, record.workflowId);
         // Where the page is now (content-access.js recordAuthority; the batch above named its space):
         // a page that moved spaces holds still (workflow/moved-hold.js) — no review expiry moves it.
-        const auth = await recordAuthority({ contentId: idx.pageId, storedKey: record.spaceKey || null, liveKey: await liveKeyOfSpaceId(places.get(String(idx.pageId))?.spaceId) });
+        // Asked only where it matters (a passed review date, an enforced record), once per row.
+        let authAnswer = null;
+        const authOf = async () => (authAnswer ??= await recordAuthority({ contentId: idx.pageId, storedKey: record.spaceKey || null, liveKey: await liveKeyOfSpaceId(places.get(String(idx.pageId))?.spaceId) }));
         // B4: label backfill / removal. On → any row whose stamp lags its state gets the label
         // (covers "enabled after pages existed"); off → rows still stamped lose their state
         // labels. One label round-trip per lagging row, none for rows already in step.
@@ -1582,7 +1584,9 @@ export async function workflowSweep() {
         // the page needs no enforce processing this tick); otherwise it stays put, overdue, and is
         // recorded + commented ONCE per due date (workflow-review-notified-{pageId}, 7-day TTL —
         // an hourly sweep must not comment hourly). A page already in Expired has nowhere to go.
-        if (record.reviewDueAt && record.stateId !== "expired" && new Date(record.reviewDueAt).getTime() < nowMs) {
+        // Not judged while where the page is cannot be read: neither expired nor noticed this tick.
+        if (record.reviewDueAt && record.stateId !== "expired" && new Date(record.reviewDueAt).getTime() < nowMs && (await authOf()).known) {
+          const auth = await authOf();
           const fromName = findState(def, record.stateId)?.name || record.stateId;
           const canExpire = auth.known && !auth.moved && !!findState(def, "expired") && validateTransition(def, record.stateId, "expired").ok;
           if (canExpire) {
@@ -1633,6 +1637,7 @@ export async function workflowSweep() {
         if (!record?.enforce) continue;
         // Unknown (see auth above) -> next run; a moved page keeps the protection it was approved
         // under (see collectWorkflowEnforcementForPage).
+        const auth = await authOf();
         if (!auth.known) continue;
         if (!findState(def, record.stateId)?.enforce && !(auth.moved && record.enforce === true)) continue;
         // "Protect Sealed Attachments in Page Body" off switches Approved-page enforcement off —
