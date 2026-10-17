@@ -1330,7 +1330,7 @@ html[data-color-mode="dark"] .artifact-card.status-trashed { border-color: #FB92
 /* The meta line is the opposite case: it is wrapping text (owner, space, age), so it keeps a 180 px
    basis — Watch stays beside it and the text wraps inside. With basis auto (round 2, first cut) it
    claimed its one-line width and pushed Watch onto a line of its own: every space-console card grew
-   56-69 px at the 834-1120 px desktop frames (offline diff c449ac2 -> 3ad15ca). */
+   56-69 px at the 834-1120 px desktop frames (offline diff 79c8a6d -> 906181f). */
 .card-row-secondary > .card-secondary-left { flex: 1 1 180px; min-width: 0; }
 .card-row-primary > .card-row-right, .card-row-secondary > .card-secondary-right { margin-left: auto; }
 .card-meta { flex-wrap: wrap; row-gap: 2px; }
@@ -2453,7 +2453,7 @@ html[data-color-mode="dark"] .action-bar-pill { background: #FBBF24; color: #0F1
 .sv-dialog-body { font-size: 14px; line-height: 1.5; }
 .sv-dialog-body p { margin: 0 0 8px; }
 .sv-dialog-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 18px; }
-/* Dialog buttons only. This block was unscoped (74e6e83) and, coming after the card pill rule,
+/* Dialog buttons only. This block was unscoped (91a9618) and, coming after the card pill rule,
    turned every card's Force release / Watch and the Access Control Approve / Deny into 37 px
    tall, 120 px wide buttons that pushed the file name out of the card (device matrix 2026-10-06). */
 .sv-dialog .action-btn {

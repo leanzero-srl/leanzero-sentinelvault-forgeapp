@@ -1,6 +1,6 @@
 # Data classification — UX design record (2026-09-30)
 
-## Gap table (written before the change, from the code on `main` at d08f201)
+## Gap table (written before the change, from the code on `main` at 095c2b1)
 
 | Principle | Today | Change |
 |---|---|---|

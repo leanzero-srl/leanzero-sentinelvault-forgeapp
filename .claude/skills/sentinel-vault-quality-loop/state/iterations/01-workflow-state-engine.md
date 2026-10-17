@@ -55,7 +55,7 @@ Research is done (CAPABILITY_EXPANSION.md §F1). This iteration = Phase 4 design
 ## Verify (live)
 - Harness grade: **PASS** (exit 0). Units 90/90 (incl. workflow-engine 25/25), eslint + forge lint clean, health OK, ensure-fixture OK, **workflow-e2e 13/13**, live-trigger 8/8, seal-e2e 4/4, forge-logs clean. Acceptance criteria 1–5 all met.
 - workflow-e2e proved LIVE against the deployed backend: assign → initial `draft`; KVS record + by-state index + `sentinel-vault-workflow` content property all written; `draft→in_review` transition moves the index (stale removed, new present); illegal `in_review→expired` rejected with state unchanged; log has ordered assign + transition entries; read model returns available transitions `[approved, draft]`.
-- **Runs-on-Atlassian:** the eligibility flag ("webtrigger can egress") is **pre-existing** — the `harness-test-state` dev webtrigger (commit 12e86af), stripped for prod. The workflow capsule itself has zero egress (asApp/asUser Confluence + KVS only). Invariant intact.
+- **Runs-on-Atlassian:** the eligibility flag ("webtrigger can egress") is **pre-existing** — the `harness-test-state` dev webtrigger (commit 946bdb3), stripped for prod. The workflow capsule itself has zero egress (asApp/asUser Confluence + KVS only). Invariant intact.
 - Red-team (above): concurrency index-leak + def-drift + log cap documented as known advisory-mode limitations; none blocking. Enforcement/approvals are #44/#43.
 
 ## Outcome

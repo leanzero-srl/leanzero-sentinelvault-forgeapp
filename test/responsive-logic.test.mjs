@@ -52,7 +52,7 @@ eq("phone stacked row: the compact form, clear, beside the toggle", [ph.spot, ph
 ok("…inside the visible band (0-390)", ph.left >= 6 && ph.left + COMPACT.width <= 390 - 6);
 eq("…covering nothing", hit(ph, COMPACT, [...phoneControls, ...phoneText]), 0);
 
-// LIVE geometry, phone-360 space console > Validations (dev 7b271ec, 2026-10-07): the frame shows
+// LIVE geometry, phone-360 space console > Validations (dev 08be245, 2026-10-07): the frame shows
 // 0-320 x 0-545; the box ticked is "Flag with a comment". The one clear spot is right of the
 // "Enable content validation" switch, and a 225 px compact form 8 px from the edge missed it by 3 px
 // and covered "Enforcement". Edge 6 + the 219 px form fit it.

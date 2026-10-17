@@ -1,5 +1,5 @@
 // The reporting cycle and the closed-account lifecycle (review 2026-10-05: C1, C3, C4, a, b, c, d,
-// C2). Each block below started life as a repro that was RED on 5dba6ae (sv-break/snapshot-loop.mjs:
+// C2). Each block below started life as a repro that was RED on b61fd72 (sv-break/snapshot-loop.mjs:
 // 4 reports + 4 erasures in 4 sweeps at a 6.5-day gap; sv-break/cadence.mjs: gaps {7: 15, 14: 18}
 // over a year; an out-of-batch "closed" answer accepted). The simulations drive the SAME pure
 // functions the worker calls, in the worker's order.
