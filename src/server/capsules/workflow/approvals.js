@@ -31,6 +31,8 @@ import { touchByline } from "../page-details/byline-touch.js"; // WF-6
 import { notifyApprovalRequested, notifyApprovalResolved } from "../../infra/approval-blueprints.js";
 import { recordActivity } from "../../infra/activity-log.js";
 import { isAccountStewardAsApp } from "../../shared/steward-checks.js";
+import { isStewardOfRecord } from "../../shared/content-access.js";
+import { movedPageHold } from "./moved-hold.js";
 import { verifySignature } from "./signature.js";
 
 const APPROVAL_ID = "approval"; // v1 single default round; schema carries the segment for future named rounds
@@ -359,7 +361,15 @@ export async function clearPageApprovals(pageId, stateId, approvers) {
 // full #44 anchor rule (fail-closed on null / stale version) so it can't be bypassed.
 const completingKey = (pageId) => `workflow-completing-${pageId}`;
 
-async function finalizeApprovedTransition(pageId, stateId, pending, actorAccountId, actorName, voteSummary) {
+async function finalizeApprovedTransition(pageId, stateId, pending, actorAccountId, actorName, voteSummary, { holdChecked = false } = {}) {
+  // The backstop for every completion (the last vote, an AI verdict): a page that moved to another
+  // space since the request does not move (moved-hold.js); the request stays open. A caller that
+  // asked already (decide-approval before the vote was recorded, the AI verdict before it was
+  // consumed) says so: one lookup, and never a vote or verdict used up by a second failed lookup.
+  if (!holdChecked) {
+    const hold = await movedPageHold(pageId, { actorAccountId, storedKey: pending?.spaceKey || null });
+    if (hold) return { success: false, reason: hold.reason, moved: !!hold.moved, transitioned: false };
+  }
   const approvers = deciderIds(pending); // records to snapshot and clear: listed + admins who decided
   // One-shot completion CLAIM (dedup concurrent finalizers: duplicate AI delivery, and the
   // AI-verdict-vs-last-human-vote race). KVS has no CAS, so this narrows the window; the
@@ -442,6 +452,18 @@ export async function applyAiVerdict(pageId, reviewedVersion, status, reason) {
   if (pending.aiGate.status !== "pending") return { applied: false, reason: "already resolved" }; // CAS: only from pending
   // Version pin: if the AI scored a different version than the humans reviewed, it's stale → fail.
   const stale = reviewedVersion != null && pending.pinnedVersion != null && reviewedVersion !== pending.pinnedVersion;
+  // A pass that would COMPLETE the request (the human quorum is met already) on a page that moved
+  // spaces, or whose space cannot be read right now, is not consumed: the request stays open and
+  // the page holds still (moved-hold.js). A pass that still waits for the humans is recorded as
+  // before; the last vote is held (decide-approval) if the page moved by then.
+  let quorumAlready = null;
+  if (!stale && status === "passed") {
+    quorumAlready = await humanQuorumMet(pageId, pending, await readApprovalRecords(pageId, pending.toStateId, pending.approvers));
+    if (quorumAlready) {
+      const hold = await movedPageHold(pageId, { actorAccountId: pending.requestedBy || null, storedKey: pending.spaceKey || null });
+      if (hold) return { applied: false, reason: hold.reason, moved: !!hold.moved };
+    }
+  }
   pending.aiGate.status = stale ? "failed" : (status === "passed" ? "passed" : "failed");
   pending.aiGate.reviewedVersion = reviewedVersion ?? null;
   pending.aiGate.reason = stale ? "Page changed during AI review — re-request." : (reason ?? null);
@@ -454,8 +476,9 @@ export async function applyAiVerdict(pageId, reviewedVersion, status, reason) {
   // AI passed — complete iff the human axis is also met (else wait for the last human vote).
   const records = await readApprovalRecords(pageId, pending.toStateId, pending.approvers);
   if (!(await humanQuorumMet(pageId, pending, records))) return { applied: true, status: "passed", waiting: "humans" };
-  // The AI was a CONDITION; the authority was the steward who requested the transition.
-  const res = await finalizeApprovedTransition(pageId, pending.toStateId, pending, pending.requestedBy || null, pending.requestedByName || "Sentinel Vault", "approved (AI review + approvals)");
+  // The AI was a CONDITION; the authority was the steward who requested the transition. The hold was
+  // asked above only if the quorum was met then; otherwise the finalizer asks it now.
+  const res = await finalizeApprovedTransition(pageId, pending.toStateId, pending, pending.requestedBy || null, pending.requestedByName || "Sentinel Vault", "approved (AI review + approvals)", { holdChecked: quorumAlready === true });
   return { applied: true, status: "passed", ...res };
 }
 
@@ -477,7 +500,9 @@ export async function decideApproval({ pageId, approverAccountId, decision, reas
     // it off). The record is made now and the admin is added to the request's decider list, so
     // every read, the evidence snapshot and the cleanup see it.
     const adminsMay = spaceSettings?.approval?.adminsCanApprove !== false;
-    const isAdmin = adminsMay && await isAccountStewardAsApp(approverAccountId, pending.spaceKey).catch(() => false);
+    // An admin of the space the page is in NOW and, if it moved since the request, of the space the
+    // request was made in (content-access.js recordAuthoritySpaces) — never the stored space alone.
+    const isAdmin = adminsMay && await isStewardOfRecord(isAccountStewardAsApp, approverAccountId, { contentId: pageId, storedKey: pending.spaceKey || null });
     if (!isAdmin) return { success: false, reason: "You are not an approver for this transition" };
     record = { approverAccountId, status: "pending", admin: true, approverName: actorName || null, createdAt: new Date().toISOString() };
     await kvs.set(key, record);
@@ -490,6 +515,12 @@ export async function decideApproval({ pageId, approverAccountId, decision, reas
     return { success: false, reason: "Your decision has already been recorded" };
   }
   if (decision !== "approved" && decision !== "denied") return { success: false, reason: "Invalid decision" };
+  // An approval of a page that moved to another space since the request is held (moved-hold.js) —
+  // before anything is recorded. A "no" still closes the request.
+  if (decision === "approved") {
+    const hold = await movedPageHold(pageId, { actorAccountId: approverAccountId, storedKey: pending.spaceKey || null });
+    if (hold) return { success: false, reason: hold.reason, moved: !!hold.moved };
+  }
   // WF-1 (UX critique 2026-09-19): an approval of a version nobody reviewed is refused UP FRONT —
   // nothing recorded, the request stays open, no comment. Before this the vote was recorded, the
   // finalizer threw the whole request away as "stale" and the requester read "declined by <the
@@ -567,7 +598,7 @@ export async function decideApproval({ pageId, approverAccountId, decision, reas
       return decided({ success: true, outcome: "pending-ai", transitioned: false, reason: "Approvals complete — waiting on the AI content review." });
     }
     const voteSummary = `approved (${records.filter((r) => r.status === "approved").length}/${records.length})`;
-    return decided(await finalizeApprovedTransition(pageId, stateId, freshPending, approverAccountId, actorName, voteSummary));
+    return decided(await finalizeApprovedTransition(pageId, stateId, freshPending, approverAccountId, actorName, voteSummary, { holdChecked: decision === "approved" }));
   }
   if (outcome === "denied") {
     // A4 §3: a denial used to leave NO durable trace once the records were deleted. Snapshot
