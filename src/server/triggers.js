@@ -43,7 +43,7 @@ import { readDocBody, readDocBodyAtVersion, writeDocBody, collectMediaFileIds, e
 import { probeAttachmentStatus, restoreAttachmentFromTrash, decideMediaRestoreAction, confirmAttachmentPurged } from "./infra/attachment-status.js";
 import { findSealedMediaSingle, findAllSealedMediaSingles, capturePresentation, presentationDiffers, applyPresentation } from "./infra/media-presentation.js";
 import { setWithTtl, setUntil } from "./shared/kvs-ttl.js";
-import { resolvePageSpaceKey } from "./shared/content-access.js";
+import { resolvePageSpaceKey, isStewardOfSpaces, recordAuthority } from "./shared/content-access.js";
 import { decideSectionRetry, nextRetryMarker, sectionRetryKey, SECTION_RETRY_PREFIX, SECTION_RETRY_TTL_MS, SECTION_RETRY_SWEEP_CAP } from "./shared/section-retry.js";
 // F5 (owner feedback 2026-08-27): a lapsed seal gets a bounded run of reminders and is then
 // released automatically. The decision is time-based, so it lives in a pure zero-import module
@@ -326,7 +326,7 @@ export async function pageContentTrigger(event) {
     // #44: enforced Approved-state probe (cheap; no ADF read). May act inline (demote)
     // or ask for a whole-page revert. See collectWorkflowEnforcementForPage.
     const enforcement = contentProtectionOn
-      ? await collectWorkflowEnforcementForPage(pageId, atlassianId, content?.version?.number, systemAccountId)
+      ? await collectWorkflowEnforcementForPage(pageId, atlassianId, content?.version?.number, systemAccountId, event?.space?.key || content?.space?.key || null)
       : null;
     const needsRevert = enforcement?.action === "revert";
 
@@ -1282,7 +1282,7 @@ async function restoreSealedSectionsPass(ctx, sectionSeals, probeCache = new Map
 
 // Cheap probe (§2.1): decides whether an enforced page needs a revert, is a privileged
 // edit, or should be demoted (done inline). NO ADF read on the fast path.
-export async function collectWorkflowEnforcementForPage(pageId, atlassianId, eventVersion, systemAccountId) {
+export async function collectWorkflowEnforcementForPage(pageId, atlassianId, eventVersion, systemAccountId, liveSpaceKey = null) {
   // 1. Fast path — content-property probe. Absent/non-enforced -> nothing to do.
   let prop = null;
   try {
@@ -1294,8 +1294,17 @@ export async function collectWorkflowEnforcementForPage(pageId, atlassianId, eve
   // 2. Authoritative record + re-confirm the state is still an enforce state.
   const record = await readPageWorkflow(pageId);
   if (!record?.enforce) return null;
+  // Where the page is now (the event names it: no lookup) against the space the record was made in
+  // (content-access.js recordAuthority). Unknown — Confluence could not be asked — is not judged
+  // here: a steward's edit must never be demoted or undone for a failed lookup; the page-guard and
+  // hourly sweeps judge the page again.
+  const auth = await recordAuthority({ contentId: pageId, storedKey: record.spaceKey || null, liveKey: liveSpaceKey });
+  if (!auth.known) return null;
   const def = await resolveWorkflowDef(record.spaceKey, record.workflowId);
-  if (!findState(def, record.stateId)?.enforce) return null;
+  // A page that MOVED keeps the protection it was approved under: the old space's definition no
+  // longer describes a space the page is in, so a change there (e.g. Approved no longer locking)
+  // does not switch it off. The record's own enforce flag decides until the page is re-assigned.
+  if (!findState(def, record.stateId)?.enforce && !(auth.moved && record.enforce === true)) return null;
   // 3. Privileged? snapshot ∩ live-config approvers, OR live steward (§0.D/§0.E).
   //    If live group-expansion FAILED (outage), trust the snapshot rather than reverting a
   //    real approver's edit — revocation is only honored when expansion actually succeeds.
@@ -1305,7 +1314,8 @@ export async function collectWorkflowEnforcementForPage(pageId, atlassianId, eve
   const liveUnresolved = !!liveSpec?.unresolved;
   const privileged =
     (Array.isArray(record.approvers) && record.approvers.includes(atlassianId) && (liveApprovers.includes(atlassianId) || liveUnresolved))
-    || await isAccountStewardAsApp(atlassianId, record.spaceKey);
+    // A steward of the space the page is in NOW and, if it moved, of the record's (recordAuthority).
+    || await isStewardOfSpaces(isAccountStewardAsApp, atlassianId, auth.spaces);
   if (privileged) return { action: "privileged", record }; // reconciliation (§2.5) advances the baseline
 
   // 3b. A late event for a version the approval already covers (the requester's own last save
@@ -1321,7 +1331,7 @@ export async function collectWorkflowEnforcementForPage(pageId, atlassianId, eve
   // 4. Not privileged -> revert (opt-in) or demote (default) — the mode the space admin chose, with
   //    or without named approvers (enforce-rules.js enforceModeOf says why the old CL-5 downgrade went).
   const mode = enforceModeOf(settings);
-  if (mode === "revert") return { action: "revert", record, spaceKey: record.spaceKey };
+  if (mode === "revert") return { action: "revert", record, spaceKey: record.spaceKey, stewardSpaces: auth.spaces };
 
   // DEMOTE inline (§2.6) — no body write, no ADF read, no ping-pong surface.
   // A2: the target is the space's configured `demoteTo` (validated at save; resolveDemoteTarget
@@ -1389,7 +1399,8 @@ async function enforceApprovedStatePass(ctx, enf) {
   // privileged actor's edit whose reconciliation hasn't advanced approvedVersion yet). Revert
   // to the HIGHEST privileged-authored version in (av, cur), not blindly to av — otherwise a
   // concurrent approver edit is destroyed. targetV === av when there's no intervening edit.
-  const targetV = (cur - av > 1) ? await highestSanctionedVersion(ctx.pageId, rec, av, cur) : av;
+  const targetV = (cur - av > 1) ? await highestSanctionedVersion(ctx.pageId, rec, av, cur, enf?.stewardSpaces) : av;
+  if (targetV == null) return;                        // who may edit could not be judged: no revert this run
 
   const { adfDoc: approvedAdf } = await readDocBodyAtVersion(ctx.pageId, targetV);
   // CL-1: never let an empty/unreadable baseline blank the page.
@@ -1413,7 +1424,7 @@ async function enforceApprovedStatePass(ctx, enf) {
 // #6: highest version in (av, cur) authored by a privileged actor (approver-snapshot ∩ live
 // config, or trigger-safe steward) — the last SANCTIONED content to revert to. Returns av if
 // none. One versions GET; only called when intervening versions exist.
-async function highestSanctionedVersion(pageId, record, av, cur) {
+async function highestSanctionedVersion(pageId, record, av, cur, knownStewardSpaces = null) {
   try {
     const res = await asApp().requestConfluence(route`/wiki/api/v2/pages/${pageId}/versions?limit=50`);
     if (!res.ok) return av;
@@ -1422,6 +1433,14 @@ async function highestSanctionedVersion(pageId, record, av, cur) {
     const liveSpec = await resolveApproverIds(settings.approval);
     const liveApprovers = liveSpec?.approvers || [];
     const liveUnresolved = !!liveSpec?.unresolved;
+    // The steward arm: the page's space now and, if it moved, the record's — looked up once (the
+    // probe's answer when it has one). Unknown: null, and the caller does not revert this run.
+    let stewardSpaces = knownStewardSpaces;
+    if (!stewardSpaces) {
+      const auth = await recordAuthority({ contentId: pageId, storedKey: record.spaceKey || null });
+      if (!auth.known) return null;
+      stewardSpaces = auth.spaces;
+    }
     let best = av;
     for (const v of versions) {
       const n = v.number;
@@ -1429,7 +1448,7 @@ async function highestSanctionedVersion(pageId, record, av, cur) {
       const author = v.authorId;
       const priv = author && (
         (Array.isArray(record.approvers) && record.approvers.includes(author) && (liveApprovers.includes(author) || liveUnresolved))
-        || await isAccountStewardAsApp(author, record.spaceKey));
+        || await isStewardOfSpaces(isAccountStewardAsApp, author, stewardSpaces));
       if (priv) best = n;
     }
     return best;
@@ -1491,6 +1510,7 @@ export async function workflowSweep() {
   const protectionOn = contentProtectionEnabled(await kvs.get("admin-settings-global").catch(() => null));
   const defCache = new Map(); // per-space def cache — most pages in a space share one workflow
   const settingsCache = new Map(); // per-space settings (B4 label sync reads them per row)
+  const spaceKeyById = new Map(); // workflowSweep: space id -> key, once per run
   let labelsSynced = 0;
   const LABEL_SYNC_PER_RUN = 40;
   const defFor = async (sk, wid = null) => { const k = `${sk}|${wid || ""}`; if (!defCache.has(k)) defCache.set(k, await resolveWorkflowDef(sk, wid)); return defCache.get(k); };
@@ -1503,6 +1523,16 @@ export async function workflowSweep() {
     // page Confluence has forgotten (purged) has its workflow keys purged too — the dashboard
     // otherwise lists it forever. `unknown` (a failed lookup) is left alone this tick.
     const places = await fetchPageStatuses((results || []).map((r) => r?.value?.pageId).filter(Boolean));
+    // The batch above already says which space each page is in now; its key is read once per space.
+    const liveKeyOfSpaceId = async (spaceId) => {
+      if (spaceId == null) return null;
+      if (!spaceKeyById.has(spaceId)) {
+        let key = null;
+        try { const r = await asApp().requestConfluence(route`/wiki/api/v2/spaces/${spaceId}`); if (r.ok) key = (await r.json())?.key || null; } catch (_) { key = null; }
+        spaceKeyById.set(spaceId, key);
+      }
+      return spaceKeyById.get(spaceId);
+    };
     for (const { value: idx } of (results || [])) {
       try {
         const place = places.get(String(idx?.pageId))?.status || "unknown";
@@ -1590,7 +1620,11 @@ export async function workflowSweep() {
           // fall through: an overdue enforced page is still enforced
         }
         if (!record?.enforce) continue;
-        if (!findState(def, record.stateId)?.enforce) continue;
+        // Where the page is now (content-access.js recordAuthority): unknown -> next run; a moved
+        // page keeps the protection it was approved under (see collectWorkflowEnforcementForPage).
+        const auth = await recordAuthority({ contentId: idx.pageId, storedKey: record.spaceKey || null, liveKey: await liveKeyOfSpaceId(places.get(String(idx.pageId))?.spaceId) });
+        if (!auth.known) continue;
+        if (!findState(def, record.stateId)?.enforce && !(auth.moved && record.enforce === true)) continue;
         // "Protect Sealed Attachments in Page Body" off switches Approved-page enforcement off —
         // the event path always honoured it, the sweep did not and still demoted / reverted.
         // Nothing here is touched while it is off: no enforcement, no baseline re-stamp (that would
@@ -1616,7 +1650,7 @@ export async function workflowSweep() {
         const authorized = author && (
           author === systemAccountId // the app's own version bumps (revert re-saves) are never tampers
           || (record.approvers.includes(author) && (liveApprovers.includes(author) || liveUnresolved))
-          || await isAccountStewardAsApp(author, record.spaceKey));
+          || await isStewardOfSpaces(isAccountStewardAsApp, author, auth.spaces));
         if (authorized) {
           if (await restampApprovedVersion(idx.pageId, live)) healed++;
           await kvs.delete(`workflow-integrity-notified-${idx.pageId}`).catch(() => {});
