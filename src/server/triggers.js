@@ -1423,13 +1423,18 @@ async function highestSanctionedVersion(pageId, record, av, cur) {
     const liveApprovers = liveSpec?.approvers || [];
     const liveUnresolved = !!liveSpec?.unresolved;
     let best = av;
+    const stewardOf = new Map(); // one steward check per author, however many versions they wrote
     for (const v of versions) {
       const n = v.number;
       if (typeof n !== "number" || n <= av || n >= cur || n <= best) continue;
       const author = v.authorId;
+      const steward = () => {
+        if (!stewardOf.has(author)) stewardOf.set(author, isAccountStewardAsApp(author, record.spaceKey).catch(() => false));
+        return stewardOf.get(author);
+      };
       const priv = author && (
         (Array.isArray(record.approvers) && record.approvers.includes(author) && (liveApprovers.includes(author) || liveUnresolved))
-        || await isAccountStewardAsApp(author, record.spaceKey));
+        || await steward());
       if (priv) best = n;
     }
     return best;
