@@ -452,11 +452,17 @@ export async function applyAiVerdict(pageId, reviewedVersion, status, reason) {
   if (pending.aiGate.status !== "pending") return { applied: false, reason: "already resolved" }; // CAS: only from pending
   // Version pin: if the AI scored a different version than the humans reviewed, it's stale → fail.
   const stale = reviewedVersion != null && pending.pinnedVersion != null && reviewedVersion !== pending.pinnedVersion;
-  // A pass on a page that moved spaces (or whose space cannot be read right now) is not consumed:
-  // the request stays open and the page holds still (moved-hold.js).
+  // A pass that would COMPLETE the request (the human quorum is met already) on a page that moved
+  // spaces, or whose space cannot be read right now, is not consumed: the request stays open and
+  // the page holds still (moved-hold.js). A pass that still waits for the humans is recorded as
+  // before; the last vote is held (decide-approval) if the page moved by then.
+  let quorumAlready = null;
   if (!stale && status === "passed") {
-    const hold = await movedPageHold(pageId, { actorAccountId: pending.requestedBy || null, storedKey: pending.spaceKey || null });
-    if (hold) return { applied: false, reason: hold.reason, moved: !!hold.moved };
+    quorumAlready = await humanQuorumMet(pageId, pending, await readApprovalRecords(pageId, pending.toStateId, pending.approvers));
+    if (quorumAlready) {
+      const hold = await movedPageHold(pageId, { actorAccountId: pending.requestedBy || null, storedKey: pending.spaceKey || null });
+      if (hold) return { applied: false, reason: hold.reason, moved: !!hold.moved };
+    }
   }
   pending.aiGate.status = stale ? "failed" : (status === "passed" ? "passed" : "failed");
   pending.aiGate.reviewedVersion = reviewedVersion ?? null;
@@ -470,8 +476,9 @@ export async function applyAiVerdict(pageId, reviewedVersion, status, reason) {
   // AI passed — complete iff the human axis is also met (else wait for the last human vote).
   const records = await readApprovalRecords(pageId, pending.toStateId, pending.approvers);
   if (!(await humanQuorumMet(pageId, pending, records))) return { applied: true, status: "passed", waiting: "humans" };
-  // The AI was a CONDITION; the authority was the steward who requested the transition.
-  const res = await finalizeApprovedTransition(pageId, pending.toStateId, pending, pending.requestedBy || null, pending.requestedByName || "Sentinel Vault", "approved (AI review + approvals)", { holdChecked: true });
+  // The AI was a CONDITION; the authority was the steward who requested the transition. The hold was
+  // asked above only if the quorum was met then; otherwise the finalizer asks it now.
+  const res = await finalizeApprovedTransition(pageId, pending.toStateId, pending, pending.requestedBy || null, pending.requestedByName || "Sentinel Vault", "approved (AI review + approvals)", { holdChecked: quorumAlready === true });
   return { applied: true, status: "passed", ...res };
 }
 
