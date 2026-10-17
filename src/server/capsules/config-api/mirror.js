@@ -84,7 +84,7 @@ export const CONFIG_WRITER_KEYS = Object.freeze([
   "set-space-workflow-settings", "classification-set-space-default", "classification-manage-levels",
 ]);
 
-export function scopeOfConfigWrite(key, payload) {
+export function scopeOfConfigWrite(key, payload, result = null) {
   const p = payload || {};
   switch (key) {
     case "store-policy":
@@ -94,8 +94,16 @@ export function scopeOfConfigWrite(key, payload) {
     case "delete-space-workflow":
     case "set-space-workflow-settings":
       return p.spaceKey ? { scope: "space", spaceKey: String(p.spaceKey) } : null;
-    case "classification-set-space-default":
-      return { scope: "space-by-id", spaceIds: [].concat(p.spaceIds || p.spaceId || []).map(String) };
+    case "classification-set-space-default": {
+      // Only the spaces the write was allowed for: the answer lists a result per space and has no
+      // overall success flag, so a refusal for every space used to refresh every space named.
+      let ids = [].concat(p.spaceIds || p.spaceId || []).map(String);
+      if (result && Array.isArray(result.results)) {
+        const allowed = new Set(result.results.filter((r) => r && r.ok === true).map((r) => String(r.spaceId)));
+        ids = ids.filter((id) => allowed.has(id));
+      } else if (result) ids = [];
+      return ids.length ? { scope: "space-by-id", spaceIds: [...new Set(ids)] } : null;
+    }
     case "classification-manage-levels":
       return { scope: "site" };
     default:

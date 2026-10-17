@@ -117,11 +117,15 @@ export default function ValidationsEditor({ scope = "global", spaceKey = null })
   const [saved, setSaved] = useState(null);
   const [aiModels, setAiModels] = useState([]);
   const [globalRules, setGlobalRules] = useState(null); // audit C6: for the informed-override note
+  // The server refuses the settings to anyone who may not change them; show that instead of an
+  // empty form (saving an empty form would replace the real rules).
+  const [loadError, setLoadError] = useState(null);
 
   useEffect(() => {
     (async () => {
       try {
         const r = await invoke("load-validation-config", { scope, key: spaceKey });
+        if (r && r.success === false) { setLoadError(r.reason || "Could not load the validation rules."); return; }
         if (r) {
           const loaded = {
             enabled: !!r.enabled,
@@ -137,7 +141,7 @@ export default function ValidationsEditor({ scope = "global", spaceKey = null })
         // C6: a space that SETS rules overrides global entirely (documented) — so surface
         // exactly what would be dropped, especially required (block-severity) global rules.
         if (scope === "space") {
-          const g = await invoke("load-validation-config", { scope: "global" });
+          const g = await invoke("load-validation-config", { scope: "global", key: spaceKey });
           setGlobalRules(Array.isArray(g?.rules) ? g.rules : []);
         }
       } catch (e) {
@@ -180,6 +184,7 @@ export default function ValidationsEditor({ scope = "global", spaceKey = null })
   };
 
   if (loading) return <div className="settings-panel">Loading…</div>;
+  if (loadError) return <div className="settings-panel"><div role="status" aria-live="polite" className="alert-error">{loadError}</div></div>;
   const dirty = saved !== null && JSON.stringify(cfg) !== saved;
   const discard = () => { try { setCfg(JSON.parse(saved)); } catch (_) { /* keep */ } setMsg(null); };
 

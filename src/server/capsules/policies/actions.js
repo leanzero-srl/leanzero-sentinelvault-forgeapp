@@ -34,6 +34,13 @@ async function redactRosterUnlessSteward(ruleset, accountId, key) {
   return { ...ruleset, adminUsers: [], adminGroups: [] };
 }
 
+async function redactRosterUnlessSiteAdmin(ruleset, accountId) {
+  if (!ruleset || typeof ruleset !== "object") return ruleset;
+  if (!ruleset.adminUsers?.length && !ruleset.adminGroups?.length) return ruleset;
+  if (accountId && (await isOperatorSiteAdmin(accountId))) return ruleset;
+  return { ...ruleset, adminUsers: [], adminGroups: [] };
+}
+
 /**
  * Get admin settings (unified function for global and realm)
  */
@@ -41,7 +48,11 @@ const loadPolicy = async (req) => {
   const { scope, key } = req.payload;
 
   if (scope === "global") {
-    const ruleset = await kvs.get("admin-settings-global");
+    const stored = await kvs.get("admin-settings-global");
+    // The site record can carry the site-wide fallback admin roster (adminUsers / adminGroups,
+    // which count for every space without its own). Every console reads the site settings, but
+    // only a site admin may see who is on that roster.
+    const ruleset = await redactRosterUnlessSiteAdmin(stored, req.context?.accountId);
     // A never-saved site answers with the ENGINE defaults (baseline.js POLICY_DEFAULTS — one copy,
     // the same values every reader applies to an absent key). The dead `enable*Notifications`
     // keys of the old seed are gone: nothing read them. No `setupCompletedAt` here on purpose —

@@ -2,6 +2,16 @@
 
 GENERATED from `src/server/shared/release-notes.js` by `scripts/render-release-notes.mjs`. Do not edit.
 
+## 8.8.0 — 2026-10-17
+
+**Stricter checks on who can see Sentinel Vault's settings**
+
+
+Fixed:
+- Stricter checks on who can see Sentinel Vault's space and site settings, and on who can run an AI review of a page.
+
+**Do this:** Nothing to do if your site already runs 8.0.0. A site on an earlier version gets this update after a site admin approves the 8.0.0 update in Confluence administration, Apps, Manage apps.
+
 ## 8.7.0 — 2026-10-17
 
 **Stricter checks on who can see a space's scan status**
@@ -22,15 +32,15 @@ Fixed:
 - Changed: the Sentinel Vault — My work link in Confluence's Apps menu and the space's Sentinel Vault page now show the app's icon instead of a broken image.
 
 Fixed:
-- Put it back on a Jira file recorded the person who clicked it as the person who deleted the file. The history and the issue comment now keep who really deleted it and say who asked for it to be put back.
-- For the first moment after a sealed Jira file was deleted, the issue's Sentinel Vault section could still show it as Not put back with a Put it back button. It now reads Being put back until Sentinel Vault has finished, and Not put back only when the file really could not be put back.
+- Put it back on a Jira file recorded the person who clicked it as the person who deleted the file. The history and the issue comment now keep who really deleted it, and the history says who asked for it to be put back.
+- For the first moment after a sealed Jira file was deleted, the issue's Sentinel Vault section could still show it as Not put back with a Put it back button. It now reads Being put back while Sentinel Vault puts it back, and Not put back only if that fails or the file is still not back after about a minute and a half.
 - When a Jira or project admin force-released a file that could not be put back, the dialog did not say that this deletes Sentinel Vault's last copy. It now says so, the button reads Delete the copy, and the seal's history records it.
 - In a space set to undo edits to Approved pages but with no approvers named, an edit to an Approved page moved it back to Draft instead of being undone, although the Workflow settings said it would be undone. It is now undone.
 - A page approved right after its last edit could move back to Draft on its own a few minutes later, and its author was told their edit had moved it. An edit made before the approval no longer counts as a change to the approved page.
 - With Protect Sealed Attachments in Page Body turned off, the hourly check still moved Approved pages back or undid edits. It now leaves them alone, and the Workflow settings, page banner, page details and approval dialog say Approved pages are not protected while it is off.
 - After an edit moved an Approved page back for review, the page banner kept showing Approved until the page was reloaded. It now updates on its own.
 - The approver's page banner said an edit was made by someone outside the approvers. It now names the person.
-- In rare cases, when page edits reached Sentinel Vault out of order, a change someone made inside another person's sealed section could be kept as if the seal owner had made it. Each edit is now judged for the person who made it.
+- Stricter checks on edits inside sealed sections.
 
 **Do this:** Nothing to do if your site already runs 8.0.0. A site on an earlier version gets this update after a site admin approves the 8.0.0 update in Confluence administration, Apps, Manage apps.
 
