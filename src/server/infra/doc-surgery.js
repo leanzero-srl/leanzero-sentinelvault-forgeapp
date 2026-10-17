@@ -110,6 +110,22 @@ export function panelExistsInDoc(adfDoc) {
 }
 
 /**
+ * PURE. Point every panel-shaped node on the page whose key is not the app's own (`ownKey`) at the
+ * app's own panel, in place (a key planted before 8.9.0 made the app insert another key's macro;
+ * those pages would otherwise count as "panel present" forever). Keeps the node's layout and
+ * localId. Returns how many nodes changed.
+ */
+export function healForeignPanels(adfDoc, ownKey) {
+  if (!ownKey || !isPanelExtensionKey(ownKey)) return 0;
+  const foreign = locateExtensionNodes(adfDoc, (node) => node.type === "extension" && isPanelExtensionKey(node.attrs?.extensionKey) && node.attrs.extensionKey !== ownKey);
+  for (const node of foreign) {
+    const own = buildExtensionNode(ownKey).attrs;
+    node.attrs = { ...own, layout: node.attrs?.layout || own.layout, ...(node.attrs?.localId ? { localId: node.attrs.localId } : {}) };
+  }
+  return foreign.length;
+}
+
+/**
  * Build the ADF extension node for the Sentinel Vault panel
  * Always uses the new panel key suffix for new insertions
  */
@@ -294,30 +310,34 @@ export async function insertPanelNode(pageId, extensionKey, maxRetries = 3, posi
     try {
       const { pageData, adfDoc } = await readDocBody(pageId);
 
-      // Skip if panel already exists (checks both old and new suffixes)
-      if (panelExistsInDoc(adfDoc)) {
+      // A panel macro carrying another key is pointed at the app's own panel (healForeignPanels);
+      // otherwise skip if the panel already exists.
+      const healed = healForeignPanels(adfDoc, extensionKey);
+      if (panelExistsInDoc(adfDoc) && !healed) {
         return { success: true, skipped: true };
       }
 
       if (!adfDoc.content) adfDoc.content = [];
 
       // Insert extension node at the configured position
-      const node = buildExtensionNode(extensionKey);
-      if (position === "top") {
-        adfDoc.content.unshift(node);
-      } else {
-        adfDoc.content.push(node);
+      if (!healed) {
+        const node = buildExtensionNode(extensionKey);
+        if (position === "top") {
+          adfDoc.content.unshift(node);
+        } else {
+          adfDoc.content.push(node);
+        }
       }
 
       const putRes = await writeDocBody(
         pageId,
         pageData,
         adfDoc,
-        "Auto-inserted Sentinel Vault panel",
+        healed ? "Repaired the Sentinel Vault panel" : "Auto-inserted Sentinel Vault panel",
       );
 
       if (putRes.ok) {
-        return { success: true, skipped: false };
+        return { success: true, skipped: false, ...(healed ? { healed } : {}) };
       }
 
       if (putRes.status === 409) {
@@ -409,7 +429,11 @@ export async function replacePanelForAttachmentsMacro(pageId, extensionKey, maxR
     try {
       const { pageData, adfDoc } = await readDocBody(pageId);
 
-      // Skip if panel already exists
+      // A panel macro carrying another key is repaired in place (the caller's normal insert does
+      // that write: answering "fallback" sends it there); otherwise skip if the panel exists.
+      if (healForeignPanels(JSON.parse(JSON.stringify(adfDoc)), extensionKey)) {
+        return { success: false, fallback: true };
+      }
       if (panelExistsInDoc(adfDoc)) {
         return { success: true, skipped: true };
       }
