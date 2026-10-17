@@ -256,12 +256,12 @@ The reds that were green are event latency, not scopes. gate-revert, revert-dest
 | server/shared/content-access.js:122 | asApp | v2 GET /pages/{id} | read:page:confluence | read:page:confluence |
 | server/shared/content-access.js:126 | asApp | v2 GET /spaces/{id} | read:space:confluence | read:space:confluence |
 | server/shared/page-status.js:35 | asApp | v2 GET /pages | read:page:confluence | read:page:confluence |
-| server/shared/steward-checks.js:33 | asApp | v1 GET /wiki/rest/api/user | read:confluence-user or read:content-details:confluence | read:confluence-user |
-| server/shared/steward-checks.js:52 | asApp | v1 GET /wiki/rest/api/user/memberof | read:confluence-user or read:group:confluence+read:user:confluence | read:confluence-user |
+| server/shared/steward-checks.js (readUserAsApp) | asApp | v1 GET /wiki/rest/api/user | read:confluence-user or read:content-details:confluence | read:confluence-user |
+| server/shared/steward-checks.js (readGroupsAsApp) | asApp | v1 GET /wiki/rest/api/user/memberof | read:confluence-user or read:group:confluence+read:user:confluence | read:confluence-user |
 | server/shared/steward-checks.js (isSpaceAdministrator) | asApp | v2 GET /wiki/api/v2/spaces?keys= + /wiki/api/v2/spaces/{id}/permissions (replaced the dead v1 space permission/check on 2026-10-17: 405 on every method) | read:space:confluence | read:space:confluence (held) |
-| server/shared/steward-checks.js:142 | asUser | v1 GET /wiki/rest/api/user | read:confluence-user or read:content-details:confluence | read:confluence-user |
-| server/shared/steward-checks.js:176 | asUser | v1 GET /wiki/rest/api/user | read:confluence-user or read:content-details:confluence | read:confluence-user |
-| server/shared/steward-checks.js:184 | asApp | v1 GET /wiki/rest/api/user | read:confluence-user or read:content-details:confluence | read:confluence-user |
+| server/shared/steward-checks.js (isOperatorInStewardCohorts) | asUser | v1 GET /wiki/rest/api/user | read:confluence-user or read:content-details:confluence | read:confluence-user |
+| server/shared/steward-checks.js (isOperatorSiteAdmin) | asUser | v1 GET /wiki/rest/api/user | read:confluence-user or read:content-details:confluence | read:confluence-user |
+| server/shared/steward-checks.js (isOperatorSiteAdmin, fallback) | asApp | v1 GET /wiki/rest/api/user | read:confluence-user or read:content-details:confluence | read:confluence-user |
 | server/shared/user-or-app.js:22 | asUser | v1 GET /wiki/rest/api/user/current | read:confluence-user or read:content-details:confluence | read:confluence-user |
 | server/shared/user-or-app.js:27 | asApp | v1 GET /wiki/rest/api/user | read:confluence-user or read:content-details:confluence | read:confluence-user |
 | server/triggers.js:202 | asApp | v1 GET /wiki/rest/api/user/current | read:confluence-user or read:content-details:confluence | read:confluence-user |

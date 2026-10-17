@@ -42,12 +42,12 @@ eq("next cursor read from _links.next", (sc.nextCursorOf || (() => undefined))({
 eq("no next link, no cursor", (sc.nextCursorOf || (() => undefined))({ _links: {} }), null);
 
 // ── a Confluence like the real one ─────────────────────────────────────────────────────────────
-function world({ permissionsStatus = 200, spaceLookupStatus = 200, keyCase = null, roleOnly = false } = {}) {
+function world({ permissionsStatus = 200, spaceLookupStatus = 200, keyCase = null, roleOnly = false, stuckCursor = false, endless = false } = {}) {
   resetFake();
   const filler = Array.from({ length: 300 }, (_, i) => row("user", `reader-${i}`, "read"));
   const lists = {
     [SPACE.id]: roleOnly
-      ? [...filler, row("role", "6820786b"), row("user", EDITOR, "update")]
+      ? [...filler, row("role", ROLE_ADMIN), row("role", "6820786b"), row("user", EDITOR, "update")]
       : [...filler, row("user", EDITOR, "update"), row("user", ROLE_ADMIN), row("group", "gid-policy-owners")],
     [OTHER.id]: [row("user", OTHER_ADMIN)],
   };
@@ -71,7 +71,9 @@ function world({ permissionsStatus = 200, spaceLookupStatus = 200, keyCase = nul
       const rows = lists[m[1]] || [];
       const limit = Number(q.limit) || 25;
       const from = Number(q.cursor) || 0;
-      const next = from + limit < rows.length ? `/wiki/api/v2/spaces/${m[1]}/permissions?limit=${limit}&cursor=${from + limit}` : null;
+      if (endless) return { body: { results: [row("user", `x-${from}`, "read")], _links: { next: `/wiki/api/v2/spaces/${m[1]}/permissions?limit=${limit}&cursor=${from + 1}` } } };
+      const next = stuckCursor ? `/wiki/api/v2/spaces/${m[1]}/permissions?limit=${limit}&cursor=0`
+        : from + limit < rows.length ? `/wiki/api/v2/spaces/${m[1]}/permissions?limit=${limit}&cursor=${from + limit}` : null;
       return { body: { results: rows.slice(from, from + limit), _links: next ? { next } : {} } };
     }
     return undefined;
@@ -105,6 +107,29 @@ world({ keyCase: true });
 eq("a space whose key does not match exactly → no", await sc.isAccountStewardAsApp(ROLE_ADMIN, SPACE.key), false);
 world({ roleOnly: true });
 eq("a role principal is never resolved into a yes", await sc.isAccountStewardAsApp(ROLE_ADMIN, SPACE.key), false);
+world({ stuckCursor: true });
+eq("a cursor that does not advance ends the walk with no (admin sits past it)", await sc.isAccountStewardAsApp(ROLE_ADMIN, SPACE.key), false);
+world({ endless: true });
+eq("more than 20 pages → no", await sc.isAccountStewardAsApp(ROLE_ADMIN, SPACE.key), false);
+eq("...after at most 20 permission pages", fake.calls.filter((c) => c.path.includes("/permissions")).length, 20);
+// One invocation, many spaces: the memo reads the account once; spaceId skips the key lookup.
+world();
+const memo = sc.newStewardMemo ? sc.newStewardMemo() : null;
+const many = [];
+for (let i = 0; i < 5; i++) many.push(await sc.isAccountStewardAsApp(GROUP_ADMIN, SPACE.key, { memo, spaceId: SPACE.id }));
+eq("memo: the answer is the same every time", many, [true, true, true, true, true]);
+eq("memo: the user record is read once", fake.calls.filter((c) => c.path.startsWith("/wiki/rest/api/user?")).length, 1);
+eq("memo: the group list is read once", fake.calls.filter((c) => c.path.startsWith("/wiki/rest/api/user/memberof")).length, 1);
+eq("spaceId given: no key lookup", fake.calls.filter((c) => c.path.startsWith("/wiki/api/v2/spaces?")).length, 0);
+world();
+eq("without spaceId the key is looked up", (await sc.isAccountStewardAsApp(ROLE_ADMIN, SPACE.key), fake.calls.filter((c) => c.path.startsWith("/wiki/api/v2/spaces?")).length), 1);
+// mapLimited (the one shared copy)
+const { mapLimited } = await import("../src/server/shared/map-limited.js");
+let inFlight = 0, peak = 0;
+const out = await mapLimited([5, 1, 4, 2, 3], 2, async (n, i) => { inFlight++; peak = Math.max(peak, inFlight); await new Promise((r) => setTimeout(r, n)); inFlight--; return `${i}:${n}`; });
+eq("mapLimited keeps input order", out, ["0:5", "1:1", "2:4", "3:2", "4:3"]);
+eq("mapLimited never exceeds the limit", peak <= 2, true);
+eq("mapLimited of nothing", await mapLimited([], 3, async () => 1), []);
 // The app's own admin list and group arms are unchanged.
 world();
 await kvs.set(`admin-settings-space-${SPACE.key}`, { adminUsers: [{ accountId: EDITOR }] });
