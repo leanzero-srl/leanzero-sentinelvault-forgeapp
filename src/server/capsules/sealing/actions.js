@@ -291,7 +291,9 @@ const sealArtifact = async (req) => {
       sealedVersion = artifactData.version?.number || null;
       sealedFileId = artifactData.fileId || null;
       artifactDownloadLink = artifactData.downloadLink || artifactData._links?.download || null;
-      artifactPageId = artifactData.pageId || null;
+      // The file's own container: a page, or a blog post (v2 names it blogPostId). Custom content
+      // is not a container this app seals on.
+      artifactPageId = artifactData.pageId || artifactData.blogPostId || null;
     }
   } catch (error) {
     console.warn("Failed to fetch artifact details:", error);
@@ -311,8 +313,14 @@ const sealArtifact = async (req) => {
 
   // Where the file actually LIVES beats where the caller happens to be standing. contentId comes
   // from the resolver context, so a mismatch means the seal record, its content property, the
-  // presentation baseline and the panel embed would all be filed against the wrong page.
-  if (artifactPageId && String(artifactPageId) !== String(contentId || "")) {
+  // presentation baseline and the panel embed would all be filed against the wrong page. A file
+  // whose own page or blog post is unknown (the read failed, or custom content) is not sealed at
+  // all: falling back to the context put a blog post's file on whatever page the caller was
+  // viewing, and wrote the seal's property, panel, comment and byline onto that page.
+  if (!artifactPageId) {
+    return { success: false, reason: "Could not tell which page this file is on — please try again." };
+  }
+  if (String(artifactPageId) !== String(contentId || "")) {
     contentId = String(artifactPageId);
     // ...and so does its SPACE. The context's space describes where the caller is standing, not
     // the file: keeping it would stamp the seal with a spaceKey the steward gates (unseal, purge,
