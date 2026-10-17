@@ -1,12 +1,12 @@
 # Sentinel Vault
 
-**Attachment and page-section sealing, approvals and page classification for Confluence.** Production release: 6.5.0.
+**Attachment and page-section sealing, approvals and page classification for Confluence, plus sealed files on Jira issues.** Production release: 8.6.0.
 
 Part of the [LeanZero](https://leanzero.net) ecosystem.
 
-Sentinel Vault is an Atlassian Forge app that brings **file locking, real-time violation detection, and automatic reversion** to Confluence Cloud attachments. When a user seals an attachment, nobody else can modify it -- and if they try, Sentinel Vault automatically restores the previous version and notifies everyone involved.
+Sentinel Vault is an Atlassian Forge app that brings **file locking, violation detection, and automatic reversion** to Confluence Cloud attachments. When a user seals an attachment, a new version from anyone without their go-ahead is undone: Sentinel Vault restores the previous version and notifies everyone involved. On an Approved page the approval decides who may change it (see Page Workflow).
 
-> **Why this exists:** Confluence has no native file locking. Teams working on shared documents -- contracts, design files, spreadsheets -- routinely overwrite each other's work. Sentinel Vault eliminates this class of problem entirely.
+> **Why this exists:** Confluence has no native file locking. Teams working on shared documents -- contracts, design files, spreadsheets -- routinely overwrite each other's work. Sentinel Vault puts a seal on the file and undoes the overwrite.
 
 ---
 
@@ -18,7 +18,7 @@ Confluence attachments are a free-for-all. Any user with edit access can upload 
 - **Accidental overwrites** -- Someone uploads the wrong file version, replacing hours of work.
 - **No audit trail for intent** -- Confluence tracks *who* changed a file but has no concept of *who was supposed to be editing it*.
 
-Sentinel Vault solves all three by adding a **seal (lock) layer** on top of Confluence attachments. Seal a file before editing, and the system enforces exclusive access until you're done.
+Sentinel Vault answers all three by adding a **seal (lock) layer** on top of Confluence attachments. Seal a file before editing, and changes by anyone you have not let in are undone until you're done.
 
 ---
 
@@ -26,10 +26,10 @@ Sentinel Vault solves all three by adding a **seal (lock) layer** on top of Conf
 
 ### Core Protection
 
-- **Attachment Sealing** -- Lock any attachment before editing. Other users see the seal status and who holds it. Seals are enforced at the platform level -- not just a visual indicator.
-- **Automatic Reversion** -- If someone modifies a sealed attachment, Sentinel Vault detects the change in real time, downloads the previous version, re-uploads it, and restores the file to its pre-violation state. The unauthorized edit is undone automatically.
+- **Attachment Sealing** -- Lock any attachment before editing. Other users see the seal status and who holds it. Seals are enforced by the app, not just shown: Confluence still accepts the upload, and Sentinel Vault then undoes it.
+- **Automatic Reversion** -- If someone other than the seal's owner or an editor they approved uploads a new version of a sealed attachment, Sentinel Vault detects the change when Confluence reports it, downloads the previous version, re-uploads it, and restores the file to its pre-violation state. The unauthorized edit is undone automatically.
 - **Content Protection** -- When a sealed attachment is embedded in a page body (e.g., an inline image or file preview), Sentinel Vault monitors page edits. If someone removes the sealed embed, the system detects the missing media reference, retrieves it from the previous page version, and re-inserts it at its original position -- without reverting any other page changes.
-- **Delete and Trash Protection** -- If someone trashes a sealed attachment, Sentinel Vault automatically restores it from the trash. If an attachment is permanently deleted, all associated seal records, content properties, and space indexes are cleaned up, and the seal owner is notified.
+- **Delete and Trash Protection** -- If someone other than the seal's owner trashes a sealed attachment, Sentinel Vault automatically restores it from the trash; the owner trashing their own file ends the seal. On an Approved page the approval holds its seals instead (see Page Workflow). If an attachment is permanently deleted, all associated seal records, content properties, and space indexes are cleaned up, and the seal owner is notified.
 - **Infinite Loop Prevention** -- The system's own restoration uploads are filtered out (via a cached app account ID) so reversion doesn't trigger itself.
 
 ### Attachment Management
@@ -63,13 +63,23 @@ Each channel is set in the Alerts group of the site settings. A space admin can 
 
 ### Edit Requests
 
-A user can request permission to edit an attachment sealed by someone else, without being granted full space-admin rights. The same works for sealed page sections. The **seal owner** answers **Approve** or **Decline** on the file's row (page-details modal, inline panel), on the page ribbon, on **My work**, or with **Approve** / **Deny** in the space console's My Sealed Files tab; a decline can carry a short reason. The owner can also give edit access directly at any time. Approved editors can replace the file until the seal expires; everyone else stays blocked. Grants are scoped to the attachment and are swept automatically when the seal is released, expires, or the attachment is deleted.
+A user can request permission to edit an attachment sealed by someone else, without being granted full space-admin rights. The same works for sealed page sections. The **seal owner** answers **Approve** or **Decline** on the file's row (page-details modal, inline panel), on the page ribbon, on **My work**, or with **Approve** / **Deny** in the space console's My Sealed Files tab; a decline can carry a short reason. The owner can also give edit access directly at any time. Approved editors can replace the file while the seal holds; a new version from anyone else is undone. Grants are scoped to the attachment and are swept automatically when the seal is released, expires, or the attachment is deleted.
 
 After a decline the same person waits before asking again. The wait is the site setting **Hours before a declined edit request can be repeated** (`editRequestCooldownHours`): default **1 hour**, 0 = ask again at once, maximum 168.
 
 ### Content Sealing (Sections)
 
 Beyond attachments, you can lock a **section of a Confluence page** -- a heading and its content -- against unauthorized edits. Pick a heading from the page-details modal (**Seal a section…**) or the panel's *Sealed Sections* group; the app wraps it in a "Sealed Section" macro carrying a stable id. If anyone other than the owner edits the body or removes the macro, the page-update trigger restores the sealed content from a snapshot (the same detect-and-restore mechanism used for sealed attachment embeds). The owner or a space admin can release the section at any time.
+
+### Sealed Files on Jira Issues
+
+Since 8.0.0 the same installation can seal attachments on Jira issues. Nothing happens on Jira until a site admin connects it (Atlassian Administration → Apps → Sites → your site → Connected apps → Sentinel Vault, then on the **Connections** tab connect Jira, listed as Jira Apps). After that, every issue has a **Sentinel Vault** section in its right-hand column listing the issue's files:
+
+- Anyone who can edit the issue can seal a file for a chosen time, with an optional note; the owner can extend or release it, and a Jira or project admin can extend it or force-release it with a typed reason.
+- Sentinel Vault keeps a copy of every sealed file (up to 25 MB) in the Forge Object Store. If anyone but the owner deletes the file while its seal holds, the copy is uploaded back to the same issue under the same name and the seal moves to it. Jira gives the put-back file a new attachment id, and its author is Sentinel Vault.
+- If a file cannot be put back, the section shows it as **Not put back** with a **Put it back** button, and Sentinel Vault retries on its own.
+- If the issue itself is deleted, the copy is kept for 30 days; its owner can download it from **My work** under its own name, or delete it at once with **Let it go**.
+- The site settings for seal duration, expiry, signing, force release and the comment switches apply to Jira too. Design notes: [docs/JIRA-SEALS.md](docs/JIRA-SEALS.md).
 
 ### Conditions & Validations
 
@@ -81,7 +91,14 @@ AI-powered content review using **Atlassian-hosted Claude via the Forge LLM API*
 
 ### Page Workflow
 
-Each space can run a document workflow. The built-in one is Draft → In Review → Approved, with a lapsed state "Needs re-review" (Approved pages are due for re-review after 150 days). Approvers are named per space (any one, all, or a minimum number); an edit to an Approved page by someone who is not an approver or a space admin sends the page back. Configure it in the space console's **Workflow** tab.
+Each space can run a document workflow. The built-in one is Draft → In Review → Approved, with a lapsed state "Needs re-review" (Approved pages are due for re-review after 150 days unless the space sets another period). Approvers are named per space (any one, all, or a minimum number). Configure it in the space console's **Workflow** tab.
+
+Approved pages are protected. When someone who is not an approver or a space admin edits one, the Workflow tab's choice decides what happens:
+
+- **Move it back to an earlier state** (the default) -- their edit stays and the page goes back for a new review, to the workflow's first state (Draft in the built-in one) unless the space picks another.
+- **Revert to the approved version** -- their edit is discarded and the version that was approved is restored. Stricter: their text is no longer on the page.
+
+While a page is Approved, its seals stay in force until the approval ends: a sealed file on it replaced or trashed by anyone other than the page's approvers or a space admin is put back. Edits to Approved pages are undone or sent back only while the site setting **Protect Sealed Attachments in Page Body** is on; while it is off, the Workflow tab, the page banner and the page details say Approved pages are not protected.
 
 ### Classification
 
@@ -89,28 +106,37 @@ Every page can carry a sensitivity level. Classification is **off until a site a
 
 ### Signing actions with an authenticator code
 
-- **Seal actions (site setting, off by default):** with **Sign seal actions with an authenticator code** on, sealing and releasing files or sections, extending a seal, force release, and approving, declining, giving or revoking edit access all ask for the current 6-digit code. People without an authenticator set up are refused until they add one. Two paths are not signed in 6.5.0: a section sealed by inserting the Sealed Section macro in the editor and publishing, and REST API jobs (they call the actions directly, without the signing check).
+- **Seal actions (site setting, off by default):** with **Sign seal actions with an authenticator code** on, sealing and releasing files or sections, extending a seal, force release, and approving, declining, giving or revoking edit access all ask for the current 6-digit code, and so do sealing, extending and releasing a Jira file and letting go of a deleted issue's copy on My work. People without an authenticator set up are refused until they add one. Two paths are not signed: a section sealed by inserting the Sealed Section macro in the editor and publishing, and REST API jobs (they call the actions directly, without the signing check).
 - **Approvals (per space):** the Workflow tab's signature setting makes each approver sign their own decision (a space admin's direct approval too; with no named approvers only a space admin can approve, and the requester signs only when an AI review step is involved).
 - Each person sets up their authenticator app once on **My work**. Codes are single-use; 5 wrong codes lock that person's signing for 15 minutes.
 
 ### Activity Log
 
-Seals, releases, forced releases, reverts and restores, edit requests, workflow moves and approvals, validation outcomes and classification changes are recorded per page and per space. Space admins read it in the space console's **Activity** tab, filter it, and export it as CSV. Records have no expiry.
+Seals, releases, forced releases, reverts and restores, edit requests, workflow moves and approvals, validation outcomes and classification changes are recorded per page and per space. Space admins read it in the space console's **Activity** tab, filter it, and export it as CSV. History is kept unless a site admin turns on **Delete old history** (Site settings → Privacy and retention; off by default). With it on, activity history, workflow history and read confirmations older than **Keep history for** (730 days unless changed) are deleted by a weekly check; a Jira file's seal history follows the same setting.
+
+### Backup and Restore
+
+Sentinel Vault backs up its settings, seals, sealed sections, workflows, validation rules, classification and history after each change and once a day, to a Confluence page restricted to the app. After a reinstall, Site settings offer to restore the setup from a backup, with a preview; anything that acts on its own comes back paused until you turn it on. The whole setup can also be downloaded as one JSON file and imported later. REST API tokens and authenticator codes are never backed up. See [docs/BACKUP-AND-RESTORE.md](docs/BACKUP-AND-RESTORE.md).
+
+### Privacy and Personal Data
+
+A weekly check reports the account ids Sentinel Vault stores to Atlassian's personal data reporting API. When Atlassian answers that an account was closed, the app erases that person everywhere it keeps them, including the backup; sealed section content is the record of what was sealed and is not rewritten. The check can also be run at once from **Site settings → Privacy and retention**, which holds the **Delete old history** setting too.
 
 ### REST API
 
-Site admins mint named tokens in **Site settings → API access** with a role of **Admin** (site and space configuration plus content operations), **Editor** (content operations, including giving, revoking and declining edit access) or **Viewer** (no writes). The plaintext (`svt_…`) is shown once; only its SHA-256 hash is stored. A token acts as the admin who minted it, so it can do nothing that person cannot, and it stops working if they are no longer a site admin. One `POST` endpoint accepts configuration bundles and content operations and answers with a status only; results are read back from Confluence properties. See [docs/REST-CONFIG-API.md](docs/REST-CONFIG-API.md).
+Site admins mint named tokens in **Site settings → API access** with a role of **Admin** (site and space configuration plus content operations), **Editor** (content operations, including giving, revoking and declining edit access) or **Viewer** (no writes). The plaintext (`svt_…`) is shown once; only its SHA-256 hash is stored. A token acts as the admin who minted it, so it can do nothing that person cannot, and it stops working if they are no longer a site admin. One `POST` endpoint accepts configuration bundles and content operations (Jira file seals included) and answers with a status only; results are read back from Confluence properties. Admin tokens can also run backup, restore, export and import, and the weekly privacy check. See [docs/REST-CONFIG-API.md](docs/REST-CONFIG-API.md).
 
 ### Administration
 
 #### Site settings (global)
 
-Under **Confluence administration > Apps > Sentinel Vault — Site settings**. Four tabs:
+Under **Confluence administration > Apps > Sentinel Vault — Site settings**. Five tabs:
 
-- **Settings** -- grouped as *Protection* (force-unseal for space admins, content protection, delete / restore / cleanup from the page, signed seal actions, edit-request cooldown), *Expiry* (default seal duration, whether seals expire, overdue reminders, recurring reminder banner), *Alerts* (pop-ups, page ribbon, comment channels), *Classification* and *Advanced* (auto-insert and replace-Attachments macro)
+- **Settings** -- grouped as *Protection* (force-unseal for space admins, content protection, delete / restore / cleanup from the page, signed seal actions, edit-request cooldown), *Expiry* (default seal duration, whether seals expire, overdue reminders, recurring reminder banner), *Alerts* (pop-ups, page ribbon, comment channels), *Classification*, *Privacy and retention* (Delete old history, Keep history for, the weekly personal-data check) and *Advanced* (auto-insert and replace-Attachments macro)
 - **Validations** -- content rules and the optional AI review
 - **Classification** -- the on/off switch, the levels, JSM Assets import, and space defaults
 - **API access** -- the endpoint, tokens and recent jobs
+- **Backup and restore** -- the latest backup, Back up now, restore, export and import
 
 Settings reference: [docs/settings-reference.md](docs/settings-reference.md).
 
@@ -130,7 +156,7 @@ A space page named **Sentinel Vault** in each space. Tabs vary by role:
 
 #### My work
 
-A Confluence app page (**Sentinel Vault — My work**) listing, across every space, what is waiting on you (approvals, edit requests on your seals), your own edit and approval requests, the files you hold sealed, and your authenticator setup.
+A Confluence app page (**Sentinel Vault — My work**) listing, across every space, what is waiting on you (approvals, edit requests on your seals), your own edit and approval requests, the files you hold sealed (on Confluence and on Jira issues), the copies of sealed files whose Jira issue was deleted, and your authenticator setup.
 
 #### Admin access requests
 
@@ -147,22 +173,24 @@ Sentinel Vault runs several scheduled tasks and event triggers to keep the syste
 | Task | Frequency | Purpose |
 |------|-----------|---------|
 | **Expiry Sweep** | Hourly | Halfway and expiry notices, overdue reminders, then release of expired seals (when seals expire) |
-| **Seal Index Cron** | Hourly | Rebuilds performance indexes for space seal lookups |
+| **Seal Index Cron** | Hourly | Rebuilds performance indexes for space seal lookups, queues a backup when one is due, and runs the Jira seal sweep (reminders, releases, retries of files not put back, clean-up of kept copies) |
 | **Workflow Sweep** | Hourly | Workflow upkeep: marks Approved pages whose re-review date has passed and catches up on enforcement for tampered Approved pages |
 | **Page Guard Sweep** | Every 5 minutes | Judges pages with live seals (and pages edited in the last 20 minutes when the site has validation rules; skipped while content protection is off) ahead of a late page event |
-| **Recurring Nudge** | Daily | Records the recurring reminder banner for long-held seals (only when seals do not expire) |
-| **Queues** | On demand | Space scan (900 s), AI validation (120 s) and REST API job (300 s) consumers |
-| **Attachment Event Trigger** | Real-time | Fires on attachment updated/trashed/deleted -- detects violations, restores files, cleans up seals |
-| **Page Content Trigger** | Real-time | Fires on page created/updated -- sealed embeds and sections, workflow enforcement and validations |
+| **Recurring Nudge** | Daily | Records the recurring reminder banner for long-held seals (only when seals do not expire), then starts the weekly privacy check when it is due |
+| **Queues** | On demand | Space scan (900 s), AI validation (120 s), REST API job (900 s), backup (900 s), privacy check (900 s) and Jira put-back (300 s) consumers |
+| **Attachment Event Trigger** | On each event | Fires on attachment updated/trashed/deleted -- detects violations, restores files, cleans up seals |
+| **Page Content Trigger** | On each event | Fires on page created/updated -- sealed embeds and sections, workflow enforcement and validations |
+| **Jira Attachment Trigger** | On each event | Fires on Jira attachment deleted and issue deleted -- puts a sealed file back, or keeps its copy when the issue is gone |
 | **Lifecycle Trigger** | On install/uninstall | Logs only. Uninstall no longer erases stored records: Forge keeps them 28 days (re-link path) and the setup survives in the backup page (docs/BACKUP-AND-RESTORE.md) |
 
 ### Role-Based Access
 
 | Role | Capabilities |
 |------|-------------|
-| **Users** | Regular users who can seal and release their own attachments and sections, request edit access, watch others' seals, request space admin access |
+| **Users** | Regular users who can seal and release their own attachments and sections, request edit access, watch others' seals, request space admin access; on Jira, anyone who can edit an issue can seal its files |
 | **Space admins** | Space administrators and delegated users with force release (when the site allows it), access control, space policy, workflow, and activity capabilities |
 | **Admin groups** | Confluence groups configured as space admin teams -- all members receive space admin privileges |
+| **Jira and project admins** | Extend or force-release a sealed Jira file (force release follows **Allow space admins to force-unseal**) |
 | **Site Administrators** | Full access to global settings via the site settings console, plus space admin capabilities in all spaces |
 
 Space admin status is determined by any of: Confluence space ADMINISTER permission, membership in configured space-admin groups/users, or site/org admin status.
@@ -183,8 +211,8 @@ User seals an attachment (page ⋯ menu, page-details modal, or inline panel)
 Another user uploads a new version of the sealed attachment
   → Forge event trigger fires (avi:confluence:updated:attachment)
   → Sentinel Vault checks if the attachment is sealed
-  → Compares uploader account ID against seal holder and app account ID
-  → If sealed and uploader is not the seal holder or the app itself:
+  → Compares uploader account ID against seal holder, approved editors and app account ID
+  → If sealed and uploader is none of them:
     → Previous version downloaded via Confluence REST API
     → Previous version re-uploaded, restoring the original
     → Editor told in a page comment that their change was undone (on by default)
@@ -212,6 +240,13 @@ Seal expires (or user manually releases)
   → Realm-seal index cleaned up
   → Watcher notification comment posted (if comments are on)
   → UI updated to show unsealed status
+
+Someone other than the owner deletes a sealed file on a Jira issue
+  → Forge event trigger fires (avi:jira:deleted:attachment)
+  → The app's copy is uploaded back to the issue under the same name
+  → The seal moves to the new attachment id
+  → Editor told in an issue comment that their change was undone (on by default)
+  → If the upload fails: the file shows as Not put back and the hourly sweep retries
 ```
 
 ---
@@ -224,13 +259,13 @@ sentinel-vault/
 ├── src/
 │   ├── boot.js                     # Entry point: exports all resolvers and triggers
 │   ├── server/
-│   │   ├── registry.js             # Action router (one Forge Resolver, 150 action keys + heartbeat)
+│   │   ├── registry.js             # Action router (one Forge Resolver, 176 action keys + heartbeat)
 │   │   ├── triggers.js             # Event and scheduled trigger handlers
-│   │   ├── capsules/               # 15 feature domains (see table below)
+│   │   ├── capsules/               # 18 feature domains (see table below)
 │   │   ├── infra/                  # Comment notices, attachment, document utilities
 │   │   └── shared/                 # Authorization, configuration, defaults
 │   └── ui/
-│       ├── surfaces/               # 9 Custom UI apps
+│       ├── surfaces/               # 10 Custom UI apps
 │       │   ├── page-details/       # Byline chip modal + "Seal attachments…" action
 │       │   ├── inline-panel/       # Macro: sealed / available files
 │       │   ├── section-setup/      # Sealed Section bodied macro
@@ -239,7 +274,8 @@ sentinel-vault/
 │       │   ├── my-work/            # Global page: what is waiting on you
 │       │   ├── steward-console/    # Site settings
 │       │   ├── realm-console/      # Space console
-│       │   └── panel-setup/        # Macro configuration (columns, layout)
+│       │   ├── panel-setup/        # Macro configuration (columns, layout)
+│       │   └── jira-issue/         # Jira issue panel: the issue's files and their seals
 │       ├── kit/                    # Shared UI components
 │       └── tokens/                 # CSS design tokens per surface
 ├── static/                         # Webpack-bundled frontend modules
@@ -262,16 +298,19 @@ The backend is organized into **capsules** -- autonomous feature modules that en
 | **realms** | 12 | Space administration, force release, space admin access requests, scanning |
 | **bulletins** | 9 | Toast, ribbon and comment notices, watch/unwatch |
 | **panels** | 9 | Panel data, upload, delete, labels, panel insert |
+| **backup** | 15 | Backup, restore, export, import, backup location |
+| **jira-seals** | 9 | Seals on Jira issue files, put back, kept copies of deleted issues |
 | **config-api** | 7 | REST API tokens, jobs and export |
 | **operators** | 5 | User identity, profiles, groups |
 | **policies** | 3 | Site and space settings storage |
 | **entitlements** | 3 | Permission checks, licence |
 | **activity** | 2 | Activity log reads |
+| **privacy** | 2 | Weekly personal-data check: status and run now |
 | **page-details** | 1 | Page-details modal data |
 
 All capsule actions are aggregated in `src/server/registry.js`, which creates a single Forge Resolver that routes incoming requests by action key. A `heartbeat` action provides health checking.
 
-### Frontend (9 Custom UI surfaces)
+### Frontend (10 Custom UI surfaces)
 
 | Surface | Forge Module | Purpose |
 |---------|-------------|---------|
@@ -280,10 +319,11 @@ All capsule actions are aggregated in `src/server/registry.js`, which creates a 
 | **Section Setup** | bodied `macro` | The Sealed Section macro |
 | **Overlay** | Modal (opened from other surfaces) | Full-size attachments view with column picker, sort and paging |
 | **Doc Ribbon** | `confluence:pageBanner` | Banner with the classification level, seals, requests and alerts |
-| **My work** | `confluence:globalPage` | Cross-space list of what is waiting on you, and authenticator setup |
-| **Site Console** | `confluence:globalSettings` | Tabs: Settings, Validations, Classification, API access |
+| **My work** | `confluence:globalPage` | Cross-space list of what is waiting on you, your sealed files (Confluence and Jira), kept copies of deleted Jira issues, and authenticator setup |
+| **Site Console** | `confluence:globalSettings` | Tabs: Settings, Validations, Classification, API access, Backup and restore |
 | **Space Console** | `confluence:spacePage` | My Sealed Files (users); Sealed Files, Access Control, Seal Duration, Macro, Validations, Workflow, Activity (space admins) |
 | **Panel Setup** | Macro `config` | Inline-panel display: columns, items per group, cards per row, upload zone |
+| **Jira issue** | `jira:issueContext` | The Sentinel Vault section on a Jira issue: its files, seal, extend, release, force release, Put it back |
 
 ---
 
@@ -294,7 +334,7 @@ All capsule actions are aggregated in `src/server/registry.js`, which creates a 
 | **Platform** | Atlassian Forge |
 | **Runtime** | Node.js 22.x |
 | **Frontend** | React 19, Webpack 5 |
-| **Storage** | Forge KVS (with query indexes) |
+| **Storage** | Forge KVS (with query indexes); Forge Object Store for copies of sealed Jira files |
 | **Build** | Babel 7, ESLint 8, Webpack 5 |
 | **Theming** | CSS custom properties (`--sv-` prefix), dark mode support |
 
@@ -332,7 +372,7 @@ This updates the `app.id` in `manifest.yml` with your own app ID.
 npm run build
 ```
 
-This builds all 9 UI surfaces via Webpack into `static/`.
+This builds all 10 UI surfaces via Webpack into `static/`.
 
 ### 4. Deploy and install
 
@@ -346,7 +386,7 @@ forge install    # Select your Confluence site when prompted
 1. Navigate to any Confluence page with attachments
 2. Open the page's **⋯** menu and choose **Seal attachments…** (or insert the **Sentinel Vault** macro)
 3. Seal any attachment you want to protect
-4. Edit the file with confidence -- no one else can overwrite it
+4. Edit the file with confidence -- an overwrite by anyone else is undone
 5. Release the seal when you're done
 
 ---
@@ -373,7 +413,7 @@ npm run lint
 
 ## Permissions
 
-The app requests the following Forge permissions (27 since 7.0.0; the call-by-call audit is docs/SCOPES-7.0.md):
+The app requests the following 30 Forge permissions. 8.0.0 added the three Jira scopes; the call-by-call audit of the 27 Confluence-era scopes is docs/SCOPES-7.0.md, and the Jira scopes are explained in docs/JIRA-SEALS.md and the 8.0.0 release notes. The Marketplace listing for the current version shows the same 30.
 
 | Scope | Purpose |
 |-------|---------|
@@ -399,10 +439,13 @@ The app requests the following Forge permissions (27 since 7.0.0; the call-by-ca
 | `write:space:confluence` | Set a space's default level through Confluence's classification API |
 | `read:servicedesk-request` | Find the JSM Assets workspace (classification import) |
 | `read:cmdb-schema:jira`, `read:cmdb-type:jira`, `read:cmdb-object:jira`, `read:cmdb-attribute:jira` | Read JSM Assets objects to import classification levels (read-only, as the signed-in admin) |
+| `read:jira-work` | Read a Jira issue and its files, and check the caller's own permissions on it |
+| `write:jira-work` | Put a deleted sealed file back, comment on the issue, keep the `sentinel-vault-seals` issue property up to date |
+| `read:jira-user` | Read people's names for Jira seals |
 | `report:personal-data` | Report stored account ids to Atlassian's personal data reporting API (weekly check; closed accounts are erased) |
 | `storage:app` | Persist seal records, settings, and audit logs |
 
-There are **no external fetch permissions** (`permissions.external` is absent from the manifest). The REST API is a web trigger with a static response, so it returns no data. The app has no external dependencies and is eligible for the **"Runs on Atlassian"** Marketplace badge. All notifications are posted as Confluence footer comments with `@mention` of the recipient; Confluence's own notification engine emails the user according to their personal preferences.
+There are **no external fetch permissions** (`permissions.external` is absent from the manifest). The REST API is a web trigger with a static response, so it returns no data. The app has no external dependencies and is eligible for the **"Runs on Atlassian"** Marketplace badge. Notifications are posted as Confluence footer comments with `@mention` of the recipient (on Jira, as a comment on the issue); Confluence's own notification engine emails the user according to their personal preferences. Seal records, settings and history are stored in Forge storage on Atlassian, and copies of sealed Jira files in the Forge Object Store.
 
 ---
 
@@ -432,6 +475,9 @@ Start at the **[docs index](docs/README.md)**.
 | [Contributing](docs/contributing.md) | Development workflow, conventions, and testing |
 | [Settings Reference](docs/settings-reference.md) | Complete reference for all site settings console and space console settings |
 | [REST API](docs/REST-CONFIG-API.md) | Tokens, roles, bundles and content operations |
+| [Jira seals](docs/JIRA-SEALS.md) | Sealing Jira issue attachments: what was measured and decided |
+| [Backup and restore](docs/BACKUP-AND-RESTORE.md) | What is backed up, restore, export and import |
+| [Release notes](docs/RELEASE-NOTES.md) | Every version's changes and fixes |
 | [Troubleshooting](docs/troubleshooting.md) | Common issues and solutions |
 
 The `docs/api/` directory contains Confluence Cloud event specifications and OpenAPI specifications (v1 and v2) for development reference.
