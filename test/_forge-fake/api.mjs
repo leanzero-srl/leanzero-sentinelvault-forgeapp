@@ -13,6 +13,6 @@ export const asApp = requester;
 export const asUser = requester;
 export const __requestAtlassianAsApp = async () => respond(404, {});
 export const webTrigger = { getUrl: async () => "https://fake.invalid/webtrigger" };
-export const getAppContext = () => ({ appAri: { appId: "fake" }, environmentId: "fake-env", environmentType: "DEVELOPMENT", appVersion: "0.0.0" });
+export const getAppContext = () => ({ appAri: { appId: "fake" }, environmentAri: { environmentId: "fake-env" }, environmentId: "fake-env", environmentType: "DEVELOPMENT", appVersion: "0.0.0" });
 const api = { asApp, asUser, webTrigger, getAppContext };
 export default api;
