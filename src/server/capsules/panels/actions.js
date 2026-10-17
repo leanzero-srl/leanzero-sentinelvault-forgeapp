@@ -12,8 +12,6 @@ import {
   removePanelNode,
   panelExistsInDoc,
   readDocBody,
-  locateExtensionNodes,
-  isPanelExtensionKey,
   triggerPanelEmbed,
   resolveExtensionKey,
   deriveExtensionKeyFromContext,
@@ -590,31 +588,16 @@ const discoverPanelKey = async (req) => {
     return { success: false, reason: "Not authorized" };
   }
 
-  // Check if already discovered
-  const existing = await kvs.get("macro-extension-key");
-  if (existing) {
-    return { success: true, alreadyStored: true };
-  }
-
+  // The site-wide key the app writes into page bodies when it inserts its panel. It is the app's
+  // OWN key, built from the app's runtime context (resolveExtensionKey) — never one read off a
+  // page: any key ending in the panel's module name used to be stored from whatever page was
+  // named here first, and every later panel insert on the site would then carry it.
   try {
-    const { adfDoc } = await readDocBody(pageId);
-
-    // Find our panel's extension node in the ADF tree
-    const nodes = locateExtensionNodes(
-      adfDoc,
-      (node) => isPanelExtensionKey(node.attrs?.extensionKey),
-    );
-
-    if (nodes.length === 0) {
-      console.warn("[PANEL] Could not find Sentinel Vault panel node in page ADF");
-      return { success: false, reason: "Macro node not found in page ADF" };
-    }
-
-    const extensionKey = nodes[0].attrs.extensionKey;
-    await kvs.set("macro-extension-key", extensionKey);
+    const extensionKey = await resolveExtensionKey();
+    if (!extensionKey) return { success: false, reason: "Could not determine the panel's key" };
     return { success: true, extensionKey };
   } catch (error) {
-    console.error("[PANEL] Error discovering extension key:", error);
+    console.error("[PANEL] Error resolving extension key:", error);
     return { success: false, reason: error.message };
   }
 };

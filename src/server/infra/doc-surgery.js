@@ -38,24 +38,22 @@ export function deriveExtensionKeyFromContext() {
 }
 
 /**
- * Get the extension key for the Sentinel Vault macro.
- * First checks KVS cache, then derives it from the Forge app context.
- * Stores the result in KVS for future use.
+ * Get the extension key for the Sentinel Vault macro: the app's own, derived from the Forge app
+ * context. The KVS copy is only a cache and the derived key always wins over it — a stored key
+ * that differs (an older version stored the first panel key it found on a page) is replaced. The
+ * cache answers alone only when the context cannot be read.
  */
 export async function resolveExtensionKey() {
-  // Check KVS cache first
   const cached = await kvs.get("macro-extension-key");
-  if (cached) return cached;
-
-  // Derive from app context
   const key = deriveExtensionKeyFromContext();
   if (key) {
-    await kvs.set("macro-extension-key", key);
-    console.info(`[PANEL-AUTO] Derived extension key from app context: ${key}`);
+    if (cached !== key) {
+      await kvs.set("macro-extension-key", key);
+      console.info(`[PANEL-AUTO] Extension key set from app context: ${key}${cached ? " (replaced a different stored key)" : ""}`);
+    }
     return key;
   }
-
-  return null;
+  return cached || null;
 }
 
 /**
