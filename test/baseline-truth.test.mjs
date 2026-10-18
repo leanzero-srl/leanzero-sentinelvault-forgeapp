@@ -160,4 +160,18 @@ try {
   const same = describeBaseline({ enforce: true, approvedVersion: 7, approvalRecord: { pinnedVersion: 7 } });
   eq("[5] baseline not moved: no sentence", [same.moved, same.sentence], [false, null]);
 }
+// 7. One home: no surface rebuilds "the reviewed version" from the pin and the baseline itself, and
+//    no surface but baseline.js words the baseline line (the defect was a hard-coded sentence).
+{
+  const fs = await import("node:fs");
+  const path = await import("node:path");
+  const root = path.resolve(path.dirname(new URL(import.meta.url).pathname), "..");
+  const files = [];
+  const walk = (d) => { for (const e of fs.readdirSync(d, { withFileTypes: true })) { const p = path.join(d, e.name); if (e.isDirectory()) walk(p); else if (/\.(js|jsx)$/.test(e.name)) files.push(p); } };
+  walk(path.join(root, "src"));
+  const offenders = files.filter((f) => !f.endsWith("baseline.js") && /pinnedVersion\s*:\s*null\)\s*\?\?\s*\w*\.?approvedVersion/.test(fs.readFileSync(f, "utf8")));
+  eq("[7] the reviewed-version rule lives only in baseline.js", offenders.map((f) => path.relative(root, f)), []);
+  const worded = files.filter((f) => !f.endsWith("baseline.js") && /last updated by an approver or space admin/.test(fs.readFileSync(f, "utf8")));
+  eq("[7] the baseline sentence is worded only in baseline.js", worded.map((f) => path.relative(root, f)), []);
+}
 report("baseline-truth");
