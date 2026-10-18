@@ -434,7 +434,9 @@ const WorkflowBlock = ({ wf, pageId, onChanged }) => {
   const move = async (target) => {
     setBusy(true); setNotice(null);
     try {
-      const r = await invoke("request-transition", { pageId, toStateId: target.id });
+      // The state this window shows: a window left open after the page moved elsewhere gets "This page
+      // is already <State>" (and the re-read below shows it) instead of moving it from a state it left.
+      const r = await invoke("request-transition", { pageId, toStateId: target.id, fromStateId: wf.state?.id });
       if (r?.success && r?.pending) setNotice({ text: `Approval requested — the approvers have been asked to move this page to ${target.name}.`, tone: "ok" });
       else if (r?.success) setNotice({ text: `Moved to ${target.name}.`, tone: "ok" });
       else if (r?.signatureRequired) setNotice({ text: r.reason || "This move must be signed — use the workflow chip on the page's ribbon.", tone: "error" });

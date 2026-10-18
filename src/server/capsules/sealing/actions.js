@@ -1159,6 +1159,9 @@ const enumeratePageSeals = async (req) => {
  */
 const checkSealStamp = async (req) => {
   const stamp = await kvs.get("protections-last-modified");
+  // The inline panel and the overlay never use the workflow stamp: they say so ({ workflow: false })
+  // and pay no read for it. The flag only drops work; which page is read never comes from the payload.
+  if (req?.payload?.workflow === false) return { stamp: stamp || 0 };
   // The banner's own page, from Forge's context (never from the payload).
   const pageId = req?.context?.extension?.content?.id;
   const workflowStamp = pageId ? await kvs.get(`protections-last-workflow-${pageId}`) : 0;

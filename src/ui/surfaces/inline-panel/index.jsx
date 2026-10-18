@@ -1624,7 +1624,7 @@ const ArtifactGridView = () => {
 
     const poll = async () => {
       try {
-        const { stamp } = await invoke("check-seal-stamp");
+        const { stamp } = await invoke("check-seal-stamp", { workflow: false }); // no workflow stamp needed here
         if (lastStamp !== null && stamp !== lastStamp) {
           retrieveFileData(pageId);
           setActivityReload((n) => n + 1);
