@@ -10,7 +10,7 @@
 import "./_forge-fake/install.mjs";
 import { eq, ok, report } from "./_assert.mjs";
 
-const { resetFake } = await import("./_forge-fake/state.mjs");
+const { resetFake, onConfluence } = await import("./_forge-fake/state.mjs");
 const { createWorld } = await import("./_forge-fake/confluence-world.mjs");
 const triggers = await import("../src/server/triggers.js");
 const logic = await import("../src/server/capsules/workflow/logic.js");
@@ -144,6 +144,31 @@ try {
     await triggers.pageContentTrigger(event(PLAIN, v3));
     const wf = await getWf();
     eq("[6] no approval record: the reviewed version is still the one it was approved at", [wf?.baseline?.reviewedVersion, wf?.baseline?.baselineVersion, wf?.baseline?.kind], [2, 4, "restored"]);
+  }
+  // 8. A sanctioned save lands WHILE the app is reverting (seen live 2026-10-18: a site admin's save of v4 and the
+  //    unapproved edit's revert to v5 in two concurrent runs). The revert restored the copy it READ (here v4, a
+  //    copy of approved v2), so its write v6 holds approved v2 — never "a copy of v4, saved by an approver"
+  //    because the baseline moved under the revert.
+  {
+    const w = await approvedPage();
+    const v3 = w.edit(PAGE, PLAIN, "unapproved change");
+    await triggers.pageContentTrigger(event(PLAIN, v3)); // app writes v4 = copy of approved v2
+    const v5 = w.edit(PAGE, PLAIN, "second unapproved change");
+    let raced = false;
+    onConfluence((method, path) => {
+      if (!raced && method === "PUT" && new RegExp(`/wiki/api/v2/pages/${PAGE}(\\?|$)`).test(decodeURIComponent(path))) {
+        raced = true; // the concurrent run: an approver's save re-stamps the baseline to v5 before ours lands
+        return logic.restampApprovedVersion(PAGE, v5, { kind: "edit" }).then(() => undefined);
+      }
+      return undefined;
+    });
+    await triggers.pageContentTrigger(event(PLAIN, v5)); // app writes v6 from what it read: v4's content
+    const wf = await getWf();
+    eq("[8] bed: the race happened and the app wrote v6", [raced, w.live(PAGE).number], [true, 6]);
+    eq("[8] the revert's copy holds approved v2, whatever moved meanwhile", [wf?.baseline?.baselineVersion, wf?.baseline?.kind, wf?.baseline?.contentOf], [6, "restored", 2]);
+    ok("[8] ...and nobody is credited with it", !APPROVER_CLAIM.test(wf?.baseline?.sentence || "x approver or space admin"));
+    const rows = await enforcedRows();
+    eq("[8] the second revert's row names approved v2 as what came back", rows.map((r) => r.details?.restoredContent), [2, 2]);
   }
 } finally {
   loud();
