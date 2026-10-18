@@ -127,34 +127,136 @@ export async function resolvePageSpaceKey(pageId) {
  * keyed by the id, the steward gate by the key) and must take both from the OBJECT.
  */
 export async function resolvePageSpace(pageId) {
-  if (!pageId) return null;
+  const live = await liveContentSpace(pageId);
+  return live.status === "found" ? { spaceId: live.spaceId, spaceKey: live.spaceKey } : null;
+}
+
+/**
+ * Where a piece of content (a page or a blog post) is NOW, with a failed read told apart from
+ * content Confluence no longer has: `{ status: "found", spaceId, spaceKey }`, `{ status: "gone" }`
+ * (404 as a page AND as a blog post: purged; a trashed page still answers, with its space), or
+ * `{ status: "error" }` (anything else). Read as the app, so a restriction never reads as "gone".
+ */
+export async function liveContentSpace(contentId) {
+  if (!contentId) return { status: "error" };
   try {
     // A blog post is content too (seals and attachments live on them): a 404 as a page is asked
     // again as a blog post before giving up. The caller's context used to paper over this for
     // blog posts — the steward stood on the post — and that fallback is gone (objectSpaceKeyOf).
-    let pres = await asApp().requestConfluence(route`/wiki/api/v2/pages/${pageId}`);
-    if (pres.status === 404) pres = await asApp().requestConfluence(route`/wiki/api/v2/blogposts/${pageId}`);
-    if (!pres.ok) return null;
+    let pres = await asApp().requestConfluence(route`/wiki/api/v2/pages/${contentId}`);
+    if (pres.status === 404) pres = await asApp().requestConfluence(route`/wiki/api/v2/blogposts/${contentId}`);
+    if (pres.status === 404) return { status: "gone" };
+    if (!pres.ok) return { status: "error" };
     const spaceId = (await pres.json())?.spaceId;
-    if (!spaceId) return null;
+    if (!spaceId) return { status: "error" };
     const sres = await asApp().requestConfluence(route`/wiki/api/v2/spaces/${spaceId}`);
-    if (!sres.ok) return null;
+    if (!sres.ok) return { status: "error" };
     const spaceKey = (await sres.json())?.key || null;
-    return spaceKey ? { spaceId: String(spaceId), spaceKey } : null;
+    return spaceKey ? { status: "found", spaceId: String(spaceId), spaceKey } : { status: "error" };
   } catch (_) { /* deny on failure */ }
-  return null;
+  return { status: "error" };
 }
 
 /**
- * The space a seal-shaped record LIVES in, for an authorization decision: the record's own
- * `spaceKey`, else the space of the page it names (`contentId` for attachment seals, `pageId` for
- * section seals). NEVER the caller's context or payload — that is the confused deputy CLAUDE.md
- * describes: a record with no spaceKey would otherwise be authorized against whatever space the
- * caller is standing in, so administering any one space reached seals site-wide. null = deny.
+ * The space a seal-shaped record is FILED under — its own `spaceKey`, else the space of the page
+ * it names (`contentId` for attachment seals, `pageId` for section seals). For filing (activity
+ * rows, the hold-period policy, the panel re-embed), never for deciding who may act on the record:
+ * that is isStewardOfRecord below, because a record keeps the space it was made in after its page
+ * moves. NEVER the caller's context or payload (the confused deputy CLAUDE.md describes).
  */
 export async function objectSpaceKeyOf(record) {
   if (!record || typeof record !== "object") return null;
   if (record.spaceKey) return record.spaceKey;
   const pageId = record.contentId || record.pageId || null;
   return pageId ? resolvePageSpaceKey(pageId) : null;
+}
+
+/**
+ * Which spaces' admins hold steward power over a RECORD the app keeps for a piece of content (a
+ * page's workflow state, its approval request, an attachment or section seal, an edit request).
+ *
+ * The record carries the space it was made in, and does not follow the page when the page moves to
+ * another space (no page-moved event is subscribed). So the authority is BOTH spaces: the one the
+ * content is in NOW, and — when it moved — the one the record was made in. The old space's admins
+ * no longer run content that left them, and moving content into a space you administer (every
+ * personal-space owner administers one) does not hand you its records. The same rule Jira seals
+ * apply to an issue moved between projects (jira-seals/actions.js isStewardOfSeal). A site admin
+ * passes both.
+ *
+ * `liveKey` is a space key Confluence itself just gave for THIS content (the resolver context when
+ * the caller is on this page, the page event): no lookup then. Content Confluence no longer has
+ * keeps the record's own space; a failed lookup is [] — deny. `storedKey` may be a list (an
+ * approval request and the workflow record it belongs to each carry one).
+ */
+export async function recordAuthoritySpaces(where = {}) {
+  return (await recordAuthority(where)).spaces;
+}
+
+/**
+ * The same answer with what it rests on: `{ known, spaces, live, moved }`. `known: false` when
+ * Confluence could not be asked where the content is (spaces is then [] — deny). `moved` when the
+ * content is now in a space other than the one the record was made in: the record's own space's
+ * settings then no longer describe a space the page is in, so callers that apply those settings
+ * hold the page's workflow still (see workflow/actions.js requestTransition, the trigger's probe).
+ */
+export async function recordAuthority({ contentId = null, storedKey = null, liveKey = null } = {}) {
+  const stored = [].concat(storedKey ?? []).filter((k) => typeof k === "string" && k);
+  let live = liveKey || null;
+  if (!live && contentId) {
+    const r = await liveContentSpace(contentId);
+    if (r.status === "found") live = r.spaceKey;
+    else if (r.status === "error") return { known: false, spaces: [], live: null, moved: false };
+    // "gone": nothing else holds the content now; the record's own space is all there is.
+  }
+  return { known: true, spaces: [...new Set([live, ...stored].filter(Boolean))], live, moved: !!live && stored.some((k) => k !== live) };
+}
+
+/**
+ * The page or blog post a seal is about NOW. An attachment seal asks Confluence where its file is
+ * (the file can be moved to another page, and a seal made before 8.9.0 could name the page the
+ * sealer was viewing instead of the file's own); the record's page answers when that read fails.
+ * A section seal names its page.
+ */
+export async function sealContainerId(seal) {
+  if (!seal || typeof seal !== "object") return null;
+  if (seal.attachmentId) {
+    let res = null;
+    try { res = await asApp().requestConfluence(route`/wiki/api/v2/attachments/${seal.attachmentId}`); } catch (_) { return undefined; }
+    if (res.ok) {
+      const a = await res.json().catch(() => null);
+      const container = a?.pageId || a?.blogPostId || null;
+      if (container) return String(container);
+    } else if (res.status !== 404) {
+      return undefined; // could not be read: undefined = deny (isStewardOfSeal), never the record's page
+    }
+    // 404 (file purged) or no container: the record's page below
+  }
+  return seal.contentId || seal.pageId || null;
+}
+
+/** Steward power over a seal: isStewardOfRecord on the seal's page now (sealContainerId). */
+export async function isStewardOfSeal(check, accountId, seal) {
+  const contentId = await sealContainerId(seal);
+  if (contentId === undefined) return false;
+  return isStewardOfRecord(check, accountId, { contentId, storedKey: seal?.spaceKey || null });
+}
+
+/** Does `check(accountId, spaceKey)` pass for EVERY space in `spaces`? [] never passes. */
+export async function isStewardOfSpaces(check, accountId, spaces) {
+  if (!accountId || !Array.isArray(spaces) || !spaces.length) return false;
+  for (const key of spaces) {
+    let yes = false;
+    try { yes = (await check(accountId, key)) === true; } catch (_) { yes = false; }
+    if (!yes) return false;
+  }
+  return true;
+}
+
+/**
+ * May `accountId` act as a steward on this record? `check` is the steward test the caller would
+ * have used for one space (authorizeSteward, isAccountStewardAsApp, …); it must pass for the
+ * content's live space and, if the content moved, the record's own (recordAuthoritySpaces).
+ */
+export async function isStewardOfRecord(check, accountId, where) {
+  return isStewardOfSpaces(check, accountId, await recordAuthoritySpaces(where));
 }

@@ -3,7 +3,7 @@ import { currentUserProfile } from "../../shared/user-or-app.js";
 import { kvs, WhereConditions } from "@forge/kvs";
 
 import { authorizeSteward } from "../../shared/steward-checks.js";
-import { canEditPage, canReadPage, mustVerify, resolvePageSpaceKey } from "../../shared/content-access.js";
+import { canEditPage, canReadPage, mustVerify, resolvePageSpaceKey, isStewardOfRecord } from "../../shared/content-access.js";
 import { touchSealTimestamp, resolveSealHoldPeriod } from "../sealing/logic.js";
 import { BASELINE_HOLD_SPAN, sanitizeHoldDuration } from "../../shared/baseline.js";
 import { setUntil } from "../../shared/kvs-ttl.js"; // SEC-7: grants carried forward on extend
@@ -302,8 +302,9 @@ export const unsealSection = async (req) => {
   // context, filing a release of someone else's section under the caller's own space).
   const objectSpaceKey = record.spaceKey || (record.pageId ? await resolvePageSpaceKey(record.pageId) : null);
   if (!allowed) {
-    try { allowed = !!objectSpaceKey && await authorizeSteward(operatorAccountId, objectSpaceKey); }
-    catch (_) { /* deny */ }
+    // Authority: the space the page is in NOW and, if it moved since the seal, the record's own
+    // (content-access.js recordAuthoritySpaces). objectSpaceKey above only files the activity row.
+    allowed = !!objectSpaceKey && await isStewardOfRecord(authorizeSteward, operatorAccountId, { contentId: record.pageId || null, storedKey: record.spaceKey || null });
     viaSteward = allowed;
   }
   if (!allowed) {
@@ -529,10 +530,8 @@ export const extendSection = async (req) => {
   if (!record || !record.lockedBy) return { success: false, reason: "Section is not sealed" };
   let authorized = record.lockedBy === operatorAccountId;
   if (!authorized) {
-    try {
-      const objectSpaceKey = record.spaceKey || (record.pageId ? await resolvePageSpaceKey(record.pageId) : null);
-      authorized = !!objectSpaceKey && await authorizeSteward(operatorAccountId, objectSpaceKey);
-    } catch (_) { authorized = false; }
+    // The space the page is in now and, if it moved since the seal, the record's own.
+    authorized = await isStewardOfRecord(authorizeSteward, operatorAccountId, { contentId: record.pageId || null, storedKey: record.spaceKey || null });
   }
   if (!authorized) return { success: false, reason: "Only the seal owner or a space admin can extend this seal" };
   { const held = heldRefusal(record, "extend"); if (held) return { success: false, reason: held }; } // SEC-2

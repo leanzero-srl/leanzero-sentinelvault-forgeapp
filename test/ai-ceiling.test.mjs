@@ -1,5 +1,5 @@
 // The site AI switch is a HARD CEILING (owner decision 2026-10-17). Forge LLM tokens are billed to
-// LeanZero, and from 8.9.0 every space admin (personal-space owners included) can edit a space's
+// LeanZero, and from 8.10.0 every space admin (personal-space owners included) can edit a space's
 // AI settings. Before this, a space config with ai.enabled defined replaced the site's AI config
 // outright: a space could switch AI on with the site switch off, and a space budget of 0
 // (unlimited) or 10x the site's was honoured.
@@ -168,7 +168,7 @@ await world({ site: { enabled: false }, space: { enabled: true }, pending: pendi
 await W.aiValidationConsumer({ body: { taskId: "g1", mode: "gate", pageId: PAGE, spaceKey: SPACE.key, realmKey: SPACE.key, pinnedVersion: 3, threshold: "medium" } });
 let gate = (await kvs.get(`workflow-pending-${PAGE}`))?.aiGate;
 eq("consumer (gate): site off + space on => no model call", fake.llmCalls.length, 0);
-ok("…a job without onBudgetExhausted (queued before 8.9.0) blocks, with the site reason", gate?.status === "failed" && /site admin/i.test(gate?.reason || ""));
+ok("…a job without onBudgetExhausted (queued before 8.10.0) blocks, with the site reason", gate?.status === "failed" && /site admin/i.test(gate?.reason || ""));
 await world({ site: { enabled: true, monthlyTokenBudget: 1000 }, space: { enabled: true, monthlyTokenBudget: 0 }, used: 1000, pending: pendingGate() });
 await W.aiValidationConsumer({ body: { taskId: "g2", mode: "gate", pageId: PAGE, spaceKey: SPACE.key, realmKey: SPACE.key, pinnedVersion: 3, threshold: "medium", onBudgetExhausted: "block" } });
 gate = (await kvs.get(`workflow-pending-${PAGE}`))?.aiGate;
