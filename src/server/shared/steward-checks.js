@@ -1,6 +1,6 @@
 import { route } from "@forge/api";
 import { kvs } from "@forge/kvs";
-import { appConfluence, userConfluence, isRateLimited, invocationMemo, noteAuthzUnknown } from "./confluence-call.js";
+import { appConfluence, userConfluence, isRateLimited, invocationMemo, noteAuthzUnknown, MEMO_TTL_MS } from "./confluence-call.js";
 import { setWithTtl } from "./kvs-ttl.js";
 
 /**
@@ -27,12 +27,21 @@ const memoized = (memo, bucket, key, load) => {
   // Without an explicit memo the invocation's own memo (confluence-call.js runInvocation) shares the
   // read with every other check in this resolver call; outside a resolver it just loads.
   if (!memo) return invocationMemo(`steward-${bucket}|${key}`, load);
-  if (!memo[bucket].has(key)) {
-    // A failed read (null) is not kept: the next space asks again instead of inheriting the miss.
-    const p = load().then((v) => { if (v == null) memo[bucket].delete(key); return v; });
-    memo[bucket].set(key, p);
-  }
-  return memo[bucket].get(key);
+  const cur = memo[bucket].get(key);
+  // Bounded like the invocation memo (review 2026-10-18): an entry lives at most MEMO_TTL_MS from
+  // when Confluence said it (`sourceAt` of a cached answer), so a long loop over spaces never keeps
+  // a grant past the cache's minute.
+  if (cur && Date.now() - cur.at <= MEMO_TTL_MS) return cur.p;
+  const entry = { at: Date.now(), p: null };
+  // A failed read (null) is not kept: the next space asks again instead of inheriting the miss.
+  entry.p = load().then((v) => {
+    if (v == null && memo[bucket].get(key) === entry) memo[bucket].delete(key);
+    const src = Number(v?.sourceAt);
+    if (Number.isFinite(src) && src < entry.at) entry.at = src;
+    return v;
+  });
+  memo[bucket].set(key, entry);
+  return entry.p;
 };
 
 // A read Confluence refused with 429 (after the door's retries): told apart from "no" everywhere
