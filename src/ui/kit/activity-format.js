@@ -12,6 +12,7 @@
 // Copy rules: Confluence-native words only (space, page, file, section, group) — never realm /
 // guild / artifact / operator in anything a user reads.
 import { looksLikeAccountId } from "../../server/shared/account-id.js";
+import { restoredLabel } from "../../server/capsules/workflow/baseline.js"; // B2: one wording for what a revert gave back
 import { when } from "./status-language.js";
 
 /** Report filter chips, in display order. `types` is what the server-side `types` filter takes. */
@@ -338,16 +339,23 @@ export function formatActivity(entry) {
     case "workflow.enforced": {
       const editor = d.editorName || d.editor;
       const byWho = editor ? `${editor} edited` : "Someone edited";
+      // B2 (2026-10-18): the row names the approved CONTENT the editor got back (restoredContent), not
+      // the version the app copied it from — after an earlier revert that is the app's own copy (v9 of
+      // approved v7). Rows written before 8.11.0 carry only restoredTo.
+      const got = d.restoredContent ?? d.restoredTo;
+      const reviewed = d.reviewedVersion;
       return d.mode === "revert"
         ? { ...base, label: "Approved page restored", glyph: "undo", tone: "caution",
             sentence: d.reconciled === "baseline-advanced"
               ? `${byWho} the Approved page with no content change — ${APP_NAME} kept it and advanced the approved baseline${d.driftedVersion != null ? ` to v${d.driftedVersion}` : ""}`
-              : `${byWho} the Approved page — ${APP_NAME} restored the approved version${d.restoredTo != null ? ` (v${d.restoredTo})` : ""}` }
+              : got != null && reviewed != null && got !== reviewed
+                ? `${byWho} the Approved page — ${APP_NAME} restored ${restoredLabel(got, reviewed)}`
+                : `${byWho} the Approved page — ${APP_NAME} restored the approved version${got != null ? ` (v${got})` : ""}` }
         : { ...base, label: `Moved back to ${d.demotedToName || "Draft"}`, glyph: "arrow", tone: "caution",
             // A2: the target is the space's configured demote state, named on the row; "Draft" is
             // only the fallback for rows written before the setting existed.
             sentence: `${byWho} the Approved page — it was moved back to ${d.demotedToName || "Draft"} for a new review`,
-            detail: [d.approvedVersion != null ? `approved v${d.approvedVersion}` : "", d.driftedVersion != null ? `edited v${d.driftedVersion}` : ""].filter(Boolean).join(" · ") };
+            detail: [(d.reviewedVersion ?? d.approvedVersion) != null ? `approved v${d.reviewedVersion ?? d.approvedVersion}` : "", d.driftedVersion != null ? `edited v${d.driftedVersion}` : ""].filter(Boolean).join(" · ") };
     }
     case "workflow.seals-held":
       return { ...base, label: "Seals held by the approval", glyph: "lock", tone: "seal",

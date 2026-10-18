@@ -4,6 +4,7 @@
  * delegate to logic.js. Enforcement (#44) and the approver model (#43) land later.
  */
 import { recordActivity } from "../../infra/activity-log.js";
+import { baselineFor } from "./baseline-read.js"; // B2: reviewed version vs baseline, named
 import { asApp, asUser, route } from "@forge/api";
 import { currentUserProfile } from "../../shared/user-or-app.js";
 import { kvs, WhereConditions } from "@forge/kvs";
@@ -179,6 +180,9 @@ const getWorkflow = async (req) => {
   // next to the approval evidence without a second resolver call. Best-effort: null on failure
   // (the ribbon then just omits the stale line — never a guess). Not added to get-workflow-log.
   if (result?.assigned && result.record?.enforce) result.liveVersion = await fetchLivePageVersion(pageId); // only where the ribbon uses it
+  // B2: the two versions of an Approved page, named for what they are (baseline.js): the version that
+  // was approved, the baseline changes are checked against, and why the baseline moved.
+  if (result?.assigned && result.record?.enforce) result.baseline = await baselineFor(pageId, result.record);
   // WF-3: on a page that is not enforced and has no open request, the ribbon's details chip shows
   // the last denial (with its reason) or stale close — the author was reading "In Review · Set
   // review date" after a rejection and the reason existed only in this log. One KVS query, only
