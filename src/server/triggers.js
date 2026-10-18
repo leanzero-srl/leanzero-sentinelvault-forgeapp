@@ -353,6 +353,7 @@ export async function pageContentTrigger(event) {
     let sectionChanged = false; // GAP 2: the last attempt's section pass had a restore pending
     const adoptedSections = []; // SEC-4 (a): wrappers this run sealed on publish (record written, id stamped)
     let sealPassesSkipped = false; // a late event met a newer version by someone else (see below)
+    let enforceStoodDown = false; // 8.12.0: Pass 0 could not judge who edited in between (no write, no new baseline)
 
     for (let attempt = 0; hasBodyWork && attempt < MAX_RETRIES; attempt++) {
       let ctx;
@@ -400,12 +401,17 @@ export async function pageContentTrigger(event) {
       // "unknown" (who may edit an Approved page could not be judged): the seal passes stand down too,
       // so the app writes nothing that would carry this version's other changes into the page; the
       // sweeps judge it again.
-      const judgeLater = lateForLiveBody || enforcement?.action === "unknown";
+      let judgeLater = lateForLiveBody || enforcement?.action === "unknown";
       if (judgeLater) sealPassesSkipped = true;
       // Pass 0 (#44): enforced-state whole-page revert — runs FIRST, short-circuits A/B (who-wins).
       if (enforcement?.action === "revert") {
         try { await enforceApprovedStatePass(ctx, enforcement); }
         catch (e) { console.error("[WORKFLOW-ENFORCE] pass error:", e); }
+        // 8.12.0 (review 2026-10-18): Pass 0 STOOD DOWN (who may have edited between the baseline and
+        // now could not be judged, e.g. Confluence answered 429). Judge nothing else either: a section
+        // or media restore would write a version carrying the unjudged edit, and that write would then
+        // become the approved baseline. Exactly as for "unknown"; the sweeps judge it again.
+        if (ctx.enforceStoodDown) { judgeLater = true; sealPassesSkipped = true; enforceStoodDown = true; }
       }
       // Pass A: sealed-section restore (suppressed while enforcing — who-wins + SV-M5 suppression)
       if (!ctx.enforcedRevert && !judgeLater && sectionSeals.length > 0) {
@@ -540,7 +546,7 @@ export async function pageContentTrigger(event) {
     // --- #44 reconciliation (§2.5): keep approvedVersion == the last version the app or
     // a privileged actor actually produced (never a pre-pass guess). Forward-only. ---
     try {
-      if (enforcement && enforcement.action !== "demote" && enforcement.action !== "unknown") {
+      if (enforcement && enforcement.action !== "demote" && enforcement.action !== "unknown" && !enforceStoodDown) {
         let newBaseline = null;
         let cause = null; // B2: why the baseline moves (baseline.js) — never an approver for the app's write
         if (anyChange && writtenVersion) {
@@ -1445,7 +1451,7 @@ async function enforceApprovedStatePass(ctx, enf) {
   // to the HIGHEST privileged-authored version in (av, cur), not blindly to av — otherwise a
   // concurrent approver edit is destroyed. targetV === av when there's no intervening edit.
   const targetV = (cur - av > 1) ? await highestSanctionedVersion(ctx.pageId, rec, av, cur, enf?.stewardSpaces) : av;
-  if (targetV == null) return;                        // who may edit could not be judged: no revert this run
+  if (targetV == null) { ctx.enforceStoodDown = true; return; } // who may edit could not be judged: no revert, no other write, this run
 
   const { adfDoc: approvedAdf } = await readDocBodyAtVersion(ctx.pageId, targetV);
   // CL-1: never let an empty/unreadable baseline blank the page.
@@ -1526,18 +1532,23 @@ async function fetchLiveVersionAuthor(pageId) {
 }
 
 // §4.3: standalone revert used by the sweep (not inside the ctx loop). Same 409 backoff.
-export async function sweepRevertToApproved(pageId, record) {
+// `targetVersion` (8.12.0): the version to give back when it is not the baseline itself — the highest
+// version an approver or space admin wrote after the baseline (highestSanctionedVersion), as the
+// event path does; never lower than the baseline.
+export async function sweepRevertToApproved(pageId, record, targetVersion = null) {
   const fresh = await readPageWorkflow(pageId);
   const av = fresh?.approvedVersion;
   if (!(typeof av === "number" && av >= 1)) return false;
+  const tv = typeof targetVersion === "number" && targetVersion > av ? targetVersion : av;
   let approvedAdf;
-  try { ({ adfDoc: approvedAdf } = await readDocBodyAtVersion(pageId, av)); } catch (_) { return false; }
+  try { ({ adfDoc: approvedAdf } = await readDocBodyAtVersion(pageId, tv)); } catch (_) { return false; }
   if (!approvedAdf?.content?.length) return false; // CL-1: never blank
-  const restored = restoredContentOf(await withLegacySource(pageId, fresh), av); // B2: what this revert gives back, on the record it read
+  const restored = restoredContentOf(await withLegacySource(pageId, fresh), tv); // B2: what this revert gives back, on the record it read
   for (let attempt = 0; attempt < 3; attempt++) {
     let head;
     try { head = await readDocBody(pageId); } catch (_) { return false; }
     if ((head.pageData.version?.number || 0) <= av) return false; // no drift now
+    if (tv > av && (head.pageData.version?.number || 0) <= tv) return false; // the sanctioned version is live: nothing to undo
     // Content already equals the baseline (a version bump with no real change) — advance
     // the baseline to resolve the drift WITHOUT a needless destructive rewrite (mirror the
     // event-path CL-7 guard). Return true: the drift is reconciled.
@@ -1553,8 +1564,8 @@ export async function sweepRevertToApproved(pageId, record) {
     const putRes = await writeDocBody(pageId, head.pageData, head.adfDoc, "(Sentinel Vault reverted unapproved change to the approved version)");
     if (putRes.ok) {
       const written = (head.pageData.version?.number || 0) + 1;
-      await restampApprovedVersion(pageId, written, { kind: "restored", from: av, ...restored }).catch(() => {});
-      return { ok: true, wrote: true, version: written, restoredContent: restored.contentOf ?? av };
+      await restampApprovedVersion(pageId, written, { kind: "restored", from: tv, ...restored }).catch(() => {});
+      return { ok: true, wrote: true, version: written, restoredContent: restored.contentOf ?? tv };
     }
     if (putRes.status === 409) { await new Promise((r) => setTimeout(r, Math.pow(2, attempt) * 500)); continue; }
     return false; // SV-M2: don't claim success on a non-409 error
@@ -1739,7 +1750,12 @@ export async function workflowSweep() {
         const mode = enforceModeOf(settings, { moved: auth.moved }); // the event path's rule (a moved page: revert)
         const alreadyNotified = await kvs.get(`workflow-integrity-notified-${idx.pageId}`);
         if (mode === "revert") {
-          const ok = await sweepRevertToApproved(idx.pageId, record);
+          // 8.12.0 (review 2026-10-18): give back the last SANCTIONED version, not the baseline blindly —
+          // an approver's or space admin's edit whose event never landed (dropped, or judged "unknown"
+          // while Confluence was limiting) is kept, as the event path keeps it. Unknown: next run.
+          const targetV = (live - record.approvedVersion > 1) ? await highestSanctionedVersion(idx.pageId, record, record.approvedVersion, live, auth.spaces) : record.approvedVersion;
+          if (targetV == null) { console.warn(`[WORKFLOW-SWEEP] ${idx.pageId}: who edited after the baseline could not be judged; judged next run`); continue; }
+          const ok = await sweepRevertToApproved(idx.pageId, record, targetV);
           // B2: the approved content the sweep's revert gave back (a copy of a copy names the original).
           const restoredContent = ok?.restoredContent ?? record.approvedVersion ?? null;
           if (ok) {
