@@ -53,7 +53,7 @@ const readUserAsApp = async (accountId) => {
 // points pool is shared by every site the app is on. These facts are now kept in the app's own
 // storage for a short time:
 //
-//   authz-space-id-<key>        the space id for a key                         10 minutes
+//   authz-space-id-<key>        the space id for a key                         60 seconds
 //   authz-space-admins-<id>     who Confluence lists with administer/space      60 seconds
 //                               (user ids and group ids; a role row never counts)
 //   authz-groups-<accountId>    the account's group ids and names               60 seconds
@@ -69,7 +69,9 @@ const readUserAsApp = async (accountId) => {
 // Vault (a new one too).
 
 export const CACHE_GRANT_TTL_MS = 60_000;
-export const SPACE_ID_TTL_MS = 10 * 60_000;
+// A space key can be given to another space (renamed, or purged and created again), so the key's id
+// lives no longer than a grant does (review 2026-10-18).
+export const SPACE_ID_TTL_MS = CACHE_GRANT_TTL_MS;
 const CLOCK_SKEW_MS = 5_000;
 const MAX_CACHED_ENTRIES = 1_000;
 
@@ -86,8 +88,9 @@ export function freshCached(v, ttlMs, now = Date.now()) {
 }
 
 const cacheGet = async (key) => { try { return await kvs.get(key); } catch (_) { return null; } };
-const cachePut = async (key, value, ttlMs) => {
-  try { await setWithTtl(key, { ...value, at: Date.now() }, ttlMs); } catch (e) { console.warn(`[AUTHZ] cache write ${key.split("-").slice(0, 3).join("-")} failed:`, e?.message || e); }
+// `at` is when the READ STARTED (a slow read must not look fresher than what it saw).
+const cachePut = async (key, value, ttlMs, at) => {
+  try { await setWithTtl(key, { ...value, at }, ttlMs); } catch (e) { console.warn(`[AUTHZ] cache write ${key.split("-").slice(0, 3).join("-")} failed:`, e?.message || e); }
 };
 
 /** The account's groups ({ ids, names }), RATE_LIMITED, or null when Confluence would not say. */
@@ -95,14 +98,15 @@ async function accountGroupsOf(accountId, memo = null) {
   return memoized(memo, "groups", accountId, async () => {
     const key = groupsCacheKey(accountId);
     const hit = await cacheGet(key);
-    if (freshCached(hit, CACHE_GRANT_TTL_MS) && hit.accountId === accountId && Array.isArray(hit.ids) && Array.isArray(hit.names)) return { ids: hit.ids, names: hit.names };
+    if (freshCached(hit, CACHE_GRANT_TTL_MS) && hit.accountId === accountId && Array.isArray(hit.ids) && Array.isArray(hit.names)) return { ids: hit.ids, names: hit.names, sourceAt: Number(hit.at) };
+    const startedAt = Date.now();
     const res = await appConfluence(route`/wiki/rest/api/user/memberof?accountId=${accountId}&limit=200`).catch(() => null);
     if (isRateLimited(res)) return RATE_LIMITED;
     if (!res?.ok) return null;
     const rows = (await res.json())?.results || [];
     const out = { ids: rows.map((g) => g?.id).filter(Boolean).map(String), names: rows.map((g) => g?.name).filter(Boolean).map(String) };
-    if (out.ids.length <= MAX_CACHED_ENTRIES) await cachePut(key, { accountId, ...out }, CACHE_GRANT_TTL_MS);
-    return out;
+    if (out.ids.length <= MAX_CACHED_ENTRIES) await cachePut(key, { accountId, ...out }, CACHE_GRANT_TTL_MS, startedAt);
+    return { ...out, sourceAt: startedAt };
   });
 }
 
@@ -111,14 +115,15 @@ async function spaceRefOf(spaceKey) {
   return invocationMemo(`space-ref|${spaceKey}`, async () => {
     const key = spaceIdCacheKey(spaceKey);
     const hit = await cacheGet(key);
-    if (freshCached(hit, SPACE_ID_TTL_MS) && hit.key === spaceKey && hit.id) return { id: String(hit.id), key: spaceKey };
+    if (freshCached(hit, SPACE_ID_TTL_MS) && hit.key === spaceKey && hit.id) return { id: String(hit.id), key: spaceKey, sourceAt: Number(hit.at) };
+    const startedAt = Date.now();
     const sres = await appConfluence(route`/wiki/api/v2/spaces?keys=${spaceKey}&limit=1`, { headers: { Accept: "application/json" } });
     if (isRateLimited(sres)) { console.warn(`[AUTHZ] space lookup ${spaceKey} -> 429; could not check (nothing granted)`); return RATE_LIMITED; }
     if (!sres.ok) { console.warn(`[AUTHZ] space lookup ${spaceKey} -> ${sres.status}; not a space admin`); return null; }
     const space = (await sres.json())?.results?.[0];
     if (!space?.id || space.key !== spaceKey) return null;
-    await cachePut(key, { id: String(space.id), key: spaceKey }, SPACE_ID_TTL_MS);
-    return { id: String(space.id), key: spaceKey };
+    await cachePut(key, { id: String(space.id), key: spaceKey }, SPACE_ID_TTL_MS, startedAt);
+    return { id: String(space.id), key: spaceKey, sourceAt: startedAt };
   });
 }
 
@@ -132,7 +137,8 @@ async function spaceAdminSetOf(space) {
     const key = spaceAdminsCacheKey(space.id);
     const hit = await cacheGet(key);
     if (freshCached(hit, CACHE_GRANT_TTL_MS) && String(hit.spaceId) === String(space.id) && hit.spaceKey === space.key
-      && Array.isArray(hit.users) && Array.isArray(hit.groups)) return { users: hit.users, groups: hit.groups };
+      && Array.isArray(hit.users) && Array.isArray(hit.groups)) return { users: hit.users, groups: hit.groups, sourceAt: Number(hit.at) };
+    const startedAt = Date.now();
     const JH = { headers: { Accept: "application/json" } };
     const users = new Set();
     const groups = new Set();
@@ -157,8 +163,8 @@ async function spaceAdminSetOf(space) {
       cursor = nextCursorOf(body);
       if (!cursor) {
         const out = { users: [...users], groups: [...groups] };
-        if (out.users.length + out.groups.length <= MAX_CACHED_ENTRIES) await cachePut(key, { spaceId: String(space.id), spaceKey: space.key, ...out }, CACHE_GRANT_TTL_MS);
-        return out;
+        if (out.users.length + out.groups.length <= MAX_CACHED_ENTRIES) await cachePut(key, { spaceId: String(space.id), spaceKey: space.key, ...out }, CACHE_GRANT_TTL_MS, startedAt);
+        return { ...out, sourceAt: startedAt };
       }
       if (seen.has(cursor)) return null; // a cursor that does not advance: the list cannot be read whole
       seen.add(cursor);
@@ -357,6 +363,13 @@ export async function isOperatorRealmSteward(operatorAccountId, realmKey, opts =
  * @returns {Promise<boolean>} - True if operator is in steward groups/operators
  */
 export async function isOperatorInStewardCohorts(operatorAccountId, realmKey) {
+  const s = await stewardCohortsStatus(operatorAccountId, realmKey);
+  if (s.unknown) noteAuthzUnknown();
+  return s.steward;
+}
+
+/** `{ steward, unknown }` for the app's own lists (unknown: the group read got a 429). */
+async function stewardCohortsStatus(operatorAccountId, realmKey) {
   try {
     const sanitizedRealmKey = realmKey.replace(/[^a-zA-Z0-9:._\s-#]/g, "_");
     const realmConfig = await kvs.get(
@@ -379,29 +392,27 @@ export async function isOperatorInStewardCohorts(operatorAccountId, realmKey) {
     });
 
     if (isDirectSteward) {
-      return true;
+      return { steward: true, unknown: false };
     }
 
     if (stewardGroups.length > 0) {
       const operatorResponse = await userConfluence(
         route`/wiki/rest/api/user?accountId=${operatorAccountId}&expand=groups`,
       );
-      if (isRateLimited(operatorResponse)) noteAuthzUnknown();
+      if (isRateLimited(operatorResponse)) return { steward: false, unknown: true };
 
       if (operatorResponse.ok) {
         const operatorData = await operatorResponse.json();
         const operatorGroups = operatorData.groups?.results?.map((g) => g.name) || [];
 
-        return stewardGroups.some((stewardGroup) =>
-          operatorGroups.includes(stewardGroup),
-        );
+        return { steward: stewardGroups.some((stewardGroup) => operatorGroups.includes(stewardGroup)), unknown: false };
       }
     }
 
-    return false;
+    return { steward: false, unknown: false };
   } catch (error) {
     console.error("Error checking steward groups:", error);
-    return false;
+    return { steward: false, unknown: false };
   }
 }
 
@@ -469,15 +480,20 @@ async function siteAdminStatus(operatorAccountId) {
  * @returns {Promise<boolean>} - True if operator is a steward
  */
 export async function isOperatorSteward(operatorAccountId, realmKey) {
-  const isSiteAdmin = await isOperatorSiteAdmin(operatorAccountId);
-  if (isSiteAdmin) {
+  const site = operatorAccountId ? await invocationMemo(`site-admin|${operatorAccountId}`, () => siteAdminStatus(operatorAccountId)) : { admin: false, unknown: false };
+  if (site.admin) {
     return true;
   }
+  const siteAdminUnknown = site.unknown;
 
   // 8.12.0: the app's own lists first (storage, no points), the space's permissions only when they
-  // do not already say yes.
-  if (await isOperatorInStewardCohorts(operatorAccountId, realmKey)) return true;
-  return isOperatorRealmSteward(operatorAccountId, realmKey);
+  // do not already say yes. "Could not check" is noted only when it decided the answer (a no).
+  const cohorts = await stewardCohortsStatus(operatorAccountId, realmKey);
+  if (cohorts.steward) return true;
+  const space = await spaceAdminStatus(operatorAccountId, realmKey);
+  if (space.admin) return true;
+  if (cohorts.unknown || space.unknown || siteAdminUnknown) noteAuthzUnknown();
+  return false;
 }
 
 /**

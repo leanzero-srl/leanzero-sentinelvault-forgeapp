@@ -1,5 +1,5 @@
 import { asApp, route } from "@forge/api";
-import { appConfluence } from "./shared/confluence-call.js";
+import { appConfluence, isRateLimited } from "./shared/confluence-call.js";
 import { kvs, WhereConditions } from "@forge/kvs";
 
 import {
@@ -1473,6 +1473,9 @@ async function enforceApprovedStatePass(ctx, enf) {
 async function highestSanctionedVersion(pageId, record, av, cur, knownStewardSpaces = null) {
   try {
     const res = await appConfluence(route`/wiki/api/v2/pages/${pageId}/versions?limit=50`);
+    // 8.12.0: Confluence's rate limit says nothing about who edited: no revert this run (null), never
+    // a revert past a sanctioned edit it could not see.
+    if (isRateLimited(res)) return null;
     if (!res.ok) return av;
     const versions = (await res.json())?.results || [];
     const settings = await getSpaceWorkflowSettings(record.spaceKey);
@@ -1511,9 +1514,12 @@ async function highestSanctionedVersion(pageId, record, av, cur, knownStewardSpa
 }
 
 // §4.4: author of the current top version (for the sweep's authorized-drift check).
+// 8.12.0: RATE_LIMITED_AUTHOR when Confluence answered 429: the sweep judges that page next run.
+const RATE_LIMITED_AUTHOR = Symbol("rate-limited");
 async function fetchLiveVersionAuthor(pageId) {
   try {
     const res = await appConfluence(route`/wiki/api/v2/pages/${pageId}/versions?limit=1`);
+    if (isRateLimited(res)) return RATE_LIMITED_AUTHOR;
     if (res.ok) return (await res.json())?.results?.[0]?.authorId ?? null;
   } catch (_) { /* fail-closed toward enforcement */ }
   return null;
@@ -1706,6 +1712,7 @@ export async function workflowSweep() {
         }
         // DRIFT. Gap C/CL-3: a dropped event may have been an AUTHORIZED edit — check the author.
         const author = await fetchLiveVersionAuthor(idx.pageId);
+        if (author === RATE_LIMITED_AUTHOR) { console.warn(`[WORKFLOW-SWEEP] ${idx.pageId}: the live version's author could not be read (Confluence 429); judged next run`); continue; }
         const settings = await getSpaceWorkflowSettings(record.spaceKey);
         const liveSpec = await resolveApproverIds(settings.approval);
         const liveApprovers = liveSpec?.approvers || [];

@@ -277,6 +277,18 @@ try {
         return [a, b];
       }, { budgetMs: 900_000 });
       eq("a long invocation re-asks after a minute", seen, [true, false]);
+      // A cached list already 59 s old is not kept another minute by the memo (review 2026-10-18).
+      const w2 = await bed();
+      clockOffset = 0;
+      await kvs.set(`authz-space-admins-${SPACE_ID}`, { spaceId: SPACE_ID, spaceKey: SPACE, users: [ADMIN], groups: [], at: Date.now() - 59_000 });
+      w2.spaceAdmins.delete(ADMIN);
+      const seen2 = await door.runInvocation(async () => {
+        const a = await sc.isSpaceAdministrator(ADMIN, SPACE);
+        clockOffset = 2_000;
+        const b = await sc.isSpaceAdministrator(ADMIN, SPACE);
+        return [a, b];
+      }, { budgetMs: 900_000 });
+      eq("the memo expires with the cached answer's own time (59 s + 2 s > 60 s)", seen2, [true, false]);
     } else ok("runInvocation exists", false);
   }
 
