@@ -1157,9 +1157,12 @@ const enumeratePageSeals = async (req) => {
  * Return the last-modified timestamp for seal operations.
  * Used by the inline panel to detect changes made in other surfaces.
  */
-const checkSealStamp = async () => {
+const checkSealStamp = async (req) => {
   const stamp = await kvs.get("protections-last-modified");
-  return { stamp: stamp || 0 };
+  // The banner's own page, from Forge's context (never from the payload).
+  const pageId = req?.context?.extension?.content?.id;
+  const workflowStamp = pageId ? await kvs.get(`protections-last-workflow-${pageId}`) : 0;
+  return { stamp: stamp || 0, workflowStamp: workflowStamp || 0 };
 };
 
 /**

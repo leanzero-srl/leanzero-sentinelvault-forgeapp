@@ -20,6 +20,7 @@ const logic = await import("../src/server/capsules/workflow/logic.js");
 const { kvs } = await import("@forge/kvs");
 const { recentDispatches } = await import("../src/server/capsules/bulletins/actions.js");
 const wfActions = new Map((await import("../src/server/capsules/workflow/actions.js")).actions);
+const sealing = new Map((await import("../src/server/capsules/sealing/actions.js")).actions);
 const { pageDetailsSummary } = await import("../src/server/capsules/page-details/actions.js");
 
 const APP = "app-account";
@@ -235,6 +236,25 @@ try {
     await kvs.set("admin-settings-global", { enableContentProtection: false });
     const fzOff = await wfActions.get("workflow-seals-to-freeze")({ payload: { pageId: PAGE }, context: ctx });
     eq("[4w] approval dialog freeze answer: protection off", fzOff.protectionOff, true);
+  }
+
+  // ---------------------------------------------------------------------------------------------
+  // 6. One Draft page open in two tabs. Tab A moves it to In Review: tab B's banner must hear
+  // about it, and the move tab B picks from its old Draft chip must name the page's real state.
+  {
+    resetFake();
+    createWorld({ spaceKey: SPACE }).addUser(PLAIN).addPage(PAGE, { versions: [{ authorId: PLAIN }] }).readers.add("*");
+    await kvs.set(`workflow-settings-${SPACE}`, { enabled: true, workflowId: "default" });
+    await logic.assignPageWorkflow({ pageId: PAGE, spaceKey: SPACE, actorAccountId: PLAIN, workflowId: "default" });
+    await new Promise((r) => setTimeout(r, 5)); // the move below stamps a later millisecond
+    const move = (fromStateId) => wfActions.get("request-transition")({ payload: { pageId: PAGE, toStateId: "in_review", fromStateId }, context: { accountId: PLAIN } });
+    const stamp = async () => (await sealing.get("check-seal-stamp")({ payload: {}, context: { extension: { content: { id: PAGE } } } })).workflowStamp;
+    const before = await stamp();
+    eq("[6] tab A moves the page from Draft to In Review", (await move("draft")).success, true);
+    ok("[6] the stamp the page's open banners poll has changed", (await stamp()) !== before);
+    const stale = await move("draft"); // tab B still shows Draft
+    eq("[6] tab B's move is refused", stale.success, false);
+    eq("[6] tab B is told the page's real state", stale.reason, "This page is already In Review.");
   }
 } finally {
   loud();

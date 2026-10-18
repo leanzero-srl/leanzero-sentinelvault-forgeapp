@@ -497,7 +497,7 @@ const WorkflowControl = ({ workflow, approvals, operatorId, pageId, spaceKey, si
   const doTransition = useCallback(async (toStateId) => {
     setBusy(true); setError(null); setMenuOpen(false);
     try {
-      const res = await invoke("request-transition", { pageId, spaceKey, toStateId, ...(moveCode ? { code: moveCode } : {}) });
+      const res = await invoke("request-transition", { pageId, spaceKey, toStateId, fromStateId: workflow.state?.id, ...(moveCode ? { code: moveCode } : {}) });
       if (res?.signatureRequired) {
         // The space requires a signed decision and this move IS the decision (no approvers,
         // or an AI-only gate): ask for the code and retry with it. A code that was SENT and
@@ -515,6 +515,7 @@ const WorkflowControl = ({ workflow, approvals, operatorId, pageId, spaceKey, si
         setSeat(false);
         requestAnimationFrame(() => setSeat(true)); // seat the newly-rendered state
       } else {
+        if (res?.stale) await onTransitioned(); // the chip then shows the page's real state
         // #46: a blocked transition names exactly what's missing (content conditions).
         const reasons = (res?.violations || []).map((v) => v.message || v.label).filter(Boolean);
         setError(reasons.length ? `${res?.reason || "Blocked"} — ${reasons.join("; ")}` : (res?.reason || "Transition not allowed"));
@@ -527,7 +528,7 @@ const WorkflowControl = ({ workflow, approvals, operatorId, pageId, spaceKey, si
       // is the thing to retry.
       requestAnimationFrame(() => (signRef.current?.querySelector('[data-testid="wf-sign-move-code"]') || btnRef.current)?.focus());
     }
-  }, [moveCode, pageId, spaceKey, onTransitioned]);
+  }, [moveCode, pageId, spaceKey, workflow, onTransitioned]);
 
   if (!workflow?.assigned || !workflow.state) return null;
   const state = workflow.state;
@@ -1097,9 +1098,10 @@ const DocumentRibbon = () => {
     let lastStamp = null;
     const poll = async () => {
       try {
-        const { stamp } = await invoke("check-seal-stamp");
-        if (lastStamp !== null && stamp !== lastStamp) evaluate("seal stamp changed");
-        lastStamp = stamp;
+        const { stamp, workflowStamp } = await invoke("check-seal-stamp");
+        const both = `${stamp}/${workflowStamp}`;
+        if (lastStamp !== null && both !== lastStamp) evaluate("seal or workflow stamp changed");
+        lastStamp = both;
       } catch (e) {
         // Polling failures are non-critical
       }

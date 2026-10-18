@@ -305,6 +305,11 @@ export const requestTransition = async (req) => {
   // cheapest way to switch protection off for a page was to walk it backwards out of Approved.
   // The exit deserves the same authority as the entry.
   const from = findState(def, current.stateId);
+  // A banner opened earlier sends the state it shows. If the page has left that state since,
+  // refuse the move and say which state the page is really in.
+  if (req.payload?.fromStateId && req.payload.fromStateId !== current.stateId) {
+    return { success: false, stale: true, reason: `This page is already ${from?.name || current.stateId}.` };
+  }
   if (from?.enforce && !target?.enforce
     && !(await isSteward())) {
     return { success: false, reason: `Only a space admin can move a page out of ${from.name}` }; // WF-10
