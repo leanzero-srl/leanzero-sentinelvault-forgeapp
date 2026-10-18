@@ -6,6 +6,7 @@
  * records (section-protection-{id} incl. stored hash), validation findings/gate,
  * and grants — the deterministic state the harness asserts against.
  */
+import { appConfluence } from "./server/shared/confluence-call.js";
 import { kvs, WhereConditions } from "@forge/kvs";
 import { pageGuardSweep, guardPageNow, pageContentTrigger, expirySweepTask, workflowSweep, collectWorkflowEnforcementForPage, sweepRevertToApproved, handleSealedArtifactDeleted, handleSealedArtifactTrash, lifecycleTrigger, recurringNudgeTask } from "./server/triggers";
 import {
@@ -283,7 +284,7 @@ export async function testStateTrigger(req) {
         const store = await import("./server/capsules/backup/store.js");
         const spaceId = String(q(req, "spaceId") || "").replace(/[^0-9]/g, "");
         if (!spaceId) return json(400, { error: "spaceId required" });
-        const conf = (r, init) => asApp().requestConfluence(r, init);
+        const conf = (r, init) => appConfluence(r, init);
         const JH = { Accept: "application/json", "Content-Type": "application/json" };
         const out = {};
         const body = async (res) => { const t = await res.text().catch(() => ""); return t.slice(0, 200); };
@@ -402,9 +403,9 @@ export async function testStateTrigger(req) {
         const attId = await store.putFile(pageId, `purge-probe-${Date.now()}.json`, "{}");
         const v = async () => confirmAttachmentPurged(attId, 300, { pageId });
         const out = { attId, current: await v() };
-        await asApp().requestConfluence(route`/wiki/api/v2/attachments/${attId}`, { method: "DELETE" });
+        await appConfluence(route`/wiki/api/v2/attachments/${attId}`, { method: "DELETE" });
         out.trashed = await v();
-        await asApp().requestConfluence(route`/wiki/api/v2/attachments/${attId}?purge=true`, { method: "DELETE" });
+        await appConfluence(route`/wiki/api/v2/attachments/${attId}?purge=true`, { method: "DELETE" });
         await new Promise((r) => setTimeout(r, 1500));
         out.purged = await v();
         out.purgedWithoutPageId = await confirmAttachmentPurged(attId, 300);

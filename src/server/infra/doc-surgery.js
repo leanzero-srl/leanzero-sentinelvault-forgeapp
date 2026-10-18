@@ -1,4 +1,5 @@
-import { asApp, route, getAppContext } from "@forge/api";
+import { route, getAppContext } from "@forge/api";
+import { appConfluence } from "../shared/confluence-call.js";
 import { kvs } from "@forge/kvs";
 
 const PANEL_KEY_SUFFIX = "/static/sentinel-vault-panel";
@@ -158,7 +159,7 @@ export function buildExtensionNode(extensionKey) {
  * and adfDoc is the parsed ADF document
  */
 export async function readDocBody(pageId) {
-  const response = await asApp().requestConfluence(
+  const response = await appConfluence(
     route`/wiki/api/v2/pages/${pageId}?body-format=atlas_doc_format`,
     { headers: { Accept: "application/json" } },
   );
@@ -180,7 +181,7 @@ export async function readDocBody(pageId) {
  * Returns { pageData, adfDoc } for the requested version
  */
 export async function readDocBodyAtVersion(pageId, versionNumber) {
-  const response = await asApp().requestConfluence(
+  const response = await appConfluence(
     route`/wiki/api/v2/pages/${pageId}?body-format=atlas_doc_format&version=${versionNumber}`,
     { headers: { Accept: "application/json" } },
   );
@@ -274,7 +275,7 @@ export function spliceMediaNodes(currentAdf, entries) {
  * body.value MUST be a JSON string (double-stringify pattern)
  */
 export async function writeDocBody(pageId, pageData, adfDoc, message) {
-  const response = await asApp().requestConfluence(
+  const response = await appConfluence(
     route`/wiki/api/v2/pages/${pageId}`,
     {
       method: "PUT",
@@ -560,7 +561,7 @@ export async function triggerPanelEmbed(contentId, spaceKey) {
 
     // Check page-level setting for macroDisabled
     try {
-      const propsRes = await asApp().requestConfluence(
+      const propsRes = await appConfluence(
         route`/wiki/api/v2/pages/${contentId}/properties?key=sentinel-vault-page-settings`,
       );
       if (propsRes.ok) {

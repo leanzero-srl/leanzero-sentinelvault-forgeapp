@@ -1,4 +1,5 @@
-import { asUser, route } from "@forge/api";
+import { route } from "@forge/api";
+import { userConfluence, isRateLimited, rateLimitOf, busyReason } from "../../shared/confluence-call.js";
 
 /**
  * Get operator information by account ID
@@ -7,7 +8,7 @@ const identifyOperator = async (req) => {
   const { accountId } = req.payload;
 
   try {
-    const response = await asUser().requestConfluence(
+    const response = await userConfluence(
       route`/wiki/rest/api/user?accountId=${accountId}`,
     );
     const operatorData = await response.json();
@@ -57,7 +58,7 @@ const searchOperators = async (req) => {
   }
 
   try {
-    const response = await asUser().requestConfluence(
+    const response = await userConfluence(
       route`/wiki/rest/api/search/user?cql=user.fullName~"${query}"&start=${start}&limit=${limit}`,
     );
 
@@ -131,7 +132,7 @@ const searchOperators = async (req) => {
  */
 const whoami = async (req) => {
   try {
-    const response = await asUser().requestConfluence(
+    const response = await userConfluence(
       route`/wiki/rest/api/user/current`,
     );
 
@@ -189,7 +190,7 @@ const enumerateOperators = async (req) => {
 
     const cqlQuery = `type=user`;
 
-    const response = await asUser().requestConfluence(
+    const response = await userConfluence(
       route`/wiki/rest/api/search/user?cql=${cqlQuery}&start=${start}&limit=${limit}&expand=`,
     );
 
@@ -261,7 +262,7 @@ const enumerateTeams = async (req) => {
       `Fetching teams with pagination: start=${start}, limit=${limit}`,
     );
 
-    const response = await asUser().requestConfluence(
+    const response = await userConfluence(
       route`/rest/api/group?start=${start}&limit=${limit}`,
       {
         method: "GET",
@@ -271,55 +272,17 @@ const enumerateTeams = async (req) => {
       },
     );
 
+    // 8.12.0: one request, never two. A failed first page used to be sent AGAIN, identically, as a
+    // "fallback" (the same path), which doubled the traffic exactly while Confluence was limiting it.
+    // A 429 is said as such ("couldn't load the groups right now"), not as an empty group list.
     if (!response.ok) {
-      const errorText = await response.text();
-      console.error(
-        `Teams API failed with status ${response.status}: ${errorText}`,
-      );
-
-      // Try fallback endpoint for older Confluence versions
-      if (start === 0) {
-        console.log("Trying fallback endpoint: /rest/api/group");
-        const fallbackResponse = await asUser().requestConfluence(
-          route`/rest/api/group?start=${start}&limit=${limit}`,
-          {
-            method: "GET",
-            headers: {
-              Accept: "application/json",
-            },
-          },
-        );
-
-        if (!fallbackResponse.ok) {
-          const fallbackError = await fallbackResponse.text();
-          throw new Error(
-            `Both team endpoints failed. Primary: ${response.status} ${errorText}. Fallback: ${fallbackResponse.status} ${fallbackError}`,
-          );
-        }
-
-        const fallbackData = await fallbackResponse.json();
-        console.log("Fallback endpoint worked, using /rest/api/group");
-
-        const teamNames =
-          fallbackData.results?.map((group) => group.name) || [];
-
-        const hasMore = !!(fallbackData._links && fallbackData._links.next);
-        const nextStart = hasMore ? start + limit : null;
-
-        console.log(
-          `Fetched ${teamNames.length} teams from Confluence (fallback), hasMore=${hasMore}, nextStart=${nextStart}`,
-        );
-
-        return {
-          groups: teamNames,
-          hasMore,
-          nextStart,
-        };
-      } else {
-        throw new Error(
-          `Failed to fetch teams: ${response.status} ${errorText}`,
-        );
+      const errorText = (await response.text().catch(() => "")).slice(0, 200);
+      console.error(`Teams API failed with status ${response.status}: ${errorText}`);
+      if (isRateLimited(response)) {
+        const s = rateLimitOf()?.retryAfterSeconds ?? null;
+        return { groups: [], hasMore: false, nextStart: null, unavailable: true, retryAfterSeconds: s, reason: busyReason(s, { what: "the groups could not be loaded", nothingChanged: false }) };
       }
+      return { groups: [], hasMore: false, nextStart: null, unavailable: true, reason: "The groups could not be loaded. Try again." };
     }
 
     const teamsData = await response.json();

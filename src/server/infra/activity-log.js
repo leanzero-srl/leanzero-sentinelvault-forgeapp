@@ -24,7 +24,8 @@
  * import so `test/activity-log.test.mjs` can pin them.
  */
 import { kvs, WhereConditions } from "@forge/kvs";
-import { asApp, route } from "@forge/api";
+import { route } from "@forge/api";
+import { appConfluence } from "../shared/confluence-call.js";
 import { accountToName, looksLikeAccountId } from "../shared/account-id.js";
 import { liveContentSpace } from "../shared/content-access.js";
 
@@ -37,7 +38,7 @@ export async function resolveActorName(accountId) {
   if (actorNameCache.has(accountId)) return actorNameCache.get(accountId);
   let name = null;
   try {
-    const res = await asApp().requestConfluence(route`/wiki/rest/api/user?accountId=${accountId}`);
+    const res = await appConfluence(route`/wiki/rest/api/user?accountId=${accountId}`);
     if (res.ok) { const d = await res.json(); name = d?.displayName || d?.publicName || null; }
   } catch (_) { /* best effort — the record still carries the id */ }
   actorNameCache.set(accountId, name);

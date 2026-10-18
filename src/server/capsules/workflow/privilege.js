@@ -5,18 +5,19 @@
 // steps 1–3: approver snapshot ∩ live config — trusting the snapshot when live group expansion
 // failed — or a live steward), split out because the probe also DEMOTES the page as a side
 // effect and so cannot be asked a question. Used where a seal is made or a held file is changed.
-import { asApp, route } from "@forge/api";
+import { route } from "@forge/api";
+import { appConfluence } from "../../shared/confluence-call.js";
 import { readPageWorkflow, resolveWorkflowDef, findState, getSpaceWorkflowSettings } from "./logic.js";
 import { resolveApproverIds } from "./approvals.js";
-import { isAccountStewardAsApp } from "../../shared/steward-checks.js";
-import { recordAuthority, isStewardOfSpaces } from "../../shared/content-access.js";
+import { accountStewardStatusAsApp } from "../../shared/steward-checks.js";
+import { recordAuthority, stewardOfSpacesStatus } from "../../shared/content-access.js";
 
 /** @returns {Promise<{ enforced: boolean, privileged: boolean, record?: object }>} */
 export async function workflowPrivilegeForPage(pageId, accountId) {
   if (!pageId) return { enforced: false, privileged: false };
   let prop = null;
   try {
-    const res = await asApp().requestConfluence(route`/wiki/api/v2/pages/${pageId}/properties?key=sentinel-vault-workflow`);
+    const res = await appConfluence(route`/wiki/api/v2/pages/${pageId}/properties?key=sentinel-vault-workflow`);
     if (res.ok) prop = (await res.json())?.results?.[0]?.value;
   } catch (_) { return { enforced: false, privileged: false }; }
   if (!prop || prop.enforce !== true) return { enforced: false, privileged: false };
@@ -35,7 +36,9 @@ export async function workflowPrivilegeForPage(pageId, accountId) {
     return { enforced: true, privileged: true, record };
   }
   if (!auth.known) return { enforced: true, privileged: false, unknown: true, record };
-  return { enforced: true, privileged: !!(await isStewardOfSpaces(isAccountStewardAsApp, accountId, auth.spaces)), record };
+  // 8.12.0: a check a 429 left open is unknown, like a failed lookup: enforced, not privileged.
+  const st = await stewardOfSpacesStatus(accountStewardStatusAsApp, accountId, auth.spaces);
+  return st.unknown ? { enforced: true, privileged: false, unknown: true, record } : { enforced: true, privileged: st.steward, record };
 }
 
 export const ENFORCED_SEAL_REFUSAL = "This page is Approved — only its approvers or a space admin can seal on it. Propose a change to its approvers instead.";

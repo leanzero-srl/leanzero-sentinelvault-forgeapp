@@ -1,4 +1,5 @@
 import { asApp, route } from "@forge/api";
+import { appConfluence, isRateLimited } from "./shared/confluence-call.js";
 import { kvs, WhereConditions } from "@forge/kvs";
 
 import {
@@ -37,13 +38,13 @@ import {
 import { resolveApproverIds, applyAiVerdict, sweepApprovalIndex, clearPageApprovals } from "./capsules/workflow/approvals.js";
 import { fetchPageStatuses } from "./shared/page-status.js";
 import { postEnforceComment, buildWorkflowEnforcementDispatch } from "./infra/approval-blueprints.js";
-import { isAccountStewardAsApp } from "./shared/steward-checks.js";
+import { accountStewardStatusAsApp } from "./shared/steward-checks.js";
 import { postValidationComment } from "./infra/validation-blueprints.js";
 import { readDocBody, readDocBodyAtVersion, writeDocBody, collectMediaFileIds, extractMediaSingleNodes, spliceMediaNodes, locateBodiedSectionNodes, spliceSectionWrapper, hashAdf, canonicalizeAdf, nonEmptySectionBody, adoptOrphanWrappers, summarizeAdfDiff, findUnrecordedWrappers, stampSectionId } from "./infra/doc-surgery.js";
 import { probeAttachmentStatus, restoreAttachmentFromTrash, decideMediaRestoreAction, confirmAttachmentPurged } from "./infra/attachment-status.js";
 import { findSealedMediaSingle, findAllSealedMediaSingles, capturePresentation, presentationDiffers, applyPresentation } from "./infra/media-presentation.js";
 import { setWithTtl, setUntil } from "./shared/kvs-ttl.js";
-import { resolvePageSpaceKey, isStewardOfSpaces, recordAuthority } from "./shared/content-access.js";
+import { resolvePageSpaceKey, stewardOfSpacesStatus, recordAuthority } from "./shared/content-access.js";
 import { decideSectionRetry, nextRetryMarker, sectionRetryKey, SECTION_RETRY_PREFIX, SECTION_RETRY_TTL_MS, SECTION_RETRY_SWEEP_CAP } from "./shared/section-retry.js";
 // F5 (owner feedback 2026-08-27): a lapsed seal gets a bounded run of reminders and is then
 // released automatically. The decision is time-based, so it lives in a pure zero-import module
@@ -202,7 +203,7 @@ async function resolveAppAccountId() {
   let systemAccountId = await kvs.get("app-account-id");
   if (!systemAccountId) {
     try {
-      const myselfResponse = await asApp().requestConfluence(
+      const myselfResponse = await appConfluence(
         route`/wiki/rest/api/user/current`,
       );
       if (myselfResponse.ok) {
@@ -349,9 +350,11 @@ export async function pageContentTrigger(event) {
     let enforceRevertVersion = null;
     let enforceRevertContent = null; // B2: { contentOf, editedIn } of what Pass 0 restored, judged on the record it read
     let enforceObservedEqual = false; // #44: the revert pass CONFIRMED content-equality (no write needed)
+    let enforceObservedContent = null; // what that equal version holds when it is a later sanctioned one ({ contentOf, editedIn })
     let sectionChanged = false; // GAP 2: the last attempt's section pass had a restore pending
     const adoptedSections = []; // SEC-4 (a): wrappers this run sealed on publish (record written, id stamped)
     let sealPassesSkipped = false; // a late event met a newer version by someone else (see below)
+    let enforceStoodDown = false; // 8.12.0: Pass 0 could not judge who edited in between (no write, no new baseline)
 
     for (let attempt = 0; hasBodyWork && attempt < MAX_RETRIES; attempt++) {
       let ctx;
@@ -399,12 +402,17 @@ export async function pageContentTrigger(event) {
       // "unknown" (who may edit an Approved page could not be judged): the seal passes stand down too,
       // so the app writes nothing that would carry this version's other changes into the page; the
       // sweeps judge it again.
-      const judgeLater = lateForLiveBody || enforcement?.action === "unknown";
+      let judgeLater = lateForLiveBody || enforcement?.action === "unknown";
       if (judgeLater) sealPassesSkipped = true;
       // Pass 0 (#44): enforced-state whole-page revert — runs FIRST, short-circuits A/B (who-wins).
       if (enforcement?.action === "revert") {
         try { await enforceApprovedStatePass(ctx, enforcement); }
         catch (e) { console.error("[WORKFLOW-ENFORCE] pass error:", e); }
+        // 8.12.0 (review 2026-10-18): Pass 0 STOOD DOWN (who may have edited between the baseline and
+        // now could not be judged, e.g. Confluence answered 429). Judge nothing else either: a section
+        // or media restore would write a version carrying the unjudged edit, and that write would then
+        // become the approved baseline. Exactly as for "unknown"; the sweeps judge it again.
+        if (ctx.enforceStoodDown) { judgeLater = true; sealPassesSkipped = true; enforceStoodDown = true; }
       }
       // Pass A: sealed-section restore (suppressed while enforcing — who-wins + SV-M5 suppression)
       if (!ctx.enforcedRevert && !judgeLater && sectionSeals.length > 0) {
@@ -441,7 +449,7 @@ export async function pageContentTrigger(event) {
       // #44: capture a CONFIRMED-equality observation (revert pass found the body already
       // equal to the baseline) so §2.5 can advance the baseline ONLY on genuine equality,
       // never on an abort/failed-write path (which must leave approvedVersion untouched).
-      if (ctx.enforceObservedEqual) enforceObservedEqual = true;
+      if (ctx.enforceObservedEqual) { enforceObservedEqual = true; enforceObservedContent = ctx.enforceObservedContent || null; }
 
       if (!ctx.changed) {
         break; // nothing to write this attempt
@@ -539,7 +547,7 @@ export async function pageContentTrigger(event) {
     // --- #44 reconciliation (§2.5): keep approvedVersion == the last version the app or
     // a privileged actor actually produced (never a pre-pass guess). Forward-only. ---
     try {
-      if (enforcement && enforcement.action !== "demote" && enforcement.action !== "unknown") {
+      if (enforcement && enforcement.action !== "demote" && enforcement.action !== "unknown" && !enforceStoodDown) {
         let newBaseline = null;
         let cause = null; // B2: why the baseline moves (baseline.js) — never an approver for the app's write
         if (anyChange && writtenVersion) {
@@ -553,7 +561,7 @@ export async function pageContentTrigger(event) {
           newBaseline = content?.version?.number || (await fetchLivePageVersion(pageId)); // editor's live version
           cause = { kind: "edit" };
         } else if (enforcement.action === "revert" && enforceObservedEqual) {
-          cause = { kind: "unchanged" };
+          cause = { kind: "unchanged", ...(enforceObservedContent || {}) };
           // ONLY when the pass CONFIRMED the body already equals the baseline (no write
           // needed) do we advance to live. On any abort/failed-write path the body is
           // still the un-reverted tamper — do NOT launder it into approvedVersion; leave
@@ -601,7 +609,7 @@ export async function pageContentTrigger(event) {
 // --- Pipeline: gather media seals applicable to a page (cheap, no ADF read) ---
 async function collectMediaSealsForPage(pageId) {
   // Fast path: does this page carry any seal content properties?
-  const propsResponse = await asApp().requestConfluence(
+  const propsResponse = await appConfluence(
     route`/wiki/api/v2/pages/${pageId}/properties?key=protection-`,
   );
   if (!propsResponse.ok) return [];
@@ -640,7 +648,7 @@ async function collectMediaSealsForPage(pageId) {
     let fileId = seal.sealedFileId || null;
     if (!fileId && seal.attachmentId) {
       try {
-        const attRes = await asApp().requestConfluence(
+        const attRes = await appConfluence(
           route`/wiki/api/v2/attachments/${seal.attachmentId}`,
         );
         if (attRes.ok) {
@@ -1018,7 +1026,7 @@ async function dispatchPipelineNotification(n, writtenVersion = null) {
 // --- Pipeline: gather section seals applicable to a page (cheap, no ADF read) ---
 async function collectSectionSealsForPage(pageId) {
   // Fast path: does this page carry any section-seal content properties?
-  const propsResponse = await asApp().requestConfluence(
+  const propsResponse = await appConfluence(
     route`/wiki/api/v2/pages/${pageId}/properties?key=section-protection-`,
   );
   if (!propsResponse.ok) return [];
@@ -1307,7 +1315,7 @@ export async function collectWorkflowEnforcementForPage(pageId, atlassianId, eve
   // 1. Fast path — content-property probe. Absent/non-enforced -> nothing to do.
   let prop = null;
   try {
-    const res = await asApp().requestConfluence(route`/wiki/api/v2/pages/${pageId}/properties?key=sentinel-vault-workflow`);
+    const res = await appConfluence(route`/wiki/api/v2/pages/${pageId}/properties?key=sentinel-vault-workflow`);
     if (res.ok) prop = (await res.json())?.results?.[0]?.value;
   } catch (_) { return null; }
   if (!prop || prop.enforce !== true) return null;
@@ -1339,7 +1347,12 @@ export async function collectWorkflowEnforcementForPage(pageId, atlassianId, eve
   // new wrappers; the page-guard and hourly sweeps judge the version again.
   if (!auth.known) return { action: "unknown", record };
   // A steward of the space the page is in NOW and, if it moved, of the record's (recordAuthority).
-  if (await isStewardOfSpaces(isAccountStewardAsApp, atlassianId, auth.spaces)) return { action: "privileged", record };
+  // 8.12.0: Confluence's rate limit is not an answer. A steward check a 429 left open is "unknown"
+  // (no demote, no revert, no new baseline): reverting an admin's edit because Confluence was busy
+  // was the outage of 2026-10-18. The page-guard and the hourly sweep judge the version again.
+  const steward = await stewardOfSpacesStatus(accountStewardStatusAsApp, atlassianId, auth.spaces);
+  if (steward.steward) return { action: "privileged", record };
+  if (steward.unknown) return { action: "unknown", record };
 
   // 3b. A late event for a version the approval already covers (the requester's own last save
   //     before the approval, delivered ~10 min after it — or the guard judging that version on the
@@ -1439,7 +1452,7 @@ async function enforceApprovedStatePass(ctx, enf) {
   // to the HIGHEST privileged-authored version in (av, cur), not blindly to av — otherwise a
   // concurrent approver edit is destroyed. targetV === av when there's no intervening edit.
   const targetV = (cur - av > 1) ? await highestSanctionedVersion(ctx.pageId, rec, av, cur, enf?.stewardSpaces) : av;
-  if (targetV == null) return;                        // who may edit could not be judged: no revert this run
+  if (targetV == null) { ctx.enforceStoodDown = true; return; } // who may edit could not be judged: no revert, no other write, this run
 
   const { adfDoc: approvedAdf } = await readDocBodyAtVersion(ctx.pageId, targetV);
   // CL-1: never let an empty/unreadable baseline blank the page.
@@ -1451,6 +1464,8 @@ async function enforceApprovedStatePass(ctx, enf) {
   if (hashAdf(ctx.adfDoc) === hashAdf(approvedAdf) &&
       JSON.stringify(canonicalizeAdf(ctx.adfDoc.content)) === JSON.stringify(canonicalizeAdf(approvedAdf.content))) {
     ctx.enforceObservedEqual = true; // CONFIRMED equality — §2.5 may advance the baseline to live
+    // Equal to a LATER sanctioned version (targetV > av): the new baseline holds that version's content.
+    if (targetV !== av) ctx.enforceObservedContent = restoredContentOf(await withLegacySource(ctx.pageId, rec), targetV);
     return; // already equal — no body write
   }
   ctx.adfDoc.content = approvedAdf.content;           // whole-body replace, in place
@@ -1466,7 +1481,10 @@ async function enforceApprovedStatePass(ctx, enf) {
 // none. One versions GET; only called when intervening versions exist.
 async function highestSanctionedVersion(pageId, record, av, cur, knownStewardSpaces = null) {
   try {
-    const res = await asApp().requestConfluence(route`/wiki/api/v2/pages/${pageId}/versions?limit=50`);
+    const res = await appConfluence(route`/wiki/api/v2/pages/${pageId}/versions?limit=50`);
+    // 8.12.0: Confluence's rate limit says nothing about who edited: no revert this run (null), never
+    // a revert past a sanctioned edit it could not see.
+    if (isRateLimited(res)) return null;
     if (!res.ok) return av;
     const versions = (await res.json())?.results || [];
     const settings = await getSpaceWorkflowSettings(record.spaceKey);
@@ -1488,57 +1506,70 @@ async function highestSanctionedVersion(pageId, record, av, cur, knownStewardSpa
       if (typeof n !== "number" || n <= av || n >= cur || n <= best) continue;
       const author = v.authorId;
       const steward = () => {
-        if (!stewardOf.has(author)) stewardOf.set(author, isStewardOfSpaces(isAccountStewardAsApp, author, stewardSpaces));
+        if (!stewardOf.has(author)) stewardOf.set(author, stewardOfSpacesStatus(accountStewardStatusAsApp, author, stewardSpaces));
         return stewardOf.get(author);
       };
-      const priv = author && (
-        (Array.isArray(record.approvers) && record.approvers.includes(author) && (liveApprovers.includes(author) || liveUnresolved))
-        || await steward());
-      if (priv) best = n;
+      const approver = author && Array.isArray(record.approvers) && record.approvers.includes(author) && (liveApprovers.includes(author) || liveUnresolved);
+      if (approver) { best = n; continue; }
+      if (!author) continue;
+      const st = await steward();
+      // 8.12.0: a 429 kept Confluence from saying whether this author may edit: no revert this run
+      // (null), rather than undoing what may be a space admin's edit.
+      if (st.unknown) return null;
+      if (st.steward) best = n;
     }
     return best;
   } catch (_) { return av; }
 }
 
 // §4.4: author of the current top version (for the sweep's authorized-drift check).
+// 8.12.0: RATE_LIMITED_AUTHOR when Confluence answered 429: the sweep judges that page next run.
+const RATE_LIMITED_AUTHOR = Symbol("rate-limited");
 async function fetchLiveVersionAuthor(pageId) {
   try {
-    const res = await asApp().requestConfluence(route`/wiki/api/v2/pages/${pageId}/versions?limit=1`);
+    const res = await appConfluence(route`/wiki/api/v2/pages/${pageId}/versions?limit=1`);
+    if (isRateLimited(res)) return RATE_LIMITED_AUTHOR;
     if (res.ok) return (await res.json())?.results?.[0]?.authorId ?? null;
   } catch (_) { /* fail-closed toward enforcement */ }
   return null;
 }
 
 // §4.3: standalone revert used by the sweep (not inside the ctx loop). Same 409 backoff.
-export async function sweepRevertToApproved(pageId, record) {
+// `targetVersion` (8.12.0): the version to give back when it is not the baseline itself — the highest
+// version an approver or space admin wrote after the baseline (highestSanctionedVersion), as the
+// event path does; never lower than the baseline.
+export async function sweepRevertToApproved(pageId, record, targetVersion = null) {
   const fresh = await readPageWorkflow(pageId);
   const av = fresh?.approvedVersion;
   if (!(typeof av === "number" && av >= 1)) return false;
+  const tv = typeof targetVersion === "number" && targetVersion > av ? targetVersion : av;
   let approvedAdf;
-  try { ({ adfDoc: approvedAdf } = await readDocBodyAtVersion(pageId, av)); } catch (_) { return false; }
+  try { ({ adfDoc: approvedAdf } = await readDocBodyAtVersion(pageId, tv)); } catch (_) { return false; }
   if (!approvedAdf?.content?.length) return false; // CL-1: never blank
-  const restored = restoredContentOf(await withLegacySource(pageId, fresh), av); // B2: what this revert gives back, on the record it read
+  const restored = restoredContentOf(await withLegacySource(pageId, fresh), tv); // B2: what this revert gives back, on the record it read
   for (let attempt = 0; attempt < 3; attempt++) {
     let head;
     try { head = await readDocBody(pageId); } catch (_) { return false; }
     if ((head.pageData.version?.number || 0) <= av) return false; // no drift now
+    if (tv > av && (head.pageData.version?.number || 0) <= tv) return false; // the sanctioned version is live: nothing to undo
     // Content already equals the baseline (a version bump with no real change) — advance
     // the baseline to resolve the drift WITHOUT a needless destructive rewrite (mirror the
     // event-path CL-7 guard). Return true: the drift is reconciled.
     if (hashAdf(head.adfDoc) === hashAdf(approvedAdf) &&
         JSON.stringify(canonicalizeAdf(head.adfDoc.content)) === JSON.stringify(canonicalizeAdf(approvedAdf.content))) {
       const live = head.pageData.version?.number || 0;
-      await restampApprovedVersion(pageId, live, { kind: "unchanged" }).catch(() => {});
+      // Equal to a later sanctioned version (tv > av): the baseline holds THAT version's content.
+      await restampApprovedVersion(pageId, live, { kind: "unchanged", ...(tv > av ? { contentOf: restored.contentOf ?? tv, editedIn: restored.editedIn ?? tv } : {}) }).catch(() => {});
       // Truthfulness (A1 review F1): this branch wrote NOTHING — the live version became the
       // baseline. Callers that record the outcome must not call it a revert.
-      return { ok: true, wrote: false, version: live };
+      return { ok: true, wrote: false, version: live, restoredTo: null };
     }
     head.adfDoc.content = approvedAdf.content;
     const putRes = await writeDocBody(pageId, head.pageData, head.adfDoc, "(Sentinel Vault reverted unapproved change to the approved version)");
     if (putRes.ok) {
       const written = (head.pageData.version?.number || 0) + 1;
-      await restampApprovedVersion(pageId, written, { kind: "restored", from: av, ...restored }).catch(() => {});
-      return { ok: true, wrote: true, version: written, restoredContent: restored.contentOf ?? av };
+      await restampApprovedVersion(pageId, written, { kind: "restored", from: tv, ...restored }).catch(() => {});
+      return { ok: true, wrote: true, version: written, restoredTo: tv, restoredContent: restored.contentOf ?? tv };
     }
     if (putRes.status === 409) { await new Promise((r) => setTimeout(r, Math.pow(2, attempt) * 500)); continue; }
     return false; // SV-M2: don't claim success on a non-409 error
@@ -1574,7 +1605,7 @@ export async function workflowSweep() {
       if (spaceId == null) return null;
       if (!spaceKeyById.has(spaceId)) {
         let key = null;
-        try { const r = await asApp().requestConfluence(route`/wiki/api/v2/spaces/${spaceId}`); if (r.ok) key = (await r.json())?.key || null; } catch (_) { key = null; }
+        try { const r = await appConfluence(route`/wiki/api/v2/spaces/${spaceId}`); if (r.ok) key = (await r.json())?.key || null; } catch (_) { key = null; }
         spaceKeyById.set(spaceId, key);
       }
       return spaceKeyById.get(spaceId);
@@ -1696,14 +1727,20 @@ export async function workflowSweep() {
         }
         // DRIFT. Gap C/CL-3: a dropped event may have been an AUTHORIZED edit — check the author.
         const author = await fetchLiveVersionAuthor(idx.pageId);
+        if (author === RATE_LIMITED_AUTHOR) { console.warn(`[WORKFLOW-SWEEP] ${idx.pageId}: the live version's author could not be read (Confluence 429); judged next run`); continue; }
         const settings = await getSpaceWorkflowSettings(record.spaceKey);
         const liveSpec = await resolveApproverIds(settings.approval);
         const liveApprovers = liveSpec?.approvers || [];
         const liveUnresolved = !!liveSpec?.unresolved;
-        const authorized = author && (
+        let authorized = author && (
           author === systemAccountId // the app's own version bumps (revert re-saves) are never tampers
-          || (record.approvers.includes(author) && (liveApprovers.includes(author) || liveUnresolved))
-          || await isStewardOfSpaces(isAccountStewardAsApp, author, auth.spaces));
+          || (record.approvers.includes(author) && (liveApprovers.includes(author) || liveUnresolved)));
+        if (author && !authorized) {
+          // 8.12.0: a steward check a 429 left open judges nothing this hour (next sweep asks again).
+          const st = await stewardOfSpacesStatus(accountStewardStatusAsApp, author, auth.spaces);
+          if (st.unknown) { console.warn(`[WORKFLOW-SWEEP] ${idx.pageId}: who edited could not be checked (Confluence 429); judged next run`); continue; }
+          authorized = st.steward;
+        }
         if (authorized) {
           // An approver's or space admin's save is a sanctioned edit. The app's own version says nothing
           // about who: when its body equals the baseline's (a re-save) the baseline's history carries
@@ -1717,7 +1754,12 @@ export async function workflowSweep() {
         const mode = enforceModeOf(settings, { moved: auth.moved }); // the event path's rule (a moved page: revert)
         const alreadyNotified = await kvs.get(`workflow-integrity-notified-${idx.pageId}`);
         if (mode === "revert") {
-          const ok = await sweepRevertToApproved(idx.pageId, record);
+          // 8.12.0 (review 2026-10-18): give back the last SANCTIONED version, not the baseline blindly —
+          // an approver's or space admin's edit whose event never landed (dropped, or judged "unknown"
+          // while Confluence was limiting) is kept, as the event path keeps it. Unknown: next run.
+          const targetV = (live - record.approvedVersion > 1) ? await highestSanctionedVersion(idx.pageId, record, record.approvedVersion, live, auth.spaces) : record.approvedVersion;
+          if (targetV == null) { console.warn(`[WORKFLOW-SWEEP] ${idx.pageId}: who edited after the baseline could not be judged; judged next run`); continue; }
+          const ok = await sweepRevertToApproved(idx.pageId, record, targetV);
           // B2: the approved content the sweep's revert gave back (a copy of a copy names the original).
           const restoredContent = ok?.restoredContent ?? record.approvedVersion ?? null;
           if (ok) {
@@ -1734,7 +1776,7 @@ export async function workflowSweep() {
               target: { kind: "page", id: idx.pageId, name: null },
               details: {
                 mode: "revert", editor: author || null, approvedVersion: record.approvedVersion ?? null,
-                restoredTo: ok.wrote ? (record.approvedVersion ?? null) : null,
+                restoredTo: ok.wrote ? (ok.restoredTo ?? record.approvedVersion ?? null) : null, // the version the body was copied from (8.12.0: can be a later sanctioned one)
                 restoredContent: ok.wrote ? restoredContent : null, reviewedVersion: reviewedVersionOf(record),
                 reconciled: ok.wrote ? "reverted" : "baseline-advanced",
                 driftedVersion: live, via: "sweep",
@@ -2000,7 +2042,7 @@ async function rebaselineSanctionedEdit(sealRecord, artifactId, pageId, currentV
       return;
     }
     let newFileId = before.sealedFileId || sealRecord.sealedFileId || null;
-    const attRes = await asApp().requestConfluence(
+    const attRes = await appConfluence(
       route`/wiki/api/v2/attachments/${artifactId}`,
     );
     if (attRes.ok) {
@@ -2116,7 +2158,7 @@ async function handleSealedArtifactEdit(sealRecord, artifactId, contentId, atlas
   // transient details-GET failure doesn't abort the revert).
   let artifactName = attachment?.fileName || "attachment";
   try {
-    const ar = await asApp().requestConfluence(route`/wiki/api/v2/attachments/${artifactId}`);
+    const ar = await appConfluence(route`/wiki/api/v2/attachments/${artifactId}`);
     if (ar.ok) artifactName = (await ar.json())?.title || artifactName;
   } catch (_) { /* fall back to event fileName */ }
 
@@ -2152,7 +2194,7 @@ async function revertAttachmentToVersion(contentId, artifactId, title, targetVer
   for (let attempt = 0; attempt < 3; attempt++) {
     const backoff = () => new Promise((r) => setTimeout(r, Math.pow(2, attempt) * 500));
     try {
-      const dl = await asApp().requestConfluence(
+      const dl = await appConfluence(
         route`/wiki/rest/api/content/${contentId}/child/attachment/${artifactId}/download?version=${targetVersion}`,
       );
       if (!dl.ok) {
@@ -2164,7 +2206,7 @@ async function revertAttachmentToVersion(contentId, artifactId, title, targetVer
       formData.append("file", new Blob([fileBuffer]), title);
       formData.append("comment", "(Sentinel Vault automatically reversed modifications)");
       formData.append("minorEdit", "true");
-      const up = await asApp().requestConfluence(
+      const up = await appConfluence(
         route`/wiki/rest/api/content/${contentId}/child/attachment/${artifactId}/data`,
         { method: "POST", headers: { "X-Atlassian-Token": "nocheck" }, body: formData },
       );
@@ -2541,7 +2583,7 @@ const PAGE_GUARD_TTL_MS = 30 * 24 * 3600 * 1000;
 const PAGE_GUARD_ECHO_MS = 3 * 60 * 1000;
 
 async function readLiveVersion(pageId) {
-  const res = await asApp().requestConfluence(route`/wiki/api/v2/pages/${pageId}`, { headers: { Accept: "application/json" } });
+  const res = await appConfluence(route`/wiki/api/v2/pages/${pageId}`, { headers: { Accept: "application/json" } });
   if (!res.ok) return null;
   const data = await res.json();
   return { number: data?.version?.number || null, authorId: data?.version?.authorId || null, status: data?.status || null };
@@ -2653,7 +2695,7 @@ async function collectRecentlyEditedPagesForValidation() {
   if (!cfg || cfg.enabled !== true || !(cfg.rules || []).length) return [];
   try {
     const cql = `type = page and lastmodified > now("${VALIDATION_SWEEP_LOOKBACK}") order by lastmodified desc`;
-    const res = await asApp().requestConfluence(route`/wiki/rest/api/content/search?cql=${cql}&limit=${String(VALIDATION_SWEEP_LIMIT)}`, { headers: { Accept: "application/json" } });
+    const res = await appConfluence(route`/wiki/rest/api/content/search?cql=${cql}&limit=${String(VALIDATION_SWEEP_LIMIT)}`, { headers: { Accept: "application/json" } });
     if (!res.ok) { console.warn(`[PAGE-GUARD] validation lookback search answered ${res.status}`); return []; }
     const data = await res.json();
     return (data?.results || []).map((r) => String(r.id)).filter((id) => /^\d+$/.test(id));
@@ -2750,7 +2792,7 @@ async function confirmContainerStatus(id) {
   let sawOnly404 = true;
   for (const coll of ["pages", "blogposts"]) {
     try {
-      const res = await asApp().requestConfluence(
+      const res = await appConfluence(
         coll === "pages" ? route`/wiki/api/v2/pages/${id}` : route`/wiki/api/v2/blogposts/${id}`,
         { headers: { Accept: "application/json" } },
       );

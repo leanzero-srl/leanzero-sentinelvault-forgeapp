@@ -14,7 +14,8 @@
  * other publish keeps the cheap probes. A page that already carries a seal is read anyway.
  */
 import { kvs } from "@forge/kvs";
-import { asApp, route } from "@forge/api";
+import { route } from "@forge/api";
+import { appConfluence } from "../../shared/confluence-call.js";
 import { hashAdf } from "../../infra/doc-surgery.js";
 import { resolveSealHoldPeriod } from "../sealing/logic.js";
 import { currentUserProfile } from "../../shared/user-or-app.js";
@@ -55,7 +56,7 @@ export async function adoptInsertedSection({ pageId, spaceKey, spaceId, pageTitl
   let sid = spaceId || null;
   if (!title || !sid) {
     try {
-      const pr = await asApp().requestConfluence(route`/wiki/api/v2/pages/${pageId}`);
+      const pr = await appConfluence(route`/wiki/api/v2/pages/${pageId}`);
       if (pr.ok) { const pd = await pr.json(); title = title || pd.title || null; sid = sid || pd.spaceId || null; }
     } catch (_) { /* best effort */ }
   }

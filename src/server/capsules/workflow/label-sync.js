@@ -5,7 +5,8 @@
 // already uses — and are best-effort: a label failure must never fail a transition.
 // Loop safety: the app's own account writes the label, and the page trigger ignores its own
 // account, so a label write never re-enters enforcement.
-import { asApp, route } from "@forge/api";
+import { route } from "@forge/api";
+import { appConfluence } from "../../shared/confluence-call.js";
 import { fetchPageLabels } from "../../infra/labels.js";
 
 export const STATE_LABEL_PREFIX = "sv-state-";
@@ -24,7 +25,7 @@ export function planLabelSync(currentLabels, wanted) {
 }
 
 async function addLabel(pageId, name) {
-  const res = await asApp().requestConfluence(route`/wiki/rest/api/content/${pageId}/label`, {
+  const res = await appConfluence(route`/wiki/rest/api/content/${pageId}/label`, {
     method: "POST", headers: { "Content-Type": "application/json", Accept: "application/json" },
     body: JSON.stringify([{ prefix: "global", name }]),
   });
@@ -32,7 +33,7 @@ async function addLabel(pageId, name) {
 }
 
 async function removeLabel(pageId, name) {
-  const res = await asApp().requestConfluence(route`/wiki/rest/api/content/${pageId}/label?name=${name}`, { method: "DELETE" });
+  const res = await appConfluence(route`/wiki/rest/api/content/${pageId}/label?name=${name}`, { method: "DELETE" });
   return res.ok || res.status === 404;
 }
 
