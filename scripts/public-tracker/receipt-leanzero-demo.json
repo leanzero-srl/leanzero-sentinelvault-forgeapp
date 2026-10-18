@@ -33,7 +33,11 @@
     "8.3.0": "10397",
     "8.4.0": "10398",
     "8.5.0": "10399",
-    "8.6.0": "10432"
+    "8.6.0": "10432",
+    "8.7.0": "10465",
+    "8.8.0": "10466",
+    "8.9.0": "10467",
+    "8.10.0": "10468"
   },
   "issues": {
     "02dc09e3ae3c6c5a": {
@@ -375,6 +379,46 @@
     "known-space-admin-not-recognised": {
       "key": "SVT-89",
       "id": "28037"
+    },
+    "b976d32281146348": {
+      "key": "SVT-90",
+      "id": "28103"
+    },
+    "af2f3e700ff89f7d": {
+      "key": "SVT-91",
+      "id": "28104"
+    },
+    "c18d6488e2b7a206": {
+      "key": "SVT-92",
+      "id": "28105"
+    },
+    "3834ea20d2a15f13": {
+      "key": "SVT-93",
+      "id": "28106"
+    },
+    "74f98ff60ededcc2": {
+      "key": "SVT-94",
+      "id": "28107"
+    },
+    "20f17512cd5a49c6": {
+      "key": "SVT-95",
+      "id": "28108"
+    },
+    "09bea6bbb0ed6be3": {
+      "key": "SVT-96",
+      "id": "28109"
+    },
+    "15719e6c54496223": {
+      "key": "SVT-97",
+      "id": "28110"
+    },
+    "50b600968a6995cb": {
+      "key": "SVT-98",
+      "id": "28111"
+    },
+    "1c1b8543e800a102": {
+      "key": "SVT-99",
+      "id": "28112"
     }
   },
   "permissionScheme": {
@@ -387,7 +431,7 @@
     ],
     "assigned": true
   },
-  "updatedAt": "2026-10-17T16:22:41.063Z",
+  "updatedAt": "2026-10-18T11:12:49.121Z",
   "projectId": "10278",
   "issueTypeScheme": {
     "id": "10636",
@@ -429,7 +473,7 @@
     "undo": "DELETE /rest/api/3/permissionscheme/10265/permission/11703",
     "proof": {
       "GET /rest/api/3/issue/SVT-1": 200,
-      "GET /rest/api/3/issue/SVT-89": 200,
+      "GET /rest/api/3/issue/SVT-99": 200,
       "GET /rest/api/3/issue/ATLAS-2361": 404,
       "GET /rest/api/3/issue/CRBAK-1": 404,
       "GET /rest/api/3/issue/CRD-30": 404,
@@ -444,7 +488,7 @@
       "GET /rest/api/3/issue/ITHELP-1223": 404,
       "GET /rest/api/3/issue/KAN-1": 404,
       "GET /rest/api/3/issue/LEDGER-1225": 404,
-      "GET /rest/api/3/issue/LICW-38": 404,
+      "GET /rest/api/3/issue/LICW-39": 404,
       "GET /rest/api/3/issue/LZMT-307": 200,
       "GET /rest/api/3/issue/ORBIT-91": 404,
       "GET /rest/api/3/issue/PLATSUP-1222": 404,
@@ -453,17 +497,17 @@
       "GET /rest/api/3/issue/SEC-1225": 404,
       "GET /rest/api/3/issue/VOY-1992": 404,
       "anonymous site-wide search (bounded, all pages): issues per project": {
-        "SVT": 85,
+        "SVT": 95,
         "CRT": 377,
         "LZMT": 307
       },
-      "anonymous listing of SVT": "85 issues (receipt holds 85; 已完成 77, Backlog 6, Selected for Development 2)",
+      "anonymous listing of SVT": "95 issues (receipt holds 95; 已完成 89, Backlog 6)",
       "other projects whose scheme lets anyone browse": "CRT,LZMT",
       "public trackers (allowlist)": "CRT,SVT,LZMT",
       "negative control": "13 fake broken answers, each failed the verdict",
       "GET /jira/software/c/projects/SVT/issues": 200
     },
-    "provenAt": "2026-10-17T16:22:41.063Z",
+    "provenAt": "2026-10-18T11:12:49.121Z",
     "proofFailures": []
   }
 }

@@ -1,16 +1,16 @@
 # Sentinel Vault Public Tracker - verify file
 
-Generated 2026-10-17T16:22:15.439Z by scripts/public-tracker/tracker.mjs verify.
+Generated 2026-10-18T11:12:26.673Z by scripts/public-tracker/tracker.mjs verify.
 Site https://leanzero-demo.atlassian.net. Project SVT (id 10278), permission scheme "Sentinel Vault Public Tracker permissions" (id 10265, used by: SVT), anonymous grants: BROWSE_PROJECTS.
-Issues checked: 85 of 85. Verification failures: 0. Withheld release-note lines: 1.
+Issues checked: 95 of 95. Verification failures: 0. Withheld release-note lines: 1.
 
 ## Counts
 
-- status: Done 77; Backlog 6; Selected for Development 2
-- version: 6.4.0 5; 6.5.0 1; 6.6.0 6; 6.7.0 8; 6.9.0 4; 6.10.0 4; 6.11.0 1; 7.0.0 5; 7.1.0 8; 8.0.0 16; 8.1.0 1; 8.2.0 2; 8.3.0 1; 8.4.0 1; 8.5.0 1; 8.6.0 13; open, affects 7.1.0 6; open, affects 8.6.0 2
-- component: Classification 1; Sealed files and sections 12; Edit requests and access 2; REST API 3; Backup and restore 13; Layout and accessibility 5; Privacy and personal data 8; Space and site settings 7; Workflow and approvals 6; App permissions and updates 4; Page banner and Sentinel Vault window 6; Activity report 1; Jira issue attachments 13; My work 4
-- type: Improvement 42; Bug 43
-- versions in Jira: 6.4.0 released 2026-09-30, 6.5.0 released 2026-09-30, 6.6.0 released 2026-10-02, 6.7.0 released 2026-10-04, 6.9.0 released 2026-10-04, 6.10.0 released 2026-10-04, 6.11.0 released 2026-10-04, 7.0.0 released 2026-10-05, 7.1.0 released 2026-10-09, 8.0.0 released 2026-10-14, 8.1.0 released 2026-10-14, 8.2.0 released 2026-10-14, 8.3.0 released 2026-10-14, 8.4.0 released 2026-10-14, 8.5.0 released 2026-10-14, 8.6.0 released 2026-10-17
+- status: Done 89; Backlog 6
+- version: 6.4.0 5; 6.5.0 1; 6.6.0 6; 6.7.0 8; 6.9.0 4; 6.10.0 4; 6.11.0 1; 7.0.0 5; 7.1.0 8; 8.0.0 16; 8.1.0 1; 8.2.0 2; 8.3.0 1; 8.4.0 1; 8.5.0 1; 8.6.0 13; 8.7.0 1; 8.8.0 1; 8.9.0 5; 8.10.0 5; open, affects 7.1.0 6
+- component: Classification 1; Sealed files and sections 13; Edit requests and access 3; REST API 3; Backup and restore 13; Layout and accessibility 5; Privacy and personal data 8; Space and site settings 10; Workflow and approvals 9; App permissions and updates 4; Page banner and Sentinel Vault window 8; Activity report 1; Jira issue attachments 13; My work 4
+- type: Improvement 45; Bug 50
+- versions in Jira: 6.4.0 released 2026-09-30, 6.5.0 released 2026-09-30, 6.6.0 released 2026-10-02, 6.7.0 released 2026-10-04, 6.9.0 released 2026-10-04, 6.10.0 released 2026-10-04, 6.11.0 released 2026-10-04, 7.0.0 released 2026-10-05, 7.1.0 released 2026-10-09, 8.0.0 released 2026-10-14, 8.1.0 released 2026-10-14, 8.2.0 released 2026-10-14, 8.3.0 released 2026-10-14, 8.4.0 released 2026-10-14, 8.5.0 released 2026-10-14, 8.6.0 released 2026-10-17, 8.7.0 released 2026-10-17, 8.8.0 released 2026-10-17, 8.9.0 released 2026-10-18, 8.10.0 released 2026-10-18
 
 ## Issues
 
@@ -609,21 +609,87 @@ Issues checked: 85 of 85. Verification failures: 0. Withheld release-note lines:
 > Stricter checks on edits inside sealed sections.
 > Fixed in Sentinel Vault 8.6.0. A site still on version 7 or earlier gets it once a site admin approves the update in Confluence administration, Apps, Manage apps.
 
-### SVT-88 - The page banner can keep showing the old workflow state after the page is moved in another tab
+### SVT-88 - The page banner follows a workflow move made elsewhere, without a reload
 
-- type: Bug; status: Selected for Development; affects: 8.6.0; component: Workflow and approvals
+- type: Bug; status: Done (Done); fixVersion: 8.10.0; component: Workflow and approvals
 
-> What you see: If the page is moved to another workflow state after you opened it, for example from Draft to In Review in another browser tab, the Sentinel Vault banner on the page you already had open can keep showing the old state, Draft in that example. Choosing In Review from that banner then shows Already in that state, and the banner still shows Draft.
-> Where: The Sentinel Vault banner at the top of a page, in a space that uses a Sentinel Vault workflow.
-> Workaround: Reload the page. The banner then shows the page's current state.
-> Confirmed on Sentinel Vault 8.6.0. Status: open, fix scheduled.
+> A page's Sentinel Vault banner kept showing the workflow state it was opened with after the page was moved somewhere else, for example in another browser tab, and choosing a move from it only said Already in that state. The banner now follows a move made elsewhere within a few seconds, without a reload, and a move chosen from a banner that is out of date says which state the page is in and the banner then shows it.
+> Fixed in Sentinel Vault 8.10.0. A site still on version 7 or earlier gets it once a site admin approves the update in Confluence administration, Apps, Manage apps.
 
-### SVT-89 - A space admin is treated as an ordinary user unless they are also a site or Confluence admin or listed under Space admins in Sentinel Vault
+### SVT-89 - Space admins are recognised from the space's own permissions
 
-- type: Bug; status: Selected for Development; affects: 8.6.0; component: Space and site settings
+- type: Bug; status: Done (Done); fixVersion: 8.10.0; component: Space and site settings
 
-> What you see: Sentinel Vault does not recognise someone who is an admin of a space only through the space's own permissions, for example through the space's Admin role. On the space's Sentinel Vault page they are asked to request admin access, they cannot approve as a space admin or use the other space admin actions, and an edit they make to an Approved page moves the page back out of Approved or is undone, as an ordinary editor's would be.
-> Where: Spaces whose admins are not also site or Confluence admins and are not listed under Space admins in Sentinel Vault.
-> Workaround: On the space's Sentinel Vault page the space admin presses Request admin access, and a site admin approves it in the Access Control tab of that page. Sentinel Vault then lists them under Space admins and treats them as a space admin. The list does not follow Confluence: remove them there if they stop being a space admin.
-> Confirmed on Sentinel Vault 8.6.0. Status: open, fix scheduled.
+> A space admin who was not also a site or Confluence admin, or listed under Space admins in Sentinel Vault, was treated as an ordinary user: the space's Sentinel Vault page asked them to request admin access, they could not approve as a space admin or use the other space admin actions, and an edit they made to an Approved page moved the page back out of Approved or was undone, as an ordinary editor's would be. Sentinel Vault now reads the space's own permissions, so a space admin is recognised whether the permission is given directly, through a group or through the space's Admin role. Space admins therefore now have Sentinel Vault's space admin actions in their spaces, as people listed under Space admins already did.
+> Fixed in Sentinel Vault 8.10.0. A site still on version 7 or earlier gets it once a site admin approves the update in Confluence administration, Apps, Manage apps.
+
+### SVT-90 - Stricter checks on who can see a space's scan status
+
+- type: Bug; status: Done (Done); fixVersion: 8.7.0; component: Space and site settings
+
+> Stricter checks on who can see a space's scan status.
+> Fixed in Sentinel Vault 8.7.0. A site still on version 7 or earlier gets it once a site admin approves the update in Confluence administration, Apps, Manage apps.
+
+### SVT-91 - Stricter checks on who can see Sentinel Vault's settings
+
+- type: Bug; status: Done (Done); fixVersion: 8.8.0; component: Space and site settings
+
+> Stricter checks on who can see Sentinel Vault's space and site settings, and on who can run an AI review of a page.
+> Fixed in Sentinel Vault 8.8.0. A site still on version 7 or earlier gets it once a site admin approves the update in Confluence administration, Apps, Manage apps.
+
+### SVT-92 - A page moved to another space after its workflow started holds still
+
+- type: Improvement; status: Done (Done); fixVersion: 8.9.0; component: Workflow and approvals
+
+> A page that was moved to another space after its workflow started now holds still: only an admin of both spaces or a site admin can change its state or approve an approval request opened before the move (anyone else can only decline or withdraw it), and an Approved page keeps its protection, with an unapproved edit undone. To hand the page to its new space, one of those admins starts its workflow again. Starting the workflow again starts the page from the first state of the new space's workflow.
+> Added in Sentinel Vault 8.9.0. A site still on version 7 or earlier gets it once a site admin approves the update in Confluence administration, Apps, Manage apps.
+
+### SVT-93 - Assigning a workflow again is refused while a page is Approved or awaiting approval
+
+- type: Improvement; status: Done (Done); fixVersion: 8.9.0; component: Workflow and approvals
+
+> Assigning a workflow to a page again is refused while the page is Approved or an approval request is open, as taking it out of the workflow already was.
+> Added in Sentinel Vault 8.9.0. A site still on version 7 or earlier gets it once a site admin approves the update in Confluence administration, Apps, Manage apps.
+
+### SVT-94 - Stricter checks on acting on a page after it moves to another space
+
+- type: Bug; status: Done (Done); fixVersion: 8.9.0; component: Workflow and approvals
+
+> Stricter checks on who can act on a page's seals, edit requests and workflow after the page moves to another space.
+> Fixed in Sentinel Vault 8.9.0. A site still on version 7 or earlier gets it once a site admin approves the update in Confluence administration, Apps, Manage apps.
+
+### SVT-95 - A file on a blog post is sealed on that blog post
+
+- type: Bug; status: Done (Done); fixVersion: 8.9.0; component: Sealed files and sections
+
+> A file on a blog post is now sealed on that blog post.
+> Fixed in Sentinel Vault 8.9.0. A site still on version 7 or earlier gets it once a site admin approves the update in Confluence administration, Apps, Manage apps.
+
+### SVT-96 - The Sentinel Vault panel always uses the app's own macro key
+
+- type: Bug; status: Done (Done); fixVersion: 8.9.0; component: Page banner and Sentinel Vault window
+
+> The Sentinel Vault panel always uses the app's own macro key when it is added to a page, and a page whose panel macro carried another key gets the Sentinel Vault panel back the next time the app adds its panel there.
+> Fixed in Sentinel Vault 8.9.0. A site still on version 7 or earlier gets it once a site admin approves the update in Confluence administration, Apps, Manage apps.
+
+### SVT-97 - The site's AI review settings apply to every space
+
+- type: Improvement; status: Done (Done); fixVersion: 8.10.0; component: Space and site settings
+
+> The site's AI review settings now apply to every space. While AI review is turned off in the site settings, it stays off in every space, whatever the space's own setting, and no space can have a bigger monthly AI budget than the site's. While AI is off for the site, a page in a space whose workflow requires an AI review before Approved cannot reach Approved, because the review cannot run; a space admin can turn that requirement off in the space's Workflow settings. A space's Validations and Workflow settings say when a site admin has turned AI off, and a save that asks for more AI than the site allows is recorded in the space's activity.
+> Added in Sentinel Vault 8.10.0. A site still on version 7 or earlier gets it once a site admin approves the update in Confluence administration, Apps, Manage apps.
+
+### SVT-98 - A declined admin access request can be sent again only after 48 hours
+
+- type: Bug; status: Done (Done); fixVersion: 8.10.0; component: Edit requests and access
+
+> A declined request for admin access to a space could be filed again before the 48 hours the space's Sentinel Vault page shows had passed (from a page opened before the decision). It can now be sent again only 48 hours after it was declined, the page says so if you try earlier, and a request has to name a space you can see.
+> Fixed in Sentinel Vault 8.10.0. A site still on version 7 or earlier gets it once a site admin approves the update in Confluence administration, Apps, Manage apps.
+
+### SVT-99 - AI review progress is shown only to the person who started it
+
+- type: Bug; status: Done (Done); fixVersion: 8.10.0; component: Page banner and Sentinel Vault window
+
+> The progress of an AI review of a page is now shown only to the person who started it.
+> Fixed in Sentinel Vault 8.10.0. A site still on version 7 or earlier gets it once a site admin approves the update in Confluence administration, Apps, Manage apps.
 

@@ -42,6 +42,26 @@ export const COMPONENTS = {
 const JIRA_ON = "It works once a site admin has connected Jira to Sentinel Vault in Atlassian Administration.";
 
 export const ENTRIES = {
+  // 8.10.0 (2026-10-18). Outcome wording only (this file is public).
+  "15719e6c54496223": ["The site's AI review settings apply to every space", "C"],
+  "7edab779ec80d20d": ["Space admins are recognised from the space's own permissions", "C", { id: "known-space-admin-not-recognised" }],
+  "50b600968a6995cb": ["A declined admin access request can be sent again only after 48 hours", "E"],
+  "1c1b8543e800a102": ["AI review progress is shown only to the person who started it", "P"],
+  "784240429f3f7c19": ["The page banner follows a workflow move made elsewhere, without a reload", "W", { id: "known-workflow-banner-stale" }],
+
+  // 8.9.0 (2026-10-18). Outcome wording only (this file is public).
+  c18d6488e2b7a206: ["A page moved to another space after its workflow started holds still", "W"],
+  "3834ea20d2a15f13": ["Assigning a workflow again is refused while a page is Approved or awaiting approval", "W"],
+  "74f98ff60ededcc2": ["Stricter checks on acting on a page after it moves to another space", "W"],
+  "20f17512cd5a49c6": ["A file on a blog post is sealed on that blog post", "S"],
+  "09bea6bbb0ed6be3": ["The Sentinel Vault panel always uses the app's own macro key", "P"],
+
+  // 8.8.0 (2026-10-17). Outcome wording only (this file is public).
+  af2f3e700ff89f7d: ["Stricter checks on who can see Sentinel Vault's settings", "C"],
+
+  // 8.7.0 (2026-10-17). Outcome wording only (this file is public).
+  b976d32281146348: ["Stricter checks on who can see a space's scan status", "C"],
+
   // 8.6.0 (2026-10-16). Fixes worded as what holds now (this file is public).
   f2a8e80362c1cd57: ["Let it go deletes a deleted issue's kept copy before the 30 days run out", "M", {
     d: "On My work, the person who sealed a file on a Jira issue that was later deleted can delete the kept copy themselves with Let it go, instead of waiting for the 30 days to run out. " + JIRA_ON,
@@ -262,6 +282,7 @@ export const ENTRIES = {
 // the fix ships, the release-note line that fixes it takes the row over (`id: "<slug>"`) and moves
 // it to Done. 2026-10-17: known-workflow-banner-stale added, reproduced on the 8.6.0 production build;
 // known-space-admin-not-recognised added (8.6.0, leanzero-demo dry take + wolfaenpak harness).
+// 2026-10-18: both shipped in 8.10.0; their 8.10.0 lines take the rows over (id: "<slug>") and move them to Done.
 // Open items that would describe how protection can be got round are NOT written here (this file is
 // public); they go to the owner privately and are fixed instead.
 export const KNOWN = [
@@ -308,19 +329,5 @@ export const KNOWN = [
     see: "On a phone narrower than about 355 px, after you change a validation setting, the Not applied yet reminder can cover the Enforcement heading's text. It does not cover a button or a field.",
     where: "Space settings or Site settings, Validations tab, on a phone narrower than about 355 px.",
     workaround: "Scroll a little to read the heading. The reminder goes away once you press Apply or Discard.",
-  },
-  {
-    k: "known-workflow-banner-stale", c: "W", affects: "8.6.0", fix: "scheduled",
-    t: "The page banner can keep showing the old workflow state after the page is moved in another tab",
-    see: "If the page is moved to another workflow state after you opened it, for example from Draft to In Review in another browser tab, the Sentinel Vault banner on the page you already had open can keep showing the old state, Draft in that example. Choosing In Review from that banner then shows Already in that state, and the banner still shows Draft.",
-    where: "The Sentinel Vault banner at the top of a page, in a space that uses a Sentinel Vault workflow.",
-    workaround: "Reload the page. The banner then shows the page's current state.",
-  },
-  {
-    k: "known-space-admin-not-recognised", c: "C", affects: "8.6.0", fix: "scheduled",
-    t: "A space admin is treated as an ordinary user unless they are also a site or Confluence admin or listed under Space admins in Sentinel Vault",
-    see: "Sentinel Vault does not recognise someone who is an admin of a space only through the space's own permissions, for example through the space's Admin role. On the space's Sentinel Vault page they are asked to request admin access, they cannot approve as a space admin or use the other space admin actions, and an edit they make to an Approved page moves the page back out of Approved or is undone, as an ordinary editor's would be.",
-    where: "Spaces whose admins are not also site or Confluence admins and are not listed under Space admins in Sentinel Vault.",
-    workaround: "On the space's Sentinel Vault page the space admin presses Request admin access, and a site admin approves it in the Access Control tab of that page. Sentinel Vault then lists them under Space admins and treats them as a space admin. The list does not follow Confluence: remove them there if they stop being a space admin.",
   },
 ];
