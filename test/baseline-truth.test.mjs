@@ -121,6 +121,23 @@ try {
     const wf2 = await getWf();
     eq("[3] the revert restores the approver's v3", [wf2?.baseline?.baselineVersion, wf2?.baseline?.kind, wf2?.baseline?.contentOf], [5, "restored", 3]);
     ok("[3] sentence: v5 is a copy of v3, which an approver or space admin saved", /v5 is a copy of v3 that Sentinel Vault restored.*v3 was saved by an approver or space admin/.test(wf2?.baseline?.sentence || ""));
+    // Review 2026-10-18 #1: the editor's comment and the banner pill called v3 "the approved version".
+    const ct = commentsText(w);
+    ok("[3] the editor's comment: v3, the last version kept after approval v2", /reverted to v3, the last version kept after approval v2/.test(ct) && !/approved version \(v3\)/.test(ct));
+    const d = await lastDispatch();
+    eq("[3] the banner pill carries both: restored v3, approved v2", [d?.approvedVersion, d?.reviewedVersion], [3, 2]);
+  }
+  // 9. Review #2: the sweep finds an app-authored version with the baseline's content (a re-save) — the
+  //    baseline moves to it and still says whose content it holds.
+  {
+    const w = await approvedPage();
+    const v3 = w.edit(PAGE, PLAIN, "unapproved change");
+    await triggers.pageContentTrigger(event(PLAIN, v3)); // v4 = copy of approved v2
+    const p = w.pages.get(PAGE);
+    p.versions.push({ number: 5, authorId: APP, adf: JSON.parse(JSON.stringify(w.live(PAGE).adf)) }); // the app re-saves the same body
+    await triggers.workflowSweep();
+    const wf = await getWf();
+    eq("[9] sweep: the app's same-content v5 keeps the history", [wf?.baseline?.baselineVersion, wf?.baseline?.kind, wf?.baseline?.contentOf], [5, "unchanged", 2]);
   }
 
   // 4. The hourly sweep's revert records the same truth.
@@ -182,6 +199,20 @@ try {
   eq("[5] legacy record + the revert's activity row: restored copy of approved v7", [fromLog.kind, fromLog.contentOf, fromLog.reviewedVersion, fromLog.baselineVersion], ["restored", 7, 7, 9]);
   const unknown = describeBaseline(legacy, { activity: [] });
   ok("[5] legacy record, no row: a neutral sentence that credits nobody", /checked against v9/.test(unknown.sentence) && !APPROVER_CLAIM.test(unknown.sentence));
+  // Review #3: an earlier approval cycle's revert row must not carry the walk past this approval.
+  const cycle = describeBaseline({ enforce: true, approvedVersion: 6, approvalRecord: { pinnedVersion: 4 } }, { activity: [
+    { type: "workflow.enforced", version: 6, details: { mode: "revert", restoredTo: 4 } },
+    { type: "workflow.enforced", version: 4, details: { mode: "revert", restoredTo: 2 } },
+  ] });
+  eq("[5] the legacy walk stops at the reviewed version", [cycle.kind, cycle.contentOf], ["restored", 4]);
+  // Review #4: a privileged edit saved again by the app (seals restored) credits the edit's version, not the app's.
+  const { nextBaselineSource } = await import("../src/server/capsules/workflow/baseline.js");
+  const src = nextBaselineSource({ approvedVersion: 2 }, 4, { kind: "edit", editedIn: 3 });
+  eq("[5] a privileged edit re-saved by the app: content v4, edited in v3", [src?.contentOf, src?.editedIn], [4, 3]);
+  const eSentence = describeBaseline({ enforce: true, approvedVersion: 4, approvalRecord: { pinnedVersion: 2 }, baselineSource: src }).sentence;
+  ok("[5] ...the sentence credits v3 to the approver, v4 to Sentinel Vault", /updated by an approver or space admin in v3/.test(eSentence) && /v4/.test(eSentence) && !/approver or space admin in v4/.test(eSentence));
+  const after = describeBaseline({ enforce: true, approvedVersion: 6, approvalRecord: { pinnedVersion: 2 }, baselineSource: nextBaselineSource({ approvedVersion: 4, baselineSource: src }, 6, { kind: "restored", from: 4 }) }).sentence;
+  ok("[5] ...and a later revert never says the app's v4 was saved by an approver", !/v4 was saved by an approver/.test(after));
   const same = describeBaseline({ enforce: true, approvedVersion: 7, approvalRecord: { pinnedVersion: 7 } });
   eq("[5] baseline not moved: no sentence", [same.moved, same.sentence], [false, null]);
 }
