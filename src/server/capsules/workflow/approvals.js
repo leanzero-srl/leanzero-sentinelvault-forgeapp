@@ -423,7 +423,10 @@ async function finalizeApprovedTransition(pageId, stateId, pending, actorAccount
     // must NOT re-clear/re-notify — that would double-email or resurrect a phantom pending.
     if (res.success) {
       await clearPageApprovals(pageId, stateId, approvers);
-      await notifyApprovalResolved({ pageId, requestedBy: pending.requestedBy, outcome: "approved", targetName: pending.toStateName || stateId, deciderName: actorName }).catch(() => {});
+      // The comment names every approver who said yes and carries their typed reasons (the record
+      // above holds them, bounded), and the version they approved.
+      const approvals = (approvalRecord.decisions || []).filter((d) => d.decision === "approved").map((d) => ({ name: d.name || null, reason: d.reason || null }));
+      await notifyApprovalResolved({ pageId, requestedBy: pending.requestedBy, outcome: "approved", targetName: pending.toStateName || stateId, deciderName: actorName, pinnedVersion: pending.pinnedVersion, approvals }).catch(() => {});
       return { success: true, outcome: "approved", transitioned: true, record: res.record };
     }
     return { success: true, outcome: "approved", transitioned: false, alreadyCompleted: true };
