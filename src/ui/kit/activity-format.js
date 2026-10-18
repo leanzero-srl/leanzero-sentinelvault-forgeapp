@@ -94,6 +94,10 @@ const APP_NAME = "Sentinel Vault";
 // itself is server/shared/account-id.js (one copy for the writer, the readers and this file).
 export { looksLikeAccountId };
 
+// The editor a row's details name — never an accountId printed as a name (8.11.0; the reader names it,
+// server/capsules/activity/actor-names.js, and an account nobody can name reads as "Someone").
+const editorOf = (d) => [d?.editorName, d?.editor].find((v) => typeof v === "string" && v.trim() && !looksLikeAccountId(v)) || null;
+
 /** Who did it, for display: the actor's name; "Someone" for an account with no readable name; the app itself when there is no actor. */
 export const actorName = (entry) => {
   const a = entry?.actor;
@@ -219,8 +223,8 @@ export function formatActivity(entry) {
         detail: d.reason ? String(d.reason) : "" };
     case "seal.edit-reverted":
       return { ...base, label: "Change reverted", glyph: "undo", tone: "caution",
-        sentence: d.editorName || d.editor
-          ? `${d.editorName || d.editor} changed sealed file ${file()} — ${APP_NAME} put the sealed version back`
+        sentence: editorOf(d)
+          ? `${editorOf(d)} changed sealed file ${file()} — ${APP_NAME} put the sealed version back`
           : `Sealed file ${file()} was changed — ${APP_NAME} put the sealed version back`,
         detail: d.restoredTo != null ? `restored v${d.restoredTo}` : "" };
     case "seal.trash-restored":
@@ -337,7 +341,7 @@ export function formatActivity(entry) {
         detail: [d.outcome ? `outcome: ${d.outcome}` : "", d.reason ? String(d.reason) : ""].filter(Boolean).join(" · ") };
     }
     case "workflow.enforced": {
-      const editor = d.editorName || d.editor;
+      const editor = editorOf(d);
       const byWho = editor ? `${editor} edited` : "Someone edited";
       // B2 (2026-10-18): the row names the approved CONTENT the editor got back (restoredContent), not
       // the version the app copied it from — after an earlier revert that is the app's own copy (v9 of
