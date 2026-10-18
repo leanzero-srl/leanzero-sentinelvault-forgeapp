@@ -78,7 +78,8 @@ export function enforceCommentBody(pageId, editorId, kind, opts = {}) {
   const myVersion = opts.revertedVersion != null
     ? `<a href="${escapeXml(`/wiki/pages/viewpage.action?pageId=${pageId}&pageVersion=${opts.revertedVersion}`)}">open your version (v${escapeXml(opts.revertedVersion)})</a>`
     : `<a href="${escapeXml(historyUrl)}">view previous versions</a>`;
-  return `<p>${HEADER} — <strong>Reverted to the approved version</strong></p>
+  const heading = label && !label.startsWith("approved ") ? `Reverted to v${escapeXml(opts.approvedVersion)}` : "Reverted to the approved version";
+  return `<p>${HEADER} — <strong>${heading}</strong></p>
 <p>${m}this page is Approved and protected, so your change was reverted to ${backTo}. Your text is not lost: it is kept in the page history — ${myVersion}. To change an approved page, ask an approver or space admin to move it out of Approved first, or request approval for your version.</p>`;
 }
 

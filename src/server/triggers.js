@@ -60,7 +60,8 @@ import { isWorkflowHeld, mayEditInside } from "./shared/seal-authority.js"; // S
 import { isLiveAttachmentSeal, advancesSealedVersion } from "./shared/live-seal.js";
 import { workflowPrivilegeForPage } from "./capsules/workflow/privilege.js";
 import { enforceModeOf, eventPredatesBaseline, contentProtectionEnabled } from "./capsules/workflow/enforce-rules.js"; // 2026-10-16: one home per enforcement rule
-import { restoredContentOf, reviewedVersionOf } from "./capsules/workflow/baseline.js"; // B2: a revert names the approved content, never an approver
+import { restoredContentOf, reviewedVersionOf } from "./capsules/workflow/baseline.js";
+import { withLegacySource } from "./capsules/workflow/baseline-read.js"; // review round 2 D1: pre-8.11.0 records // B2: a revert names the approved content, never an approver
 
 // --- Fix 3 (CORE T6 extension): cross-run violation-comment dedup ---
 // K1: `violation-noticed-{pageId}-{targetId}-{class}`, TTL 24h, claimed BEFORE the footer
@@ -545,7 +546,9 @@ export async function pageContentTrigger(event) {
           newBaseline = writtenVersion; // app wrote (revert, or a seal restore on a privileged edit)
           // A privileged save the app saved again (seals restored): the edit is the editor's version, never the app's.
           cause = enforceReverted ? { kind: "restored", from: enforceRevertVersion, ...(enforceRevertContent || {}) }
-            : enforcement.action === "privileged" ? { kind: "edit", editedIn: typeof content?.version?.number === "number" ? content.version.number : null } : null;
+            // The version the app read and saved again (writtenVersion = the read version + 1), never the event's:
+            // a later save by the same editor may be what was read (review round 2 D3).
+            : enforcement.action === "privileged" ? { kind: "edit", editedIn: writtenVersion - 1 } : null;
         } else if (enforcement.action === "privileged") {
           newBaseline = content?.version?.number || (await fetchLivePageVersion(pageId)); // editor's live version
           cause = { kind: "edit" };
@@ -1454,7 +1457,7 @@ async function enforceApprovedStatePass(ctx, enf) {
   ctx.changed = true;
   ctx.enforcedRevert = true;                          // short-circuit A/B + suppress SV-M5
   ctx.enforceRevertTo = targetV;                      // for the comment copy (§5)
-  ctx.enforceRevertContent = restoredContentOf(rec, targetV); // B2: what comes back, judged on the record read here
+  ctx.enforceRevertContent = restoredContentOf(await withLegacySource(ctx.pageId, rec), targetV); // B2: what comes back, judged on the record read here
   ctx.enforceMessage = "(Sentinel Vault reverted unapproved change to the approved version)";
 }
 
@@ -1514,7 +1517,7 @@ export async function sweepRevertToApproved(pageId, record) {
   let approvedAdf;
   try { ({ adfDoc: approvedAdf } = await readDocBodyAtVersion(pageId, av)); } catch (_) { return false; }
   if (!approvedAdf?.content?.length) return false; // CL-1: never blank
-  const restored = restoredContentOf(fresh, av); // B2: what this revert gives back, on the record it read
+  const restored = restoredContentOf(await withLegacySource(pageId, fresh), av); // B2: what this revert gives back, on the record it read
   for (let attempt = 0; attempt < 3; attempt++) {
     let head;
     try { head = await readDocBody(pageId); } catch (_) { return false; }
