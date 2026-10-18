@@ -64,7 +64,7 @@ const FIRST_VERSION = [6, 4, 0];
 // published (each needs an entries.mjs row first); main may already carry later notes.
 // Raise it only to a version that is DEPLOYED TO PRODUCTION: an unlisted version's issues say it is
 // waiting for Marketplace approval, which is true only of a production build.
-const LAST_VERSION = [8, 11, 0];
+const LAST_VERSION = [8, 12, 0];
 // RELEASED = listed as "public" by the Marketplace's own versions endpoint (no login), and released in
 // Jira on the Marketplace's release date. Sentinel Vault has no deploy ledger, so the Marketplace is
 // the source; there is no hand-set constant to forget to raise or to raise too early (review

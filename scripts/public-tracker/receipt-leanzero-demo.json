@@ -38,7 +38,8 @@
     "8.8.0": "10466",
     "8.9.0": "10467",
     "8.10.0": "10468",
-    "8.11.0": "10469"
+    "8.11.0": "10469",
+    "8.12.0": "10502"
   },
   "issues": {
     "02dc09e3ae3c6c5a": {
@@ -432,6 +433,18 @@
     "67cde2be10130ab3": {
       "key": "SVT-102",
       "id": "28115"
+    },
+    "f5edf7b2eb1d89de": {
+      "key": "SVT-103",
+      "id": "28116"
+    },
+    "d9a9300f5335cbb7": {
+      "key": "SVT-104",
+      "id": "28117"
+    },
+    "98b39eaacb4a218c": {
+      "key": "SVT-105",
+      "id": "28118"
     }
   },
   "permissionScheme": {
@@ -444,7 +457,7 @@
     ],
     "assigned": true
   },
-  "updatedAt": "2026-10-18T16:08:34.280Z",
+  "updatedAt": "2026-10-18T19:13:41.102Z",
   "projectId": "10278",
   "issueTypeScheme": {
     "id": "10636",
@@ -486,7 +499,7 @@
     "undo": "DELETE /rest/api/3/permissionscheme/10265/permission/11703",
     "proof": {
       "GET /rest/api/3/issue/SVT-1": 200,
-      "GET /rest/api/3/issue/SVT-102": 200,
+      "GET /rest/api/3/issue/SVT-105": 200,
       "GET /rest/api/3/issue/ATLAS-2361": 404,
       "GET /rest/api/3/issue/CRBAK-1": 404,
       "GET /rest/api/3/issue/CRD-30": 404,
@@ -510,17 +523,17 @@
       "GET /rest/api/3/issue/SEC-1225": 404,
       "GET /rest/api/3/issue/VOY-1992": 404,
       "anonymous site-wide search (bounded, all pages): issues per project": {
-        "SVT": 98,
+        "SVT": 101,
         "CRT": 377,
         "LZMT": 307
       },
-      "anonymous listing of SVT": "98 issues (receipt holds 98; 已完成 92, Backlog 6)",
+      "anonymous listing of SVT": "101 issues (receipt holds 101; 已完成 95, Backlog 6)",
       "other projects whose scheme lets anyone browse": "CRT,LZMT",
       "public trackers (allowlist)": "CRT,SVT,LZMT",
       "negative control": "13 fake broken answers, each failed the verdict",
       "GET /jira/software/c/projects/SVT/issues": 200
     },
-    "provenAt": "2026-10-18T16:08:34.279Z",
+    "provenAt": "2026-10-18T19:13:41.102Z",
     "proofFailures": []
   }
 }
