@@ -131,6 +131,20 @@ try {
     const wf = await getWf();
     eq("[4] sweep revert: restored copy of approved v2", [wf?.baseline?.reviewedVersion, wf?.baseline?.baselineVersion, wf?.baseline?.kind, wf?.baseline?.contentOf], [2, 4, "restored", 2]);
   }
+  // 6. An approval recorded without an approval record (a space admin's direct move, or an older
+  //    path): the version it entered Approved at is still the reviewed one after a revert.
+  {
+    const w = await approvedPage();
+    const rec = await logic.readPageWorkflow(PAGE);
+    await logic.transitionPageWorkflow({ pageId: PAGE, spaceKey: SPACE, toStateId: "draft", actorAccountId: APPROVER, actorName: "Ana Approver" });
+    await logic.transitionPageWorkflow({ pageId: PAGE, spaceKey: SPACE, toStateId: "in_review", actorAccountId: PLAIN, actorName: "Pat Plain" });
+    const bare = await logic.transitionPageWorkflow({ pageId: PAGE, spaceKey: SPACE, toStateId: "approved", actorAccountId: APPROVER, actorName: "Ana Approver", approvers: rec.approvers, approvedVersion: 2 });
+    eq("[6] bed: approved with no approval record", [bare.success, (await logic.readPageWorkflow(PAGE)).approvalRecord ?? null], [true, null]);
+    const v3 = w.edit(PAGE, PLAIN, "unapproved change");
+    await triggers.pageContentTrigger(event(PLAIN, v3));
+    const wf = await getWf();
+    eq("[6] no approval record: the reviewed version is still the one it was approved at", [wf?.baseline?.reviewedVersion, wf?.baseline?.baselineVersion, wf?.baseline?.kind], [2, 4, "restored"]);
+  }
 } finally {
   loud();
 }
