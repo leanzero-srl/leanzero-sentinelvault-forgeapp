@@ -37,7 +37,8 @@
  */
 import { kvs, MetadataField, WhereConditions } from "@forge/kvs";
 import { Queue } from "@forge/events";
-import { asApp, route, __requestAtlassianAsApp } from "@forge/api";
+import { route, __requestAtlassianAsApp } from "@forge/api";
+import { appConfluence } from "../../shared/confluence-call.js";
 import { readEffective } from "../policies/settings-schema.js";
 import { isPastRetention, retainedFamily, effectiveRetentionDays } from "./retention.js";
 import {
@@ -258,7 +259,7 @@ async function ownAccountId() {
   const cached = await kvs.get("app-account-id").catch(() => null);
   if (typeof cached === "string" && cached) return cached;
   try {
-    const res = await asApp().requestConfluence(route`/wiki/rest/api/user/current`);
+    const res = await appConfluence(route`/wiki/rest/api/user/current`);
     if (res.ok) {
       const id = (await res.json())?.accountId;
       if (typeof id === "string" && id) { await kvs.set("app-account-id", id).catch(() => {}); return id; }
@@ -269,7 +270,7 @@ async function ownAccountId() {
 
 async function displayNameOf(accountId) {
   try {
-    const res = await asApp().requestConfluence(route`/wiki/rest/api/user?accountId=${accountId}`);
+    const res = await appConfluence(route`/wiki/rest/api/user?accountId=${accountId}`);
     if (res.ok) { const d = await res.json(); return d?.displayName || d?.publicName || null; }
   } catch (_) { /* name stays */ }
   return null;
@@ -278,26 +279,26 @@ async function displayNameOf(accountId) {
 // ── Confluence-side copies ──────────────────────────────────────────────────────────────────
 
 async function readPageProperty(pageId, key) {
-  const res = await asApp().requestConfluence(route`/wiki/api/v2/pages/${pageId}/properties?key=${key}`);
+  const res = await appConfluence(route`/wiki/api/v2/pages/${pageId}/properties?key=${key}`);
   if (!res.ok) return null;
   const row = (await res.json())?.results?.[0];
   return row ? { id: String(row.id), version: row.version?.number || 1, value: row.value } : null;
 }
 async function putPageProperty(pageId, row, key, value) {
-  const res = await asApp().requestConfluence(route`/wiki/api/v2/pages/${pageId}/properties/${row.id}`, {
+  const res = await appConfluence(route`/wiki/api/v2/pages/${pageId}/properties/${row.id}`, {
     method: "PUT", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ key, value, version: { number: row.version + 1 } }),
   });
   return res.ok;
 }
 async function readSpaceProperty(spaceId, key) {
-  const res = await asApp().requestConfluence(route`/wiki/api/v2/spaces/${spaceId}/properties?key=${key}`);
+  const res = await appConfluence(route`/wiki/api/v2/spaces/${spaceId}/properties?key=${key}`);
   if (!res.ok) return null;
   const row = (await res.json())?.results?.[0];
   return row ? { id: String(row.id), version: row.version?.number || 1, value: row.value } : null;
 }
 async function putSpaceProperty(spaceId, row, key, value) {
-  const res = await asApp().requestConfluence(route`/wiki/api/v2/spaces/${spaceId}/properties/${row.id}`, {
+  const res = await appConfluence(route`/wiki/api/v2/spaces/${spaceId}/properties/${row.id}`, {
     method: "PUT", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ key, value, version: { number: row.version + 1 } }),
   });

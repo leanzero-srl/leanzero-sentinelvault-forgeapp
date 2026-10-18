@@ -10,7 +10,8 @@
  * Content property `sentinel-vault-workflow` mirrors {workflowId,stateId,enteredAt} for CQL + cheap trigger probe.
  * NEVER overload `sentinel-vault-validation` (separate subsystem, separate rewrite cadence).
  */
-import { asApp, route } from "@forge/api";
+import { route } from "@forge/api";
+import { appConfluence } from "../../shared/confluence-call.js";
 import { kvs, WhereConditions } from "@forge/kvs";
 import { recordActivity } from "../../infra/activity-log.js";
 import { syncStateLabel } from "./label-sync.js";
@@ -411,7 +412,7 @@ export async function readPageWorkflow(pageId) {
 // Returns null on any failure; callers treat null as fail-closed, never "no drift".
 export async function fetchLivePageVersion(pageId) {
   try {
-    const res = await asApp().requestConfluence(route`/wiki/api/v2/pages/${pageId}`);
+    const res = await appConfluence(route`/wiki/api/v2/pages/${pageId}`);
     if (res.ok) return (await res.json())?.version?.number ?? null;
   } catch (_) { /* fail-closed */ }
   return null;
@@ -466,14 +467,14 @@ async function writeStateContentProp(pageId, record) {
     ...(record.enforce === true ? baselineFields(record) : { reviewedVersion: null, baselineVersion: null, baselineKind: null, baselineContentOf: null }),
   };
   try {
-    const getRes = await asApp().requestConfluence(
+    const getRes = await appConfluence(
       route`/wiki/api/v2/pages/${pageId}/properties?key=${WORKFLOW_STATE_PROP}`,
     );
     if (!getRes.ok) return;
     const body = await getRes.json();
     const existing = body.results?.[0];
     if (existing) {
-      await asApp().requestConfluence(
+      await appConfluence(
         route`/wiki/api/v2/pages/${pageId}/properties/${existing.id}`,
         {
           method: "PUT",
@@ -482,7 +483,7 @@ async function writeStateContentProp(pageId, record) {
         },
       );
     } else {
-      await asApp().requestConfluence(
+      await appConfluence(
         route`/wiki/api/v2/pages/${pageId}/properties`,
         {
           method: "POST",
@@ -605,9 +606,9 @@ export async function unassignPageWorkflow({ pageId, actorAccountId = null, acto
   ]) await kvs.delete(k).catch(() => {});
   // The page property the trigger's enforcement probe and CQL read — gone with the workflow.
   try {
-    const res = await asApp().requestConfluence(route`/wiki/api/v2/pages/${pageId}/properties?key=${WORKFLOW_STATE_PROP}`);
+    const res = await appConfluence(route`/wiki/api/v2/pages/${pageId}/properties?key=${WORKFLOW_STATE_PROP}`);
     const existing = res.ok ? (await res.json())?.results?.[0] : null;
-    if (existing?.id) await asApp().requestConfluence(route`/wiki/api/v2/pages/${pageId}/properties/${existing.id}`, { method: "DELETE" });
+    if (existing?.id) await appConfluence(route`/wiki/api/v2/pages/${pageId}/properties/${existing.id}`, { method: "DELETE" });
   } catch (e) { console.warn(`[WORKFLOW] remove: property cleanup failed for ${pageId}:`, e?.message || e); }
   // A state label (label sync on) no longer describes the page.
   try { const { syncStateLabel } = await import("./label-sync.js"); await syncStateLabel(pageId, null); } catch (_) { /* best effort */ }
@@ -993,8 +994,8 @@ export async function setPageReviewDue({ pageId, reviewDueAt, actorAccountId, ac
 export async function bulkAssignPagesInSpace({ spaceKey, spaceId, cursor, actorAccountId }) {
   if (!spaceKey || !spaceId) return { success: false, reason: "spaceKey and spaceId required" };
   const listRes = cursor
-    ? await asApp().requestConfluence(route`/wiki/api/v2/spaces/${spaceId}/pages?status=current&limit=10&cursor=${cursor}`)
-    : await asApp().requestConfluence(route`/wiki/api/v2/spaces/${spaceId}/pages?status=current&limit=10`);
+    ? await appConfluence(route`/wiki/api/v2/spaces/${spaceId}/pages?status=current&limit=10&cursor=${cursor}`)
+    : await appConfluence(route`/wiki/api/v2/spaces/${spaceId}/pages?status=current&limit=10`);
   if (!listRes.ok) return { success: false, reason: `Could not list pages (${listRes.status})` };
   const body = await listRes.json();
   const pages = body?.results || [];

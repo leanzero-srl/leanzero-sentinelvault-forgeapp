@@ -14,7 +14,8 @@
  * (`postCommentWithMention`) derives the space from the page.
  */
 
-import { asApp, route } from "@forge/api";
+import { route } from "@forge/api";
+import { appConfluence } from "../shared/confluence-call.js";
 import { postCommentWithMention } from "./outbound-notify.js";
 import {
   composeViolationLayout,
@@ -76,7 +77,7 @@ export async function fetchOperatorProfile(accountId) {
   let displayName = "Unknown User";
 
   try {
-    const response = await asApp().requestConfluence(
+    const response = await appConfluence(
       route`/wiki/rest/api/user?accountId=${accountId}`,
     );
     if (response.ok) {
@@ -96,7 +97,7 @@ export async function fetchOperatorProfile(accountId) {
 async function resolvePageUrl(pageId) {
   if (!pageId) return { pageTitle: "Unknown Page", pageUrl: "", historyUrl: "" };
   try {
-    const response = await asApp().requestConfluence(
+    const response = await appConfluence(
       route`/wiki/api/v2/pages/${pageId}`,
     );
     if (!response.ok) return { pageTitle: "Unknown Page", pageUrl: "", historyUrl: "" };

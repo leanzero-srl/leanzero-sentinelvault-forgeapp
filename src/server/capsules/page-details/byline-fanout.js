@@ -14,7 +14,8 @@
  * five quick default changes cost one walk. Never awaited into anyone's success: queueing is best
  * effort and logged.
  */
-import { asApp, route } from "@forge/api";
+import { route } from "@forge/api";
+import { appConfluence } from "../../shared/confluence-call.js";
 import { kvs, WhereConditions } from "@forge/kvs";
 import { mapLimited } from "../../shared/map-limited.js";
 
@@ -57,7 +58,7 @@ export async function queueBylineRefresh(spaceIds, why = "") {
 export async function queueBylineRefreshForKey(spaceKey, why = "") {
   if (!spaceKey) return 0;
   try {
-    const res = await asApp().requestConfluence(route`/wiki/api/v2/spaces?keys=${spaceKey}&limit=1`, { headers: { Accept: "application/json" } });
+    const res = await appConfluence(route`/wiki/api/v2/spaces?keys=${spaceKey}&limit=1`, { headers: { Accept: "application/json" } });
     const id = res.ok ? (await res.json())?.results?.[0]?.id : null;
     return id != null ? queueBylineRefresh([String(id)], why) : 0;
   } catch (e) {
@@ -100,7 +101,7 @@ export async function runBylineRefreshJob(body) {
     const url = coll === "blogposts"
       ? (next ? route`/wiki/api/v2/spaces/${spaceId}/blogposts?limit=50&cursor=${next}` : route`/wiki/api/v2/spaces/${spaceId}/blogposts?limit=50`)
       : (next ? route`/wiki/api/v2/spaces/${spaceId}/pages?limit=50&cursor=${next}` : route`/wiki/api/v2/spaces/${spaceId}/pages?limit=50`);
-    const res = await asApp().requestConfluence(url, { headers: { Accept: "application/json" } });
+    const res = await appConfluence(url, { headers: { Accept: "application/json" } });
     if (!res.ok) { console.warn(`[BYLINE-FANOUT] ${spaceId} ${coll} list → ${res.status}`); next = null; break; }
     const data = await res.json();
     const ids = (data?.results || []).map((p) => String(p?.id || "")).filter((id) => NUMERIC.test(id));

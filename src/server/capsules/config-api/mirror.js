@@ -16,6 +16,7 @@
  * (in the 7.0 batch); until consented, the space mirror logs the 403 and moves on.
  */
 import { asApp, route } from "@forge/api";
+import { appConfluence } from "../../shared/confluence-call.js";
 import { mirrorProperty } from "../classification/logic.js";
 import { confluenceRequest } from "../classification/provider.js";
 import { pushReceipt, redactConfigForMirror, RECEIPTS_KEPT } from "./pure.js";
@@ -29,7 +30,7 @@ const log = (m) => console.warn(m.replace("[CLASSIFICATION]", "[CONFIG-API]"));
 export async function spaceIdByKey(spaceKey) {
   if (!spaceKey) return null;
   try {
-    const res = await asApp().requestConfluence(route`/wiki/api/v2/spaces?keys=${spaceKey}&limit=1`, { headers: { Accept: "application/json" } });
+    const res = await appConfluence(route`/wiki/api/v2/spaces?keys=${spaceKey}&limit=1`, { headers: { Accept: "application/json" } });
     if (!res.ok) return null;
     const s = (await res.json())?.results?.[0];
     return s?.id != null ? String(s.id) : null;
@@ -126,7 +127,7 @@ export async function refreshConfigMirror(target, accountId) {
     const out = [];
     for (const id of target.spaceIds) {
       try {
-        const r = await asApp().requestConfluence(route`/wiki/api/v2/spaces/${id}`);
+        const r = await appConfluence(route`/wiki/api/v2/spaces/${id}`);
         const key = r.ok ? (await r.json())?.key : null;
         if (key) out.push(await mirrorSpaceConfig(key, await exportSpaceConfig(key, accountId)));
       } catch (e) { log(`[CONFIG-API] space ${id} mirror skipped: ${e?.message || e}`); }

@@ -1,4 +1,5 @@
-import { asApp, asUser, route } from "@forge/api";
+import { asApp, route } from "@forge/api";
+import { appConfluence } from "../../shared/confluence-call.js";
 import { currentUserProfile } from "../../shared/user-or-app.js";
 import { kvs, WhereConditions } from "@forge/kvs";
 
@@ -240,7 +241,7 @@ export const sealSection = async (req) => {
 
   let pageTitle = "Unknown Page";
   try {
-    const pr = await asApp().requestConfluence(route`/wiki/api/v2/pages/${pageId}`);
+    const pr = await appConfluence(route`/wiki/api/v2/pages/${pageId}`);
     if (pr.ok) { const pd = await pr.json(); pageTitle = pd.title || pageTitle; if (!realmId && pd.spaceId) realmId = pd.spaceId; }
   } catch (_) { /* best effort */ }
 

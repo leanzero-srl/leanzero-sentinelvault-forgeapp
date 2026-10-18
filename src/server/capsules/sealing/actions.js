@@ -1,4 +1,5 @@
 import { asUser, asApp, route } from "@forge/api";
+import { appConfluence, userConfluence } from "../../shared/confluence-call.js";
 import { requestUserOrApp, currentUserProfile } from "../../shared/user-or-app.js";
 import { kvs, WhereConditions } from "@forge/kvs";
 
@@ -73,7 +74,7 @@ const enumerateDocArtifacts = async (req) => {
       url = route`/wiki/api/v2/pages/${contentId}/attachments?limit=${limit}&cursor=${cursor}`;
     }
 
-    const response = await asUser().requestConfluence(url);
+    const response = await userConfluence(url);
 
     if (!response.ok) {
       const errorText = await response.text();
@@ -127,7 +128,7 @@ const enumerateDocArtifacts = async (req) => {
         // Labels via v2 API
         let labels = [];
         try {
-          const labelsRes = await asUser().requestConfluence(
+          const labelsRes = await userConfluence(
             route`/wiki/api/v2/attachments/${att.id}/labels`,
           );
           if (labelsRes.ok) {
@@ -181,7 +182,7 @@ const enumerateDocArtifacts = async (req) => {
     // the cards on screen, not the attachments on the page).
     let counts = null;
     if (!cursor || cursor === "0") {
-      try { counts = await countPageAttachments(contentId, req.context.accountId, (u) => asUser().requestConfluence(u)); }
+      try { counts = await countPageAttachments(contentId, req.context.accountId, (u) => userConfluence(u)); }
       catch (e) { console.warn("[ENUMERATE-DOC-ARTIFACTS] counts failed:", e?.message || e); }
     }
     return {
@@ -366,7 +367,7 @@ const sealArtifact = async (req) => {
     realmKey = await resolvePageSpaceKey(contentId);
     if (realmKey && !realmId) {
       try {
-        const sres = await asApp().requestConfluence(route`/wiki/api/v2/spaces?keys=${realmKey}&limit=1`, { headers: { Accept: "application/json" } });
+        const sres = await appConfluence(route`/wiki/api/v2/spaces?keys=${realmKey}&limit=1`, { headers: { Accept: "application/json" } });
         const sid = sres.ok ? (await sres.json())?.results?.[0]?.id : null;
         if (sid != null) realmId = String(sid);
       } catch (_) { /* index leg keyed by the policy row's spaceId below, if any */ }
@@ -917,7 +918,7 @@ const enumerateOperatorSeals = async (req) => {
         // recoverable → mark stale (enumeratePageSeals parity); anything transient keeps the
         // seal and just skips the row for this render.
         try {
-          const artifactResponse = await asUser().requestConfluence(
+          const artifactResponse = await userConfluence(
             route`/wiki/api/v2/attachments/${artifactId}`,
           );
           if (!artifactResponse.ok) {
@@ -958,7 +959,7 @@ const enumerateOperatorSeals = async (req) => {
 
         if (value.contentId) {
           try {
-            const pageResponse = await asUser().requestConfluence(
+            const pageResponse = await userConfluence(
               route`/wiki/api/v2/pages/${value.contentId}`,
             );
             if (pageResponse.ok) {
@@ -970,7 +971,7 @@ const enumerateOperatorSeals = async (req) => {
 
               if (pageData.spaceId) {
                 try {
-                  const realmResponse = await asUser().requestConfluence(
+                  const realmResponse = await userConfluence(
                     route`/wiki/api/v2/spaces/${pageData.spaceId}`,
                   );
                   if (realmResponse.ok) {
@@ -1102,7 +1103,7 @@ const enumeratePageSeals = async (req) => {
         let isStale = false;
         let staleReason = null;
         try {
-          const probeRes = await asApp().requestConfluence(
+          const probeRes = await appConfluence(
             route`/wiki/api/v2/attachments/${artifactId}`,
           );
           if (probeRes.ok) {
@@ -1183,7 +1184,7 @@ export const restoreSealedArtifact = async (req) => {
   }
 
   // Probe attachment status
-  const probeRes = await asApp().requestConfluence(
+  const probeRes = await appConfluence(
     route`/wiki/api/v2/attachments/${attachmentId}`,
   );
 
@@ -1293,7 +1294,7 @@ export const purgeSealRecord = async (req) => {
   // attachment's v2 body names its page; the seal record names the page it was sealed on.
   let probeData = null;
   try {
-    const probeRes = await asApp().requestConfluence(route`/wiki/api/v2/attachments/${attachmentId}`);
+    const probeRes = await appConfluence(route`/wiki/api/v2/attachments/${attachmentId}`);
     if (probeRes.ok) probeData = await probeRes.json();
   } catch (err) {
     console.warn(`[PURGE] probe of ${attachmentId} failed:`, err);
@@ -1337,7 +1338,7 @@ export const purgeSealRecord = async (req) => {
     if (probeData) {
       if (probeData.status === "current") {
         // Trash it first
-        const trashRes = await asUser().requestConfluence(
+        const trashRes = await userConfluence(
           route`/wiki/api/v2/attachments/${attachmentId}`,
           { method: "DELETE" },
         );
@@ -1346,7 +1347,7 @@ export const purgeSealRecord = async (req) => {
         }
       }
       // Now permanently delete
-      const purgeRes = await asApp().requestConfluence(
+      const purgeRes = await appConfluence(
         route`/wiki/api/v2/attachments/${attachmentId}?purge=true`,
         { method: "DELETE" },
       );
@@ -1437,7 +1438,7 @@ const ribbonSummary = async (req) => {
       const url = coll === "blogposts"
         ? (cursor ? route`/wiki/api/v2/blogposts/${pageId}/attachments?limit=250&cursor=${cursor}` : route`/wiki/api/v2/blogposts/${pageId}/attachments?limit=250`)
         : (cursor ? route`/wiki/api/v2/pages/${pageId}/attachments?limit=250&cursor=${cursor}` : route`/wiki/api/v2/pages/${pageId}/attachments?limit=250`);
-      const res = await asApp().requestConfluence(url);
+      const res = await appConfluence(url);
       if (!res.ok) return res.status;
       const data = await res.json();
       for (const att of data?.results || []) if (att?.id) ids.push(String(att.id));
@@ -1481,7 +1482,7 @@ const ribbonSummary = async (req) => {
   // where its owner restores it, and the ribbon is the only door to that overlay. The default
   // listing excludes trashed attachments, so ask for them explicitly (best effort).
   if (attachmentsOk) try {
-    const trashed = await asApp().requestConfluence(route`/wiki/api/v2/${collection}/${pageId}/attachments?status=trashed&limit=250`);
+    const trashed = await appConfluence(route`/wiki/api/v2/${collection}/${pageId}/attachments?status=trashed&limit=250`);
     if (trashed.ok) {
       const tdata = await trashed.json();
       const tids = (tdata?.results || []).map((a) => String(a?.id || "")).filter((id) => id && !ids.includes(id));

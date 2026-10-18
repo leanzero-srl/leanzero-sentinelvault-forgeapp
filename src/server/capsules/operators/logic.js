@@ -1,4 +1,5 @@
-import { asUser, route } from "@forge/api";
+import { route } from "@forge/api";
+import { userConfluence } from "../../shared/confluence-call.js";
 
 /**
  * Get operator information by account ID
@@ -9,7 +10,7 @@ import { asUser, route } from "@forge/api";
  */
 export async function identifyOperatorById(accountId, cloudId) {
   try {
-    const response = await asUser().requestConfluence(
+    const response = await userConfluence(
       route`/wiki/rest/api/user?accountId=${accountId}`,
     );
     const operatorData = await response.json();
@@ -58,7 +59,7 @@ export async function searchOperatorsByName(query, limit = 50, cloudId) {
     // Use the correct Confluence API endpoint with CQL parameter
     const cqlQuery = `user.fullname~${encodeURIComponent(query)}`;
 
-    const response = await asUser().requestConfluence(
+    const response = await userConfluence(
       route`/wiki/rest/api/search/user?cql=${cqlQuery}&limit=${limit}&expand=operations,personalSpace`,
     );
 
@@ -128,7 +129,7 @@ export async function getInitialOperators(cloudId) {
   try {
     const cqlQuery = `type=user`;
 
-    const response = await asUser().requestConfluence(
+    const response = await userConfluence(
       route`/wiki/rest/api/search/user?cql=${cqlQuery}&limit=10&expand=`,
     );
 

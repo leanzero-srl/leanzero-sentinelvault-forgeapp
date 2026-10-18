@@ -14,7 +14,8 @@
  *                                   enumeratePageSeals still does. Sections come from the one
  *                                   paginated reader (listSectionSealRecordsForPage).
  */
-import { asApp, route } from "@forge/api";
+import { route } from "@forge/api";
+import { appConfluence } from "../../shared/confluence-call.js";
 import { kvs } from "@forge/kvs";
 import { listSectionSealRecordsForPage } from "../section-seals/logic.js";
 
@@ -31,7 +32,7 @@ export async function readPageMeta(pageId) {
   if (!NUMERIC.test(String(pageId ?? ""))) return null;
   for (const coll of ["pages", "blogposts"]) {
     try {
-      const res = await asApp().requestConfluence(
+      const res = await appConfluence(
         coll === "pages" ? route`/wiki/api/v2/pages/${pageId}` : route`/wiki/api/v2/blogposts/${pageId}`,
         { headers: { Accept: "application/json" } },
       );
@@ -59,7 +60,7 @@ async function listAttachments(pageId, collection, status) {
         ? (cursor ? route`/wiki/api/v2/pages/${pageId}/attachments?status=${status}&limit=250&cursor=${cursor}` : route`/wiki/api/v2/pages/${pageId}/attachments?status=${status}&limit=250`)
         : (cursor ? route`/wiki/api/v2/pages/${pageId}/attachments?limit=250&cursor=${cursor}` : route`/wiki/api/v2/pages/${pageId}/attachments?limit=250`);
     }
-    const res = await asApp().requestConfluence(url, { headers: { Accept: "application/json" } });
+    const res = await appConfluence(url, { headers: { Accept: "application/json" } });
     if (!res.ok) throw new Error(`attachments ${status || "current"} → ${res.status}`);
     const data = await res.json();
     for (const a of data?.results || []) if (a?.id) ids.push({ id: String(a.id), title: a.title || "", fileSize: a.fileSize ?? null, mediaType: a.mediaType || null, createdAt: a.createdAt || null, version: a.version?.number ?? null, downloadLink: a.downloadLink || a._links?.download || null });
