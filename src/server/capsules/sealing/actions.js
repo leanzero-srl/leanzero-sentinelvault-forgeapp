@@ -33,7 +33,7 @@ import { validateReleaseReason } from "../../shared/release-reason.js";
 import { notifyWatchers, sweepWatchers } from "../bulletins/logic.js";
 import { sweepEditAccess } from "../editreq/logic.js";
 import { triggerPanelEmbed, removePanelNode } from "../../infra/doc-surgery.js";
-import { refreshByline, writeBylineFor } from "../page-details/byline.js"; // 5.0 byline chip — one line per seal write, never awaited into the result
+import { refreshByline, writeBylineFor, composeByline } from "../page-details/byline.js"; // 5.0 byline chip — one line per seal write, never awaited into the result
 // 5.0 ribbon (mockup §2/§3): the summary carries the classification, the steward's ribbon setting,
 // the viewer's waiting-on-me numbers for THIS page and the first seal the viewer does not own.
 import { getClassificationProvider, classificationActiveForPage } from "../classification/provider.js";
@@ -1509,15 +1509,20 @@ const ribbonSummary = async (req) => {
   // — the same stamp-checked write the details modal does, so an unchanged chip costs one KVS read.
   // Only with a known seal count; bounded so the banner never waits long on the property write.
   if (attachmentsOk) {
+    const wf = await workflowRead;
+    // 8.11.0: the answer carries the byline the page should show, so the banner can hand a CHANGED one
+    // to Confluence (kit/byline-sync.js): an open page renders its byline item from the property once,
+    // at load, and never re-reads it. The same composeByline the property write uses, from the same
+    // inputs; none when the workflow read failed (no chip without it, as below).
+    const bylineInputs = wf === undefined ? null : {
+      level: out.classification?.level || null, source: out.classification?.source || "none", classificationEnabled: out.classification?.enabled === true,
+      sealCount: liveSeals.filter(({ record }) => record?.lockedBy).length + sectionRecords.length,
+      workflow: wf?.status || null,
+    };
+    if (bylineInputs) out.byline = composeByline(bylineInputs);
     const write = (async () => {
-      const wf = await workflowRead;
-      if (wf === undefined) return null; // the workflow read failed: do not write a chip without it
-      const c = out.classification || {};
-      return writeBylineFor(pageId, {
-        level: c.level || null, source: c.source || "none", classificationEnabled: c.enabled === true,
-        sealCount: liveSeals.filter(({ record }) => record?.lockedBy).length + sectionRecords.length,
-        workflow: wf?.status || null,
-      }, { lazy: true });
+      if (!bylineInputs) return null; // the workflow read failed: do not write a chip without it
+      return writeBylineFor(pageId, bylineInputs, { lazy: true });
     })().catch((e) => console.warn("[RIBBON] byline refresh failed:", e?.message || e));
     await Promise.race([write, new Promise((r) => setTimeout(r, 1500))]);
   }

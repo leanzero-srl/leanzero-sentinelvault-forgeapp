@@ -17,6 +17,8 @@ import React, { useState, useEffect, useCallback, useRef } from "react";
 import { createRoot } from "react-dom/client";
 import { createPortal } from "react-dom";
 import { invoke, view, Modal, router } from "@forge/bridge";
+import { updateBylineProperties } from "@forge/confluence-bridge"; // 8.11.0: keep the byline item under the title in step
+import { bylineSyncStep } from "../../kit/byline-sync.js";
 import { enablePaletteSync } from "../../kit/palette-sync";
 import { myWorkPath } from "../../kit/my-work-path.js";
 import { useActionMenu } from "../../kit/ActionMenu";
@@ -852,6 +854,9 @@ const readSummaryStub = () => {
   try { const s = window.__svRibbonSummaryStub; return s && (typeof s === "object" || typeof s === "function") ? s : null; } catch (_) { return null; }
 };
 
+// The byline module's contentPropertyKey (manifest.yml; page-details/byline.js BYLINE_PROPERTY_KEY).
+const BYLINE_KEY = "sentinel-byline";
+
 const DocumentRibbon = () => {
   const [summary, setSummary] = useState(null); // ribbon-summary answer
   const [summaryError, setSummaryError] = useState(null); // reason string when the summary could not be read
@@ -872,6 +877,7 @@ const DocumentRibbon = () => {
   const openStateRef = useRef(null); // true after view.open(), false after view.close(), null = untouched
   const evalSeq = useRef(0);
   const evaluateRef = useRef(null); // the current `evaluate`, for the guard's deferred re-run
+  const bylineRef = useRef(null); // kit/byline-sync.js state: the byline the page's item shows
 
   // Apply a decision to the bridge exactly when it changes.
   const applyVisibility = useCallback((show, why) => {
@@ -923,6 +929,12 @@ const DocumentRibbon = () => {
         res = await invoke("ribbon-summary", { pageId: id });
       }
       console.info("[ribbon] summary", res);
+      // 8.11.0: the byline item under the title is rendered by Confluence from a content property it
+      // reads once, at load. When the answer's byline changed (a move made elsewhere reached this
+      // banner through the workflow stamp, or this banner made one), hand it to Confluence.
+      const step = bylineSyncStep(bylineRef.current, id, res?.byline || null);
+      bylineRef.current = step.state;
+      if (step.push) updateBylineProperties({ propertyKey: BYLINE_KEY, valueUpdate: step.push }).catch((e) => console.info("[ribbon] byline update failed", e?.message || e));
       const failed = !res || typeof res !== "object" || (res.ok !== true && res.reason !== "none");
       // B (2026-09-30): an answer that could not list the attachments still carries the level —
       // keep it, so the row shows the classification and names what could not be checked.
