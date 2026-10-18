@@ -211,7 +211,16 @@ qualifier (`Approved v3`, `Awaiting approval 1 of 2`, `Declined Sep 19`, `Review
 plain state). `tooltip` spells the parts out (`Workflow: Approved — v3`). It is rewritten on every
 transition, approval request / decision and enforcement, so a script can read where a page is with
 `GET /wiki/api/v2/pages/{id}/properties?key=sentinel-byline` and no app call. The workflow's own
-record stays on the `sentinel-vault-workflow` property as before. The **full** export — the shape that can be edited and POSTed back as a bundle — is the
+record stays on the `sentinel-vault-workflow` property as before. On an Approved page that property names the two
+version numbers for what they are (8.11.0): `reviewedVersion` is the version that was approved,
+`baselineVersion` the version later changes are checked against (it moves, for example, when an approver or
+space admin saves, and to Sentinel Vault's own write when it restores the page after an unapproved edit),
+`baselineKind` says why it moved (`restored`, `unchanged`, `edit`, `seal`, `healed`, or `null` when nothing
+moved it or the reason was not recorded) and `baselineContentOf` names the version whose content the
+baseline holds (a restored copy of v7 holds v7; `null` when that was not recorded). A page approved before
+8.11.0 carries these fields from the next time Sentinel Vault updates its workflow record. `approvedVersion`
+is kept with its old value, the baseline, for scripts that already read it; read `reviewedVersion` for
+"which version was approved". The **full** export — the shape that can be edited and POSTed back as a bundle — is the
 gated `export-space-config` (steward of that space) / `export-site-config` (site admin) resolver,
 i.e. the Export button in the console.
 

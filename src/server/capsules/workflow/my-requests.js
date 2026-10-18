@@ -6,6 +6,8 @@
  * editreq-mine index), confirmed on read against the pending record, the page's workflow record
  * and the log, and dropped once it says nothing any more. PURE here; the I/O sits in approvals.js.
  */
+import { reviewedVersionOf } from "./baseline.js"; // B2: the version that was approved, not the baseline
+
 export const MY_REQUEST_PREFIX = "wfreq-mine";
 export const MY_REQUEST_KEEP_MS = 14 * 24 * 3600 * 1000; // a decided request stays listed two weeks
 export const myRequestKey = (requesterAccountId, pageId) => `${MY_REQUEST_PREFIX}-${requesterAccountId}-${pageId}`;
@@ -35,7 +37,7 @@ export function classifyMyApprovalRequest({ row, pending, record, lastDecision, 
   const arAt = ms(ar?.completedAt);
   if (ar && ar.requestedBy === row.requesterAccountId && ar.outcome === "approved" && (!Number.isFinite(askedAt) || !Number.isFinite(arAt) || arAt >= askedAt - 1000)) {
     const at = Number.isFinite(arAt) ? arAt : now;
-    return { ...base, status: "approved", keep: now - at < MY_REQUEST_KEEP_MS, at: ar.completedAt || null, byName: ar.completedByName || null, approvedVersion: record?.approvedVersion ?? null };
+    return { ...base, status: "approved", keep: now - at < MY_REQUEST_KEEP_MS, at: ar.completedAt || null, byName: ar.completedByName || null, approvedVersion: reviewedVersionOf(record) };
   }
   const ld = lastDecision && (lastDecision.kind === "denied" || lastDecision.kind === "stale") ? lastDecision : null;
   const ldAt = ms(ld?.at) || (typeof ld?.at === "number" ? ld.at : NaN);
