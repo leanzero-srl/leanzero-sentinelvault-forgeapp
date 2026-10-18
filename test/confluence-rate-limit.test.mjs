@@ -330,6 +330,9 @@ try {
       const live = w.live(PAGE);
       eq("the hourly sweep (Confluence answering again) reverts the tamper", live.authorId, APP);
       ok("...to the space admin's sanctioned version, not past it", textOf(live.adf).includes("ADMIN'S SANCTIONED INTRO") && !textOf(live.adf).includes("PLAIN TAMPER"));
+      const rows = [...fake.kvs.entries()].filter(([k]) => k.startsWith("activity-page-")).flatMap(([, v]) => (Array.isArray(v?.entries) ? v.entries : Array.isArray(v) ? v : [v]));
+      const sweepRow = rows.find((r) => r?.type === "workflow.enforced" && r?.details?.via === "sweep");
+      eq("the sweep's activity row names the version it copied (v2), not the baseline", [sweepRow?.details?.restoredTo, sweepRow?.details?.restoredContent], [2, 2]);
     }
     {
       const { w, save } = await approvedBed();
@@ -338,6 +341,26 @@ try {
       limit.versions = { headers: { "Retry-After": "1800" } };
       await triggers.workflowSweep();
       eq("the sweep while the versions cannot be read: no revert this run", w.live(PAGE).authorId, PLAIN);
+    }
+    {
+      // A plain save that changes nothing after an admin's edit: the baseline holds the ADMIN's content.
+      const { w, save } = await approvedBed();
+      save(ADMIN, pageAdf("ADMIN'S SANCTIONED INTRO", "SEALED TEXT"));
+      save(PLAIN, pageAdf("ADMIN'S SANCTIONED INTRO", "SEALED TEXT"));
+      await triggers.workflowSweep();
+      const rec = await logic.readPageWorkflow(PAGE);
+      eq("an unchanged save on top of an admin's edit: nothing written", w.live(PAGE).authorId, PLAIN);
+      eq("...the baseline moves to it and says it holds the admin's v2", [rec?.approvedVersion, rec?.baselineSource?.kind, rec?.baselineSource?.contentOf], [3, "unchanged", 2]);
+    }
+    {
+      // The same, judged by the page event (Pass 0 finds the body equal to the admin's v2).
+      const { w, save } = await approvedBed();
+      save(ADMIN, pageAdf("ADMIN'S SANCTIONED INTRO", "SEALED TEXT"));
+      const v3 = save(PLAIN, pageAdf("ADMIN'S SANCTIONED INTRO", "SEALED TEXT"));
+      await triggers.pageContentTrigger(ev(PLAIN, v3));
+      const rec = await logic.readPageWorkflow(PAGE);
+      eq("event path: an unchanged save on top of an admin's edit writes nothing", w.live(PAGE).authorId, PLAIN);
+      eq("event path: the baseline says it holds the admin's v2", [rec?.approvedVersion, rec?.baselineSource?.kind, rec?.baselineSource?.contentOf], [3, "unchanged", 2]);
     }
   }
 
