@@ -64,7 +64,7 @@ const FIRST_VERSION = [6, 4, 0];
 // published (each needs an entries.mjs row first); main may already carry later notes.
 // Raise it only to a version that is DEPLOYED TO PRODUCTION: an unlisted version's issues say it is
 // waiting for Marketplace approval, which is true only of a production build.
-const LAST_VERSION = [8, 10, 0];
+const LAST_VERSION = [8, 11, 0];
 // RELEASED = listed as "public" by the Marketplace's own versions endpoint (no login), and released in
 // Jira on the Marketplace's release date. Sentinel Vault has no deploy ledger, so the Marketplace is
 // the source; there is no hand-set constant to forget to raise or to raise too early (review
@@ -95,9 +95,13 @@ async function loadMarketplace() {
   // listed 8.10.0 or stopped at 8.6.0, the stale one with Age ~74,000 s), and a stale read made 8.7.0-8.10.0 look
   // unreleased. Read it five times and keep the answer that lists the most versions: a stale copy only ever lacks the
   // newest ones.
+  // 2026-10-18 (8.11.0): five plain reads were NOT enough. The stale copy is cached per URL behind CloudFront (x-cache
+  // Miss, Age ~17,000 s) and came back five reads in a row, so 8.11.0 read as unreleased in 2 of 4 plan runs. A unique
+  // query parameter per read misses that cache: measured 20/20 fresh (Age 0) against 3/20 fresh for the plain URL.
   let list = [];
   for (let i = 0; i < 5; i++) {
-    const r = await fetch(MARKETPLACE_VERSIONS, { headers: { Accept: "application/json" } });
+    const url = new URL(MARKETPLACE_VERSIONS); url.searchParams.set("nocache", `${Date.now()}-${i}`);
+    const r = await fetch(url, { headers: { Accept: "application/json" } });
     if (!r.ok) throw new Error(`Marketplace versions endpoint answered HTTP ${r.status}; refusing to guess what is released`);
     const body = await r.json();
     const l = (body._embedded && body._embedded.versions) || [];
