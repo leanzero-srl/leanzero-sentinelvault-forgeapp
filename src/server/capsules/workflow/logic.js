@@ -560,9 +560,6 @@ export async function purgePageWorkflow(pageId, { clearApprovals } = {}) {
     `workflow-state-${pageId}`, `workflow-pending-${pageId}`, `workflow-autoassigned-${pageId}`,
     `workflow-integrity-notified-${pageId}`, `workflow-review-notified-${pageId}`, `workflow-completing-${pageId}`,
     `workflow-label-${pageId}`,
-    // The page's runtime stamps: the banner's workflow stamp (byline-touch.js) and the byline's
-    // last-written stamp (byline.js) — one each per page that ever had a workflow write.
-    `protections-last-workflow-${pageId}`, `byline-stamp-${pageId}`,
   ];
   if (record?.stateId) keys.push(`workflow-idx-${sk}-${record.stateId}-${pageId}`);
   for (const k of keys) await kvs.delete(k).catch(() => {});
@@ -572,6 +569,10 @@ export async function purgePageWorkflow(pageId, { clearApprovals } = {}) {
     for (const { key } of results || []) await kvs.delete(key).catch(() => {});
   }
   if (typeof clearApprovals === "function") await clearApprovals(pageId, null, null).catch(() => {});
+  // LAST, after the approvals teardown (which touches the byline and would write them back): the page's
+  // runtime stamps — the banner's workflow stamp (byline-touch.js) and the byline's last-written stamp
+  // (byline.js), one each per page that ever had a workflow write.
+  for (const k of [`protections-last-workflow-${pageId}`, `byline-stamp-${pageId}`]) await kvs.delete(k).catch(() => {});
   return { purged: true, stateId: record?.stateId || null, spaceKey: record?.spaceKey || null };
 }
 
