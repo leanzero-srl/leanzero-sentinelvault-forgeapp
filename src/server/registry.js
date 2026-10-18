@@ -99,7 +99,7 @@ export function busyAware(result) {
     ...(typeof result.error === "string" ? { error: reason } : {}),
   };
 }
-const withInvocation = (fn) => (req) => runInvocation(async () => busyAware(await fn(req)));
+const withInvocation = (key, fn) => (req) => runInvocation(async () => busyAware(await fn(req)), { label: key });
 
 // `wrappedActions` is what the router actually runs (mirror hook included); the dev hook's generic
 // seam drives THIS map, not the raw list, so a seam-driven write behaves exactly like a UI write.
@@ -109,7 +109,7 @@ export const wrappedActions = allActions.map(([key, fn]) => {
   let wrapped = CONFIG_WRITER_KEYS.includes(key) ? withConfigMirror(key, fn) : fn;
   if (WRITE_ACTIONS.includes(key)) wrapped = withBackupHook(key, wrapped);
   if (SIGNED_SEAL_ACTION_KEYS.includes(key)) wrapped = withSealSignature(key, wrapped);
-  return [key, withInvocation(wrapped)]; // outermost: the backup, mirror and signature wrappers run inside it
+  return [key, withInvocation(key, wrapped)]; // outermost: the backup, mirror and signature wrappers run inside it
 });
 wrappedActions.forEach(([key, fn]) => router.define(key, fn));
 

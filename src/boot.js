@@ -8,12 +8,12 @@ import { asInvocation } from "./server/shared/confluence-call.js";
 // 8.12.0: each trigger call is ONE invocation (shared/confluence-call.js): Confluence 429 retries
 // stop inside the function's time limit (these run on the default 25 s), and the permission answers
 // a run reads are shared across the pages it judges. The resolvers get the same in registry.js.
-export const artifactEventTrigger = asInvocation(artifactEventTriggerCore);
-export const pageContentTrigger = asInvocation(pageContentTriggerCore);
-export const lifecycleTrigger = asInvocation(lifecycleTriggerCore);
-export const expirySweepTask = asInvocation(expirySweepTaskCore);
-export const workflowSweep = asInvocation(workflowSweepCore);
-export const pageGuardSweep = asInvocation(pageGuardSweepCore);
+export const artifactEventTrigger = asInvocation(artifactEventTriggerCore, { label: "artifactEventTrigger" });
+export const pageContentTrigger = asInvocation(pageContentTriggerCore, { label: "pageContentTrigger" });
+export const lifecycleTrigger = asInvocation(lifecycleTriggerCore, { label: "lifecycleTrigger" });
+export const expirySweepTask = asInvocation(expirySweepTaskCore, { label: "expirySweepTask" });
+export const workflowSweep = asInvocation(workflowSweepCore, { label: "workflowSweep" });
+export const pageGuardSweep = asInvocation(pageGuardSweepCore, { label: "pageGuardSweep" });
 import { sealIndexCron as sealIndexCronCore } from "./server/capsules/realms/scan-worker.js";
 import { backupSweep } from "./server/capsules/backup/worker.js";
 import { privacySweepCheck } from "./server/capsules/privacy/worker.js";
@@ -23,7 +23,7 @@ import { privacySweepCheck } from "./server/capsules/privacy/worker.js";
 export { privacyConsumer } from "./server/capsules/privacy/worker.js";
 export const recurringNudgeTask = asInvocation(async (event, context) => {
   try { return await recurringNudgeTaskCore(event, context); } finally { await privacySweepCheck(context || event?.context); }
-});
+}, { label: "recurringNudgeTask" });
 export { realmScanConsumer } from "./server/capsules/realms/scan-worker.js";
 export { aiValidationConsumer } from "./server/capsules/validations/ai-worker.js";
 // Config REST API (docs/REST-CONFIG-API.md): the static web trigger and its queue consumer.
@@ -38,7 +38,7 @@ export const sealIndexCron = asInvocation(async (event, context) => {
     await backupSweep(context || event?.context);
     await jiraSealSweep();
   }
-}, { budgetMs: 270_000 }); // timeoutSeconds 300 in the manifest
+}, { budgetMs: 270_000, label: "sealIndexCron" }); // timeoutSeconds 300 in the manifest
 // 8.0 — Jira attachment seals: the product-event handler; the hourly lapse sweep rides the index cron.
 export { jiraAttachmentEventTrigger, jiraRestoreConsumer } from "./server/capsules/jira-seals/trigger.js";
 import { jiraSealSweep } from "./server/capsules/jira-seals/trigger.js";

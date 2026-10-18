@@ -291,6 +291,18 @@ try {
     ok("busy reason in seconds", /in 30 seconds/.test(d.busyReason?.(28) || ""));
     ok("busy reason in minutes", /in about 30 minutes/.test(d.busyReason?.(1790) || ""));
     eq("log paths drop the query (account ids)", d.pathForLog?.("/wiki/rest/api/user?accountId=712020:abc"), "/wiki/rest/api/user");
+    eq("call kinds for the per-invocation count", ["/wiki/api/v2/spaces/9/permissions?limit=250", "/wiki/rest/api/user/memberof?accountId=a", "/wiki/rest/api/user?accountId=a", "/rest/api/group?start=0", "/wiki/api/v2/spaces?keys=X", "/wiki/api/v2/pages/1"].map((p) => d.callKind?.(p)), ["perms", "groups", "users", "groups", "spaces", "other"]);
+    if (d.runInvocation) {
+      const lines = [];
+      const prev = console.info;
+      console.info = (...a) => lines.push(a.join(" "));
+      await bed();
+      console.info = (...a) => lines.push(a.join(" "));
+      await call("get-page-approvals", onPage(PLAIN));
+      console.info = prev;
+      quiet();
+      ok("a resolver invocation ends with one [CONFLUENCE] count line", lines.some((l) => /^\[CONFLUENCE\] get-page-approvals calls=\d+ perms=1 /.test(l)));
+    }
     eq("KVS key parts are injective", new Set(["~a", "_a", "#7e.a", "~A"].map((s) => d.kvsPart?.(s) ?? sc.kvsPart?.(s))).size, 4);
   }
   // ── one door: no Confluence call bypasses it (so a 429 is always retried, logged and noted) ──
