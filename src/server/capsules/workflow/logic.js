@@ -18,6 +18,8 @@ import { sanitizeReadConfirmation } from "./read-acks.js";
 import { fetchPageLabels } from "../../infra/labels.js";
 import { touchByline } from "../page-details/byline-touch.js"; // WF-6 (dynamic inside: no cycle)
 import { enforceModeOf } from "./enforce-rules.js";
+import { nextBaselineSource, baselineFields } from "./baseline.js";
+import { withLegacySource } from "./baseline-read.js"; // a pre-8.11.0 record's history, seeded before it is extended // B2: why the baseline moved, named on every surface
 
 export const WORKFLOW_STATE_PROP = "sentinel-vault-workflow";
 
@@ -417,7 +419,11 @@ export async function fetchLivePageVersion(pageId) {
 
 // Forward-only re-stamp of approvedVersion (the ONE re-stamp primitive; #44 §1.3).
 // Never drags the baseline backward on a late/re-delivered event.
-export async function restampApprovedVersion(pageId, n) {
+// `cause` ({ kind, from? }, baseline.js nextBaselineSource) records WHY the baseline moved, so the
+// banner, the details modal, the content property and the API can say "a copy of approved v7 that
+// Sentinel Vault restored" instead of crediting an approver with the app's own revert. A caller that
+// passes no cause leaves no source: the surfaces then name nobody.
+export async function restampApprovedVersion(pageId, n, cause = null) {
   if (!(typeof n === "number" && n >= 1)) return false;
   const record = await readPageWorkflow(pageId);
   if (!record?.enforce) return false;
@@ -429,6 +435,7 @@ export async function restampApprovedVersion(pageId, n) {
   const fresh = await readPageWorkflow(pageId);
   if (!fresh?.enforce || fresh.stateId !== record.stateId) return false;
   if (fresh.approvedVersion != null && n <= fresh.approvedVersion) return false;
+  fresh.baselineSource = nextBaselineSource(await withLegacySource(pageId, fresh), n, cause);
   fresh.approvedVersion = n;
   await persistState(pageId, fresh, fresh.stateId);
   return true;
@@ -442,7 +449,7 @@ export async function restampIfEnforced(pageId) {
     const wf = await readPageWorkflow(pageId);
     if (wf?.enforce) {
       const v = await fetchLivePageVersion(pageId);
-      if (v) return await restampApprovedVersion(pageId, v);
+      if (v) return await restampApprovedVersion(pageId, v, { kind: "seal" });
     }
   } catch (_) { /* best-effort */ }
   return false;
@@ -451,7 +458,12 @@ export async function restampIfEnforced(pageId) {
 async function writeStateContentProp(pageId, record) {
   const value = {
     workflowId: record.workflowId, stateId: record.stateId, enteredAt: record.enteredAt,
-    enforce: record.enforce === true, approvedVersion: record.approvedVersion ?? null,
+    enforce: record.enforce === true,
+    // approvedVersion is the ENFORCEMENT BASELINE (kept under its old name for scripts that read it);
+    // reviewedVersion is the version that was approved, baselineVersion the same number as
+    // approvedVersion under its real name, baselineKind/baselineContentOf why it moved (baseline.js).
+    approvedVersion: record.approvedVersion ?? null,
+    ...(record.enforce === true ? baselineFields(record) : { reviewedVersion: null, baselineVersion: null, baselineKind: null, baselineContentOf: null }),
   };
   try {
     const getRes = await asApp().requestConfluence(
@@ -835,11 +847,15 @@ export async function transitionPageWorkflow({ pageId, spaceKey, toStateId, acto
       approvedAt: enteredAt,
       approvedBy: actorAccountId || null,
       approvalRecord: approvalRecord && typeof approvalRecord === "object" ? approvalRecord : null,
+      baselineSource: null, // the baseline IS the approved version until something moves it
+      // The version the page entered this state at, kept apart from the baseline (which moves):
+      // the reviewed version when no approval record pins one (a direct move by a space admin).
+      reviewedVersion: (typeof approvedVersion === "number" && approvedVersion >= 1) ? approvedVersion : null,
     };
   } else {
     // `...current` is spread into the record below, so the previous approval's evidence would
     // survive a move out of Approved unless it is cleared here, with the rest of the enforce set.
-    enforceFields = { enforce: false, approvedVersion: null, approvers: [], approvalRecord: null };
+    enforceFields = { enforce: false, approvedVersion: null, approvers: [], approvalRecord: null, baselineSource: null, reviewedVersion: null };
   }
   // #45/A5: a review clock on the entered state — per-state override, the legacy enforce-state
   // override, or the definition's own value (resolveReviewAfterDays). A per-state override can

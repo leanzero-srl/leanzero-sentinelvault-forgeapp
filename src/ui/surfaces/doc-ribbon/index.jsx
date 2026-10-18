@@ -17,6 +17,8 @@ import React, { useState, useEffect, useCallback, useRef } from "react";
 import { createRoot } from "react-dom/client";
 import { createPortal } from "react-dom";
 import { invoke, view, Modal, router } from "@forge/bridge";
+import { updateBylineProperties } from "@forge/confluence-bridge"; // 8.11.0: keep the byline item under the title in step
+import { bylineSyncStep } from "../../kit/byline-sync.js";
 import { enablePaletteSync } from "../../kit/palette-sync";
 import { myWorkPath } from "../../kit/my-work-path.js";
 import { useActionMenu } from "../../kit/ActionMenu";
@@ -28,6 +30,7 @@ import { freezeSentence } from "../../kit/freeze-sentence.js"; // SEC-2 (d), tru
 import { sourcePhrase } from "../../../server/capsules/classification/logic.js"; // P3: "from space default" / "set on this page"
 import BusyVeil from "../../kit/BusyVeil";
 import { detailsModalSize } from "../../kit/modal-size.js";
+import { reviewedVersionOf, restoredLabel } from "../../../server/capsules/workflow/baseline.js"; // B2: the version that was approved
 
 /**
  * Workflow state chip + transition control (#42). Shows the page's current
@@ -124,11 +127,13 @@ const WorkflowDetails = ({ workflow, siteUrl, pageId, isSteward, host, onSaved, 
   const enforced = !!record.enforce && record.approvedVersion != null;
   const ar = record.approvalRecord || null;
   // The chip and the link name the version that was REVIEWED (the record's pin). The enforce
-  // baseline (record.approvedVersion) moves forward on every sanctioned edit; when it has, the
-  // panel says so on its own line rather than linking to a version nobody approved.
-  const reviewedVersion = (typeof ar?.pinnedVersion === "number" ? ar.pinnedVersion : null) ?? record.approvedVersion;
+  // baseline (record.approvedVersion) moves forward on every write the app or an approver makes on
+  // the Approved page; when it has, the panel says why on its own line (the server's
+  // workflow.baseline, baseline.js), rather than linking to a version nobody approved. B2: it used
+  // to say an approver or space admin updated it — also after the app's own revert.
+  const reviewedVersion = reviewedVersionOf(record);
   const baselineVersion = record.approvedVersion;
-  const baselineMoved = typeof baselineVersion === "number" && baselineVersion !== reviewedVersion;
+  const baselineSentence = workflow.baseline?.moved ? workflow.baseline.sentence : null;
   const decisions = Array.isArray(ar?.decisions) ? ar.decisions : [];
   const live = typeof workflow.liveVersion === "number" ? workflow.liveVersion : null;
   const changedSince = live != null && typeof baselineVersion === "number" && live > baselineVersion;
@@ -141,7 +146,7 @@ const WorkflowDetails = ({ workflow, siteUrl, pageId, isSteward, host, onSaved, 
   if (enforced) {
     if (!ar) summary = `Approved on ${fmtDate(record.approvedAt)} (details were not recorded for this approval).`;
     else if (decisions.length === 0) summary = `${outcomeWord} by ${ar.completedByName || "a space admin"} on ${fmtDate(ar.completedAt)}.`;
-    else summary = `${outcomeWord} for version ${ar.pinnedVersion ?? reviewedVersion} on ${fmtDate(ar.completedAt)} · ${modeLabel(ar.mode, ar.min)}`;
+    else summary = `${outcomeWord} for version ${reviewedVersion} on ${fmtDate(ar.completedAt)} · ${modeLabel(ar.mode, ar.min)}`;
   }
 
   // --- Review date ---
@@ -271,9 +276,9 @@ const WorkflowDetails = ({ workflow, siteUrl, pageId, isSteward, host, onSaved, 
               <VersionLink siteUrl={siteUrl} pageId={pageId} version={reviewedVersion} testId="wf-approved-version-link">
                 View approved version (v{reviewedVersion})
               </VersionLink>
-              {baselineMoved && (
-                <p className="wf-evidence-baseline" data-testid="wf-evidence-baseline">
-                  Approved content was last updated by an approver or space admin in v{baselineVersion}.
+              {baselineSentence && (
+                <p className="wf-evidence-baseline" data-testid="wf-evidence-baseline" data-kind={workflow.baseline?.kind || ""}>
+                  {baselineSentence}
                 </p>
               )}
               {changedSince && (
@@ -536,7 +541,7 @@ const WorkflowControl = ({ workflow, approvals, operatorId, pageId, spaceKey, si
   // the details chip beside it drops the state word.
   const rec = workflow.record || {};
   const chipEnforced = !!rec.enforce && rec.approvedVersion != null;
-  const chipVersion = (typeof rec.approvalRecord?.pinnedVersion === "number" ? rec.approvalRecord.pinnedVersion : null) ?? rec.approvedVersion;
+  const chipVersion = reviewedVersionOf(rec);
   const stateLabel = chipEnforced ? `${state.name} v${chipVersion}` : state.name;
 
   // APPROVAL MODE — the page is awaiting sign-off before it can move to the enforce state.
@@ -814,8 +819,8 @@ const alertSentence = (a, operatorId) => {
       return asEditor ? <>You removed the sealed section <strong>{name}</strong>; it was put back.</> : <>Your sealed section <strong>{name}</strong> was removed and put back.</>;
     case "workflow-reverted":
       return asEditor
-        ? <>Your edit was reverted to {a.approvedVersion != null ? `approved v${a.approvedVersion}` : "the approved version"}.</>
-        : <>An edit to this Approved page by {a.editorDisplayName || "someone outside the approvers"} was reverted to the approved version{a.approvedVersion != null ? ` (v${a.approvedVersion})` : ""}.</>;
+        ? <>Your edit was reverted to {restoredLabel(a.approvedVersion, a.reviewedVersion) || "the approved version"}.</>
+        : <>An edit to this Approved page by {a.editorDisplayName || "someone outside the approvers"} was reverted to {(() => { const l = restoredLabel(a.approvedVersion, a.reviewedVersion); return !l ? "the approved version" : l.startsWith("approved ") ? `the approved version (v${a.approvedVersion})` : l; })()}.</>;
     case "workflow-demoted":
       return asEditor
         ? <>Your edit moved this page back to <strong>{a.demotedToName || "Draft"}</strong>. Nothing was lost.</>
@@ -849,6 +854,9 @@ const readSummaryStub = () => {
   try { const s = window.__svRibbonSummaryStub; return s && (typeof s === "object" || typeof s === "function") ? s : null; } catch (_) { return null; }
 };
 
+// The byline module's contentPropertyKey (manifest.yml; page-details/byline.js BYLINE_PROPERTY_KEY).
+const BYLINE_KEY = "sentinel-byline";
+
 const DocumentRibbon = () => {
   const [summary, setSummary] = useState(null); // ribbon-summary answer
   const [summaryError, setSummaryError] = useState(null); // reason string when the summary could not be read
@@ -869,6 +877,7 @@ const DocumentRibbon = () => {
   const openStateRef = useRef(null); // true after view.open(), false after view.close(), null = untouched
   const evalSeq = useRef(0);
   const evaluateRef = useRef(null); // the current `evaluate`, for the guard's deferred re-run
+  const bylineRef = useRef(null); // kit/byline-sync.js state: the byline the page's item shows
 
   // Apply a decision to the bridge exactly when it changes.
   const applyVisibility = useCallback((show, why) => {
@@ -920,6 +929,12 @@ const DocumentRibbon = () => {
         res = await invoke("ribbon-summary", { pageId: id });
       }
       console.info("[ribbon] summary", res);
+      // 8.11.0: the byline item under the title is rendered by Confluence from a content property it
+      // reads once, at load. When the answer's byline changed (a move made elsewhere reached this
+      // banner through the workflow stamp, or this banner made one), hand it to Confluence.
+      const step = bylineSyncStep(bylineRef.current, id, res?.byline || null);
+      bylineRef.current = step.state;
+      if (step.push) updateBylineProperties({ propertyKey: BYLINE_KEY, valueUpdate: step.push }).catch((e) => console.info("[ribbon] byline update failed", e?.message || e));
       const failed = !res || typeof res !== "object" || (res.ok !== true && res.reason !== "none");
       // B (2026-09-30): an answer that could not list the attachments still carries the level —
       // keep it, so the row shows the classification and names what could not be checked.

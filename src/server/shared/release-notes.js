@@ -12,6 +12,19 @@ const note = (n) => Object.freeze({ ...n, changes: Object.freeze([...(n.changes 
 
 export const RELEASE_NOTES = Object.freeze([
   note({
+    version: "8.11.0",
+    date: "2026-10-18",
+    headline: "The status under the page title follows workflow moves, and a restored Approved page names the version that was approved",
+    changes: [
+      "Changed: on an Approved page, the page property sentinel-vault-workflow (read with Confluence's REST API) now also says reviewedVersion, the version that was approved, and baselineVersion, the version later changes are checked against, with baselineKind and baselineContentOf saying why that version moved and whose content it holds (empty where that was not recorded). A page approved before this update gets these fields the next time Sentinel Vault updates its workflow record, for example when the page is edited or moved. approvedVersion keeps the value it had, for scripts that already read it.",
+    ],
+    fixes: [
+      "The Sentinel Vault status under the page title kept showing the workflow state the page was opened with after the page was moved somewhere else, while the banner above it already followed the move. The status under the title now follows within a few seconds too, without a reload.",
+      "After Sentinel Vault restored an Approved page following an unapproved edit, the page's approval details said an approver or space admin had last updated the approved content in the restored version, and the page's activity, the comment to the editor, the banner and My work could name the restored copy as the approved version. They now name the version that was approved, and the approval details say the later version is Sentinel Vault's restored copy of it; when the version restored is one kept after the approval, such as an approver's or space admin's later change, they name that version and the approval it followed. Only a change an approver or space admin made is credited to them.",
+    ],
+    action: "Nothing to do.",
+  }),
+  note({
     version: "8.10.0",
     date: "2026-10-18",
     headline: "Space admins are recognised from the space's own permissions",

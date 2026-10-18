@@ -77,4 +77,12 @@ ok("closed sentence never says declined by", !/declined by/.test(describeStaleCl
   eq("dispatch demote carries the target, no reverted version", [d2.demotedToName, d2.revertedVersion, d2.ownerAccountId, d2.via], ["Draft", null, null, "sweep"]);
 }
 
+// 8.11.0 review round 2 D2: when what came back is an approver's later save, the heading says that version.
+{
+  const later = enforceCommentBody("123", "712020:ed", "revert", { approvedVersion: 8, reviewedVersion: 7, revertedVersion: 9 });
+  ok("revert of an approver's later save: heading names v8, not 'the approved version'", later.includes("Reverted to v8") && !later.includes("Reverted to the approved version"));
+  ok("...and the body says it was kept after approval v7", later.includes("v8, the last version kept after approval v7"));
+  const same = enforceCommentBody("123", "712020:ed", "revert", { approvedVersion: 7, reviewedVersion: 7, revertedVersion: 8 });
+  ok("revert to the approved version: heading unchanged", same.includes("Reverted to the approved version") && same.includes("(v7)"));
+}
 report("approval-notice");
