@@ -47,6 +47,23 @@ try {
   eq("[1] bed: the page moved to In Review", moved?.success, true);
   const s2 = await summary();
   ok("[1] after the move ribbon-summary answers In Review", /In Review/.test(s2?.byline?.title || "") && !/Draft/.test(s2?.byline?.title || ""));
+  // Review 2026-10-18 #5: the byline answer must not hold the banner past its 1.5 s bound — a slow
+  // workflow read (a long log) now delays the summary only up to that bound.
+  const realQuery = kvs.query;
+  kvs.query = () => {
+    const api = realQuery();
+    let prefix = "";
+    const where = api.where; api.where = (f, c) => { prefix = c?.beginsWith || ""; return where(f, c); };
+    const getMany = api.getMany; api.getMany = async () => { if (prefix.startsWith("workflow-log-")) await new Promise((r) => setTimeout(r, 4000)); return getMany(); };
+    return api;
+  };
+  try {
+    const t0 = Date.now();
+    const slow = await summary();
+    const ms = Date.now() - t0;
+    ok(`[1] a slow workflow read holds the summary at most ~1.5 s (took ${ms} ms)`, ms < 3000);
+    eq("[1] ...and the summary still answers", slow?.ok === true || slow?.reason === "none", true);
+  } finally { kvs.query = realQuery; }
 } finally {
   loud();
 }
