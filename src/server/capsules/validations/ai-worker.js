@@ -81,7 +81,8 @@ export async function aiValidationConsumer(event) {
   }
   const statusKey = `ai-validation-status-${taskId}`;
   const STATUS_TTL_MS = 3600000;
-  const setStatus = (value) => setWithTtl(statusKey, value, STATUS_TTL_MS);
+  // Every write keeps the requester on the row (get-validation-job answers only them).
+  const setStatus = (value) => setWithTtl(statusKey, { ...value, requestedBy: requestedBy || null }, STATUS_TTL_MS);
 
   try {
     await setStatus({ status: "processing", pageId });
