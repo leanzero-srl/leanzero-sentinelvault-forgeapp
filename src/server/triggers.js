@@ -350,6 +350,7 @@ export async function pageContentTrigger(event) {
     let enforceRevertVersion = null;
     let enforceRevertContent = null; // B2: { contentOf, editedIn } of what Pass 0 restored, judged on the record it read
     let enforceObservedEqual = false; // #44: the revert pass CONFIRMED content-equality (no write needed)
+    let enforceObservedContent = null; // what that equal version holds when it is a later sanctioned one ({ contentOf, editedIn })
     let sectionChanged = false; // GAP 2: the last attempt's section pass had a restore pending
     const adoptedSections = []; // SEC-4 (a): wrappers this run sealed on publish (record written, id stamped)
     let sealPassesSkipped = false; // a late event met a newer version by someone else (see below)
@@ -448,7 +449,7 @@ export async function pageContentTrigger(event) {
       // #44: capture a CONFIRMED-equality observation (revert pass found the body already
       // equal to the baseline) so §2.5 can advance the baseline ONLY on genuine equality,
       // never on an abort/failed-write path (which must leave approvedVersion untouched).
-      if (ctx.enforceObservedEqual) enforceObservedEqual = true;
+      if (ctx.enforceObservedEqual) { enforceObservedEqual = true; enforceObservedContent = ctx.enforceObservedContent || null; }
 
       if (!ctx.changed) {
         break; // nothing to write this attempt
@@ -560,7 +561,7 @@ export async function pageContentTrigger(event) {
           newBaseline = content?.version?.number || (await fetchLivePageVersion(pageId)); // editor's live version
           cause = { kind: "edit" };
         } else if (enforcement.action === "revert" && enforceObservedEqual) {
-          cause = { kind: "unchanged" };
+          cause = { kind: "unchanged", ...(enforceObservedContent || {}) };
           // ONLY when the pass CONFIRMED the body already equals the baseline (no write
           // needed) do we advance to live. On any abort/failed-write path the body is
           // still the un-reverted tamper — do NOT launder it into approvedVersion; leave
@@ -1463,6 +1464,8 @@ async function enforceApprovedStatePass(ctx, enf) {
   if (hashAdf(ctx.adfDoc) === hashAdf(approvedAdf) &&
       JSON.stringify(canonicalizeAdf(ctx.adfDoc.content)) === JSON.stringify(canonicalizeAdf(approvedAdf.content))) {
     ctx.enforceObservedEqual = true; // CONFIRMED equality — §2.5 may advance the baseline to live
+    // Equal to a LATER sanctioned version (targetV > av): the new baseline holds that version's content.
+    if (targetV !== av) ctx.enforceObservedContent = restoredContentOf(await withLegacySource(ctx.pageId, rec), targetV);
     return; // already equal — no body write
   }
   ctx.adfDoc.content = approvedAdf.content;           // whole-body replace, in place
@@ -1555,17 +1558,18 @@ export async function sweepRevertToApproved(pageId, record, targetVersion = null
     if (hashAdf(head.adfDoc) === hashAdf(approvedAdf) &&
         JSON.stringify(canonicalizeAdf(head.adfDoc.content)) === JSON.stringify(canonicalizeAdf(approvedAdf.content))) {
       const live = head.pageData.version?.number || 0;
-      await restampApprovedVersion(pageId, live, { kind: "unchanged" }).catch(() => {});
+      // Equal to a later sanctioned version (tv > av): the baseline holds THAT version's content.
+      await restampApprovedVersion(pageId, live, { kind: "unchanged", ...(tv > av ? { contentOf: restored.contentOf ?? tv, editedIn: restored.editedIn ?? tv } : {}) }).catch(() => {});
       // Truthfulness (A1 review F1): this branch wrote NOTHING — the live version became the
       // baseline. Callers that record the outcome must not call it a revert.
-      return { ok: true, wrote: false, version: live };
+      return { ok: true, wrote: false, version: live, restoredTo: null };
     }
     head.adfDoc.content = approvedAdf.content;
     const putRes = await writeDocBody(pageId, head.pageData, head.adfDoc, "(Sentinel Vault reverted unapproved change to the approved version)");
     if (putRes.ok) {
       const written = (head.pageData.version?.number || 0) + 1;
       await restampApprovedVersion(pageId, written, { kind: "restored", from: tv, ...restored }).catch(() => {});
-      return { ok: true, wrote: true, version: written, restoredContent: restored.contentOf ?? tv };
+      return { ok: true, wrote: true, version: written, restoredTo: tv, restoredContent: restored.contentOf ?? tv };
     }
     if (putRes.status === 409) { await new Promise((r) => setTimeout(r, Math.pow(2, attempt) * 500)); continue; }
     return false; // SV-M2: don't claim success on a non-409 error
@@ -1772,7 +1776,7 @@ export async function workflowSweep() {
               target: { kind: "page", id: idx.pageId, name: null },
               details: {
                 mode: "revert", editor: author || null, approvedVersion: record.approvedVersion ?? null,
-                restoredTo: ok.wrote ? (record.approvedVersion ?? null) : null,
+                restoredTo: ok.wrote ? (ok.restoredTo ?? record.approvedVersion ?? null) : null, // the version the body was copied from (8.12.0: can be a later sanctioned one)
                 restoredContent: ok.wrote ? restoredContent : null, reviewedVersion: reviewedVersionOf(record),
                 reconciled: ok.wrote ? "reverted" : "baseline-advanced",
                 driftedVersion: live, via: "sweep",
