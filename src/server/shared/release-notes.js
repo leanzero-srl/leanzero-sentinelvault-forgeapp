@@ -20,6 +20,8 @@ export const RELEASE_NOTES = Object.freeze([
     ],
     fixes: [
       "A space admin who was not also a site or Confluence admin, or listed under Space admins in Sentinel Vault, was treated as an ordinary user: the space's Sentinel Vault page asked them to request admin access, they could not approve as a space admin or use the other space admin actions, and an edit they made to an Approved page moved the page back out of Approved or was undone, as an ordinary editor's would be. Sentinel Vault now reads the space's own permissions, so a space admin is recognised whether the permission is given directly, through a group or through the space's Admin role. Space admins therefore now have Sentinel Vault's space admin actions in their spaces, as people listed under Space admins already did.",
+      "A declined request for admin access to a space could be filed again before the 48 hours the space's Sentinel Vault page shows had passed (from a page opened before the decision). It can now be sent again only 48 hours after it was declined, the page says so if you try earlier, and a request has to name a space you can see.",
+      "The progress of an AI review of a page is now shown only to the person who started it.",
     ],
     action: "If a space uses AI review while AI review is off in the site settings, AI review stops in that space with this update, and pages in a space whose workflow requires an AI review cannot reach Approved. To keep AI review, a site admin turns it on in Sentinel Vault's site settings, Validations.",
   }),
