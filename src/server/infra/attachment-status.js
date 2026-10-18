@@ -1,4 +1,5 @@
-import { asApp, route } from "@forge/api";
+import { route } from "@forge/api";
+import { appConfluence } from "../shared/confluence-call.js";
 
 /**
  * PURE. The name a trashed file comes back under when a NEWER file with its name is already on
@@ -22,7 +23,7 @@ export const isNameTakenConflict = (status, text) => status === 409 && /newer Co
  */
 export async function putAttachmentCurrent(pageId, attachmentId, title, version) {
   const putRoute = route`/wiki/rest/api/content/${pageId}/child/attachment/${attachmentId}`;
-  const put = (status, name, ver) => asApp().requestConfluence(putRoute, {
+  const put = (status, name, ver) => appConfluence(putRoute, {
     method: "PUT", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ id: attachmentId, type: "attachment", status, title: name, version: { number: ver + 1 } }),
   });
@@ -105,7 +106,7 @@ export function decideMediaRestoreAction(probeStatus) {
 export async function probeAttachmentStatus(attachmentId) {
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
-      const res = await asApp().requestConfluence(
+      const res = await appConfluence(
         route`/wiki/api/v2/attachments/${attachmentId}`,
       );
       if (res.ok) {
@@ -204,7 +205,7 @@ export async function confirmAttachmentPurged(attachmentId, settleMs = 1500, { p
     return false;
   }
   try {
-    let res = await asApp().requestConfluence(route`/wiki/api/v2/pages/${pageId}/attachments?status=current&status=trashed&status=archived&limit=250`);
+    let res = await appConfluence(route`/wiki/api/v2/pages/${pageId}/attachments?status=current&status=trashed&status=archived&limit=250`);
     for (let i = 0; i < 20; i++) {
       if (!res.ok) return false; // the page's list must be readable (positive control on the same object)
       const body = await res.json();
@@ -212,7 +213,7 @@ export async function confirmAttachmentPurged(attachmentId, settleMs = 1500, { p
       const next = body?._links?.next;
       const cursor = next ? new URL(next, "https://x.invalid").searchParams.get("cursor") : null;
       if (!cursor) return true;
-      res = await asApp().requestConfluence(route`/wiki/api/v2/pages/${pageId}/attachments?status=current&status=trashed&status=archived&limit=250&cursor=${cursor}`);
+      res = await appConfluence(route`/wiki/api/v2/pages/${pageId}/attachments?status=current&status=trashed&status=archived&limit=250&cursor=${cursor}`);
     }
     return false; // a list that never ended proves nothing
   } catch (e) {

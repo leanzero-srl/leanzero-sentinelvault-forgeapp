@@ -1,4 +1,5 @@
-import { asApp, route } from "@forge/api";
+import { route } from "@forge/api";
+import { appConfluence, isRateLimited, noteAuthzUnknown } from "./confluence-call.js";
 
 // SV-SEC-1 — content-level entitlement checks for resolver actions.
 //
@@ -71,7 +72,8 @@ export function mustVerify(payloadId, contextId) {
 export async function accountCanAccessContent(accountId, contentId, operation) {
   if (!accountId || !contentId) return false;
   try {
-    const res = await asApp().requestConfluence(
+    // A read-only question asked with POST: retried on 429 like a read (confluence-call.js).
+    const res = await appConfluence(
       route`/wiki/rest/api/content/${contentId}/permission/check`,
       {
         method: "POST",
@@ -81,7 +83,14 @@ export async function accountCanAccessContent(accountId, contentId, operation) {
           operation,
         }),
       },
+      { idempotent: true },
     );
+    if (isRateLimited(res)) {
+      // Still a no (fail closed), but the resolver's answer says "try again", not "not allowed".
+      noteAuthzUnknown();
+      console.warn(`[AUTHZ] permission/check ${operation} on ${contentId} -> 429; could not check (denying for now)`);
+      return false;
+    }
     if (!res.ok) {
       console.warn(`[AUTHZ] permission/check ${operation} on ${contentId} → ${res.status}; denying`);
       return false;
@@ -143,13 +152,15 @@ export async function liveContentSpace(contentId) {
     // A blog post is content too (seals and attachments live on them): a 404 as a page is asked
     // again as a blog post before giving up. The caller's context used to paper over this for
     // blog posts — the steward stood on the post — and that fallback is gone (objectSpaceKeyOf).
-    let pres = await asApp().requestConfluence(route`/wiki/api/v2/pages/${contentId}`);
-    if (pres.status === 404) pres = await asApp().requestConfluence(route`/wiki/api/v2/blogposts/${contentId}`);
+    let pres = await appConfluence(route`/wiki/api/v2/pages/${contentId}`);
+    if (pres.status === 404) pres = await appConfluence(route`/wiki/api/v2/blogposts/${contentId}`);
     if (pres.status === 404) return { status: "gone" };
+    if (isRateLimited(pres)) { noteAuthzUnknown(); return { status: "error", rateLimited: true }; }
     if (!pres.ok) return { status: "error" };
     const spaceId = (await pres.json())?.spaceId;
     if (!spaceId) return { status: "error" };
-    const sres = await asApp().requestConfluence(route`/wiki/api/v2/spaces/${spaceId}`);
+    const sres = await appConfluence(route`/wiki/api/v2/spaces/${spaceId}`);
+    if (isRateLimited(sres)) { noteAuthzUnknown(); return { status: "error", rateLimited: true }; }
     if (!sres.ok) return { status: "error" };
     const spaceKey = (await sres.json())?.key || null;
     return spaceKey ? { status: "found", spaceId: String(spaceId), spaceKey } : { status: "error" };
@@ -205,7 +216,7 @@ export async function recordAuthority({ contentId = null, storedKey = null, live
   if (!live && contentId) {
     const r = await liveContentSpace(contentId);
     if (r.status === "found") live = r.spaceKey;
-    else if (r.status === "error") return { known: false, spaces: [], live: null, moved: false };
+    else if (r.status === "error") return { known: false, spaces: [], live: null, moved: false, rateLimited: !!r.rateLimited };
     // "gone": nothing else holds the content now; the record's own space is all there is.
   }
   return { known: true, spaces: [...new Set([live, ...stored].filter(Boolean))], live, moved: !!live && stored.some((k) => k !== live) };
@@ -221,7 +232,8 @@ export async function sealContainerId(seal) {
   if (!seal || typeof seal !== "object") return null;
   if (seal.attachmentId) {
     let res = null;
-    try { res = await asApp().requestConfluence(route`/wiki/api/v2/attachments/${seal.attachmentId}`); } catch (_) { return undefined; }
+    try { res = await appConfluence(route`/wiki/api/v2/attachments/${seal.attachmentId}`); } catch (_) { return undefined; }
+    if (isRateLimited(res)) noteAuthzUnknown();
     if (res.ok) {
       const a = await res.json().catch(() => null);
       const container = a?.pageId || a?.blogPostId || null;
@@ -253,10 +265,40 @@ export async function isStewardOfSpaces(check, accountId, spaces) {
 }
 
 /**
+ * isStewardOfSpaces with "could not tell" kept apart (8.12.0). `statusCheck(accountId, spaceKey)`
+ * answers `{ steward, unknown }` (steward-checks.js accountStewardStatusAsApp). Steward only when
+ * EVERY space says yes; a known no anywhere is a known no; otherwise an unknown is unknown. [] and
+ * a thrown check are a known no, as in isStewardOfSpaces. Never grants on unknown.
+ */
+export async function stewardOfSpacesStatus(statusCheck, accountId, spaces) {
+  if (!accountId || !Array.isArray(spaces) || !spaces.length) return { steward: false, unknown: false };
+  let unknown = false;
+  for (const key of spaces) {
+    let s = null;
+    try { s = await statusCheck(accountId, key); } catch (_) { s = null; }
+    if (s?.steward === true) continue;
+    if (s?.unknown === true) { unknown = true; continue; }
+    return { steward: false, unknown: false };
+  }
+  return unknown ? { steward: false, unknown: true } : { steward: true, unknown: false };
+}
+
+/**
  * May `accountId` act as a steward on this record? `check` is the steward test the caller would
  * have used for one space (authorizeSteward, isAccountStewardAsApp, …); it must pass for the
  * content's live space and, if the content moved, the record's own (recordAuthoritySpaces).
  */
 export async function isStewardOfRecord(check, accountId, where) {
   return isStewardOfSpaces(check, accountId, await recordAuthoritySpaces(where));
+}
+
+/**
+ * isStewardOfRecord with "could not tell" kept apart (8.12.0): `{ steward, unknown }`. Unknown when a
+ * 429 kept Confluence from saying where the content is or whether the account is a steward there.
+ * For DISPLAY decisions ("couldn't check right now") and for paths that must not act on a no.
+ */
+export async function stewardOfRecordStatus(statusCheck, accountId, where) {
+  const auth = await recordAuthority(where);
+  if (!auth.known) return { steward: false, unknown: !!auth.rateLimited };
+  return stewardOfSpacesStatus(statusCheck, accountId, auth.spaces);
 }

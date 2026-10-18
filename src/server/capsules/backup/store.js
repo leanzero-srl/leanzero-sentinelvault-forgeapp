@@ -17,13 +17,14 @@
  *              installation id that has written here (the re-link ticket needs the previous one)
  */
 import api, { route } from "@forge/api";
+import { appConfluence } from "../../shared/confluence-call.js";
 
 export const BACKUP_LABEL = "sentinel-vault-backup";
 export const INDEX_PROPERTY = "sentinel-vault-backup-index";
 export const KEEP_GENERATIONS = 10;
 const JSONH = { Accept: "application/json", "Content-Type": "application/json" };
 
-const conf = (r, init) => api.asApp().requestConfluence(r, init);
+const conf = (r, init) => appConfluence(r, init);
 
 export async function readJson(res) {
   const t = await res.text();

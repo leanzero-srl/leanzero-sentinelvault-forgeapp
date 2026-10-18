@@ -1,4 +1,5 @@
-import { asApp, asUser, route } from "@forge/api";
+import { asApp, route } from "@forge/api";
+import { appConfluence, userConfluence } from "../../shared/confluence-call.js";
 import { kvs, WhereConditions } from "@forge/kvs";
 import { resolveRealm } from "./logic.js";
 import { Queue } from "@forge/events";
@@ -46,7 +47,7 @@ const identifyRealm = async (req) => {
  */
 async function resolveRealmIdFromKey(spaceKey) {
   try {
-    const res = await asApp().requestConfluence(
+    const res = await appConfluence(
       route`/wiki/api/v2/spaces?keys=${spaceKey}`,
       { headers: { Accept: "application/json" } },
     );
@@ -256,7 +257,7 @@ export async function scanRecordSpaceKey(status, spaceId) {
   const id = status?.spaceId ?? spaceId;
   if (!/^\d+$/.test(String(id || ""))) return null;
   try {
-    const res = await asApp().requestConfluence(route`/wiki/api/v2/spaces/${String(id)}`, { headers: { Accept: "application/json" } });
+    const res = await appConfluence(route`/wiki/api/v2/spaces/${String(id)}`, { headers: { Accept: "application/json" } });
     if (!res.ok) return null;
     return (await res.json())?.key || null;
   } catch (_) { return null; }
@@ -476,7 +477,7 @@ async function resolveRequestedSpaceKey(req) {
   if (!asked) return null;
   if (ctxKey && asked === ctxKey) return ctxKey;
   try {
-    const res = await asUser().requestConfluence(route`/wiki/api/v2/spaces?keys=${asked}&limit=1`, { headers: { Accept: "application/json" } });
+    const res = await userConfluence(route`/wiki/api/v2/spaces?keys=${asked}&limit=1`, { headers: { Accept: "application/json" } });
     if (!res.ok) return null;
     const found = (await res.json())?.results?.[0]?.key || null;
     return found && found === asked ? found : null;
@@ -503,7 +504,7 @@ export const requestStewardAccess = async (req) => {
     // Get user display name for the request
     let displayName = "Unknown User";
     try {
-      const userRes = await asApp().requestConfluence(
+      const userRes = await appConfluence(
         route`/wiki/rest/api/user?accountId=${accountId}`,
         { headers: { Accept: "application/json" } },
       );

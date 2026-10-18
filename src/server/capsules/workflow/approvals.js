@@ -21,7 +21,8 @@
  *        the page banner still showed the request. Written with the approval records, deleted
  *        with them, backfilled hourly by workflowSweep for approvals opened before this shipped.
  */
-import { asApp, route } from "@forge/api";
+import { route } from "@forge/api";
+import { appConfluence } from "../../shared/confluence-call.js";
 import { kvs, WhereConditions } from "@forge/kvs";
 import { setWithTtl } from "../../shared/kvs-ttl.js";
 import { transitionPageWorkflow, readPageWorkflow, fetchLivePageVersion, appendWorkflowLog, getSpaceWorkflowSettings, getPageWorkflow, getWorkflowLog, lastDecisionFrom } from "./logic.js";
@@ -185,7 +186,7 @@ async function resolveGroupId(group) {
   if (isGroupId(group?.id)) return group.id;
   const name = String(group?.name || group?.id || "");
   if (!name) return null;
-  const res = await asApp().requestConfluence(route`/wiki/rest/api/group/picker?query=${name}&limit=50`);
+  const res = await appConfluence(route`/wiki/rest/api/group/picker?query=${name}&limit=50`);
   if (!res.ok) return null;
   const hit = ((await res.json())?.results || []).find((g) => String(g?.name || "").toLowerCase() === name.toLowerCase());
   return hit?.id || null;
@@ -205,7 +206,7 @@ export async function fetchGroupMembers(group) {
     // Paged by what the server returns (it may cap a page below the 200 asked for) and stopped by
     // the absence of `_links.next`, never by a short page alone (review 2026-10-04, P5).
     for (let start = 0, i = 0; start < MAX_GROUP_MEMBERS_READ && i < 50; i++) {
-      const res = await asApp().requestConfluence(route`/wiki/rest/api/group/${groupId}/membersByGroupId?limit=200&start=${start}`);
+      const res = await appConfluence(route`/wiki/rest/api/group/${groupId}/membersByGroupId?limit=200&start=${start}`);
       if (!res.ok) return { ids, ok: false }; // non-ok — distinguish an outage from a genuinely empty group
       const body = await res.json();
       const page = body?.results || [];
@@ -842,7 +843,7 @@ export async function listMyApprovalRequests(accountId, now = Date.now()) {
         if (!c.keep) { await kvs.delete(key).catch(() => {}); continue; }
         let pageTitle = null;
         try {
-          const pr = await asApp().requestConfluence(route`/wiki/api/v2/pages/${row.pageId}`);
+          const pr = await appConfluence(route`/wiki/api/v2/pages/${row.pageId}`);
           if (pr.ok) pageTitle = (await pr.json())?.title || null;
         } catch (_) { /* the row lists without a title */ }
         out.push({ ...c, pageTitle });

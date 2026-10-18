@@ -1,4 +1,5 @@
-import { asApp, route } from "@forge/api";
+import { route } from "@forge/api";
+import { appConfluence } from "../../shared/confluence-call.js";
 import { kvs, WhereConditions } from "@forge/kvs";
 
 import { authorizeSteward, isAccountStewardAsApp } from "../../shared/steward-checks.js";
@@ -138,7 +139,7 @@ const requestEditAccess = async (req) => {
 
   let requesterName = "Unknown User";
   try {
-    const userRes = await asApp().requestConfluence(
+    const userRes = await appConfluence(
       route`/wiki/rest/api/user?accountId=${accountId}`,
       { headers: { Accept: "application/json" } },
     );
@@ -439,7 +440,7 @@ export const listEditGrants = async (req) => {
 // them on that page. A pending or declined request from that person is consumed by the grant.
 async function lookupDisplayName(accountId) {
   try {
-    const res = await asApp().requestConfluence(route`/wiki/rest/api/user?accountId=${accountId}`, { headers: { Accept: "application/json" } });
+    const res = await appConfluence(route`/wiki/rest/api/user?accountId=${accountId}`, { headers: { Accept: "application/json" } });
     if (res.ok) return (await res.json())?.displayName || null;
   } catch (_) { /* best effort */ }
   return null;
@@ -528,7 +529,7 @@ export const searchGrantees = async (req) => {
   if (!gate.seal || !gate.authorized) return { users: [], reason: "Not authorized" };
   try {
     const cql = `type=user AND user.fullname~"${q.replace(/["\\]/g, " ")}"`;
-    const res = await asApp().requestConfluence(route`/wiki/rest/api/search/user?cql=${cql}&limit=8`, { headers: { Accept: "application/json" } });
+    const res = await appConfluence(route`/wiki/rest/api/search/user?cql=${cql}&limit=8`, { headers: { Accept: "application/json" } });
     if (!res.ok) return { users: [], reason: `Search failed (${res.status})` };
     const data = await res.json();
     const users = (data.results || [])
@@ -585,7 +586,7 @@ export const requestSectionEdit = async (req) => {
 
   let requesterName = "Unknown User";
   try {
-    const userRes = await asApp().requestConfluence(route`/wiki/rest/api/user?accountId=${accountId}`, { headers: { Accept: "application/json" } });
+    const userRes = await appConfluence(route`/wiki/rest/api/user?accountId=${accountId}`, { headers: { Accept: "application/json" } });
     if (userRes.ok) { const u = await userRes.json(); requesterName = u.displayName || requesterName; }
   } catch (_) { /* best effort */ }
 

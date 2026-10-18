@@ -9,8 +9,9 @@ import { asApp, asUser, route } from "@forge/api";
 import { currentUserProfile } from "../../shared/user-or-app.js";
 import { kvs, WhereConditions } from "@forge/kvs";
 
-import { authorizeSteward, isOperatorSiteAdmin, isOperatorSteward, isAccountStewardAsApp } from "../../shared/steward-checks.js";
-import { canEditPage, canReadPage, mustVerify, resolvePageSpaceKey, isStewardOfRecord, isStewardOfSpaces, recordAuthority } from "../../shared/content-access.js";
+import { authorizeSteward, isOperatorSiteAdmin, isOperatorSteward, isAccountStewardAsApp, accountStewardStatusAsApp } from "../../shared/steward-checks.js";
+import { canEditPage, canReadPage, mustVerify, resolvePageSpaceKey, isStewardOfRecord, isStewardOfSpaces, recordAuthority, stewardOfRecordStatus } from "../../shared/content-access.js";
+import { appConfluence, authzUnknownOf, busyReason, isRateLimited, rateLimitOf } from "../../shared/confluence-call.js";
 import { fetchPageStatuses } from "../../shared/page-status.js";
 import {
   resolveWorkflowDef,
@@ -565,7 +566,11 @@ const getPageApprovals = async (req) => {
       // failed with NEEDS_AUTHENTICATION for an admin without user consent, and followed the
       // force-release toggle — so the ribbon hid Approve/Deny from an admin the server would accept
       // (tester 2026-09-30).
-      status.adminCanDecide = await stewardOfPageRecord(isAccountStewardAsApp, req, pageId, spaceKey || null);
+      // 8.12.0: "could not check" is not "no": the banner says so instead of hiding Approve/Deny as if
+      // the viewer had no right to decide. Nothing is offered on unknown (adminCanDecide stays false).
+      const st = await stewardOfRecordStatus(accountStewardStatusAsApp, me, { contentId: pageId, storedKey: spaceKey || null, liveKey: ctxSpaceKeyFor(req, pageId) });
+      status.adminCanDecide = st.steward;
+      if (st.unknown) status.adminCheck = "unknown";
     }
     if (status.requireSignature) status.signatureEnrolled = (await signatureStatus(req.context?.accountId)).enrolled;
   }
@@ -639,14 +644,23 @@ async function mayUseApproverPicker(req) {
   return isOperatorSiteAdmin(caller);
 }
 
+// 8.12.0: when Confluence's rate limit (not the caller's rights) left the picker empty, it says so:
+// "couldn't search right now" instead of an empty list that reads as "nobody matches". Still no
+// results on a 429: the search runs as the app, so it is never answered without the check.
+const pickerUnavailable = (empty) => {
+  const s = rateLimitOf()?.retryAfterSeconds ?? null;
+  return { ...empty, unavailable: true, retryAfterSeconds: s, reason: busyReason(s, { what: "the search could not run", nothingChanged: false }) };
+};
+
 // User search for the approver picker (steward config). Confluence user search.
 const searchUsers = async (req) => {
   const q = (req.payload?.query || "").trim();
   if (q.length < 2) return { users: [] };
-  if (!(await mayUseApproverPicker(req))) return { users: [] };
+  if (!(await mayUseApproverPicker(req))) return authzUnknownOf() ? pickerUnavailable({ users: [] }) : { users: [] };
   try {
     const cql = `user.fullname~"${q.replace(/"/g, "")}"`;
-    const res = await asApp().requestConfluence(route`/wiki/rest/api/search/user?cql=${cql}&limit=8`);
+    const res = await appConfluence(route`/wiki/rest/api/search/user?cql=${cql}&limit=8`);
+    if (isRateLimited(res)) return pickerUnavailable({ users: [] });
     if (!res.ok) return { users: [] };
     const body = await res.json();
     const users = (body?.results || [])
@@ -664,9 +678,10 @@ const searchUsers = async (req) => {
 const searchGroups = async (req) => {
   const q = (req.payload?.query || "").trim();
   if (q.length < 1) return { groups: [] };
-  if (!(await mayUseApproverPicker(req))) return { groups: [] };
+  if (!(await mayUseApproverPicker(req))) return authzUnknownOf() ? pickerUnavailable({ groups: [] }) : { groups: [] };
   try {
-    const res = await asApp().requestConfluence(route`/wiki/rest/api/group/picker?query=${q}&limit=8`);
+    const res = await appConfluence(route`/wiki/rest/api/group/picker?query=${q}&limit=8`);
+    if (isRateLimited(res)) return pickerUnavailable({ groups: [] });
     if (!res.ok) return { groups: [] };
     const body = await res.json();
     const groups = (body?.results || []).map((g) => ({ id: g.id || g.name, name: g.name })).filter((g) => g.name);
@@ -783,7 +798,7 @@ const bulkAssign = async (req) => {
   // state and content properties onto them. Resolve the id from the key that was authorized,
   // and from nothing else.
   let spaceId = null;
-  const sres = await asApp().requestConfluence(route`/wiki/api/v2/spaces?keys=${spaceKey}`);
+  const sres = await appConfluence(route`/wiki/api/v2/spaces?keys=${spaceKey}`);
   if (sres.ok) spaceId = (await sres.json())?.results?.[0]?.id;
   if (!spaceId) return { success: false, reason: "Could not resolve the space" };
 
@@ -836,7 +851,7 @@ export const getWorkflowDashboard = async (req) => {
   // not read out to this space's admins.
   let ownSpaceId = null;
   try {
-    const sres = await asApp().requestConfluence(route`/wiki/api/v2/spaces?keys=${spaceKey}`);
+    const sres = await appConfluence(route`/wiki/api/v2/spaces?keys=${spaceKey}`);
     if (sres.ok) ownSpaceId = (await sres.json())?.results?.[0]?.id ?? null;
   } catch (_) { ownSpaceId = null; }
   if (ownSpaceId == null) return { error: "Could not read this space right now — try again in a moment" };

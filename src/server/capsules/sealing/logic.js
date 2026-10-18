@@ -1,5 +1,6 @@
 import { kvs, WhereConditions } from "@forge/kvs";
-import { asApp, route } from "@forge/api";
+import { route } from "@forge/api";
+import { appConfluence } from "../../shared/confluence-call.js";
 import { BASELINE_HOLD_SPAN, sanitizeHoldDuration } from "../../shared/baseline.js";
 import { sealPropertyValue } from "./seal-property.js";
 // 2026-10-11: computeSealStatus / breakSeal (a lazy "delete the expired seal on read" and an
@@ -76,7 +77,7 @@ export async function writeSealContentProp(contentId, sealData) {
   const value = sealPropertyValue(sealData);
   try {
     // Check if property already exists by listing with key filter
-    const getResponse = await asApp().requestConfluence(
+    const getResponse = await appConfluence(
       route`/wiki/api/v2/pages/${contentId}/properties?key=${propertyKey}`,
       { method: "GET" },
     );
@@ -89,7 +90,7 @@ export async function writeSealContentProp(contentId, sealData) {
         // Property exists — update using its numeric ID
         const propertyId = existing.id;
         const nextVersion = (existing.version?.number || 1) + 1;
-        const putResponse = await asApp().requestConfluence(
+        const putResponse = await appConfluence(
           route`/wiki/api/v2/pages/${contentId}/properties/${propertyId}`,
           {
             method: "PUT",
@@ -109,7 +110,7 @@ export async function writeSealContentProp(contentId, sealData) {
         }
       } else {
         // Property doesn't exist — create
-        const postResponse = await asApp().requestConfluence(
+        const postResponse = await appConfluence(
           route`/wiki/api/v2/pages/${contentId}/properties`,
           {
             method: "POST",
@@ -148,7 +149,7 @@ export async function removeSealContentProp(contentId) {
   const propertyKey = "protection-";
   try {
     // Look up the property by key to get its numeric ID
-    const getResponse = await asApp().requestConfluence(
+    const getResponse = await appConfluence(
       route`/wiki/api/v2/pages/${contentId}/properties?key=${propertyKey}`,
       { method: "GET" },
     );
@@ -168,7 +169,7 @@ export async function removeSealContentProp(contentId) {
     if (!existing) return; // Property doesn't exist, nothing to delete
 
     const propertyId = existing.id;
-    const response = await asApp().requestConfluence(
+    const response = await appConfluence(
       route`/wiki/api/v2/pages/${contentId}/properties/${propertyId}`,
       {
         method: "DELETE",

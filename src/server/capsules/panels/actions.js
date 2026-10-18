@@ -1,6 +1,7 @@
 import { isWorkflowHeld, heldRefusal, HELD_REASON } from "../../shared/seal-authority.js"; // SEC-2 (zero-import module: no cycle)
 import { isLiveAttachmentSeal } from "../../shared/live-seal.js"; // zero-import: a trashedOnly stub is not a seal
-import { asUser, asApp, route } from "@forge/api";
+import { asApp, route } from "@forge/api";
+import { appConfluence, userConfluence } from "../../shared/confluence-call.js";
 import { kvs } from "@forge/kvs";
 import { withinUploadSizeLimit, MAX_UPLOAD_LABEL } from "../../shared/upload-limits.js";
 import { canEditPage, canReadPage, mustVerify, resolvePageSpace } from "../../shared/content-access.js";
@@ -44,7 +45,7 @@ const enumeratePanelArtifacts = async (req) => {
       url = route`/wiki/api/v2/pages/${contentId}/attachments?limit=${limit}&cursor=${cursor}`;
     }
 
-    const response = await asUser().requestConfluence(url);
+    const response = await userConfluence(url);
     if (!response.ok) {
       console.error(
         `[PANEL] Failed to fetch attachments: ${response.status}`,
@@ -88,7 +89,7 @@ const enumeratePanelArtifacts = async (req) => {
         // Labels via v2 API
         let labels = [];
         try {
-          const labelsRes = await asUser().requestConfluence(
+          const labelsRes = await userConfluence(
             route`/wiki/api/v2/attachments/${att.id}/labels`,
           );
           if (labelsRes.ok) {
@@ -156,7 +157,7 @@ const enumeratePanelArtifacts = async (req) => {
     // Whole-page counts ride the FIRST page only (the cards are paged; the numbers are not).
     let counts = null;
     if (!cursor || cursor === "0") {
-      try { const { countPageAttachments } = await import("../sealing/logic.js"); counts = await countPageAttachments(contentId, operatorAccountId, (u) => asUser().requestConfluence(u)); }
+      try { const { countPageAttachments } = await import("../sealing/logic.js"); counts = await countPageAttachments(contentId, operatorAccountId, (u) => userConfluence(u)); }
       catch (e) { console.warn("[PANEL] counts failed:", e?.message || e); }
     }
     return { attachments: enrichedArtifacts, hasMore, nextCursor, counts };
@@ -177,7 +178,7 @@ const labelArtifact = async (req) => {
   }
 
   try {
-    const response = await asUser().requestConfluence(
+    const response = await userConfluence(
       route`/wiki/rest/api/content/${attachmentId}/label`,
       {
         method: "POST",
@@ -210,7 +211,7 @@ const unlabelArtifact = async (req) => {
   }
 
   try {
-    const response = await asUser().requestConfluence(
+    const response = await userConfluence(
       route`/wiki/rest/api/content/${attachmentId}/label/${labelName}`,
       { method: "DELETE" },
     );
@@ -287,7 +288,7 @@ export const deleteArtifact = async (req) => {
     const isUnsealed = !liveSeal;
     if (isUnsealed) {
       try {
-        const attRes = await asApp().requestConfluence(
+        const attRes = await appConfluence(
           route`/wiki/api/v2/attachments/${attachmentId}`,
         );
         if (attRes.ok) {
@@ -298,7 +299,7 @@ export const deleteArtifact = async (req) => {
       } catch (_) { /* best effort */ }
     }
 
-    const response = await asUser().requestConfluence(
+    const response = await userConfluence(
       route`/wiki/api/v2/attachments/${attachmentId}`,
       { method: "DELETE" },
     );
@@ -405,7 +406,7 @@ const checkPanelStatus = async (req) => {
   // Get page-level settings from content property
   let panelDisabled = false;
   try {
-    const propsRes = await asApp().requestConfluence(
+    const propsRes = await appConfluence(
       route`/wiki/api/v2/pages/${pageId}/properties?key=sentinel-vault-page-settings`,
     );
     if (propsRes.ok) {
@@ -445,7 +446,7 @@ const storeDocPanelPrefs = async (req) => {
 
   try {
     // Check if property already exists
-    const getRes = await asApp().requestConfluence(
+    const getRes = await appConfluence(
       route`/wiki/api/v2/pages/${pageId}/properties?key=${propertyKey}`,
     );
 
@@ -457,7 +458,7 @@ const storeDocPanelPrefs = async (req) => {
         // Update
         const propertyId = existing.id;
         const nextVersion = (existing.version?.number || 1) + 1;
-        const putRes = await asApp().requestConfluence(
+        const putRes = await appConfluence(
           route`/wiki/api/v2/pages/${pageId}/properties/${propertyId}`,
           {
             method: "PUT",
@@ -475,7 +476,7 @@ const storeDocPanelPrefs = async (req) => {
         }
       } else {
         // Create
-        const postRes = await asApp().requestConfluence(
+        const postRes = await appConfluence(
           route`/wiki/api/v2/pages/${pageId}/properties`,
           {
             method: "POST",
@@ -539,7 +540,7 @@ const uploadArtifact = async (req) => {
     }
     formData.append("minorEdit", "true");
 
-    const response = await asUser().requestConfluence(
+    const response = await userConfluence(
       route`/wiki/rest/api/content/${contentId}/child/attachment`,
       {
         method: "POST",

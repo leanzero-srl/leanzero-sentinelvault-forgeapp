@@ -797,6 +797,8 @@ const RealmPolicyDashboard = () => {
 
       setHasMoreTeams(result.hasMore || false);
       setNextTeamsStart(result.nextStart || null);
+      // 8.12.0: an empty list because Confluence is limiting requests is said as such, not shown as "no groups".
+      if (result?.unavailable) { setMessage(result.reason || "The groups could not be loaded. Try again."); setMessageType("error"); }
     } catch (error) {
       setMessage(`Unable to fetch groups: ${error.message}`);
       setMessageType("error");

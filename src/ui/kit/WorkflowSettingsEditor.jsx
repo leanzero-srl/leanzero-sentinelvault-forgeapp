@@ -84,14 +84,15 @@ const UserPicker = ({ selected, onChange }) => {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState([]);
   const [open, setOpen] = useState(false);
+  const [unavailable, setUnavailable] = useState(null); // 8.12.0: Confluence's rate limit, said as such
   useEffect(() => {
-    if (query.trim().length < 2) { setResults([]); setOpen(false); return undefined; }
+    if (query.trim().length < 2) { setResults([]); setOpen(false); setUnavailable(null); return undefined; }
     let cancelled = false;
     const t = setTimeout(async () => {
       try {
         const r = await invoke("search-workflow-users", { query });
         // Someone already chosen is not offered again (owner, 2026-09-25).
-        if (!cancelled) { setResults((r?.users || []).filter((u) => !selected.some((s) => s.id === u.accountId))); setOpen(true); }
+        if (!cancelled) { setResults((r?.users || []).filter((u) => !selected.some((s) => s.id === u.accountId))); setOpen(true); setUnavailable(r?.unavailable ? (r.reason || "The search could not run right now. Try again.") : null); }
       } catch (_) { /* ignore */ }
     }, 300);
     return () => { cancelled = true; clearTimeout(t); };
@@ -116,6 +117,7 @@ const UserPicker = ({ selected, onChange }) => {
         </div>
       )}
       <input className="form-input" placeholder="Search people to add…" value={query} onChange={(e) => setQuery(e.target.value)} aria-label="Search people to add as approvers" />
+      {unavailable && <p className="settings-row-description" role="status" data-testid="wf-picker-unavailable" style={{ marginTop: "6px" }}>{unavailable}</p>}
       {open && results.length > 0 && (
         <div className="wf-userpicker-menu" role="listbox">
           {results.map((u) => (
@@ -136,13 +138,14 @@ const GroupPicker = ({ selected, onChange }) => {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState([]);
   const [open, setOpen] = useState(false);
+  const [unavailable, setUnavailable] = useState(null); // 8.12.0: Confluence's rate limit, said as such
   useEffect(() => {
-    if (query.trim().length < 1) { setResults([]); setOpen(false); return undefined; }
+    if (query.trim().length < 1) { setResults([]); setOpen(false); setUnavailable(null); return undefined; }
     let cancelled = false;
     const t = setTimeout(async () => {
       try {
         const r = await invoke("search-workflow-groups", { query });
-        if (!cancelled) { setResults(r?.groups || []); setOpen(true); }
+        if (!cancelled) { setResults(r?.groups || []); setOpen(true); setUnavailable(r?.unavailable ? (r.reason || "The search could not run right now. Try again.") : null); }
       } catch (_) { /* ignore */ }
     }, 300);
     return () => { cancelled = true; clearTimeout(t); };
@@ -165,6 +168,7 @@ const GroupPicker = ({ selected, onChange }) => {
         </div>
       )}
       <input className="form-input" placeholder="Search groups to add…" value={query} onChange={(e) => setQuery(e.target.value)} aria-label="Search groups to add as approvers" />
+      {unavailable && <p className="settings-row-description" role="status" data-testid="wf-picker-unavailable" style={{ marginTop: "6px" }}>{unavailable}</p>}
       {open && results.length > 0 && (
         <div className="wf-userpicker-menu" role="listbox">
           {results.map((g) => (

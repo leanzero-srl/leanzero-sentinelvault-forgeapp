@@ -1,5 +1,6 @@
 import { kvs, WhereConditions } from "@forge/kvs";
-import { asApp, route } from "@forge/api";
+import { route } from "@forge/api";
+import { appConfluence } from "../../shared/confluence-call.js";
 
 // Content Sealing (section-level) — storage helpers.
 //
@@ -89,7 +90,7 @@ export async function writeSectionContentProp(pageId, sections) {
     return;
   }
   try {
-    const getResponse = await asApp().requestConfluence(
+    const getResponse = await appConfluence(
       route`/wiki/api/v2/pages/${pageId}/properties?key=${SECTION_PROP_KEY}`,
     );
     if (!getResponse.ok) return;
@@ -97,7 +98,7 @@ export async function writeSectionContentProp(pageId, sections) {
     const existing = getBody.results?.[0];
     if (existing) {
       const nextVersion = (existing.version?.number || 1) + 1;
-      await asApp().requestConfluence(
+      await appConfluence(
         route`/wiki/api/v2/pages/${pageId}/properties/${existing.id}`,
         {
           method: "PUT",
@@ -106,7 +107,7 @@ export async function writeSectionContentProp(pageId, sections) {
         },
       );
     } else {
-      await asApp().requestConfluence(
+      await appConfluence(
         route`/wiki/api/v2/pages/${pageId}/properties`,
         {
           method: "POST",
@@ -126,14 +127,14 @@ export async function writeSectionContentProp(pageId, sections) {
 export async function removeSectionContentProp(pageId) {
   if (!pageId) return;
   try {
-    const getResponse = await asApp().requestConfluence(
+    const getResponse = await appConfluence(
       route`/wiki/api/v2/pages/${pageId}/properties?key=${SECTION_PROP_KEY}`,
     );
     if (!getResponse.ok) return;
     const getBody = await getResponse.json();
     const existing = getBody.results?.[0];
     if (!existing) return;
-    await asApp().requestConfluence(
+    await appConfluence(
       route`/wiki/api/v2/pages/${pageId}/properties/${existing.id}`,
       { method: "DELETE" },
     );

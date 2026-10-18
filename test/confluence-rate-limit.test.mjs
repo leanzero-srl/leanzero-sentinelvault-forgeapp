@@ -293,6 +293,18 @@ try {
     eq("log paths drop the query (account ids)", d.pathForLog?.("/wiki/rest/api/user?accountId=712020:abc"), "/wiki/rest/api/user");
     eq("KVS key parts are injective", new Set(["~a", "_a", "#7e.a", "~A"].map((s) => d.kvsPart?.(s) ?? sc.kvsPart?.(s))).size, 4);
   }
+  // ── one door: no Confluence call bypasses it (so a 429 is always retried, logged and noted) ──
+  {
+    const { readdirSync, readFileSync, statSync } = await import("node:fs");
+    const { join } = await import("node:path");
+    const root = new URL("../src/", import.meta.url).pathname;
+    const files = [];
+    const walk = (d) => { for (const f of readdirSync(d)) { const p = join(d, f); if (statSync(p).isDirectory()) { if (f !== "ui") walk(p); } else if (/\.(m?js|jsx)$/.test(f)) files.push(p); } };
+    walk(root);
+    const bypass = files.filter((p) => !p.endsWith("shared/confluence-call.js"))
+      .filter((p) => /\.requestConfluence\s*\(/.test(readFileSync(p, "utf8").replace(/\/\/[^\n]*|\/\*[\s\S]*?\*\//g, "")));
+    eq("every backend Confluence call goes through shared/confluence-call.js", bypass.map((p) => p.slice(root.length)), []);
+  }
 } finally {
   Date.now = realNow;
   Object.assign(console, realLog);

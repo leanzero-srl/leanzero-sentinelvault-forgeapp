@@ -1,7 +1,7 @@
 /**
  * Native Confluence notification transport
  *
- * Posts a footer comment on a page using `asApp().requestConfluence()`.
+ * Posts a footer comment on a page using `appConfluence()`.
  * When the storage body contains `<ac:link><ri:user ri:account-id="..."/></ac:link>`
  * mention tags, Confluence's own notification engine notifies the mentioned user
  * (and may email them, subject to their personal notification preferences).
@@ -12,6 +12,7 @@
  */
 
 import { asApp, asUser, route } from "@forge/api";
+import { appConfluence, userConfluence } from "../shared/confluence-call.js";
 import { resolveBulletinToggles, resolveSpaceNotificationsMode } from "../shared/bulletin-flags.js";
 import { shouldPostComment } from "../shared/notice-policy.js";
 import { resolvePageSpaceKey } from "../shared/content-access.js";
@@ -23,7 +24,7 @@ async function displayNames(ids) {
   const out = {};
   await Promise.all([...new Set(ids)].map(async (id) => {
     try {
-      const res = await asApp().requestConfluence(route`/wiki/rest/api/user?accountId=${id}`, { headers: { Accept: "application/json" } });
+      const res = await appConfluence(route`/wiki/rest/api/user?accountId=${id}`, { headers: { Accept: "application/json" } });
       if (res.ok) { const u = await res.json(); out[id] = u?.displayName || u?.publicName || null; }
     } catch (_) { /* name stays unknown */ }
   }));
@@ -39,7 +40,7 @@ async function commentBody(storageBody) {
   const { storage, ids } = tokenizeMentions(storageBody);
   if (!ids.length) return { representation: "storage", value: storageBody };
   try {
-    const res = await asApp().requestConfluence(route`/wiki/rest/api/contentbody/convert/atlas_doc_format`, {
+    const res = await appConfluence(route`/wiki/rest/api/contentbody/convert/atlas_doc_format`, {
       method: "POST",
       headers: { Accept: "application/json", "Content-Type": "application/json" },
       body: JSON.stringify({ value: storage, representation: "storage" }),
@@ -147,7 +148,7 @@ export async function postCommentWithMention({ pageId, storageBody, spaceKey = n
       let response = null;
       if (postAsUser) {
         try {
-          response = await asUser().requestConfluence(...request);
+          response = await userConfluence(...request);
           if (response.ok) console.info(`[NOTIFY] ${noticeType || "comment"} on page ${pageId} posted AS THE USER (bell-capable mention)`);
           else { console.warn(`[NOTIFY] posting as the user refused (HTTP ${response.status}) — posting as the app`); response = null; }
         } catch (e) {
@@ -155,7 +156,7 @@ export async function postCommentWithMention({ pageId, storageBody, spaceKey = n
           response = null;
         }
       }
-      if (!response) response = await asApp().requestConfluence(...request);
+      if (!response) response = await appConfluence(...request);
 
       if (response.ok) {
         const data = await response.json().catch(() => ({}));

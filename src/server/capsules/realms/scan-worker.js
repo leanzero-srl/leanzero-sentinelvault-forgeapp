@@ -1,4 +1,5 @@
-import { asApp, route } from "@forge/api";
+import { route } from "@forge/api";
+import { appConfluence } from "../../shared/confluence-call.js";
 import { kvs, WhereConditions } from "@forge/kvs";
 import { Queue } from "@forge/events";
 import { isLiveAttachmentSeal } from "../../shared/live-seal.js";
@@ -45,7 +46,7 @@ export async function realmScanConsumer(event) {
         url = route`/wiki/api/v2/spaces/${realmId}/pages?limit=100&cursor=${fetchCursor}`;
       }
 
-      const pagesResponse = await asApp().requestConfluence(url);
+      const pagesResponse = await appConfluence(url);
 
       if (!pagesResponse.ok) {
         console.error(`[REALM-SCAN] Pages API error: ${pagesResponse.status}`);
@@ -59,7 +60,7 @@ export async function realmScanConsumer(event) {
       // For each page, fetch artifacts
       for (const page of pages) {
         try {
-          const artifactResponse = await asApp().requestConfluence(
+          const artifactResponse = await appConfluence(
             route`/wiki/api/v2/pages/${page.id}/attachments?limit=250`,
           );
 

@@ -7,7 +7,8 @@
 // A confirmation is FOR a version: when the approved baseline advances the old ack no longer
 // counts, and the reader is asked again. Every confirmation also lands on the activity log
 // (workflow.read-confirmed), so the history survives an overwrite of the per-reader record.
-import { asApp, route } from "@forge/api";
+import { route } from "@forge/api";
+import { appConfluence } from "../../shared/confluence-call.js";
 import { kvs } from "@forge/kvs";
 import { extractApprovalConfig, fetchGroupMembers } from "./approvals.js";
 import { recordActivity } from "../../infra/activity-log.js";
@@ -63,7 +64,7 @@ export async function resolveAudience(settings) {
 
 async function displayName(accountId) {
   try {
-    const res = await asApp().requestConfluence(route`/wiki/rest/api/user?accountId=${accountId}`);
+    const res = await appConfluence(route`/wiki/rest/api/user?accountId=${accountId}`);
     if (res.ok) return (await res.json())?.displayName || null;
   } catch (_) { /* best-effort */ }
   return null;
