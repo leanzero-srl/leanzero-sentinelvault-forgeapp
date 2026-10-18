@@ -82,7 +82,14 @@ export function invocationMemo(key, load) {
   if (!cur || Date.now() - cur.at > MEMO_TTL_MS) {
     const entry = { at: Date.now(), p: null };
     entry.p = Promise.resolve().then(load).then(
-      (v) => { if (v == null && scope.memo.get(key) === entry) scope.memo.delete(key); return v; },
+      (v) => {
+        if (v == null && scope.memo.get(key) === entry) scope.memo.delete(key);
+        // A value read from a cache carries when Confluence said it (`sourceAt`): the memo expires
+        // with THAT time, so a 59 s old cached grant is not kept another minute (review 2026-10-18).
+        const src = Number(v?.sourceAt);
+        if (Number.isFinite(src) && src < entry.at) entry.at = src;
+        return v;
+      },
       (e) => { if (scope.memo.get(key) === entry) scope.memo.delete(key); throw e; },
     );
     scope.memo.set(key, entry);
@@ -202,7 +209,7 @@ export const userConfluence = (path, init, opts) => call("user", path, init, opt
  * PURE. What a person is told when Confluence's limit, not their rights, decided the answer.
  * `what` names what could not be done; `nothingChanged` adds that the action did not run.
  */
-export function busyReason(retryAfterSeconds = null, { what = "your permissions could not be checked", nothingChanged = true } = {}) {
+export function busyReason(retryAfterSeconds = null, { what = "your permissions could not be checked", nothingChanged = false } = {}) {
   const s = Number(retryAfterSeconds);
   const when = !Number.isFinite(s) || s <= 0 ? "in a minute"
     : s < 90 ? `in ${Math.max(5, Math.ceil(s / 5) * 5)} seconds`
