@@ -66,7 +66,10 @@ try {
   ok("[4] the move wrote the page's workflow stamp", !!w);
   ok("[4] ...with a TTL, so it does not stay forever", Number(w?.opts?.ttl?.value) > 0 && w?.opts?.ttl?.unit === "SECONDS");
   await kvs.set(`byline-stamp-${PAGE}`, { stamp: "x" });
-  await logic.purgePageWorkflow(PAGE);
+  // As the hourly sweep calls it (triggers.js): the approvals teardown runs too — and it touches the byline,
+  // which used to write the stamp back after it was deleted (seen live on 0b4508e).
+  const { clearPageApprovals } = await import("../src/server/capsules/workflow/approvals.js");
+  await logic.purgePageWorkflow(PAGE, { clearApprovals: clearPageApprovals });
   eq("[4] a purged page's workflow stamp is deleted", await realGet(STAMP), undefined);
   eq("[4] ...and its byline stamp", await realGet(`byline-stamp-${PAGE}`), undefined);
 } finally {
