@@ -59,7 +59,7 @@ const keyLookups = () => fake.calls.filter((c) => c.path.startsWith("/wiki/api/v
 const callsTo = (re) => fake.calls.filter((c) => re.test(decodeURIComponent(c.path))).length;
 
 // 429 switches, checked AFTER the world's own routes (later handlers answer first).
-let limit = { permissions: null, groups: null, picker: null };
+let limit = { permissions: null, groups: null, picker: null, versions: null };
 function installLimits() {
   // Handlers answer last-registered first: the plain answers go in first, the 429 switch last.
   onConfluence((method, rawPath) => {
@@ -72,7 +72,8 @@ function installLimits() {
     const base = decodeURIComponent(rawPath).split("?")[0];
     const pick = /^\/wiki\/api\/v2\/spaces\/[^/]+\/permissions$/.test(base) ? "permissions"
       : base === "/rest/api/group" ? "groups"
-        : base === "/wiki/rest/api/group/picker" ? "picker" : null;
+        : base === "/wiki/rest/api/group/picker" ? "picker"
+          : /^\/wiki\/api\/v2\/pages\/[^/]+\/versions$/.test(base) ? "versions" : null;
     if (!pick || !limit[pick]) return undefined;
     const l = limit[pick];
     if (typeof l.times === "number") { if (l.times <= 0) return undefined; l.times -= 1; }
@@ -84,7 +85,7 @@ function installLimits() {
 async function bed({ pending = true } = {}) {
   resetFake();
   clockOffset = 0;
-  limit = { permissions: null, groups: null, picker: null };
+  limit = { permissions: null, groups: null, picker: null, versions: null };
   const w = createWorld({ appAccountId: APP, spaceKey: SPACE, spaceId: SPACE_ID });
   w.addUser(APP, { displayName: "Sentinel Vault" })
     .addUser(ADMIN, { displayName: "Sam Admin" })
@@ -290,6 +291,54 @@ try {
       }, { budgetMs: 900_000 });
       eq("the memo expires with the cached answer's own time (59 s + 2 s > 60 s)", seen2, [true, false]);
     } else ok("runInvocation exists", false);
+  }
+
+  // ── D. an Approved page while Confluence cannot say who edited in between (review 2026-10-18) ──
+  {
+    const { hashAdf } = await import("../src/server/infra/doc-surgery.js");
+    const SID = "sec-429";
+    const KEY = "app/env/static/sentinel-vault-sealed-section";
+    const para = (t) => ({ type: "paragraph", content: [{ type: "text", text: t }] });
+    const wrapper = (body) => ({ type: "bodiedExtension", attrs: { extensionKey: KEY, extensionType: "com.atlassian.ecosystem", parameters: { guestParams: { sectionId: SID } } }, content: body });
+    const pageAdf = (intro, inside) => ({ version: 1, type: "doc", content: [para(intro), wrapper([para(inside)])] });
+    const textOf = (adf) => JSON.stringify(adf);
+    const approvedBed = async () => {
+      const w = await bed({ pending: false });
+      const p = w.pages.get(PAGE);
+      p.versions[0].adf = pageAdf("approved intro", "SEALED TEXT");
+      const body = [para("SEALED TEXT")];
+      p.props.set("section-protection-", { id: "900", version: 1, value: { sections: [SID] } });
+      await kvs.set(`section-protection-${SID}`, { sectionId: SID, pageId: PAGE, lockedBy: REQUESTER, lockedByName: "Rae", contentHash: hashAdf(body), sectionTitle: "Sealed", expiresAt: new Date(Date.now() + 864e5).toISOString() });
+      await kvs.set(`section-snapshot-${SID}`, { wrapperNode: wrapper(body), bodyContent: body, hash: hashAdf(body), version: 1, originalIndex: 1 });
+      const t = await logic.transitionPageWorkflow({ pageId: PAGE, spaceKey: SPACE, toStateId: "approved", actorAccountId: APPROVER, actorName: "Ana Approver", approvers: [APPROVER], approvedVersion: 1,
+        approvalRecord: { outcome: "approved", completedBy: APPROVER, completedByName: "Ana Approver", pinnedVersion: 1, decisions: [] } });
+      if (!t.success) throw new Error(`approve failed: ${t.reason}`);
+      const save = (author, adf) => { p.versions.push({ number: p.versions.length + 1, authorId: author, adf }); return p.versions.length; };
+      return { w, p, save };
+    };
+    const ev = (actor, version) => ({ eventType: "avi:confluence:updated:page", atlassianId: actor, content: { id: PAGE, version: { number: version } }, space: { key: SPACE } });
+    {
+      const { w, save } = await approvedBed();
+      save(ADMIN, pageAdf("ADMIN'S SANCTIONED INTRO", "SEALED TEXT")); // its event never lands
+      const v3 = save(PLAIN, pageAdf("PLAIN TAMPER", "TAMPERED SECTION"));
+      limit.versions = { headers: { "Retry-After": "1800" } };
+      await triggers.pageContentTrigger(ev(PLAIN, v3));
+      eq("versions unreadable (429): the app writes nothing (no section restore carrying the tamper)", w.live(PAGE).authorId, PLAIN);
+      eq("...and the tamper does not become the approved baseline", (await logic.readPageWorkflow(PAGE))?.approvedVersion, 1);
+      limit.versions = null;
+      await triggers.workflowSweep();
+      const live = w.live(PAGE);
+      eq("the hourly sweep (Confluence answering again) reverts the tamper", live.authorId, APP);
+      ok("...to the space admin's sanctioned version, not past it", textOf(live.adf).includes("ADMIN'S SANCTIONED INTRO") && !textOf(live.adf).includes("PLAIN TAMPER"));
+    }
+    {
+      const { w, save } = await approvedBed();
+      save(ADMIN, pageAdf("ADMIN'S SANCTIONED INTRO", "SEALED TEXT"));
+      save(PLAIN, pageAdf("PLAIN TAMPER", "TAMPERED SECTION"));
+      limit.versions = { headers: { "Retry-After": "1800" } };
+      await triggers.workflowSweep();
+      eq("the sweep while the versions cannot be read: no revert this run", w.live(PAGE).authorId, PLAIN);
+    }
   }
 
   // ── pure parts of the door ──────────────────────────────────────────────────────────────────
