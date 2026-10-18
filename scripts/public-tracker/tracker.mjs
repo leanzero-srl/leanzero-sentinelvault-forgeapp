@@ -64,7 +64,7 @@ const FIRST_VERSION = [6, 4, 0];
 // published (each needs an entries.mjs row first); main may already carry later notes.
 // Raise it only to a version that is DEPLOYED TO PRODUCTION: an unlisted version's issues say it is
 // waiting for Marketplace approval, which is true only of a production build.
-const LAST_VERSION = [8, 6, 0];
+const LAST_VERSION = [8, 10, 0];
 // RELEASED = listed as "public" by the Marketplace's own versions endpoint (no login), and released in
 // Jira on the Marketplace's release date. Sentinel Vault has no deploy ledger, so the Marketplace is
 // the source; there is no hand-set constant to forget to raise or to raise too early (review
@@ -91,10 +91,19 @@ const vge = (a, b) => { for (let i = 0; i < 3; i++) { if (a[i] !== b[i]) return 
 let MARKET = null; // version name -> { status, date } from the Marketplace
 async function loadMarketplace() {
   if (MARKET) return MARKET;
-  const r = await fetch(MARKETPLACE_VERSIONS, { headers: { Accept: "application/json" } });
-  if (!r.ok) throw new Error(`Marketplace versions endpoint answered HTTP ${r.status}; refusing to guess what is released`);
-  const body = await r.json();
-  const list = (body._embedded && body._embedded.versions) || [];
+  // The endpoint FLAPS between a fresh answer and a stale cached copy (2026-10-18: alternate reads a few seconds apart
+  // listed 8.10.0 or stopped at 8.6.0, the stale one with Age ~74,000 s), and a stale read made 8.7.0-8.10.0 look
+  // unreleased. Read it five times and keep the answer that lists the most versions: a stale copy only ever lacks the
+  // newest ones.
+  let list = [];
+  for (let i = 0; i < 5; i++) {
+    const r = await fetch(MARKETPLACE_VERSIONS, { headers: { Accept: "application/json" } });
+    if (!r.ok) throw new Error(`Marketplace versions endpoint answered HTTP ${r.status}; refusing to guess what is released`);
+    const body = await r.json();
+    const l = (body._embedded && body._embedded.versions) || [];
+    if (l.length > list.length) list = l;
+    if (i < 4) await new Promise((res) => setTimeout(res, 1500));
+  }
   if (!list.length) throw new Error("Marketplace versions endpoint listed no versions; refusing to guess what is released");
   MARKET = new Map(list.map((v) => [v.name, { status: v.status, date: v.release && v.release.date }]));
   return MARKET;
