@@ -18,7 +18,8 @@ import { sanitizeReadConfirmation } from "./read-acks.js";
 import { fetchPageLabels } from "../../infra/labels.js";
 import { touchByline } from "../page-details/byline-touch.js"; // WF-6 (dynamic inside: no cycle)
 import { enforceModeOf } from "./enforce-rules.js";
-import { nextBaselineSource, baselineFields } from "./baseline.js"; // B2: why the baseline moved, named on every surface
+import { nextBaselineSource, baselineFields } from "./baseline.js";
+import { withLegacySource } from "./baseline-read.js"; // a pre-8.11.0 record's history, seeded before it is extended // B2: why the baseline moved, named on every surface
 
 export const WORKFLOW_STATE_PROP = "sentinel-vault-workflow";
 
@@ -434,7 +435,7 @@ export async function restampApprovedVersion(pageId, n, cause = null) {
   const fresh = await readPageWorkflow(pageId);
   if (!fresh?.enforce || fresh.stateId !== record.stateId) return false;
   if (fresh.approvedVersion != null && n <= fresh.approvedVersion) return false;
-  fresh.baselineSource = nextBaselineSource(fresh, n, cause);
+  fresh.baselineSource = nextBaselineSource(await withLegacySource(pageId, fresh), n, cause);
   fresh.approvedVersion = n;
   await persistState(pageId, fresh, fresh.stateId);
   return true;

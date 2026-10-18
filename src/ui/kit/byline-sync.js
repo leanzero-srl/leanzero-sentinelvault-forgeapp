@@ -25,10 +25,15 @@ export function bylineSyncStep(state, pageId, byline) {
   }
   const value = { title: String(byline.title), icon: byline.icon ? String(byline.icon) : "", tooltip: byline.tooltip ? String(byline.tooltip) : "" };
   const stamp = `${value.title}|${value.icon}|${value.tooltip}`;
-  if (!state || state.pageId !== id || state.stamp == null) {
+  if (!state || state.pageId !== id) {
     // A page we have not seen an answer for: what Confluence shows is the property it just loaded.
-    // (A remembered "no answer" for this page is not a stamp: the next byline is the baseline too.)
     return { state: { pageId: id, stamp }, push: null };
+  }
+  if (state.stamp == null) {
+    // The earlier answer for this page came without a byline (its workflow read missed the summary's
+    // bound): what Confluence shows is unknown, so hand this one over — never the manifest's own
+    // default title, which a page with no property already shows (review round 2 D4).
+    return { state: { pageId: id, stamp }, push: value.title === "Sentinel Vault" ? null : value };
   }
   if (state.stamp === stamp) return { state, push: null };
   return { state: { pageId: id, stamp }, push: value };
