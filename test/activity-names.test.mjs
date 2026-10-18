@@ -43,6 +43,24 @@ eq("row 2 gains its accountId", out[1].actor.accountId, MIHAI);
 eq("one lookup per distinct account", [...calls].sort(), ["boom", "gone", MIHAI].sort());
 eq("nothing to resolve → no lookups, same list", (await decorateActorNames([{ actor: { accountId: "a", name: "A" } }], async () => { throw new Error("must not be called"); })).length, 1);
 
+// 8.11.0 (found by the revert-record live spec, 2026-10-18): the EDITOR named in a row's details (an
+// Approved page restored or moved back, a sealed file put back) was printed as the raw accountId —
+// "712020:6c8d… edited the Approved page" in the page's Activity — because only the actor was looked
+// up. The reader names the details' editor the same way, and the UI never prints an id as a name.
+{
+  const { formatActivity } = await import("../src/ui/kit/activity-format.js");
+  const rows = [
+    { id: "r1", type: "workflow.enforced", actor: { accountId: null, name: null }, details: { mode: "revert", editor: MIHAI, restoredTo: 1 }, version: 3 },
+    { id: "r2", type: "workflow.enforced", actor: { accountId: null, name: null }, details: { mode: "demote", editor: MIHAI, editorName: "Kept Editor" }, version: 3 },
+    { id: "r3", type: "seal.edit-reverted", actor: { accountId: null, name: null }, details: { editor: MIHAI, restoredTo: 2 }, version: 4 },
+  ];
+  const named = await decorateActorNames(rows, async (id) => (id === MIHAI ? "Mihai Perdum" : null));
+  eq("the details' editor is named at read time", named.map((e) => e.details?.editorName ?? null), ["Mihai Perdum", "Kept Editor", "Mihai Perdum"]);
+  ok("the restored-page row reads the editor's name", /^Mihai Perdum edited the Approved page/.test(formatActivity(named[0]).sentence));
+  const unnamed = await decorateActorNames(rows, async () => null);
+  for (const e of unnamed) ok(`an editor nobody can name is never printed as an id (${e.type})`, !String(formatActivity(e).sentence).includes(MIHAI));
+}
+
 // The writer guard and both readers are wired (a pure helper nobody calls fixes nothing).
 const log = readFileSync(new URL("../src/server/infra/activity-log.js", import.meta.url), "utf8");
 ok("recordActivity resolves a no-name / id-as-name actor before storing", /const lookup = accountToName\(actor\);/.test(log) && /else if \(looksLikeAccountId\(actor\.name\)\) actor\.name = null;/.test(log));
