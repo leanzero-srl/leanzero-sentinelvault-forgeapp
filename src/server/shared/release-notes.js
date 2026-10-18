@@ -20,9 +20,10 @@ export const RELEASE_NOTES = Object.freeze([
     ],
     fixes: [
       "The Sentinel Vault status under the page title kept showing the workflow state the page was opened with after the page was moved somewhere else, while the banner above it already followed the move. The status under the title now follows within a few seconds too, without a reload.",
-      "After Sentinel Vault restored an Approved page following an unapproved edit, the page's approval details said an approver or space admin had last updated the approved content in the restored version, and after a second restore the page's activity, the comment to the editor, the banner and My work named the restored copy as the approved version. They now name the version that was approved and say that the later version is Sentinel Vault's restored copy of it. Only a change an approver or space admin made is credited to them.",
+      "After Sentinel Vault restored an Approved page following an unapproved edit, the page's approval details said an approver or space admin had last updated the approved content in the restored version, and after a second restore the page's activity, the comment to the editor, the banner and My work named the restored copy as the approved version. They now name the version that was approved and say that the later version is Sentinel Vault's restored copy of it, or, when an approver or space admin changed the page after the approval, which of their versions was restored. Only a change an approver or space admin made is credited to them.",
       "The comment that tells the requester their approval request was approved was titled Approval approved and left out the reason the approver typed. It is now titled with the version and the approvers' names, for example Approved v7 by Lena Steward, and includes each approver's reason.",
       "A move chosen in the page's Sentinel Vault details window, or signed in the banner's signing dialog, after the page had been moved somewhere else now says which state the page is in, as the banner already did.",
+      "A page's Sentinel Vault activity could show the person whose edit was undone or moved back for review as an account ID instead of their name. It now shows their name.",
     ],
     action: "Nothing to do.",
   }),
