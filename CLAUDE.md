@@ -40,6 +40,20 @@ workflow definition comes from the page's own space, never a payload `spaceKey`.
 Guards: `test/validation-config-authz.test.mjs`, `test/config-read-authz.test.mjs`, and the live
 `forge-live-harness/scenarios/sentinel-vault/settings-read-authz.spec.ts`.
 
+**A record's stored space is not authority (8.9.0, GHSA-g79w-wv2m-9rhm, GHSA-58xh-hcqw-m5xh).** A
+workflow record, approval request, seal or edit request keeps the space it was made in; the page can
+move since. Steward power over it = an admin of the page's space NOW and, if it moved, of the record's
+space too: `content-access.js` `recordAuthority` / `isStewardOfRecord` / `isStewardOfSeal` (a seal's page
+is where its FILE is now, `sealContainerId`). Never a steward check on `record.spaceKey` alone, never
+live-only (moving a page into your own space must not hand you its records). A moved page's workflow
+HOLDS (`workflow/moved-hold.js`, the one home: request, approve, re-request, finalizer, AI verdict,
+proposals); a moved Approved page is always reverted (`enforceModeOf(settings, { moved })`). A failed
+lookup is "unknown" and judges nothing (no demote, revert or re-baseline). A file is sealed on the page
+or blog post it is attached to (`pageId || blogPostId`, refuse when unknown). The panel's macro key is
+the app's own (`resolveExtensionKey`), never read from page content. Guards: `test/record-space-authz.test.mjs`
+(includes a source guard: no direct steward check in the record-only files), `test/seal-container.test.mjs`,
+`test/panel-key.test.mjs`, live `forge-live-harness/scenarios/sentinel-vault/moved-records-authz.spec.ts`.
+
 Guards: `test/content-access.test.mjs` (pure decision core) and
 `~/Projects/forge-live-harness/scenarios/sentinel-vault/authz-content-gate.spec.ts` (live, and the
 assertions that matter are the REFUSALS — a happy-path test proves nothing about an authz fix).
