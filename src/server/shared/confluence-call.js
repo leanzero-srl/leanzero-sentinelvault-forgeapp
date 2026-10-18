@@ -35,11 +35,33 @@ export const UNSCOPED_WAIT_MS = 6_000;    // outside a resolver: the most one ca
 export const MAX_RETRIES = 2;
 export const MAX_SINGLE_WAIT_MS = 8_000;  // a longer Retry-After is a spent quota, not a burst: answer now
 
-/** Run `fn` as one invocation: its own memo, its own rate-limit notes, its own deadline. */
-export function runInvocation(fn, { budgetMs = RESOLVER_BUDGET_MS } = {}) {
+/**
+ * Run `fn` as one invocation: its own memo, its own rate-limit notes, its own deadline. With a
+ * `label` (the resolver key, the trigger name) the invocation ends with ONE log line counting what
+ * it asked Confluence, by kind — the measurement for the points budget (space-permission rows cost
+ * 2 points each): `[CONFLUENCE] ribbon-evaluate calls=7 perms=1 users=1 groups=0 spaces=1 other=4 429=0`.
+ */
+export function runInvocation(fn, { budgetMs = RESOLVER_BUDGET_MS, label = null } = {}) {
   const now = Date.now();
-  const scope = { startedAt: now, deadline: now + budgetMs, memo: new Map(), rateLimited: null, authzUnknown: false, nearLimitLogged: false };
-  return als.run(scope, fn);
+  const scope = { startedAt: now, deadline: now + budgetMs, memo: new Map(), rateLimited: null, authzUnknown: false, nearLimitLogged: false, counts: null };
+  if (!label) return als.run(scope, fn);
+  scope.counts = { calls: 0, perms: 0, users: 0, groups: 0, spaces: 0, other: 0, limited: 0 };
+  return als.run(scope, async () => {
+    try { return await fn(); } finally {
+      const c = scope.counts;
+      if (c.calls > 0) console.info(`[CONFLUENCE] ${label} calls=${c.calls} perms=${c.perms} users=${c.users} groups=${c.groups} spaces=${c.spaces} other=${c.other} 429=${c.limited} ms=${Date.now() - now}`);
+    }
+  });
+}
+
+/** PURE. The kind of a Confluence path, for the per-invocation count. */
+export function callKind(path) {
+  const p = pathForLog(path);
+  if (/\/permissions$/.test(p) && p.includes("/spaces/")) return "perms";
+  if (p.startsWith("/wiki/rest/api/user/memberof") || /\/group/.test(p)) return "groups";
+  if (p.startsWith("/wiki/rest/api/user")) return "users";
+  if (p.startsWith("/wiki/api/v2/spaces")) return "spaces";
+  return "other";
 }
 
 /** The current invocation's scope, or null outside one. */
@@ -70,8 +92,8 @@ export function invocationMemo(key, load) {
 }
 
 /** Wrap a Forge function handler so each call is one invocation (memo, notes, retry deadline). */
-export const asInvocation = (handler, { budgetMs = RESOLVER_BUDGET_MS } = {}) =>
-  (...args) => runInvocation(() => handler(...args), { budgetMs });
+export const asInvocation = (handler, { budgetMs = RESOLVER_BUDGET_MS, label = null } = {}) =>
+  (...args) => runInvocation(() => handler(...args), { budgetMs, label });
 
 const headerOf = (res, name) => {
   try { const v = res?.headers?.get?.(name); return v == null || v === "" ? null : String(v); } catch (_) { return null; }
@@ -151,7 +173,9 @@ async function call(who, path, init, { idempotent } = {}) {
   const until = scope ? scope.deadline : Date.now() + UNSCOPED_WAIT_MS;
   for (let attempt = 0; ; attempt++) {
     const requester = who === "user" ? api.asUser() : api.asApp();
+    if (scope?.counts) { scope.counts.calls += 1; scope.counts[callKind(path)] += 1; }
     const res = await requester.requestConfluence(path, init);
+    if (scope?.counts && res?.status === 429) scope.counts.limited += 1;
     if (res?.status !== 429) {
       if (scope && !scope.nearLimitLogged && headerOf(res, "X-RateLimit-NearLimit") === "true") {
         scope.nearLimitLogged = true;
