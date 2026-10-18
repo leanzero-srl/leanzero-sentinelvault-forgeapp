@@ -42,6 +42,17 @@ export const COMPONENTS = {
 const JIRA_ON = "It works once a site admin has connected Jira to Sentinel Vault in Atlassian Administration.";
 
 export const ENTRIES = {
+  // 8.12.0 (2026-10-18). Outcome wording only (this file is public).
+  f5edf7b2eb1d89de: ["A permission change in Confluence reaches Sentinel Vault within a minute", "C"],
+  // The public text says only what 8.12.0 does (review 2026-10-18): the in-app line's "says so and asks you to try
+  // again" holds for the banner, the pickers and most admin actions, not yet for every settings read.
+  d9a9300f5335cbb7: ["A Confluence rate limit no longer makes space admins look like ordinary users", "W", {
+    d: "While Confluence was limiting requests from Sentinel Vault, space admins could be treated as ordinary users: Approve and Deny were hidden, space admin actions were refused, and an edit a space admin made to an Approved page could be undone or the page moved back out of Approved. The approver and group lists could also come back empty. Sentinel Vault now asks Confluence about permissions far less often, and the page banner, the approver and group pickers and most space admin actions now say when Confluence is busy and ask you to try again.",
+  }],
+  "98b39eaacb4a218c": ["A page's activity names the person whose edit was undone, not an account ID", "A", {
+    d: "A page's Sentinel Vault activity could show the person whose edit was undone, or whose page was moved back out of Approved, as an account ID instead of their name. It now shows their name.",
+  }],
+
   // 8.11.0 (2026-10-18). Outcome wording only (this file is public).
   "2909e08b7dcf8ef8": ["The sentinel-vault-workflow page property adds reviewedVersion, the version that was approved", "R", {
     d: "On an Approved page, the page property sentinel-vault-workflow (read with Confluence's REST API) now also says reviewedVersion, the version that was approved, and baselineVersion, the version later changes are checked against, with baselineKind and baselineContentOf saying why that version moved and which version's content it holds (empty where that was not recorded). A page approved before this update gets these fields the next time Sentinel Vault updates its workflow record, for example when the page is edited or moved. approvedVersion keeps the value it had, for scripts that already read it.",
