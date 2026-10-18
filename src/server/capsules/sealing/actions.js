@@ -1512,19 +1512,19 @@ const ribbonSummary = async (req) => {
   // — the same stamp-checked write the details modal does, so an unchanged chip costs one KVS read.
   // Only with a known seal count; bounded so the banner never waits long on the property write.
   if (attachmentsOk) {
-    const wf = await workflowRead;
-    // 8.11.0: the answer carries the byline the page should show, so the banner can hand a CHANGED one
-    // to Confluence (kit/byline-sync.js): an open page renders its byline item from the property once,
-    // at load, and never re-reads it. The same composeByline the property write uses, from the same
-    // inputs; none when the workflow read failed (no chip without it, as below).
-    const bylineInputs = wf === undefined ? null : {
-      level: out.classification?.level || null, source: out.classification?.source || "none", classificationEnabled: out.classification?.enabled === true,
-      sealCount: liveSeals.filter(({ record }) => record?.lockedBy).length + sectionRecords.length,
-      workflow: wf?.status || null,
-    };
-    if (bylineInputs) out.byline = composeByline(bylineInputs);
     const write = (async () => {
-      if (!bylineInputs) return null; // the workflow read failed: do not write a chip without it
+      const wf = await workflowRead;
+      if (wf === undefined) return null; // the workflow read failed: do not write a chip without it
+      const bylineInputs = {
+        level: out.classification?.level || null, source: out.classification?.source || "none", classificationEnabled: out.classification?.enabled === true,
+        sealCount: liveSeals.filter(({ record }) => record?.lockedBy).length + sectionRecords.length,
+        workflow: wf?.status || null,
+      };
+      // 8.11.0: the answer carries the byline the page should show, so the banner can hand a CHANGED one
+      // to Confluence (kit/byline-sync.js): an open page renders its byline item from the property once,
+      // at load, and never re-reads it. The same composeByline the property write uses, from the same
+      // inputs; set only when the workflow read lands inside the bound below (a later answer carries it).
+      out.byline = composeByline(bylineInputs);
       return writeBylineFor(pageId, bylineInputs, { lazy: true });
     })().catch((e) => console.warn("[RIBBON] byline refresh failed:", e?.message || e));
     await Promise.race([write, new Promise((r) => setTimeout(r, 1500))]);

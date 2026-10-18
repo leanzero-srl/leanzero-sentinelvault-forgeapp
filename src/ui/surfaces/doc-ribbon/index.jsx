@@ -30,7 +30,7 @@ import { freezeSentence } from "../../kit/freeze-sentence.js"; // SEC-2 (d), tru
 import { sourcePhrase } from "../../../server/capsules/classification/logic.js"; // P3: "from space default" / "set on this page"
 import BusyVeil from "../../kit/BusyVeil";
 import { detailsModalSize } from "../../kit/modal-size.js";
-import { reviewedVersionOf } from "../../../server/capsules/workflow/baseline.js"; // B2: the version that was approved
+import { reviewedVersionOf, restoredLabel } from "../../../server/capsules/workflow/baseline.js"; // B2: the version that was approved
 
 /**
  * Workflow state chip + transition control (#42). Shows the page's current
@@ -824,8 +824,8 @@ const alertSentence = (a, operatorId) => {
       return asEditor ? <>You removed the sealed section <strong>{name}</strong>; it was put back.</> : <>Your sealed section <strong>{name}</strong> was removed and put back.</>;
     case "workflow-reverted":
       return asEditor
-        ? <>Your edit was reverted to {a.approvedVersion != null ? `approved v${a.approvedVersion}` : "the approved version"}.</>
-        : <>An edit to this Approved page by {a.editorDisplayName || "someone outside the approvers"} was reverted to the approved version{a.approvedVersion != null ? ` (v${a.approvedVersion})` : ""}.</>;
+        ? <>Your edit was reverted to {restoredLabel(a.approvedVersion, a.reviewedVersion) || "the approved version"}.</>
+        : <>An edit to this Approved page by {a.editorDisplayName || "someone outside the approvers"} was reverted to {(() => { const l = restoredLabel(a.approvedVersion, a.reviewedVersion); return !l ? "the approved version" : l.startsWith("approved ") ? `the approved version (v${a.approvedVersion})` : l; })()}.</>;
     case "workflow-demoted":
       return asEditor
         ? <>Your edit moved this page back to <strong>{a.demotedToName || "Draft"}</strong>. Nothing was lost.</>
