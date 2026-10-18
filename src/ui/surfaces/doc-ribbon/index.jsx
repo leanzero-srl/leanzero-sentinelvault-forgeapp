@@ -28,6 +28,7 @@ import { freezeSentence } from "../../kit/freeze-sentence.js"; // SEC-2 (d), tru
 import { sourcePhrase } from "../../../server/capsules/classification/logic.js"; // P3: "from space default" / "set on this page"
 import BusyVeil from "../../kit/BusyVeil";
 import { detailsModalSize } from "../../kit/modal-size.js";
+import { reviewedVersionOf } from "../../../server/capsules/workflow/baseline.js"; // B2: the version that was approved
 
 /**
  * Workflow state chip + transition control (#42). Shows the page's current
@@ -124,11 +125,13 @@ const WorkflowDetails = ({ workflow, siteUrl, pageId, isSteward, host, onSaved, 
   const enforced = !!record.enforce && record.approvedVersion != null;
   const ar = record.approvalRecord || null;
   // The chip and the link name the version that was REVIEWED (the record's pin). The enforce
-  // baseline (record.approvedVersion) moves forward on every sanctioned edit; when it has, the
-  // panel says so on its own line rather than linking to a version nobody approved.
-  const reviewedVersion = (typeof ar?.pinnedVersion === "number" ? ar.pinnedVersion : null) ?? record.approvedVersion;
+  // baseline (record.approvedVersion) moves forward on every write the app or an approver makes on
+  // the Approved page; when it has, the panel says why on its own line (the server's
+  // workflow.baseline, baseline.js), rather than linking to a version nobody approved. B2: it used
+  // to say an approver or space admin updated it — also after the app's own revert.
+  const reviewedVersion = reviewedVersionOf(record);
   const baselineVersion = record.approvedVersion;
-  const baselineMoved = typeof baselineVersion === "number" && baselineVersion !== reviewedVersion;
+  const baselineSentence = workflow.baseline?.moved ? workflow.baseline.sentence : null;
   const decisions = Array.isArray(ar?.decisions) ? ar.decisions : [];
   const live = typeof workflow.liveVersion === "number" ? workflow.liveVersion : null;
   const changedSince = live != null && typeof baselineVersion === "number" && live > baselineVersion;
@@ -271,9 +274,9 @@ const WorkflowDetails = ({ workflow, siteUrl, pageId, isSteward, host, onSaved, 
               <VersionLink siteUrl={siteUrl} pageId={pageId} version={reviewedVersion} testId="wf-approved-version-link">
                 View approved version (v{reviewedVersion})
               </VersionLink>
-              {baselineMoved && (
-                <p className="wf-evidence-baseline" data-testid="wf-evidence-baseline">
-                  Approved content was last updated by an approver or space admin in v{baselineVersion}.
+              {baselineSentence && (
+                <p className="wf-evidence-baseline" data-testid="wf-evidence-baseline" data-kind={workflow.baseline?.kind || ""}>
+                  {baselineSentence}
                 </p>
               )}
               {changedSince && (
@@ -536,7 +539,7 @@ const WorkflowControl = ({ workflow, approvals, operatorId, pageId, spaceKey, si
   // the details chip beside it drops the state word.
   const rec = workflow.record || {};
   const chipEnforced = !!rec.enforce && rec.approvedVersion != null;
-  const chipVersion = (typeof rec.approvalRecord?.pinnedVersion === "number" ? rec.approvalRecord.pinnedVersion : null) ?? rec.approvedVersion;
+  const chipVersion = reviewedVersionOf(rec);
   const stateLabel = chipEnforced ? `${state.name} v${chipVersion}` : state.name;
 
   // APPROVAL MODE — the page is awaiting sign-off before it can move to the enforce state.
