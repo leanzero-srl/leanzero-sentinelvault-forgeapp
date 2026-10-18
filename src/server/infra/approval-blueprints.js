@@ -114,7 +114,7 @@ export function buildWorkflowEnforcementDispatch({ pageId, mode, editorAccountId
 // <the approver>" — the approver had approved. It now says what happened and names no decider.
 // WF-3: a denial carries the approver's reason — the whole point of Deny + reason is to tell the
 // author what to fix.
-export function approvalResolvedBody({ requestedBy, outcome, targetName, deciderName, reason, pinnedVersion, liveVersion }) {
+export function approvalResolvedBody({ requestedBy, outcome, targetName, deciderName, reason, pinnedVersion, liveVersion, approvals }) {
   const target = `<strong>${escapeXml(targetName || "the next state")}</strong>`;
   const who = mention(requestedBy);
   if (outcome === "stale") {
@@ -124,6 +124,7 @@ export function approvalResolvedBody({ requestedBy, outcome, targetName, decider
 <p>${who} — the page changed after you asked for approval to move it to ${target}${versions}, so the request was closed. Nobody declined it. Re-request approval when the page is ready.</p>
 `.trim();
   }
+  if (outcome === "approved") return approvedBody({ who, target, pinnedVersion, deciderName, reason, approvals });
   const verb = outcome === "approved" ? "approved" : "declined";
   const tail = outcome === "approved" ? " The page has moved." : " The page stays in its current state.";
   // The reason on its own labelled line, like the other notices (owner, 2026-09-25) — tucked in
@@ -135,10 +136,39 @@ export function approvalResolvedBody({ requestedBy, outcome, targetName, decider
 `.trim();
 }
 
+// 2026-10-18 (content pilot two-seats-2): a completed approval was titled "Approval approved" and
+// dropped the reason the approver typed. The title now says what happened ("Approved v7 by Lena
+// Steward"; every approver who said yes, the version they approved) and each typed reason follows on
+// its own line, named when more than one approver gave one. `approvals` = [{ name, reason }] from the
+// approval record (buildApprovalRecord: names and reasons already bounded); `deciderName` / `reason`
+// are the fallback for a caller that has no record.
+const joinNames = (names) => {
+  const shown = names.slice(0, 3);
+  const more = names.length - shown.length;
+  if (more > 0) return `${shown.join(", ")} and ${more} other${more === 1 ? "" : "s"}`;
+  return shown.length <= 1 ? (shown[0] || "") : `${shown.slice(0, -1).join(", ")} and ${shown[shown.length - 1]}`;
+};
+function approvedBody({ who, target, pinnedVersion, deciderName, reason, approvals }) {
+  const list = Array.isArray(approvals)
+    ? approvals.filter((a) => a && (a.name || a.reason)).map((a) => ({ name: a.name ? String(a.name) : null, reason: a.reason ? String(a.reason).trim() : null }))
+    : (deciderName || reason ? [{ name: deciderName || null, reason: reason || null }] : []);
+  const names = [...new Set(list.map((a) => a.name).filter(Boolean))];
+  const by = names.length ? ` by ${escapeXml(joinNames(names))}` : "";
+  const version = typeof pinnedVersion === "number" ? ` v${escapeXml(pinnedVersion)}` : "";
+  const reasons = list.filter((a) => a.reason);
+  const why = reasons.length === 1 && names.length <= 1
+    ? `\n<p><strong>Reason:</strong> <em>“${escapeXml(reasons[0].reason)}”</em></p>`
+    : reasons.map((a) => `\n<p><strong>${escapeXml(a.name || "Approver")}:</strong> <em>“${escapeXml(a.reason)}”</em></p>`).join("");
+  return `
+<p>${HEADER} — <strong>Approved${version}${by}</strong></p>
+<p>${who} — your request to move this page to ${target} was <strong>approved</strong>${by}. The page has moved.</p>${why}
+`.trim();
+}
+
 // Notify the requester that their request was approved, denied, or closed because the page changed.
-export async function notifyApprovalResolved({ pageId, requestedBy, outcome, targetName, deciderName, reason, pinnedVersion, liveVersion }) {
+export async function notifyApprovalResolved({ pageId, requestedBy, outcome, targetName, deciderName, reason, pinnedVersion, liveVersion, approvals }) {
   if (!pageId || !requestedBy) return { success: false };
-  const storageBody = approvalResolvedBody({ requestedBy, outcome, targetName, deciderName, reason, pinnedVersion, liveVersion });
+  const storageBody = approvalResolvedBody({ requestedBy, outcome, targetName, deciderName, reason, pinnedVersion, liveVersion, approvals });
   try {
     return await postCommentWithMention({ pageId, storageBody });
   } catch (e) {
