@@ -12,6 +12,7 @@
 // Copy rules: Confluence-native words only (space, page, file, section, group) — never realm /
 // guild / artifact / operator in anything a user reads.
 import { looksLikeAccountId } from "../../server/shared/account-id.js";
+import { restoredLabel } from "../../server/capsules/workflow/baseline.js"; // B2: one wording for what a revert gave back
 import { when } from "./status-language.js";
 
 /** Report filter chips, in display order. `types` is what the server-side `types` filter takes. */
@@ -352,7 +353,7 @@ export function formatActivity(entry) {
             sentence: d.reconciled === "baseline-advanced"
               ? `${byWho} the Approved page with no content change — ${APP_NAME} kept it and advanced the approved baseline${d.driftedVersion != null ? ` to v${d.driftedVersion}` : ""}`
               : got != null && reviewed != null && got !== reviewed
-                ? `${byWho} the Approved page — ${APP_NAME} restored v${got}, the last version kept after approval v${reviewed}`
+                ? `${byWho} the Approved page — ${APP_NAME} restored ${restoredLabel(got, reviewed)}`
                 : `${byWho} the Approved page — ${APP_NAME} restored the approved version${got != null ? ` (v${got})` : ""}` }
         : { ...base, label: `Moved back to ${d.demotedToName || "Draft"}`, glyph: "arrow", tone: "caution",
             // A2: the target is the space's configured demote state, named on the row; "Draft" is

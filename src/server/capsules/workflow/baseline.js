@@ -29,6 +29,18 @@
 
 const num = (v) => (typeof v === "number" && Number.isFinite(v) ? v : null);
 
+/**
+ * PURE. How every surface names what a revert gave back (the activity row, the editor's comment, the
+ * banner pill): "approved v7" when it is the approved content, else "v8, the last version kept after
+ * approval v7" (an approver's or space admin's later save). null when nothing is known.
+ */
+export function restoredLabel(contentOf, reviewedVersion) {
+  const c = num(contentOf);
+  const r = num(reviewedVersion);
+  if (c == null) return null;
+  return r == null || c === r ? `approved v${c}` : `v${c}, the last version kept after approval v${r}`;
+}
+
 /** PURE. The version that was approved (what the chip says): the approval record's pin, else the
  *  version the page entered the enforce state at (8.11.0 records), else — a record from before
  *  either — the baseline itself. */
@@ -78,7 +90,9 @@ export function nextBaselineSource(record, n, cause, nowIso = new Date().toISOSt
     return { kind, contentOf: from, editedIn: from, at: nowIso };
   }
   if (kind === "unchanged") return { kind, contentOf: prevContent ?? n, editedIn: prevEdited, at: nowIso };
-  if (kind === "edit") return { kind, contentOf: n, editedIn: n, at: nowIso };
+  // A privileged save the app then saved again (its seals restored) holds the editor's change in the
+  // app's version n: the edit was made in cause.editedIn, never in the app's n.
+  if (kind === "edit") return { kind, contentOf: n, editedIn: num(cause.editedIn) ?? n, at: nowIso };
   if (kind === "seal" || kind === "healed") return { kind, contentOf: n, editedIn: null, at: nowIso };
   return null;
 }
@@ -97,7 +111,10 @@ export function legacySourceFrom(record, activity) {
   if (!first) return null;
   const kind = first.details?.reconciled === "baseline-advanced" ? "unchanged" : "restored";
   let content = kind === "unchanged" ? num(first.details?.approvedVersion) : num(first.details?.restoredTo);
-  for (let i = 0; content != null && i < 5; i++) {
+  const reviewed = reviewedVersionOf(record);
+  // Walk back through copies of copies — never past this approval's own version (an earlier approval
+  // cycle's rows describe content this approval replaced).
+  for (let i = 0; content != null && content !== reviewed && i < 5; i++) {
     const earlier = at(content);
     if (!earlier || earlier === first) break;
     const next = earlier.details?.reconciled === "baseline-advanced" ? num(earlier.details?.approvedVersion) : num(earlier.details?.restoredTo);
@@ -135,8 +152,11 @@ export function describeBaseline(record, { activity } = {}) {
     out.sentence = `v${b} has the same content as ${ofWhat(c)}${editNote(c)}.`;
     out.short = `v${b}: same content as v${c}`;
   } else if (kind === "edit") {
-    out.sentence = `Approved content was last updated by an approver or space admin in v${b}.`;
-    out.short = `v${b}: updated by an approver or space admin`;
+    const e = num(src?.editedIn) ?? b;
+    out.sentence = e === b
+      ? `Approved content was last updated by an approver or space admin in v${b}.`
+      : `Approved content was last updated by an approver or space admin in v${e}; v${b} is Sentinel Vault's save of it with the page's seals restored.`;
+    out.short = `v${e}: updated by an approver or space admin`;
   } else if (kind === "seal") {
     out.sentence = `Changes after approval are checked against v${b}, saved when a seal was added to the page.`;
     out.short = `Checked against v${b} (a seal was added)`;

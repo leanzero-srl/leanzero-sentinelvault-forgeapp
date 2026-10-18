@@ -543,7 +543,9 @@ export async function pageContentTrigger(event) {
         let cause = null; // B2: why the baseline moves (baseline.js) — never an approver for the app's write
         if (anyChange && writtenVersion) {
           newBaseline = writtenVersion; // app wrote (revert, or a seal restore on a privileged edit)
-          cause = enforceReverted ? { kind: "restored", from: enforceRevertVersion, ...(enforceRevertContent || {}) } : enforcement.action === "privileged" ? { kind: "edit" } : null;
+          // A privileged save the app saved again (seals restored): the edit is the editor's version, never the app's.
+          cause = enforceReverted ? { kind: "restored", from: enforceRevertVersion, ...(enforceRevertContent || {}) }
+            : enforcement.action === "privileged" ? { kind: "edit", editedIn: typeof content?.version?.number === "number" ? content.version.number : null } : null;
         } else if (enforcement.action === "privileged") {
           newBaseline = content?.version?.number || (await fetchLivePageVersion(pageId)); // editor's live version
           cause = { kind: "edit" };
@@ -1397,12 +1399,26 @@ export async function collectWorkflowEnforcementForPage(pageId, atlassianId, eve
 // revert) goes through here; the activity row stays at the site because its facts differ per path.
 async function announceWorkflowEnforcement({ pageId, mode, editorAccountId, record, approvedVersion, revertedVersion, demotedToName, via, comment = true }) {
   const approverAccountId = record?.approvalRecord?.completedBy || record?.enteredBy || null;
+  // B2: approvedVersion here is what came back (the restored content); reviewedVersion the version that
+  // was approved — the pill and the comment name both when they differ (baseline.js restoredLabel).
+  const reviewedVersion = reviewedVersionOf(record);
   try {
-    await recordDispatch(buildWorkflowEnforcementDispatch({ pageId, mode, editorAccountId, approverAccountId, approvedVersion, revertedVersion, demotedToName, via }));
+    await recordDispatch(buildWorkflowEnforcementDispatch({ pageId, mode, editorAccountId, approverAccountId, approvedVersion, reviewedVersion, revertedVersion, demotedToName, via }));
   } catch (e) { console.error("[WORKFLOW-ENFORCE] dispatch failed:", e); }
   if (comment && editorAccountId) {
-    await postEnforceComment(pageId, editorAccountId, mode === "revert" ? "revert" : "demote", { approvedVersion, revertedVersion, demotedToName }).catch(() => {});
+    await postEnforceComment(pageId, editorAccountId, mode === "revert" ? "revert" : "demote", { approvedVersion, reviewedVersion, revertedVersion, demotedToName }).catch(() => {});
   }
+}
+
+// B2 (review 2026-10-18 #2): does version `a` of the page carry the same body as version `b`? Used only
+// where the sweep finds an app-authored version beyond the baseline. A failed read answers false.
+async function sameBodyAsVersion(pageId, a, b) {
+  try {
+    if (!(typeof a === "number" && typeof b === "number")) return false;
+    const [{ adfDoc: x }, { adfDoc: y }] = await Promise.all([readDocBodyAtVersion(pageId, a), readDocBodyAtVersion(pageId, b)]);
+    if (!x?.content || !y?.content) return false;
+    return hashAdf(x) === hashAdf(y) && JSON.stringify(canonicalizeAdf(x.content)) === JSON.stringify(canonicalizeAdf(y.content));
+  } catch (_) { return false; }
 }
 
 // Pass 0 (§2.3): whole-page revert to the approved baseline. Mutates ctx.adfDoc; the
@@ -1686,9 +1702,12 @@ export async function workflowSweep() {
           || (record.approvers.includes(author) && (liveApprovers.includes(author) || liveUnresolved))
           || await isStewardOfSpaces(isAccountStewardAsApp, author, auth.spaces));
         if (authorized) {
-          // An approver's or space admin's save is a sanctioned edit; the app's own version (a revert
-          // whose re-stamp was lost) says nothing about who — no cause, so no surface names anyone.
-          if (await restampApprovedVersion(idx.pageId, live, author === systemAccountId ? null : { kind: "edit" })) healed++;
+          // An approver's or space admin's save is a sanctioned edit. The app's own version says nothing
+          // about who: when its body equals the baseline's (a re-save) the baseline's history carries
+          // forward ("unchanged"); otherwise no cause, so no surface names anyone.
+          const cause = author !== systemAccountId ? { kind: "edit" }
+            : (await sameBodyAsVersion(idx.pageId, live, record.approvedVersion)) ? { kind: "unchanged" } : null;
+          if (await restampApprovedVersion(idx.pageId, live, cause)) healed++;
           await kvs.delete(`workflow-integrity-notified-${idx.pageId}`).catch(() => {});
           continue;
         }
