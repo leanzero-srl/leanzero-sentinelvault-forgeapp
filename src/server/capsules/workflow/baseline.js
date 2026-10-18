@@ -29,10 +29,12 @@
 
 const num = (v) => (typeof v === "number" && Number.isFinite(v) ? v : null);
 
-/** PURE. The version that was approved (what the chip says). */
+/** PURE. The version that was approved (what the chip says): the approval record's pin, else the
+ *  version the page entered the enforce state at (8.11.0 records), else — a record from before
+ *  either — the baseline itself. */
 export function reviewedVersionOf(record) {
   if (!record) return null;
-  return num(record.approvalRecord?.pinnedVersion) ?? num(record.approvedVersion);
+  return num(record.approvalRecord?.pinnedVersion) ?? num(record.reviewedVersion) ?? num(record.approvedVersion);
 }
 
 /**

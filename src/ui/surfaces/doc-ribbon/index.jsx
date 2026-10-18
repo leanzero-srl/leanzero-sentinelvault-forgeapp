@@ -146,7 +146,7 @@ const WorkflowDetails = ({ workflow, siteUrl, pageId, isSteward, host, onSaved, 
   if (enforced) {
     if (!ar) summary = `Approved on ${fmtDate(record.approvedAt)} (details were not recorded for this approval).`;
     else if (decisions.length === 0) summary = `${outcomeWord} by ${ar.completedByName || "a space admin"} on ${fmtDate(ar.completedAt)}.`;
-    else summary = `${outcomeWord} for version ${ar.pinnedVersion ?? reviewedVersion} on ${fmtDate(ar.completedAt)} · ${modeLabel(ar.mode, ar.min)}`;
+    else summary = `${outcomeWord} for version ${reviewedVersion} on ${fmtDate(ar.completedAt)} · ${modeLabel(ar.mode, ar.min)}`;
   }
 
   // --- Review date ---

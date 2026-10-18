@@ -850,11 +850,14 @@ export async function transitionPageWorkflow({ pageId, spaceKey, toStateId, acto
       approvedBy: actorAccountId || null,
       approvalRecord: approvalRecord && typeof approvalRecord === "object" ? approvalRecord : null,
       baselineSource: null, // the baseline IS the approved version until something moves it
+      // The version the page entered this state at, kept apart from the baseline (which moves):
+      // the reviewed version when no approval record pins one (a direct move by a space admin).
+      reviewedVersion: (typeof approvedVersion === "number" && approvedVersion >= 1) ? approvedVersion : null,
     };
   } else {
     // `...current` is spread into the record below, so the previous approval's evidence would
     // survive a move out of Approved unless it is cleared here, with the rest of the enforce set.
-    enforceFields = { enforce: false, approvedVersion: null, approvers: [], approvalRecord: null, baselineSource: null };
+    enforceFields = { enforce: false, approvedVersion: null, approvers: [], approvalRecord: null, baselineSource: null, reviewedVersion: null };
   }
   // #45/A5: a review clock on the entered state — per-state override, the legacy enforce-state
   // override, or the definition's own value (resolveReviewAfterDays). A per-state override can
