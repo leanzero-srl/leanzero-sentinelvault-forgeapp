@@ -1,7 +1,7 @@
 /**
  * WF-6 (UX critique 2026-09-19) — ONE workflow status for every always-present surface.
  *
- * Zero imports (node-importable, test/workflow-status.test.mjs): the byline chip, the details
+ * Node-importable (one zero-import sibling, baseline.js; test/workflow-status.test.mjs): the byline chip, the details
  * modal and anything else that must say where a page is compose it from here, so the state
  * name, its single qualifier and its tone can never disagree between surfaces.
  *
@@ -15,6 +15,8 @@
  *
  * Tones map to the SOLID palette the byline disc and the modal pill use (no tints).
  */
+
+import { reviewedVersionOf } from "./baseline.js"; // B2: one rule for "the version that was approved"
 
 export const TONE_COLORS = Object.freeze({
   success: "#15803D",
@@ -69,8 +71,7 @@ export function workflowStatus({ record, state, pending, pendingDecided = 0, las
 
   const enforced = !!record.enforce && record.approvedVersion != null;
   if (enforced) {
-    const ar = record.approvalRecord || null;
-    const reviewed = (typeof ar?.pinnedVersion === "number" ? ar.pinnedVersion : null) ?? record.approvedVersion;
+    const reviewed = reviewedVersionOf(record);
     return done("enforced", `${stateName} v${reviewed}`, "success", `v${reviewed}`);
   }
 
@@ -93,5 +94,5 @@ export function approvalSummary(record, { locale } = {}) {
   const decisions = Array.isArray(ar.decisions) ? ar.decisions : [];
   if (decisions.length === 0) return `${word} by ${ar.completedByName || "a space admin"} on ${fmt(ar.completedAt)}.`;
   const mode = ar.mode === "all" ? "every approver" : ar.mode === "min" ? `at least ${ar.min} of ${ar.approverCount}` : "any one approver";
-  return `${word} for version ${ar.pinnedVersion ?? record.approvedVersion} on ${fmt(ar.completedAt)} · ${mode}.`;
+  return `${word} for version ${reviewedVersionOf(record)} on ${fmt(ar.completedAt)} · ${mode}.`;
 }
