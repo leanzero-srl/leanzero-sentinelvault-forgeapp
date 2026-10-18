@@ -89,6 +89,16 @@ try {
   eq("[2] ...and the next change is still pushed", r.push?.title, "In Review");
 }
 
+// Review round 2 D4: a first answer that came WITHOUT a byline (the workflow read was slower than the
+// summary's bound) must not swallow the next one: it is pushed, unless it is the manifest's own default.
+{
+  let st = bylineSyncStep(null, "9", null).state;
+  const r = bylineSyncStep(st, "9", { title: "In Review", icon: "i", tooltip: "t" });
+  eq("[2] after a first answer with no byline, the next byline is pushed", r.push?.title, "In Review");
+  st = bylineSyncStep(null, "8", null).state;
+  eq("[2] ...but never the manifest's own default title", bylineSyncStep(st, "8", { title: "Sentinel Vault", icon: "i", tooltip: "t" }).push, null);
+}
+
 // 3. The banner calls Confluence's bridge with the key the byline module renders from.
 {
   const manifest = fs.readFileSync(path.join(ROOT, "manifest.yml"), "utf8");
