@@ -60,6 +60,8 @@ import { isWorkflowHeld, mayEditInside } from "./shared/seal-authority.js"; // S
 import { isLiveAttachmentSeal, advancesSealedVersion } from "./shared/live-seal.js";
 import { workflowPrivilegeForPage } from "./capsules/workflow/privilege.js";
 import { enforceModeOf, eventPredatesBaseline, contentProtectionEnabled } from "./capsules/workflow/enforce-rules.js"; // 2026-10-16: one home per enforcement rule
+import { restoredContentOf, reviewedVersionOf } from "./capsules/workflow/baseline.js";
+import { withLegacySource } from "./capsules/workflow/baseline-read.js"; // review round 2 D1: pre-8.11.0 records // B2: a revert names the approved content, never an approver
 
 // --- Fix 3 (CORE T6 extension): cross-run violation-comment dedup ---
 // K1: `violation-noticed-{pageId}-{targetId}-{class}`, TTL 24h, claimed BEFORE the footer
@@ -345,6 +347,7 @@ export async function pageContentTrigger(event) {
     let writtenVersion = null; // #44: the version an app write actually produced (§2.5)
     let enforceReverted = false; // #44: a Pass-0 revert actually wrote (for the SV-M2 notice)
     let enforceRevertVersion = null;
+    let enforceRevertContent = null; // B2: { contentOf, editedIn } of what Pass 0 restored, judged on the record it read
     let enforceObservedEqual = false; // #44: the revert pass CONFIRMED content-equality (no write needed)
     let sectionChanged = false; // GAP 2: the last attempt's section pass had a restore pending
     const adoptedSections = []; // SEC-4 (a): wrappers this run sealed on publish (record written, id stamped)
@@ -454,7 +457,7 @@ export async function pageContentTrigger(event) {
       if (putRes.ok) {
         anyChange = true;
         writtenVersion = (ctx.currentVersion || 0) + 1; // #44: the version this PUT created
-        if (ctx.enforcedRevert) { enforceReverted = true; enforceRevertVersion = ctx.enforceRevertTo; }
+        if (ctx.enforcedRevert) { enforceReverted = true; enforceRevertVersion = ctx.enforceRevertTo; enforceRevertContent = ctx.enforceRevertContent || null; }
         break;
       }
       if (putRes.status === 409) {
@@ -509,6 +512,12 @@ export async function pageContentTrigger(event) {
 
     // #44: the enforce-revert notice — only after a CONFIRMED write (SV-M2).
     if (anyChange && enforceReverted) {
+      // B2 (2026-10-18): what the editor got back is the CONTENT of the version restored — after an
+      // earlier revert the baseline is the app's copy (v9 holds approved v7), so "restored the
+      // approved version (v9)" named a copy. The row, the comment and the banner pill name the
+      // approved content; the row keeps restoredTo (the version written back) for the audit.
+      const restoredContent = enforceRevertContent?.contentOf ?? enforceRevertVersion ?? null;
+      const reviewedVersion = reviewedVersionOf(enforcement?.record) ?? null;
       // A1: same confirmation bar as the notice — the revert is a fact at writtenVersion.
       await recordActivity({
         type: "workflow.enforced",
@@ -516,14 +525,14 @@ export async function pageContentTrigger(event) {
         spaceKey: enforcement?.spaceKey || enforcement?.record?.spaceKey || null,
         actor: null,
         target: { kind: "page", id: pageId, name: null },
-        details: { mode: "revert", editor: atlassianId || null, approvedVersion: enforceRevertVersion ?? null, restoredTo: enforceRevertVersion ?? null },
+        details: { mode: "revert", editor: atlassianId || null, approvedVersion: enforceRevertVersion ?? null, restoredTo: enforceRevertVersion ?? null, restoredContent, reviewedVersion },
         version: writtenVersion,
       });
       // The version holding the editor's text is the one the app's write replaced (as the seal path
       // computes it: writtenVersion − 1).
       await announceWorkflowEnforcement({
         pageId, mode: "revert", editorAccountId: atlassianId, record: enforcement?.record || null,
-        approvedVersion: enforceRevertVersion ?? null, revertedVersion: writtenVersion ? writtenVersion - 1 : null, via: "event",
+        approvedVersion: restoredContent, revertedVersion: writtenVersion ? writtenVersion - 1 : null, via: "event",
       });
     }
 
@@ -532,18 +541,26 @@ export async function pageContentTrigger(event) {
     try {
       if (enforcement && enforcement.action !== "demote" && enforcement.action !== "unknown") {
         let newBaseline = null;
+        let cause = null; // B2: why the baseline moves (baseline.js) — never an approver for the app's write
         if (anyChange && writtenVersion) {
           newBaseline = writtenVersion; // app wrote (revert, or a seal restore on a privileged edit)
+          // A privileged save the app saved again (seals restored): the edit is the editor's version, never the app's.
+          cause = enforceReverted ? { kind: "restored", from: enforceRevertVersion, ...(enforceRevertContent || {}) }
+            // The version the app read and saved again (writtenVersion = the read version + 1), never the event's:
+            // a later save by the same editor may be what was read (review round 2 D3).
+            : enforcement.action === "privileged" ? { kind: "edit", editedIn: writtenVersion - 1 } : null;
         } else if (enforcement.action === "privileged") {
           newBaseline = content?.version?.number || (await fetchLivePageVersion(pageId)); // editor's live version
+          cause = { kind: "edit" };
         } else if (enforcement.action === "revert" && enforceObservedEqual) {
+          cause = { kind: "unchanged" };
           // ONLY when the pass CONFIRMED the body already equals the baseline (no write
           // needed) do we advance to live. On any abort/failed-write path the body is
           // still the un-reverted tamper — do NOT launder it into approvedVersion; leave
           // the baseline at V0 so the hourly sweep re-attempts (fail-closed).
           newBaseline = await fetchLivePageVersion(pageId);
         }
-        if (newBaseline) await restampApprovedVersion(pageId, newBaseline).catch(() => {});
+        if (newBaseline) await restampApprovedVersion(pageId, newBaseline, cause).catch(() => {});
       }
     } catch (e) {
       console.error("[WORKFLOW-ENFORCE] reconciliation error:", e);
@@ -1362,13 +1379,13 @@ export async function collectWorkflowEnforcementForPage(pageId, atlassianId, eve
         actor: null,
         target: { kind: "page", id: pageId, name: null },
         details: {
-          mode: "demote", editor: atlassianId || null, approvedVersion: record.approvedVersion ?? null, restoredTo: null,
+          mode: "demote", editor: atlassianId || null, approvedVersion: record.approvedVersion ?? null, reviewedVersion: reviewedVersionOf(record), restoredTo: null,
           demotedTo: target.id, demotedToName: target.name || target.id,
           driftedVersion: typeof eventVersion === "number" ? eventVersion : null, via: "event",
         },
         version: typeof eventVersion === "number" ? eventVersion : null,
       });
-      await announceWorkflowEnforcement({ pageId, mode: "demote", editorAccountId: atlassianId, record, approvedVersion: record.approvedVersion ?? null, demotedToName: target.name || target.id, via: "event" });
+      await announceWorkflowEnforcement({ pageId, mode: "demote", editorAccountId: atlassianId, record, approvedVersion: reviewedVersionOf(record), demotedToName: target.name || target.id, via: "event" });
     }
     // #7: the default workflow has an Approved->Draft edge; a custom workflow that lacks one
     // would leave the page enforced-but-not-demoted — surface it rather than fail silently.
@@ -1385,12 +1402,26 @@ export async function collectWorkflowEnforcementForPage(pageId, atlassianId, eve
 // revert) goes through here; the activity row stays at the site because its facts differ per path.
 async function announceWorkflowEnforcement({ pageId, mode, editorAccountId, record, approvedVersion, revertedVersion, demotedToName, via, comment = true }) {
   const approverAccountId = record?.approvalRecord?.completedBy || record?.enteredBy || null;
+  // B2: approvedVersion here is what came back (the restored content); reviewedVersion the version that
+  // was approved — the pill and the comment name both when they differ (baseline.js restoredLabel).
+  const reviewedVersion = reviewedVersionOf(record);
   try {
-    await recordDispatch(buildWorkflowEnforcementDispatch({ pageId, mode, editorAccountId, approverAccountId, approvedVersion, revertedVersion, demotedToName, via }));
+    await recordDispatch(buildWorkflowEnforcementDispatch({ pageId, mode, editorAccountId, approverAccountId, approvedVersion, reviewedVersion, revertedVersion, demotedToName, via }));
   } catch (e) { console.error("[WORKFLOW-ENFORCE] dispatch failed:", e); }
   if (comment && editorAccountId) {
-    await postEnforceComment(pageId, editorAccountId, mode === "revert" ? "revert" : "demote", { approvedVersion, revertedVersion, demotedToName }).catch(() => {});
+    await postEnforceComment(pageId, editorAccountId, mode === "revert" ? "revert" : "demote", { approvedVersion, reviewedVersion, revertedVersion, demotedToName }).catch(() => {});
   }
+}
+
+// B2 (review 2026-10-18 #2): does version `a` of the page carry the same body as version `b`? Used only
+// where the sweep finds an app-authored version beyond the baseline. A failed read answers false.
+async function sameBodyAsVersion(pageId, a, b) {
+  try {
+    if (!(typeof a === "number" && typeof b === "number")) return false;
+    const [{ adfDoc: x }, { adfDoc: y }] = await Promise.all([readDocBodyAtVersion(pageId, a), readDocBodyAtVersion(pageId, b)]);
+    if (!x?.content || !y?.content) return false;
+    return hashAdf(x) === hashAdf(y) && JSON.stringify(canonicalizeAdf(x.content)) === JSON.stringify(canonicalizeAdf(y.content));
+  } catch (_) { return false; }
 }
 
 // Pass 0 (§2.3): whole-page revert to the approved baseline. Mutates ctx.adfDoc; the
@@ -1426,6 +1457,7 @@ async function enforceApprovedStatePass(ctx, enf) {
   ctx.changed = true;
   ctx.enforcedRevert = true;                          // short-circuit A/B + suppress SV-M5
   ctx.enforceRevertTo = targetV;                      // for the comment copy (§5)
+  ctx.enforceRevertContent = restoredContentOf(await withLegacySource(ctx.pageId, rec), targetV); // B2: what comes back, judged on the record read here
   ctx.enforceMessage = "(Sentinel Vault reverted unapproved change to the approved version)";
 }
 
@@ -1485,6 +1517,7 @@ export async function sweepRevertToApproved(pageId, record) {
   let approvedAdf;
   try { ({ adfDoc: approvedAdf } = await readDocBodyAtVersion(pageId, av)); } catch (_) { return false; }
   if (!approvedAdf?.content?.length) return false; // CL-1: never blank
+  const restored = restoredContentOf(await withLegacySource(pageId, fresh), av); // B2: what this revert gives back, on the record it read
   for (let attempt = 0; attempt < 3; attempt++) {
     let head;
     try { head = await readDocBody(pageId); } catch (_) { return false; }
@@ -1495,7 +1528,7 @@ export async function sweepRevertToApproved(pageId, record) {
     if (hashAdf(head.adfDoc) === hashAdf(approvedAdf) &&
         JSON.stringify(canonicalizeAdf(head.adfDoc.content)) === JSON.stringify(canonicalizeAdf(approvedAdf.content))) {
       const live = head.pageData.version?.number || 0;
-      await restampApprovedVersion(pageId, live).catch(() => {});
+      await restampApprovedVersion(pageId, live, { kind: "unchanged" }).catch(() => {});
       // Truthfulness (A1 review F1): this branch wrote NOTHING — the live version became the
       // baseline. Callers that record the outcome must not call it a revert.
       return { ok: true, wrote: false, version: live };
@@ -1504,8 +1537,8 @@ export async function sweepRevertToApproved(pageId, record) {
     const putRes = await writeDocBody(pageId, head.pageData, head.adfDoc, "(Sentinel Vault reverted unapproved change to the approved version)");
     if (putRes.ok) {
       const written = (head.pageData.version?.number || 0) + 1;
-      await restampApprovedVersion(pageId, written).catch(() => {});
-      return { ok: true, wrote: true, version: written };
+      await restampApprovedVersion(pageId, written, { kind: "restored", from: av, ...restored }).catch(() => {});
+      return { ok: true, wrote: true, version: written, restoredContent: restored.contentOf ?? av };
     }
     if (putRes.status === 409) { await new Promise((r) => setTimeout(r, Math.pow(2, attempt) * 500)); continue; }
     return false; // SV-M2: don't claim success on a non-409 error
@@ -1654,7 +1687,7 @@ export async function workflowSweep() {
         if (live == null) continue;
         // Gap B: a null baseline on an enforced page is a hole — self-heal, don't skip.
         if (record.approvedVersion == null) {
-          if (await restampApprovedVersion(idx.pageId, live)) healed++;
+          if (await restampApprovedVersion(idx.pageId, live, { kind: "healed" })) healed++;
           continue;
         }
         if (live === record.approvedVersion) {
@@ -1672,7 +1705,12 @@ export async function workflowSweep() {
           || (record.approvers.includes(author) && (liveApprovers.includes(author) || liveUnresolved))
           || await isStewardOfSpaces(isAccountStewardAsApp, author, auth.spaces));
         if (authorized) {
-          if (await restampApprovedVersion(idx.pageId, live)) healed++;
+          // An approver's or space admin's save is a sanctioned edit. The app's own version says nothing
+          // about who: when its body equals the baseline's (a re-save) the baseline's history carries
+          // forward ("unchanged"); otherwise no cause, so no surface names anyone.
+          const cause = author !== systemAccountId ? { kind: "edit" }
+            : (await sameBodyAsVersion(idx.pageId, live, record.approvedVersion)) ? { kind: "unchanged" } : null;
+          if (await restampApprovedVersion(idx.pageId, live, cause)) healed++;
           await kvs.delete(`workflow-integrity-notified-${idx.pageId}`).catch(() => {});
           continue;
         }
@@ -1680,6 +1718,8 @@ export async function workflowSweep() {
         const alreadyNotified = await kvs.get(`workflow-integrity-notified-${idx.pageId}`);
         if (mode === "revert") {
           const ok = await sweepRevertToApproved(idx.pageId, record);
+          // B2: the approved content the sweep's revert gave back (a copy of a copy names the original).
+          const restoredContent = ok?.restoredContent ?? record.approvedVersion ?? null;
           if (ok) {
             reverted++;
             // A1: sweepRevertToApproved succeeds on TWO branches — a confirmed write, or confirmed
@@ -1695,6 +1735,7 @@ export async function workflowSweep() {
               details: {
                 mode: "revert", editor: author || null, approvedVersion: record.approvedVersion ?? null,
                 restoredTo: ok.wrote ? (record.approvedVersion ?? null) : null,
+                restoredContent: ok.wrote ? restoredContent : null, reviewedVersion: reviewedVersionOf(record),
                 reconciled: ok.wrote ? "reverted" : "baseline-advanced",
                 driftedVersion: live, via: "sweep",
               },
@@ -1704,7 +1745,7 @@ export async function workflowSweep() {
             if (ok.wrote) {
               await announceWorkflowEnforcement({
                 pageId: idx.pageId, mode: "revert", editorAccountId: author || null, record,
-                approvedVersion: record.approvedVersion ?? null, revertedVersion: live, via: "sweep",
+                approvedVersion: restoredContent, revertedVersion: live, via: "sweep",
               });
             }
           }
@@ -1728,7 +1769,7 @@ export async function workflowSweep() {
               spaceKey: record.spaceKey || null,
               actor: null,
               target: { kind: "page", id: idx.pageId, name: null },
-              details: { mode: "demote", editor: author || null, approvedVersion: record.approvedVersion ?? null, restoredTo: null, demotedTo: target.id, demotedToName: target.name || target.id, driftedVersion: live, via: "sweep" },
+              details: { mode: "demote", editor: author || null, approvedVersion: record.approvedVersion ?? null, reviewedVersion: reviewedVersionOf(record), restoredTo: null, demotedTo: target.id, demotedToName: target.name || target.id, driftedVersion: live, via: "sweep" },
               version: live,
             });
           }
@@ -1736,7 +1777,7 @@ export async function workflowSweep() {
             demoted++;
             await announceWorkflowEnforcement({
               pageId: idx.pageId, mode: "demote", editorAccountId: author || record.enteredBy || null, record,
-              approvedVersion: record.approvedVersion ?? null, demotedToName: target.name || target.id, via: "sweep",
+              approvedVersion: reviewedVersionOf(record), demotedToName: target.name || target.id, via: "sweep",
             });
             await kvs.set(`workflow-integrity-notified-${idx.pageId}`, { at: new Date().toISOString() });
           }

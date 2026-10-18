@@ -4,6 +4,7 @@
  * them — no external egress. Mirrors validation-blueprints.js.
  */
 import { postCommentWithMention } from "./outbound-notify.js";
+import { restoredLabel } from "../capsules/workflow/baseline.js"; // B2: one wording for what a revert gave back
 import { NOTICE_EDITOR_REVERT } from "../shared/notice-policy.js";
 
 const HEADER = "🛡️ Sentinel Vault";
@@ -70,12 +71,16 @@ export function enforceCommentBody(pageId, editorId, kind, opts = {}) {
     return `<p>${HEADER} — <strong>Approved version not restored yet</strong></p>
 <p>Sentinel Vault could not restore the approved version of this page yet — it will retry automatically. The current content is in the page history — <a href="${escapeXml(historyUrl)}">view previous versions</a>.</p>`;
   }
-  const av = opts.approvedVersion != null ? ` (v${escapeXml(opts.approvedVersion)})` : "";
+  // B2: what came back. "the approved version (v7)", or after an approver's later save "v8, the last
+  // version kept after approval v7" (baseline.js restoredLabel — one wording for every surface).
+  const label = restoredLabel(opts.approvedVersion, opts.reviewedVersion);
+  const backTo = label && !label.startsWith("approved ") ? escapeXml(label) : `the approved version${opts.approvedVersion != null ? ` (v${escapeXml(opts.approvedVersion)})` : ""}`;
   const myVersion = opts.revertedVersion != null
     ? `<a href="${escapeXml(`/wiki/pages/viewpage.action?pageId=${pageId}&pageVersion=${opts.revertedVersion}`)}">open your version (v${escapeXml(opts.revertedVersion)})</a>`
     : `<a href="${escapeXml(historyUrl)}">view previous versions</a>`;
-  return `<p>${HEADER} — <strong>Reverted to the approved version</strong></p>
-<p>${m}this page is Approved and protected, so your change was reverted to the approved version${av}. Your text is not lost: it is kept in the page history — ${myVersion}. To change an approved page, ask an approver or space admin to move it out of Approved first, or request approval for your version.</p>`;
+  const heading = label && !label.startsWith("approved ") ? `Reverted to v${escapeXml(opts.approvedVersion)}` : "Reverted to the approved version";
+  return `<p>${HEADER} — <strong>${heading}</strong></p>
+<p>${m}this page is Approved and protected, so your change was reverted to ${backTo}. Your text is not lost: it is kept in the page history — ${myVersion}. To change an approved page, ask an approver or space admin to move it out of Approved first, or request approval for your version.</p>`;
 }
 
 export async function postEnforceComment(pageId, editorId, kind, opts = {}) {
@@ -93,14 +98,15 @@ export async function postEnforceComment(pageId, editorId, kind, opts = {}) {
 // WF-2: the dispatch record behind the ribbon's pill for a workflow enforcement — the editor and
 // the approver are the parties (recent-dispatches filters on either), the versions let the ribbon
 // link to the version holding the editor's text. Pure; unit-tested.
-export function buildWorkflowEnforcementDispatch({ pageId, mode, editorAccountId, approverAccountId, approvedVersion, revertedVersion, demotedToName, via }) {
+export function buildWorkflowEnforcementDispatch({ pageId, mode, editorAccountId, approverAccountId, approvedVersion, reviewedVersion, revertedVersion, demotedToName, via }) {
   return {
     id: `notification-${Date.now()}`,
     type: mode === "revert" ? "workflow-reverted" : "workflow-demoted",
     pageId,
     ownerAccountId: approverAccountId || null,
     editorAccountId: editorAccountId || null,
-    approvedVersion: approvedVersion ?? null,
+    approvedVersion: approvedVersion ?? null, // what came back (a revert's restored content)
+    reviewedVersion: reviewedVersion ?? null, // the version that was approved
     revertedVersion: mode === "revert" ? (revertedVersion ?? null) : null,
     demotedToName: mode === "revert" ? null : (demotedToName || "Draft"),
     via: via || "event",
