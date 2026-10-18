@@ -2,7 +2,7 @@
 
 GENERATED from `src/server/shared/release-notes.js` by `scripts/render-release-notes.mjs`. Do not edit.
 
-## 8.10.0 — 2026-10-17
+## 8.10.0 — 2026-10-18
 
 **Space admins are recognised from the space's own permissions**
 
@@ -12,6 +12,7 @@ Fixed:
 - A space admin who was not also a site or Confluence admin, or listed under Space admins in Sentinel Vault, was treated as an ordinary user: the space's Sentinel Vault page asked them to request admin access, they could not approve as a space admin or use the other space admin actions, and an edit they made to an Approved page moved the page back out of Approved or was undone, as an ordinary editor's would be. Sentinel Vault now reads the space's own permissions, so a space admin is recognised whether the permission is given directly, through a group or through the space's Admin role. Space admins therefore now have Sentinel Vault's space admin actions in their spaces, as people listed under Space admins already did.
 - A declined request for admin access to a space could be filed again before the 48 hours the space's Sentinel Vault page shows had passed (from a page opened before the decision). It can now be sent again only 48 hours after it was declined, the page says so if you try earlier, and a request has to name a space you can see.
 - The progress of an AI review of a page is now shown only to the person who started it.
+- A page's Sentinel Vault banner kept showing the workflow state it was opened with after the page was moved somewhere else, for example in another browser tab, and choosing a move from it only said Already in that state. The banner now follows a move made elsewhere within a few seconds, without a reload, and a move chosen from a banner that is out of date says which state the page is in and the banner then shows it.
 
 **Do this:** If a space uses AI review while AI review is off in the site settings, AI review stops in that space with this update, and pages in a space whose workflow requires an AI review cannot reach Approved. To keep AI review, a site admin turns it on in Sentinel Vault's site settings, Validations.
 
