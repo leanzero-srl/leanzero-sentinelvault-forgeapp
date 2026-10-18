@@ -32,7 +32,8 @@
  * Per-viewer data (mockup §1's "waiting-on-you" counter, decision 4) CANNOT live here: a content
  * property is one value for every viewer. The modal header carries that count instead.
  */
-import { asApp, route } from "@forge/api";
+import { route } from "@forge/api";
+import { appConfluence } from "../../shared/confluence-call.js";
 import { kvs } from "@forge/kvs";
 import { getClassificationProvider, classificationActiveForPage } from "../classification/provider.js";
 import { sourcePhrase } from "../classification/logic.js"; // P3: one "where it comes from" phrase
@@ -126,7 +127,7 @@ export function bylineStamp(b) {
 
 /** Live: create-or-update the v2 page property, bumping the version. Returns true on success. */
 async function writeProperty(pageId, value) {
-  const getRes = await asApp().requestConfluence(
+  const getRes = await appConfluence(
     route`/wiki/api/v2/pages/${pageId}/properties?key=${BYLINE_PROPERTY_KEY}`,
     { headers: { Accept: "application/json" } },
   );
@@ -134,11 +135,11 @@ async function writeProperty(pageId, value) {
   const existing = (await getRes.json())?.results?.[0];
   const headers = { Accept: "application/json", "Content-Type": "application/json" };
   const res = existing
-    ? await asApp().requestConfluence(route`/wiki/api/v2/pages/${pageId}/properties/${existing.id}`, {
+    ? await appConfluence(route`/wiki/api/v2/pages/${pageId}/properties/${existing.id}`, {
       method: "PUT", headers,
       body: JSON.stringify({ key: BYLINE_PROPERTY_KEY, value, version: { number: (existing.version?.number || 1) + 1 } }),
     })
-    : await asApp().requestConfluence(route`/wiki/api/v2/pages/${pageId}/properties`, {
+    : await appConfluence(route`/wiki/api/v2/pages/${pageId}/properties`, {
       method: "POST", headers, body: JSON.stringify({ key: BYLINE_PROPERTY_KEY, value }),
     });
   if (!res.ok) console.warn(`[BYLINE] property write on ${pageId} → ${res.status} ${await res.text().catch(() => "")}`);

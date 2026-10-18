@@ -1,4 +1,5 @@
-import { asUser, asApp, route } from "@forge/api";
+import { asUser, route } from "@forge/api";
+import { appConfluence, userConfluence } from "../shared/confluence-call.js";
 
 // Attachment preview for the Custom UI surfaces (panels resolve-artifact-preview).
 //
@@ -32,7 +33,7 @@ export async function resolveArtifactPreview(artifactId, contentId) {
     // properties of the attachment, so they are now always read from the attachment, never
     // taken from the caller. The parameters are gone rather than ignored, so no call site can
     // quietly keep passing them.
-    const metaResponse = await asApp().requestConfluence(
+    const metaResponse = await appConfluence(
       route`/wiki/api/v2/attachments/${artifactId}`,
       { headers: { Accept: "application/json" } },
     );
@@ -62,7 +63,7 @@ export async function resolveArtifactPreview(artifactId, contentId) {
     // site-wide read here bought nothing and made the blast radius the whole tenant. asUser
     // makes over-reach structurally impossible rather than merely gated.
     const downloadRoute = route`/wiki/rest/api/content/${contentId}/child/attachment/${artifactId}/download`;
-    const downloadResponse = await asUser().requestConfluence(downloadRoute);
+    const downloadResponse = await userConfluence(downloadRoute);
 
     if (!downloadResponse.ok) {
       console.warn(`[PREVIEW] Failed to download ${artifactId}: ${downloadResponse.status}`);

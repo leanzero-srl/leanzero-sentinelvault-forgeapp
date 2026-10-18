@@ -69,7 +69,7 @@ export const READ_ACTIONS = Object.freeze([
   "list-my-section-edit-requests", "list-my-steward-requests", "list-page-headings", "list-section-edit-grants",
   "list-section-edit-requests", "list-space-workflows", "list-steward-requests", "load-bulletin-toggles", "load-policy",
   "load-session", "load-validation-config", "load-workflow-config", "operator-dispatches", "page-details-summary",
-  "recent-dispatches", "resolve-artifact-preview", "ribbon-summary", "search-grantees", "search-operators",
+  "recent-dispatches", "resolve-artifact-preview", "ribbon-evaluate", "ribbon-summary", "search-grantees", "search-operators",
   "search-workflow-groups", "search-workflow-users", "section-seal-status", "signature-status", "steward-override-enabled",
   "workflow-seals-to-freeze",
   // the backup's own doors

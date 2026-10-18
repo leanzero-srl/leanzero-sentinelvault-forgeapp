@@ -10,7 +10,8 @@
 // FAIL CLOSED toward "present": a page is reported `missing` only when BOTH calls succeeded and
 // neither returned it. A failed call marks the whole batch `unknown` so a transient 5xx can never
 // license a purge — "a negative that authorises action must be proven, not observed".
-import { asApp, route } from "@forge/api";
+import { route } from "@forge/api";
+import { appConfluence } from "./confluence-call.js";
 
 export const PAGE_STATUS_BATCH = 250;
 
@@ -34,7 +35,7 @@ export function classifyPageStatuses(ids, liveResults, trashedResults, { liveOk 
 }
 
 async function fetchBatch(ids, status) {
-  const res = await asApp().requestConfluence(route`/wiki/api/v2/pages?id=${ids.join(",")}&status=${status}&limit=250`);
+  const res = await appConfluence(route`/wiki/api/v2/pages?id=${ids.join(",")}&status=${status}&limit=250`);
   if (!res.ok) return { ok: false, results: [] };
   const body = await res.json().catch(() => null);
   return { ok: Array.isArray(body?.results), results: body?.results || [] };

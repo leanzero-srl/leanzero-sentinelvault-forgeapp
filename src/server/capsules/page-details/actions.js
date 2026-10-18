@@ -35,7 +35,8 @@
  * Instead this read compares what the chip SHOULD say with the stored stamp and rewrites the
  * property when they differ (writeBylineFor skips the write when they match).
  */
-import { asApp, route } from "@forge/api";
+import { route } from "@forge/api";
+import { appConfluence } from "../../shared/confluence-call.js";
 import { baselineFor } from "../workflow/baseline-read.js"; // B2: reviewed version vs baseline, named
 import { reviewedVersionOf } from "../workflow/baseline.js";
 import { kvs, WhereConditions } from "@forge/kvs";
@@ -63,7 +64,7 @@ const isExpired = (iso) => !!(iso && new Date(iso).getTime() <= Date.now());
 async function readSpaceKey(spaceId) {
   if (!spaceId || !NUMERIC.test(String(spaceId))) return null;
   try {
-    const res = await asApp().requestConfluence(route`/wiki/api/v2/spaces/${spaceId}`, { headers: { Accept: "application/json" } });
+    const res = await appConfluence(route`/wiki/api/v2/spaces/${spaceId}`, { headers: { Accept: "application/json" } });
     if (!res.ok) return null;
     return (await res.json())?.key || null;
   } catch (_) { return null; }

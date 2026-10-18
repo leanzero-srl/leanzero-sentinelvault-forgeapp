@@ -14,7 +14,8 @@
  * READ of that page; the space report is a steward instrument, gated on stewardship of the
  * space named. Both payload ids are attacker-controlled; the gates fail closed.
  */
-import { asApp, route } from "@forge/api";
+import { route } from "@forge/api";
+import { appConfluence } from "../../shared/confluence-call.js";
 import { canReadPage, mustVerify } from "../../shared/content-access.js";
 import { isOperatorSteward } from "../../shared/steward-checks.js";
 import {
@@ -56,13 +57,13 @@ async function decoratePageTitles(entries, spaceKey) {
   // not this steward's (A1 review F7). The v2 page read carries spaceId, so this costs nothing.
   let spaceId = null;
   try {
-    const sres = await asApp().requestConfluence(route`/wiki/api/v2/spaces?keys=${String(spaceKey)}`, { headers: { Accept: "application/json" } });
+    const sres = await appConfluence(route`/wiki/api/v2/spaces?keys=${String(spaceKey)}`, { headers: { Accept: "application/json" } });
     if (sres.ok) spaceId = String((await sres.json())?.results?.[0]?.id || "");
   } catch (_) { /* best-effort */ }
   const titles = new Map();
   await Promise.all(ids.map(async (id) => {
     try {
-      const res = await asApp().requestConfluence(route`/wiki/api/v2/pages/${id}`);
+      const res = await appConfluence(route`/wiki/api/v2/pages/${id}`);
       if (res.ok) {
         const p = await res.json();
         if (p?.title && (!spaceId || String(p.spaceId) === spaceId)) titles.set(String(id), p.title);

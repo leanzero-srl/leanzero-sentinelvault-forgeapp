@@ -18,11 +18,13 @@ import { actions as configApiActions } from "./capsules/config-api/actions.js";
 import { actions as backupActions } from "./capsules/backup/actions.js";
 import { actions as privacyActions } from "./capsules/privacy/actions.js";
 import { actions as jiraSealActions } from "./capsules/jira-seals/actions.js";
+import { actions as ribbonActions } from "./capsules/ribbon/actions.js";
 import { WRITE_ACTIONS, withBackupHook } from "./capsules/backup/hook.js";
 import { CONFIG_WRITER_KEYS, scopeOfConfigWrite, refreshConfigMirror } from "./capsules/config-api/mirror.js";
 import { SIGNED_SEAL_ACTION_KEYS, signSealActionsOn } from "./shared/seal-signature.js";
 import { verifySignature } from "./capsules/workflow/signature.js";
 import { kvs } from "@forge/kvs";
+import { runInvocation, authzUnknownOf, rateLimitOf, busyReason } from "./shared/confluence-call.js";
 
 const router = new Resolver();
 
@@ -45,6 +47,7 @@ export const allActions = [
   ...backupActions,
   ...privacyActions,
   ...jiraSealActions,
+  ...ribbonActions,
 ];
 
 // One home for "a config write refreshes the Confluence-side mirror": every UI save of site or
@@ -74,6 +77,30 @@ const withSealSignature = (key, fn) => async (req) => {
   if (result && typeof result === "object" && result.success !== false) result.signature = v.signature;
   return result;
 };
+// 8.12.0 — Confluence's rate limit is not a "no". Every resolver call runs as ONE invocation
+// (shared/confluence-call.js runInvocation): a memo for the permission answers that do not change
+// within it, a deadline for 429 retries inside the 25 s limit, and a note when a 429 left an
+// authorization question unanswered. When that note is set and the action REFUSED, the answer says
+// so ("Confluence is limiting requests … try again") instead of the refusal it fell back to; the
+// refusal itself stands (nothing is granted on a 429) and its own wording is kept in deniedReason.
+// Answers that succeeded are never touched.
+export function busyAware(result) {
+  if (!authzUnknownOf() || !result || typeof result !== "object" || Array.isArray(result)) return result;
+  const refused = result.success === false || (typeof result.error === "string" && result.success !== true);
+  if (!refused) return result;
+  const rl = rateLimitOf();
+  const reason = busyReason(rl?.retryAfterSeconds ?? null);
+  return {
+    ...result,
+    busy: true,
+    retryAfterSeconds: rl?.retryAfterSeconds ?? null,
+    deniedReason: result.reason ?? result.error ?? null,
+    reason,
+    ...(typeof result.error === "string" ? { error: reason } : {}),
+  };
+}
+const withInvocation = (key, fn) => (req) => runInvocation(async () => busyAware(await fn(req)), { label: key });
+
 // `wrappedActions` is what the router actually runs (mirror hook included); the dev hook's generic
 // seam drives THIS map, not the raw list, so a seam-driven write behaves exactly like a UI write.
 // Pillar 12: every write path schedules ONE debounced backup (capsules/backup/hook.js); the
@@ -82,7 +109,7 @@ export const wrappedActions = allActions.map(([key, fn]) => {
   let wrapped = CONFIG_WRITER_KEYS.includes(key) ? withConfigMirror(key, fn) : fn;
   if (WRITE_ACTIONS.includes(key)) wrapped = withBackupHook(key, wrapped);
   if (SIGNED_SEAL_ACTION_KEYS.includes(key)) wrapped = withSealSignature(key, wrapped);
-  return [key, wrapped];
+  return [key, withInvocation(key, wrapped)]; // outermost: the backup, mirror and signature wrappers run inside it
 });
 wrappedActions.forEach(([key, fn]) => router.define(key, fn));
 

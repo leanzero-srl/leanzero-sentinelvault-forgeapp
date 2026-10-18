@@ -11,6 +11,7 @@
  * (both test sites today) stays on App, because an empty scheme has nothing to assign.
  */
 import { asApp, assumeTrustedRoute } from "@forge/api";
+import { appConfluence } from "../../shared/confluence-call.js";
 import { kvs } from "@forge/kvs";
 import { createAppProvider, createNativeProvider, selectProvider, classificationActive } from "./logic.js";
 import { resolvePageSpaceKey } from "../../shared/content-access.js";
@@ -43,7 +44,7 @@ export async function classificationActiveForPage(pageId) {
 
 // Every path handed to this function is built in logic.js from ids that passed isContentId()
 // (digits only) or from constants, so assumeTrustedRoute is exactly that: trusted by construction.
-const request = (path, init) => asApp().requestConfluence(assumeTrustedRoute(path), init);
+const request = (path, init) => appConfluence(assumeTrustedRoute(path), init);
 const log = (m) => console.warn(m);
 
 const cache = new Map();

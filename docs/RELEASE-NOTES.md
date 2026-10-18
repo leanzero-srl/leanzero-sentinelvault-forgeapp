@@ -2,6 +2,18 @@
 
 GENERATED from `src/server/shared/release-notes.js` by `scripts/render-release-notes.mjs`. Do not edit.
 
+## 8.12.0 — 2026-10-18
+
+**Space admins keep their rights while Confluence is limiting requests**
+
+- Changed: Sentinel Vault keeps what Confluence says about a space's admins and a person's groups for up to a minute, so a permission given or taken away in Confluence reaches Sentinel Vault within a minute.
+
+Fixed:
+- While Confluence was limiting requests from Sentinel Vault, space admins could be treated as ordinary users: Approve and Deny were hidden, space admin actions were refused, and the approver and group lists came back empty. Sentinel Vault now asks Confluence far less often for each page view, and when Confluence is busy it says so and asks you to try again instead.
+- A page's Sentinel Vault activity could show the person whose edit was undone or moved back for review as an account ID instead of their name. It now shows their name.
+
+**Do this:** Nothing to do.
+
 ## 8.11.0 — 2026-10-18
 
 **The status under the page title follows workflow moves, and a restored Approved page names the version that was approved**

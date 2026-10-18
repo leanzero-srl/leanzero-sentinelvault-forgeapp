@@ -1,4 +1,5 @@
-import { asApp, route } from "@forge/api";
+import { route } from "@forge/api";
+import { appConfluence } from "../shared/confluence-call.js";
 
 // Native page labels (names only). Shared by validations, the page trigger, and the
 // #46 transition-conditions gate — authored once here, not copied per capsule.
@@ -17,8 +18,8 @@ export async function fetchPageLabelsChecked(pageId) {
     let cursor = null;
     for (let i = 0; i < 8; i++) {
       const res = cursor
-        ? await asApp().requestConfluence(route`/wiki/api/v2/pages/${pageId}/labels?limit=250&cursor=${cursor}`)
-        : await asApp().requestConfluence(route`/wiki/api/v2/pages/${pageId}/labels?limit=250`);
+        ? await appConfluence(route`/wiki/api/v2/pages/${pageId}/labels?limit=250&cursor=${cursor}`)
+        : await appConfluence(route`/wiki/api/v2/pages/${pageId}/labels?limit=250`);
       if (!res.ok) {
         console.warn(`[LABELS] page ${pageId}: label read refused (HTTP ${res.status})`);
         return { labels, complete: false, status: res.status };

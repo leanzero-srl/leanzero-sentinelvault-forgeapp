@@ -1,5 +1,6 @@
 import { kvs } from "@forge/kvs";
-import { asApp, route } from "@forge/api";
+import { route } from "@forge/api";
+import { appConfluence } from "../../shared/confluence-call.js";
 import { setWithTtl, setUntil } from "../../shared/kvs-ttl.js";
 
 // Conditions & Validations — config + state storage.
@@ -236,7 +237,7 @@ const STATE_KEY = "sentinel-vault-validation";
 export async function readValidationState(pageId) {
   if (!pageId) return null;
   try {
-    const res = await asApp().requestConfluence(
+    const res = await appConfluence(
       route`/wiki/api/v2/pages/${pageId}/properties?key=${STATE_KEY}`,
     );
     if (!res.ok) return null;
@@ -251,14 +252,14 @@ export async function readValidationState(pageId) {
 export async function writeValidationState(pageId, state) {
   if (!pageId) return;
   try {
-    const getRes = await asApp().requestConfluence(
+    const getRes = await appConfluence(
       route`/wiki/api/v2/pages/${pageId}/properties?key=${STATE_KEY}`,
     );
     if (!getRes.ok) return;
     const body = await getRes.json();
     const existing = body.results?.[0];
     if (existing) {
-      await asApp().requestConfluence(
+      await appConfluence(
         route`/wiki/api/v2/pages/${pageId}/properties/${existing.id}`,
         {
           method: "PUT",
@@ -267,7 +268,7 @@ export async function writeValidationState(pageId, state) {
         },
       );
     } else {
-      await asApp().requestConfluence(
+      await appConfluence(
         route`/wiki/api/v2/pages/${pageId}/properties`,
         {
           method: "POST",

@@ -94,6 +94,9 @@ export const FAMILIES = Object.freeze([
   { prefix: "webtrigger-url:", cls: "runtime" },
   { prefix: "confluence-webhook-id", cls: "runtime" },
   { prefix: "protections-last-", cls: "runtime" },
+  // 8.12.0: what Confluence said about a space's admins, a space key's id and an account's groups,
+  // kept for a minute (shared/steward-checks.js). A restored copy would be a stale permission answer.
+  { prefix: "authz-", cls: "runtime" },
   { prefix: "space-scan-status-", cls: "runtime" },
   { prefix: "page-guard-", cls: "runtime" },
   { prefix: "section-restore-pending-", cls: "runtime" },

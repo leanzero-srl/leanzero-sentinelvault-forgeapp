@@ -21,7 +21,8 @@
  * against the key RESOLVED FROM THE PAYLOAD SPACE ID (never a payload spaceKey); a page against
  * canEditPage on that page. Everything fails closed: an id that does not resolve is a refusal.
  */
-import { asApp, asUser, assumeTrustedRoute, route } from "@forge/api";
+import { asUser, assumeTrustedRoute, route } from "@forge/api";
+import { appConfluence, userConfluence } from "../../shared/confluence-call.js";
 import { canEditPage, canReadPage, mustVerify, resolvePageSpaceKey } from "../../shared/content-access.js";
 import { authorizeSteward, isAccountStewardAsApp, isOperatorSiteAdmin, newStewardMemo } from "../../shared/steward-checks.js";
 import { mapLimited } from "../../shared/map-limited.js";
@@ -41,7 +42,7 @@ const NOT_AUTHORIZED = "Not authorized";
 async function readSpace(spaceId) {
   if (!isContentId(spaceId)) return null;
   try {
-    const res = await asApp().requestConfluence(route`/wiki/api/v2/spaces/${spaceId}`, { headers: { Accept: "application/json" } });
+    const res = await appConfluence(route`/wiki/api/v2/spaces/${spaceId}`, { headers: { Accept: "application/json" } });
     if (!res.ok) return null;
     const s = await res.json();
     return s?.key ? { id: String(s.id), key: s.key, name: s.name || s.key, type: s.type || "global" } : null;
@@ -58,8 +59,8 @@ async function listVisibleSpaces() {
     // (never from the payload), and route`` would escape its `?`, so cursor pages follow the
     // documented link verbatim via assumeTrustedRoute.
     const res = guard === 1
-      ? await asUser().requestConfluence(route`/wiki/api/v2/spaces?limit=250&sort=name`, { headers: { Accept: "application/json" } })
-      : await asUser().requestConfluence(assumeTrustedRoute(next), { headers: { Accept: "application/json" } });
+      ? await userConfluence(route`/wiki/api/v2/spaces?limit=250&sort=name`, { headers: { Accept: "application/json" } })
+      : await userConfluence(assumeTrustedRoute(next), { headers: { Accept: "application/json" } });
     if (!res.ok) throw new Error(`spaces list → ${res.status}`);
     const body = await res.json();
     for (const s of body?.results || []) out.push({ id: String(s.id), key: s.key, name: s.name || s.key, type: s.type || "global" });

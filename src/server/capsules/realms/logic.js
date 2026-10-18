@@ -1,4 +1,5 @@
 import { asUser, route } from "@forge/api";
+import { userConfluence } from "../../shared/confluence-call.js";
 import { kvs, WhereConditions } from "@forge/kvs";
 
 /**
@@ -19,7 +20,7 @@ export async function resolveRealm(realmKey) {
   // space's name; identify-realm delegates here, and the two other copies that existed
   // (operators/logic.getRealmInfo, an inline one in realms/actions) were deleted.
   try {
-    const response = await asUser().requestConfluence(
+    const response = await userConfluence(
       route`/wiki/api/v2/spaces?keys=${realmKey}`,
       { headers: { Accept: "application/json" } },
     );

@@ -675,7 +675,14 @@ const WorkflowControl = ({ workflow, approvals, operatorId, pageId, spaceKey, si
             ) : (
               <div className="wf-appr-note" data-testid="wf-appr-note">{iAmRequester
                 ? "You asked for this move, so you can't approve it yourself — another approver or a space admin decides. You can withdraw the request."
-                : mine && mine.status !== "pending" ? "You have already responded." : "Waiting on the approvers above."}
+                : mine && mine.status !== "pending" ? "You have already responded."
+                  // 8.12.0: Confluence's rate limit left the space-admin check open: say so, never "not yours to decide".
+                  : !mine && pendingApproval.adminCheck === "unknown" ? (
+                    <span data-testid="wf-appr-admin-unknown">
+                      Sentinel Vault couldn't check right now whether you can decide as a space admin, because Confluence is limiting requests.{" "}
+                      <button type="button" className="ribbon-inline-link" onClick={() => onTransitioned()} data-testid="wf-appr-admin-recheck">Check again</button>
+                    </span>
+                  ) : "Waiting on the approvers above."}
                 {iAmRequester && (
                   <div className="wf-appr-withdraw-row">
                     <button type="button" className="wf-appr-rerequest" onClick={doWithdraw} disabled={withdrawBusy} data-testid="wf-appr-withdraw">
@@ -918,13 +925,19 @@ const DocumentRibbon = () => {
   // Returns { res, error }: `error` is set when the summary THREW or answered ok:false with a
   // reason that is not the confirmed "nothing to show". Only a confirmed nothing may close the
   // banner (P1-7); everything else is an error row with Retry.
-  const fetchSummary = useCallback(async (id) => {
+  // `bundle` is ribbon-evaluate's answer when the caller has one (evaluate below); without it the
+  // summary is asked on its own.
+  const fetchSummary = useCallback(async (id, bundle = null) => {
     try {
       const stub = readSummaryStub();
       let res;
       if (stub) {
         res = typeof stub === "function" ? await stub() : stub;
         if (res && res.throw) throw new Error("stubbed ribbon-summary failure");
+      } else if (bundle) {
+        if (bundle.threw) throw bundle.threw;
+        if (Array.isArray(bundle.failed) && bundle.failed.includes("summary")) throw new Error("ribbon-summary failed");
+        res = bundle.summary;
       } else {
         res = await invoke("ribbon-summary", { pageId: id });
       }
@@ -948,9 +961,10 @@ const DocumentRibbon = () => {
     }
   }, []);
 
-  const fetchAlerts = useCallback(async (id, operator) => {
+  const fetchAlerts = useCallback(async (id, operator, bundle = null) => {
     try {
-      const result = await invoke("recent-dispatches", { pageId: id });
+      if (bundle?.threw) throw bundle.threw;
+      const result = bundle ? bundle.dispatches : await invoke("recent-dispatches", { pageId: id });
       const relevant = result?.success && result.notifications?.length > 0
         ? result.notifications.filter((n) => n.ownerAccountId === operator || n.editorAccountId === operator)
         : [];
@@ -1000,14 +1014,19 @@ const DocumentRibbon = () => {
       setOperatorId(operator);
       setSiteUrl(context?.siteUrl || null);
 
-      const [sumRes, wf, appr, al, vs, ai] = await Promise.all([
-        fetchSummary(ctxPageId),
-        invoke("get-page-workflow", { pageId: ctxPageId, spaceKey: ctxSpaceKey }).catch(() => null),
-        invoke("get-page-approvals", { pageId: ctxPageId, spaceKey: ctxSpaceKey }).catch(() => null),
-        operator ? fetchAlerts(ctxPageId, operator) : Promise.resolve([]),
-        invoke("get-validation-state", { pageId: ctxPageId }).catch(() => null),
-        invoke("get-ai-findings", { pageId: ctxPageId }).catch(() => null),
+      // 8.12.0: ONE resolver call for the whole evaluation (server capsules/ribbon): its six parts
+      // share one answer to "is this viewer an admin here?" instead of asking Confluence six times
+      // against the hourly points pool every site of the app shares. Same parts, same payloads.
+      const bundle = await invoke("ribbon-evaluate", { pageId: ctxPageId, spaceKey: ctxSpaceKey }).catch((e) => ({ threw: e }));
+      const part = (k) => (bundle?.threw || !bundle ? null : bundle[k] ?? null);
+      const [sumRes, al] = await Promise.all([
+        fetchSummary(ctxPageId, bundle || { threw: new Error("no answer") }),
+        operator ? fetchAlerts(ctxPageId, operator, bundle || { threw: new Error("no answer") }) : Promise.resolve([]),
       ]);
+      const wf = part("workflow");
+      const appr = part("approvals");
+      const vs = part("validation");
+      const ai = part("ai");
       if (stale()) return;
       const sum = sumRes?.res || null;
       const wfVal = wf?.assigned ? wf : null;

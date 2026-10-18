@@ -89,7 +89,12 @@ export function nextBaselineSource(record, n, cause, nowIso = new Date().toISOSt
     if (from === prevBaseline) return { kind, contentOf: prevContent ?? n, editedIn: prevEdited, at: nowIso };
     return { kind, contentOf: from, editedIn: from, at: nowIso };
   }
-  if (kind === "unchanged") return { kind, contentOf: prevContent ?? n, editedIn: prevEdited, at: nowIso };
+  // An unchanged version equal to a LATER sanctioned edit (the sweep's or Pass 0's target above the
+  // baseline) holds that edit's content: the caller says so in cause.contentOf (review 2026-10-18).
+  if (kind === "unchanged") {
+    if (num(cause.contentOf) != null) return { kind, contentOf: num(cause.contentOf), editedIn: num(cause.editedIn), at: nowIso };
+    return { kind, contentOf: prevContent ?? n, editedIn: prevEdited, at: nowIso };
+  }
   // A privileged save the app then saved again (its seals restored) holds the editor's change in the
   // app's version n: the edit was made in cause.editedIn, never in the app's n.
   if (kind === "edit") return { kind, contentOf: n, editedIn: num(cause.editedIn) ?? n, at: nowIso };

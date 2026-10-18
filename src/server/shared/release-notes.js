@@ -12,6 +12,19 @@ const note = (n) => Object.freeze({ ...n, changes: Object.freeze([...(n.changes 
 
 export const RELEASE_NOTES = Object.freeze([
   note({
+    version: "8.12.0",
+    date: "2026-10-18",
+    headline: "Space admins keep their rights while Confluence is limiting requests",
+    changes: [
+      "Changed: Sentinel Vault keeps what Confluence says about a space's admins and a person's groups for up to a minute, so a permission given or taken away in Confluence reaches Sentinel Vault within a minute.",
+    ],
+    fixes: [
+      "While Confluence was limiting requests from Sentinel Vault, space admins could be treated as ordinary users: Approve and Deny were hidden, space admin actions were refused, and the approver and group lists came back empty. Sentinel Vault now asks Confluence far less often for each page view, and when Confluence is busy it says so and asks you to try again instead.",
+      "A page's Sentinel Vault activity could show the person whose edit was undone or moved back for review as an account ID instead of their name. It now shows their name.",
+    ],
+    action: "Nothing to do.",
+  }),
+  note({
     version: "8.11.0",
     date: "2026-10-18",
     headline: "The status under the page title follows workflow moves, and a restored Approved page names the version that was approved",
