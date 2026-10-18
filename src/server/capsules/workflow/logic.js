@@ -560,6 +560,9 @@ export async function purgePageWorkflow(pageId, { clearApprovals } = {}) {
     `workflow-state-${pageId}`, `workflow-pending-${pageId}`, `workflow-autoassigned-${pageId}`,
     `workflow-integrity-notified-${pageId}`, `workflow-review-notified-${pageId}`, `workflow-completing-${pageId}`,
     `workflow-label-${pageId}`,
+    // The page's runtime stamps: the banner's workflow stamp (byline-touch.js) and the byline's
+    // last-written stamp (byline.js) — one each per page that ever had a workflow write.
+    `protections-last-workflow-${pageId}`, `byline-stamp-${pageId}`,
   ];
   if (record?.stateId) keys.push(`workflow-idx-${sk}-${record.stateId}-${pageId}`);
   for (const k of keys) await kvs.delete(k).catch(() => {});

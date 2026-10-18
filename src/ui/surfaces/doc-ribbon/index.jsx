@@ -399,7 +399,7 @@ const WorkflowControl = ({ workflow, approvals, operatorId, pageId, spaceKey, si
     try { setReadStatus(await invoke("get-read-status", { pageId })); } catch (_) { setReadStatus(null); }
   }, [pageId]);
   useEffect(() => { if (workflow?.readConfirmation?.required) loadReadStatus(); else setReadStatus(null); }, [workflow?.readConfirmation?.required, workflow?.readConfirmation?.version, loadReadStatus]);
-  const [signMove, setSignMove] = useState(null); // B3: { toStateId, reason } — a move that must be signed (direct steward approval / AI-only gate)
+  const [signMove, setSignMove] = useState(null); // B3: { toStateId, fromStateId, reason } — a move that must be signed (direct steward approval / AI-only gate)
   const [moveCode, setMoveCode] = useState("");
   const signRef = useRef(null);
   const signBtnRef = useRef(null);
@@ -499,16 +499,18 @@ const WorkflowControl = ({ workflow, approvals, operatorId, pageId, spaceKey, si
   // back to the chip) is the kit's: this was the original and now lives in kit/ActionMenu.jsx.
   const { onMenuKey, itemProps } = useActionMenu({ open: menuOpen, setOpen: setMenuOpen, count: available.length, triggerRef: btnRef, menuRef });
 
-  const doTransition = useCallback(async (toStateId) => {
+  // fromStateId: the state the move was PICKED from. "Sign & move" passes the one it kept when the
+  // signing dialog opened — the 5 s poll may refresh the banner while the dialog is open.
+  const doTransition = useCallback(async (toStateId, fromStateId = workflow.state?.id) => {
     setBusy(true); setError(null); setMenuOpen(false);
     try {
-      const res = await invoke("request-transition", { pageId, spaceKey, toStateId, fromStateId: workflow.state?.id, ...(moveCode ? { code: moveCode } : {}) });
+      const res = await invoke("request-transition", { pageId, spaceKey, toStateId, fromStateId, ...(moveCode ? { code: moveCode } : {}) });
       if (res?.signatureRequired) {
         // The space requires a signed decision and this move IS the decision (no approvers,
         // or an AI-only gate): ask for the code and retry with it. A code that was SENT and
         // refused is an error inside the dialog, not a new subtitle.
         if (moveCode) { setError(res.reason || "That code did not match"); }
-        else { setSignMove({ toStateId, reason: res.reason || "" }); }
+        else { setSignMove({ toStateId, fromStateId, reason: res.reason || "" }); }
         setMoveCode("");
         setMenuOpen(false);
         return;
@@ -520,7 +522,10 @@ const WorkflowControl = ({ workflow, approvals, operatorId, pageId, spaceKey, si
         setSeat(false);
         requestAnimationFrame(() => setSeat(true)); // seat the newly-rendered state
       } else {
-        if (res?.stale) await onTransitioned(); // the chip then shows the page's real state
+        // The chip then shows the page's real state. A stale "Sign & move" closes its dialog (the move
+        // it would sign no longer exists) so the sentence shows next to the chip; no code was used —
+        // the server checks the state before the signature.
+        if (res?.stale) { setSignMove(null); setMoveCode(""); await onTransitioned(); }
         // #46: a blocked transition names exactly what's missing (content conditions).
         const reasons = (res?.violations || []).map((v) => v.message || v.label).filter(Boolean);
         setError(reasons.length ? `${res?.reason || "Blocked"} — ${reasons.join("; ")}` : (res?.reason || "Transition not allowed"));
@@ -726,7 +731,7 @@ const WorkflowControl = ({ workflow, approvals, operatorId, pageId, spaceKey, si
             </label>
           </div>
           <div className="wf-appr-actions">
-            <button type="button" className="wf-appr-approve" disabled={busy || !moveCode.trim()} onClick={() => { const to = signMove.toStateId; doTransition(to); }} data-testid="wf-sign-move-go">Sign &amp; move</button>
+            <button type="button" className="wf-appr-approve" disabled={busy || !moveCode.trim()} onClick={() => doTransition(signMove.toStateId, signMove.fromStateId)} data-testid="wf-sign-move-go">Sign &amp; move</button>
             <button type="button" className="wf-review-clear" onClick={() => { setSignMove(null); setMoveCode(""); setError(null); }}>Cancel</button>
           </div>
           {error && <div className="wf-error" role="alert" data-testid="wf-sign-move-error">{error}</div>}
