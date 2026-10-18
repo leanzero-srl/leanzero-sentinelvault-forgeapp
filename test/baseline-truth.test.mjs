@@ -187,6 +187,27 @@ try {
     const rows = await enforcedRows();
     eq("[8] the second revert's row names approved v2 as what came back", rows.map((r) => r.details?.restoredContent), [2, 2]);
   }
+  // 10. Review round 2 D1: a page whose first revert happened on 8.10.0 (no baselineSource on the record; the
+  //     revert's activity row says restoredTo) is reverted again on 8.11.0: every surface still names approved v2.
+  {
+    const w = await approvedPage();
+    const v3 = w.edit(PAGE, PLAIN, "unapproved change");
+    await triggers.pageContentTrigger(event(PLAIN, v3)); // v4 = copy of approved v2
+    const rec = await logic.readPageWorkflow(PAGE);
+    delete rec.baselineSource; delete rec.reviewedVersion; // as 8.10.0 left it
+    await kvs.set(`workflow-state-${PAGE}`, rec);
+    for (const r of await enforcedRows()) { const k = (await kvs.query().where("key", WhereConditions.beginsWith(`activity-page-${PAGE}-`)).limit(100).getMany()).results.find((x) => x.value.id === r.id)?.key; if (k) { const v = { ...r, details: { ...r.details } }; delete v.details.restoredContent; delete v.details.reviewedVersion; await kvs.set(k, v); } }
+    w.comments.length = 0;
+    const v5 = w.edit(PAGE, PLAIN, "second unapproved change");
+    await triggers.pageContentTrigger(event(PLAIN, v5)); // v6
+    const wf = await getWf();
+    eq("[10] legacy page, second revert on 8.11.0: still a copy of approved v2", [wf?.baseline?.baselineVersion, wf?.baseline?.kind, wf?.baseline?.contentOf], [6, "restored", 2]);
+    const ct = commentsText(w);
+    ok("[10] the editor's comment names approved v2", /approved version \(v2\)/.test(ct) && !/v4, the last version kept/.test(ct));
+    eq("[10] the banner pill names approved v2", (await lastDispatch())?.approvedVersion, 2);
+    const rows = await enforcedRows();
+    eq("[10] the new activity row names approved v2", rows[rows.length - 1]?.details?.restoredContent, 2);
+  }
 } finally {
   loud();
 }
