@@ -42,6 +42,15 @@ export const COMPONENTS = {
 const JIRA_ON = "It works once a site admin has connected Jira to Sentinel Vault in Atlassian Administration.";
 
 export const ENTRIES = {
+  // 8.11.0 (2026-10-18). Outcome wording only (this file is public).
+  "2909e08b7dcf8ef8": ["The sentinel-vault-workflow page property adds reviewedVersion, the version that was approved", "R", {
+    d: "On an Approved page, the page property sentinel-vault-workflow (read with Confluence's REST API) now also says reviewedVersion, the version that was approved, and baselineVersion, the version later changes are checked against, with baselineKind and baselineContentOf saying why that version moved and which version's content it holds (empty where that was not recorded). A page approved before this update gets these fields the next time Sentinel Vault updates its workflow record, for example when the page is edited or moved. approvedVersion keeps the value it had, for scripts that already read it.",
+  }],
+  "57ef916f1e809fe0": ["The Sentinel Vault status under the page title follows workflow moves made elsewhere", "W", {
+    d: "The Sentinel Vault status under the page title kept showing the workflow state the page was opened with after the page was moved to another workflow state somewhere else, for example in another browser tab, while the banner above it already followed the move. The status under the title now follows within a few seconds too, without a reload.",
+  }],
+  "67cde2be10130ab3": ["An Approved page whose unapproved edit was undone names the version that was approved", "W"],
+
   // 8.10.0 (2026-10-18). Outcome wording only (this file is public).
   "15719e6c54496223": ["The site's AI review settings apply to every space", "C"],
   "7edab779ec80d20d": ["Space admins are recognised from the space's own permissions", "C", { id: "known-space-admin-not-recognised" }],

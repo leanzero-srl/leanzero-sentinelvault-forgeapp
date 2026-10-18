@@ -1,16 +1,16 @@
 # Sentinel Vault Public Tracker - verify file
 
-Generated 2026-10-18T11:12:26.673Z by scripts/public-tracker/tracker.mjs verify.
+Generated 2026-10-18T16:08:08.614Z by scripts/public-tracker/tracker.mjs verify.
 Site https://leanzero-demo.atlassian.net. Project SVT (id 10278), permission scheme "Sentinel Vault Public Tracker permissions" (id 10265, used by: SVT), anonymous grants: BROWSE_PROJECTS.
-Issues checked: 95 of 95. Verification failures: 0. Withheld release-note lines: 1.
+Issues checked: 98 of 98. Verification failures: 0. Withheld release-note lines: 1.
 
 ## Counts
 
-- status: Done 89; Backlog 6
-- version: 6.4.0 5; 6.5.0 1; 6.6.0 6; 6.7.0 8; 6.9.0 4; 6.10.0 4; 6.11.0 1; 7.0.0 5; 7.1.0 8; 8.0.0 16; 8.1.0 1; 8.2.0 2; 8.3.0 1; 8.4.0 1; 8.5.0 1; 8.6.0 13; 8.7.0 1; 8.8.0 1; 8.9.0 5; 8.10.0 5; open, affects 7.1.0 6
-- component: Classification 1; Sealed files and sections 13; Edit requests and access 3; REST API 3; Backup and restore 13; Layout and accessibility 5; Privacy and personal data 8; Space and site settings 10; Workflow and approvals 9; App permissions and updates 4; Page banner and Sentinel Vault window 8; Activity report 1; Jira issue attachments 13; My work 4
-- type: Improvement 45; Bug 50
-- versions in Jira: 6.4.0 released 2026-09-30, 6.5.0 released 2026-09-30, 6.6.0 released 2026-10-02, 6.7.0 released 2026-10-04, 6.9.0 released 2026-10-04, 6.10.0 released 2026-10-04, 6.11.0 released 2026-10-04, 7.0.0 released 2026-10-05, 7.1.0 released 2026-10-09, 8.0.0 released 2026-10-14, 8.1.0 released 2026-10-14, 8.2.0 released 2026-10-14, 8.3.0 released 2026-10-14, 8.4.0 released 2026-10-14, 8.5.0 released 2026-10-14, 8.6.0 released 2026-10-17, 8.7.0 released 2026-10-17, 8.8.0 released 2026-10-17, 8.9.0 released 2026-10-18, 8.10.0 released 2026-10-18
+- status: Done 92; Backlog 6
+- version: 6.4.0 5; 6.5.0 1; 6.6.0 6; 6.7.0 8; 6.9.0 4; 6.10.0 4; 6.11.0 1; 7.0.0 5; 7.1.0 8; 8.0.0 16; 8.1.0 1; 8.2.0 2; 8.3.0 1; 8.4.0 1; 8.5.0 1; 8.6.0 13; 8.7.0 1; 8.8.0 1; 8.9.0 5; 8.10.0 5; 8.11.0 3; open, affects 7.1.0 6
+- component: Classification 1; Sealed files and sections 13; Edit requests and access 3; REST API 4; Backup and restore 13; Layout and accessibility 5; Privacy and personal data 8; Space and site settings 10; Workflow and approvals 11; App permissions and updates 4; Page banner and Sentinel Vault window 8; Activity report 1; Jira issue attachments 13; My work 4
+- type: Improvement 46; Bug 52
+- versions in Jira: 6.4.0 released 2026-09-30, 6.5.0 released 2026-09-30, 6.6.0 released 2026-10-02, 6.7.0 released 2026-10-04, 6.9.0 released 2026-10-04, 6.10.0 released 2026-10-04, 6.11.0 released 2026-10-04, 7.0.0 released 2026-10-05, 7.1.0 released 2026-10-09, 8.0.0 released 2026-10-14, 8.1.0 released 2026-10-14, 8.2.0 released 2026-10-14, 8.3.0 released 2026-10-14, 8.4.0 released 2026-10-14, 8.5.0 released 2026-10-14, 8.6.0 released 2026-10-17, 8.7.0 released 2026-10-17, 8.8.0 released 2026-10-17, 8.9.0 released 2026-10-18, 8.10.0 released 2026-10-18, 8.11.0 released 2026-10-18
 
 ## Issues
 
@@ -692,4 +692,25 @@ Issues checked: 95 of 95. Verification failures: 0. Withheld release-note lines:
 
 > The progress of an AI review of a page is now shown only to the person who started it.
 > Fixed in Sentinel Vault 8.10.0. A site still on version 7 or earlier gets it once a site admin approves the update in Confluence administration, Apps, Manage apps.
+
+### SVT-100 - The sentinel-vault-workflow page property adds reviewedVersion, the version that was approved
+
+- type: Improvement; status: Done (Done); fixVersion: 8.11.0; component: REST API
+
+> On an Approved page, the page property sentinel-vault-workflow (read with Confluence's REST API) now also says reviewedVersion, the version that was approved, and baselineVersion, the version later changes are checked against, with baselineKind and baselineContentOf saying why that version moved and which version's content it holds (empty where that was not recorded). A page approved before this update gets these fields the next time Sentinel Vault updates its workflow record, for example when the page is edited or moved. approvedVersion keeps the value it had, for scripts that already read it.
+> Added in Sentinel Vault 8.11.0. A site still on version 7 or earlier gets it once a site admin approves the update in Confluence administration, Apps, Manage apps.
+
+### SVT-101 - The Sentinel Vault status under the page title follows workflow moves made elsewhere
+
+- type: Bug; status: Done (Done); fixVersion: 8.11.0; component: Workflow and approvals
+
+> The Sentinel Vault status under the page title kept showing the workflow state the page was opened with after the page was moved to another workflow state somewhere else, for example in another browser tab, while the banner above it already followed the move. The status under the title now follows within a few seconds too, without a reload.
+> Fixed in Sentinel Vault 8.11.0. A site still on version 7 or earlier gets it once a site admin approves the update in Confluence administration, Apps, Manage apps.
+
+### SVT-102 - An Approved page whose unapproved edit was undone names the version that was approved
+
+- type: Bug; status: Done (Done); fixVersion: 8.11.0; component: Workflow and approvals
+
+> After Sentinel Vault restored an Approved page following an unapproved edit, the page's approval details said an approver or space admin had last updated the approved content in the restored version, and the page's activity, the comment to the editor, the banner and My work could name the restored copy as the approved version. They now name the version that was approved, and the approval details say the later version is Sentinel Vault's restored copy of it; when the version restored is one kept after the approval, such as an approver's or space admin's later change, they name that version and the approval it followed. Only a change an approver or space admin made is credited to them.
+> Fixed in Sentinel Vault 8.11.0. A site still on version 7 or earlier gets it once a site admin approves the update in Confluence administration, Apps, Manage apps.
 
