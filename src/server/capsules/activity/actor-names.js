@@ -6,7 +6,7 @@
  */
 import { accountToName, looksLikeAccountId } from "../../shared/account-id.js";
 
-// 8.11.0: rows that name an EDITOR in their details (an Approved page restored or moved back, a sealed
+// 8.12.0: rows that name an EDITOR in their details (an Approved page restored or moved back, a sealed
 // file put back) store the editor's accountId; it is named here too, or the UI printed the id.
 const editorToName = (e) => {
   const d = e?.details;

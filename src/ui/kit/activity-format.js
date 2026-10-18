@@ -94,7 +94,7 @@ const APP_NAME = "Sentinel Vault";
 // itself is server/shared/account-id.js (one copy for the writer, the readers and this file).
 export { looksLikeAccountId };
 
-// The editor a row's details name — never an accountId printed as a name (8.11.0; the reader names it,
+// The editor a row's details name — never an accountId printed as a name (8.12.0; the reader names it,
 // server/capsules/activity/actor-names.js, and an account nobody can name reads as "Someone").
 const editorOf = (d) => [d?.editorName, d?.editor].find((v) => typeof v === "string" && v.trim() && !looksLikeAccountId(v)) || null;
 
