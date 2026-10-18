@@ -43,7 +43,7 @@ eq("row 2 gains its accountId", out[1].actor.accountId, MIHAI);
 eq("one lookup per distinct account", [...calls].sort(), ["boom", "gone", MIHAI].sort());
 eq("nothing to resolve → no lookups, same list", (await decorateActorNames([{ actor: { accountId: "a", name: "A" } }], async () => { throw new Error("must not be called"); })).length, 1);
 
-// 8.11.0 (found by the revert-record live spec, 2026-10-18): the EDITOR named in a row's details (an
+// 8.12.0 (found by the revert-record live spec, 2026-10-18): the EDITOR named in a row's details (an
 // Approved page restored or moved back, a sealed file put back) was printed as the raw accountId —
 // "712020:6c8d… edited the Approved page" in the page's Activity — because only the actor was looked
 // up. The reader names the details' editor the same way, and the UI never prints an id as a name.
