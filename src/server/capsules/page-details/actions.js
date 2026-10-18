@@ -36,6 +36,8 @@
  * property when they differ (writeBylineFor skips the write when they match).
  */
 import { asApp, route } from "@forge/api";
+import { baselineFor } from "../workflow/baseline-read.js"; // B2: reviewed version vs baseline, named
+import { reviewedVersionOf } from "../workflow/baseline.js";
 import { kvs, WhereConditions } from "@forge/kvs";
 import { canEditPage, canReadPage, mustVerify, isStewardOfSpaces } from "../../shared/content-access.js";
 import { authorizeSteward, isAccountStewardAsApp } from "../../shared/steward-checks.js";
@@ -233,7 +235,7 @@ export const pageDetailsSummary = async (req) => {
       const wfAdmin = !spaceKey ? false : record.spaceKey && record.spaceKey !== spaceKey ? await adminOf(authorizeSteward, [spaceKey, record.spaceKey]) : isSpaceAdmin;
       const wfDecideAdmin = spaceKey ? await adminOf(isAccountStewardAsApp, [spaceKey, record.spaceKey]) : false;
       const ar = record.approvalRecord || null;
-      const reviewedVersion = (typeof ar?.pinnedVersion === "number" ? ar.pinnedVersion : null) ?? record.approvedVersion ?? null;
+      const reviewedVersion = reviewedVersionOf(record);
       const dueMs = record.reviewDueAt ? new Date(record.reviewDueAt).getTime() : NaN;
       const readers = readConfirmationRequired(settings, record)
         ? await readStatus({ pageId, accountId, record, settings }).catch(() => null)
@@ -250,6 +252,8 @@ export const pageDetailsSummary = async (req) => {
         enforceMode: shownEnforcement(settings, await kvs.get("admin-settings-global").catch(() => null), { moved: !!(record.spaceKey && spaceKey && record.spaceKey !== spaceKey) }), // "off" while content protection is off
         reviewedVersion,
         baselineVersion: record.approvedVersion ?? null,
+        // B2: why the baseline moved, in words that never credit an approver with the app's revert.
+        baseline: record.enforce ? await baselineFor(pageId, record) : null,
         approvalSummary: wf.approvalSummary,
         // The modal composes the approval sentence ITSELF from these (workflow/status.js
         // approvalSummary in the browser) so its dates are in the viewer's zone like every other

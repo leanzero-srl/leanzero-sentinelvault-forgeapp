@@ -453,7 +453,8 @@ const WorkflowBlock = ({ wf, pageId, onChanged }) => {
   const meta = [];
   if (wf.reviewDueAt && !wf.reviewOverdue) meta.push({ id: "due", text: `Review due ${fmtDueDay(wf.reviewDueAt)}` });
   if (wf.readers) meta.push({ id: "readers", text: `Read by ${wf.readers.acked} of ${wf.readers.audience}${wf.readers.mine ? " · you confirmed" : ""}` });
-  if (wf.enforced && wf.baselineVersion != null && wf.baselineVersion !== wf.reviewedVersion) meta.push({ id: "baseline", text: `Enforced from v${wf.baselineVersion}` });
+  // B2: why the baseline moved (the server's baseline.js), never "updated by an approver" for the app's revert.
+  if (wf.enforced && wf.baseline?.moved && wf.baseline.short) meta.push({ id: "baseline", text: wf.baseline.short, title: wf.baseline.sentence || undefined });
   return (
     <section className="pd-sec" data-testid="pd-workflow" data-state={wf.state?.id || ""} data-tone={status.tone}>
       <h4>Workflow{wf.workflowName ? ` · ${wf.workflowName}` : ""}</h4>
@@ -474,7 +475,7 @@ const WorkflowBlock = ({ wf, pageId, onChanged }) => {
       )}
       {meta.length > 0 && (
         <div className="pd-wf-meta" data-testid="pd-wf-meta">
-          {meta.map((m) => <span key={m.id} className="pd-wf-meta-item" data-testid={`pd-wf-${m.id}`}>{m.text}</span>)}
+          {meta.map((m) => <span key={m.id} className="pd-wf-meta-item" data-testid={`pd-wf-${m.id}`} title={m.title}>{m.text}</span>)}
         </div>
       )}
       {wf.approvalRecord?.decisions?.length > 0 && (
