@@ -38,6 +38,21 @@ export function reviewedVersionOf(record) {
 }
 
 /**
+ * PURE. What a revert to version `from` gives back, judged on the record AS THE REVERT READ IT (the
+ * baseline can move while the revert runs — a sanctioned save in a concurrent run — and what was
+ * restored is what was read). Restoring the baseline carries its content forward; restoring a later
+ * sanctioned edit (Pass 0's highestSanctionedVersion) restores that edit's own content.
+ * @returns {{ contentOf: number|null, editedIn: number|null }}
+ */
+export function restoredContentOf(record, from) {
+  const baseline = num(record?.approvedVersion);
+  const f = num(from) ?? baseline;
+  if (f == null) return { contentOf: null, editedIn: null };
+  if (f === baseline) return { contentOf: num(record?.baselineSource?.contentOf) ?? baseline, editedIn: num(record?.baselineSource?.editedIn) };
+  return { contentOf: f, editedIn: f };
+}
+
+/**
  * PURE. The baselineSource a re-stamp to version `n` leaves behind, from the record BEFORE the re-stamp.
  * @param {object} record  the workflow record as it is now (approvedVersion = the old baseline)
  * @param {number} n       the new baseline
@@ -53,6 +68,9 @@ export function nextBaselineSource(record, n, cause, nowIso = new Date().toISOSt
   const prevContent = num(prevSrc?.contentOf) ?? prevBaseline;
   const prevEdited = num(prevSrc?.editedIn);
   if (kind === "restored") {
+    // The revert says what it restored (restoredContentOf on the record it read): trust that over the
+    // record now, which a concurrent re-stamp may have moved.
+    if (num(cause.contentOf) != null) return { kind, contentOf: num(cause.contentOf), editedIn: num(cause.editedIn), at: nowIso };
     const from = num(cause.from) ?? prevBaseline;
     // Restoring the baseline itself carries its content forward; restoring a later sanctioned edit
     // (Pass 0's highestSanctionedVersion) restores that edit's own content.
