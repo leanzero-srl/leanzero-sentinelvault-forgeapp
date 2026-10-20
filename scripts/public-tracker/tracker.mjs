@@ -40,7 +40,7 @@ import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { ENTRIES, KNOWN, COMPONENTS } from "./entries.mjs";
-import { FIRST_VERSION, vparts, vge, hashOf, newestReleaseTag } from "./coverage.mjs";
+import { FIRST_VERSION, vparts, vge, hashOf, productionRelease } from "./coverage.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = join(HERE, "..", "..");
@@ -61,14 +61,14 @@ const PROP = "svt.tracker";
 // beside the rules the production door shares. 6.8.0 has no note: it was the same evening's redeploy
 // of 6.7.0 (built bundles), and carries no line of its own.
 // The newest version the tracker records FOLLOWS THE CUT RELEASE (2026-10-20, owner: "the release
-// notes should always get updated"): the newest vX.Y.Z release tag, cut after every production
-// deploy (release checklist), so it only ever names a version that is DEPLOYED TO PRODUCTION (an
-// unlisted version's issues say it is waiting for Marketplace approval, true only of a production
-// build). It used to be a constant raised by hand. scripts/deploy-prod.sh refuses a production release
-// whose lines have no entries.mjs row, so every line in this range has one; main may already carry
-// later notes, which wait for their own deploy and tag.
-const LAST_VERSION = newestReleaseTag(execFileSync("git", ["tag", "--list", "v[0-9]*.[0-9]*.[0-9]*"], { cwd: HERE, encoding: "utf8" }));
-if (!LAST_VERSION) throw new Error("no vX.Y.Z release tag in this checkout (git fetch --tags), so the tracker has no release to cover");
+// notes should always get updated"): production-release.json, which scripts/deploy-prod.sh writes
+// after an ELIGIBLE production deploy, so it only ever names a version that is DEPLOYED TO PRODUCTION
+// (an unlisted version's issues say it is waiting for Marketplace approval, true only of a production
+// build). Not the newest tag: a tag can be pushed before the deploy. It used to be a constant raised by
+// hand. The door refuses a production release whose lines have no entries.mjs row, so every line in
+// this range has one; main may already carry later notes, which wait for their own deploy.
+const LAST_VERSION = productionRelease(JSON.parse(readFileSync(join(HERE, "production-release.json"), "utf8")));
+if (!LAST_VERSION) throw new Error("scripts/public-tracker/production-release.json records no release, so the tracker has no release to cover");
 // RELEASED = listed as "public" by the Marketplace's own versions endpoint (no login), and released in
 // Jira on the Marketplace's release date. Sentinel Vault has no deploy ledger, so the Marketplace is
 // the source; there is no hand-set constant to forget to raise or to raise too early (review
@@ -752,7 +752,7 @@ async function verify() {
   writeFileSync(VERIFY_REVIEW, md + "\n");
   // The production door's proof that the tracker caught up with the newest release tag (coverage.mjs
   // trackerReleaseRefusal): recorded only by a verify with no failure over every wanted issue.
-  if (!fails.length && rows.length === want.issues.length) {
+  if (!fails.length && !want.problems.length && rows.length === want.issues.length) {
     const rc2 = readReceipt();
     rc2.verified = { through: LAST_VERSION.join("."), at: new Date().toISOString(), issues: rows.length, failures: 0 };
     writeReceipt(rc2);

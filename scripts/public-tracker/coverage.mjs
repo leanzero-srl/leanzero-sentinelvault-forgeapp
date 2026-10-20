@@ -7,11 +7,15 @@
 // the tracker driver (tracker.mjs) and the production door (scripts/deploy-prod.sh, through
 // release-gate.mjs) share. Owner, 2026-10-20: "the release notes should always get updated" - so the
 // door refuses to cut a production release whose note lines have no tracker row, and the range the
-// tracker publishes follows the cut release (its vX.Y.Z tag) instead of a constant raised by hand.
+// tracker publishes follows the cut release instead of a constant raised by hand: the door itself
+// records the release it deployed in production-release.json (after the eligibility verdict), the
+// way CogniRunner's door writes its deploy ledger. Not the newest git tag (review 2026-10-20): a tag
+// can be pushed BEFORE the deploy (docs/deployment.md deploys "from a release tag"), and a checkout
+// can lack tags, so a tag cannot prove what production runs.
 //
 //   hashOf(line)               the row key: first 16 hex of sha256(note line) (receipt + issue property)
-//   newestReleaseTag(text)     the highest vX.Y.Z in `git tag --list` output: the release production
-//                              carries (a tag is cut after every production deploy - release checklist)
+//   productionRelease(obj)     the release production-release.json records, as [major, minor, patch]
+//   newestReleaseTag(text)     the highest vX.Y.Z in `git tag --list` output (kept for tooling)
 //   trackedNotes(notes, thr)   the release notes the tracker covers, FIRST_VERSION .. thr
 //   missingRows(notes, rows)   every note line in those notes with no entries.mjs row
 //   trackerReleaseRefusal(..)  the door's verdict: null, or the refusal naming each missing line
@@ -26,6 +30,9 @@ export const vge = (a, b) => { for (let i = 0; i < 3; i++) { if (a[i] !== b[i]) 
 const SEMVER = /^\d+\.\d+\.\d+$/;
 
 export const hashOf = (line) => createHash("sha256").update(line).digest("hex").slice(0, 16);
+
+/** The release production-release.json records (the door wrote it after an eligible deploy), or null. */
+export const productionRelease = (obj) => (obj && typeof obj.release === "string" && SEMVER.test(obj.release) ? vparts(obj.release) : null);
 
 /** The highest release tag (vX.Y.Z) in `git tag --list` output, as [major, minor, patch], or null. */
 export const newestReleaseTag = (text) => {
@@ -64,9 +71,12 @@ export const receiptVerifiedThrough = (rc) => {
  * else the refusal sentence. Two rules:
  *  1. every note line from FIRST_VERSION through `release` has an entries.mjs row (a public-safe
  *     rewrite, { withhold: "<why>" }, a fold, or the line as written) - named one by one;
- *  2. the release production carries NOW (`live`, the newest vX.Y.Z tag) has been applied and verified
- *     on the public tracker: the receipt's clean verify reaches it. The door prints those commands
- *     after every production deploy; this makes the next production deploy wait for them.
+ *  2. on a FORWARD cut (the release is newer than `live`, the release production-release.json says
+ *     production carries), that live release has been applied and verified on the public tracker: the
+ *     receipt's clean verify reaches it. The door prints those commands after every production deploy;
+ *     this makes the next forward cut wait for them. A redeploy of the live release, a rollback to an
+ *     older tag and a hotfix cut from one are not held by rule 2. No recorded production release
+ *     refuses: the check is never skipped because its input is missing.
  */
 export const trackerReleaseRefusal = ({ release, notes, entries, live, receipt }) => {
   if (!SEMVER.test(String(release || ""))) return `the release being deployed (${release}) is not a version number, so its tracker rows cannot be checked`;
@@ -80,18 +90,18 @@ export const trackerReleaseRefusal = ({ release, notes, entries, live, receipt }
     ].join("\n"));
   }
   const verified = receiptVerifiedThrough(receipt);
-  if (live && !(verified && vge(vparts(verified), live))) {
-    why.push(`the public tracker was not applied and verified for ${live.join(".")}, the release production carries now (its tag; the receipt's last clean verify ${verified ? `reached ${verified}` : "is not recorded"}). Run, then commit the receipt:\n  node scripts/public-tracker/tracker.mjs apply && node scripts/public-tracker/tracker.mjs verify && node scripts/public-tracker/tracker.mjs public --reprove`);
+  if (!live) why.push("scripts/public-tracker/production-release.json records no production release, so the door cannot prove the tracker caught up with production");
+  else if (!vge(live, vparts(release)) && !(verified && vge(vparts(verified), live))) {
+    why.push(`the public tracker was not applied and verified for ${live.join(".")}, the release production carries now (production-release.json; the receipt's last clean verify ${verified ? `reached ${verified}` : "is not recorded"}). Run, then commit the receipt:\n  node scripts/public-tracker/tracker.mjs apply && node scripts/public-tracker/tracker.mjs verify && node scripts/public-tracker/tracker.mjs public --reprove`);
   }
   return why.length ? why.join("\n") : null;
 };
 
 /** What the door prints after a production deploy of `release`: the release tag and the tracker step it now requires. */
 export const trackerPostDeploySteps = (release) => [
-  `PUBLIC TRACKER (required before the next production deploy): ${release} is in production. Cut its tag first - the tracker's range follows the newest release tag:`,
-  `  git tag -a v${release} -m "Sentinel Vault ${release}" && git push origin v${release}`,
+  `PUBLIC TRACKER (required before the next production deploy): ${release} is in production; scripts/public-tracker/production-release.json now records it, so the tracker's range covers it.`,
   "  node scripts/public-tracker/tracker.mjs apply",
   "  node scripts/public-tracker/tracker.mjs verify",
   "  node scripts/public-tracker/tracker.mjs public --reprove",
-  "  then commit scripts/public-tracker/receipt-leanzero-demo.json (the next production deploy refuses until its clean verify reaches the newest release tag)",
+  "  then commit scripts/public-tracker/production-release.json and receipt-leanzero-demo.json on main (the next forward production cut refuses until the receipt's clean verify reaches this release)",
 ].join("\n");
