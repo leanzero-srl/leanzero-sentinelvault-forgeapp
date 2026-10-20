@@ -77,13 +77,20 @@ try {
 
   const r4 = await A.generateNote({ appName: "CogniRunner", version: "1.35.0", previous: "1.34.0", examples: [], commits: [], trackerKey: "CRT", runner: fake([]) });
   ok(r4.note.changes.length === 1 && /Maintenance release/.test(r4.note.changes[0]), "no visible commit = a maintenance note, no model call");
+  const leaky = [
+    { subject: "Breaker round on wolfaenpak.atlassian.net: the harness found it for mihai@leanzero.net", body: "", files: ["src/a.js"] },
+    { subject: "Validators name the field (src/shared/fields.js) in the log", body: "", files: ["src/b.js"] },
+  ];
+  const r6 = await A.generateNote({ appName: "CogniRunner", version: "1.35.0", previous: "1.34.0", examples: [], commits: leaky, trackerKey: "CRT", runner: fake([null]) });
+  const all6 = [...r6.note.changes, ...r6.note.fixes].join(" | ");
+  ok(!/atlassian\.net|@leanzero|harness|src\//.test(all6) && r6.dropped.length >= 1 && /Validators name the field in the log\./.test(all6), `the deterministic note passes the hazard check too: a site, an email or an internal word drops the line; a path in parentheses is stripped (${all6})`);
   const r5 = await A.generateNote({ appName: "CogniRunner", version: "1.35.0", previous: "1.34.0", examples: [], commits, trackerKey: "CRT", runner: fake(["not json at all"]) });
   ok(r5.source === "deterministic", "an answer that is not JSON falls back");
   // Sentinel Vault core additions (2026-10-20): one retry, the fallback's subject trimming
-  const r6 = await A.generateNote({ appName: "CogniRunner", version: "1.35.0", previous: "1.34.0", examples: [], commits, trackerKey: "CRT", runner: fake([null, JSON.stringify({ headline: "Validators no longer block when the AI is slow.", changes: [{ text: "The Rules tab names each rule's field.", keys: [] }], fixes: [] })]) });
-  ok(r6.source === "model", "a model call that answers nothing is tried once more before the fallback");
-  const r7 = A.deterministicNote({ commits: [{ subject: "Review round 2: when the sweep cannot judge who edited, it writes nothing; the memo is bounded", body: "" }], previous: "1", trackerKey: "CRT" });
-  ok(r7.changes[0] === "When the sweep cannot judge who edited, it writes nothing.", `the fallback drops a subject's label and keeps its first clause (${JSON.stringify(r7)})`);
+  const sv6 = await A.generateNote({ appName: "CogniRunner", version: "1.35.0", previous: "1.34.0", examples: [], commits, trackerKey: "CRT", runner: fake([null, JSON.stringify({ headline: "Validators no longer block when the AI is slow.", changes: [{ text: "The Rules tab names each rule's field.", keys: [] }], fixes: [] })]) });
+  ok(sv6.source === "model", "a model call that answers nothing is tried once more before the fallback");
+  const sv7 = A.deterministicNote({ commits: [{ subject: "Review round 2: when the sweep cannot judge who edited, it writes nothing; the memo is bounded", body: "" }], previous: "1", trackerKey: "CRT" });
+  ok(sv7.changes[0] === "When the sweep cannot judge who edited, it writes nothing.", `the fallback drops a subject's label and keeps its first clause (${JSON.stringify(sv7)})`);
 }
 
 /* ── 3. tracker rows ────────────────────────────────────────────────────────── */
@@ -121,7 +128,15 @@ try {
 
   const det = await A.generateTrackerRows({ appName: "CogniRunner", trackerKey: "CRT", lines, components: { W: "Workflow rules" }, examples: [], runner: fake([null, null]), receiptIssues: {}, knownSlugs: [] });
   ok(det.source === "deterministic" && !det.reviewed, "no model = deterministic rows");
-  ok(det.rows.find((r) => r.h === lines[2].h).withhold && !det.rows.find((r) => r.h === lines[0].h).withhold, "deterministic: sensitive withheld, the rest published as written");
+  ok(det.rows.every((r) => r.withhold) && /review pass did not answer/.test(det.rows.find((r) => r.h === lines[0].h).withhold), "no model = no review = every row withheld (doubt = withhold)");
+  const half = await A.generateTrackerRows({ appName: "CogniRunner", trackerKey: "CRT", lines, components: { W: "Workflow rules" }, examples: [], runner: fake([JSON.stringify({ rows }), "not json"]), receiptIssues: {}, knownSlugs: [] });
+  ok(half.rows.every((r) => r.withhold) && !half.reviewed, "rows written but the review answered nothing: every row withheld");
+  // two lines naming the same key: the first closes the bug, the second gets an ordinary row (no double move)
+  const twice = [L("Validators stopped blocking (CRT-12)."), L("The validator log names the timeout (CRT-12).")];
+  const tw = await A.generateTrackerRows({ appName: "CogniRunner", trackerKey: "CRT", lines: twice, components: { W: "W" }, examples: [], runner: fake([JSON.stringify({ rows: twice.map((l) => ({ h: l.h, title: "t", c: "W", d: null, withhold: null })) }), JSON.stringify({ verdicts: twice.map((l) => ({ h: l.h, verdict: "ok" })) })]), receiptIssues: { "known-x": { key: "CRT-12" } }, knownSlugs: ["known-x"] });
+  ok(tw.closed.join() === "known-x" && tw.rows.filter((r) => r.fold).length === 1 && !tw.rows[1].fold, "two lines naming one key: one fold, the second line gets its own row");
+  const fill = await A.generateTrackerRows({ appName: "CogniRunner", trackerKey: "CRT", lines: [L("Maintenance release with no change you will notice.", "changes")], components: { W: "W" }, examples: [], runner: fake([JSON.stringify({ rows: [{ h: A.hashOf("Maintenance release with no change you will notice."), title: "Maintenance", c: "W", d: null, withhold: null }] }), JSON.stringify({ verdicts: [{ h: A.hashOf("Maintenance release with no change you will notice."), verdict: "ok" }] })]), receiptIssues: {}, knownSlugs: [] });
+  ok(/filler/.test(fill.rows[0].withhold || ""), "a filler line is never a public issue");
   ok(det.rows.find((r) => r.h === lines[1].h).line === "A validator blocked a transition when its check timed out.", "a key with no KNOWN bug is stripped from the public line and the line gets its own issue");
 }
 

@@ -216,8 +216,9 @@ let p = ""; process.stdin.on("data", (d) => (p += d)); process.stdin.on("end", (
     /"fold":"known-macro-position-focus"/.test(last.entries) && /closes SVT-47/.test(last.log)
     && last.entries.indexOf('k: "known-macro-position-focus"') > last.entries.indexOf("export const CLOSED"));
   const d = (last.desired || [])[0] || {};
-  ok(`...and the tracker builds SVT-47's issue as a Done Bug with ${NEXT} as its fix version and the line as its text (${JSON.stringify(last.desired).slice(0, 300)})`,
-    d.type === "Bug" && d.status === "Done" && d.version === NEXT && !d.known && /focus outline/i.test(d.text) && !/SVT-47/.test(d.text));
+  // the model is off here, so the fix text was never reviewed: the issue closes with a generic sentence, never the raw line
+  ok(`...and the tracker builds SVT-47's issue as a Done Bug with ${NEXT} as its fix version (unreviewed text: the generic sentence) (${JSON.stringify(last.desired).slice(0, 300)})`,
+    d.type === "Bug" && d.status === "Done" && d.version === NEXT && !d.known && d.text === "This problem is fixed." && !/SVT-47/.test(d.text));
 
   ok("the tree is clean after every run (manifest and build stamp restored)", git("status", "--porcelain", "--untracked-files=no") === "");
 } finally {
