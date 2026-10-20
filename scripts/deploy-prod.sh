@@ -46,6 +46,13 @@ if [[ -n "$(git status --porcelain --untracked-files=no)" ]]; then
   echo "ABORT: uncommitted changes to tracked files; production ships committed code only."
   exit 1
 fi
+
+# Public tracker gate (2026-10-20, owner: "the release notes should always get updated"): refuse to cut a
+# production release when any release-note line through it has no public tracker row (a public-safe rewrite or
+# a withhold in scripts/public-tracker/entries.mjs), naming each missing line, or when the tracker was not
+# applied and verified for the release production carries now (the newest vX.Y.Z tag). Offline; read-only.
+echo "==> Public tracker gate"
+if ! node scripts/public-tracker/release-gate.mjs check; then exit 1; fi
 HEAD_SHA="$(git rev-parse --short HEAD)"
 # Every static/ resource the manifest serves is moved aside, so a folder the build does not
 # produce is MISSING afterwards instead of silently old (webpack 5 does not rewrite a file whose
@@ -109,3 +116,7 @@ if [[ $ELIG_RC -ne 0 ]] || ! grep -q "is eligible for the Runs on Atlassian" <<<
   exit 1
 fi
 echo "==> Eligible for Runs on Atlassian"
+
+# The public tracker step this release now requires (the gate above refuses the next production deploy until the
+# receipt's clean verify reaches the newest release tag); the tracker's range follows that tag.
+node scripts/public-tracker/release-gate.mjs post

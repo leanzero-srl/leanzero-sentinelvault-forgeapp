@@ -35,12 +35,12 @@
 // ../CogniRunner/test-harness/.env beside this repo (never printed). Only apply/verify/public and
 // plan --check-site read them.
 
-import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { ENTRIES, KNOWN, COMPONENTS } from "./entries.mjs";
+import { FIRST_VERSION, vparts, vge, hashOf, productionRelease } from "./coverage.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = join(HERE, "..", "..");
@@ -57,14 +57,18 @@ const DESCRIPTION = "The public list of known issues and fixes in Sentinel Vault
 const PERM_SCHEME_NAME = "Sentinel Vault Public Tracker permissions";
 const TEMPLATE = "com.pyxis.greenhopper.jira:gh-simplified-kanban-classic";
 const PROP = "svt.tracker";
-// 6.4.0 is the first version the in-app release notes carry. 6.8.0 has no note: it was the same
-// evening's redeploy of 6.7.0 (built bundles), and carries no line of its own.
-const FIRST_VERSION = [6, 4, 0];
-// The newest version the tracker records. Raise it deliberately when a new release's lines are to be
-// published (each needs an entries.mjs row first); main may already carry later notes.
-// Raise it only to a version that is DEPLOYED TO PRODUCTION: an unlisted version's issues say it is
-// waiting for Marketplace approval, which is true only of a production build.
-const LAST_VERSION = [8, 12, 0];
+// FIRST_VERSION (6.4.0, the first version the in-app release notes carry) lives in coverage.mjs,
+// beside the rules the production door shares. 6.8.0 has no note: it was the same evening's redeploy
+// of 6.7.0 (built bundles), and carries no line of its own.
+// The newest version the tracker records FOLLOWS THE CUT RELEASE (2026-10-20, owner: "the release
+// notes should always get updated"): production-release.json, which scripts/deploy-prod.sh writes
+// after an ELIGIBLE production deploy, so it only ever names a version that is DEPLOYED TO PRODUCTION
+// (an unlisted version's issues say it is waiting for Marketplace approval, true only of a production
+// build). Not the newest tag: a tag can be pushed before the deploy. It used to be a constant raised by
+// hand. The door refuses a production release whose lines have no entries.mjs row, so every line in
+// this range has one; main may already carry later notes, which wait for their own deploy.
+const LAST_VERSION = productionRelease(JSON.parse(readFileSync(join(HERE, "production-release.json"), "utf8")));
+if (!LAST_VERSION) throw new Error("scripts/public-tracker/production-release.json records no release, so the tracker has no release to cover");
 // RELEASED = listed as "public" by the Marketplace's own versions endpoint (no login), and released in
 // Jira on the Marketplace's release date. Sentinel Vault has no deploy ledger, so the Marketplace is
 // the source; there is no hand-set constant to forget to raise or to raise too early (review
@@ -86,8 +90,6 @@ const REPROVE = process.argv.includes("--reprove");
 // is planned for a coming version, and it moves to Done with the release-note line that fixes it.
 const STATUS = { released: "Done", known: ["Backlog", "To Do", "Open"], scheduled: ["Selected for Development"] };
 
-const vparts = (v) => v.split(".").map(Number);
-const vge = (a, b) => { for (let i = 0; i < 3; i++) { if (a[i] !== b[i]) return a[i] > b[i]; } return true; };
 let MARKET = null; // version name -> { status, date } from the Marketplace
 async function loadMarketplace() {
   if (MARKET) return MARKET;
@@ -129,7 +131,7 @@ const reachedIn = (v) => {
   later.sort((a, b) => (vge(vparts(a), vparts(b)) ? 1 : -1));
   return later[0] || null;
 };
-export const hashOf = (line) => createHash("sha256").update(line).digest("hex").slice(0, 16);
+export { hashOf };
 
 // ---------- credentials (lazy: plan without --check-site needs none) ----------
 function parseEnv(text) {
@@ -748,6 +750,13 @@ async function verify() {
     ].join("\n")),
   ].join("\n");
   writeFileSync(VERIFY_REVIEW, md + "\n");
+  // The production door's proof that the tracker caught up with the newest release tag (coverage.mjs
+  // trackerReleaseRefusal): recorded only by a verify with no failure over every wanted issue.
+  if (!fails.length && !want.problems.length && rows.length === want.issues.length) {
+    const rc2 = readReceipt();
+    rc2.verified = { through: LAST_VERSION.join("."), at: new Date().toISOString(), issues: rows.length, failures: 0 };
+    writeReceipt(rc2);
+  }
   console.log(JSON.stringify(count, null, 1));
   console.log(`verified ${rows.length}/${want.issues.length}, failures ${fails.length}, anonymous grants ${anon.length}; verify file ${VERIFY_REVIEW}`);
   if (fails.length) { console.log(fails.join("\n")); process.exitCode = 1; }
