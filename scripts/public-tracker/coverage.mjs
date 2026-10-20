@@ -105,3 +105,22 @@ export const trackerPostDeploySteps = (release) => [
   "  node scripts/public-tracker/tracker.mjs public --reprove",
   "  then commit scripts/public-tracker/production-release.json and receipt-leanzero-demo.json on main (the next forward production cut refuses until the receipt's clean verify reaches this release)",
 ].join("\n");
+
+// The public lint and the note-label strip, shared by tracker.mjs (plan, apply) and the production door (release-gate.mjs
+// prepare), which lints the rows it writes with the same rules before they are committed (2026-10-20).
+// Drop the note's own "New: " / "Changed: " / "Improved: " label; the issue type says which.
+export const plainLine = (line) => line.replace(/^(New|Changed|Improved):\s+/, "").replace(/^./, (c) => c.toUpperCase());
+
+export const PUBLIC_LINT = [
+  [/\b(SV-[A-Z0-9-]+|SEC-\d+|WF-\d+|CLS-\d+|BRK\d*-\d+|BN-\d+|BR-\d+|F-?\d{2,}|it\d{2,})\b/, "finding or iteration id"],
+  [/wolfaenpak|leanzero-demo|test-easy-apps|leanzero-apps-demo|SVSEC1P|SVPLAIN|\bWFH\b/i, "tenant or test space name"],
+  [/\b(Mihai|Gabriela|Perdum)\b/i, "person name"],
+  [/\bsrc\/|\.jsx?\b|\.mjs\b|\.css\b|:\d{2,}\b/, "file path or line reference"],
+  [/@[a-z0-9-]+\.[a-z]{2,}/i, "email address"],
+  [/\b(accountId|712020|557058)\b/i, "account id"],
+  [/api[_ -]?key\s*[:=]|token\s*[:=]|ATATT|svt_[A-Za-z0-9]/i, "secret-looking text"],
+  [/inject|bypass|exploit|cross-tenant|confused deputy|\basApp\b|\basUser\b/i, "security wording"],
+  [/\b(steward|realm|operator|resolver|KVS|webtrigger|test hook|harness|surgeon|breaker|ledger)s?\b/i, "internal word"],
+  [/\b(Claude|Anthropic|OpenAI|Gemini|Bedrock|OpenRouter)\b/i, "model or provider name"],
+];
+export const lint = (text) => PUBLIC_LINT.filter(([re]) => re.test(text)).map(([, why]) => why);
