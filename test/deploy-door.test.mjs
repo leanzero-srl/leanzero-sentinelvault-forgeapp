@@ -4,10 +4,13 @@
 //    `forge eligibility ... || true` and exit 0);
 //  - the licensing guard asks for --licensing-live only for the deploy that turns licensing on: when the last release
 //    tag already shipped `licensing.enabled: true`, the door runs without the flag.
-//  - the public tracker gate (2026-10-20): a release-note line through the release being cut with no tracker row,
-//    or (on a forward cut) a tracker not verified through the release production carries, ABORTS before the build
-//    and the deploy, naming the line; a covered release deploys, the door records it in production-release.json
-//    and prints the tracker step it now requires; a redeploy of the recorded release is not held.
+//  - release notes and the public tracker are AUTOMATIC (2026-10-20, owner: "the release notes in app need to be done
+//    automatically"): a release with no in-app note gets one written from the commits since production (through a
+//    stand-in model, and deterministically with the model off) and committed BEFORE the build; a note line with no
+//    tracker row gets one instead of a refusal; a line naming an SVT key of a known bug closes it (KNOWN -> CLOSED,
+//    and the tracker builds that issue as Done with the release); nothing about notes or the tracker ever refuses;
+//    after an eligible deploy the door records the release and runs the tracker's apply, verify and public --reprove
+//    itself, and a failing tracker step never changes the door's exit code.
 import { execFileSync, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
@@ -22,7 +25,8 @@ const git = (...a) => execFileSync("git", ["-C", repo, "-c", "user.name=door-tes
 try {
   execFileSync("git", ["clone", "-q", "--no-hardlinks", root, repo], { stdio: "ignore" });
   // the working copy under test (the clone holds the last commit; the door is copied in as it is on disk now)
-  for (const f of ["scripts/deploy-prod.sh", "scripts/strip-dev-modules.mjs", "manifest.yml", "scripts/public-tracker/coverage.mjs", "scripts/public-tracker/release-gate.mjs"]) fs.copyFileSync(path.join(root, f), path.join(repo, f));
+  for (const f of ["scripts/deploy-prod.sh", "scripts/strip-dev-modules.mjs", "manifest.yml", "scripts/public-tracker/coverage.mjs", "scripts/public-tracker/release-gate.mjs",
+    "scripts/public-tracker/tracker.mjs", "scripts/release-autopilot.mjs"]) fs.copyFileSync(path.join(root, f), path.join(repo, f));
   // The tracker gate reads the clone's own rows, receipt and production-release.json: a row for every note line,
   // production recorded one release behind the one being cut, and a receipt verified through it.
   const { hashOf } = await import(pathToFileURL(path.join(root, "scripts/public-tracker/coverage.mjs")).href);
@@ -62,13 +66,48 @@ echo "export const BUILD = \\"$(git rev-parse --short HEAD)\\";" > src/build-inf
 
   const ELIGIBLE = "The version of your app [98.1.0] that's deployed to [production] is eligible for the Runs on Atlassian program.";
   const NOT = "The version of your app [98.1.0] that's deployed to [production] is not eligible for the Runs on Atlassian program.\n  App is using a webtrigger module that can egress data";
-  // A successful door writes production-release.json (the tracker step's input); the helper keeps what it wrote in
-  // `lastRecorded` and puts the committed file back, so every case starts from the same tree.
-  let lastRecorded = null;
+  // The door commits (its note, its tracker rows, the production record after the deploy). The helper keeps what it
+  // recorded and wrote in `last` and resets the clone to the commit the case started from, so every case starts clean.
+  // The model is OFF (no `claude` call in a test) unless a case points RELEASE_AUTOPILOT_CLAUDE at the stand-in below;
+  // the tracker driver is a stand-in that logs its argv; nothing is pushed.
+  const TRK_LOG = path.join(tmp, "tracker.log");
+  fs.writeFileSync(path.join(bin, "tracker-stub.mjs"), `import fs from "node:fs"; fs.appendFileSync(${JSON.stringify(TRK_LOG)}, process.argv.slice(2).join(" ") + "\\n"); process.exit(process.env.FAKE_TRACKER_FAIL === process.argv[2] ? 1 : 0);\n`);
+  // The Marketplace "Try it first" publisher runs over ssh (or zsh -lc on the workhorse): both are stand-ins here that log
+  // the command and print the publisher's JSON (FAKE_PUBLISHER=error prints its error form). The real publisher never runs.
+  const PUB_LOG = path.join(tmp, "publisher.log");
+  for (const name of ["ssh", "zsh"]) fs.writeFileSync(path.join(bin, name), `#!/bin/bash
+printf '%s\\n' "${name} $*" >> ${JSON.stringify(PUB_LOG)}
+if [[ "$FAKE_PUBLISHER" == "error" ]]; then echo '{"error":"the vendor browser is not signed in"}'; else echo '{"apps":{"sv":{"ok":true,"version":"98.1.0","build":"500"}}}'; fi
+exit 0
+`, { mode: 0o755 });
+  const BASE_ENV = { RELEASE_GATE_MARKETPLACE_FAKE: JSON.stringify({ name: "98.1.0", buildNumber: 500 }), RELEASE_AUTOPILOT_MODEL: "off", RELEASE_GATE_TRACKER: path.join(bin, "tracker-stub.mjs"), RELEASE_GATE_NO_PUSH: "1",
+    GIT_AUTHOR_NAME: "door-test", GIT_AUTHOR_EMAIL: "door-test@invalid", GIT_COMMITTER_NAME: "door-test", GIT_COMMITTER_EMAIL: "door-test@invalid" };
+  let last = null;
   const door = (env, args = []) => {
-    const r = spawnSync("bash", ["scripts/deploy-prod.sh", ...args], { cwd: repo, encoding: "utf8", env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, ...env } });
-    lastRecorded = fs.readFileSync(PROD_F, "utf8");
-    git("checkout", "--", "scripts/public-tracker/production-release.json");
+    const start = git("rev-parse", "HEAD");
+    for (const f of [TRK_LOG, PUB_LOG]) { try { fs.rmSync(f); } catch { /* none */ } }
+    const { RELEASE_AUTOPILOT_MODEL: _m, ...outer } = process.env;
+    const r = spawnSync("bash", ["scripts/deploy-prod.sh", ...args], { cwd: repo, encoding: "utf8", env: { ...outer, PATH: `${bin}:${outer.PATH}`, ...BASE_ENV, ...env } });
+    const read = (f) => { try { return fs.readFileSync(f, "utf8"); } catch { return null; } };
+    last = { recorded: read(PROD_F), entries: read(ENTRIES_F), notes: read(path.join(repo, "src/server/shared/release-notes.js")), doc: read(path.join(repo, "docs/RELEASE-NOTES.md")),
+      tracker: (read(TRK_LOG) || "").trim().split("\n").filter(Boolean), publisher: (read(PUB_LOG) || "").trim().split("\n").filter(Boolean), log: git("log", "--format=%s", `${start}..HEAD`), build: read(path.join(repo, "src/build-info.js")), head: git("rev-parse", "--short", "HEAD") };
+    last.desired = null;
+    if (env.WANT_DESIRED) {
+      // the tracker's own desired state in the clone, after the deploy (Marketplace read stubbed: everything is listed)
+      const runner = path.join(tmp, "desired.mjs");
+      fs.writeFileSync(runner, `globalThis.fetch = async () => ({ ok: true, json: async () => ({ _embedded: { versions: ${JSON.stringify(Array.from({ length: 30 }, (_, i) => ({ name: "", status: "public", release: { date: "2026-10-20" } })))}.map((v, i) => v) } }) });
+process.argv[2] = "none";
+const M = await import(${JSON.stringify(pathToFileURL(path.join(repo, "scripts/public-tracker/tracker.mjs")).href)});
+const d = await M.desired();
+console.log("DESIRED" + JSON.stringify(d.issues.filter((i) => i.id === ${JSON.stringify(env.WANT_DESIRED)})));
+process.exitCode = 0;
+`);
+      const dr = spawnSync(process.execPath, [runner], { cwd: repo, encoding: "utf8" });
+      const m = /DESIRED(.*)/.exec(dr.stdout || "");
+      last.desired = m ? JSON.parse(m[1]) : { error: `${dr.stdout}\n${dr.stderr}`.slice(-600) };
+    }
+    if (process.env.DOOR_DEBUG) console.log(`---- door ${args.join(" ")}\n${r.stdout}\n${r.stderr}`);
+    git("reset", "-q", "--hard", start);
     return r;
   };
 
@@ -102,29 +141,83 @@ echo "export const BUILD = \\"$(git rev-parse --short HEAD)\\";" > src/build-inf
   r = door({ FAKE_ELIG: ELIGIBLE });
   ok("a release tag on HEAD itself does not lift the licensing guard", r.status === 1 && /ABORT: manifest has app.licensing.enabled: true/.test(r.stdout));
 
-  // THE PUBLIC TRACKER GATE (2026-10-20). Licensing is acknowledged with the flag so only the tracker decides.
+  // RELEASE NOTES AND THE PUBLIC TRACKER, AUTOMATIC (2026-10-20). Licensing is acknowledged with the flag throughout.
   r = door({ FAKE_ELIG: ELIGIBLE }, ["--licensing-live"]);
   ok("covered release, caught-up tracker: the door passes", r.status === 0 && /Public tracker: every release-note line through/.test(r.stdout));
-  ok("...records the deployed release in production-release.json", JSON.parse(lastRecorded).release === CUT);
-  ok("...and prints the tracker step it now requires, after the eligibility verdict", /PUBLIC TRACKER \(required before the next production deploy\)/.test(r.stdout) && /tracker\.mjs public --reprove/.test(r.stdout)
-    && r.stdout.indexOf("PUBLIC TRACKER") > r.stdout.indexOf("Eligible for Runs on Atlassian"));
+  ok("...records the deployed release (and its commit) in production-release.json and commits it", JSON.parse(last.recorded).release === CUT && /^[0-9a-f]{7,}$/.test(JSON.parse(last.recorded).sha) && /public tracker: .* in production/.test(last.log));
+  ok("...and runs the tracker's apply, verify and public --reprove ITSELF, after the eligibility verdict", last.tracker.join("|") === "apply|verify|public --reprove"
+    && /applied, verified and re-proved public/.test(r.stdout) && r.stdout.indexOf("Public tracker: " + CUT + " applied") > r.stdout.indexOf("Eligible for Runs on Atlassian"));
+  ok("...and prints no manual tracker instructions", !/PUBLIC TRACKER \(required/.test(r.stdout) && !/then commit/.test(r.stdout));
+  ok("...then re-applies the Marketplace \"Try it first\" message to the version the deploy reported, through the publisher, after the tracker step",
+    last.publisher.length === 1 && /APPS=sv/.test(last.publisher[0]) && /mp-more-details-try-first\.mjs/.test(last.publisher[0]) && !/DRY=1/.test(last.publisher[0])
+    && /"Try it first" message is on 98\.1\.0 \(build 500\), written and read back/.test(r.stdout) && r.stdout.indexOf("Try it first\" message is on") > r.stdout.indexOf(`Public tracker: ${CUT} applied`));
+  r = door({ FAKE_ELIG: ELIGIBLE, FAKE_PUBLISHER: "error" }, ["--licensing-live"]);
+  ok("a publisher error is logged and does NOT fail the deploy", r.status === 0 && /"Try it first" message was NOT re-applied \(the vendor browser is not signed in\)/.test(r.stdout));
+  r = door({ FAKE_ELIG: ELIGIBLE, RELEASE_GATE_MARKETPLACE_FAKE: JSON.stringify({ name: "98.0.0", buildNumber: 499 }), RELEASE_GATE_TRYFIRST_WAIT_MS: "0" }, ["--licensing-live"]);
+  ok("a version the Marketplace does not list yet: no publisher run, logged, exit 0", r.status === 0 && last.publisher.length === 0 && /did not list 98\.1\.0/.test(r.stdout));
+
+  r = door({ FAKE_ELIG: ELIGIBLE, FAKE_TRACKER_FAIL: "verify" }, ["--licensing-live"]);
+  ok("a tracker step that fails does NOT fail the deploy (exit 0), names the step and stops there", r.status === 0 && /stopped at tracker\.mjs verify/.test(r.stdout) && last.tracker.join("|") === "apply|verify"
+    && JSON.parse(last.recorded).release === CUT);
+  r = door({ FAKE_ELIG: NOT }, ["--licensing-live"]);
+  ok("an ineligible deploy still fails, and runs no tracker step and no Marketplace step", r.status === 1 && last.tracker.length === 0 && last.publisher.length === 0);
+
   const firstLine = [...(CURRENT_RELEASE.changes || []), ...(CURRENT_RELEASE.fixes || [])][0];
   const missing = { ...allRows }; delete missing[hashOf(firstLine)];
   writeTracker(missing, LIVE); git("commit", "-qam", "a release line without a tracker row");
   r = door({ FAKE_ELIG: ELIGIBLE }, ["--licensing-live"]);
-  ok("a release-note line with no tracker row: the door refuses, naming it", r.status === 1 && /ABORT: the public tracker does not cover this production release/.test(r.stdout)
-    && r.stdout.includes(hashOf(firstLine)) && r.stdout.includes(firstLine.slice(0, 60)));
-  ok("...before the build and before any deploy", !/Building every bundle/.test(r.stdout) && !/Deployed to production/.test(r.stdout));
+  ok("a release-note line with no tracker row is NOT refused: the door writes the row and deploys", r.status === 0 && /Deployed to production/.test(r.stdout)
+    && last.entries.includes(`"${hashOf(firstLine)}"`) && /public tracker: rows for the release-note lines through/.test(last.log));
+  ok("...committed before the build, so the build is of the commit that carries the row", r.stdout.indexOf("Public tracker rows committed") > 0 && r.stdout.indexOf("Public tracker rows committed") < r.stdout.indexOf("Building every bundle"));
   writeTracker(allRows, "1.0.0"); git("commit", "-qam", "tracker verified only through an older release");
   r = door({ FAKE_ELIG: ELIGIBLE }, ["--licensing-live"]);
-  ok("a forward cut while the tracker is not verified through the release production carries: the door refuses", r.status === 1 && r.stdout.includes(`not applied and verified for ${LIVE}`) && !/Deployed to production/.test(r.stdout));
-  writeTracker(allRows, "1.0.0", CUT); git("commit", "-qam", "a redeploy of the recorded release");
-  r = door({ FAKE_ELIG: ELIGIBLE }, ["--licensing-live"]);
-  ok("a redeploy (or rollback) of the release production already carries is not held by the receipt", r.status === 0 && JSON.parse(lastRecorded).release === CUT);
+  ok("a tracker not verified through the release production carries is NOT refused: logged, and this deploy's tracker step runs", r.status === 0 && /last clean verify reached 1\.0\.0/.test(r.stdout) && last.tracker.length === 3);
   fs.rmSync(PROD_F); git("commit", "-qam", "no production release recorded");
-  r = spawnSync("bash", ["scripts/deploy-prod.sh", "--licensing-live"], { cwd: repo, encoding: "utf8", env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, FAKE_ELIG: ELIGIBLE } });
-  ok("no production-release.json: the door refuses (never skips the check)", r.status === 1 && /could not read scripts\/public-tracker\/production-release\.json/.test(r.stdout) && !/Deployed to production/.test(r.stdout));
-  writeTracker(allRows, LIVE); git("add", "-A", "scripts"); git("commit", "-qam", "tracker caught up");
+  r = door({ FAKE_ELIG: ELIGIBLE }, ["--licensing-live"]);
+  ok("no production-release.json is NOT refused: the door deploys and records the release", r.status === 0 && /Deployed to production/.test(r.stdout) && JSON.parse(last.recorded).release === CUT);
+  writeTracker(allRows, LIVE); git("add", "-A", "scripts"); git("commit", "-qq", "-m", "tracker caught up");
+
+  // THE NOTE. Production carries the newest note (CUT) from an earlier commit, and HEAD has a customer-visible commit
+  // after it, so the release being cut has no note. The real editorial file and receipt are used from here on.
+  for (const f of ["scripts/public-tracker/entries.mjs", "scripts/public-tracker/receipt-leanzero-demo.json"]) fs.copyFileSync(path.join(root, f), path.join(repo, f));
+  fs.writeFileSync(PROD_F, JSON.stringify({ release: CUT, at: "2026-10-18" }));
+  git("add", "-A", "scripts"); git("commit", "-qm", "production carries the newest note");
+  const prodSha = git("rev-parse", "--short=8", "HEAD");
+  fs.writeFileSync(PROD_F, JSON.stringify({ release: CUT, at: "2026-10-18", sha: prodSha })); git("commit", "-qam", "production commit recorded");
+  const [maj, min] = CUT.split(".").map(Number), NEXT = `${maj}.${min + 1}.0`, MAJOR = `${maj + 1}.0.0`;
+  fs.writeFileSync(path.join(repo, "src/server/door-test-change.js"), "export const x = 1;\n"); git("add", "-A", "src"); git("commit", "-qm", "Approvers see the page's classification in the approval dialog");
+  // a stand-in for `claude -p`: answers the note prompt, the rows prompt and the review prompt
+  fs.writeFileSync(path.join(bin, "claude"), `#!/usr/bin/env node
+let p = ""; process.stdin.on("data", (d) => (p += d)); process.stdin.on("end", () => {
+  if (/in-app release note/.test(p)) console.log(JSON.stringify({ headline: "Approvers see the page's classification", changes: [{ text: "New: the approval dialog shows the page's classification.", keys: [] }], fixes: [{ text: "Fixed something in src/server/x.js.", keys: [] }], action: null }));
+  else if (/adversarial reviewer/.test(p)) { const rows = JSON.parse(p.slice(p.indexOf("[", p.indexOf("Rows (")), p.lastIndexOf("]", p.indexOf("Answer with ONLY")) + 1)); console.log(JSON.stringify({ verdicts: rows.map((r) => ({ h: r.h, verdict: "ok" })) })); }
+  else if (/PUBLIC tracker/.test(p)) { const lines = JSON.parse(p.slice(p.indexOf("[", p.indexOf("Lines (")), p.lastIndexOf("]", p.indexOf("Answer with ONLY")) + 1)); console.log(JSON.stringify({ rows: lines.map((l) => ({ h: l.h, title: "The approval dialog shows the page's classification", c: "W", d: null, withhold: null })) })); }
+  else process.exit(1);
+});
+`, { mode: 0o755 });
+  r = door({ FAKE_ELIG: ELIGIBLE, RELEASE_AUTOPILOT_MODEL: "", RELEASE_AUTOPILOT_CLAUDE: path.join(bin, "claude") }, ["--licensing-live"]);
+  ok(`no note for the release being cut: the door WRITES it (${NEXT}, from the model stand-in) and deploys`, r.status === 0 && /Deployed to production/.test(r.stdout)
+    && last.notes.includes(`version: "${NEXT}"`) && last.notes.includes("New: the approval dialog shows the page's classification.") && JSON.parse(last.recorded).release === NEXT);
+  ok("...drops a generated line that would turn the note gate red (a file name)", !last.notes.includes("src/server/x.js"));
+  ok("...re-renders docs/RELEASE-NOTES.md and commits the note before the build", last.doc.includes(`## ${NEXT}`) && /release .*: in-app note written by the release door/.test(last.log)
+    && r.stdout.indexOf(`Release note ${NEXT} written and committed`) < r.stdout.indexOf("Building every bundle"));
+  ok("...and writes the new line's tracker row through the model and the review pass", /rows: model; review pass: model/.test(last.entries) && last.entries.includes("The approval dialog shows the page's classification"));
+  r = door({ FAKE_ELIG: ELIGIBLE }, ["--licensing-live", "--approve-major"]);
+  ok(`with the model off the note is written from the commit subjects; --approve-major cuts ${MAJOR}`, r.status === 0 && last.notes.includes(`version: "${MAJOR}"`) && /commit subjects/.test(last.notes)
+    && last.notes.includes("Approvers see the page's classification in the approval dialog."));
+
+  // A COMMIT NAMING AN SVT KEY OF A KNOWN BUG CLOSES IT. known-macro-position-focus is SVT-47 in the receipt.
+  fs.writeFileSync(path.join(repo, "src/server/door-test-change.js"), "export const x = 2;\n");
+  git("commit", "-qam", "Show the keyboard focus outline on the Top and Bottom switches (SVT-47)");
+  r = door({ FAKE_ELIG: ELIGIBLE, WANT_DESIRED: "known-macro-position-focus" }, ["--licensing-live"]);
+  const closedNote = (last.notes.match(/"[^"\n]*\(SVT-47\)\."/) || [""])[0];
+  ok("the generated note line carries the key the commit names", r.status === 0 && !!closedNote);
+  ok("...the row FOLDS into the known bug instead of a new issue, and the known bug moves from KNOWN to CLOSED",
+    /"fold":"known-macro-position-focus"/.test(last.entries) && /closes SVT-47/.test(last.log)
+    && last.entries.indexOf('k: "known-macro-position-focus"') > last.entries.indexOf("export const CLOSED"));
+  const d = (last.desired || [])[0] || {};
+  ok(`...and the tracker builds SVT-47's issue as a Done Bug with ${NEXT} as its fix version and the line as its text (${JSON.stringify(last.desired).slice(0, 300)})`,
+    d.type === "Bug" && d.status === "Done" && d.version === NEXT && !d.known && /focus outline/i.test(d.text) && !/SVT-47/.test(d.text));
 
   ok("the tree is clean after every run (manifest and build stamp restored)", git("status", "--porcelain", "--untracked-files=no") === "");
 } finally {
