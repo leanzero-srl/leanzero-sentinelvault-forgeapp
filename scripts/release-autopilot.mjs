@@ -44,7 +44,7 @@ import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import os from "node:os";
 
-export const AUTOPILOT_VERSION = "1.1.0";
+export const AUTOPILOT_VERSION = "1.2.0";
 
 export const hashOf = (line) => createHash("sha256").update(line).digest("hex").slice(0, 16);
 const SEMVER = /^\d+\.\d+\.\d+$/;
@@ -81,6 +81,9 @@ export const stripKeys = (text, trackerKey) => String(text || "")
   .replace(new RegExp(`\\s*\\b(?:fixes|closes|for)?\\s*${trackerKey}-\\d+\\b`, "gi"), "")
   .replace(/\s+([.,;:])/g, "$1").replace(/\s{2,}/g, " ").trim();
 
+/** Lines the door writes when it has nothing to say: never a public tracker issue. */
+export const FILLER_LINES = Object.freeze(["Maintenance release with no change you will notice.", "This release fixes the problems listed below.", "Security and reliability improvements."]);
+
 export const hazardsOf = (text, hazards) => (hazards || []).filter(([re]) => { re.lastIndex = 0; return re.test(String(text || "")); }).map(([, what]) => what);
 
 /** A commit subject made into a plain sentence: ids, paths and code marks out, capital first, full stop. */
@@ -88,7 +91,9 @@ export const plainSentence = (s, trackerKey = "ZZZZ") => {
   let t = String(s || "")
     .replace(/`([^`]*)`/g, "$1")
     .replace(/\$\{[^}]*\}/g, "")
-    .replace(/(?:^|\s)(?:src|static|scripts|test|tests|docs|apps|packages)\/\S+/g, " ")
+    .replace(/\s*\((?:src|static|scripts|test|tests|docs|apps|packages)\/[^)]*\)/g, "")
+    .replace(/(?:^|\s)(?:src|static|scripts|test|tests|docs|apps|packages)\/[^\s)]+/g, " ")
+    .replace(/\(((?:src|static|scripts|test|tests|docs|apps|packages)\/[^\s)]+)/g, "(")
     .replace(/\b(?!(?:Node|Next|Vue|React|Nuxt|Express)\.js\b)[\w-]+\.(?:js|jsx|mjs|cjs|ts|tsx|mts|json|ya?ml|css|md|sh)\b/g, "")
     .replace(idPattern(trackerKey), "")
     .replace(/\(\s*[,;]\s*/g, "(").replace(/\s*[,;]\s*\)/g, ")")
@@ -288,14 +293,20 @@ export const generateNote = async ({ appName, version, previous, examples, commi
       }
     }
   }
-  if (!note) note = deterministicNote({ commits: visible, previous, trackerKey, requireChange });
+  if (!note) {
+    // the deterministic note passes the same hazard check as the model's (a subject can carry a site, an email, a path)
+    const d = deterministicNote({ commits: visible, previous, trackerKey, requireChange });
+    note = { ...d, changes: d.changes.map((l) => clean(l, [])).filter(Boolean), fixes: d.fixes.map((l) => clean(l, [])).filter(Boolean) };
+    if (!note.changes.length && !note.fixes.length) note.changes = [FILLER_LINES[0]];
+  }
   // every tracker key the commits name rides on some line
   const carried = new Set([...note.changes, ...note.fixes].flatMap((l) => keysIn(l, trackerKey)));
   for (const k of commitKeys) {
     if (carried.has(k)) continue;
     const c = visible.find((x) => keysIn(`${x.subject}\n${x.body}`, trackerKey).includes(k));
     const base = c && !SENSITIVE_RE.test(c.subject) ? plainSentence(stripKeys(c.subject, trackerKey), trackerKey) : "";
-    note.fixes.push(base.length >= 12 ? `${base.replace(/[.!?]$/, "")} (${k}).` : `A problem reported on the public tracker is fixed (${k}).`);
+    const line = base.length >= 12 ? clean(`${base.replace(/[.!?]$/, "")} (${k}).`, [k]) : null;
+    note.fixes.push(line || `A problem reported on the public tracker is fixed (${k}).`);
   }
   if (requireChange && !note.changes.length) note.changes.push("This release fixes the problems listed below.");
   note.changes = [...new Set(note.changes)];
@@ -407,6 +418,7 @@ export const generateTrackerRows = async ({ appName, trackerKey, lines, componen
     out.source = "model";
   }
   if (!rows) rows = lines.map((l) => deterministicRow(asLine(l), dflt));
+  rows = rows.map((r) => (FILLER_LINES.includes(r.line) ? { ...r, withhold: "a filler line the door writes when there is nothing to say (release door)" } : r));
   // the review pass: one adversarial model read of what would be published (security/leakage lens)
   const toReview = rows.filter((r) => !r.withhold);
   if (toReview.length) {
@@ -422,7 +434,11 @@ export const generateTrackerRows = async ({ appName, trackerKey, lines, componen
         if (v.verdict === "rewrite") return { ...r, title: typeof v.title === "string" && v.title.trim() ? v.title.trim().slice(0, 120) : r.title, d: typeof v.d === "string" && v.d.trim() ? v.d.trim() : r.d };
         return r;
       });
-    } else log("[autopilot] public tracker review: no usable verdicts; the deterministic net alone decides (sensitive or hazardous rows are withheld)");
+    } else {
+      // doubt = withhold: no review, no publication (a missed public line is fine, a leaked one is not)
+      log("[autopilot] public tracker review: no usable verdicts, so every row it would have reviewed is withheld");
+      rows = rows.map((r) => (r.withhold ? r : { ...r, withhold: "the review pass did not answer (release door: no review, no publication)" }));
+    }
   }
   rows = rows.map((r) => netRow(r, trackerKey));
   // a line naming the tracker's own key closes that issue
@@ -431,6 +447,7 @@ export const generateTrackerRows = async ({ appName, trackerKey, lines, componen
     for (const k of keys) {
       const slug = knownSlugForKey(k, receiptIssues, knownSlugs);
       if (!slug) { log(`[autopilot] ${lines[i].h} names ${k}, which is not a known bug on the tracker; the line gets its own issue`); continue; }
+      if (out.closed.includes(slug)) { log(`[autopilot] ${lines[i].h} names ${k} too; that bug is already closed by an earlier line, so this one gets its own row`); continue; }
       const r = rows[i];
       rows[i] = { ...r, fold: slug, withhold: null, d: r.withhold ? "This problem is fixed." : (r.d || r.line), key: k };
       if (!out.closed.includes(slug)) out.closed.push(slug);
