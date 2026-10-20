@@ -4,11 +4,14 @@
 //    `forge eligibility ... || true` and exit 0);
 //  - the licensing guard asks for --licensing-live only for the deploy that turns licensing on: when the last release
 //    tag already shipped `licensing.enabled: true`, the door runs without the flag.
+//  - the public tracker gate (2026-10-20): a release-note line through the release being cut with no tracker row,
+//    or a tracker not verified through the newest release tag, ABORTS before the build and the deploy, naming the
+//    line; a covered release deploys and the door prints the tracker step it now requires.
 import { execFileSync, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { ok, report } from "./_assert.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -18,7 +21,19 @@ const git = (...a) => execFileSync("git", ["-C", repo, "-c", "user.name=door-tes
 try {
   execFileSync("git", ["clone", "-q", "--no-hardlinks", root, repo], { stdio: "ignore" });
   // the working copy under test (the clone holds the last commit; the door is copied in as it is on disk now)
-  for (const f of ["scripts/deploy-prod.sh", "scripts/strip-dev-modules.mjs", "manifest.yml"]) fs.copyFileSync(path.join(root, f), path.join(repo, f));
+  for (const f of ["scripts/deploy-prod.sh", "scripts/strip-dev-modules.mjs", "manifest.yml", "scripts/public-tracker/coverage.mjs", "scripts/public-tracker/release-gate.mjs"]) fs.copyFileSync(path.join(root, f), path.join(repo, f));
+  // The tracker gate reads the clone's own rows and receipt: a row for every note line, and a receipt verified
+  // through the highest tag this test makes (v100.0.0), so the cases below test what they name.
+  const { hashOf } = await import(pathToFileURL(path.join(root, "scripts/public-tracker/coverage.mjs")).href);
+  const { RELEASE_NOTES, CURRENT_RELEASE } = await import(pathToFileURL(path.join(repo, "src/server/shared/release-notes.js")).href);
+  const ENTRIES_F = path.join(repo, "scripts/public-tracker/entries.mjs"), RECEIPT_F = path.join(repo, "scripts/public-tracker/receipt-leanzero-demo.json");
+  const allRows = Object.fromEntries(RELEASE_NOTES.flatMap((n) => [...(n.changes || []), ...(n.fixes || [])]).map((l) => [hashOf(l), ["fixture", "X"]]));
+  const writeTracker = (rows, through) => {
+    fs.writeFileSync(ENTRIES_F, `export const ENTRIES = ${JSON.stringify(rows)};\n`);
+    fs.writeFileSync(RECEIPT_F, JSON.stringify({ verified: { through, failures: 0 } }));
+  };
+  writeTracker(allRows, "100.0.0");
+  git("add", "-A", "scripts");
   if (git("status", "--porcelain", "--untracked-files=no")) git("commit", "-qam", "door under test");
   fs.symlinkSync(path.join(root, "node_modules"), path.join(repo, "node_modules"));
   for (const t of git("tag", "--list").split("\n").filter(Boolean)) git("tag", "-d", t);
@@ -74,6 +89,23 @@ echo "export const BUILD = \\"$(git rev-parse --short HEAD)\\";" > src/build-inf
   git("tag", "v100.0.0", "HEAD");
   r = door({ FAKE_ELIG: ELIGIBLE });
   ok("a release tag on HEAD itself does not lift the licensing guard", r.status === 1 && /ABORT: manifest has app.licensing.enabled: true/.test(r.stdout));
+
+  // THE PUBLIC TRACKER GATE (2026-10-20). Licensing is acknowledged with the flag so only the tracker decides.
+  r = door({ FAKE_ELIG: ELIGIBLE }, ["--licensing-live"]);
+  ok("covered release, caught-up tracker: the door passes", r.status === 0 && /Public tracker: every release-note line through/.test(r.stdout));
+  ok("...and prints the tracker step it now requires, after the eligibility verdict", /PUBLIC TRACKER \(required before the next production deploy\)/.test(r.stdout) && /tracker\.mjs public --reprove/.test(r.stdout)
+    && r.stdout.indexOf("PUBLIC TRACKER") > r.stdout.indexOf("Eligible for Runs on Atlassian"));
+  const firstLine = [...(CURRENT_RELEASE.changes || []), ...(CURRENT_RELEASE.fixes || [])][0];
+  const missing = { ...allRows }; delete missing[hashOf(firstLine)];
+  writeTracker(missing, "100.0.0"); git("commit", "-qam", "a release line without a tracker row");
+  r = door({ FAKE_ELIG: ELIGIBLE }, ["--licensing-live"]);
+  ok("a release-note line with no tracker row: the door refuses, naming it", r.status === 1 && /ABORT: the public tracker does not cover this production release/.test(r.stdout)
+    && r.stdout.includes(hashOf(firstLine)) && r.stdout.includes(firstLine.slice(0, 60)));
+  ok("...before the build and before any deploy", !/Building every bundle/.test(r.stdout) && !/Deployed to production/.test(r.stdout));
+  writeTracker(allRows, "99.0.0"); git("commit", "-qam", "tracker verified only through an older tag");
+  r = door({ FAKE_ELIG: ELIGIBLE }, ["--licensing-live"]);
+  ok("a tracker not verified through the newest release tag: the door refuses", r.status === 1 && /not applied and verified for 100\.0\.0/.test(r.stdout) && !/Deployed to production/.test(r.stdout));
+  writeTracker(allRows, "100.0.0"); git("commit", "-qam", "tracker caught up");
 
   ok("the tree is clean after every run (manifest and build stamp restored)", git("status", "--porcelain", "--untracked-files=no") === "");
 } finally {
