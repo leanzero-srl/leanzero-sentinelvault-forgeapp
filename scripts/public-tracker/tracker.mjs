@@ -39,8 +39,12 @@ import { execFileSync } from "node:child_process";
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { ENTRIES, KNOWN, COMPONENTS } from "./entries.mjs";
-import { FIRST_VERSION, vparts, vge, hashOf, productionRelease } from "./coverage.mjs";
+import * as EDITORIAL from "./entries.mjs";
+const { ENTRIES, KNOWN, COMPONENTS } = EDITORIAL;
+// Known bugs a release closed (the release door moves them out of KNOWN when a note line names their SVT key and
+// folds into them): their issue is Done with that release. Absent in an entries.mjs that never closed one.
+const CLOSED = EDITORIAL.CLOSED || [];
+import { FIRST_VERSION, vparts, vge, hashOf, productionRelease, plainLine, lint } from "./coverage.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = join(HERE, "..", "..");
@@ -187,22 +191,8 @@ async function loadNotes() {
   return [...notes].sort((a, b) => (vge(vparts(a.version), vparts(b.version)) ? 1 : -1)); // oldest first
 }
 
-// Drop the note's own "New: " / "Changed: " / "Improved: " label; the issue type says which.
-const plainLine = (line) => line.replace(/^(New|Changed|Improved):\s+/, "").replace(/^./, (c) => c.toUpperCase());
-
-const PUBLIC_LINT = [
-  [/\b(SV-[A-Z0-9-]+|SEC-\d+|WF-\d+|CLS-\d+|BRK\d*-\d+|BN-\d+|BR-\d+|F-?\d{2,}|it\d{2,})\b/, "finding or iteration id"],
-  [/wolfaenpak|leanzero-demo|test-easy-apps|leanzero-apps-demo|SVSEC1P|SVPLAIN|\bWFH\b/i, "tenant or test space name"],
-  [/\b(Mihai|Gabriela|Perdum)\b/i, "person name"],
-  [/\bsrc\/|\.jsx?\b|\.mjs\b|\.css\b|:\d{2,}\b/, "file path or line reference"],
-  [/@[a-z0-9-]+\.[a-z]{2,}/i, "email address"],
-  [/\b(accountId|712020|557058)\b/i, "account id"],
-  [/api[_ -]?key\s*[:=]|token\s*[:=]|ATATT|svt_[A-Za-z0-9]/i, "secret-looking text"],
-  [/inject|bypass|exploit|cross-tenant|confused deputy|\basApp\b|\basUser\b/i, "security wording"],
-  [/\b(steward|realm|operator|resolver|KVS|webtrigger|test hook|harness|surgeon|breaker|ledger)s?\b/i, "internal word"],
-  [/\b(Claude|Anthropic|OpenAI|Gemini|Bedrock|OpenRouter)\b/i, "model or provider name"],
-];
-const lint = (text) => PUBLIC_LINT.filter(([re]) => re.test(text)).map(([, why]) => why);
+// plainLine and the public lint live in coverage.mjs since 2026-10-20, so the production door lints the rows
+// it writes with the SAME rules as plan, without loading this driver.
 
 export async function desired() {
   await loadMarketplace();
@@ -221,7 +211,7 @@ export async function desired() {
         if (!e) { problems.push(`no entries.mjs row for ${n.version} ${kind}: ${line.slice(0, 80)}`); continue; }
         const [title, code, over = {}] = e;
         if (over.withhold) { withheld.push({ h, version: n.version, kind, why: over.withhold, line }); continue; }
-        if (over.fold) { folds[over.fold] = { h, version: n.version, line }; continue; }
+        if (over.fold) { folds[over.fold] = { h, version: n.version, date: n.date, line, d: over.d || null }; continue; }
         issues.push({
           id: over.id || h, type, version: n.version, date: n.date, component: COMPONENTS[code],
           summary: title, text: over.d || plainLine(line), sanitized: !!over.d, line,
@@ -231,8 +221,20 @@ export async function desired() {
     }
   }
   for (const h of Object.keys(ENTRIES)) if (!seenRows.has(h)) problems.push(`entries.mjs row ${h} matches no note line in ${FIRST_VERSION.join(".")}..${LAST_VERSION.join(".")} (reworded note?)`);
-  for (const k of KNOWN) {
+  for (const k of [...KNOWN, ...CLOSED]) {
     if (k.fix !== undefined && k.fix !== "scheduled") problems.push(`${k.k}: fix must be "scheduled" or absent`);
+    // A known bug a note line folds into is FIXED by that line's release: a Done Bug with that release as its fix
+    // version and the line (or its public rewrite) as its text (2026-10-20, the release door closes SVT keys this way).
+    const fix = folds[k.k];
+    if (CLOSED.includes(k) && !fix) problems.push(`${k.k} is in CLOSED but no note line folds into it (in range ${FIRST_VERSION.join(".")}..${LAST_VERSION.join(".")})`);
+    if (fix) {
+      issues.push({
+        id: k.k, type: "Bug", version: fix.version, date: fix.date, component: COMPONENTS[k.c], summary: k.tf || k.t,
+        text: fix.d || plainLine(fix.line), sanitized: true, line: fix.line, closedKnown: true,
+        status: STATUS.released, released: !!reachedIn(fix.version),
+      });
+      continue;
+    }
     const scheduled = k.fix === "scheduled";
     issues.push({
       id: k.k, type: "Bug", affects: k.affects, component: COMPONENTS[k.c], summary: k.t,
