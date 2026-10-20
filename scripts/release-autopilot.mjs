@@ -44,7 +44,7 @@ import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import os from "node:os";
 
-export const AUTOPILOT_VERSION = "1.2.0";
+export const AUTOPILOT_VERSION = "1.3.0";
 
 export const hashOf = (line) => createHash("sha256").update(line).digest("hex").slice(0, 16);
 const SEMVER = /^\d+\.\d+\.\d+$/;
@@ -184,7 +184,7 @@ export const parseModelJson = (text) => {
   try { return JSON.parse(body.slice(start, end + 1)); } catch { return null; }
 };
 
-/** One model call, tried twice (a headless call fails now and then: measured 2026-10-20, one null in four on the same prompt). */
+/** One model call, tried twice (a headless call fails now and then: measured 2026-10-20 in Sentinel Vault, one null in four on the same prompt). */
 const callModel = async (runner, prompt, log, what) => {
   if (typeof runner !== "function") return null;
   let text = null, json = null;
@@ -318,7 +318,7 @@ export const generateNote = async ({ appName, version, previous, examples, commi
 
 export const TRACKER_HAZARDS = Object.freeze([
   ...GENERIC_HAZARDS,
-  // "accountId" (the field name) or a raw id; "an account ID" in plain words is customer language (2026-10-20)
+  // "accountId" (the field name) or a raw id; "an account ID" in plain words is customer language (Sentinel Vault, 2026-10-20)
   [/\baccountId\b|\b[0-9a-f]{24}\b|\b[0-9a-f]{8}-[0-9a-f]{4}-/, "an account or object id"],
 ]);
 
