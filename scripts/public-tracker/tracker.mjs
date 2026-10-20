@@ -763,14 +763,14 @@ async function verify() {
 }
 
 // ---------- the logged-out proof: what it reads, its verdict, and the verdict's negative control ----------
-// The same block lives in the CRT, SVT and LZMT drivers (one per repo, baseline pillar 11); keep them in step.
+// The same block lives in the CRT, SVT, LZMT and CST drivers (one per repo, baseline pillar 11); keep them in step.
 //
 // The public trackers on leanzero-demo, by KEY and nothing else. Any other project an anonymous request
 // can read, or whose permission scheme lets "anyone" browse it, is a LEAK and fails the proof. Never
 // derive this list (from scheme names, or from "its scheme grants anyone"): each derived rule switched
 // the leak check off for whatever it matched. When another app's tracker goes public, add its key here
-// AND in the other two drivers, or their next re-proof fails.
-export const PUBLIC_TRACKERS = new Set(["CRT", "SVT", "LZMT"]);
+// AND in the other drivers, or their next re-proof fails.
+export const PUBLIC_TRACKERS = new Set(["CRT", "SVT", "LZMT", "CST"]);
 // Jira's enhanced search answers 400 to UNBOUNDED JQL ("ORDER BY created DESC" alone, logged in or out),
 // and that 400 was once recorded as a pass. The site-wide search is bounded, read to its last page, and
 // any non-200 fails.
