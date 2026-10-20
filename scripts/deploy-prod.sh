@@ -47,12 +47,20 @@ if [[ -n "$(git status --porcelain --untracked-files=no)" ]]; then
   exit 1
 fi
 
-# Public tracker gate (2026-10-20, owner: "the release notes should always get updated"): refuse to cut a
-# production release when any release-note line through it has no public tracker row (a public-safe rewrite or
-# a withhold in scripts/public-tracker/entries.mjs), naming each missing line, or when the tracker was not
-# applied and verified for the release production carries now (the newest vX.Y.Z tag). Offline; read-only.
-echo "==> Public tracker gate"
-if ! node scripts/public-tracker/release-gate.mjs check; then exit 1; fi
+# Release notes and public tracker, AUTOMATIC (2026-10-20, owner: "the release notes in app need to be done
+# automatically"): when the release being cut has no in-app note, the door writes it from the commits since the release
+# production carries, and every release-note line with no public tracker row gets one (model-written, model-reviewed,
+# withheld by a deterministic net when it touches security, permissions, isolation or keys). Each is committed here, so
+# the build below is of a named commit. It never refuses and never asks: a missed line is fine. Details in
+# scripts/public-tracker/release-gate.mjs and scripts/release-autopilot.mjs.
+echo "==> Release notes and public tracker rows"
+PREP_ARGS=(); [[ "$APPROVE_MAJOR" == "1" ]] && PREP_ARGS+=(--approve-major)
+node scripts/public-tracker/release-gate.mjs prepare "${PREP_ARGS[@]+"${PREP_ARGS[@]}"}" || echo "==> The release autopilot did not finish; deploying as committed"
+if [[ -n "$(git status --porcelain --untracked-files=no)" ]]; then
+  git checkout -- src/server/shared/release-notes.js docs/RELEASE-NOTES.md scripts/public-tracker/entries.mjs 2>/dev/null || true
+  echo "==> The release autopilot left uncommitted edits; they were put back"
+  if [[ -n "$(git status --porcelain --untracked-files=no)" ]]; then echo "ABORT: uncommitted changes to tracked files; production ships committed code only."; exit 1; fi
+fi
 HEAD_SHA="$(git rev-parse --short HEAD)"
 # Every static/ resource the manifest serves is moved aside, so a folder the build does not
 # produce is MISSING afterwards instead of silently old (webpack 5 does not rewrite a file whose
@@ -100,6 +108,8 @@ if [[ $LINT_RC -ne 0 ]]; then
   fi
 fi
 
+# The Marketplace's newest build before the deploy (the "Try it first" step after it waits for a newer one).
+MP_BEFORE="$(node scripts/public-tracker/release-gate.mjs marketplace-latest 2>/dev/null || true)"
 echo "==> Deploying to production"
 if [[ "$APPROVE_MAJOR" == "1" ]]; then forge deploy -e production --approve MAJOR_VERSION_RULE "$@"; else forge deploy -e production "$@"; fi
 
@@ -117,6 +127,12 @@ if [[ $ELIG_RC -ne 0 ]] || ! grep -q "is eligible for the Runs on Atlassian" <<<
 fi
 echo "==> Eligible for Runs on Atlassian"
 
-# The public tracker step this release now requires (the gate above refuses the next production deploy until the
-# receipt's clean verify reaches the newest release tag); the tracker's range follows that tag.
-node scripts/public-tracker/release-gate.mjs post
+# The public tracker, automatic: record the release production now carries (the tracker's LAST_VERSION), then apply,
+# verify and re-prove the tracker, commit the receipt and push main. A failure there is logged and never fails the
+# deploy (the daily digest's tracker check catches the drift the next morning).
+node scripts/public-tracker/release-gate.mjs post || echo "==> The public tracker step did not finish; production is deployed and eligible"
+
+# The Marketplace "Try it first" message (owner 2026-10-20): More details is per Marketplace version, so every production
+# deploy re-applies it once the Marketplace lists the version this deploy reported. Logged, never fails the deploy.
+DEPLOYED_FORGE="$(grep -oE 'version of your app \[[0-9]+\.[0-9]+\.[0-9]+\]' <<<"$ELIG_OUT" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1 || true)"
+node scripts/public-tracker/release-gate.mjs try-first "${DEPLOYED_FORGE:-}" "${MP_BEFORE:-}" || echo "==> The Try it first step did not finish; production is deployed and eligible"

@@ -1,6 +1,6 @@
-// The public tracker gate's rules (scripts/public-tracker/coverage.mjs), which scripts/deploy-prod.sh applies through
-// scripts/public-tracker/release-gate.mjs before a production release (owner 2026-10-20: "the release notes should
-// always get updated"). The door itself is run end to end in test/deploy-door.test.mjs. Pinned here:
+// The public tracker's coverage rules (scripts/public-tracker/coverage.mjs). Since 2026-10-20 (owner: "the release notes
+// in app need to be done automatically") the production door no longer refuses on them: release-gate.mjs prepare WRITES
+// what is missing and `check` only reports. The door itself is run end to end in test/deploy-door.test.mjs. Pinned here:
 //  - a note line with no entries.mjs row is named (version, kind, key, line); a withheld, rewritten or folded row
 //    covers its line; an earlier untagged release shipped with this one is checked too; lines before 6.4.0 are not;
 //  - a release with no note refuses; on a FORWARD cut the receipt's CLEAN verify must reach the release production
@@ -57,8 +57,9 @@ ok(`every note line through ${(through || []).join(".")} (the release production
 const src = fs.readFileSync(path.join(root, "scripts/public-tracker/tracker.mjs"), "utf8");
 ok("the tracker's LAST_VERSION is read from production-release.json, not a hand-raised constant", /const LAST_VERSION = productionRelease\(/.test(src) && !/const LAST_VERSION = \[\d/.test(src));
 const door = fs.readFileSync(path.join(root, "scripts/deploy-prod.sh"), "utf8");
-ok("the production door runs the gate before the build and prints the tracker step after eligibility",
-  door.indexOf("release-gate.mjs check") > 0 && door.indexOf("release-gate.mjs check") < door.indexOf("npm run build")
-  && door.indexOf("release-gate.mjs post") > door.indexOf("Eligible for Runs on Atlassian"));
+ok("the production door writes the note and the tracker rows (prepare) before the build, never refusing on them, and runs the tracker step (post) after eligibility",
+  door.indexOf("release-gate.mjs prepare") > 0 && door.indexOf("release-gate.mjs prepare") < door.indexOf("npm run build")
+  && door.indexOf("release-gate.mjs post") > door.indexOf("Eligible for Runs on Atlassian")
+  && !/release-gate\.mjs check/.test(door) && /release-gate\.mjs prepare[^\n]*\|\| echo/.test(door) && /release-gate\.mjs post[^\n]*\|\| echo/.test(door));
 
 report("tracker-release-gate");
