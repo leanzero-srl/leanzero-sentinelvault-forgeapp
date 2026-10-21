@@ -296,6 +296,7 @@ try {
     "capsules/sealing/logic.js": "mirror writer: reads the property only to update or delete it",
     "capsules/section-seals/logic.js": "mirror writer: reads the property only to update or delete it",
     "capsules/validations/logic.js": "mirror writer: reads the property only to update it (the status is read from KVS)",
+    "capsules/validations/mirror-scrub.js": "one-time scrub of pre-8.14 mirrors: reads an archived or trashed page's property only to rewrite it without ids",
     "capsules/workflow/logic.js": "mirror writer: reads the property only to update or delete it",
   };
   const files = [];
@@ -304,7 +305,7 @@ try {
   const readers = files.filter((f) => /properties\?key=/.test(fs.readFileSync(f, "utf8").replace(/\/\/[^\n]*|\/\*[\s\S]*?\*\//g, ""))).map((f) => path.relative(root, f).split(path.sep).join("/")).sort();
   eq("[C7] every page-property reader in src/server is a listed mirror writer, erasure or backup-index file", readers.filter((f) => !ALLOW[f]), []);
   // R5: and each listed file keeps its number of reads — a new read in a listed file is reviewed too.
-  const COUNTS = { "capsules/backup/store.js": 1, "capsules/classification/logic.js": 1, "capsules/config-api/mirror.js": 1, "capsules/page-details/byline.js": 1, "capsules/panels/actions.js": 2, "infra/doc-surgery.js": 1, "capsules/privacy/worker.js": 2, "capsules/sealing/logic.js": 2, "capsules/section-seals/logic.js": 2, "capsules/validations/logic.js": 1, "capsules/workflow/logic.js": 2 };
+  const COUNTS = { "capsules/backup/store.js": 1, "capsules/classification/logic.js": 1, "capsules/config-api/mirror.js": 1, "capsules/page-details/byline.js": 1, "capsules/panels/actions.js": 2, "infra/doc-surgery.js": 1, "capsules/privacy/worker.js": 2, "capsules/sealing/logic.js": 2, "capsules/section-seals/logic.js": 2, "capsules/validations/logic.js": 1, "capsules/validations/mirror-scrub.js": 1, "capsules/workflow/logic.js": 2 };
   const counted = Object.fromEntries(readers.map((f) => [f, (fs.readFileSync(path.join(root, f), "utf8").replace(/\/\/[^\n]*|\/\*[\s\S]*?\*\//g, "").match(/properties\?key=/g) || []).length]));
   eq("[R5] the number of page-property reads per listed file is pinned", counted, Object.fromEntries(Object.keys(counted).sort().map((f) => [f, COUNTS[f]])));
 }
