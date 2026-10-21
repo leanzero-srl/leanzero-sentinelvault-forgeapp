@@ -26,8 +26,9 @@
  *                   sweep: a restore can bring old ones back) and the one-time migration of the
  *                   6.6.0-era `protection-` page properties.
  *   6. validation   the one-time scrub of the pre-8.14 `sentinel-vault-validation` page properties
- *                   (validations/mirror-scrub.js): worked on here and by its own queue chain until
- *                   `validationMirrorV1` is set; an erasure is not complete before that.
+ *                   (validations/mirror-scrub.js) runs in its own queue chain until `validationMirrorV1`
+ *                   is set; an erasure is not complete before that, and the scrub queues a sweep when
+ *                   it finishes.
  *
  * Scheduling: Forge allows 5 scheduled triggers and this app uses all 5, so the sweep rides the
  * DAILY recurring-nudge trigger (boot.js → privacySweepCheck), which asks sweepSchedule()
@@ -53,7 +54,7 @@ import { makeQueueBackupErasure, ERASE_PENDING_KEY } from "./erase-queue.js";
 import { acquireLock, releaseLock, withLock } from "../../shared/kvs-lock.js";
 import { sealPropertyValue, sealPropertyNeedsScrub } from "../sealing/seal-property.js";
 import { errText, safeKey } from "../../shared/action-log.js";
-import { runValidationMirrorScrub, SCRUB_FLAG, SCRUB_LOCK_KEY } from "../validations/mirror-scrub.js";
+import { runValidationMirrorScrub, SCRUB_FLAG, SCRUB_LOCK_KEY, SCRUB_STATE_KEY } from "../validations/mirror-scrub.js";
 
 export const PRIVACY_QUEUE_KEY = "privacy-queue";
 export const STATUS_KEY = "privacy-status";
@@ -112,22 +113,30 @@ export async function queuePrivacySweep(reason = "manual") {
 
 // ── One-time scrub of the pre-8.14 validation mirrors (8.14.1, validations/mirror-scrub.js) ───────
 const SCRUB_KICK_KEY = "privacy-validation-scrub-kick";
-const SCRUB_KICK_EVERY_MS = 30 * 60000;
+const SCRUB_KICK_EVERY_MS = 15 * 60000;
+const SCRUB_ALIVE_MS = 20 * 60000; // a running chain saves its state after every batch, runs hand on in seconds
 const SCRUB_EVENT = "validation-scrub"; // the queue event kind (not a storage key)
-let scrubKnownDone = false; // per instance: once the flag is seen, the five-minute kick costs nothing
+let scrubKnownDone = false; // per instance: once the flag is seen, the five-minute kick reads nothing
 
-/** Run the scrub under its own lock and record the flag when it finishes. Never throws. */
+const scrubFlagSet = async () => !!((await kvs.get(MIGRATIONS_KEY)) || {})[SCRUB_FLAG];
+
+/** Run the scrub under its own lock; record the flag when it finishes. Never throws. */
 export async function runValidationMirrorScrubLocked({ budgetMs = SWEEP_BUDGET_MS } = {}) {
   const token = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   if (!(await acquireLock(SCRUB_LOCK_KEY, LOCK_MS, token).catch(() => false))) return { done: false, busy: true };
   try {
+    // A leftover event after the job finished does nothing (no second pass).
+    if (await scrubFlagSet()) { scrubKnownDone = true; return { done: true, already: true }; }
     const r = await runValidationMirrorScrub({ budgetMs });
     if (r.done) {
       const m = (await kvs.get(MIGRATIONS_KEY).catch(() => null)) || {};
       await kvs.set(MIGRATIONS_KEY, { ...m, [SCRUB_FLAG]: nowIso() });
       scrubKnownDone = true;
     }
-    console.info(`[VALIDATION-MIRROR] scrub pages=${r.pages} scrubbed=${r.scrubbed} failed=${r.failed} done=${r.done}${r.phase ? ` next=${safeKey(r.phase)}` : ""}`);
+    const waitS = r.waitUntil ? Math.max(0, Math.round((r.waitUntil - Date.now()) / 1000)) : 0;
+    console.info(`[VALIDATION-MIRROR] scrub pages=${r.pages} scrubbed=${r.scrubbed} failed=${r.failed} done=${r.done}${r.skipped ? ` skipped=${r.skipped}` : ""}${r.phase ? ` next=${safeKey(r.phase)}` : ""}${waitS ? ` wait=${waitS}s` : ""}`);
+    // Erasures stay open while the scrub runs: once it is done, a sweep finishes them now, not in a week.
+    if (r.done) await queuePrivacySweep("validation-scrub").catch((e) => console.warn("[VALIDATION-MIRROR] could not queue the sweep:", errText(e)));
     return r;
   } catch (e) {
     console.error("[VALIDATION-MIRROR] scrub failed:", errText(e));
@@ -138,18 +147,22 @@ export async function runValidationMirrorScrubLocked({ budgetMs = SWEEP_BUDGET_M
 }
 
 /**
- * Start the scrub if it has not finished (the five-minute page sweep calls this). Once the flag is
- * set an instance stops asking; until then at most one queue event per half hour, and the job hands
- * itself on until it is done. Confluence installation only. Never throws.
+ * Start the scrub when it has not finished and nothing is running it (the five-minute page sweep
+ * calls this). Once the flag is seen an instance stops asking. A chain that is alive (its state saved
+ * in the last SCRUB_ALIVE_MS) or waiting (a rate-limit reset, a back-off, a retry round) is left alone.
+ * Confluence installation only. Never throws.
  */
 export async function kickValidationMirrorScrub(context = null) {
   if (scrubKnownDone) return false;
   try {
     if (context && !isConfluenceInstall(context)) return false;
-    const m = (await kvs.get(MIGRATIONS_KEY)) || {};
-    if (m[SCRUB_FLAG]) { scrubKnownDone = true; return false; }
+    if (await scrubFlagSet()) { scrubKnownDone = true; return false; }
+    const now = Date.now();
+    const st = await kvs.get(SCRUB_STATE_KEY);
+    if (st?.waitUntil && st.waitUntil > now) return false;
+    if (st?.at && !st?.waitUntil && now - Date.parse(st.at) < SCRUB_ALIVE_MS) return false;
     const kick = await kvs.get(SCRUB_KICK_KEY);
-    if (kick?.at && Date.now() - Date.parse(kick.at) < SCRUB_KICK_EVERY_MS) return false;
+    if (kick?.at && now - Date.parse(kick.at) < SCRUB_KICK_EVERY_MS) return false;
     await kvs.set(SCRUB_KICK_KEY, { at: nowIso() });
     await new Queue({ key: PRIVACY_QUEUE_KEY }).push({ body: { kind: SCRUB_EVENT } });
     return true;
@@ -162,12 +175,15 @@ export async function kickValidationMirrorScrub(context = null) {
 /** Test seam: forget what this instance learned about the flag. */
 export const _resetScrubMemo = () => { scrubKnownDone = false; };
 
-export async function privacyConsumer(event) {
+export async function privacyConsumer(event, context) {
   const body = event?.body || event?.payload || {};
   if (body.kind === SCRUB_EVENT) {
+    if (context && !isConfluenceInstall(context)) return;
     const r = await runValidationMirrorScrubLocked();
-    // Not finished: hand on (a busy lock means the weekly sweep is running it; look again later).
-    if (!r.done) await new Queue({ key: PRIVACY_QUEUE_KEY }).push({ body: { kind: SCRUB_EVENT }, delayInSeconds: r.busy || r.error ? 300 : 5 }).catch((e) => console.error("[VALIDATION-MIRROR] could not hand on:", errText(e)));
+    // Hand on ONLY a run that stopped for its time budget. A busy lock (another chain), a wait (a
+    // rate-limit reset, a back-off, a retry round) or an error ends this chain: the five-minute kick
+    // starts a new one when the wait is over, so nothing ever loops on the shared rate limit.
+    if (!r.done && !r.busy && !r.error && !r.waitUntil) await new Queue({ key: PRIVACY_QUEUE_KEY }).push({ body: { kind: SCRUB_EVENT }, delayInSeconds: 5 }).catch((e) => console.error("[VALIDATION-MIRROR] could not hand on:", errText(e)));
     return;
   }
   if (body.kind !== "sweep") { console.warn(`[PRIVACY] consumer: unknown event kind=${safeKey(body.kind, "none")}`); return; }
@@ -603,14 +619,10 @@ export async function runPrivacySweep({ reason = "manual", nowMs = Date.now(), r
     // The validation mirrors written before 8.14.0 name who checked or approved a page. Until the
     // one-time scrub has finished, the sweep works on it too, and an erasure is not complete while
     // it is unfinished (the person may still be named in one of those page properties).
-    let validationScrubDone = !!migrations[SCRUB_FLAG];
-    if (!validationScrubDone) {
-      const left = budgetMs - (Date.now() - t0);
-      const r = left > 0 ? await runValidationMirrorScrubLocked({ budgetMs: left }) : { done: false };
-      summary.validationMirror = { done: !!r.done, pages: r.pages ?? 0, scrubbed: r.scrubbed ?? 0, failed: r.failed ?? 0 };
-      validationScrubDone = !!r.done;
-      if (!r.done) await kickValidationMirrorScrub(); // its own queue chain carries on (no full re-sweep)
-    }
+    // The scrub runs in its own queue chain (never inside this sweep, so it can never hold up reporting).
+    const validationScrubDone = !!migrations[SCRUB_FLAG];
+    summary.validationMirror = { done: validationScrubDone };
+    if (!validationScrubDone) await kickValidationMirrorScrub();
 
     // Report what is due (≤ once per cycle per account), 90 at a time, saving after each batch.
     const plan = planReport(prior, seen, nowMs, { cycleMs, exclude });
