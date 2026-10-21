@@ -287,6 +287,12 @@ try {
       await worker.kickValidationMirrorScrub();
       eq("[7] ...and the next kick in the same instance reads nothing", reads.length, n);
     } finally { kvs.get = realGet; }
+    // A flag that went away (a restore, or by hand): the sweep's own fresh read wins over the memory.
+    await kvs.set("privacy-migrations", {});
+    await kvs.delete("privacy-validation-scrub-kick");
+    fake.queued = [];
+    eq("[7] the memory alone would not ask again", await worker.kickValidationMirrorScrub(), false);
+    eq("[7] ...but a sweep that found no flag starts the job", await worker.kickValidationMirrorScrub(null, { fresh: true }), true);
     ok("[7] the log line holds counts only", lines.some((l) => /\[VALIDATION-MIRROR\] scrub pages=\d+ scrubbed=\d+ failed=0 done=true/.test(l)) && !lines.some((l) => l.includes(CHECKER) || l.includes(ADMIN)));
   }
   {
