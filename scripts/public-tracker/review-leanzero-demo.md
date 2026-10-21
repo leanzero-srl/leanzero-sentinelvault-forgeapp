@@ -1,15 +1,15 @@
 # Sentinel Vault Public Tracker - verify file
 
-Generated 2026-10-20T15:47:21.270Z by scripts/public-tracker/tracker.mjs verify.
+Generated 2026-10-21T06:03:21.581Z by scripts/public-tracker/tracker.mjs verify.
 Site https://leanzero-demo.atlassian.net. Project SVT (id 10278), permission scheme "Sentinel Vault Public Tracker permissions" (id 10265, used by: SVT), anonymous grants: BROWSE_PROJECTS.
-Issues checked: 101 of 101. Verification failures: 0. Withheld release-note lines: 1.
+Issues checked: 126 of 126. Verification failures: 0. Withheld release-note lines: 1.
 
 ## Counts
 
-- status: Done 95; Backlog 6
-- version: 6.4.0 5; 6.5.0 1; 6.6.0 6; 6.7.0 8; 6.9.0 4; 6.10.0 4; 6.11.0 1; 7.0.0 5; 7.1.0 8; 8.0.0 16; 8.1.0 1; 8.2.0 2; 8.3.0 1; 8.4.0 1; 8.5.0 1; 8.6.0 13; 8.7.0 1; 8.8.0 1; 8.9.0 5; 8.10.0 5; 8.11.0 3; 8.12.0 3; open, affects 7.1.0 6
-- component: Classification 1; Sealed files and sections 13; Edit requests and access 3; REST API 4; Backup and restore 13; Layout and accessibility 5; Privacy and personal data 8; Space and site settings 11; Workflow and approvals 12; App permissions and updates 4; Page banner and Sentinel Vault window 8; Activity report 2; Jira issue attachments 13; My work 4
-- type: Improvement 47; Bug 54
+- status: Done 95; Backlog 31
+- version: 6.4.0 5; 6.5.0 1; 6.6.0 6; 6.7.0 8; 6.9.0 4; 6.10.0 4; 6.11.0 1; 7.0.0 5; 7.1.0 8; 8.0.0 16; 8.1.0 1; 8.2.0 2; 8.3.0 1; 8.4.0 1; 8.5.0 1; 8.6.0 13; 8.7.0 1; 8.8.0 1; 8.9.0 5; 8.10.0 5; 8.11.0 3; 8.12.0 3; open, affects 7.1.0 6; open, affects 8.12.0 25
+- component: Classification 4; Sealed files and sections 14; Edit requests and access 4; REST API 4; Backup and restore 13; Layout and accessibility 10; Privacy and personal data 8; Space and site settings 17; Workflow and approvals 18; App permissions and updates 4; Page banner and Sentinel Vault window 10; Activity report 2; Jira issue attachments 13; My work 5
+- type: Improvement 47; Bug 79
 - versions in Jira: 6.4.0 released 2026-09-30, 6.5.0 released 2026-09-30, 6.6.0 released 2026-10-02, 6.7.0 released 2026-10-04, 6.9.0 released 2026-10-04, 6.10.0 released 2026-10-04, 6.11.0 released 2026-10-04, 7.0.0 released 2026-10-05, 7.1.0 released 2026-10-09, 8.0.0 released 2026-10-14, 8.1.0 released 2026-10-14, 8.2.0 released 2026-10-14, 8.3.0 released 2026-10-14, 8.4.0 released 2026-10-14, 8.5.0 released 2026-10-14, 8.6.0 released 2026-10-17, 8.7.0 released 2026-10-17, 8.8.0 released 2026-10-17, 8.9.0 released 2026-10-18, 8.10.0 released 2026-10-18, 8.11.0 released 2026-10-18, 8.12.0 released 2026-10-18
 
 ## Issues
@@ -734,4 +734,230 @@ Issues checked: 101 of 101. Verification failures: 0. Withheld release-note line
 
 > A page's Sentinel Vault activity could show the person whose edit was undone, or whose page was moved back out of Approved, as an account ID instead of their name. It now shows their name.
 > Fixed in Sentinel Vault 8.12.0. A site still on version 7 or earlier gets it once a site admin approves the update in Confluence administration, Apps, Manage apps.
+
+### SVT-106 - Turning off Page ribbon in Site settings does not hide the Sentinel Vault banner on pages
+
+- type: Bug; status: Backlog; affects: 8.12.0; component: Space and site settings
+
+> What you see: The Page ribbon switch says it controls the Sentinel Vault ribbon at the top of pages with sealed content. After you turn it off and apply, the banner still shows on pages with seals, a workflow or a classification level. On its own, the switch turns off only the recurring reminder banner for seals that do not expire. With Pop-up messages also off, the banner stops listing recent seal events.
+> Where: Site settings, Settings tab, Alerts, Page ribbon.
+> Workaround: None in Sentinel Vault. The banner shows only on pages that have something to show.
+> Confirmed on Sentinel Vault 8.12.0. Status: open.
+
+### SVT-107 - Turning off Allow space admins to force-unseal also takes away other admin actions
+
+- type: Bug; status: Backlog; affects: 8.12.0; component: Space and site settings
+
+> What you see: The switch's text says only that a space admin can release anyone's seal from the Sealed Files tab. While it is off, space admins and site admins also cannot open or change a space's workflow settings and workflows, see its Workflow status list, use Apply to existing pages, approve workflow pages as an admin, use Approve anyway on a failed content check, start an AI review, give or revoke edit access on other people's seals, or release other people's sealed sections. Space admins also cannot set their space's default classification level.
+> Where: Site settings, Settings tab, Protection, Allow space admins to force-unseal.
+> Workaround: Leave the switch on, or turn it on while you change these settings. Seal owners keep their own actions either way.
+> Confirmed on Sentinel Vault 8.12.0. Status: open.
+
+### SVT-108 - Turning off Protect Sealed Attachments in Page Body also turns off sealed section and Approved page protection
+
+- type: Bug; status: Backlog; affects: 8.12.0; component: Space and site settings
+
+> What you see: The switch's text describes only sealed images and files in the page body. While it is off, edits to sealed sections are not undone either, and Approved pages in a workflow are not protected from edits by people who are not approvers. The page banner and the space's Workflow tab say that Approved pages are not protected, but the switch itself mentions neither.
+> Where: Site settings, Settings tab, Protection, Protect Sealed Attachments in Page Body.
+> Workaround: Leave the switch on unless you mean to turn off all of these protections.
+> Confirmed on Sentinel Vault 8.12.0. Status: open.
+
+### SVT-109 - The Workflow tab can show the workflow as off, with default settings, when its settings could not be read
+
+- type: Bug; status: Backlog; affects: 8.12.0; component: Workflow and approvals
+
+> What you see: The space's Workflow tab can open with Enable document workflow off and no approvers although the workflow is on, with no message saying the settings could not be read. This always happens while Allow space admins to force-unseal is off in Site settings (Save workflow settings is then refused as well), and it can happen when loading fails for another reason; saving from that state would replace the real settings with the defaults shown. In Site settings, when the settings cannot be read, Unable to load preferences. Verify your access rights. appears above a form that shows default values.
+> Where: Space settings, Workflow tab; Site settings, Settings tab.
+> Workaround: If the tab looks reset, do not save: reload the page and check again. Keep Allow space admins to force-unseal on while you manage workflows.
+> Confirmed on Sentinel Vault 8.12.0. Status: open.
+
+### SVT-110 - With signed decisions required, Approve and Deny in the approvals list on My work always fail
+
+- type: Bug; status: Backlog; affects: 8.12.0; component: Workflow and approvals
+
+> What you see: In a space where Require a signed decision is on, pressing Approve or Deny under Approvals waiting on you answers Enter the current code from your authenticator to sign this decision (or, if you have no signature yet, asks you to set one up), and there is no place to type a code there.
+> Where: My work, and the approvals list on the space's settings page, for pages in a space that requires signed decisions.
+> Workaround: Open the page and decide from its banner, which asks you to Sign with your authenticator code.
+> Confirmed on Sentinel Vault 8.12.0. Status: open.
+
+### SVT-111 - The comment for an approved request leaves out the approver's reason
+
+- type: Bug; status: Backlog; affects: 8.12.0; component: Workflow and approvals
+
+> What you see: When an approver types a reason in Add a reason (optional) and approves, the page comment Sentinel Vault posts for the person who asked does not include the reason. A declined request's comment does include it.
+> Where: The page comment posted when an approval request is approved, in a space that uses a Sentinel Vault workflow with page comments turned on.
+> Workaround: The reason is shown in the page's Sentinel Vault activity, on the Approval given row.
+> Confirmed on Sentinel Vault 8.12.0. Status: open.
+
+### SVT-112 - Move to… in the Sentinel Vault window can keep offering moves from a state the page has already left
+
+- type: Bug; status: Backlog; affects: 8.12.0; component: Workflow and approvals
+
+> What you see: If the Sentinel Vault window stays open while the page is moved to another workflow state elsewhere, for example in another tab or by a colleague, Move to… still offers the moves from the state the window opened with. Picking the state the page is already in answers Already in that state, and a move you pick there is made from the state the page is in now, not the one the window shows. After any move you try, the window shows the page's current state.
+> Where: The Sentinel Vault window opened from under the page title, Workflow section, Move to….
+> Workaround: Close and reopen the window, or reload the page, before choosing a move. The workflow chip on the page banner follows moves made elsewhere.
+> Confirmed on Sentinel Vault 8.12.0. Status: open.
+
+### SVT-113 - Asking for approval again from a second tab sets approvers' decisions back to pending
+
+- type: Bug; status: Backlog; affects: 8.12.0; component: Workflow and approvals
+
+> What you see: If you ask for approval and then ask again from another tab or window that had not caught up with your first request, the request starts over: approvers who already approved are set back to pending and asked again.
+> Where: The workflow chip on the page banner, or Move to… in the Sentinel Vault window, on a page waiting for approval.
+> Workaround: Reload the page before asking again. If it already happened, the approvers need to approve again.
+> Confirmed on Sentinel Vault 8.12.0. Status: open.
+
+### SVT-114 - A page moved to another space can disappear from both spaces' Workflow status and Sealed Files lists
+
+- type: Bug; status: Backlog; affects: 8.12.0; component: Space and site settings
+
+> What you see: After a page with a Sentinel Vault workflow or sealed files is moved to another space, it no longer appears in the Workflow status list on either space's Workflow tab, and its sealed files can be missing from both spaces' Sealed Files tab.
+> Where: Space settings, Workflow tab and Sealed Files tab, for pages moved between spaces.
+> Workaround: The page's own banner and Sentinel Vault window still show its workflow state and seals, and each seal's owner still sees their files in My work.
+> Confirmed on Sentinel Vault 8.12.0. Status: open.
+
+### SVT-115 - A required heading rule's message reads Missing required a heading containing
+
+- type: Bug; status: Backlog; affects: 8.12.0; component: Page banner and Sentinel Vault window
+
+> What you see: When a page misses a required heading, the content check message reads, for example, Missing required a heading containing Security, Missing required an H2 heading., or Needs at least 2 of a heading containing Security (found 1). The rule itself works; only the wording is wrong.
+> Where: The content check results on the page's Sentinel Vault panel, the page comment for a failed check, and the message when a workflow move is blocked by the content rules.
+> Workaround: None needed: the message names the heading the page is missing.
+> Confirmed on Sentinel Vault 8.12.0. Status: open.
+
+### SVT-116 - While Confluence is limiting requests, some admin screens look empty or treat you as a non-admin instead of asking you to try again
+
+- type: Bug; status: Backlog; affects: 8.12.0; component: Space and site settings
+
+> What you see: When Confluence is limiting Sentinel Vault's requests, many space admin actions say Confluence is limiting requests right now and ask you to try again. Some screens still answer as if you were not an admin: Space settings can open with only My Sealed Files and a Request admin access button, the Sealed Files tab can say No sealed files discovered in the index., the Workflow tab can show the workflow as off with default settings, the Activity tab can say No activity recorded yet in this space for these filters., and the spaces list on the Classification tab in Site settings can say You do not administer any space.
+> Where: Space settings (when it opens, and the Sealed Files, Workflow and Activity tabs); Site settings, Classification tab.
+> Workaround: Wait a few minutes and reload. The screens show their content again once Confluence stops limiting requests.
+> Why: Confluence limits how many requests an app may make in a period of time.
+> Confirmed on Sentinel Vault 8.12.0. Status: open.
+
+### SVT-117 - Unsaved changes on the Workflow and Validations tabs are lost without a warning
+
+- type: Bug; status: Backlog; affects: 8.12.0; component: Space and site settings
+
+> What you see: If you change workflow or validation settings and then switch tab, or press Edit the states, approvers and protection… or ← Back to workflow settings, your changes are gone without the Apply your changes first? question other settings tabs ask.
+> Where: Space settings, Workflow and Validations tabs; Site settings, Validations tab.
+> Workaround: Save before you leave the view: Save workflow settings, Save workflow, or Save validation rules.
+> Confirmed on Sentinel Vault 8.12.0. Status: open.
+
+### SVT-118 - Some drop-down lists in the settings cannot be used with the keyboard
+
+- type: Bug; status: Backlog; affects: 8.12.0; component: Layout and accessibility
+
+> What you see: You can reach these lists with Tab, but the keyboard either does not open them, or opens them without letting you pick an option.
+> Where: Space settings, Workflow tab (Decision rule, what happens when an Approved page is edited by someone else, the state to move it back to, AI review strictness, a state's colour); the Validations tabs (rule type, severity, model, severity threshold); the Activity tab's Time range; the Sealed Files tab's sort order; panel setup (Items per page, Cards per row); Site settings, Classification tab (the space default level pickers and the level colour swatches).
+> Workaround: Use a mouse or touch for these lists. For a level colour, open the swatch and type the colour's hex code in the field under the swatches.
+> Confirmed on Sentinel Vault 8.12.0. Status: open.
+
+### SVT-119 - The click to select link in the upload area cannot be reached with the keyboard
+
+- type: Bug; status: Backlog; affects: 8.12.0; component: Layout and accessibility
+
+> What you see: Tab skips click to select in the upload area (Drop files here or click to select on the panel, Drop a file here or click to select in the window), so someone using only the keyboard cannot pick a file to upload from Sentinel Vault.
+> Where: The Sentinel Vault panel on the page, and the Sentinel Vault window.
+> Workaround: Attach the file with Confluence's own attachment option; it then shows in Sentinel Vault.
+> Confirmed on Sentinel Vault 8.12.0. Status: open.
+
+### SVT-120 - The panel's collapse buttons have no readable name for screen readers
+
+- type: Bug; status: Backlog; affects: 8.12.0; component: Layout and accessibility
+
+> What you see: The buttons that open and close the AI Review, Validation, Sealed Sections and Activity groups are announced as a symbol, and do not name their group or say whether it is open.
+> Where: The Sentinel Vault panel on the page.
+> Workaround: None.
+> Confirmed on Sentinel Vault 8.12.0. Status: open.
+
+### SVT-121 - Dismissing an AI finding can look done when it was not saved
+
+- type: Bug; status: Backlog; affects: 8.12.0; component: Page banner and Sentinel Vault window
+
+> What you see: Dismiss or False positive hides the finding at once, but if you cannot edit the page, or the save fails, the finding comes back the next time the page loads. No message says it was not saved.
+> Where: The Sentinel Vault panel on the page, AI Review group.
+> Workaround: Ask someone who can edit the page to dismiss the finding.
+> Confirmed on Sentinel Vault 8.12.0. Status: open.
+
+### SVT-122 - The Seal expired warning in the full attachments view comes back after you close it
+
+- type: Bug; status: Backlog; affects: 8.12.0; component: Sealed files and sections
+
+> What you see: In the full attachments view, a Seal expired warning for each of your expired seals appears again whenever the file list refreshes, for example after you or someone else seals or releases a file, even after you close it.
+> Where: The full attachments view: Open the full attachments view on the Attachments tab of the Sentinel Vault window.
+> Workaround: Release or extend your expired seals; the warning stops once none of your seals on the page has expired.
+> Confirmed on Sentinel Vault 8.12.0. Status: open.
+
+### SVT-123 - On a phone, a drop-down list can open partly hidden at the top of the window
+
+- type: Bug; status: Backlog; affects: 8.12.0; component: Layout and accessibility
+
+> What you see: On a phone, a list opened near the bottom of the Sentinel Vault window can open with its top part hidden under the top edge of the window, and it does not move if you scroll while it is open.
+> Where: The Sentinel Vault window and Seal attachments…, on a phone.
+> Workaround: Scroll so the field sits in the middle of the screen, then open the list again.
+> Confirmed on Sentinel Vault 8.12.0. Status: open.
+
+### SVT-124 - A new page can miss its automatic workflow start if the first try fails
+
+- type: Bug; status: Backlog; affects: 8.12.0; component: Workflow and approvals
+
+> What you see: In a space with Auto-start workflow on new pages turned on, a page created while Confluence or Sentinel Vault had a passing error does not get the workflow, and Sentinel Vault does not try again or say so.
+> Where: New pages in a space whose Workflow tab has Auto-start workflow on new pages turned on.
+> Workaround: Press Apply to existing pages on the space's Workflow tab; it adds the workflow to pages that do not have it.
+> Confirmed on Sentinel Vault 8.12.0. Status: open.
+
+### SVT-125 - Access Control can leave out admin access requests in a space with many of them
+
+- type: Bug; status: Backlog; affects: 8.12.0; component: Edit requests and access
+
+> What you see: Access Control reads up to 50 admin access requests for a space, pending and declined together. In a space with more than that, some pending requests may not be listed.
+> Where: Space settings, Access Control tab, Pending Access Requests.
+> Workaround: Add the person directly as a space admin on the Access Control tab.
+> Confirmed on Sentinel Vault 8.12.0. Status: open.
+
+### SVT-126 - Some labels and buttons have white text on a light colour that is hard to read
+
+- type: Bug; status: Backlog; affects: 8.12.0; component: Layout and accessibility
+
+> What you see: Some labels and buttons put white text on cyan or amber, below the contrast normally needed for small text: the badge on a sealed section and the section dialog's buttons (light theme), the banner's read confirmation button, and the status pills and some counts on My work.
+> Where: Sealed sections on pages, the page banner, and My work.
+> Workaround: None.
+> Confirmed on Sentinel Vault 8.12.0. Status: open.
+
+### SVT-127 - Some colours offered for a classification level make the level name hard to read
+
+- type: Bug; status: Backlog; affects: 8.12.0; component: Classification
+
+> What you see: Light swatches such as orange, amber, yellow, green and cyan put white text on the level's chip and on the banner, which is hard to read.
+> Where: Site settings, Classification tab, the levels list, colour of a level.
+> Workaround: Pick a darker colour for the level, such as red, blue, purple, pink, slate or near-black.
+> Confirmed on Sentinel Vault 8.12.0. Status: open.
+
+### SVT-128 - Removing a classification level, or re-importing levels under new names, turns pages Unclassified without a warning
+
+- type: Bug; status: Backlog; affects: 8.12.0; component: Classification
+
+> What you see: Pages and spaces set to a level that is no longer in the list fall back to the space default or to Unclassified. Nothing warns you before you remove a level, and the import buttons do not say that pages set to a level that disappears will fall back.
+> Where: Site settings, Classification tab: removing a level and pressing Save levels, or Levels from JSM Assets, Import or Re-import now.
+> Workaround: Add the level back under the name it had when it was first created or imported. Pages that kept their setting then show the level again.
+> Confirmed on Sentinel Vault 8.12.0. Status: open.
+
+### SVT-129 - Linking classification levels to JSM Assets shows only an error code when Assets cannot be reached
+
+- type: Bug; status: Backlog; affects: 8.12.0; component: Classification
+
+> What you see: If Sentinel Vault cannot reach JSM Assets, the message is only a short status such as Assets workspace lookup answered 401, with no next step.
+> Where: Site settings, Classification tab, Levels from JSM Assets.
+> Workaround: Check that the site has Jira Service Management with Assets and that you can open Assets yourself, then try again.
+> Confirmed on Sentinel Vault 8.12.0. Status: open.
+
+### SVT-130 - Some lists say there is nothing to show when they could not load, or before they have loaded
+
+- type: Bug; status: Backlog; affects: 8.12.0; component: My work
+
+> What you see: My work can say Nothing is waiting on your approval. when the approvals list failed to load, and its approval signature card can say Not set up when the status could not be read. The space's Sealed Files tab shows No sealed files discovered in the index. until its list arrives, and Access Control can say No pending requests. when that list failed to load.
+> Where: My work; Space settings, Sealed Files and Access Control tabs.
+> Workaround: Wait a moment and reload the page before you rely on an empty list.
+> Confirmed on Sentinel Vault 8.12.0. Status: open.
 
