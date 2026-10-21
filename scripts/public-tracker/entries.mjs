@@ -42,6 +42,9 @@ export const COMPONENTS = {
 const JIRA_ON = "It works once a site admin has connected Jira to Sentinel Vault in Atlassian Administration.";
 
 export const ENTRIES = {
+  // 8.14.1: written by the release door on 2026-10-21 (rows: model; review pass: model).
+  "51e4df6a02478bf4": ["Pages validated before 8.14.0 still stored who had checked and approved them", "D", {"withhold":"review: Security and privacy: the row says versions before 8.14.0 kept personal data (who checked a page and who approved it anyway) in a store attached to the page itself, so anyone who can read the page may be able to read it. That is an older version missing a data-minimisation safeguard. It also gives t"}],
+
   // 8.14.0: written by the release door on 2026-10-21 (rows: model; review pass: model).
   "573b0b724717566f": ["Restoring or permanently deleting a file from the panel follows your own Confluence permissions", "S"],
   "bf3d30788bb75ca9": ["Only a space's current approvers can decide its open approval requests", "W"],
