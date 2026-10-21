@@ -20,8 +20,9 @@
  *             or signature refusal) | busy (Confluence is limiting requests) | error (it threw) |
  *             timeout (still running 1.5 s before the platform limit; a later line may follow)
  *   errorType the error's class name (TypeError, FetchError...), with status (an HTTP status) and code
- *             (an upper-case error code) when the error carries them, and step: the app function
- *             that threw (from the stack frames; the message is never read)
+ *             (an upper-case error code) when the error carries them, and step: where it was thrown,
+ *             as the app source file:line ("server/capsules/realms/actions.js:239") from the stack
+ *             frames (the message is never read), or a named step a job reports ("llm-call")
  *   reason    the slug of a refusal whose text is written literally in the source (never one built at
  *             runtime, which can hold a name or a title)
  *   ms        how long the action took; trail = the UI controls pressed since the previous call
@@ -82,7 +83,9 @@ export function reasonSlug(text) {
 }
 
 // A refusal that is about WHO is asking (classified from the text; only the category is printed).
-const DENIED_RE = /\b(permission|not authori[sz]ed|unauthori[sz]ed|forbidden|insufficient|only (?:a|an|the|this|its|site|space|page)\b|cannot see|can't see|do not have access|don't have access|no access|not allowed to|must be (?:a|an) )/i;
+// Curated against every literal refusal in action-reasons.gen.js (test/action-log.test.mjs pins samples
+// both ways): "must be an object" / "Only a label-scoped workflow" are input refusals, not permission ones.
+const DENIED_RE = /\b(permission|not authori[sz]ed|unauthori[sz]ed|forbidden|cannot see|can't see|cannot (?:read|edit) (?:that|this)|do not have access|don't have access|no access to|not the (?:seal|section|file) owner|not an approver|not signed in|only (?:a |an |the )?(?:site |space |confluence )?admins?\b|only (?:this page's |the page's |the )?(?:approvers?|owner|requester)\b|only someone who can|only (?:a |an )?(?:space|site) admin)/i;
 
 /** PURE. The outcome of a resolver's RETURNED value (a throw is handled by errorFacts). */
 export function classifyResult(result) {
@@ -99,24 +102,37 @@ export function classifyResult(result) {
 
 /** PURE. What a thrown value may say in a log line: its class, status, code and the app frame. */
 export function errorFacts(e) {
-  const out = {};
-  const name = e && typeof e === "object" ? (typeof e.name === "string" ? e.name : e.constructor?.name) : null;
-  out.errorType = typeof name === "string" && IDENT_RE.test(name) ? name : e instanceof Error ? "Error" : `thrown-${typeof e}`;
-  const status = Number(e?.status ?? e?.statusCode ?? e?.response?.status);
-  if (Number.isInteger(status) && status >= 100 && status <= 599) out.status = status;
-  if (typeof e?.code === "string" && CODE_RE.test(e.code)) out.code = e.code;
-  const step = stepOf(e);
-  if (step) out.step = step;
-  return out;
+  try {
+    const out = {};
+    const name = e && typeof e === "object" ? (typeof e.name === "string" ? e.name : e.constructor?.name) : null;
+    out.errorType = typeof name === "string" && IDENT_RE.test(name) ? name : e instanceof Error ? "Error" : `thrown-${typeof e}`;
+    const status = Number(e?.status ?? e?.statusCode ?? e?.response?.status);
+    if (Number.isInteger(status) && status >= 100 && status <= 599) out.status = status;
+    if (typeof e?.code === "string" && CODE_RE.test(e.code)) out.code = e.code;
+    const step = stepOf(e);
+    if (step) out.step = step;
+    return out;
+  } catch (_) {
+    return { errorType: "unreadable" }; // a hostile getter or a revoked Proxy: never replace the real error
+  }
 }
 
-/** PURE. The first app function in a stack (frames only; the message line is never parsed). */
+// Frame names that are plumbing, not the app step (Promise.all, Function.prototype.call, generators...).
+const BUILTIN_FRAMES = new Set(["Promise", "Array", "Object", "Function", "new", "anonymous", "all", "allSettled", "race", "any", "then", "call", "apply", "bind", "next", "step", "asyncGeneratorStep", "_next", "_throw", "fulfilled", "rejected", "processTicksAndRejections", "runMicrotasks", "map", "forEach", "reduce", "run", "runInvocation", "wrapped", "inner", "withInvocation"]);
+
+/**
+ * PURE. Where the error was thrown, from the stack FRAMES (the message line is cut off first and never
+ * parsed): the app source file and line ("server/capsules/realms/actions.js:239") when the frame maps
+ * to src/ (Forge bundles with source maps; its async transpilation renames functions to "call" /
+ * "_invoke", so a name alone says nothing there), else the first app function name.
+ */
+export const STEP_RE = /^(?:[A-Za-z_$][\w$]{0,59}|[a-z0-9][\w./-]{0,100}\.(?:js|jsx|mjs):\d{1,6})$/;
 export function stepOf(e) {
-  const stack = typeof e?.stack === "string" ? e.stack : "";
+  let stack;
+  try { stack = typeof e?.stack === "string" ? e.stack : ""; } catch (_) { return undefined; }
   if (!stack) return undefined;
-  // Skip the header ("Name: message", which can span lines and look like frames): cut exactly the
-  // message off; if it cannot be located, print no step at all.
-  const msg = typeof e?.message === "string" ? e.message : "";
+  let msg = "";
+  try { msg = typeof e?.message === "string" ? e.message : ""; } catch (_) { return undefined; }
   let rest;
   if (msg) {
     const at = stack.indexOf(msg);
@@ -125,22 +141,27 @@ export function stepOf(e) {
   } else rest = stack;
   const firstFrame = rest.search(/\n\s+at /);
   if (firstFrame < 0) return undefined;
+  let named;
   for (const line of rest.slice(firstFrame).split("\n")) {
-    const m = line.match(/^\s+at (?:async )?([A-Za-z_$][\w$.]*?)(?: \[as [\w$]+\])? \((.*)\)$/);
+    const m = line.match(/^\s+at (?:async )?(?:([A-Za-z_$][\w$.]*?)(?: \[as [\w$]+\])? \((.*)\)|(\S+))$/);
     if (!m) continue;
-    if (/node_modules|node:|internal\//.test(m[2])) continue;
-    const fn = m[1].split(".").pop();
-    if (fn && IDENT_RE.test(fn) && !/^(?:Promise|Array|Object|Function|new|anonymous)$/.test(fn)) return fn;
+    const where = m[2] ?? m[3] ?? "";
+    if (/node_modules|node:|internal\//.test(where)) continue;
+    const src = where.match(/\/src\/([\w./-]+\.(?:js|jsx|mjs)):(\d+)(?::\d+)?$/);
+    if (src && !src[1].endsWith("shared/action-log.js")) { const s2 = `${src[1]}:${src[2]}`; if (STEP_RE.test(s2)) return s2; }
+    const fn = m[1] ? m[1].split(".").pop() : null;
+    if (!named && fn && IDENT_RE.test(fn) && !BUILTIN_FRAMES.has(fn)) named = fn;
   }
-  return undefined;
+  return named;
 }
 
-/** PURE. The payload without the UI trail, and the trail itself (cleaned). */
+/** PURE. The payload without the UI trail (and its bare marker), and the trail itself (cleaned). */
 export function splitTrail(payload) {
   if (!payload || typeof payload !== "object" || Array.isArray(payload) || !(TRAIL_KEY in payload || BARE_KEY in payload)) return { payload, trail: [], dropped: 0 };
   const { [TRAIL_KEY]: raw, [BARE_KEY]: bare, ...rest } = payload;
   const { trail, dropped } = cleanTrail(raw);
-  return { payload: bare && Object.keys(rest).length === 0 ? undefined : rest, trail, dropped };
+  // A bare call (the UI sent no payload) gets `{}`, exactly what @forge/resolver hands a payload-less call.
+  return { payload: rest, trail, dropped };
 }
 
 /** Print ONE action line. Never throws. */
@@ -219,7 +240,7 @@ export function classifyJob(r) {
   if (!r || typeof r !== "object" || Array.isArray(r)) return { outcome: "ok" };
   if (OUTCOME_SET.has(r.outcome)) {
     const out = { outcome: r.outcome };
-    if (typeof r.step === "string" && KEY_RE.test(r.step)) out.step = r.step;
+    if (typeof r.step === "string" && (KEY_RE.test(r.step) || STEP_RE.test(r.step))) out.step = r.step;
     if (typeof r.errorType === "string" && IDENT_RE.test(r.errorType)) out.errorType = r.errorType;
     if (Number.isInteger(r.status) && r.status >= 100 && r.status <= 599) out.status = r.status;
     if (typeof r.code === "string" && CODE_RE.test(r.code)) out.code = r.code;
@@ -231,7 +252,7 @@ export function classifyJob(r) {
 }
 
 /** A queue consumer that runs work a user started, logged as `job.<name>[.<kind>]`. */
-export function withJobLog(name, fn, { kinds = [], kindOf = (event) => event?.body?.kind ?? event?.payload?.kind, limitMs = 900_000 } = {}) {
+export function withJobLog(name, fn, { kinds = [], kindOf = (event) => event?.body?.kind ?? event?.payload?.kind, limitMs = 900_000, classify = classifyJob } = {}) {
   const base = `job.${safeKey(name)}`;
   return logged(fn, {
     limitMs,
@@ -240,7 +261,7 @@ export function withJobLog(name, fn, { kinds = [], kindOf = (event) => event?.bo
       try { k = kindOf(event); } catch (_) { k = null; }
       return { via: "job", action: kinds.includes(k) ? `${base}.${k}` : base, surface: safeKey(name) };
     },
-    classify: classifyJob,
+    classify,
   });
 }
 

@@ -36,7 +36,17 @@ export const configApiTrigger = logged(configApiTriggerCore, {
   describe: (req) => ({ via: "rest", action: `rest.${restOpOf(req)}`, surface: "rest-api" }),
   classify: (r) => REST_OUTCOME[r?.outputKey] || { outcome: "error", errorType: "unknown-output" },
 });
-export const configApiConsumer = withJobLog("config-api", configApiConsumerCore);
+// A REST job: error when it crashed or a step threw; refused when a step was refused or skipped; ok when
+// every step applied. (Its receipt's "failed" also covers "all refused", which is not an error.)
+const classifyRestJob = (r) => {
+  if (!r || typeof r !== "object") return { outcome: "ok" };
+  if (r.ok === false) return { outcome: "refused" };
+  if (r.crashed || (r.summary && r.summary.failed > 0)) return { outcome: "error" };
+  if (r.status && r.status !== "done") return { outcome: "refused" };
+  return { outcome: "ok" };
+};
+export const __classifyRestJob = classifyRestJob; // tests
+export const configApiConsumer = withJobLog("config-api", configApiConsumerCore, { classify: classifyRestJob });
 export const realmScanConsumer = withJobLog("realm-audit", realmScanConsumerCore, { kinds: ["byline-refresh"] });
 export const aiValidationConsumer = withJobLog("ai-validation", aiValidationConsumerCore, { kinds: ["gate"], kindOf: (e) => e?.body?.mode, limitMs: 120_000 });
 export const backupConsumer = withJobLog("backup", backupConsumerCore, { kinds: ["backup", "job"] });

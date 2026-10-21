@@ -7,7 +7,7 @@
  * space key, a file id, a level a site defined) is reported by its fixed head and "*":
  *   "pd-close"               a static id
  *   "sv-decline-confirm"     a testId prop literal + a fixed tail
- *   "pd-tab-overview"        a templated id whose dynamic part is a code-defined id
+ *   "pd-tab-overview"        a templated id (CODE_ONLY_PREFIXES) whose dynamic part is a code-defined id
  *   "cls-space-row-*"        a templated id whose dynamic part is data (never printed)
  *   "jv-row-*>button"        an unnamed control inside a named one ("button", "tab", "link", ...)
  *   "pd-close~3"             the same control pressed 3 times in a row
@@ -18,6 +18,12 @@ const S = new Set(STATIC);
 const SUF = new Set(SUFFIXES);
 const LIT = new Set(LITERALS);
 const PRE = [...PREFIXES].sort((a, b) => b.length - a.length); // longest head first
+// Templated ids whose dynamic part comes ONLY from a list written in the source (tab ids, menu item ids,
+// filter chips, token roles, notification modes). Every other templated id can carry a value a site
+// defined (a classification level or workflow state slug, a space key, a file id) and prints "head-*"
+// even when that value happens to equal a word of the source (review 2026-10-21).
+export const CODE_ONLY_PREFIXES = Object.freeze(["pd-tab-", "pd-menu-", "pd-chip-", "sv-activity-filter-", "api-mint-role-", "sv-notifications-mode-"]);
+const CODE_ONLY = new Set(CODE_ONLY_PREFIXES);
 const BASES = [...STATIC].sort((a, b) => b.length - a.length);
 export const ROLES = Object.freeze(["button", "link", "tab", "menuitem", "option", "checkbox", "radio", "switch", "summary"]);
 const ROLE_SET = new Set(ROLES);
@@ -28,18 +34,11 @@ const MAX_REPEAT = 999;
 export function nameOfId(id) {
   if (typeof id !== "string" || id.length === 0 || id.length > 120) return null;
   if (S.has(id)) return id;
+  for (const head of CODE_ONLY_PREFIXES) if (id.startsWith(head) && LIT.has(id.slice(head.length))) return id;
   for (const base of BASES) {
-    if (id.length > base.length + 1 && id.startsWith(base + "-")) {
-      const rest = id.slice(base.length + 1);
-      return SUF.has(rest) || LIT.has(rest) ? id : `${base}-*`;
-    }
+    if (id.length > base.length + 1 && id.startsWith(base + "-")) return SUF.has(id.slice(base.length + 1)) ? id : `${base}-*`;
   }
-  for (const head of PRE) {
-    if (id.length > head.length && id.startsWith(head)) {
-      const rest = id.slice(head.length);
-      return LIT.has(rest) ? id : `${head}*`;
-    }
-  }
+  for (const head of PRE) if (id.length > head.length && id.startsWith(head)) return `${head}*`;
   return null;
 }
 

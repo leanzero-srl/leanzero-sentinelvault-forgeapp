@@ -11,8 +11,9 @@
  *     STATIC    data-testid / data-lz / testId literals ("pd-close", "sv-decline")
  *     PREFIXES  the head of a templated test id (`pd-tab-${id}` -> "pd-tab-")
  *     SUFFIXES  the tail of an id built on a testId prop (`${testId}-confirm` -> "confirm")
- *     LITERALS  short lowercase string literals in src/ui ("overview"): the only dynamic parts a
- *               templated id may keep ("pd-tab-overview"); anything else becomes "pd-tab-*"
+ *     LITERALS  code-defined ids in src/ui ("overview", "extend"): the only dynamic parts a templated
+ *               id may keep, and only for ui-action-names.js CODE_ONLY_PREFIXES ("pd-tab-overview");
+ *               anything else becomes "head-*"
  *   src/server/shared/action-reasons.gen.js   refusal sentences written literally in src/server
  *               (`reason: "This file is not sealed"`): a refusal is logged by its slug only when its
  *               text is exactly one of these; a sentence built at runtime (a name in it) never is.
@@ -76,6 +77,8 @@ export function collectUi(files) {
     // role lists) and the first item of a `["x", "Label"]` pair (tab lists)
     for (const m of src.matchAll(/\b(?:id|key|value|kind|mode)\s*:\s*"([a-z][a-z0-9-]{1,31})"/g)) if (okId(m[1])) LITERALS.add(m[1]);
     for (const m of src.matchAll(/\[\s*"([a-z][a-z0-9-]{1,31})"\s*,\s*["'`]/g)) if (okId(m[1])) LITERALS.add(m[1]);
+    // keys of label maps (`{ extend: "Extend the seal", "give-access": "Give edit access…" }`)
+    for (const m of src.matchAll(/[{,]\s*("?)([a-z][a-z0-9-]{1,31})\1\s*:\s*"[^"]*"/g)) if (okId(m[2])) LITERALS.add(m[2]);
   }
   const sort = (s) => [...s].sort();
   return { STATIC: sort(STATIC), PREFIXES: sort(PREFIXES), SUFFIXES: sort(SUFFIXES), LITERALS: sort(LITERALS) };
