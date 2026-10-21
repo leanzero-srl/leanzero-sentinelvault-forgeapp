@@ -278,21 +278,22 @@ try {
     eq("[7] a leftover event after the flag reads nothing", searchCalls.n, callsDone);
     await kvs.delete("privacy-validation-scrub-kick");
     worker._resetScrubMemo();
+    const A = { installContext: "ari:cloud:confluence::site/A" }, B = { installContext: "ari:cloud:confluence::site/B" };
     const reads = [];
     const realGet = kvs.get;
     kvs.get = async (k) => { reads.push(k); return realGet(k); };
     try {
-      eq("[7] after the flag the kick queues nothing", await worker.kickValidationMirrorScrub(), false);
+      eq("[7] after the flag the kick queues nothing", await worker.kickValidationMirrorScrub(A), false);
       const n = reads.length;
-      await worker.kickValidationMirrorScrub();
-      eq("[7] ...and the next kick in the same instance reads nothing", reads.length, n);
+      await worker.kickValidationMirrorScrub(A);
+      eq("[7] ...and the next kick for the same site reads nothing", reads.length, n);
     } finally { kvs.get = realGet; }
-    // A flag that went away (a restore, or by hand): the sweep's own fresh read wins over the memory.
+    // One Forge process serves several sites: site A's "done" must not stop site B's scrub.
     await kvs.set("privacy-migrations", {});
     await kvs.delete("privacy-validation-scrub-kick");
     fake.queued = [];
-    eq("[7] the memory alone would not ask again", await worker.kickValidationMirrorScrub(), false);
-    eq("[7] ...but a sweep that found no flag starts the job", await worker.kickValidationMirrorScrub(null, { fresh: true }), true);
+    eq("[7] another site served by the same instance still starts its own job", await worker.kickValidationMirrorScrub(B), true);
+    eq("[7] ...and a second kick within the quarter hour queues nothing", await worker.kickValidationMirrorScrub(null), false);
     ok("[7] the log line holds counts only", lines.some((l) => /\[VALIDATION-MIRROR\] scrub pages=\d+ scrubbed=\d+ failed=0 done=true/.test(l)) && !lines.some((l) => l.includes(CHECKER) || l.includes(ADMIN)));
   }
   {
