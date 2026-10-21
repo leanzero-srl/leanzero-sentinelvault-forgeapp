@@ -43,19 +43,19 @@ const JIRA_ON = "It works once a site admin has connected Jira to Sentinel Vault
 
 export const ENTRIES = {
   // 8.14.0: written by the release door on 2026-10-21 (rows: model; review pass: model).
-  "573b0b724717566f": ["Restoring or permanently deleting a file from the panel follows your own Confluence permissions", "S", {"withhold":"touches permissions and implies older versions let users restore or delete beyond their own access"}],
-  "bf3d30788bb75ca9": ["Only a space's current approvers can decide its open approval requests", "W", {"withhold":"touches approval permissions and implies older versions counted decisions from removed approvers"}],
-  "0dc8be63209398e9": ["Adding a seal to an Approved page waits until a pending change has been checked", "S", {"withhold":"guard on Approved-page integrity; implies older versions let a seal slip past a pending check"}],
+  "573b0b724717566f": ["Restoring or permanently deleting a file from the panel follows your own Confluence permissions", "S"],
+  "bf3d30788bb75ca9": ["Only a space's current approvers can decide its open approval requests", "W"],
+  "0dc8be63209398e9": ["Adding a seal to an Approved page is refused while a change to the page is being checked", "S"],
   "6f0f9ff547d04450": ["Workflow settings that can't move edited Approved pages back are refused on save", "W"],
-  "4fb91df0ea1a3a79": ["The app's own log lines no longer contain account IDs, personal space keys or error text", "D", {"withhold":"touches personal data exposure in logs; implies older versions logged identifiers"}],
-  "955bf945b0ed226a": ["Only approvers' and space admins' versions could become an Approved page's approved version", "W", {"withhold":"protection fix; implies older versions let other editors' versions become approved"}],
-  "f6fa92c9422c6762": ["Sealed sections and Approved pages did not compare every part of their content", "S", {"withhold":"protection fix; implies older versions missed changes in some parts of the content"}],
-  "76b3feb4b0745b54": ["An edited Approved page stayed as edited when it could not be moved back", "W", {"withhold":"protection fix; implies older versions left unapproved edits in place when the move failed"}],
-  "ace25cdc5b0b832e": ["A configuration REST API job showed as done before its receipt reached the space's page", "R", {"withhold":"review: The receipt on the space's page is the visible audit record of a configuration change made through the REST API. The published title says older versions marked a job done before that receipt existed, so it reads as a gap in the audit trail for API-driven configuration changes. That is a protection o"}],
-  "8ba4a915fd791f89": ["Deleting or changing the app's page properties switched off page protection", "S", {"withhold":"protection bypass; maps a hole that sites on older versions still have"}],
+  "4fb91df0ea1a3a79": ["The app's own log lines no longer contain account IDs, personal space keys or error text", "D"],
+  "955bf945b0ed226a": ["Unapproved edits could become an Approved page's approved version", "W"],
+  "f6fa92c9422c6762": ["Changes to some parts of a sealed section or an Approved page were not detected", "S"],
+  "76b3feb4b0745b54": ["An unapproved edit to an Approved page was left in place when the page could not be moved back", "W"],
+  "ace25cdc5b0b832e": ["A configuration REST API job showed as done before its receipt reached the space's page", "R"],
+  "8ba4a915fd791f89": ["Deleting or changing the app's page properties switched off page protection", "S"],
 
   // 8.13.0: written by the release door on 2026-10-21 (rows: model; review pass: model).
-  "c64fc647c00462b6": ["Each action now writes one line to the app's logs, with no names, IDs, page content or anything typed", "D", {"withhold":"touches security, permissions, isolation or keys (release door net)"}],
+  "c64fc647c00462b6": ["Each action now writes one line to the app's logs, with no names, IDs, page content or anything typed", "D"],
 
   // 8.12.0 (2026-10-18). Outcome wording only (this file is public).
   f5edf7b2eb1d89de: ["A permission change in Confluence reaches Sentinel Vault within a minute", "C"],
