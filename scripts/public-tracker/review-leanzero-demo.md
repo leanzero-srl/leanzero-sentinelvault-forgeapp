@@ -1,16 +1,16 @@
 # Sentinel Vault Public Tracker - verify file
 
-Generated 2026-10-21T19:12:39.619Z by scripts/public-tracker/tracker.mjs verify.
+Generated 2026-10-21T19:36:03.264Z by scripts/public-tracker/tracker.mjs verify.
 Site https://leanzero-demo.atlassian.net. Project SVT (id 10278), permission scheme "Sentinel Vault Public Tracker permissions" (id 10265, used by: SVT), anonymous grants: BROWSE_PROJECTS.
-Issues checked: 127 of 127. Verification failures: 0. Withheld release-note lines: 11.
+Issues checked: 137 of 137. Verification failures: 0. Withheld release-note lines: 1.
 
 ## Counts
 
-- status: Done 96; Backlog 31
-- version: 6.4.0 5; 6.5.0 1; 6.6.0 6; 6.7.0 8; 6.9.0 4; 6.10.0 4; 6.11.0 1; 7.0.0 5; 7.1.0 8; 8.0.0 16; 8.1.0 1; 8.2.0 2; 8.3.0 1; 8.4.0 1; 8.5.0 1; 8.6.0 13; 8.7.0 1; 8.8.0 1; 8.9.0 5; 8.10.0 5; 8.11.0 3; 8.12.0 3; 8.14.0 1; open, affects 7.1.0 6; open, affects 8.12.0 25
-- component: Classification 4; Sealed files and sections 14; Edit requests and access 4; REST API 4; Backup and restore 13; Layout and accessibility 10; Privacy and personal data 8; Space and site settings 17; Workflow and approvals 19; App permissions and updates 4; Page banner and Sentinel Vault window 10; Activity report 2; Jira issue attachments 13; My work 5
-- type: Improvement 48; Bug 79
-- versions in Jira: 6.4.0 released 2026-09-30, 6.5.0 released 2026-09-30, 6.6.0 released 2026-10-02, 6.7.0 released 2026-10-04, 6.9.0 released 2026-10-04, 6.10.0 released 2026-10-04, 6.11.0 released 2026-10-04, 7.0.0 released 2026-10-05, 7.1.0 released 2026-10-09, 8.0.0 released 2026-10-14, 8.1.0 released 2026-10-14, 8.2.0 released 2026-10-14, 8.3.0 released 2026-10-14, 8.4.0 released 2026-10-14, 8.5.0 released 2026-10-14, 8.6.0 released 2026-10-17, 8.7.0 released 2026-10-17, 8.8.0 released 2026-10-17, 8.9.0 released 2026-10-18, 8.10.0 released 2026-10-18, 8.11.0 released 2026-10-18, 8.12.0 released 2026-10-18, 8.13.0 released 2026-10-21, 8.14.0 unreleased
+- status: Done 106; Backlog 31
+- version: 6.4.0 5; 6.5.0 1; 6.6.0 6; 6.7.0 8; 6.9.0 4; 6.10.0 4; 6.11.0 1; 7.0.0 5; 7.1.0 8; 8.0.0 16; 8.1.0 1; 8.2.0 2; 8.3.0 1; 8.4.0 1; 8.5.0 1; 8.6.0 13; 8.7.0 1; 8.8.0 1; 8.9.0 5; 8.10.0 5; 8.11.0 3; 8.12.0 3; 8.13.0 1; 8.14.0 10; open, affects 7.1.0 6; open, affects 8.12.0 25
+- component: Classification 4; Sealed files and sections 18; Edit requests and access 4; REST API 5; Backup and restore 13; Layout and accessibility 10; Privacy and personal data 10; Space and site settings 17; Workflow and approvals 22; App permissions and updates 4; Page banner and Sentinel Vault window 10; Activity report 2; Jira issue attachments 13; My work 5
+- type: Improvement 53; Bug 84
+- versions in Jira: 6.4.0 released 2026-09-30, 6.5.0 released 2026-09-30, 6.6.0 released 2026-10-02, 6.7.0 released 2026-10-04, 6.9.0 released 2026-10-04, 6.10.0 released 2026-10-04, 6.11.0 released 2026-10-04, 7.0.0 released 2026-10-05, 7.1.0 released 2026-10-09, 8.0.0 released 2026-10-14, 8.1.0 released 2026-10-14, 8.2.0 released 2026-10-14, 8.3.0 released 2026-10-14, 8.4.0 released 2026-10-14, 8.5.0 released 2026-10-14, 8.6.0 released 2026-10-17, 8.7.0 released 2026-10-17, 8.8.0 released 2026-10-17, 8.9.0 released 2026-10-18, 8.10.0 released 2026-10-18, 8.11.0 released 2026-10-18, 8.12.0 released 2026-10-18, 8.13.0 released 2026-10-21, 8.14.0 released 2026-10-21
 
 ## Issues
 
@@ -966,5 +966,75 @@ Issues checked: 127 of 127. Verification failures: 0. Withheld release-note line
 - type: Improvement; status: Done (Done); fixVersion: 8.14.0; component: Workflow and approvals
 
 > Workflow settings that would move edited Approved pages back to a state the workflow cannot reach, or to a chosen state that is itself Approved or has an entry condition, or whose first state is itself Approved, are refused when you save them, with a message saying what to change.
-> Added in Sentinel Vault 8.14.0, which is waiting for Marketplace approval and is not yet listed on the Marketplace.
+> Added in Sentinel Vault 8.14.0. A site still on version 7 or earlier gets it once a site admin approves the update in Confluence administration, Apps, Manage apps.
+
+### SVT-132 - Each action now writes one line to the app's logs, with no names, IDs, page content or anything typed
+
+- type: Improvement; status: Done (Done); fixVersion: 8.13.0; component: Privacy and personal data
+
+> Each action in Sentinel Vault, such as a button that seals, approves or saves, a REST API call or a background job someone started, now writes one line to the app's logs on the Atlassian platform: which action it was, from which screen, how it ended and how long it took, with the buttons pressed just before it. A line never holds names, account IDs, page or space names or keys, file names, page content or anything typed. Sites share an app's logs with its developer unless a site admin turns Logs access off for the app in Atlassian Administration, so when you report a problem we can see which action failed and where.
+> Added in Sentinel Vault 8.13.0. A site still on version 7 or earlier gets it once a site admin approves the update in Confluence administration, Apps, Manage apps.
+
+### SVT-133 - Restoring or permanently deleting a file from the panel follows your own Confluence permissions
+
+- type: Improvement; status: Done (Done); fixVersion: 8.14.0; component: Sealed files and sections
+
+> Restoring a file from the trash and deleting a file permanently from the Sentinel Vault panel now follow your own Confluence permissions, so you can only restore or permanently delete what Confluence itself lets you. The first time you do either, Atlassian may ask you to allow Sentinel Vault to act on your behalf. The Allow Attachment Restore from Page and Allow Seal Cleanup from Page settings now say clearly that Seal Cleanup deletes a file from the trash for good, and Seal Cleanup removes a file's records only once Confluence confirms the file is gone from its page. Restoring a file when a newer file with the same name is on the page now says to rename or remove that file first.
+> Added in Sentinel Vault 8.14.0. A site still on version 7 or earlier gets it once a site admin approves the update in Confluence administration, Apps, Manage apps.
+
+### SVT-134 - Only a space's current approvers can decide its open approval requests
+
+- type: Improvement; status: Done (Done); fixVersion: 8.14.0; component: Workflow and approvals
+
+> Only a space's current approvers can decide its open approval requests, and only their decisions count. When approvers are removed, the number of approvals a request needs can drop by up to the number removed; if that changes the outcome, the AI review alone does not complete the request. A request whose approvers changed says so and can be requested again with the current approvers, which starts its decisions afresh. The approval record shows which decisions counted, and a refusal names an approver group that could not be read.
+> Added in Sentinel Vault 8.14.0. A site still on version 7 or earlier gets it once a site admin approves the update in Confluence administration, Apps, Manage apps.
+
+### SVT-135 - Adding a seal to an Approved page is refused while a change to the page is being checked
+
+- type: Improvement; status: Done (Done); fixVersion: 8.14.0; component: Sealed files and sections
+
+> Adding a seal to an Approved page is refused while a change to the page is being checked. The message says when to try again, or what to do when nothing will check the change. An approver or space admin who publishes an Approved page accepts what is on the page at that point.
+> Added in Sentinel Vault 8.14.0. A site still on version 7 or earlier gets it once a site admin approves the update in Confluence administration, Apps, Manage apps.
+
+### SVT-136 - The app's own log lines no longer contain account IDs, personal space keys or error text
+
+- type: Improvement; status: Done (Done); fixVersion: 8.14.0; component: Privacy and personal data
+
+> Sentinel Vault's own log lines no longer contain account IDs, personal space keys or error message text, only the kind of error and where in the app it happened.
+> Added in Sentinel Vault 8.14.0. A site still on version 7 or earlier gets it once a site admin approves the update in Confluence administration, Apps, Manage apps.
+
+### SVT-137 - Unapproved edits could become an Approved page's approved version
+
+- type: Bug; status: Done (Done); fixVersion: 8.14.0; component: Workflow and approvals
+
+> Only versions saved by a page's approvers or space admins, or by Sentinel Vault on top of those, can become an Approved page's approved version. Other edits are reverted or sent back for review unless an approver or space admin publishes the page after them, and an approver's later save is never undone by the review of an earlier edit.
+> Fixed in Sentinel Vault 8.14.0. A site still on version 7 or earlier gets it once a site admin approves the update in Confluence administration, Apps, Manage apps.
+
+### SVT-138 - Changes to some parts of a sealed section or an Approved page were not detected
+
+- type: Bug; status: Done (Done); fixVersion: 8.14.0; component: Sealed files and sections
+
+> Sealed sections and Approved pages compare every part of their content, and a sealed section recovers a missing saved copy from the page history, or tells the seal's owner when it cannot.
+> Fixed in Sentinel Vault 8.14.0. A site still on version 7 or earlier gets it once a site admin approves the update in Confluence administration, Apps, Manage apps.
+
+### SVT-139 - An unapproved edit to an Approved page was left in place when the page could not be moved back
+
+- type: Bug; status: Done (Done); fixVersion: 8.14.0; component: Workflow and approvals
+
+> When a space set to move edited Approved pages back cannot make that move, the approved version is restored instead, the person who edited is told, and the page's activity records it.
+> Fixed in Sentinel Vault 8.14.0. A site still on version 7 or earlier gets it once a site admin approves the update in Confluence administration, Apps, Manage apps.
+
+### SVT-140 - A configuration REST API job showed as done before its receipt reached the space's page
+
+- type: Bug; status: Done (Done); fixVersion: 8.14.0; component: REST API
+
+> A configuration REST API job is shown as done only once its receipt is also on the space's page.
+> Fixed in Sentinel Vault 8.14.0. A site still on version 7 or earlier gets it once a site admin approves the update in Confluence administration, Apps, Manage apps.
+
+### SVT-141 - Deleting or changing the app's page properties switched off page protection
+
+- type: Bug; status: Done (Done); fixVersion: 8.14.0; component: Sealed files and sections
+
+> Deleting or changing Sentinel Vault's page properties no longer switches off protection for sealed sections, sealed files on the page or Approved pages, or changes the validation status shown for a page. A page's validation status from before this update is checked again the first time someone opens the page's panel.
+> Fixed in Sentinel Vault 8.14.0. A site still on version 7 or earlier gets it once a site admin approves the update in Confluence administration, Apps, Manage apps.
 

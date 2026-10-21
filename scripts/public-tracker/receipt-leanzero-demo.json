@@ -551,6 +551,46 @@
     "6f0f9ff547d04450": {
       "key": "SVT-131",
       "id": "28555"
+    },
+    "c64fc647c00462b6": {
+      "key": "SVT-132",
+      "id": "28556"
+    },
+    "573b0b724717566f": {
+      "key": "SVT-133",
+      "id": "28557"
+    },
+    "bf3d30788bb75ca9": {
+      "key": "SVT-134",
+      "id": "28558"
+    },
+    "0dc8be63209398e9": {
+      "key": "SVT-135",
+      "id": "28559"
+    },
+    "4fb91df0ea1a3a79": {
+      "key": "SVT-136",
+      "id": "28560"
+    },
+    "955bf945b0ed226a": {
+      "key": "SVT-137",
+      "id": "28561"
+    },
+    "f6fa92c9422c6762": {
+      "key": "SVT-138",
+      "id": "28562"
+    },
+    "76b3feb4b0745b54": {
+      "key": "SVT-139",
+      "id": "28563"
+    },
+    "ace25cdc5b0b832e": {
+      "key": "SVT-140",
+      "id": "28564"
+    },
+    "8ba4a915fd791f89": {
+      "key": "SVT-141",
+      "id": "28565"
     }
   },
   "permissionScheme": {
@@ -563,7 +603,7 @@
     ],
     "assigned": true
   },
-  "updatedAt": "2026-10-21T19:13:04.641Z",
+  "updatedAt": "2026-10-21T19:36:25.531Z",
   "projectId": "10278",
   "issueTypeScheme": {
     "id": "10636",
@@ -579,66 +619,6 @@
       "version": "6.7.0",
       "kind": "changes",
       "why": "How authenticator codes for signed actions are stored (secret storage); security mechanism topic, as the CogniRunner tracker withholds secrets lines."
-    },
-    {
-      "h": "c64fc647c00462b6",
-      "version": "8.13.0",
-      "kind": "changes",
-      "why": "touches security, permissions, isolation or keys (release door net)"
-    },
-    {
-      "h": "573b0b724717566f",
-      "version": "8.14.0",
-      "kind": "changes",
-      "why": "touches permissions and implies older versions let users restore or delete beyond their own access"
-    },
-    {
-      "h": "bf3d30788bb75ca9",
-      "version": "8.14.0",
-      "kind": "changes",
-      "why": "touches approval permissions and implies older versions counted decisions from removed approvers"
-    },
-    {
-      "h": "0dc8be63209398e9",
-      "version": "8.14.0",
-      "kind": "changes",
-      "why": "guard on Approved-page integrity; implies older versions let a seal slip past a pending check"
-    },
-    {
-      "h": "4fb91df0ea1a3a79",
-      "version": "8.14.0",
-      "kind": "changes",
-      "why": "touches personal data exposure in logs; implies older versions logged identifiers"
-    },
-    {
-      "h": "955bf945b0ed226a",
-      "version": "8.14.0",
-      "kind": "fixes",
-      "why": "protection fix; implies older versions let other editors' versions become approved"
-    },
-    {
-      "h": "f6fa92c9422c6762",
-      "version": "8.14.0",
-      "kind": "fixes",
-      "why": "protection fix; implies older versions missed changes in some parts of the content"
-    },
-    {
-      "h": "76b3feb4b0745b54",
-      "version": "8.14.0",
-      "kind": "fixes",
-      "why": "protection fix; implies older versions left unapproved edits in place when the move failed"
-    },
-    {
-      "h": "ace25cdc5b0b832e",
-      "version": "8.14.0",
-      "kind": "fixes",
-      "why": "review: The receipt on the space's page is the visible audit record of a configuration change made through the REST API. The published title says older versions marked a job done before that receipt existed, so it reads as a gap in the audit trail for API-driven configuration changes. That is a protection o"
-    },
-    {
-      "h": "8ba4a915fd791f89",
-      "version": "8.14.0",
-      "kind": "fixes",
-      "why": "protection bypass; maps a hole that sites on older versions still have"
     }
   ],
   "folds": {
@@ -665,7 +645,7 @@
     "undo": "DELETE /rest/api/3/permissionscheme/10265/permission/11703",
     "proof": {
       "GET /rest/api/3/issue/SVT-1": 200,
-      "GET /rest/api/3/issue/SVT-131": 200,
+      "GET /rest/api/3/issue/SVT-141": 200,
       "GET /rest/api/3/issue/ATLAS-2361": 404,
       "GET /rest/api/3/issue/CRBAK-1": 404,
       "GET /rest/api/3/issue/CRD-30": 404,
@@ -690,24 +670,24 @@
       "GET /rest/api/3/issue/SEC-1225": 404,
       "GET /rest/api/3/issue/VOY-1992": 404,
       "anonymous site-wide search (bounded, all pages): issues per project": {
-        "SVT": 127,
+        "SVT": 137,
         "CRT": 423,
         "LZMT": 376,
         "CST": 37
       },
-      "anonymous listing of SVT": "127 issues (receipt holds 127; 已完成 96, Backlog 31)",
+      "anonymous listing of SVT": "137 issues (receipt holds 137; 已完成 106, Backlog 31)",
       "other projects whose scheme lets anyone browse": "CRT,CST,LZMT",
       "public trackers (allowlist)": "CRT,SVT,LZMT,CST",
       "negative control": "13 fake broken answers, each failed the verdict",
       "GET /jira/software/c/projects/SVT/issues": 200
     },
-    "provenAt": "2026-10-21T19:13:04.641Z",
+    "provenAt": "2026-10-21T19:36:25.531Z",
     "proofFailures": []
   },
   "verified": {
     "through": "8.14.0",
-    "at": "2026-10-21T19:12:39.620Z",
-    "issues": 127,
+    "at": "2026-10-21T19:36:03.268Z",
+    "issues": 137,
     "failures": 0
   }
 }
