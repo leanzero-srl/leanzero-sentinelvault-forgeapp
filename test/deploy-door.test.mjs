@@ -24,6 +24,9 @@ const repo = path.join(tmp, "repo"), bin = path.join(tmp, "bin");
 const git = (...a) => execFileSync("git", ["-C", repo, "-c", "user.name=door-test", "-c", "user.email=door-test@invalid", ...a], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
 try {
   execFileSync("git", ["clone", "-q", "--no-hardlinks", root, repo], { stdio: "ignore" });
+  // The clone is on a branch whatever the checkout under test is: CI runs a tag on a DETACHED HEAD, and a detached
+  // clone reads to the door as a rollback from a tag, so the note-writing cases would fail only there (v8.13.0, 2026-10-21).
+  git("checkout", "-q", "-B", "main");
   // the working copy under test (the clone holds the last commit; the door is copied in as it is on disk now)
   for (const f of ["scripts/deploy-prod.sh", "scripts/strip-dev-modules.mjs", "manifest.yml", "scripts/public-tracker/coverage.mjs", "scripts/public-tracker/release-gate.mjs",
     "scripts/public-tracker/tracker.mjs", "scripts/release-autopilot.mjs"]) fs.copyFileSync(path.join(root, f), path.join(repo, f));
