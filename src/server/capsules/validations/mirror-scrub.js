@@ -12,10 +12,11 @@
  *     (validationMirrorValue of the old value). The panel never reads the property, so what it
  *     shows does not change.
  *
- * Which pages: every page and blog post the app can see.
- *   phase "cql"      content search (current pages and blog posts) with the property expanded inline,
+ * Which pages: every page the app can see. (Blog posts never carried it: the status was only ever
+ * written through the v2 /pages/{id}/properties endpoint, which does not take a blog post.)
+ *   phase "cql"      content search (current pages) with the property expanded inline,
  *                    100 per request, so a clean page costs nothing beyond its share of one request;
- *   phase "archived" / "trashed"  CQL never returns these, so they are listed with the v2 API and
+ *   phase "archived-page" / "trashed-page"  CQL never returns these, so they are listed with the v2 API and
  *                    each one's property is read on its own (rare: a page validated, then archived
  *                    or trashed, would otherwise bring the old ids back when restored).
  *
@@ -37,8 +38,8 @@ export const SCRUB_FLAG = "validationMirrorV1"; // in privacy-migrations
 export const SCRUB_LOCK_KEY = "privacy-validation-scrub-lock";
 const PROP = "sentinel-vault-validation";
 const MIRROR_FIELDS = new Set(["state", "violations", "version", "checkedAt", "approvedAt", "rulesFp", "source", "approved"]);
-const PHASES = ["cql", "archived-page", "trashed-page", "trashed-blogpost"];
-const CQL = "type in (page, blogpost) order by id";
+const PHASES = ["cql", "archived-page", "trashed-page"];
+const CQL = "type = page order by id";
 
 /** PURE. Does a stored property value carry anything a mirror may not (an account id field above all)? */
 export function mirrorNeedsScrub(value) {
@@ -94,12 +95,11 @@ async function fetchBatch(phase, cursor) {
     });
     return { items, next: cursorOf(data?._links?.next) };
   }
-  const [status, type] = phase.split("-");
-  const base = type === "blogpost" ? "blogposts" : "pages";
+  const status = phase.split("-")[0];
   const res = cursor
-    ? await appConfluence(route`/wiki/api/v2/${base}?status=${status}&limit=${"250"}&cursor=${cursor}`)
-    : await appConfluence(route`/wiki/api/v2/${base}?status=${status}&limit=${"250"}`);
-  if (!res.ok) throw new Error(`${base} list answered ${res.status}`);
+    ? await appConfluence(route`/wiki/api/v2/pages?status=${status}&limit=${"250"}&cursor=${cursor}`)
+    : await appConfluence(route`/wiki/api/v2/pages?status=${status}&limit=${"250"}`);
+  if (!res.ok) throw new Error(`pages list answered ${res.status}`);
   const data = await res.json();
   return { items: (data?.results || []).map((r) => ({ pageId: String(r.id), prop: null, needsRead: true })), next: cursorOf(data?._links?.next) };
 }
