@@ -34,7 +34,7 @@
  */
 import { kvs } from "@forge/kvs";
 import { route } from "@forge/api";
-import { appConfluence } from "../../shared/confluence-call.js";
+import { appConfluence, rateLimitInfo } from "../../shared/confluence-call.js";
 import { validationMirrorValue, VALIDATION_STATE_PREFIX } from "./logic.js";
 import { errText } from "../../shared/action-log.js";
 
@@ -44,6 +44,14 @@ export const SCRUB_LOCK_KEY = "privacy-validation-scrub-lock";
 export const RETRY_ROUNDS = 3;
 export const RETRY_AFTER_MS = 3600000;
 export const FAILED_CAP = 500;
+/** Pages a site walks per hour: the Confluence pool is shared by every site, so a big site takes hours, never the pool. */
+export const HOURLY_PAGES = 3000;
+/** The share in force: HOURLY_PAGES, or the environment variable SV_SCRUB_HOURLY_PAGES where one is set (the
+ * development environment, so a test can walk a whole test site in minutes). Production sets none. */
+export const hourlyPages = () => { const v = Number(process.env.SV_SCRUB_HOURLY_PAGES); return Number.isFinite(v) && v >= 100 ? v : HOURLY_PAGES; };
+/** A list that keeps failing this many times in a row is given up (recorded as a skipped phase). */
+export const LIST_FAILURES_MAX = 24;
+const JITTER_MS = 15 * 60000;
 const PROP = "sentinel-vault-validation";
 const MIRROR_FIELDS = new Set(["state", "violations", "version", "checkedAt", "approvedAt", "rulesFp", "source", "approved"]);
 const LIST_PHASES = ["search", "archived", "trashed"];
@@ -65,6 +73,10 @@ export function cursorOf(nextLink) {
 
 /** PURE. The start of the next hour after `nowMs` (a 429 on the shared pool waits for its reset). */
 export const nextHour = (nowMs) => (Math.floor(nowMs / 3600000) + 1) * 3600000;
+
+/** After the next hour, plus up to 15 minutes, so sites that waited do not all start again together. */
+const afterReset = (nowMs, rand = Math.random) => nextHour(nowMs) + Math.floor(rand() * JITTER_MS);
+const nearLimit = (res) => { try { return String(rateLimitInfo(res).nearLimit || "").toLowerCase() === "true"; } catch (_) { return false; } };
 
 /** PURE. The next back-off after a failed list: 5 minutes, doubling, at most an hour. */
 export const nextBackoffS = (prev) => Math.min(3600, Math.max(300, (Number(prev) || 0) * 2));
@@ -90,6 +102,7 @@ async function putProperty(pageId, prop, value) {
 async function readProperty(pageId) {
   const res = await appConfluence(route`/wiki/api/v2/pages/${pageId}/properties?key=${PROP}`);
   if (res.status === 404) return null;
+  if (res.status === 429) return "limited";
   if (!res.ok) return undefined;
   return asProp((await res.json())?.results?.[0]) || null;
 }
@@ -102,6 +115,7 @@ async function scrubOne(pageId, prop) {
     if (status === 409) {
       // Someone wrote the property meanwhile (most likely the 8.14 writer, which leaves it clean).
       const fresh = await readProperty(pageId);
+      if (fresh === "limited") return "limited";
       if (fresh === undefined) return "failed";
       if (!fresh || !mirrorNeedsScrub(fresh.value)) return "clean";
       status = await putProperty(pageId, fresh, await cleanValueFor(pageId, fresh.value));
@@ -126,40 +140,47 @@ async function fetchBatch(phase, cursor) {
     res = await appConfluence(route`/wiki/rest/api/content?type=${"page"}&status=${phase}&limit=${"100"}&start=${start}&expand=${EXPAND_CONTENT}`);
   }
   if (!res.ok) return { status: res.status, items: [], next: null };
+  const near = nearLimit(res);
   const data = await res.json();
   const rows = data?.results || [];
   if (phase === "search") {
     const items = rows.map((r) => r?.content).filter((c) => c && c.id && (c.type === "page" || !c.type))
       .map((c) => ({ pageId: String(c.id), prop: asProp(c?.metadata?.properties?.[PROP]) }));
-    return { status: res.status, items, next: cursorOf(data?._links?.next) };
+    return { status: res.status, items, next: cursorOf(data?._links?.next), near };
   }
   const items = rows.filter((c) => c && c.id).map((c) => ({ pageId: String(c.id), prop: asProp(c?.metadata?.properties?.[PROP]) }));
   const more = rows.length > 0 && !!data?._links?.next;
-  return { status: res.status, items, next: more ? String((Number(cursor) || 0) + rows.length) : null };
+  return { status: res.status, items, next: more ? String((Number(cursor) || 0) + rows.length) : null, near };
 }
 
-const fresh = (t0) => ({ phase: LIST_PHASES[0], cursor: null, pages: 0, scrubbed: 0, failedIds: [], overflow: 0, retryRound: 0, waitUntil: null, backoffS: 0, startedAt: new Date(t0).toISOString() });
+const fresh = (t0) => ({ phase: LIST_PHASES[0], cursor: null, pages: 0, scrubbed: 0, failedIds: [], overflow: 0, retryRound: 0, waitUntil: null, backoffS: 0, listFailures: 0, skippedPhases: [], hourStart: t0, hourPages: 0, startedAt: new Date(t0).toISOString() });
 
 /**
  * Run the scrub until it is done, the budget is spent, or it has to wait.
  * @returns {Promise<{ done: boolean, waitUntil?: number|null, phase: string|null, pages: number, scrubbed: number, failed: number, skipped?: number }>}
  */
-export async function runValidationMirrorScrub({ budgetMs = 600000, now = () => Date.now() } = {}) {
+export async function runValidationMirrorScrub({ budgetMs = 600000, now = () => Date.now(), rand = Math.random } = {}) {
   const t0 = now();
   const over = () => now() - t0 > budgetMs;
   let state = (await kvs.get(SCRUB_STATE_KEY).catch(() => null)) || null;
   if (!state || ![...LIST_PHASES, "retry"].includes(state.phase)) state = fresh(t0);
+  state = { listFailures: 0, skippedPhases: [], hourStart: t0, hourPages: 0, ...state };
   const out = (extra = {}) => ({ done: false, waitUntil: state.waitUntil || null, phase: state.phase, pages: state.pages, scrubbed: state.scrubbed, failed: state.failedIds.length + (state.overflow || 0), ...extra });
   const save = () => kvs.set(SCRUB_STATE_KEY, { ...state, at: new Date(now()).toISOString() });
   if (state.waitUntil && state.waitUntil > t0) return out();
   state.waitUntil = null;
+  if (t0 - state.hourStart >= 3600000) { state.hourStart = t0; state.hourPages = 0; }
+  const limited = () => wait(afterReset(now(), rand));
+  // The site's hourly share: once it is used, wait for the next hour (with jitter).
+  const cap = hourlyPages();
+  const hourUsed = () => state.hourPages >= cap;
   const noteFailed = (id) => { if (state.failedIds.includes(id)) return; if (state.failedIds.length < FAILED_CAP) state.failedIds.push(id); else state.overflow = (state.overflow || 0) + 1; };
   const wait = async (until) => { state.waitUntil = until; await save(); return out(); };
 
   const finish = async (skipped = 0) => {
     if (skipped) console.warn(`[VALIDATION-MIRROR] ${skipped} page(s) could not be rewritten after ${RETRY_ROUNDS} retries; skipped`);
     await kvs.delete(SCRUB_STATE_KEY).catch(() => {});
-    return { done: true, phase: null, pages: state.pages, scrubbed: state.scrubbed, failed: skipped, skipped };
+    return { done: true, phase: null, pages: state.pages, scrubbed: state.scrubbed, failed: skipped, skipped, skippedPhases: state.skippedPhases };
   };
   // After the lists or a retry round: what is left, and whether another round may still run.
   const settle = async () => {
@@ -179,10 +200,12 @@ export async function runValidationMirrorScrub({ budgetMs = 600000, now = () => 
     if (state.phase === "retry") {
       const still = [];
       for (let i = 0; i < state.failedIds.length; i++) {
+        if (over() || hourUsed()) { state.failedIds = [...still, ...state.failedIds.slice(i)]; if (hourUsed()) return limited(); await save(); return out(); }
         const id = state.failedIds[i];
         const prop = await readProperty(id).catch(() => undefined);
-        const r = prop === undefined ? "failed" : await scrubOne(id, prop);
-        if (r === "limited") { state.failedIds = [...still, ...state.failedIds.slice(i)]; return wait(nextHour(now())); }
+        const r = prop === "limited" ? "limited" : prop === undefined ? "failed" : await scrubOne(id, prop);
+        if (r === "limited") { state.failedIds = [...still, ...state.failedIds.slice(i)]; return limited(); }
+        state.hourPages += 1;
         if (r === "scrubbed") state.scrubbed += 1;
         if (r === "failed") still.push(id);
       }
@@ -190,23 +213,41 @@ export async function runValidationMirrorScrub({ budgetMs = 600000, now = () => 
       return settle();
     }
 
+    if (hourUsed()) return limited();
+
     const batch = await fetchBatch(state.phase, state.cursor).catch((e) => { console.warn(`[VALIDATION-MIRROR] ${state.phase} list failed:`, errText(e)); return { status: 0, items: [], next: null }; });
-    if (batch.status === 429) return wait(nextHour(now()));
+    if (batch.status === 429) return limited();
     if (!(batch.status >= 200 && batch.status < 300)) {
-      console.warn(`[VALIDATION-MIRROR] ${state.phase} list answered ${batch.status}; waiting`);
-      state.backoffS = nextBackoffS(state.backoffS);
-      return wait(now() + state.backoffS * 1000);
+      state.listFailures = (state.listFailures || 0) + 1;
+      if (state.listFailures >= LIST_FAILURES_MAX) {
+        // A list that never answers cannot hold the job (and every open erasure) open for ever.
+        console.warn(`[VALIDATION-MIRROR] ${state.phase} list failed ${state.listFailures} times in a row (last ${batch.status}); phase skipped`);
+        state.skippedPhases = [...(state.skippedPhases || []), state.phase];
+        state.listFailures = 0; state.backoffS = 0;
+        batch.next = null; batch.items = [];
+      } else {
+        console.warn(`[VALIDATION-MIRROR] ${state.phase} list answered ${batch.status}; waiting`);
+        state.backoffS = nextBackoffS(state.backoffS);
+        return wait(now() + state.backoffS * 1000);
+      }
+    } else {
+      state.backoffS = 0; state.listFailures = 0;
     }
-    state.backoffS = 0;
+    let scrubbed = 0;
+    const failed = [];
     for (const it of batch.items) {
       const r = await scrubOne(it.pageId, it.prop);
-      // A 429 on a write: resume this batch after the reset (the cursor stays on it; the pages
-      // already rewritten are clean and cost nothing on the re-read).
-      if (r === "limited") return wait(nextHour(now()));
-      state.pages += 1;
-      if (r === "scrubbed") state.scrubbed += 1;
-      if (r === "failed") noteFailed(it.pageId);
+      // A 429 on a write: resume this batch after the reset (the cursor stays on it; nothing of
+      // this batch is counted yet, and the pages already rewritten are clean on the re-read).
+      if (r === "limited") { state.scrubbed += scrubbed; for (const id of failed) noteFailed(id); return limited(); }
+      if (r === "scrubbed") scrubbed += 1;
+      if (r === "failed") failed.push(it.pageId);
     }
+    state.pages += batch.items.length;
+    state.hourPages += batch.items.length + scrubbed;
+    state.scrubbed += scrubbed;
+    for (const id of failed) noteFailed(id);
+    if (batch.near) { if (batch.next) state.cursor = batch.next; else { const k = LIST_PHASES.indexOf(state.phase); if (k < LIST_PHASES.length - 1) { state.phase = LIST_PHASES[k + 1]; state.cursor = null; } else return settle(); } return limited(); }
     if (batch.next) { state.cursor = batch.next; await save(); continue; }
     const i = LIST_PHASES.indexOf(state.phase);
     if (i < LIST_PHASES.length - 1) { state.phase = LIST_PHASES[i + 1]; state.cursor = null; await save(); continue; }

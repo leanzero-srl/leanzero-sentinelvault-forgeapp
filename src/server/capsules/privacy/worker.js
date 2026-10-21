@@ -130,11 +130,12 @@ export async function runValidationMirrorScrubLocked({ budgetMs = SWEEP_BUDGET_M
     const r = await runValidationMirrorScrub({ budgetMs });
     if (r.done) {
       const m = (await kvs.get(MIGRATIONS_KEY).catch(() => null)) || {};
-      await kvs.set(MIGRATIONS_KEY, { ...m, [SCRUB_FLAG]: nowIso() });
+      // What could not be done is kept with the flag (and shown in the sweep's status), not only logged.
+      await kvs.set(MIGRATIONS_KEY, { ...m, [SCRUB_FLAG]: { at: nowIso(), pages: r.pages, scrubbed: r.scrubbed, skipped: r.skipped || 0, skippedPhases: r.skippedPhases || [] } });
       scrubKnownDone = true;
     }
     const waitS = r.waitUntil ? Math.max(0, Math.round((r.waitUntil - Date.now()) / 1000)) : 0;
-    console.info(`[VALIDATION-MIRROR] scrub pages=${r.pages} scrubbed=${r.scrubbed} failed=${r.failed} done=${r.done}${r.skipped ? ` skipped=${r.skipped}` : ""}${r.phase ? ` next=${safeKey(r.phase)}` : ""}${waitS ? ` wait=${waitS}s` : ""}`);
+    console.info(`[VALIDATION-MIRROR] scrub pages=${r.pages} scrubbed=${r.scrubbed} failed=${r.failed} done=${r.done}${r.skipped ? ` skipped=${r.skipped}` : ""}${r.skippedPhases?.length ? ` skippedPhases=${r.skippedPhases.map((x) => safeKey(x)).join(",")}` : ""}${r.phase ? ` next=${safeKey(r.phase)}` : ""}${waitS ? ` wait=${waitS}s` : ""}`);
     // Erasures stay open while the scrub runs: once it is done, a sweep finishes them now, not in a week.
     if (r.done) await queuePrivacySweep("validation-scrub").catch((e) => console.warn("[VALIDATION-MIRROR] could not queue the sweep:", errText(e)));
     return r;
@@ -616,12 +617,11 @@ export async function runPrivacySweep({ reason = "manual", nowMs = Date.now(), r
     if (!migrations.sealEmailV1) done.sealEmailV1 = nowIso();
     if (!migrations.rosterEmailV2) done.rosterEmailV2 = nowIso();
     if (Object.keys(done).length) await kvs.set(MIGRATIONS_KEY, { ...migrations, ...done });
-    // The validation mirrors written before 8.14.0 name who checked or approved a page. Until the
-    // one-time scrub has finished, the sweep works on it too, and an erasure is not complete while
-    // it is unfinished (the person may still be named in one of those page properties).
+    // The validation mirrors written before 8.14.0 name who checked or approved a page. An erasure is
+    // not complete while the one-time scrub is unfinished (the person may still be named in one).
     // The scrub runs in its own queue chain (never inside this sweep, so it can never hold up reporting).
     const validationScrubDone = !!migrations[SCRUB_FLAG];
-    summary.validationMirror = { done: validationScrubDone };
+    summary.validationMirror = validationScrubDone && typeof migrations[SCRUB_FLAG] === "object" ? { done: true, ...migrations[SCRUB_FLAG] } : { done: validationScrubDone };
     if (!validationScrubDone) await kickValidationMirrorScrub();
 
     // Report what is due (≤ once per cycle per account), 90 at a time, saving after each batch.

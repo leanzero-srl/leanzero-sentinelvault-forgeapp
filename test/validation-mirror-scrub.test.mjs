@@ -155,7 +155,7 @@ try {
     onConfluence((method, rawPath) => (method === "PUT" && decodeURIComponent(rawPath).includes("/pages/1009/properties/") ? { status: 403, body: {} } : undefined));
     let t = Date.parse("2026-10-22T08:00:00Z");
     const clock = () => t;
-    const r1 = await scrub.runValidationMirrorScrub({ budgetMs: 60000, now: clock });
+    const r1 = await scrub.runValidationMirrorScrub({ budgetMs: 60000, now: clock, rand: () => 0 });
     eq("[5] the first pass ends in a wait, not a restart", [r1.done, r1.failed], [false, 1]);
     eq("[5] ...an hour later", r1.waitUntil - t, scrub.RETRY_AFTER_MS);
     const r1b = await scrub.runValidationMirrorScrub({ budgetMs: 60000, now: clock });
@@ -172,8 +172,11 @@ try {
     site(30);
     onConfluence((method, rawPath) => (method === "GET" && decodeURIComponent(rawPath).startsWith("/wiki/rest/api/search") ? { status: 429, body: {} } : undefined));
     const t = Date.parse("2026-10-22T08:20:00Z");
-    const r = await scrub.runValidationMirrorScrub({ budgetMs: 60000, now: () => t });
+    const r = await scrub.runValidationMirrorScrub({ budgetMs: 60000, now: () => t, rand: () => 0 });
     eq("[6] a 429 waits until the next hour", r.waitUntil, Date.parse("2026-10-22T09:00:00Z"));
+    await kvs.delete(scrub.SCRUB_STATE_KEY);
+    const rj = await scrub.runValidationMirrorScrub({ budgetMs: 60000, now: () => t, rand: () => 0.5 });
+    eq("[6] ...plus jitter, so waiting sites do not all start again together", rj.waitUntil, Date.parse("2026-10-22T09:07:30Z"));
     fake.handlers.pop();
     onConfluence((method, rawPath) => (method === "GET" && decodeURIComponent(rawPath).startsWith("/wiki/rest/api/search") ? { status: 500, body: {} } : undefined));
     await kvs.delete(scrub.SCRUB_STATE_KEY);
@@ -181,6 +184,70 @@ try {
     for (let i = 0; i < 6; i++) { const x = await scrub.runValidationMirrorScrub({ budgetMs: 60000, now: () => now }); waits.push((x.waitUntil - now) / 1000); now = x.waitUntil + 1; }
     eq("[6] failed lists back off 300, 600, 1200, 2400, 3600, 3600 s", waits, [300, 600, 1200, 2400, 3600, 3600]);
     eq("[6] pure: next hour", scrub.nextHour(Date.parse("2026-10-22T08:59:59Z")), Date.parse("2026-10-22T09:00:00Z"));
+  }
+  // 6b. Pacing: a site walks at most HOURLY_PAGES an hour, and stops early when Confluence says it is near the limit.
+  {
+    const { searchCalls } = site(230);
+    const t = Date.parse("2026-10-22T08:00:00Z");
+    const realCap = scrub.HOURLY_PAGES;
+    ok("[6b] the hourly share is far below the shared pool", realCap <= 5000);
+    // A near-limit answer on the first batch: the run stops after that batch and waits for the reset.
+    const siteHandler = fake.handlers[fake.handlers.length - 1];
+    let marked = false;
+    onConfluence(async (m, pth, b, who) => {
+      if (!marked && m === "GET" && decodeURIComponent(pth).startsWith("/wiki/rest/api/search")) { marked = true; const r = await siteHandler(m, pth, b, who); return { ...r, headers: { "X-RateLimit-NearLimit": "true" } }; }
+      return undefined;
+    });
+    const r = await scrub.runValidationMirrorScrub({ budgetMs: 60000, now: () => t, rand: () => 0 });
+    eq("[6b] near the limit: one batch, then a wait for the reset", [searchCalls.n, r.done, r.waitUntil], [1, false, Date.parse("2026-10-22T09:00:00Z")]);
+    eq("[6b] ...that batch is counted", r.pages, 100);
+  }
+  {
+    // The hourly share: with a share smaller than the site, the walk waits for the next hour.
+    site(30);
+    const st0 = { phase: "search", cursor: null, pages: 0, scrubbed: 0, failedIds: [], overflow: 0, retryRound: 0, waitUntil: null, backoffS: 0, listFailures: 0, skippedPhases: [], hourStart: Date.parse("2026-10-22T08:00:00Z"), hourPages: scrub.HOURLY_PAGES };
+    await kvs.set(scrub.SCRUB_STATE_KEY, st0);
+    const r = await scrub.runValidationMirrorScrub({ budgetMs: 60000, now: () => Date.parse("2026-10-22T08:30:00Z"), rand: () => 0 });
+    eq("[6b] the hour's share used: wait for the next hour", [r.done, r.waitUntil], [false, Date.parse("2026-10-22T09:00:00Z")]);
+    const r2 = await scrub.runValidationMirrorScrub({ budgetMs: 60000, now: () => Date.parse("2026-10-22T09:00:01Z"), rand: () => 0 });
+    eq("[6b] ...and goes on in the next hour", r2.done, true);
+  }
+  // 6c. A read that hits the rate limit in a retry round waits; it never turns a writable page into a skip.
+  {
+    const { w } = site(30);
+    let putFails = 1;
+    onConfluence((method, rawPath) => (method === "PUT" && decodeURIComponent(rawPath).includes("/pages/1009/properties/") && putFails-- > 0 ? { status: 500, body: {} } : undefined));
+    let t = Date.parse("2026-10-22T08:00:00Z");
+    const clock = () => t;
+    await scrub.runValidationMirrorScrub({ budgetMs: 60000, now: clock, rand: () => 0 });
+    let reads429 = 3;
+    onConfluence((method, rawPath) => (method === "GET" && decodeURIComponent(rawPath).includes("/pages/1009/properties?") && reads429-- > 0 ? { status: 429, body: {} } : undefined));
+    let r;
+    for (let i = 0; i < 8; i++) { t += scrub.RETRY_AFTER_MS + 1000; r = await scrub.runValidationMirrorScrub({ budgetMs: 60000, now: clock, rand: () => 0 }); if (r.done) break; }
+    eq("[6c] after the limited reads the page is written, not skipped", [r.done, r.skipped], [true, 0]);
+    eq("[6c] ...and is clean", ids(propOf(w, "1009")).length, 0);
+  }
+  // 6d. A list that never answers is given up after LIST_FAILURES_MAX tries and recorded; the job ends.
+  {
+    site(10);
+    onConfluence((method, rawPath) => (method === "GET" && decodeURIComponent(rawPath).includes("/wiki/rest/api/content?") && decodeURIComponent(rawPath).includes("status=trashed") ? { status: 403, body: {} } : undefined));
+    let t = Date.parse("2026-10-22T08:00:00Z");
+    let r; let runs = 0;
+    for (; runs < 60; runs++) { r = await scrub.runValidationMirrorScrub({ budgetMs: 60000, now: () => t, rand: () => 0 }); if (r.done) break; t = (r.waitUntil || t) + 1000; }
+    eq("[6d] the job ends", r.done, true);
+    eq("[6d] ...with the trashed phase recorded as skipped", r.skippedPhases, ["trashed"]);
+    eq("[6d] ...after exactly LIST_FAILURES_MAX attempts", runs + 1, scrub.LIST_FAILURES_MAX);
+  }
+  // 6e. A mid-batch 429 on a write is resumed without counting the batch twice.
+  {
+    site(33);
+    let n429 = 1;
+    onConfluence((method, rawPath) => (method === "PUT" && decodeURIComponent(rawPath).includes("/pages/1015/properties/") && n429-- > 0 ? { status: 429, body: {} } : undefined));
+    let t = Date.parse("2026-10-22T08:00:00Z");
+    const r1 = await scrub.runValidationMirrorScrub({ budgetMs: 60000, now: () => t, rand: () => 0 });
+    t = r1.waitUntil + 1;
+    const r2 = await scrub.runValidationMirrorScrub({ budgetMs: 60000, now: () => t, rand: () => 0 });
+    eq("[6e] every page counted once (33 current + archived space + archived + trashed)", [r2.done, r2.pages], [true, 36]);
   }
   // 7. The locked runner, the kick and the consumer: one chain, no loop, nothing after the flag.
   {

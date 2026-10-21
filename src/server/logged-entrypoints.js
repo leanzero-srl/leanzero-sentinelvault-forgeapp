@@ -50,7 +50,7 @@ export const configApiConsumer = withJobLog("config-api", configApiConsumerCore,
 export const realmScanConsumer = withJobLog("realm-audit", realmScanConsumerCore, { kinds: ["byline-refresh"] });
 export const aiValidationConsumer = withJobLog("ai-validation", aiValidationConsumerCore, { kinds: ["gate"], kindOf: (e) => e?.body?.mode, limitMs: 120_000 });
 export const backupConsumer = withJobLog("backup", backupConsumerCore, { kinds: ["backup", "job"] });
-export const privacyConsumer = withJobLog("privacy", privacyConsumerCore, { kinds: ["sweep"] });
+export const privacyConsumer = withJobLog("privacy", privacyConsumerCore, { kinds: ["sweep", "validation-scrub"] });
 export const jiraRestoreConsumer = withJobLog("jira-restore", jiraRestoreConsumerCore, { kinds: ["issue-deleted"], limitMs: 300_000 });
 
 /** Manifest functions that are NOT user actions, and why (test/action-log.test.mjs reads this). */
