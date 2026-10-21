@@ -1,5 +1,6 @@
 {
-  "release": "8.12.0",
-  "at": "2026-10-18",
-  "note": "The release production carries, written by scripts/deploy-prod.sh (release-gate.mjs post) after an eligible production deploy; the public tracker's LAST_VERSION. Bootstrapped 2026-10-20 from tag v8.12.0."
+  "release": "8.13.0",
+  "at": "2026-10-21",
+  "sha": "5e68fd98",
+  "note": "The release production carries and the commit it was deployed from, written by scripts/deploy-prod.sh (release-gate.mjs post) after an eligible production deploy; the public tracker's LAST_VERSION."
 }
