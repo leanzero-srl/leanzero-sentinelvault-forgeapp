@@ -45,33 +45,40 @@ function site(n = 230) {
   if (n >= 11) w.pages.get("1011").props.set(PROP, { id: "91011", version: 3, value: { state: "failed", violations: [], version: 2, checkedAt: "2026-10-01T00:00:00.000Z", rulesFp: "x" } });
   if (n >= 10) w.pages.get("1010").props.set(PROP, { id: "91010", version: 1, value: old() });
   const extra = { archived: ["2001"], trashed: ["2002"] };
-  for (const id of [...extra.archived, ...extra.trashed]) {
+  const inArchivedSpace = ["2003"]; // a current page in an archived space (a person who left)
+  for (const id of [...extra.archived, ...extra.trashed, ...inArchivedSpace]) {
     w.addPage(id, { versions: [{ authorId: CHECKER, adf: { version: 1, type: "doc", content: [para("x")] } }] });
     w.pages.get(id).props.set(PROP, { id: `9${id}`, version: 1, value: old({ approvedBy: ADMIN }) });
   }
-  const searchCalls = { n: 0 };
+  const searchCalls = { n: 0, lists: 0 };
+  const entry = (id, expandKey) => {
+    const row = w.pages.get(id).props.get(PROP);
+    return { id, type: "page", metadata: { properties: row && expandKey ? { [PROP]: { id: row.id, key: PROP, value: row.value, version: { number: row.version } } } : {} } };
+  };
   onConfluence((method, rawPath) => {
     const path = decodeURIComponent(rawPath);
     const u = new URL(path, "https://x.invalid");
-    if (method === "GET" && u.pathname === "/wiki/rest/api/content/search") {
+    if (method === "GET" && u.pathname === "/wiki/rest/api/search") {
       searchCalls.n += 1;
       const limit = Number(u.searchParams.get("limit")) || 25;
       const start = Number(u.searchParams.get("cursor") || 0);
-      const slice = current.slice(start, start + limit);
-      const expand = u.searchParams.get("expand") || "";
-      const results = slice.map((id) => {
-        const row = w.pages.get(id).props.get(PROP);
-        const props = expand.includes(PROP) && row ? { [PROP]: { id: row.id, key: PROP, value: row.value, version: { number: row.version } } } : {};
-        return { id, type: "page", status: "current", metadata: { properties: props } };
-      });
-      const next = start + limit < current.length ? `/rest/api/content/search?next=true&cursor=${start + limit}&limit=${limit}` : undefined;
+      const archived = u.searchParams.get("includeArchivedSpaces") === "true";
+      const pool = archived ? [...current, ...inArchivedSpace] : current;
+      const slice = pool.slice(start, start + limit);
+      const ex = (u.searchParams.get("expand") || "").includes(`content.metadata.properties.${PROP}`);
+      const results = slice.map((id) => ({ content: entry(id, ex), title: id }));
+      const next = start + limit < pool.length ? `/rest/api/search?next=true&cursor=${start + limit}&limit=${limit}` : undefined;
       return { body: { results, size: results.length, _links: next ? { next } : {} } };
     }
-    const m = u.pathname.match(/^\/wiki\/api\/v2\/(pages|blogposts)$/);
-    if (method === "GET" && m) {
+    if (method === "GET" && u.pathname === "/wiki/rest/api/content") {
+      searchCalls.lists += 1;
       const st = u.searchParams.get("status");
-      const list = m[1] === "pages" ? extra[st] || [] : [];
-      return { body: { results: list.map((id) => ({ id, status: st })), _links: {} } };
+      const list = extra[st] || [];
+      const limit = Number(u.searchParams.get("limit")) || 25;
+      const start = Number(u.searchParams.get("start") || 0);
+      const ex = (u.searchParams.get("expand") || "").includes(`metadata.properties.${PROP}`);
+      const slice = list.slice(start, start + limit);
+      return { body: { results: slice.map((id) => ({ ...entry(id, ex), status: st })), size: slice.length, _links: start + limit < list.length ? { next: "/rest/api/content?more" } : {} } };
     }
     return undefined;
   });
@@ -86,7 +93,7 @@ console.info = console.warn = console.error = console.log = (...a) => { lines.pu
 try {
   // 1. A full run: no account id is left in any page property, verdicts and the KVS status survive.
   {
-    const { w } = site();
+    const { w, searchCalls } = site();
     await kvs.set("validation-state-1010", { state: "failed", violations: [{ ruleId: "r1", message: "m" }], version: 1, checkedAt: "2026-10-21T00:00:00.000Z", checkedBy: CHECKER, approvedBy: ADMIN, rulesFp: "y" });
     ok("[1] before: old properties name people", allProps(w).some((v) => ids(v).length));
     const r = await scrub.runValidationMirrorScrub({ budgetMs: 60000 });
@@ -97,25 +104,27 @@ try {
     eq("[1] ...still without ids", ids(propOf(w, "1010")).length, 0);
     eq("[1] the KVS status itself is untouched (erasure handles KVS)", (await kvs.get("validation-state-1010"))?.approvedBy, ADMIN);
     eq("[1] a clean property is not rewritten", w.pages.get("1011").props.get(PROP).version, 3);
-    eq("[1] archived content is reached", ids(propOf(w, "2001")).length, 0);
-    eq("[1] trashed content is reached", ids(propOf(w, "2002")).length, 0);
+    eq("[1] a page in an archived space is reached", ids(propOf(w, "2003")).length, 0);
+    eq("[1] an archived page is reached", ids(propOf(w, "2001")).length, 0);
+    eq("[1] a trashed page is reached", ids(propOf(w, "2002")).length, 0);
     eq("[1] the resume state is gone once done", await kvs.get(scrub.SCRUB_STATE_KEY), undefined);
-    ok("[1] the counts add up (every current, archived and trashed page looked at)", r.pages === 232 && r.scrubbed === 79 && r.failed === 0);
+    eq("[1] the counts add up (every page looked at, every old one rewritten)", [r.pages, r.scrubbed, r.failed], [233, 80, 0]);
+    eq("[1] archived and trashed come in lists, never one read per page", searchCalls.lists, 2);
   }
   // 2. Resumable under a budget: a run that stops after its first batch continues where it stopped.
   {
     const { w, searchCalls } = site();
     let t = 0;
-    const now = () => t;
-    const r1 = await scrub.runValidationMirrorScrub({ budgetMs: 5, now: () => { t += 3; return now(); } });
+    const r1 = await scrub.runValidationMirrorScrub({ budgetMs: 5, now: () => (t += 3) });
     eq("[2] a short budget stops before the end", r1.done, false);
+    eq("[2] ...and is not a wait (the consumer hands it on at once)", r1.waitUntil ?? null, null);
     const st = await kvs.get(scrub.SCRUB_STATE_KEY);
-    ok("[2] ...and saved where it stopped", st && st.phase === "cql" && st.cursor);
+    ok("[2] ...and saved where it stopped", st && st.phase === "search" && st.cursor);
     const callsAfterFirst = searchCalls.n;
     const r2 = await scrub.runValidationMirrorScrub({ budgetMs: 60000 });
     eq("[2] the next run finishes", r2.done, true);
-    eq("[2] ...without re-reading the first batch (3 batches of 100 for 230 pages in all)", searchCalls.n, 3);
-    ok("[2] ...the first run read exactly one batch", callsAfterFirst === 1);
+    eq("[2] ...without re-reading the first batch (3 search batches for 231 pages in all)", searchCalls.n, 3);
+    eq("[2] ...the first run read exactly one batch", callsAfterFirst, 1);
     eq("[2] no ids left", allProps(w).filter((v) => ids(v).length).length, 0);
   }
   // 3. Idempotent: a second pass rewrites nothing.
@@ -123,65 +132,106 @@ try {
     const { w } = site(40);
     await scrub.runValidationMirrorScrub({ budgetMs: 60000 });
     const versions = [...w.pages.values()].map((p) => p.props.get(PROP)?.version);
-    await kvs.delete(scrub.SCRUB_STATE_KEY);
     const r = await scrub.runValidationMirrorScrub({ budgetMs: 60000 });
     eq("[3] a second pass scrubs nothing", r.scrubbed, 0);
     eq("[3] ...and writes no property", [...w.pages.values()].map((p) => p.props.get(PROP)?.version), versions);
   }
-  // 4. A failed write is not the end: the pass starts again and finishes once the write goes through.
+  // 4. A lost version race (409) is re-read and retried once: no failure, no restart.
   {
-    const { w } = site(30);
+    const { w, searchCalls } = site(30);
     let failOnce = true;
     onConfluence((method, rawPath) => {
       if (method === "PUT" && decodeURIComponent(rawPath).includes("/pages/1006/properties/") && failOnce) { failOnce = false; return { status: 409, body: { message: "conflict" } }; }
       return undefined;
     });
-    const r1 = await scrub.runValidationMirrorScrub({ budgetMs: 60000 });
-    eq("[4] a pass with a failed write is not done", r1.done, false);
-    ok("[4] ...the page that failed still names someone", ids(propOf(w, "1006")).length > 0);
-    const r2 = await scrub.runValidationMirrorScrub({ budgetMs: 60000 });
-    eq("[4] the next pass finishes", r2.done, true);
-    eq("[4] ...and the page is clean", ids(propOf(w, "1006")).length, 0);
+    const r = await scrub.runValidationMirrorScrub({ budgetMs: 60000 });
+    eq("[4] a 409 does not stop the job", [r.done, r.failed], [true, 0]);
+    eq("[4] ...the page is clean", ids(propOf(w, "1006")).length, 0);
+    eq("[4] ...and the site was walked once", searchCalls.n, 1);
   }
-  // 5. The locked runner records the flag; the five-minute kick then does nothing at all.
+  // 5. A page that can never be written: retried at most RETRY_ROUNDS times, an hour apart, never in a loop.
   {
-    site(10);
+    const { w, searchCalls } = site(30);
+    onConfluence((method, rawPath) => (method === "PUT" && decodeURIComponent(rawPath).includes("/pages/1009/properties/") ? { status: 403, body: {} } : undefined));
+    let t = Date.parse("2026-10-22T08:00:00Z");
+    const clock = () => t;
+    const r1 = await scrub.runValidationMirrorScrub({ budgetMs: 60000, now: clock });
+    eq("[5] the first pass ends in a wait, not a restart", [r1.done, r1.failed], [false, 1]);
+    eq("[5] ...an hour later", r1.waitUntil - t, scrub.RETRY_AFTER_MS);
+    const r1b = await scrub.runValidationMirrorScrub({ budgetMs: 60000, now: clock });
+    eq("[5] a run before the hour does nothing", [r1b.done, searchCalls.n], [false, 1]);
+    let r;
+    for (let round = 1; round <= scrub.RETRY_ROUNDS; round++) { t += scrub.RETRY_AFTER_MS + 1000; r = await scrub.runValidationMirrorScrub({ budgetMs: 60000, now: clock }); }
+    eq("[5] after the retry rounds the job ends with the page skipped", [r.done, r.skipped], [true, 1]);
+    eq("[5] ...the lists were walked only once (retries read the one page)", searchCalls.n, 1);
+    ok("[5] ...and the skip is logged with a count", lines.some((l) => /\[VALIDATION-MIRROR\] 1 page\(s\) could not be rewritten after 3 retries; skipped/.test(l)));
+    eq("[5] every other page is clean", allProps(w).filter((v) => ids(v).length).length, 1);
+  }
+  // 6. A 429 waits for the next hour; a failed list backs off (5 min, doubling, at most an hour).
+  {
+    site(30);
+    onConfluence((method, rawPath) => (method === "GET" && decodeURIComponent(rawPath).startsWith("/wiki/rest/api/search") ? { status: 429, body: {} } : undefined));
+    const t = Date.parse("2026-10-22T08:20:00Z");
+    const r = await scrub.runValidationMirrorScrub({ budgetMs: 60000, now: () => t });
+    eq("[6] a 429 waits until the next hour", r.waitUntil, Date.parse("2026-10-22T09:00:00Z"));
+    fake.handlers.pop();
+    onConfluence((method, rawPath) => (method === "GET" && decodeURIComponent(rawPath).startsWith("/wiki/rest/api/search") ? { status: 500, body: {} } : undefined));
+    await kvs.delete(scrub.SCRUB_STATE_KEY);
+    let now = t; const waits = [];
+    for (let i = 0; i < 6; i++) { const x = await scrub.runValidationMirrorScrub({ budgetMs: 60000, now: () => now }); waits.push((x.waitUntil - now) / 1000); now = x.waitUntil + 1; }
+    eq("[6] failed lists back off 300, 600, 1200, 2400, 3600, 3600 s", waits, [300, 600, 1200, 2400, 3600, 3600]);
+    eq("[6] pure: next hour", scrub.nextHour(Date.parse("2026-10-22T08:59:59Z")), Date.parse("2026-10-22T09:00:00Z"));
+  }
+  // 7. The locked runner, the kick and the consumer: one chain, no loop, nothing after the flag.
+  {
+    const { searchCalls } = site(10);
     fake.queued = [];
-    eq("[5] before the flag the kick queues the job", await worker.kickValidationMirrorScrub(), true);
-    eq("[5] ...at most once per half hour", await worker.kickValidationMirrorScrub(), false);
-    eq("[5] ...one event", (fake.queued || []).length, 1);
+    eq("[7] before the flag the kick queues the job", await worker.kickValidationMirrorScrub(), true);
+    eq("[7] ...not twice", await worker.kickValidationMirrorScrub(), false);
+    eq("[7] ...one event", (fake.queued || []).length, 1);
+    eq("[7] a Jira installation never runs it (kick)", await worker.kickValidationMirrorScrub({ installContext: "ari:cloud:jira::site/x" }), false);
+    fake.queued = [];
+    await worker.privacyConsumer({ body: { kind: "validation-scrub" } }, { installContext: "ari:cloud:jira::site/x" });
+    eq("[7] ...nor the consumer", [searchCalls.n, (fake.queued || []).length], [0, 0]);
     const r = await worker.runValidationMirrorScrubLocked({ budgetMs: 60000 });
-    eq("[5] the locked run finishes", r.done, true);
-    ok("[5] ...and records validationMirrorV1", !!(await kvs.get("privacy-migrations"))?.[scrub.SCRUB_FLAG]);
+    eq("[7] the locked run finishes", r.done, true);
+    ok("[7] ...records validationMirrorV1", !!(await kvs.get("privacy-migrations"))?.[scrub.SCRUB_FLAG]);
+    ok("[7] ...and queues a sweep so open erasures finish now", (fake.queued || []).some((q) => JSON.stringify(q).includes('"sweep"')));
+    const callsDone = searchCalls.n;
+    await worker.privacyConsumer({ body: { kind: "validation-scrub" } }, null);
+    eq("[7] a leftover event after the flag reads nothing", searchCalls.n, callsDone);
     await kvs.delete("privacy-validation-scrub-kick");
     worker._resetScrubMemo();
     const reads = [];
     const realGet = kvs.get;
     kvs.get = async (k) => { reads.push(k); return realGet(k); };
     try {
-      eq("[5] after the flag the kick queues nothing", await worker.kickValidationMirrorScrub(), false);
-      eq("[5] ...and the next kick in the same instance reads nothing", (reads.length, await worker.kickValidationMirrorScrub(), reads.length), 1);
+      eq("[7] after the flag the kick queues nothing", await worker.kickValidationMirrorScrub(), false);
+      const n = reads.length;
+      await worker.kickValidationMirrorScrub();
+      eq("[7] ...and the next kick in the same instance reads nothing", reads.length, n);
     } finally { kvs.get = realGet; }
-    ok("[5] the log line holds counts only", lines.some((l) => /\[VALIDATION-MIRROR\] scrub pages=\d+ scrubbed=\d+ failed=0 done=true/.test(l)) && !lines.some((l) => l.includes(CHECKER) || l.includes(ADMIN)));
+    ok("[7] the log line holds counts only", lines.some((l) => /\[VALIDATION-MIRROR\] scrub pages=\d+ scrubbed=\d+ failed=0 done=true/.test(l)) && !lines.some((l) => l.includes(CHECKER) || l.includes(ADMIN)));
   }
-  // 6. The consumer hands an unfinished job on, and stops handing on once it is done.
   {
+    // Hand-on rules: only a run that ran out of budget is handed on; a wait or a busy lock ends the chain.
     site(10);
+    onConfluence((method, rawPath) => (method === "GET" && decodeURIComponent(rawPath).startsWith("/wiki/rest/api/search") ? { status: 429, body: {} } : undefined));
     fake.queued = [];
-    await worker.privacyConsumer({ body: { kind: "validation-scrub" } });
-    eq("[6] a finished job queues nothing more", (fake.queued || []).length, 0);
-    site(250);
+    await worker.privacyConsumer({ body: { kind: "validation-scrub" } }, null);
+    eq("[7] a run that has to wait is NOT handed on (no loop on the shared rate limit)", (fake.queued || []).length, 0);
+    const st = await kvs.get(scrub.SCRUB_STATE_KEY);
+    ok("[7] ...it saved the wait", st?.waitUntil > Date.now());
+    eq("[7] ...and the kick leaves a waiting job alone", await worker.kickValidationMirrorScrub(), false);
+    await kvs.set(scrub.SCRUB_LOCK_KEY, { token: "other", at: new Date().toISOString() });
+    await kvs.delete(scrub.SCRUB_STATE_KEY);
     fake.queued = [];
-    await kvs.set("privacy-validation-scrub", { phase: "cql", cursor: null, pages: 0, scrubbed: 0, failed: 0, passFailed: 0 });
-    const realSet = kvs.set;
-    let saves = 0;
-    kvs.set = async (k, v) => { if (k === scrub.SCRUB_STATE_KEY && ++saves === 1) throw new Error("kvs down"); return realSet(k, v); };
-    try { await worker.privacyConsumer({ body: { kind: "validation-scrub" } }); } finally { kvs.set = realSet; }
-    eq("[6] an interrupted job hands itself on", (fake.queued || []).length, 1);
+    await worker.privacyConsumer({ body: { kind: "validation-scrub" } }, null);
+    eq("[7] a busy lock ends the chain too", (fake.queued || []).length, 0);
   }
-  // 7. The panel reads the same before and after (it reads KVS, never the property).
+  // 8. The panel reads the same before and after (it reads KVS, never the property).
   {
-    const { w } = site(12);
+    site(12);
     await kvs.set("validation-config-global", { enabled: true, modes: { advisory: false, gate: true, revert: false }, rules: RULES });
     await kvs.set("validation-state-1003", { state: "failed", violations: [{ ruleId: "r1", message: "Missing heading" }], version: 1, checkedAt: "2026-10-21T00:00:00.000Z", rulesFp: "y" });
     const ctx = (id) => ({ accountId: CHECKER, extension: { content: { id, type: "page", space: { key: "WF" } }, space: { key: "WF" } } });
@@ -189,39 +239,36 @@ try {
     const before = [await read("1003"), await read("1006"), await read("1001")];
     await scrub.runValidationMirrorScrub({ budgetMs: 60000 });
     const after = [await read("1003"), await read("1006"), await read("1001")];
-    eq("[7] the panel answers exactly as before for a KVS status, an old-property-only page and a page with neither", after, before);
-    ok("[7] ...and the KVS status still shows its violation", after[0].includes("Missing heading"));
-    void w;
+    eq("[8] the panel answers exactly as before for a KVS status, an old-property-only page and a page with neither", after, before);
+    ok("[8] ...and the KVS status still shows its violation", after[0].includes("Missing heading"));
   }
-  // 8. Erasure: a closed person is not marked erased while an old mirror may still name them.
+  // 9. Erasure: a closed person is not marked erased while the scrub is unfinished; the sweep never runs it inline.
   {
-    site(9);
+    const { searchCalls } = site(9);
     await kvs.set("app-account-id", APP);
     await kvs.set("validation-state-1003", { state: "passed", violations: [], version: 1, checkedBy: ADMIN });
-    // The scrub cannot finish (every property write fails) — the erasure must stay open.
-    onConfluence((method, rawPath) => (method === "PUT" && decodeURIComponent(rawPath).includes("/properties/") ? { status: 500, body: {} } : undefined));
     const reportClosed = async (batch) => batch.map((a) => ({ accountId: a.accountId, status: a.accountId === ADMIN ? "closed" : "ok" }));
     const s1 = await worker.runPrivacySweep({ reason: "test", report: reportClosed });
-    ok("[8] the sweep ran", s1.ok === true);
-    ok("[8] ...and worked on the scrub, which could not finish", s1.validationMirror && s1.validationMirror.done === false);
+    ok("[9] the sweep ran and reported", s1.ok === true && s1.accounts.reporting === "done");
+    eq("[9] ...without walking the site itself", searchCalls.n, 0);
     const idx1 = await kvs.get("privacy-accounts-0000");
-    ok("[8] the closed person is marked closed", !!idx1?.[ADMIN]?.c);
-    eq("[8] ...but NOT erased while the scrub is unfinished", idx1?.[ADMIN]?.x ?? null, null);
-    // Writes work again: the next sweep finishes the scrub and the erasure.
-    fake.handlers.pop();
+    ok("[9] the closed person is marked closed", !!idx1?.[ADMIN]?.c);
+    eq("[9] ...but NOT erased while the scrub is unfinished", idx1?.[ADMIN]?.x ?? null, null);
+    const r = await worker.runValidationMirrorScrubLocked({ budgetMs: 60000 });
+    ok("[9] the scrub finishes in its own run", r.done === true);
     const s2 = await worker.runPrivacySweep({ reason: "test", report: reportClosed });
-    ok("[8] the next sweep finishes the scrub", s2.validationMirror?.done === true);
+    ok("[9] the sweep after it", s2.ok === true && s2.validationMirror?.done === true);
     const idx2 = await kvs.get("privacy-accounts-0000");
-    ok("[8] ...and only then is the person marked erased", !!idx2?.[ADMIN]?.x);
-    ok("[8] ...with the flag recorded", !!(await kvs.get("privacy-migrations"))?.[scrub.SCRUB_FLAG]);
+    ok("[9] ...and only then is the person marked erased", !!idx2?.[ADMIN]?.x);
   }
-  // 9. Pure helpers.
+  // 10. Pure helpers.
   {
-    eq("[9] an old property needs the scrub", scrub.mirrorNeedsScrub(old()), true);
-    eq("[9] a mirror does not", scrub.mirrorNeedsScrub({ state: "passed", violations: [], approved: true, rulesFp: "x" }), false);
-    eq("[9] nothing to scrub in a non-object", [scrub.mirrorNeedsScrub(null), scrub.mirrorNeedsScrub([1]), scrub.mirrorNeedsScrub("x")], [false, false, false]);
-    eq("[9] the cursor of a v1 next link", scrub.cursorOf("/rest/api/content/search?next=true&cursor=abc%3D&limit=100"), "abc=");
-    eq("[9] no next link, no cursor", scrub.cursorOf(undefined), null);
+    eq("[10] an old property needs the scrub", scrub.mirrorNeedsScrub(old()), true);
+    eq("[10] a mirror does not", scrub.mirrorNeedsScrub({ state: "passed", violations: [], approved: true, rulesFp: "x" }), false);
+    eq("[10] nothing to scrub in a non-object", [scrub.mirrorNeedsScrub(null), scrub.mirrorNeedsScrub([1]), scrub.mirrorNeedsScrub("x")], [false, false, false]);
+    eq("[10] the cursor of a next link", scrub.cursorOf("/rest/api/search?next=true&cursor=abc%3D&limit=100"), "abc=");
+    eq("[10] no next link, no cursor", scrub.cursorOf(undefined), null);
+    eq("[10] back-off steps", [0, 300, 600, 2400, 3600].map(scrub.nextBackoffS), [300, 600, 1200, 3600, 3600]);
   }
 } finally {
   Object.assign(console, log);
