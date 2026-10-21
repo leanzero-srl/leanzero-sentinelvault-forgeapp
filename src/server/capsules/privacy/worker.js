@@ -616,7 +616,8 @@ export async function runPrivacySweep({ reason = "manual", nowMs = Date.now(), r
     }
     if (!migrations.sealEmailV1) done.sealEmailV1 = nowIso();
     if (!migrations.rosterEmailV2) done.rosterEmailV2 = nowIso();
-    if (Object.keys(done).length) await kvs.set(MIGRATIONS_KEY, { ...migrations, ...done });
+    // Re-read before writing: the validation scrub's chain may have recorded its flag since this sweep began.
+    if (Object.keys(done).length) await kvs.set(MIGRATIONS_KEY, { ...((await kvs.get(MIGRATIONS_KEY).catch(() => null)) || migrations), ...done });
     // The validation mirrors written before 8.14.0 name who checked or approved a page. An erasure is
     // not complete while the one-time scrub is unfinished (the person may still be named in one).
     // The scrub runs in its own queue chain (never inside this sweep, so it can never hold up reporting).

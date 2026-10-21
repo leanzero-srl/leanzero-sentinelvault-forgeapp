@@ -211,6 +211,15 @@ try {
     eq("[6b] the hour's share used: wait for the next hour", [r.done, r.waitUntil], [false, Date.parse("2026-10-22T09:00:00Z")]);
     const r2 = await scrub.runValidationMirrorScrub({ budgetMs: 60000, now: () => Date.parse("2026-10-22T09:00:01Z"), rand: () => 0 });
     eq("[6b] ...and goes on in the next hour", r2.done, true);
+    // The share is per clock hour: a run that started at 10:50 and used its share wakes at 11:0x with a fresh one.
+    site(30);
+    await kvs.set(scrub.SCRUB_STATE_KEY, { ...st0, hourStart: Date.parse("2026-10-22T10:00:00Z") });
+    const r3 = await scrub.runValidationMirrorScrub({ budgetMs: 60000, now: () => Date.parse("2026-10-22T11:03:00Z"), rand: () => 0 });
+    eq("[6b] a wake after the top of the hour makes progress (no wasted hour)", r3.done, true);
+    process.env.SV_SCRUB_HOURLY_PAGES = "1000000000";
+    eq("[6b] the environment override is clamped", scrub.hourlyPages(), scrub.HOURLY_PAGES_MAX);
+    process.env.SV_SCRUB_HOURLY_PAGES = "";
+    eq("[6b] ...and absent it is the default", scrub.hourlyPages(), scrub.HOURLY_PAGES);
   }
   // 6c. A read that hits the rate limit in a retry round waits; it never turns a writable page into a skip.
   {
