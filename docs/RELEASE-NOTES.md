@@ -8,7 +8,7 @@ GENERATED from `src/server/shared/release-notes.js` by `scripts/render-release-n
 
 
 Fixed:
-- A page's validation status saved before 8.14.0 still named, in the page's sentinel-vault-validation property, who had checked the page and who had approved it anyway. A one-time background job now removes those names from every page Sentinel Vault can read, including archived and trashed pages and pages in archived spaces, and keeps the verdict. A page it is not allowed to change is tried again a few times, then skipped and counted in the app's logs. What the Sentinel Vault panel shows does not change. Erasing the data of a closed Atlassian account is not counted as finished until that job has finished.
+- A page's validation status saved before 8.14.0 still named, in the page's sentinel-vault-validation property, who had checked the page and who had approved it anyway. A one-time background job now removes those names from every page Sentinel Vault can read, including archived and trashed pages and pages in archived spaces, and keeps the verdict. It works through a limited number of pages an hour, so a large site takes a few hours. A page it cannot change is tried again a few times over the following hours, then skipped and counted in the app's logs. What the Sentinel Vault panel shows does not change. Erasing the data of a closed Atlassian account is not counted as finished until that job has finished.
 
 **Do this:** Nothing to do.
 
