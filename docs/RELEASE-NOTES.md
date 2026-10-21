@@ -2,6 +2,16 @@
 
 GENERATED from `src/server/shared/release-notes.js` by `scripts/render-release-notes.mjs`. Do not edit.
 
+## 8.14.1 — 2026-10-21
+
+**Validation statuses saved on pages before 8.14.0 no longer name anyone**
+
+
+Fixed:
+- A page's validation status saved before 8.14.0 still named, in the page's sentinel-vault-validation property, who had checked the page and who had approved it anyway. A one-time background job now removes those names from every page, archived and trashed pages included, keeping the verdict. What the Sentinel Vault panel shows does not change. Erasing the data of a closed Atlassian account is not counted as finished until that job has finished.
+
+**Do this:** Nothing to do.
+
 ## 8.14.0 — 2026-10-21
 
 **Stricter protection for Approved pages and sealed sections, approvals decided by the current approvers, and trash actions that follow your Confluence permissions**

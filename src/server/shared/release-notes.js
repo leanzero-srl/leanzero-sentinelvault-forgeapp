@@ -12,6 +12,16 @@ const note = (n) => Object.freeze({ ...n, changes: Object.freeze([...(n.changes 
 
 export const RELEASE_NOTES = Object.freeze([
   note({
+    version: "8.14.1",
+    date: "2026-10-21",
+    headline: "Validation statuses saved on pages before 8.14.0 no longer name anyone",
+    changes: [],
+    fixes: [
+      "A page's validation status saved before 8.14.0 still named, in the page's sentinel-vault-validation property, who had checked the page and who had approved it anyway. A one-time background job now removes those names from every page, archived and trashed pages included, keeping the verdict. What the Sentinel Vault panel shows does not change. Erasing the data of a closed Atlassian account is not counted as finished until that job has finished.",
+    ],
+    action: "Nothing to do.",
+  }),
+  note({
     version: "8.14.0",
     date: "2026-10-21",
     headline: "Stricter protection for Approved pages and sealed sections, approvals decided by the current approvers, and trash actions that follow your Confluence permissions",

@@ -2963,6 +2963,9 @@ export async function sweepRestoreRechecks({ limit = 20 } = {}) {
 export async function pageGuardSweep() {
   const started = Date.now();
   await sweepRestoreRechecks();
+  // 8.14.1: the one-time scrub of pre-8.14 validation mirrors starts from here (costs nothing once done).
+  try { const { kickValidationMirrorScrub } = await import("./capsules/privacy/worker.js"); await kickValidationMirrorScrub(); }
+  catch (e) { console.warn("[VALIDATION-MIRROR] kick failed:", errText(e)); }
   // Once after an upgrade or a restore: every page with a seal record gets its KVS marker.
   try { const b = await backfillGuardMarkers(); if (!b.skipped) console.info(`[GUARD-MARKER] backfill written=${b.written} done=${b.done}`); }
   catch (e) { console.error("[GUARD-MARKER] backfill failed:", errText(e)); }
