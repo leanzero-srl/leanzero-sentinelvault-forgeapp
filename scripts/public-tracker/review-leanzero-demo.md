@@ -1,16 +1,16 @@
 # Sentinel Vault Public Tracker - verify file
 
-Generated 2026-10-21T07:16:12.057Z by scripts/public-tracker/tracker.mjs verify.
+Generated 2026-10-21T19:12:39.619Z by scripts/public-tracker/tracker.mjs verify.
 Site https://leanzero-demo.atlassian.net. Project SVT (id 10278), permission scheme "Sentinel Vault Public Tracker permissions" (id 10265, used by: SVT), anonymous grants: BROWSE_PROJECTS.
-Issues checked: 126 of 126. Verification failures: 0. Withheld release-note lines: 2.
+Issues checked: 127 of 127. Verification failures: 0. Withheld release-note lines: 11.
 
 ## Counts
 
-- status: Done 95; Backlog 31
-- version: 6.4.0 5; 6.5.0 1; 6.6.0 6; 6.7.0 8; 6.9.0 4; 6.10.0 4; 6.11.0 1; 7.0.0 5; 7.1.0 8; 8.0.0 16; 8.1.0 1; 8.2.0 2; 8.3.0 1; 8.4.0 1; 8.5.0 1; 8.6.0 13; 8.7.0 1; 8.8.0 1; 8.9.0 5; 8.10.0 5; 8.11.0 3; 8.12.0 3; open, affects 7.1.0 6; open, affects 8.12.0 25
-- component: Classification 4; Sealed files and sections 14; Edit requests and access 4; REST API 4; Backup and restore 13; Layout and accessibility 10; Privacy and personal data 8; Space and site settings 17; Workflow and approvals 18; App permissions and updates 4; Page banner and Sentinel Vault window 10; Activity report 2; Jira issue attachments 13; My work 5
-- type: Improvement 47; Bug 79
-- versions in Jira: 6.4.0 released 2026-09-30, 6.5.0 released 2026-09-30, 6.6.0 released 2026-10-02, 6.7.0 released 2026-10-04, 6.9.0 released 2026-10-04, 6.10.0 released 2026-10-04, 6.11.0 released 2026-10-04, 7.0.0 released 2026-10-05, 7.1.0 released 2026-10-09, 8.0.0 released 2026-10-14, 8.1.0 released 2026-10-14, 8.2.0 released 2026-10-14, 8.3.0 released 2026-10-14, 8.4.0 released 2026-10-14, 8.5.0 released 2026-10-14, 8.6.0 released 2026-10-17, 8.7.0 released 2026-10-17, 8.8.0 released 2026-10-17, 8.9.0 released 2026-10-18, 8.10.0 released 2026-10-18, 8.11.0 released 2026-10-18, 8.12.0 released 2026-10-18, 8.13.0 released 2026-10-21
+- status: Done 96; Backlog 31
+- version: 6.4.0 5; 6.5.0 1; 6.6.0 6; 6.7.0 8; 6.9.0 4; 6.10.0 4; 6.11.0 1; 7.0.0 5; 7.1.0 8; 8.0.0 16; 8.1.0 1; 8.2.0 2; 8.3.0 1; 8.4.0 1; 8.5.0 1; 8.6.0 13; 8.7.0 1; 8.8.0 1; 8.9.0 5; 8.10.0 5; 8.11.0 3; 8.12.0 3; 8.14.0 1; open, affects 7.1.0 6; open, affects 8.12.0 25
+- component: Classification 4; Sealed files and sections 14; Edit requests and access 4; REST API 4; Backup and restore 13; Layout and accessibility 10; Privacy and personal data 8; Space and site settings 17; Workflow and approvals 19; App permissions and updates 4; Page banner and Sentinel Vault window 10; Activity report 2; Jira issue attachments 13; My work 5
+- type: Improvement 48; Bug 79
+- versions in Jira: 6.4.0 released 2026-09-30, 6.5.0 released 2026-09-30, 6.6.0 released 2026-10-02, 6.7.0 released 2026-10-04, 6.9.0 released 2026-10-04, 6.10.0 released 2026-10-04, 6.11.0 released 2026-10-04, 7.0.0 released 2026-10-05, 7.1.0 released 2026-10-09, 8.0.0 released 2026-10-14, 8.1.0 released 2026-10-14, 8.2.0 released 2026-10-14, 8.3.0 released 2026-10-14, 8.4.0 released 2026-10-14, 8.5.0 released 2026-10-14, 8.6.0 released 2026-10-17, 8.7.0 released 2026-10-17, 8.8.0 released 2026-10-17, 8.9.0 released 2026-10-18, 8.10.0 released 2026-10-18, 8.11.0 released 2026-10-18, 8.12.0 released 2026-10-18, 8.13.0 released 2026-10-21, 8.14.0 unreleased
 
 ## Issues
 
@@ -960,4 +960,11 @@ Issues checked: 126 of 126. Verification failures: 0. Withheld release-note line
 > Where: My work; Space settings, Sealed Files and Access Control tabs.
 > Workaround: Wait a moment and reload the page before you rely on an empty list.
 > Confirmed on Sentinel Vault 8.12.0. Status: open.
+
+### SVT-131 - Workflow settings that can't move edited Approved pages back are refused on save
+
+- type: Improvement; status: Done (Done); fixVersion: 8.14.0; component: Workflow and approvals
+
+> Workflow settings that would move edited Approved pages back to a state the workflow cannot reach, or to a chosen state that is itself Approved or has an entry condition, or whose first state is itself Approved, are refused when you save them, with a message saying what to change.
+> Added in Sentinel Vault 8.14.0, which is waiting for Marketplace approval and is not yet listed on the Marketplace.
 
