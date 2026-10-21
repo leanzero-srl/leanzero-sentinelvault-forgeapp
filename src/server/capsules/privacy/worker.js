@@ -54,7 +54,7 @@ import { makeQueueBackupErasure, ERASE_PENDING_KEY } from "./erase-queue.js";
 import { acquireLock, releaseLock, withLock } from "../../shared/kvs-lock.js";
 import { sealPropertyValue, sealPropertyNeedsScrub } from "../sealing/seal-property.js";
 import { errText, safeKey } from "../../shared/action-log.js";
-import { runValidationMirrorScrub, SCRUB_FLAG, SCRUB_LOCK_KEY, SCRUB_STATE_KEY } from "../validations/mirror-scrub.js";
+import { runValidationMirrorScrub, recheckArchivedMirrors, SCRUB_FLAG, SCRUB_LOCK_KEY, SCRUB_STATE_KEY } from "../validations/mirror-scrub.js";
 
 export const PRIVACY_QUEUE_KEY = "privacy-queue";
 export const STATUS_KEY = "privacy-status";
@@ -627,6 +627,12 @@ export async function runPrivacySweep({ reason = "manual", nowMs = Date.now(), r
     const validationScrubDone = !!migrations[SCRUB_FLAG];
     summary.validationMirror = validationScrubDone && typeof migrations[SCRUB_FLAG] === "object" ? { done: true, ...migrations[SCRUB_FLAG] } : { done: validationScrubDone };
     if (!validationScrubDone) await kickValidationMirrorScrub();
+    else if (!overBudget()) {
+      // Archived pages Confluence would not let the scrub change: re-tried here weekly, in case their
+      // unarchive event was missed.
+      const a = await recheckArchivedMirrors().catch((e) => { console.warn("[VALIDATION-MIRROR] archived re-check failed:", errText(e)); return null; });
+      if (a?.checked) summary.validationMirror.archivedRecheck = a;
+    }
 
     // Report what is due (≤ once per cycle per account), 90 at a time, saving after each batch.
     const plan = planReport(prior, seen, nowMs, { cycleMs, exclude });

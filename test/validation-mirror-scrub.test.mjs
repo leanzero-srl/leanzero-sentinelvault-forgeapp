@@ -357,6 +357,18 @@ try {
     eq("[11] the unarchive trigger cleans it", ids(propOf(w, "2001")).length, 0);
     eq("[11] ...and a clean page is left alone", await scrub.scrubOnePageMirror("2001"), "clean");
   }
+  {
+    // The weekly fallback when the unarchive event was missed.
+    const { w } = site(12);
+    onConfluence((method, rawPath) => (method === "PUT" && decodeURIComponent(rawPath).includes("/pages/2001/properties/") ? { status: 404, body: {} } : undefined));
+    await scrub.runValidationMirrorScrub({ budgetMs: 60000, rand: () => 0 });
+    eq("[11] the archived page is remembered", (await kvs.get(scrub.ARCHIVED_LEFT_KEY))?.ids, ["2001"]);
+    const still = await scrub.recheckArchivedMirrors();
+    eq("[11] still archived: kept", [still.checked, still.cleaned, still.left], [1, 0, 1]);
+    fake.handlers.pop(); // restored, and the event never came
+    const done = await scrub.recheckArchivedMirrors();
+    eq("[11] restored: cleaned by the weekly re-check and forgotten", [done.cleaned, done.left, ids(propOf(w, "2001")).length, await kvs.get(scrub.ARCHIVED_LEFT_KEY)], [1, 0, 0, undefined]);
+  }
   // 10. Pure helpers.
   {
     eq("[10] an old property needs the scrub", scrub.mirrorNeedsScrub(old()), true);
