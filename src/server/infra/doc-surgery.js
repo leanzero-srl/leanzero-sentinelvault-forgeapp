@@ -1,6 +1,8 @@
 import { route, getAppContext } from "@forge/api";
 import { appConfluence } from "../shared/confluence-call.js";
+import { setOwn } from "../shared/own-key.js";
 import { kvs } from "@forge/kvs";
+import { errText, reasonText, spaceKeyForLog } from "../shared/action-log.js";
 
 const PANEL_KEY_SUFFIX = "/static/sentinel-vault-panel";
 const MACRO_MODULE_KEY = "sentinel-vault-panel";
@@ -33,7 +35,7 @@ export function deriveExtensionKeyFromContext() {
 
     return `${appId}/${envId}/static/${MACRO_MODULE_KEY}`;
   } catch (e) {
-    console.warn("[PANEL-AUTO] getAppContext() failed:", e);
+    console.warn("[PANEL-AUTO] getAppContext() failed:", errText(e));
     return null;
   }
 }
@@ -534,7 +536,7 @@ export async function triggerPanelEmbed(contentId, spaceKey) {
         return;
       }
       if (!replaceResult.fallback) {
-        console.error(`[PANEL-AUTO] Replace failed: ${replaceResult.error}`);
+        console.error(`[PANEL-AUTO] Replace failed on page ${contentId}: ${reasonText(replaceResult.error)}`);
         return;
       }
       // No Attachments macro found — fall through to normal insert
@@ -550,7 +552,7 @@ export async function triggerPanelEmbed(contentId, spaceKey) {
       );
       if (spaceSettings?.autoInsertMacro === false) {
         console.info(
-          `[PANEL-AUTO] Auto-insert disabled for space ${spaceKey}, skipping`,
+          `[PANEL-AUTO] Auto-insert disabled for space ${spaceKeyForLog(spaceKey)}, skipping`,
         );
         return;
       }
@@ -575,7 +577,7 @@ export async function triggerPanelEmbed(contentId, spaceKey) {
         }
       }
     } catch (e) {
-      console.warn("[PANEL-AUTO] Failed to check page settings:", e);
+      console.warn("[PANEL-AUTO] Failed to check page settings:", errText(e));
     }
 
     // Insert the panel at the configured position
@@ -592,11 +594,11 @@ export async function triggerPanelEmbed(contentId, spaceKey) {
       }
     } else {
       console.error(
-        `[PANEL-AUTO] Failed to auto-insert panel: ${result.error}`,
+        `[PANEL-AUTO] Failed to auto-insert panel on page ${contentId}: ${reasonText(result.error)}`,
       );
     }
   } catch (error) {
-    console.error("[PANEL-AUTO] Error in panel auto-insert:", error);
+    console.error("[PANEL-AUTO] Error in panel auto-insert:", errText(error));
   }
 }
 
@@ -622,7 +624,7 @@ function buildSealedSectionKeyFromContext() {
     if (!appId || !envId) return null;
     return `${appId}/${envId}/static/${SECTION_MACRO_MODULE_KEY}`;
   } catch (e) {
-    console.warn("[SECTION] getAppContext() failed:", e);
+    console.warn("[SECTION] getAppContext() failed:", errText(e));
     return null;
   }
 }
@@ -928,7 +930,8 @@ export function canonicalizeAdf(value) {
     for (const k of Object.keys(value).sort()) {
       if (VOLATILE_ADF_KEYS.has(k)) continue;
       const v = canonicalizeAdf(value[k]);
-      if (v !== undefined) out[k] = v;
+      // setOwn (shared/own-key.js): every own key of the content is kept as a key, whatever its name.
+      if (v !== undefined) setOwn(out, k, v);
     }
     return out;
   }

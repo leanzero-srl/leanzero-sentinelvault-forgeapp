@@ -93,6 +93,12 @@ export function approvalSummary(record, { locale } = {}) {
   const word = ar.outcome === "denied" ? "Denied" : "Approved";
   const decisions = Array.isArray(ar.decisions) ? ar.decisions : [];
   if (decisions.length === 0) return `${word} by ${ar.completedByName || "a space admin"} on ${fmt(ar.completedAt)}.`;
-  const mode = ar.mode === "all" ? "every approver" : ar.mode === "min" ? `at least ${ar.min} of ${ar.approverCount}` : "any one approver";
+  // 8.14: the approver set and minimum the outcome was judged on, when the record names them.
+  const min = ar.effectiveMin ?? ar.min;
+  const of = Array.isArray(ar.effectiveApprovers) ? ar.effectiveApprovers.length : ar.approverCount;
+  const mode = ar.approverListUnknown ? "decided by a space admin (the approver list could not be read)"
+    : Array.isArray(ar.effectiveApprovers) && ar.effectiveApprovers.length === 0
+    ? "decided by a space admin (no one on the request was still an approver)"
+    : ar.mode === "all" ? "every approver" : ar.mode === "min" ? `at least ${min} of ${of}` : "any one approver";
   return `${word} for version ${reviewedVersionOf(record)} on ${fmt(ar.completedAt)} · ${mode}.`;
 }

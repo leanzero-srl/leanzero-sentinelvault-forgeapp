@@ -236,7 +236,11 @@ export function planBundle(bundle) {
     const wf = readSet(sp.workflows);
     if (wf) {
       if (wf.replace) step(`${p}.workflows.$replace`, "delete-space-workflow", { spaceKey: key, keep: wf.items.map((w) => w.workflowId || "default") }, { needs: "workflowPrune" });
-      wf.items.forEach((w, i) => step(`${p}.workflows[${i}]`, "store-space-workflow", { spaceKey: key, workflowId: w.workflowId ?? null, def: w.def, labels: w.labels, priority: w.priority }));
+      // A definition is judged against the settings it arrives with (the demote check, logic.js
+      // storeSpaceWorkflow): a bundle that switches the space to revert and carries a workflow with
+      // no way back must not be refused against the settings it is about to replace.
+      const withSettings = isObj(sp.workflowSettings) ? { settings: sp.workflowSettings } : {};
+      wf.items.forEach((w, i) => step(`${p}.workflows[${i}]`, "store-space-workflow", { spaceKey: key, workflowId: w.workflowId ?? null, def: w.def, labels: w.labels, priority: w.priority, ...withSettings }));
     }
     if (isObj(sp.workflowSettings)) step(`${p}.workflowSettings`, "set-space-workflow-settings", { spaceKey: key, settings: sp.workflowSettings });
     // P5: a default that LOWERS the space's level is refused without `classificationDefaultReason`.

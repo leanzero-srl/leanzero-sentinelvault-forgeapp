@@ -15,6 +15,7 @@ import { appConfluence } from "../../shared/confluence-call.js";
 import { kvs } from "@forge/kvs";
 import { createAppProvider, createNativeProvider, selectProvider, classificationActive } from "./logic.js";
 import { resolvePageSpaceKey } from "../../shared/content-access.js";
+import { errText } from "../../shared/action-log.js";
 
 // ── CLS-1: the switch, bound to the two policy records ──────────────────────────────────────
 // The same sanitisation policies/actions.js applies to the space key (the KVS key charset).
@@ -29,7 +30,7 @@ export async function resolveClassificationActive(spaceKey) {
     ]);
     return classificationActive({ site, space });
   } catch (e) {
-    console.warn("[CLASSIFICATION] switch read failed:", e?.message || e);
+    console.warn("[CLASSIFICATION] switch read failed:", errText(e));
     return { active: false, reason: "site" };
   }
 }

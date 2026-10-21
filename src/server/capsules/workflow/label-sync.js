@@ -8,6 +8,7 @@
 import { route } from "@forge/api";
 import { appConfluence } from "../../shared/confluence-call.js";
 import { fetchPageLabels } from "../../infra/labels.js";
+import { errText } from "../../shared/action-log.js";
 
 export const STATE_LABEL_PREFIX = "sv-state-";
 
@@ -48,7 +49,7 @@ export async function syncStateLabel(pageId, stateId) {
     for (const l of plan.remove) ok = (await removeLabel(pageId, l)) && ok;
     return { ok, label: wanted, added: plan.add, removed: plan.remove };
   } catch (e) {
-    console.warn(`[LABEL-SYNC] page ${pageId}:`, e?.message || e);
+    console.warn(`[LABEL-SYNC] page ${pageId}:`, errText(e));
     return { ok: false, label: wanted, added: null, removed: [] };
   }
 }

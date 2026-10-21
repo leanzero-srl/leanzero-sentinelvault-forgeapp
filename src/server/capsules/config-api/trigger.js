@@ -34,6 +34,7 @@ import { validateBundle, bundleRoleFloor } from "./bundle.js";
 import { OUTPUT, OPS, BACKUP_OPS, JOB_TTL_MS, decideAdmission, opRoleFloor, jobId, jobKvsKey, activeJobKvsKey, isActiveJob, validIdempotencyKey } from "./admission.js";
 import { validateBackupOp } from "../backup/rest-validate.js";
 import { staleFailureReceipt } from "./pure.js";
+import { errText, safeKey } from "../../shared/action-log.js";
 
 export const CONFIG_API_QUEUE_KEY = "config-api-queue";
 const ACTIVE_TTL_MS = 15 * 60000; // a stuck consumer must not wedge a token forever
@@ -64,7 +65,7 @@ async function writeRefusedReceipt(id, key, token, op, reason) {
       submittedAt: new Date().toISOString(), finishedAt: new Date().toISOString(), reason,
       summary: { applied: 0, refused: 0, failed: 0 }, results: [],
     }, JOB_TTL_MS);
-  } catch (e) { console.warn("[CONFIG-API] refused receipt write failed:", e?.message || e); }
+  } catch (e) { console.warn("[CONFIG-API] refused receipt write failed:", errText(e)); }
 }
 
 export async function configApiTrigger(req) {
@@ -75,7 +76,7 @@ export async function configApiTrigger(req) {
     if (!token) return out(OUTPUT.unauthorized);
     // The token acts as its minter; a minter who is no longer a site admin lends nothing.
     if (!(await isOperatorSiteAdmin(token.createdBy))) {
-      console.warn(`[CONFIG-API] token ${token.id} refused: minter ${token.createdBy} is not a site admin`);
+      console.warn(`[CONFIG-API] token ${token.id} refused: its minter is not a site admin`);
       return out(OUTPUT.unauthorized);
     }
 
@@ -124,11 +125,11 @@ export async function configApiTrigger(req) {
     if (isBackupOp) {
       if (bundle === undefined) return out(OUTPUT.invalid);
       validation = { ...validateBackupOp(op, bundle), plan: [] };
-      if (!validation.ok) { console.warn(`[CONFIG-API] invalid ${op} key=${key}: ${validation.errors.join(" | ")}`); return out(OUTPUT.invalid); }
+      if (!validation.ok) { console.warn(`[CONFIG-API] invalid ${op} key=${safeKey(key, "custom")}: ${validation.errors.length} error(s)`); return out(OUTPUT.invalid); }
     } else if (op !== "whoami") {
       if (bundle === undefined || bundle === null) return out(OUTPUT.invalid);
       validation = validateBundle(bundle, { rawBytes: bytes });
-      if (!validation.ok) { console.warn(`[CONFIG-API] invalid bundle key=${key}: ${validation.errors.slice(0, 5).join(" | ")}`); return out(OUTPUT.invalid); }
+      if (!validation.ok) { console.warn(`[CONFIG-API] invalid bundle key=${safeKey(key, "custom")}: ${validation.errors.length} error(s)`); return out(OUTPUT.invalid); }
     }
 
     // Write only if absent: two submissions racing on one key each re-read and keep only the
@@ -144,14 +145,14 @@ export async function configApiTrigger(req) {
     if (isActiveJob(present)) return out(OUTPUT.conflict);
     await setWithTtl(rowKey, job, JOB_TTL_MS);
     const landed = await kvs.get(rowKey);
-    if (!landed || landed.nonce !== nonce) { console.warn(`[CONFIG-API] lost the write race on key=${key}`); return out(OUTPUT.conflict); }
+    if (!landed || landed.nonce !== nonce) { console.warn(`[CONFIG-API] lost the write race on key=${safeKey(key, "custom")}`); return out(OUTPUT.conflict); }
     await setWithTtl(activeKey, { jobId: key, at: job.submittedAt }, ACTIVE_TTL_MS);
     // it17: build the Queue at push time, never at module load.
     await new Queue({ key: CONFIG_API_QUEUE_KEY }).push({ body: { jobId: id } });
     console.log(`[CONFIG-API] queued job=${id} op=${op} token=${token.id} steps=${validation.plan.length}`);
     return out(OUTPUT.accepted);
   } catch (e) {
-    console.error("[CONFIG-API] trigger error:", e);
+    console.error("[CONFIG-API] trigger error:", errText(e));
     return out(OUTPUT.invalid);
   }
 }

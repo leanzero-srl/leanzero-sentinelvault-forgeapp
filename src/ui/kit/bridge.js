@@ -20,6 +20,7 @@
  */
 import { invoke as bridgeInvoke } from "@forge/bridge";
 import { nameOfId, pushName } from "./ui-action-names.js";
+import { errorFacts, KEY_RE } from "./error-facts.js";
 
 export * from "@forge/bridge";
 
@@ -61,16 +62,16 @@ if (typeof document !== "undefined" && !globalThis.__lzTrailListener) {
 
 const plain = (v) => v != null && typeof v === "object" && !Array.isArray(v) && Object.getPrototypeOf(v) === Object.prototype;
 
-const KEY_RE = /^[a-z0-9][a-z0-9-]{0,63}$/;
-const IDENT_RE = /^[A-Za-z_$][\w$]{0,59}$/;
 
 /** PURE. The console.error descriptor of a failed resolver call (no message, no payload). */
 export function failureLine(key, e, sent) {
-  const name = e && typeof e === "object" ? (typeof e.name === "string" ? e.name : e.constructor && e.constructor.name) : null;
+  const { errorType, status, code } = errorFacts(e);
   return JSON.stringify({
     lz: "ui-error", app: "sv",
     action: typeof key === "string" && KEY_RE.test(key) ? key : "unknown",
-    errorType: typeof name === "string" && IDENT_RE.test(name) ? name : "Error",
+    errorType,
+    ...(status !== undefined ? { status } : {}),
+    ...(code ? { code } : {}),
     step: "invoke",
     ...(sent && sent.length ? { trail: sent } : {}),
   });

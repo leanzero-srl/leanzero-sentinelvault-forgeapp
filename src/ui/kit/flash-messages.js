@@ -9,6 +9,7 @@
 
 import { showFlag } from "@forge/bridge";
 import { invoke } from "./bridge";
+import { errText } from "./error-facts.js";
 
 /**
  * Check if flash messages are enabled
@@ -19,7 +20,7 @@ export async function flashMessagesEnabled() {
     const result = await invoke("load-bulletin-toggles");
     return result?.flags?.ENABLE_TOAST_DISPATCHES === true;
   } catch (error) {
-    console.error("Error checking notification flags:", error);
+    console.error("Error checking notification flags:", errText(error));
     return false;
   }
 }

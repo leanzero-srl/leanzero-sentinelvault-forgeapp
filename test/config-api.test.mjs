@@ -208,7 +208,9 @@ const memStorage = () => { const m = new Map(); return { m, get: async (k) => (m
   eq("levels payload", by["site.classification.levels"].payload.levels.length, 1);
   eq("space policy payload", by["spaces.WFH.policy"].payload, { scope: "space", key: "WFH", data: { defaultLockDuration: 86400 } });
   eq("$replace prunes then stores", by["spaces.WFH.workflows.$replace"].payload, { spaceKey: "WFH", keep: ["review"] });
-  eq("workflow payload", by["spaces.WFH.workflows[0]"].payload, { spaceKey: "WFH", workflowId: "review", def: { states: [] }, labels: ["policy"], priority: 1 });
+  // 2026-10-21: a workflow step carries the bundle's workflowSettings, so the definition is judged
+  // against the settings it arrives with (the demote check), not the ones it replaces.
+  eq("workflow payload", by["spaces.WFH.workflows[0]"].payload, { spaceKey: "WFH", workflowId: "review", def: { states: [] }, labels: ["policy"], priority: 1, settings: { enabled: true } });
   eq("workflowSettings payload", by["spaces.WFH.workflowSettings"].payload, { spaceKey: "WFH", settings: { enabled: true } });
   eq("classificationDefault resolves the space id at run time", [by["spaces.WFH.classificationDefault"].needs, by["spaces.WFH.classificationDefault"].payload], ["spaceId", { spaceKey: "WFH", levelId: "confidential" }]);
   eq("spaceAdmins → the roster fields of the space policy", by["spaces.WFH.spaceAdmins"].payload, { scope: "space", key: "WFH", data: { adminUsers: [{ accountId: "712020:a" }], adminGroups: ["confluence-admins"] } });

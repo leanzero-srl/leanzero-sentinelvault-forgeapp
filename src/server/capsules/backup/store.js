@@ -261,8 +261,7 @@ export async function deletePage(pageId, { waitMs = 8000, stepMs = 1000 } = {}) 
   const res = await conf(route`/wiki/rest/api/content/${pageId}/pageTree`, { method: "DELETE" });
   if (res.status === 404) return { ok: true, state: "gone", status: 404 };
   if (!res.ok) {
-    const t = await res.text().catch(() => "");
-    console.error(`[BACKUP] delete of page ${pageId} refused: ${res.status} ${t.slice(0, 200)}`);
+    console.error(`[BACKUP] delete of page ${pageId} refused: ${res.status}`);
     return { ok: false, state: "current", status: res.status };
   }
   // 202: a long task. Confirm from the page itself rather than trusting the accept.

@@ -25,7 +25,7 @@ Any external fetch/image/script/style addition breaks that eligibility — treat
 | Scheduled triggers ×3 | `expiry-sweep-scheduled` (hour), `seal-index-cron` (hour), `recurring-nudge-scheduled` (day) | `halfway-check-task` function is declared but wired to no trigger (kept as no-op) |
 | Async events / queues (`@forge/events`) ×2 | `realm-audit-queue` (900s timeout), `ai-validation-queue` (120s) | AI validation queued because LLM call exceeds the 25s resolver limit |
 | KVS (`storage:app`) | Entire data model (`protection-*`, `section-protection-*`, grants, findings, settings — see CORE_CONTRACT) | Plain untyped KVS + prefix queries; **no custom entities/indexes**. Uses KVS TTLs (grants self-expire at seal expiry) |
-| Content properties | `protection-`, `section-protection-`, `sentinel-vault-validation`, `sentinel-vault-page-settings` | CQL-able mirror + trigger fast-path probes (core contract C12/C13) |
+| Content properties | `protection-`, `section-protection-`, `sentinel-vault-validation`, `sentinel-vault-page-settings` | CQL/UI mirrors only — never read for enforcement (8.14.0); the trigger's fast path is the KVS marker `guarded-page-{pageId}` |
 | Web trigger | `harness-test-state` | DEV-ONLY (404 without `HARNESS_SECRET`); reads/writes KVS, invokes `expirySweep` for the harness |
 | Resolver | One shared `action-router` for ALL surfaces | 10 capsules' actions + `heartbeat` |
 | Custom UI + `view.theme.enable()` | All 7 surfaces | `permissions.content.styles: [unsafe-inline]` |

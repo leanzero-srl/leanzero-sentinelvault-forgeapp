@@ -28,6 +28,7 @@ import { route } from "@forge/api";
 import { appConfluence } from "../shared/confluence-call.js";
 import { accountToName, looksLikeAccountId } from "../shared/account-id.js";
 import { liveContentSpace } from "../shared/content-access.js";
+import { errText } from "../shared/action-log.js";
 
 // Twenty-odd call sites write `actor: { accountId, name: null }` (triggers, stewards acting on
 // another owner's seal, realm actions) and the feed then read "Someone denied edit access" —
@@ -50,7 +51,7 @@ export const ACTIVITY_TYPES = Object.freeze([
   "seal.created", "seal.released", "seal.forced", "seal.extended", "seal.auto-released",
   "seal.edit-reverted", "seal.trash-restored", "seal.embed-restored", "seal.presentation-restored",
   "seal.deleted", "seal.revert-failed",
-  "section.sealed", "section.released", "section.extended", "section.restored", "section.reverted", "section.rebaselined", "section.auto-released",
+  "section.sealed", "section.released", "section.extended", "section.restored", "section.reverted", "section.rebaselined", "section.auto-released", "section.restore-failed",
   "editreq.requested", "editreq.approved", "editreq.denied", "editreq.revoked", "editreq.granted",
   "workflow.transition", "workflow.removed", "workflow.approval-requested", "workflow.approval-rerequested", "workflow.approval-decided", "workflow.approval-withdrawn",
   "workflow.enforced", "workflow.expired", "workflow.review-due", "workflow.read-confirmed", "workflow.seals-held", "workflow.seals-released",
@@ -244,20 +245,20 @@ export async function recordActivity(entry) {
     };
     // Both keys, each best-effort on its own: a failed space leg must not cost the page leg.
     if (pageKey) {
-      await kvs.set(pageKey, value).catch((e) => console.warn(`[ACTIVITY] page key write failed (${type}):`, e));
+      await kvs.set(pageKey, value).catch((e) => console.warn(`[ACTIVITY] page key write failed (${type}):`, errText(e)));
     }
     if (spaceStoreKey) {
-      await kvs.set(spaceStoreKey, value).catch((e) => console.warn(`[ACTIVITY] space key write failed (${type}):`, e));
+      await kvs.set(spaceStoreKey, value).catch((e) => console.warn(`[ACTIVITY] space key write failed (${type}):`, errText(e)));
     }
     if (issueStoreKey) {
-      await kvs.set(issueStoreKey, value).catch((e) => console.warn(`[ACTIVITY] issue key write failed (${type}):`, e));
+      await kvs.set(issueStoreKey, value).catch((e) => console.warn(`[ACTIVITY] issue key write failed (${type}):`, errText(e)));
     }
     if (siteKey) {
-      await kvs.set(siteKey, value).catch((e) => console.warn(`[ACTIVITY] site key write failed (${type}):`, e));
+      await kvs.set(siteKey, value).catch((e) => console.warn(`[ACTIVITY] site key write failed (${type}):`, errText(e)));
     }
     return { id };
   } catch (e) {
-    console.warn("[ACTIVITY] recordActivity failed (event already happened; record dropped):", e);
+    console.warn("[ACTIVITY] recordActivity failed (event already happened; record dropped):", errText(e));
     return null;
   }
 }

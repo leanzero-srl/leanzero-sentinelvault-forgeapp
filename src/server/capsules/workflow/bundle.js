@@ -16,7 +16,7 @@ export async function runBundle({ storeDef, storeSettings, restoreDef }) {
   const d = await storeDef();
   if (!d || d.success !== true) return { success: false, stage: "definition", reason: (d && d.reason) || "Could not save the workflow states", restored: false };
   const s = await storeSettings();
-  if (s && s.success === true) return { success: true, def: d.def || null, warning: d.warning || null };
+  if (s && s.success === true) return { success: true, def: d.def || null, warning: [d.warning, s.warning].filter(Boolean).join(". ") || null };
   let restored = false;
   try { const r = await restoreDef(); restored = !r || r.success !== false; } catch (_) { restored = false; }
   return { success: false, stage: "settings", reason: (s && s.reason) || "Could not save the workflow settings", restored };

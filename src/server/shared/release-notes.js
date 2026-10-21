@@ -12,6 +12,26 @@ const note = (n) => Object.freeze({ ...n, changes: Object.freeze([...(n.changes 
 
 export const RELEASE_NOTES = Object.freeze([
   note({
+    version: "8.14.0",
+    date: "2026-10-21",
+    headline: "Stricter protection for Approved pages and sealed sections, approvals decided by the current approvers, and trash actions that follow your Confluence permissions",
+    changes: [
+      "Changed: restoring a file from the trash and deleting a file permanently from the Sentinel Vault panel now follow your own Confluence permissions, so you can only restore or permanently delete what Confluence itself lets you. The first time you do either, Atlassian may ask you to allow Sentinel Vault to act on your behalf. The Allow Attachment Restore from Page and Allow Seal Cleanup from Page settings now say clearly that Seal Cleanup deletes a file from the trash for good, and Seal Cleanup removes a file's records only once Confluence confirms the file is gone from its page. Restoring a file when a newer file with the same name is on the page now says to rename or remove that file first.",
+      "Changed: only a space's current approvers can decide its open approval requests, and only their decisions count. When approvers are removed, the number of approvals a request needs can drop by up to the number removed; if that changes the outcome, the AI review alone does not complete the request. A request whose approvers changed says so and can be requested again with the current approvers, which starts its decisions afresh. The approval record shows which decisions counted, and a refusal names an approver group that could not be read.",
+      "Changed: adding a seal to an Approved page is refused while a change to the page is being checked. The message says when to try again, or what to do when nothing will check the change. An approver or space admin who publishes an Approved page accepts what is on the page at that point.",
+      "Changed: workflow settings that would move edited Approved pages back to a state the workflow cannot reach, or to a chosen state that is itself Approved or has an entry condition, or whose first state is itself Approved, are refused when you save them, with a message saying what to change.",
+      "Changed: Sentinel Vault's own log lines no longer contain account IDs, personal space keys or error message text, only the kind of error and where in the app it happened.",
+    ],
+    fixes: [
+      "Only versions saved by a page's approvers or space admins, or by Sentinel Vault on top of those, can become an Approved page's approved version. Other edits are reverted or sent back for review unless an approver or space admin publishes the page after them, and an approver's later save is never undone by the review of an earlier edit.",
+      "Sealed sections and Approved pages compare every part of their content, and a sealed section recovers a missing saved copy from the page history, or tells the seal's owner when it cannot.",
+      "When a space set to move edited Approved pages back cannot make that move, the approved version is restored instead, the person who edited is told, and the page's activity records it.",
+      "A configuration REST API job is shown as done only once its receipt is also on the space's page.",
+      "Deleting or changing Sentinel Vault's page properties no longer switches off protection for sealed sections, sealed files on the page or Approved pages, or changes the validation status shown for a page. A page's validation status from before this update is checked again the first time someone opens the page's panel.",
+    ],
+    action: "If your site turned on Allow Attachment Restore from Page or Allow Seal Cleanup from Page, people whom Confluence does not allow to restore or permanently delete a file are now refused. If an open approval request names someone who is no longer an approver, re-request it so the current approvers can decide. The sentinel-vault-validation page property no longer says who approved or checked a page, only that it was approved; a page keeps the old values until its status is next stored. A space admin's Approve anyway given before this update is not carried over, so approve those pages again if they still need it. Nothing else to do.",
+  }),
+  note({
     version: "8.13.0",
     date: "2026-10-21",
     headline: "Sentinel Vault's logs say which action ran, and never hold your data",

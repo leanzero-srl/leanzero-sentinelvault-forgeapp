@@ -45,8 +45,8 @@ import { authorizeSteward, isAccountStewardAsApp } from "../../shared/steward-ch
 import { getClassificationProvider, resolveClassificationActive } from "../classification/provider.js";
 import { getActiveEditGrant, getActiveSectionEditGrant, resolveEditCooldownMs } from "../editreq/logic.js";
 // WF-6: the Workflow block reads through the same helper the byline uses.
-import { describeWorkflowForPage, extractApprovalConfig } from "../workflow/approvals.js";
-import { getSpaceWorkflowSettings } from "../workflow/logic.js";
+import { describeWorkflowForPage, extractApprovalConfig, newApproverCheck } from "../workflow/approvals.js";
+import { getSpaceWorkflowSettings, readPageWorkflow } from "../workflow/logic.js";
 import { shownEnforcement } from "../workflow/enforce-rules.js"; // 2026-10-16
 import { readStatus, readConfirmationRequired } from "../workflow/read-acks.js";
 import { retryAtFor } from "../../shared/edit-cooldown.js";
@@ -55,6 +55,7 @@ import { resolveSealHoldPeriod } from "../sealing/logic.js";
 import { collectPageSeals, readPageMeta } from "./logic.js";
 import { writeBylineFor } from "./byline.js";
 import { isWorkflowHeld, heldLabel } from "../../shared/seal-authority.js"; // SEC-2
+import { errText } from "../../shared/action-log.js";
 
 const NOT_AUTHORIZED = "Not authorized";
 const NUMERIC = /^\d{1,20}$/;
@@ -103,7 +104,7 @@ async function pendingRequestsFor(prefix, decider = null) {
         requestedAt: v.requestedAt || null,
       }));
   } catch (e) {
-    console.warn("[PAGE-DETAILS] pending requests read failed:", e?.message || e);
+    console.warn("[PAGE-DETAILS] pending requests read failed:", errText(e));
     return [];
   }
 }
@@ -141,7 +142,7 @@ export const pageDetailsSummary = async (req) => {
       const spaceDefault = spaceDefaultId != null ? (levels.find((l) => String(l.id) === String(spaceDefaultId)) || null) : null;
       classification = { enabled: true, reason: null, effective, pageLevelId: pageLevelId ?? null, spaceDefault, levels, canChange: canEdit, provider: provider.name };
     } catch (e) {
-      console.error("[PAGE-DETAILS] classification failed:", e);
+      console.error("[PAGE-DETAILS] classification failed:", errText(e));
       classification.error = "Could not load the classification";
     }
   }
@@ -160,9 +161,19 @@ export const pageDetailsSummary = async (req) => {
     if (!adminOfMemo.has(memoKey)) adminOfMemo.set(memoKey, isStewardOfSpaces(check, accountId, spaces).catch(() => false));
     return adminOfMemo.get(memoKey);
   };
+  // 8.14: being listed on a proposal counts only while the viewer is still one of the approvers of
+  // the space the page's workflow lives in (workflow/approvals.js approverStatusNow, read once here).
+  // "unknown" still offers it — the server then says to try again.
+  const approverNow = newApproverCheck();
+  let wfSpace = null;
+  const stillApprover = async (snapshot) => {
+    wfSpace ??= readPageWorkflow(pageId).then((r) => r?.spaceKey || spaceKey || null).catch(() => spaceKey || null);
+    return (await approverNow(snapshot, accountId, await wfSpace)) !== "no";
+  };
   const deciderFor = async (record) => {
     const admin = spaceKey ? await adminOf(isAccountStewardAsApp, [spaceKey, record?.spaceKey]) : false;
-    return { accountId, may: (v) => (v.approvers || []).includes(accountId) || admin === true };
+    const listedNow = await stillApprover([accountId]);
+    return { accountId, may: (v) => ((v.approvers || []).includes(accountId) && listedNow) || admin === true };
   };
   const storedSealSpaces = new Set();
   let sealError = null;
@@ -211,13 +222,13 @@ export const pageDetailsSummary = async (req) => {
     ]);
     seals.push(...rows);
   } catch (e) {
-    console.error("[PAGE-DETAILS] seals failed:", e);
+    console.error("[PAGE-DETAILS] seals failed:", errText(e));
     sealError = "Could not load the seals on this page";
   }
   const sealedIds = new Set(seals.filter((r) => r.kind === "attachment").map((r) => r.id));
   const attachments = attachmentsAll.map((a) => ({ id: a.id, name: a.title || "Unknown file", fileSize: a.fileSize, mediaType: a.mediaType, createdAt: a.createdAt, version: a.version, sealed: sealedIds.has(a.id) }));
   let sealDefaults = { holdSeconds: null };
-  try { sealDefaults = { holdSeconds: await resolveSealHoldPeriod(spaceKey, undefined) }; } catch (e) { console.warn("[PAGE-DETAILS] hold period:", e?.message || e); }
+  try { sealDefaults = { holdSeconds: await resolveSealHoldPeriod(spaceKey, undefined) }; } catch (e) { console.warn("[PAGE-DETAILS] hold period:", errText(e)); }
   const waitingOnMe = seals.reduce((n, r) => n + (r.isMine ? r.pendingRequests.length : 0), 0);
 
   // ── workflow (WF-6: the modal's Workflow block, above Seals) ────────────────────────────────
@@ -250,7 +261,7 @@ export const pageDetailsSummary = async (req) => {
         // A space admin may take the page out — not while Approved/enforced or an approval waits
         // (the server refuses those too: workflow/logic.js removeRefusal).
         canRemove: wfAdmin && !record.enforce && !wf.pending,
-        enforceMode: shownEnforcement(settings, await kvs.get("admin-settings-global").catch(() => null), { moved: !!(record.spaceKey && spaceKey && record.spaceKey !== spaceKey) }), // "off" while content protection is off
+        enforceMode: shownEnforcement(settings, await kvs.get("admin-settings-global").catch(() => null), { moved: !!(record.spaceKey && spaceKey && record.spaceKey !== spaceKey), def: wf.def || null, stateId: record.stateId || null }), // "off" while content protection is off; a demote this workflow cannot make is a revert
         reviewedVersion,
         baselineVersion: record.approvedVersion ?? null,
         // B2: why the baseline moved, in words that never credit an approver with the app's revert.
@@ -259,8 +270,8 @@ export const pageDetailsSummary = async (req) => {
         // The modal composes the approval sentence ITSELF from these (workflow/status.js
         // approvalSummary in the browser) so its dates are in the viewer's zone like every other
         // date on the modal — the server-composed sentence above is UTC and stays for API readers.
-        recordForSummary: { enforce: !!record.enforce, approvedVersion: record.approvedVersion ?? null, reviewedVersion: record.reviewedVersion ?? null, approvedAt: record.approvedAt || null, approvalRecord: ar ? { outcome: ar.outcome, completedByName: ar.completedByName || null, completedAt: ar.completedAt || null, pinnedVersion: ar.pinnedVersion ?? null, mode: ar.mode ?? null, min: ar.min ?? null, approverCount: ar.approverCount ?? null, decisions: (ar.decisions || []).map((d) => ({ decision: d.decision })) } : null },
-        approvalRecord: ar ? { outcome: ar.outcome, completedByName: ar.completedByName || null, completedAt: ar.completedAt || null, requestedByName: ar.requestedByName || null, decisions: (ar.decisions || []).map((d) => ({ name: d.name, decision: d.decision, decidedAt: d.decidedAt, reason: d.reason || null, signed: !!d.signed })) } : null,
+        recordForSummary: { enforce: !!record.enforce, approvedVersion: record.approvedVersion ?? null, reviewedVersion: record.reviewedVersion ?? null, approvedAt: record.approvedAt || null, approvalRecord: ar ? { outcome: ar.outcome, completedByName: ar.completedByName || null, completedAt: ar.completedAt || null, pinnedVersion: ar.pinnedVersion ?? null, mode: ar.mode ?? null, min: ar.min ?? null, approverCount: ar.approverCount ?? null, ...(Array.isArray(ar.effectiveApprovers) ? { effectiveApprovers: ar.effectiveApprovers, effectiveMin: ar.effectiveMin ?? null } : {}), decisions: (ar.decisions || []).map((d) => ({ decision: d.decision })) } : null },
+        approvalRecord: ar ? { outcome: ar.outcome, completedByName: ar.completedByName || null, completedAt: ar.completedAt || null, requestedByName: ar.requestedByName || null, decisions: (ar.decisions || []).map((d) => ({ name: d.name, decision: d.decision, decidedAt: d.decidedAt, reason: d.reason || null, signed: !!d.signed, ...(d.counted === false ? { counted: false } : {}) })) } : null,
         reviewDueAt: record.reviewDueAt || null,
         reviewOverdue: Number.isFinite(dueMs) && dueMs < Date.now(),
         lastDecision: wf.lastDecision || null,
@@ -268,7 +279,9 @@ export const pageDetailsSummary = async (req) => {
           toStateId: wf.pending.toStateId, toStateName: wf.pending.toStateName || wf.pending.toStateId, requestedByName: wf.pending.requestedByName || null, requestedAt: wf.pending.requestedAt || null,
           decided: wf.pendingDecided, required: wf.pending.mode === "any" ? 1 : (wf.pending.min || (wf.pending.approvers || []).length), mode: wf.pending.mode || null,
           iCanDecide: wf.pending.requestedBy !== accountId && (
-            (Array.isArray(wf.pending.approvers) && wf.pending.approvers.includes(accountId))
+            // listed on the request AND still one of the space's approvers (approvals.js approverStatusNow)
+            (Array.isArray(wf.pending.approvers) && wf.pending.approvers.includes(accountId)
+              && (await approverNow(wf.pending.approvers, accountId, wf.pending.spaceKey || record.spaceKey || spaceKey || null)) !== "no")
             || (wfDecideAdmin && settings?.approval?.adminsCanApprove !== false)), // admins may decide too
         } : null,
         available: (wf.available || []).filter(Boolean).map((s) => ({ id: s.id, name: s.name, color: s.color || "neutral", requiresApproval: !!(s.enforce && hasApprovers) })),
@@ -280,7 +293,7 @@ export const pageDetailsSummary = async (req) => {
         readers: readers?.required ? { acked: readers.ackedCount ?? 0, audience: readers.audienceCount ?? 0, mine: !!readers.acked } : null,
       };
     }
-  } catch (e) { console.warn("[PAGE-DETAILS] workflow failed:", e?.message || e); workflow = { assigned: false, error: "Could not load the workflow" }; }
+  } catch (e) { console.warn("[PAGE-DETAILS] workflow failed:", errText(e)); workflow = { assigned: false, error: "Could not load the workflow" }; }
   // Not in the workflow yet, the space runs one, and the viewer is its admin: offer to start it
   // on THIS page (owner, 2026-09-25 — "Apply to existing pages" was the only way in).
   if (!workflow.assigned && !workflow.error && isSpaceAdmin && spaceKey) {
@@ -293,13 +306,13 @@ export const pageDetailsSummary = async (req) => {
   try {
     const a = await getPageActivity({ context: req.context, payload: { pageId, limit: 10 } });
     activity = { entries: Array.isArray(a?.entries) ? a.entries : [], nextCursor: a?.nextCursor || null };
-  } catch (e) { console.warn("[PAGE-DETAILS] activity failed:", e?.message || e); }
+  } catch (e) { console.warn("[PAGE-DETAILS] activity failed:", errText(e)); }
 
   // ── lazy byline refresh (space-default changes reach the chip on open, not by fan-out) ─────
   if (!sealError) {
     const liveSeals = seals.filter((r) => !r.isTrashed).length;
     await writeBylineFor(pageId, { level: classification.effective?.level || null, source: classification.effective?.source || "none", sealCount: liveSeals, classificationEnabled: sw.active, workflow: workflow.assigned ? workflow.status : null })
-      .catch((e) => console.warn("[PAGE-DETAILS] byline refresh failed:", e?.message || e));
+      .catch((e) => console.warn("[PAGE-DETAILS] byline refresh failed:", errText(e)));
   }
 
   return {

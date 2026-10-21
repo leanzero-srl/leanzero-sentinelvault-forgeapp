@@ -17,6 +17,7 @@ import { resolveBulletinToggles, resolveSpaceNotificationsMode } from "../shared
 import { shouldPostComment } from "../shared/notice-policy.js";
 import { resolvePageSpaceKey } from "../shared/content-access.js";
 import { tokenizeMentions, injectMentions } from "./mention-adf.js";
+import { errText, spaceKeyForLog } from "../shared/action-log.js";
 
 // Display names for the ADF mention's `text` attribute ("@Name"). Best effort — the id is what
 // Confluence resolves; a missing name still posts as "@user".
@@ -51,10 +52,10 @@ async function commentBody(storageBody) {
     if (!adf || adf.type !== "doc") throw new Error("convert returned no ADF document");
     const { doc, placed } = injectMentions(adf, ids, await displayNames(ids));
     if (placed !== ids.length) throw new Error(`placed ${placed} of ${ids.length} mentions`);
-    console.info(`[NOTIFY] comment posted as ADF with ${placed} mention node(s): ${ids.join(", ")}`);
+    console.info(`[NOTIFY] comment posted as ADF with ${placed} mention node(s)`);
     return { representation: "atlas_doc_format", value: JSON.stringify(doc) };
   } catch (e) {
-    console.warn(`[NOTIFY] ADF mention conversion failed — posting storage instead: ${e?.message || e}`);
+    console.warn(`[NOTIFY] ADF mention conversion failed — posting storage instead: ${errText(e)}`);
     return { representation: "storage", value: storageBody };
   }
 }
@@ -122,7 +123,7 @@ export async function postCommentWithMention({ pageId, storageBody, spaceKey = n
     const why = decision.reason === "quiet-mode"
       ? `space ${resolvedSpaceKey} is in quiet mode`
       : "comments with @mentions are switched off (opt-in)";
-    console.info(`[NOTIFY] ${noticeType || "comment"} on page ${pageId} not posted: ${why}`);
+    console.info(`[NOTIFY] ${noticeType || "comment"} on page ${pageId} not posted: ${spaceKeyForLog(why)}`);
     return { success: false, suppressed: true, reason: `Not posted: ${why}` };
   }
 
@@ -152,7 +153,7 @@ export async function postCommentWithMention({ pageId, storageBody, spaceKey = n
           if (response.ok) console.info(`[NOTIFY] ${noticeType || "comment"} on page ${pageId} posted AS THE USER (bell-capable mention)`);
           else { console.warn(`[NOTIFY] posting as the user refused (HTTP ${response.status}) — posting as the app`); response = null; }
         } catch (e) {
-          console.warn(`[NOTIFY] no user context to post as (${e?.message || e}) — posting as the app`);
+          console.warn(`[NOTIFY] no user context to post as (${errText(e)}) — posting as the app`);
           response = null;
         }
       }
@@ -178,7 +179,7 @@ export async function postCommentWithMention({ pageId, storageBody, spaceKey = n
         continue;
       }
 
-      console.error(`[NOTIFY] Failed to post comment on page ${pageId}: ${lastReason}`);
+      console.error(`[NOTIFY] Failed to post comment on page ${pageId}: HTTP ${response.status}`);
       return { success: false, reason: lastReason };
     } catch (error) {
       lastReason = error.message || "Unknown error";
@@ -188,12 +189,12 @@ export async function postCommentWithMention({ pageId, storageBody, spaceKey = n
           RETRY_CONFIG.maxDelayMs,
         );
         console.warn(
-          `[NOTIFY] Comment POST exception (attempt ${attempt}/${RETRY_CONFIG.maxRetries}): ${lastReason}; retrying in ${delayMs}ms`,
+          `[NOTIFY] Comment POST exception (attempt ${attempt}/${RETRY_CONFIG.maxRetries}): ${errText(error)}; retrying in ${delayMs}ms`,
         );
         await pause(delayMs);
         continue;
       }
-      console.error(`[NOTIFY] Comment POST failed after ${attempt} attempts:`, error);
+      console.error(`[NOTIFY] Comment POST failed after ${attempt} attempts:`, errText(error));
       return { success: false, reason: lastReason };
     }
   }

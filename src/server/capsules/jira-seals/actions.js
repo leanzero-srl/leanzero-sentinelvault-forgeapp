@@ -28,6 +28,7 @@ import { validateReleaseReason } from "../../shared/release-reason.js";
 import { resolveBulletinToggles } from "../../shared/bulletin-flags.js";
 import { withSealLock } from "./trigger.js";
 import { recordActivity, readActivity, activityIssuePrefix } from "../../infra/activity-log.js";
+import { errText } from "../../shared/action-log.js";
 
 const nowMs = () => Date.now();
 const contextIssueId = (req) => normId(req?.context?.extension?.issue?.id);
@@ -265,7 +266,7 @@ export async function issueSealsView({ issueId, viewerId, powers }) {
   }
   let history = [];
   try { history = (await readActivity(activityIssuePrefix(issue.id), { limit: 8 })).entries; }
-  catch (e) { console.warn("[JIRA-SEAL] history read failed:", e?.message || e); }
+  catch (e) { console.warn("[JIRA-SEAL] history read failed:", errText(e)); }
   return {
     success: true,
     issue: { id: issue.id, key: issue.key },

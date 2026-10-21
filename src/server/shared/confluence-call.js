@@ -1,6 +1,7 @@
 // Through the default export (the documented `api.asApp()` shape): test fakes that patch it apply here too.
 import api from "@forge/api";
 import { AsyncLocalStorage } from "node:async_hooks";
+import { safeKey } from "./action-log.js";
 
 // ── The ONE door to Confluence's REST API (8.12.0) ─────────────────────────────────────────────
 //
@@ -134,10 +135,10 @@ export function rateLimitInfo(res, now = Date.now()) {
   };
 }
 
-/** PURE. The path for a log line: no query string (account ids live there). */
+/** PURE. The path for a log line: no query string (account ids live there), no label name (text a user typed). */
 export function pathForLog(path) {
   const raw = typeof path === "string" ? path : (path?.value ?? path?.value_ ?? String(path));
-  return String(raw).split("?")[0];
+  return String(raw).split("?")[0].replace(/\/label\/[^/]+/g, "/label/*");
 }
 
 /** PURE. The wait before retry number `attempt` (0-based): Retry-After + up to 30 %, else a jittered doubling from 500 ms. */
@@ -194,7 +195,7 @@ async function call(who, path, init, { idempotent } = {}) {
     const info = rateLimitInfo(res);
     const wait = retryWaitMs(info, attempt);
     const giveUp = !retriable || attempt >= MAX_RETRIES || wait > MAX_SINGLE_WAIT_MS || Date.now() + wait > until;
-    console.warn(`[RATE-LIMIT] ${who === "user" ? "asUser" : "asApp"} ${method} ${pathForLog(path)} -> 429 reason=${info.reason || "-"} retry-after=${info.retryAfterSeconds ?? "-"} reset=${info.reset || "-"} remaining=${info.remaining ?? "-"} limit=${info.limit ?? "-"} attempt=${attempt + 1} ${giveUp ? "giving up" : `retrying in ${wait} ms`}`);
+    console.warn(`[RATE-LIMIT] ${who === "user" ? "asUser" : "asApp"} ${method} ${pathForLog(path)} -> 429 reason=${safeKey(info.reason, info.reason ? "other" : "-")} retry-after=${info.retryAfterSeconds ?? "-"} reset=${info.reset || "-"} remaining=${info.remaining ?? "-"} limit=${info.limit ?? "-"} attempt=${attempt + 1} ${giveUp ? "giving up" : `retrying in ${wait} ms`}`);
     if (giveUp) { noteRateLimited(info); return res; }
     await sleep(wait);
   }

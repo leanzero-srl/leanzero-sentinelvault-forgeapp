@@ -1,6 +1,7 @@
 import { kvs } from "@forge/kvs";
 import { writeSealContentProp, releaseSealContentPropIfLast, touchSealTimestamp } from "./logic.js";
 import { sweepEditAccess } from "../editreq/logic.js";
+import { errText } from "../../shared/action-log.js";
 
 /**
  * Write a per-artifact realm-seal index key for fast realm-scoped queries.
@@ -45,7 +46,7 @@ export async function writeRealmSealIndex(realmId, artifactId, indexData) {
   } catch (indexError) {
     console.warn(
       `[SEAL-SYNC] Failed to write realm-seal index:`,
-      indexError,
+      errText(indexError),
     );
   }
 }
@@ -64,7 +65,7 @@ export async function removeRealmSealIndex(realmId, artifactId) {
       `[SEAL-SYNC] Removed realm-seal index key for artifact ${artifactId} in realm ${realmId}`,
     );
   } catch (indexError) {
-    console.warn(`[SEAL-SYNC] Failed to delete realm-seal index:`, indexError);
+    console.warn(`[SEAL-SYNC] Failed to delete realm-seal index:`, errText(indexError));
   }
 }
 
@@ -84,7 +85,7 @@ export async function syncSealToContentProp(contentId, sealData) {
 /**
  * Full cleanup of all seal-related external state for an artifact.
  * Removes KVS seal record, the page's content property (only when this was the page's LAST
- * seal — it is one per page and gates the media fast path for the others), and realm index key.
+ * seal — it is one per page and mirrors the others for CQL and the UI), and realm index key.
  *
  * @param {string} artifactId - The artifact (attachment) ID
  * @param {Object} sealRecord - The existing seal record

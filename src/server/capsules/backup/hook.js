@@ -12,6 +12,7 @@
 import { kvs } from "@forge/kvs";
 import { Queue } from "@forge/events";
 import { setWithTtl } from "../../shared/kvs-ttl.js";
+import { errText } from "../../shared/action-log.js";
 
 export const BACKUP_QUEUE_KEY = "backup-queue";
 export const DIRTY_KEY = "backup-dirty";
@@ -94,7 +95,7 @@ export async function scheduleBackup(reason = "save") {
     await new Queue({ key: BACKUP_QUEUE_KEY }).push({ body: { kind: "backup", reason }, delayInSeconds: DEBOUNCE_SECONDS });
     return true;
   } catch (e) {
-    console.warn("[BACKUP] could not schedule a backup after a save:", e?.message || e);
+    console.warn("[BACKUP] could not schedule a backup after a save:", errText(e));
     return false;
   }
 }

@@ -49,6 +49,7 @@ import { scheduleBackup } from "../backup/hook.js";
 import { makeQueueBackupErasure, ERASE_PENDING_KEY } from "./erase-queue.js";
 import { acquireLock, releaseLock, withLock } from "../../shared/kvs-lock.js";
 import { sealPropertyValue, sealPropertyNeedsScrub } from "../sealing/seal-property.js";
+import { errText, safeKey } from "../../shared/action-log.js";
 
 export const PRIVACY_QUEUE_KEY = "privacy-queue";
 export const STATUS_KEY = "privacy-status";
@@ -63,7 +64,8 @@ const LOCK_MS = 16 * 60000; // > the 900 s consumer timeout: a killed run frees 
 export const SWEEP_BUDGET_MS = 600000;
 const MAX_DELAY_S = 900; // Forge queue delayInSeconds limit
 const nowIso = () => new Date().toISOString();
-const errText = (e) => String(e?.message || e).slice(0, 300);
+// The error text kept in job/status rows and returned reasons. Never printed: log lines use errText.
+const errMessage = (e) => String(e?.message || e).slice(0, 300);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 /** PURE. Does this invocation belong to the Confluence installation? Unknown context → yes. */
@@ -93,7 +95,7 @@ export async function privacySweepCheck(context) {
     await kvs.set(STATUS_KEY, { ...status, queuedAt: nowIso() });
     await pushSweep("schedule", notBefore);
   } catch (e) {
-    console.error("[PRIVACY] daily check failed:", e);
+    console.error("[PRIVACY] daily check failed:", errText(e));
   }
 }
 
@@ -106,7 +108,7 @@ export async function queuePrivacySweep(reason = "manual") {
 
 export async function privacyConsumer(event) {
   const body = event?.body || event?.payload || {};
-  if (body.kind !== "sweep") { console.warn("[PRIVACY] consumer: unknown event", JSON.stringify(body).slice(0, 200)); return; }
+  if (body.kind !== "sweep") { console.warn(`[PRIVACY] consumer: unknown event kind=${safeKey(body.kind, "none")}`); return; }
   // A delayed sweep that arrives early (one hop is at most 900 s) re-queues itself until notBefore.
   const nb = Number(body.notBefore);
   if (Number.isFinite(nb) && Date.now() < nb - 1000) { await pushSweep(body.reason || "schedule", nb); return; }
@@ -232,7 +234,7 @@ async function reportBatch(batch, report) {
         await sleep(Math.min(60, Number.isFinite(after) && after > 0 ? after : 10) * 1000);
         continue;
       }
-      const err = new Error(`report-accounts answered ${status || errText(e)}`);
+      const err = new Error(`report-accounts answered ${status || errMessage(e)}`);
       err.status = status || null;
       throw err;
     }
@@ -365,6 +367,7 @@ async function applyAccountUpdates({ closed, updated, places }) {
   out.renamed = renames;
   const sealPages = new Set();
   const sectionPages = new Set();
+  const validationPages = new Map(); // pageId -> the rewritten KVS status (its page mirror is rewritten from it)
 
   await scanKvs(async ({ key, value: scanned, expireTime }) => {
     if (key.startsWith(OWN_PREFIX)) return;
@@ -401,9 +404,16 @@ async function applyAccountUpdates({ closed, updated, places }) {
     out.rewrittenRows += 1;
     if (key.startsWith("protection-") && v?.contentId) sealPages.add(String(v.contentId));
     if (key.startsWith("section-protection-") && v?.pageId) sectionPages.add(String(v.pageId));
+    if (key.startsWith("validation-state-")) validationPages.set(key.slice("validation-state-".length), v);
   });
 
   if (closed.length) {
+    // The validation status mirror on the page: a mirror written before 8.14.0 carried who checked or
+    // approved; it is rewritten from the erased KVS status (the mirror never carries account ids now).
+    if (validationPages.size) {
+      const { mirrorValidationState } = await import("../validations/logic.js");
+      for (const [pageId, v] of validationPages) await mirrorValidationState(pageId, v).catch(() => {});
+    }
     const { eraseSignature } = await import("../workflow/signature.js");
     for (const id of closed) { await eraseSignature(id); out.signatures += 1; }
     for (const pageId of sealPages) if ((await scrubSealProperty(pageId, closed).catch(() => "failed")) === "scrubbed") out.sealProperties += 1;
@@ -558,7 +568,7 @@ export async function runPrivacySweep({ reason = "manual", nowMs = Date.now(), r
         console.warn(`[PRIVACY] report-accounts refused (${e.status}) although the manifest declares report:personal-data; every account stays due`);
       } else {
         summary.ok = false;
-        summary.error = errText(e);
+        summary.error = errMessage(e);
         summary.accounts.reporting = "failed";
       }
     }
@@ -582,7 +592,7 @@ export async function runPrivacySweep({ reason = "manual", nowMs = Date.now(), r
       // The backup: a first erasure always (older generations may name them); a repeat only when
       // rows actually changed. Page content alone never queues one.
       const forBackup = [...new Set([...newlyClosed, ...unfinished, ...(changes > 0 ? [...stillErasable] : [])])];
-      if (forBackup.length) summary.erasure.backup = await queueBackupErasure(forBackup).catch((e) => ({ error: errText(e) }));
+      if (forBackup.length) summary.erasure.backup = await queueBackupErasure(forBackup).catch((e) => ({ error: errMessage(e) }));
       // The backup's part could not be handed over (the pending lock busy, a failed read, a failed
       // write): these ids are NOT erased yet — x goes back to null so the next sweep re-erases and
       // re-queues them (review blocking). Their KVS rows are already clean, so that repeat is cheap.
@@ -593,13 +603,13 @@ export async function runPrivacySweep({ reason = "manual", nowMs = Date.now(), r
     // A pending backup erasure whose job died is restarted.
     if (!summary.erasure?.backup) {
       const pending = await kvs.get(ERASE_PENDING_KEY).catch(() => null);
-      if (pending?.ids?.length) summary.erasureBackup = await queueBackupErasure([]).catch((e) => ({ error: errText(e) }));
+      if (pending?.ids?.length) summary.erasureBackup = await queueBackupErasure([]).catch((e) => ({ error: errMessage(e) }));
     }
     await writeIndex(index, written);
   } catch (e) {
     summary.ok = false;
-    summary.error = errText(e);
-    console.error("[PRIVACY] sweep failed:", e);
+    summary.error = errMessage(e);
+    console.error("[PRIVACY] sweep failed:", errText(e));
     if (index) await writeIndex(index, written).catch(() => {});
   } finally {
     summary.finishedAt = nowIso();
@@ -619,9 +629,9 @@ export async function runPrivacySweep({ reason = "manual", nowMs = Date.now(), r
       // Only after a report that went through and only for a moment still ahead: a refused or
       // failed report leaves past due dates, which the daily check retries, never a tight loop.
       else if (summary.accounts.reporting === "done" && nra && Date.parse(nra) > Date.now() && Date.parse(nra) - Date.now() < DUE_WINDOW_MS) await queueContinuation("due", Date.parse(nra) + DUE_MARGIN_MS);
-    } catch (e) { console.error("[PRIVACY] could not queue the continuation:", e); }
+    } catch (e) { console.error("[PRIVACY] could not queue the continuation:", errText(e)); }
   }
-  console.log(`[PRIVACY] sweep reason=${reason} scanned=${summary.scanned} retention=${JSON.stringify(summary.retention)} accounts=${JSON.stringify(summary.accounts)} handOff=${handOff} ok=${summary.ok}${summary.error ? ` error=${summary.error}` : ""}`);
+  console.log(`[PRIVACY] sweep reason=${safeKey(reason)} scanned=${summary.scanned} retention=activity:${summary.retention.activity},workflowLog:${summary.retention.workflowLog},readAck:${summary.retention.readAck} accounts=stored:${summary.accounts.stored},due:${summary.accounts.due},reported:${summary.accounts.reported},closed:${summary.accounts.closed},updated:${summary.accounts.updated},reporting:${safeKey(summary.accounts.reporting, "-")} handOff=${handOff} ok=${summary.ok}${summary.error ? " failed=yes (the error line above)" : ""}`);
   return summary;
 }
 

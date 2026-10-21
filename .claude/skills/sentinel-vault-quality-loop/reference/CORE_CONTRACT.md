@@ -21,7 +21,7 @@ KNOWN GAP: `artifactEventTrigger` fails OPEN on the same condition — `if (syst
 WHY: asApp attribution is what makes T1 work, and users/the harness identify app writes by these messages. The invariant is the MECHANISM (asApp + a distinctive message + T1 absorption), not the literal strings — copy may be reworded, but only together with the harness assertions that grep for it, in the same diff.
 Files: `src/server/triggers.js`, `src/server/infra/doc-surgery.js` (`writeDocBody`).
 
-**T4. Fast paths are contractual FOR THE SEAL PASSES: `pageContentTrigger` reads NO page body for the section/media restore passes unless a content-property probe (`protection-` / `section-protection-`) says there is work; `artifactEventTrigger` bails on one KVS get for unsealed attachments; `getActiveEditGrant` is O(1); `sealIndexCron` skips when `protections-last-modified <= protections-last-scanned`.**
+**T4. Fast paths are contractual FOR THE SEAL PASSES: `pageContentTrigger` reads NO page body for the section/media restore passes unless the page's KVS seal marker `guarded-page-{pageId}` (shared/guarded-page.js; until the marker backfill is done, every page) says there is work — never a page property, which an editor can delete (8.14.0); `artifactEventTrigger` bails on one KVS get for unsealed attachments; `getActiveEditGrant` is O(1); `sealIndexCron` skips when `protections-last-modified <= protections-last-scanned`.**
 WHY: these triggers fire on EVERY page save / attachment event on the instance — unrelated pages must cost ~2 property GETs, not an ADF read or KVS scan.
 Files: `src/server/triggers.js:103–225`, `src/server/capsules/editreq/logic.js`, `src/server/capsules/realms/scan-worker.js` (`sealIndexCron`).
 SCOPE NOTE: `runValidationPhase` is NOT covered by this fast path — once `validation-config-global.enabled` is true it calls `readDocBody` on every saved page, with the (pageId, version) dedup checked only AFTER the body read. Adding a probe or moving dedup before the read is a semantics-preserving optimization, not a contract change; conversely, config-gated body-reading features are not forbidden by this invariant.
@@ -59,7 +59,7 @@ Files: `src/server/capsules/sealing/actions.js` (`sealArtifact` re-seal path), `
 NOTE: `breakSeal` and `computeSealStatus` were dead code (zero callers) and were deleted 2026-10-11.
 
 **S5. Every seal mutation touches `protections-last-modified` and keeps the triad in sync: KVS record `protection-{id}`, realm index `space-protection-{spaceId}-{id}`, and the page content property `protection-`.**
-WHY: frontend 5s polling (`check-seal-stamp`), the cron change-gate, steward listings, and the trigger fast-path all read different legs of this triad; a mutation that updates only one leg desyncs the product.
+WHY: frontend 5s polling (`check-seal-stamp`), the cron change-gate, steward listings and CQL read different legs of this triad; a mutation that updates only one leg desyncs the product. (The trigger's fast path reads the KVS marker `guarded-page-{pageId}`, written before the seal record and never from the property — 8.14.0.)
 Files: `src/server/capsules/sealing/logic.js` (`touchSealTimestamp`, `writeSealContentProp`), `src/server/capsules/sealing/confluence-sync.js`, `src/server/capsules/realms/scan-worker.js`.
 KNOWN GAPS: (a) the grant re-baseline in `handleSealedArtifactEdit` (triggers.js:~619) rewrites only the KVS record + stamp — the `protection-` content property and the space index keep the stale `sealedVersion`/`sealedFileId` until the next full mutation; (b) `sealArtifact` writes the realm-index leg only when a space id resolves from context (sealing/actions.js:~319) — a seal made without space context has no index leg and is invisible to steward listings until a realm audit backfills it. Closing either gap is a semantics-preserving fix.
 
@@ -191,8 +191,8 @@ Files: all capsules; `src/server/shared/kvs-ttl.js`; canonical inventory in this
 WHY: two sanitizers = two keys for the same space = settings that randomly apply or don't.
 Files: `src/server/capsules/policies/actions.js`, `src/server/capsules/validations/logic.js`.
 
-**K3. Content-property keys are external API surface: `protection-`, `section-protection-` (the trigger fast-path probes — must exist iff seals exist), `sentinel-vault-validation` (gate state), `sentinel-vault-page-settings` (macroDisabled).**
-WHY: T4's fast path, CQL discoverability, the doc ribbon, and the E2E harness (`live-trigger-e2e.mjs`, `seal-e2e`) all read these by exact name.
+**K3. Content-property keys are external API surface: `protection-`, `section-protection-` (CQL/UI mirrors of a page's seals), `sentinel-vault-validation` (mirror of the gate state; the status itself is KVS `validation-state-{pageId}`), `sentinel-vault-page-settings` (macroDisabled). They are MIRRORS: no enforcement or authorization decision reads them (8.14.0 — anyone who can edit a page can change or delete its properties). KVS is the authority (`guarded-page-{pageId}`, `workflow-state-{pageId}`, `validation-state-{pageId}`).**
+WHY: CQL discoverability, the doc ribbon, and the E2E harness (`live-trigger-e2e.mjs`, `seal-e2e`) read these by exact name; the build guard test/guard-marker-backfill.test.mjs lists every reader in src/server.
 Files: `src/server/capsules/sealing/logic.js`, `src/server/capsules/section-seals/logic.js` (`refreshSectionContentProp`), `src/server/capsules/validations/logic.js`.
 
 **K4. App uninstall wipes ALL KVS keys (lifecycle trigger enumerates and deletes) — any new key family must remain reachable by that cleanup enumeration.**

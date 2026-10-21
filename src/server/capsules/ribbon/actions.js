@@ -16,6 +16,7 @@ import { actions as sealingActions } from "../sealing/actions.js";
 import { actions as workflowActions } from "../workflow/actions.js";
 import { actions as bulletinActions } from "../bulletins/actions.js";
 import { actions as validationActions } from "../validations/actions.js";
+import { errText } from "../../shared/action-log.js";
 
 export const RIBBON_PARTS = Object.freeze({
   summary: "ribbon-summary",
@@ -45,7 +46,7 @@ const ribbonEvaluate = async (req) => {
     try {
       out[part] = await byKey.get(key)({ ...req, payload: payloads[part] });
     } catch (e) {
-      console.warn(`[RIBBON] ${key} failed inside ribbon-evaluate:`, e?.message || e);
+      console.warn(`[RIBBON] ${key} failed inside ribbon-evaluate:`, errText(e));
       out[part] = null;
       out.failed.push(part);
     }

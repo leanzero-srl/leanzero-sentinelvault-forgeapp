@@ -39,16 +39,17 @@
 import * as forgeApi from "@forge/api";
 import { cleanTrail } from "../../ui/kit/ui-action-names.js";
 import { REASONS } from "./action-reasons.gen.js";
+import { errorFacts, stepOf, STEP_RE, IDENT_RE, CODE_RE, KEY_RE, errText, safeKey, spaceKeyForLog } from "../../ui/kit/error-facts.js";
+
+// errorFacts/stepOf/errText live in src/ui/kit/error-facts.js (pure, shared with the frontend bundle).
+export { errorFacts, stepOf, STEP_RE, errText, safeKey, spaceKeyForLog };
 
 export const LOGGED = Symbol.for("lz.action-log");
 const TRAIL_KEY = "__lzTrail";
 const BARE_KEY = "__lzBare";
 const REASON_SET = new Set(REASONS);
 
-const KEY_RE = /^[a-z0-9][a-z0-9-]{0,63}$/;
 const ACTION_RE = /^[a-z0-9][a-z0-9-]{0,40}(?:\.[a-z0-9][a-z0-9-]{0,63}){1,2}$/;
-const IDENT_RE = /^[A-Za-z_$][\w$]{0,59}$/;
-const CODE_RE = /^[A-Z][A-Z0-9_]{1,39}$/;
 
 let appFacts = null;
 function facts() {
@@ -73,14 +74,19 @@ function remainingMs() {
   } catch (_) { return null; }
 }
 
-/** PURE. A key-like value or the fallback. */
-export const safeKey = (s, fallback = "unknown") => (typeof s === "string" && KEY_RE.test(s) ? s : fallback);
 
 /** PURE. The slug of a refusal text, only when the text is a literal of the source. */
 export function reasonSlug(text) {
   if (typeof text !== "string" || !REASON_SET.has(text)) return undefined;
   return text.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 60).replace(/-+$/, "") || undefined;
 }
+
+/**
+ * PURE. A refusal or failure reason as a log line may print it: its slug when the text is a literal
+ * of the source, "unlisted" when it was built at runtime (it may hold a title, a name or an error
+ * message), "none" when there is none.
+ */
+export const reasonText = (text) => reasonSlug(text) || (text ? "unlisted" : "none");
 
 // A refusal that is about WHO is asking (classified from the text; only the category is printed).
 // Curated against every literal refusal in action-reasons.gen.js (test/action-log.test.mjs pins samples
@@ -98,61 +104,6 @@ export function classifyResult(result) {
   if (result.signatureRequired || result.codeRequired || result.lockedOut) return { outcome: "denied", errorType: "signature", ...(reason ? { reason } : {}) };
   const denied = (text && DENIED_RE.test(text)) || result.status === 403 || result.forbidden === true;
   return { outcome: denied ? "denied" : "refused", ...(reason ? { reason } : {}) };
-}
-
-/** PURE. What a thrown value may say in a log line: its class, status, code and the app frame. */
-export function errorFacts(e) {
-  try {
-    const out = {};
-    const name = e && typeof e === "object" ? (typeof e.name === "string" ? e.name : e.constructor?.name) : null;
-    out.errorType = typeof name === "string" && IDENT_RE.test(name) ? name : e instanceof Error ? "Error" : `thrown-${typeof e}`;
-    const status = Number(e?.status ?? e?.statusCode ?? e?.response?.status);
-    if (Number.isInteger(status) && status >= 100 && status <= 599) out.status = status;
-    if (typeof e?.code === "string" && CODE_RE.test(e.code)) out.code = e.code;
-    const step = stepOf(e);
-    if (step) out.step = step;
-    return out;
-  } catch (_) {
-    return { errorType: "unreadable" }; // a hostile getter or a revoked Proxy: never replace the real error
-  }
-}
-
-// Frame names that are plumbing, not the app step (Promise.all, Function.prototype.call, generators...).
-const BUILTIN_FRAMES = new Set(["Promise", "Array", "Object", "Function", "new", "anonymous", "all", "allSettled", "race", "any", "then", "call", "apply", "bind", "next", "step", "asyncGeneratorStep", "_next", "_throw", "fulfilled", "rejected", "processTicksAndRejections", "runMicrotasks", "map", "forEach", "reduce", "run", "runInvocation", "wrapped", "inner", "withInvocation"]);
-
-/**
- * PURE. Where the error was thrown, from the stack FRAMES (the message line is cut off first and never
- * parsed): the app source file and line ("server/capsules/realms/actions.js:239") when the frame maps
- * to src/ (Forge bundles with source maps; its async transpilation renames functions to "call" /
- * "_invoke", so a name alone says nothing there), else the first app function name.
- */
-export const STEP_RE = /^(?:[A-Za-z_$][\w$]{0,59}|[a-z0-9][\w./-]{0,100}\.(?:js|jsx|mjs):\d{1,6})$/;
-export function stepOf(e) {
-  let stack;
-  try { stack = typeof e?.stack === "string" ? e.stack : ""; } catch (_) { return undefined; }
-  if (!stack) return undefined;
-  let msg = "";
-  try { msg = typeof e?.message === "string" ? e.message : ""; } catch (_) { return undefined; }
-  let rest;
-  if (msg) {
-    const at = stack.indexOf(msg);
-    if (at < 0) return undefined;
-    rest = stack.slice(at + msg.length);
-  } else rest = stack;
-  const firstFrame = rest.search(/\n\s+at /);
-  if (firstFrame < 0) return undefined;
-  let named;
-  for (const line of rest.slice(firstFrame).split("\n")) {
-    const m = line.match(/^\s+at (?:async )?(?:([A-Za-z_$][\w$.]*?)(?: \[as [\w$]+\])? \((.*)\)|(\S+))$/);
-    if (!m) continue;
-    const where = m[2] ?? m[3] ?? "";
-    if (/node_modules|node:|internal\//.test(where)) continue;
-    const src = where.match(/\/src\/([\w./-]+\.(?:js|jsx|mjs)):(\d+)(?::\d+)?$/);
-    if (src && !src[1].endsWith("shared/action-log.js")) { const s2 = `${src[1]}:${src[2]}`; if (STEP_RE.test(s2)) return s2; }
-    const fn = m[1] ? m[1].split(".").pop() : null;
-    if (!named && fn && IDENT_RE.test(fn) && !BUILTIN_FRAMES.has(fn)) named = fn;
-  }
-  return named;
 }
 
 /** PURE. The payload without the UI trail (and its bare marker), and the trail itself (cleaned). */

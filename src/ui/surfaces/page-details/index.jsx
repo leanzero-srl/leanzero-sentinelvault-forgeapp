@@ -481,7 +481,7 @@ const WorkflowBlock = ({ wf, pageId, onChanged }) => {
       {wf.approvalRecord?.decisions?.length > 0 && (
         <ul className="pd-wf-decisions" data-testid="pd-wf-decisions">
           {wf.approvalRecord.decisions.map((d, i) => (
-            <li key={i}><strong>{d.name || "Approver"}</strong> · {d.decision === "denied" ? "Denied" : d.decision === "approved" ? "Approved" : "No decision before completion"}{d.decidedAt ? ` · ${fmtDay(d.decidedAt)}` : ""}{d.signed ? " · Signed" : ""}{d.reason ? ` · “${d.reason}”` : ""}</li>
+            <li key={i}><strong>{d.name || "Approver"}</strong> · {d.decision === "denied" ? "Denied" : d.decision === "approved" ? "Approved" : "No decision before completion"}{d.decidedAt ? ` · ${fmtDay(d.decidedAt)}` : ""}{d.signed ? " · Signed" : ""}{d.counted === false ? " · Not counted" : ""}{d.reason ? ` · “${d.reason}”` : ""}</li>
           ))}
         </ul>
       )}

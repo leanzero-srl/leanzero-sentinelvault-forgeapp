@@ -35,6 +35,7 @@ import { kvs } from "@forge/kvs";
 import { refreshByline } from "../page-details/byline.js"; // 5.0 byline chip — the page write refreshes its own chip
 import { queueBylineRefresh } from "../page-details/byline-fanout.js"; // E2: a space default reaches every inheriting page's chip
 import { recordActivity } from "../../infra/activity-log.js"; // H: the audit trail
+import { errText } from "../../shared/action-log.js";
 
 const NOT_AUTHORIZED = "Not authorized";
 
@@ -82,7 +83,7 @@ export const getProvider = async (req) => {
     const canManageLevels = provider.name === "app" && (await isOperatorSiteAdmin(accountId));
     return { name: provider.name, levels, canManageLevels, enabled: sw.active };
   } catch (e) {
-    console.error("[CLASSIFICATION] provider failed:", e);
+    console.error("[CLASSIFICATION] provider failed:", errText(e));
     return { name: "app", levels: [], canManageLevels: false, error: "Could not load the classification scheme" };
   }
 };
@@ -109,7 +110,7 @@ export const listSpaces = async (req) => {
     });
     return { spaces: spaces.map((s, i) => ({ ...s, defaultLevelId: defaults[i] ?? null })), siteAdmin };
   } catch (e) {
-    console.error("[CLASSIFICATION] list-spaces failed:", e);
+    console.error("[CLASSIFICATION] list-spaces failed:", errText(e));
     return { spaces: [], error: "Could not load spaces" };
   }
 };
@@ -124,7 +125,7 @@ export const setSpaceDefault = async (req) => {
   if (!accountId || unique.length === 0) return { results: [], reason: NOT_AUTHORIZED };
   let provider, levels;
   try { ({ provider, levels } = await getClassificationProvider()); } catch (e) {
-    console.error("[CLASSIFICATION] provider failed:", e);
+    console.error("[CLASSIFICATION] provider failed:", errText(e));
     return { results: unique.map((spaceId) => ({ spaceId, ok: false, reason: "Could not load the classification scheme" })) };
   }
   const siteAdmin = await isOperatorSiteAdmin(accountId);
@@ -154,7 +155,7 @@ export const setSpaceDefault = async (req) => {
       });
       return { spaceId, ok: true, key: space.key, defaultLevelId: levelId, from: current ?? null };
     } catch (e) {
-      console.error(`[CLASSIFICATION] set-space-default ${spaceId} failed:`, e);
+      console.error(`[CLASSIFICATION] set-space-default ${spaceId} failed:`, errText(e));
       return { spaceId, ok: false, reason: e?.message || "Could not set the default" };
     }
   });
@@ -179,7 +180,7 @@ export const getSpaceDefault = async (req) => {
     const levelId = await provider.getSpaceDefault(space.id).catch(() => null);
     return { enabled: sw.active, offReason: sw.reason, levels, levelId: findLevel(levels, levelId) ? String(levelId) : null, spaceKey: space.key };
   } catch (e) {
-    console.error("[CLASSIFICATION] space-default read failed:", e);
+    console.error("[CLASSIFICATION] space-default read failed:", errText(e));
     return { error: "Could not load the classification" };
   }
 };
@@ -200,7 +201,7 @@ export const getPage = async (req) => {
     const [effective, pageLevelId] = await Promise.all([provider.effectiveLevel(pageId), provider.getPageLevel(pageId)]);
     return { enabled: true, effective, pageLevelId: pageLevelId ?? null, provider: provider.name };
   } catch (e) {
-    console.error("[CLASSIFICATION] get-page failed:", e);
+    console.error("[CLASSIFICATION] get-page failed:", errText(e));
     return { effective: { level: null, source: "none" }, pageLevelId: null, error: "Could not load the classification" };
   }
 };
@@ -237,7 +238,7 @@ export const setPage = async (req) => {
     if (lowered && !reason) return { ok: false, needsReason: true, reason: downgradeRefusal(findLevel(levels, fromId), findLevel(levels, toId)) };
     if (levelId == null) await provider.resetPage(pageId);
     else await provider.setPageLevel(pageId, levelId);
-    await refreshByline(pageId).catch((e) => console.warn("[BYLINE] set-page refresh failed:", e?.message || e));
+    await refreshByline(pageId).catch((e) => console.warn("[BYLINE] set-page refresh failed:", errText(e)));
     await recordActivity({
       type: "classification.page-set", pageId: String(pageId), spaceKey: await resolvePageSpaceKey(pageId).catch(() => null),
       actor: { accountId, name: null }, target: { kind: "page", id: String(pageId), name: null },
@@ -246,7 +247,7 @@ export const setPage = async (req) => {
     });
     return { ok: true, effective: await provider.effectiveLevel(pageId), pageLevelId: levelId, previousPageLevelId: pageBefore ?? null, lowered };
   } catch (e) {
-    console.error("[CLASSIFICATION] set-page failed:", e);
+    console.error("[CLASSIFICATION] set-page failed:", errText(e));
     return { ok: false, reason: e?.message || "Could not set the classification" };
   }
 };
@@ -263,7 +264,7 @@ export const manageLevels = async (req) => {
     resetProviderCache();
     return { ok: true, levels };
   } catch (e) {
-    console.error("[CLASSIFICATION] manage-levels failed:", e);
+    console.error("[CLASSIFICATION] manage-levels failed:", errText(e));
     return { ok: false, reason: "Could not save the levels" };
   }
 };
@@ -365,7 +366,7 @@ const importAssetsLevels = async (req) => {
     await kvs.set(ASSETS_LINK_KVS_KEY, link);
     return { ok: true, levels, link, problems: r.problems };
   } catch (e) {
-    console.error("[CLASSIFICATION] assets import failed:", e);
+    console.error("[CLASSIFICATION] assets import failed:", errText(e));
     return { error: "Could not save the imported levels" };
   }
 };

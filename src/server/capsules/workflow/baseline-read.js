@@ -7,6 +7,7 @@
  */
 import { describeBaseline, legacySourceFrom } from "./baseline.js";
 import { readActivity, activityPagePrefix } from "../../infra/activity-log.js";
+import { errText } from "../../shared/action-log.js";
 
 /**
  * Review round 2 (D1): a record whose baseline moved before 8.11.0 has no baselineSource, so a revert on
@@ -22,7 +23,7 @@ export async function withLegacySource(pageId, record) {
     const src = legacySourceFrom(record, entries);
     return src ? { ...record, baselineSource: src } : record;
   } catch (e) {
-    console.warn(`[WORKFLOW] legacy baseline history for ${pageId}:`, e?.message || e);
+    console.warn(`[WORKFLOW] legacy baseline history for ${pageId}:`, errText(e));
     return record;
   }
 }
@@ -34,7 +35,7 @@ export async function baselineFor(pageId, record) {
     const { entries } = await readActivity(activityPagePrefix(String(pageId)), { limit: 100 });
     return describeBaseline(record, { activity: entries });
   } catch (e) {
-    console.warn(`[WORKFLOW] baseline history for ${pageId}:`, e?.message || e);
+    console.warn(`[WORKFLOW] baseline history for ${pageId}:`, errText(e));
     return plain;
   }
 }

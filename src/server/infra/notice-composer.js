@@ -33,6 +33,7 @@ import {
   composeEditorRevertLayout,
 } from "./notice-blueprints.js";
 import { NOTICE_EDITOR_REVERT } from "../shared/notice-policy.js";
+import { errText, reasonText } from "../shared/action-log.js";
 
 export {
   composeViolationLayout,
@@ -85,7 +86,7 @@ export async function fetchOperatorProfile(accountId) {
       displayName = data.displayName || "Unknown User";
     }
   } catch (error) {
-    console.error(`[NOTICE] Failed to fetch user info for ${accountId}:`, error);
+    console.error("[NOTICE] Failed to fetch user info:", errText(error));
   }
 
   return { displayName, accountId };
@@ -111,7 +112,7 @@ async function resolvePageUrl(pageId) {
       historyUrl: baseUrl ? `${baseUrl}/pages/viewpreviousversions.action?pageId=${pageId}` : "",
     };
   } catch (error) {
-    console.warn(`[NOTICE] Failed to fetch page ${pageId}:`, error);
+    console.warn(`[NOTICE] Failed to fetch page ${pageId}:`, errText(error));
     return { pageTitle: "Unknown Page", pageUrl: "", historyUrl: "" };
   }
 }
@@ -175,7 +176,7 @@ export async function dispatchNotice(type, data) {
   }
 
   console.info(
-    `[NOTICE] Preparing ${type} notice for ${recipientAccountId} on artifact "${artifactName}"`,
+    `[NOTICE] Preparing ${type} notice on page ${pageId}`,
   );
 
   try {
@@ -217,12 +218,12 @@ export async function dispatchNotice(type, data) {
     } else if (result.suppressed) {
       // Deliberate (flag off / quiet space) — already logged at the choke point; not a failure.
     } else {
-      console.warn(`[NOTICE] ${type} comment failed: ${result.reason}`);
+      console.warn(`[NOTICE] ${type} comment failed: ${reasonText(result.reason)}`);
     }
 
     return result;
   } catch (error) {
-    console.error(`[NOTICE] Exception in ${type}:`, error);
+    console.error(`[NOTICE] Exception in ${type}:`, errText(error));
     return { success: false, reason: error.message };
   }
 }

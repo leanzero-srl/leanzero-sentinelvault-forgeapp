@@ -27,6 +27,7 @@ import {
   resolveActorName,
 } from "../../infra/activity-log.js";
 import { decorateActorNames as decorateNames } from "./actor-names.js";
+import { errText } from "../../shared/action-log.js";
 
 const clampLimit = (limit, fallback) => {
   const n = Number(limit);
@@ -91,7 +92,7 @@ export const getPageActivity = async (req) => {
     });
     return { entries: await decorateActorNames(entries), nextCursor };
   } catch (e) {
-    console.error("[ACTIVITY] get-page-activity failed:", e);
+    console.error("[ACTIVITY] get-page-activity failed:", errText(e));
     return { entries: [], nextCursor: null, error: "Could not load activity" };
   }
 };
@@ -122,7 +123,7 @@ export const getSpaceActivity = async (req) => {
     const matched = await decorateActorNames(await decoratePageTitles(entries.filter((e) => matchesActivityFilter(e, filter)), spaceKey));
     return { entries: matched, nextCursor, scanned: entries.length };
   } catch (e) {
-    console.error("[ACTIVITY] get-space-activity failed:", e);
+    console.error("[ACTIVITY] get-space-activity failed:", errText(e));
     return { entries: [], nextCursor: null, scanned: 0, error: "Could not load activity" };
   }
 };

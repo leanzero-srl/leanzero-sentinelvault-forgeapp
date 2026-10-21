@@ -19,6 +19,7 @@ import { listApiTokens, createApiToken, revokeApiToken } from "./tokens.js";
 import { exportSpaceConfig, exportSiteConfig } from "./export.js";
 import { resolveActorName } from "../../infra/activity-log.js";
 import { withDisplayNames } from "./display-names.js";
+import { errText } from "../../shared/action-log.js";
 
 export const WEBTRIGGER_KEY = "config-api";
 export const WEBTRIGGER_URL_KVS_KEY = "webtrigger-url:config-api";
@@ -35,7 +36,7 @@ export async function resolveConfigApiUrl() {
   try {
     const url = await webTrigger.getUrl(WEBTRIGGER_KEY);
     if (url) { await kvs.set(WEBTRIGGER_URL_KVS_KEY, { url, at: new Date().toISOString() }); return url; }
-  } catch (e) { console.warn("[CONFIG-API] webTrigger.getUrl failed:", e?.message || e); }
+  } catch (e) { console.warn("[CONFIG-API] webTrigger.getUrl failed:", errText(e)); }
   return null;
 }
 

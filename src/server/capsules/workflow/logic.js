@@ -7,7 +7,8 @@
  *   workflow-state-{pageId}                                    full page-state record (source of truth)
  *   workflow-idx-{sanitizedSpaceKey}-{stateId}-{pageId}        by-state index (F7 dashboard)
  *   workflow-log-{pageId}-{ts}                                 transition log, NO TTL (compliance artifact)
- * Content property `sentinel-vault-workflow` mirrors {workflowId,stateId,enteredAt} for CQL + cheap trigger probe.
+ * Content property `sentinel-vault-workflow` mirrors {workflowId,stateId,enteredAt} for CQL and the UI only.
+ * Enforcement never reads it (an editor can delete a page property): the record above is the authority.
  * NEVER overload `sentinel-vault-validation` (separate subsystem, separate rewrite cadence).
  */
 import { route } from "@forge/api";
@@ -18,9 +19,11 @@ import { syncStateLabel } from "./label-sync.js";
 import { sanitizeReadConfirmation } from "./read-acks.js";
 import { fetchPageLabels } from "../../infra/labels.js";
 import { touchByline } from "../page-details/byline-touch.js"; // WF-6 (dynamic inside: no cycle)
-import { enforceModeOf } from "./enforce-rules.js";
+import { enforceModeOf, demoteConfigProblem } from "./enforce-rules.js";
+import { findState, getInitialState, validateTransition, validateDemoteTarget } from "./state-machine.js";
 import { nextBaselineSource, baselineFields } from "./baseline.js";
 import { withLegacySource } from "./baseline-read.js"; // a pre-8.11.0 record's history, seeded before it is extended // B2: why the baseline moved, named on every surface
+import { errText } from "../../shared/action-log.js";
 
 export const WORKFLOW_STATE_PROP = "sentinel-vault-workflow";
 
@@ -55,16 +58,9 @@ export const DEFAULT_WORKFLOW = {
 };
 
 // --- Pure state-machine helpers (unit-tested; no I/O) ---
-
-export function findState(def, stateId) {
-  if (!def || !Array.isArray(def.states)) return null;
-  return def.states.find((s) => s.id === stateId) || null;
-}
-
-export function getInitialState(def) {
-  if (!def || !Array.isArray(def.states) || def.states.length === 0) return null;
-  return def.states.find((s) => s.initial) || def.states[0];
-}
+// findState, getInitialState, validateTransition and the A2 demote rules live in state-machine.js
+// (zero imports, so the browser reads the same copy); re-exported here for every existing caller.
+export { findState, getInitialState, validateTransition, validateDemoteTarget, resolveDemoteTarget, planDemote, enforceStateIds } from "./state-machine.js";
 
 // State ids reachable from `fromStateId` via a defined transition edge.
 export function listTransitions(def, fromStateId) {
@@ -84,63 +80,6 @@ export function findDeadEndStates(def) {
   const hasOutgoing = new Set(def.transitions.filter((t) => findState(def, t.to)).map((t) => t.from));
   const isTarget = new Set(def.transitions.filter((t) => findState(def, t.to)).map((t) => t.to));
   return def.states.filter((s) => isTarget.has(s.id) && !hasOutgoing.has(s.id)).map((s) => s.id);
-}
-
-// { ok, reason } — is moving from→to allowed by this definition?
-export function validateTransition(def, fromStateId, toStateId) {
-  if (!def) return { ok: false, reason: "No workflow definition" };
-  if (!findState(def, fromStateId)) return { ok: false, reason: `Unknown current state: ${fromStateId}` };
-  if (!findState(def, toStateId)) return { ok: false, reason: `Unknown target state: ${toStateId}` };
-  if (fromStateId === toStateId) return { ok: false, reason: "Already in that state" };
-  const edge = def.transitions?.some((t) => t.from === fromStateId && t.to === toStateId);
-  if (!edge) return { ok: false, reason: `No transition ${fromStateId} → ${toStateId}` };
-  return { ok: true };
-}
-
-// --- A2: where a tampered enforced page goes ---
-
-const enforceStateIds = (def) => (def?.states || []).filter((s) => s?.enforce).map((s) => s.id);
-
-// PURE. { ok, reason } — may `stateId` be the space's demotion target for this definition?
-// (a) it exists, (b) it is not itself an enforce state (demoting Approved to Approved is not a
-// demotion), (c) it is reachable by a defined transition from EVERY enforce state — the demote
-// runs from whichever enforce state the page is in, and a target one of them cannot reach would
-// leave that page enforced-but-not-demoted. A definition with no enforce state has nothing to
-// demote from, so no stateId is valid there ("initial" always is).
-export function validateDemoteTarget(def, stateId, entryConditions = null) {
-  if (!def || !Array.isArray(def.states)) return { ok: false, reason: "No workflow definition" };
-  const target = findState(def, stateId);
-  if (!target) return { ok: false, reason: `Unknown state: ${stateId}` };
-  if (target.enforce) return { ok: false, reason: `"${target.name || stateId}" is an approved state — a page cannot be moved back to it` };
-  // A demote is a SYSTEM move that skips the entry gate (rules / AI review) a human transition
-  // would pay, so a state that has one cannot be the target (review finding 9): the page would
-  // land past a gate nobody ran.
-  const cond = entryConditions && typeof entryConditions === "object" ? entryConditions[stateId] : null;
-  if (cond && (cond.requireRules || cond.requireAi)) {
-    return { ok: false, reason: `"${target.name || stateId}" has an entry condition — a page moved back automatically would skip it. Pick a state without one, or remove the condition` };
-  }
-  const froms = enforceStateIds(def);
-  if (!froms.length) return { ok: false, reason: "This workflow has no approved state to move pages back from" };
-  const unreachable = froms.filter((from) => !validateTransition(def, from, stateId).ok);
-  if (unreachable.length) {
-    const names = unreachable.map((id) => findState(def, id)?.name || id).join(", ");
-    return { ok: false, reason: `No transition from ${names} to "${target.name || stateId}" — add one to the workflow first` };
-  }
-  return { ok: true };
-}
-
-// PURE. The state an enforced page is demoted to after an unsanctioned edit: the space's
-// `demoteTo` when it still names a valid target (see validateDemoteTarget — a re-saved definition
-// may have dropped the state or the edge since the setting was saved), else the initial state
-// (today's behaviour, and the "initial" setting). `fromStateId` (the page's current state) tightens
-// the check to the edge that will actually be taken; without it the save-time rule applies.
-export function resolveDemoteTarget(def, settings, fromStateId) {
-  const initial = getInitialState(def);
-  const want = settings?.demoteTo;
-  if (typeof want !== "string" || !want || want === "initial") return initial;
-  if (!validateDemoteTarget(def, want, settings?.entryConditions).ok) return initial;
-  if (fromStateId && !validateTransition(def, fromStateId, want).ok) return initial;
-  return findState(def, want);
 }
 
 // --- A5: review clocks ---
@@ -240,6 +179,10 @@ export function validateDefinition(input) {
     const clean = { id, name, color };
     if (st?.initial === true) { clean.initial = true; initials++; }
     if (st?.enforce === true) clean.enforce = true;
+    // 2026-10-21: pages START in the first state with no approval, and "move it back to the first
+    // state" (the default demote) is no move at all from it — an edit to such a page was left
+    // standing. A first state is never an approved (enforced) one.
+    if (clean.initial && clean.enforce) return { ok: false, reason: `"${name}" is the first state, so it cannot also be an approved (enforced) state — pages start there without an approval` };
     if (days != null) clean.reviewAfterDays = days;
     outStates.push(clean);
   }
@@ -314,12 +257,20 @@ export async function listSpaceWorkflows(spaceKey) {
 // Save the space default (workflowId absent / "default" / the default's own id) or a
 // label-scoped extra. A state that still holds pages cannot be removed — those pages would be
 // in a state the definition no longer knows.
-export async function storeSpaceWorkflow(spaceKey, { workflowId, def, labels, priority }) {
+export async function storeSpaceWorkflow(spaceKey, { workflowId, def, labels, priority, settings = null }) {
   if (!spaceKey) return { success: false, reason: "spaceKey required" };
   const v = validateDefinition({ ...def, id: workflowId && workflowId !== "default" ? workflowId : (def?.id || "default") });
   if (!v.ok) return { success: false, reason: v.reason };
   const clean = v.value;
   const isExtra = !!workflowId && workflowId !== "default";
+  // 2026-10-21: in a space that moves edited Approved pages back, a definition that cannot make that
+  // move is refused (the engine would revert instead — enforce-rules.js enforcementPlan). Judged
+  // against the settings this save goes with: the one-Save bundle passes the settings it is about
+  // to write; every other save, the space's stored ones.
+  const stored = await getSpaceWorkflowSettings(spaceKey);
+  const effective = settings && typeof settings === "object" ? { ...stored, ...settings } : stored; // a partial set (the config import) overrides only what it names
+  const demoteProblem = demoteConfigProblem(clean, { ...effective, entryConditions: sanitizeEntryConditions(effective?.entryConditions) });
+  if (demoteProblem) return { success: false, reason: `${isExtra ? `In the "${clean.name}" workflow: ` : ""}${demoteProblem}` };
   const current = isExtra ? await kvs.get(extraDefKey(spaceKey, workflowId)) : await resolveWorkflowDef(spaceKey);
   const keep = new Set(clean.states.map((s) => s.id));
   for (const st of current?.states || []) {
@@ -442,15 +393,20 @@ export async function restampApprovedVersion(pageId, n, cause = null) {
   return true;
 }
 
-// #44 §2.7: when a seal is created on an enforced page, advance the approved baseline to
-// the live version so its body ⊇ the new seal (a whole-page revert then restores the seal
-// instead of stripping it). Best-effort; the sweep reconciles a miss next tick.
+// #44 §2.7: when a seal is created on an enforced page, advance the approved baseline so its
+// body ⊇ the new seal (a whole-page revert then restores the seal instead of stripping it).
+// Only to versions that COUNT (sanctioned.js): the live version
+// when every version since the baseline was saved by an approver, a steward, or the app on top of
+// such a version; otherwise at most the newest version that does count, so the page event and the
+// sweep still revert or demote the edit after it. Could not tell (429, unreadable list): no move.
+// A null baseline is left to the sweep's heal. Best-effort; the sweep reconciles a miss next tick.
 export async function restampIfEnforced(pageId) {
   try {
     const wf = await readPageWorkflow(pageId);
-    if (wf?.enforce) {
-      const v = await fetchLivePageVersion(pageId);
-      if (v) return await restampApprovedVersion(pageId, v, { kind: "seal" });
+    if (wf?.enforce && typeof wf.approvedVersion === "number") {
+      const { sanctionedRestampTarget } = await import("./sanctioned.js"); // dynamic: sanctioned.js imports this module
+      const t = await sanctionedRestampTarget(pageId, wf);
+      if (t.known && t.version > wf.approvedVersion) return await restampApprovedVersion(pageId, t.version, { kind: "seal" });
     }
   } catch (_) { /* best-effort */ }
   return false;
@@ -493,7 +449,7 @@ async function writeStateContentProp(pageId, record) {
       );
     }
   } catch (e) {
-    console.error("[WORKFLOW-STATE] content-property write failed:", e);
+    console.error("[WORKFLOW-STATE] content-property write failed:", errText(e));
   }
 }
 
@@ -604,12 +560,12 @@ export async function unassignPageWorkflow({ pageId, actorAccountId = null, acto
     `workflow-state-${pageId}`, `workflow-idx-${sk}-${record.stateId}-${pageId}`, `workflow-integrity-notified-${pageId}`,
     `workflow-review-notified-${pageId}`, `workflow-completing-${pageId}`, `workflow-label-${pageId}`,
   ]) await kvs.delete(k).catch(() => {});
-  // The page property the trigger's enforcement probe and CQL read — gone with the workflow.
+  // The page property CQL reads — gone with the workflow.
   try {
     const res = await appConfluence(route`/wiki/api/v2/pages/${pageId}/properties?key=${WORKFLOW_STATE_PROP}`);
     const existing = res.ok ? (await res.json())?.results?.[0] : null;
     if (existing?.id) await appConfluence(route`/wiki/api/v2/pages/${pageId}/properties/${existing.id}`, { method: "DELETE" });
-  } catch (e) { console.warn(`[WORKFLOW] remove: property cleanup failed for ${pageId}:`, e?.message || e); }
+  } catch (e) { console.warn(`[WORKFLOW] remove: property cleanup failed for ${pageId}:`, errText(e)); }
   // A state label (label sync on) no longer describes the page.
   try { const { syncStateLabel } = await import("./label-sync.js"); await syncStateLabel(pageId, null); } catch (_) { /* best effort */ }
   await appendWorkflowLog(pageId, { kind: "removed", from: record.stateId, to: null, by: actorAccountId, byName: actorName, reason: "removed from the workflow" });
@@ -730,6 +686,26 @@ function sanitizeEntryConditions(ec) {
   return out;
 }
 
+/**
+ * Can this space's settings move every enforced page back (demote mode), in the default workflow and
+ * every label-scoped one? Null, or the reason a space admin reads (naming the label workflow). The
+ * settings save refuses on it and the Workflow tab shows it for a configuration saved before the
+ * check existed (the engine reverts those edits instead — enforce-rules.js enforcementPlan).
+ */
+export async function demoteProblemForSpace(spaceKey, settings, defaultDef = null) {
+  if (!spaceKey) return null;
+  const s = settings || {};
+  const own = demoteConfigProblem(defaultDef || await resolveWorkflowDef(spaceKey), s);
+  if (own) return own;
+  for (const lw of Array.isArray(s.labelWorkflows) ? s.labelWorkflows : []) {
+    const d = lw?.workflowId ? await kvs.get(extraDefKey(spaceKey, lw.workflowId)) : null;
+    if (!d || !Array.isArray(d.states) || !d.states.length) continue;
+    const p = demoteConfigProblem(d, s);
+    if (p) return `In the "${d.name || lw.name || lw.workflowId}" workflow: ${p}`;
+  }
+  return null;
+}
+
 export async function setSpaceWorkflowSettings(spaceKey, settings) {
   if (!spaceKey) return { success: false, reason: "spaceKey required" };
   const existing = await getSpaceWorkflowSettings(spaceKey);
@@ -744,6 +720,17 @@ export async function setSpaceWorkflowSettings(spaceKey, settings) {
   }
   const byState = sanitizeReviewAfterDaysByState(settings?.reviewAfterDaysByState, def);
   if (!byState.ok) return { success: false, reason: byState.reason };
+  // Demote mode must be able to move every enforced page back — in the default workflow AND in every
+  // label-scoped one (they follow these settings too), "the first state" included.
+  const labelWorkflows = settings?.labelWorkflows === undefined ? (existing.labelWorkflows || []) : sanitizeLabelWorkflows(settings?.labelWorkflows);
+  const demoteProblem = await demoteProblemForSpace(spaceKey, { enforceMode: enforceModeOf(settings), demoteTo, entryConditions: sanitizeEntryConditions(settings?.entryConditions), labelWorkflows }, def);
+  // A configuration saved before this check that the save does not touch (same mode, same target):
+  // refusing would block unrelated changes — removing a departed approver, turning the workflow off —
+  // while protecting nothing (the engine already reverts those edits). Saved, with the problem said.
+  const untouched = demoteProblem && enforceModeOf(existing) === enforceModeOf(settings)
+    && (existing.demoteTo || "initial") === demoteTo
+    && demoteProblem === await demoteProblemForSpace(spaceKey, { ...existing, entryConditions: sanitizeEntryConditions(existing.entryConditions) }, def);
+  if (demoteProblem && !untouched) return { success: false, reason: demoteProblem };
   const clean = {
     enabled: !!settings?.enabled,
     autoAssignNew: !!settings?.autoAssignNew,
@@ -774,7 +761,7 @@ export async function setSpaceWorkflowSettings(spaceKey, settings) {
     // B1: label-scoped workflows — [{ workflowId, name, labels, priority }], highest priority wins.
     // The settings editor does not own this field (the definition editor does), so a save that
     // omits it must keep what is stored — not wipe every mapping (Tier B review, finding 1).
-    labelWorkflows: settings?.labelWorkflows === undefined ? (existing.labelWorkflows || []) : sanitizeLabelWorkflows(settings?.labelWorkflows),
+    labelWorkflows,
   };
   // Optional approval config for the enforce transition (#43). Shape:
   // { approvers: [{ type:"user"|"group", id, name }], mode:"any"|"all"|"min", min }.
@@ -788,7 +775,7 @@ export async function setSpaceWorkflowSettings(spaceKey, settings) {
     };
   }
   await kvs.set(`workflow-settings-${sanitize(spaceKey)}`, clean);
-  return { success: true, settings: clean };
+  return { success: true, settings: clean, ...(demoteProblem ? { warning: `Edits to approved pages are reverted, not moved back: ${demoteProblem}` } : {}) };
 }
 
 // Pure decision (unit-tested): should a page in this space be auto-assigned now?
@@ -887,7 +874,7 @@ export async function transitionPageWorkflow({ pageId, spaceKey, toStateId, acto
       const custody = await import("./seal-custody.js");
       if (enteringEnforce) await custody.holdPageSeals({ pageId, record, stateName: target.name || toStateId, actorAccountId, actorName });
       else await custody.handBackPageSeals({ pageId, record, actorAccountId, actorName, toStateName: target.name || toStateId });
-    } catch (e) { console.warn("[SEAL-CUSTODY] transition hook failed:", e?.message || e); }
+    } catch (e) { console.warn("[SEAL-CUSTODY] transition hook failed:", errText(e)); }
   }
   // Review #1: a transition that is NOT the completion of the page's pending approval (no
   // approvalRecord rides it: a plain request-transition to an open state, the review-clock
@@ -903,7 +890,7 @@ export async function transitionPageWorkflow({ pageId, spaceKey, toStateId, acto
         await clearPageApprovals(pageId, pending.toStateId, [...(pending.approvers || []), ...(pending.adminDeciders || [])]);
         console.warn(`[WORKFLOW] pending approval to ${pending.toStateId} voided: page ${pageId} moved ${current.stateId} → ${toStateId}`);
       }
-    } catch (e) { console.warn("[WORKFLOW] could not void the pending approval:", e); }
+    } catch (e) { console.warn("[WORKFLOW] could not void the pending approval:", errText(e)); }
   }
   await mirrorStateLabel(pageId, record, settings).catch(() => {});
   await appendWorkflowLog(pageId, {

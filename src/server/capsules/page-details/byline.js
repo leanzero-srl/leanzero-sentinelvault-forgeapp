@@ -40,6 +40,7 @@ import { sourcePhrase } from "../classification/logic.js"; // P3: one "where it 
 import { describeWorkflowForPage } from "../workflow/approvals.js"; // WF-6: the status the chip carries
 import { collectPageSeals, readPageMeta } from "./logic.js";
 import { sealCountLabel } from "../../../ui/kit/status-language.js"; // SEC-3: "Sealed (2)"
+import { errText } from "../../shared/action-log.js";
 
 export const BYLINE_PROPERTY_KEY = "sentinel-byline";
 export const NEUTRAL_COLOR = "#475569";
@@ -142,7 +143,7 @@ async function writeProperty(pageId, value) {
     : await appConfluence(route`/wiki/api/v2/pages/${pageId}/properties`, {
       method: "POST", headers, body: JSON.stringify({ key: BYLINE_PROPERTY_KEY, value }),
     });
-  if (!res.ok) console.warn(`[BYLINE] property write on ${pageId} → ${res.status} ${await res.text().catch(() => "")}`);
+  if (!res.ok) console.warn(`[BYLINE] property write on ${pageId} → ${res.status}`);
   return !!res.ok;
 }
 
@@ -167,7 +168,7 @@ export async function writeBylineFor(pageId, { level, source, sealCount, classif
     if (ok) await kvs.set(stampKey(pageId), { stamp, updatedAt: new Date().toISOString() }).catch(() => {});
     return { byline, wrote: ok };
   } catch (e) {
-    console.warn(`[BYLINE] write for ${pageId} failed:`, e?.message || e);
+    console.warn(`[BYLINE] write for ${pageId} failed:`, errText(e));
     return { byline, wrote: false };
   }
 }
@@ -186,12 +187,12 @@ export async function refreshByline(pageId, opts = {}) {
   // WF-6: the workflow status rides the same property (one read of the page's workflow — the
   // record, the open request and, where it matters, the last decision).
   const [seals, sw, wf] = await Promise.all([
-    collectPageSeals(id, meta.type).catch((e) => { console.warn("[BYLINE] seals:", e?.message || e); return { attachments: [], sections: [] }; }),
+    collectPageSeals(id, meta.type).catch((e) => { console.warn("[BYLINE] seals:", errText(e)); return { attachments: [], sections: [] }; }),
     classificationActiveForPage(id).catch(() => ({ active: false, reason: "site" })),
-    describeWorkflowForPage(id).catch((e) => { console.warn("[BYLINE] workflow:", e?.message || e); return null; }),
+    describeWorkflowForPage(id).catch((e) => { console.warn("[BYLINE] workflow:", errText(e)); return null; }),
   ]);
   const classification = sw.active
-    ? await getClassificationProvider().then(({ provider }) => provider.effectiveLevel(id)).catch((e) => { console.warn("[BYLINE] classification:", e?.message || e); return { level: null, source: "none" }; })
+    ? await getClassificationProvider().then(({ provider }) => provider.effectiveLevel(id)).catch((e) => { console.warn("[BYLINE] classification:", errText(e)); return { level: null, source: "none" }; })
     : { level: null, source: "none" };
   const sealCount = seals.attachments.filter((a) => !a.trashed).length + seals.sections.length;
   return writeBylineFor(id, { level: classification.level, source: classification.source, sealCount, classificationEnabled: sw.active, workflow: wf?.status || null }, opts);

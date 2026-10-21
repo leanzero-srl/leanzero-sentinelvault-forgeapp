@@ -3,6 +3,7 @@ import { resolveBulletinToggles } from "../../shared/bulletin-flags.js";
 import { setWithTtl } from "../../shared/kvs-ttl.js";
 import { canReadPage } from "../../shared/content-access.js";
 import { resolveActorName } from "../../infra/activity-log.js";
+import { errText } from "../../shared/action-log.js";
 
 // The banner sentences that NAME a person (doc-ribbon alertSentence): "An edit to this Approved page
 // by {editor} …" for the approver, and the legacy SEAL_CONFLICT line. The dispatch records carry
@@ -79,7 +80,7 @@ export const recentDispatches = async (req) => {
       notifications: events,
     };
   } catch (error) {
-    console.error("Error fetching recent dispatches:", error);
+    console.error("Error fetching recent dispatches:", errText(error));
     return {
       success: false,
       notifications: [],
@@ -109,7 +110,7 @@ export const operatorDispatches = async (req) => {
       notifications: operatorNotifications,
     };
   } catch (error) {
-    console.error("Error fetching operator dispatches:", error);
+    console.error("Error fetching operator dispatches:", errText(error));
     return {
       success: false,
       notifications: [],
@@ -152,7 +153,7 @@ export const acknowledgeDispatch = async (req) => {
       success: true,
     };
   } catch (error) {
-    console.error("Error acknowledging dispatch:", error);
+    console.error("Error acknowledging dispatch:", errText(error));
     return {
       success: false,
     };
@@ -187,7 +188,7 @@ export const watchArtifact = async (req) => {
       message: "Notification request saved",
     };
   } catch (error) {
-    console.error("Error requesting watch:", error);
+    console.error("Error requesting watch:", errText(error));
     return {
       success: false,
       error: error.message,
@@ -211,7 +212,7 @@ export const checkWatch = async (req) => {
       requested: !!watchData,
     };
   } catch (error) {
-    console.error("Error checking watch:", error);
+    console.error("Error checking watch:", errText(error));
     return {
       success: false,
       requested: false,
@@ -235,7 +236,7 @@ export const unwatchArtifact = async (req) => {
       message: "Notification request cancelled",
     };
   } catch (error) {
-    console.error("Error cancelling watch:", error);
+    console.error("Error cancelling watch:", errText(error));
     return {
       success: false,
       error: error.message,
@@ -267,7 +268,7 @@ const flushOperatorDispatches = async (req) => {
       success: true,
     };
   } catch (error) {
-    console.error("Error clearing operator alerts:", error);
+    console.error("Error clearing operator alerts:", errText(error));
     return {
       success: false,
     };
@@ -296,7 +297,7 @@ export const listBreachDispatches = async (req) => {
 
     return alertData;
   } catch (error) {
-    console.error("Failed to get breach dispatches:", error);
+    console.error("Failed to get breach dispatches:", errText(error));
     return [];
   }
 };

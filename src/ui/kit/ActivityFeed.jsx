@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "./bridge";
 import { actorName, formatActivity, formatAbsolute, relativeTime } from "./activity-format";
+import { errText } from "./error-facts.js";
 
 // A1 — Document Activity feed. One list, three homes (inline panel group, overlay section, and
 // — through ActivityReport — the realm console). Reads `get-page-activity` when it has a pageId,
@@ -115,7 +116,7 @@ export default function ActivityFeed({ pageId = null, spaceKey = null, pageSize 
     setLoading(true); setError(false);
     fetchPage(null)
       .then((r) => { if (!cancelled && alive.current) { setEntries(r.entries); setNextCursor(r.nextCursor); setLoading(false); } })
-      .catch((e) => { console.warn("Activity load failed:", e); if (!cancelled && alive.current) { setError(true); setLoading(false); } });
+      .catch((e) => { console.warn("Activity load failed:", errText(e)); if (!cancelled && alive.current) { setError(true); setLoading(false); } });
     return () => { cancelled = true; };
   }, [fetchPage, pageId, spaceKey, reloadKey]);
 
@@ -128,7 +129,7 @@ export default function ActivityFeed({ pageId = null, spaceKey = null, pageSize 
       setEntries((prev) => [...prev, ...r.entries]);
       setNextCursor(r.nextCursor);
     } catch (e) {
-      console.warn("Activity load-more failed:", e);
+      console.warn("Activity load-more failed:", errText(e));
       if (alive.current) setError(true);
     } finally {
       if (alive.current) setLoadingMore(false);

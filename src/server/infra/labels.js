@@ -1,5 +1,6 @@
 import { route } from "@forge/api";
 import { appConfluence } from "../shared/confluence-call.js";
+import { errText } from "../shared/action-log.js";
 
 // Native page labels (names only). Shared by validations, the page trigger, and the
 // #46 transition-conditions gate — authored once here, not copied per capsule.
@@ -34,7 +35,7 @@ export async function fetchPageLabelsChecked(pageId) {
     console.warn(`[LABELS] page ${pageId}: more than 2000 labels — read the first 2000`);
     return { labels, complete: false };
   } catch (e) {
-    console.warn(`[LABELS] page ${pageId}: label read failed:`, e?.message || e);
+    console.warn(`[LABELS] page ${pageId}: label read failed:`, errText(e));
     return { labels, complete: false };
   }
 }

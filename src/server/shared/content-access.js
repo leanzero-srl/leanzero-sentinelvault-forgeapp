@@ -1,5 +1,6 @@
 import { route } from "@forge/api";
 import { appConfluence, isRateLimited, noteAuthzUnknown } from "./confluence-call.js";
+import { errText } from "./action-log.js";
 
 // SV-SEC-1 — content-level entitlement checks for resolver actions.
 //
@@ -97,7 +98,7 @@ export async function accountCanAccessContent(accountId, contentId, operation) {
     }
     return grantsAccess(true, await res.json());
   } catch (e) {
-    console.error("[AUTHZ] permission/check threw; denying:", e);
+    console.error("[AUTHZ] permission/check threw; denying:", errText(e));
     return false;
   }
 }

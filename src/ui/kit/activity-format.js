@@ -23,7 +23,7 @@ export const ACTIVITY_CATEGORIES = Object.freeze([
     "seal.deleted", "seal.revert-failed",
   ]) },
   { id: "sections", label: "Sections", types: Object.freeze([
-    "section.sealed", "section.released", "section.extended", "section.restored", "section.reverted", "section.rebaselined", "section.auto-released",
+    "section.sealed", "section.released", "section.extended", "section.restored", "section.reverted", "section.rebaselined", "section.auto-released", "section.restore-failed",
   ]) },
   { id: "editreq", label: "Edit access", types: Object.freeze([
     "editreq.requested", "editreq.approved", "editreq.denied", "editreq.revoked", "editreq.granted",
@@ -86,6 +86,17 @@ export const categoryLabel = (id) => ALL_CATEGORIES.find((c) => c.id === id)?.la
 // ── Small helpers ────────────────────────────────────
 
 const APP_NAME = "Sentinel Vault";
+// Why a space set to move edited pages back had the edit reverted instead (workflow.enforced
+// `demoteFallback`, codes from state-machine.js planDemote; "transition-refused" from the engine).
+const DEMOTE_FALLBACK_WHY = Object.freeze({
+  "no-transition": "the workflow has no transition from the approved state to the state pages go back to",
+  "approved-target": "the state pages go back to is itself an approved state",
+  "entry-condition": "the state pages go back to has an entry condition",
+  "same-state": "the page is already in the state pages go back to",
+  "no-target": "the workflow has no state to go back to",
+  "unknown-state": "the workflow no longer has the state the page was in",
+  other: "the workflow refused the move",
+});
 
 // An Atlassian accountId ("712020:937bc860-…", or a legacy 24-hex id) is never a name. Some events
 // carry one in `actor.name` (device matrix SV-08: it printed in the Who column and the sentence,
@@ -284,6 +295,11 @@ export function formatActivity(entry) {
     case "section.reverted":
       return { ...base, label: "Page reverted", glyph: "undo", tone: "caution",
         sentence: `Sealed section ${section()} was edited — ${APP_NAME} reverted the page to the sealed version${version}` };
+    case "section.restore-failed":
+      return { ...base, label: "Restore failed", glyph: "alert", tone: "critical",
+        sentence: d.changed
+          ? `Sealed section ${section()} was edited, and ${APP_NAME} could not put it back: its sealed copy is missing — check the section against the page history${version}`
+          : `${APP_NAME} cannot check sealed section ${section()}: its sealed copy is missing — check the section against the page history${version}` };
 
     // ── Edit access ──
     case "editreq.requested":
@@ -348,8 +364,10 @@ export function formatActivity(entry) {
       // approved v7). Rows written before 8.11.0 carry only restoredTo.
       const got = d.restoredContent ?? d.restoredTo;
       const reviewed = d.reviewedVersion;
+      // 2026-10-21: a revert the app made because the space's demote could not be made in its workflow.
+      const fallback = d.demoteFallback ? { detail: `It could not be moved back for review: ${DEMOTE_FALLBACK_WHY[d.demoteFallback] || DEMOTE_FALLBACK_WHY.other}. A space admin can fix this in the space's Workflow settings` } : {};
       return d.mode === "revert"
-        ? { ...base, label: "Approved page restored", glyph: "undo", tone: "caution",
+        ? { ...base, label: "Approved page restored", glyph: "undo", tone: "caution", ...fallback,
             sentence: d.reconciled === "baseline-advanced"
               ? `${byWho} the Approved page with no content change — ${APP_NAME} kept it and advanced the approved baseline${d.driftedVersion != null ? ` to v${d.driftedVersion}` : ""}`
               : got != null && reviewed != null && got !== reviewed

@@ -117,7 +117,7 @@ Every re-stamp in the system goes through this one function.
 | `enforce` | same record | `.enforce` (bool) | YES |
 | approver snapshot | same record | `.approvers` (accountId[]) | YES |
 | `approvedAt`/`approvedBy` | same record | audit | YES (also in `workflow-log-{pageId}-{ts}`) |
-| cheap probe mirror | content property `sentinel-vault-workflow` | `.enforce`, `.approvedVersion` | NO (best-effort hint) |
+| CQL/UI mirror | content property `sentinel-vault-workflow` | `.enforce`, `.approvedVersion` | NO — never read for enforcement (an editor can delete it; 8.14.0) |
 | enforcement mode | KVS `workflow-settings-{spaceKey}` | `.enforceMode` ("demote"\|"revert", default "demote") | YES |
 | integrity dedup | KVS `workflow-integrity-notified-{pageId}` | presence flag | — |
 
@@ -175,7 +175,7 @@ content, (b) writes no body so it never fights the seal passes (dissolves the pi
 naturally idempotent. Cost is positioning only (closer to competitors' state-reset), not correctness.
 Revert remains available per-space for teams that want byte-freeze, gated with eyes-open copy.
 
-### 2.1 Phase 1 — the third cheap probe (fixes the `hasBodyWork` gating bug)
+### 2.1 Phase 1 — the workflow probe (fixes the `hasBodyWork` gating bug)
 An enforced page with NO seals must still read its body to revert. Add, alongside the two seal probes:
 ```js
 const enforcement = contentProtectionOn
@@ -187,9 +187,12 @@ const hasBodyWork = sealFileMap.length > 0 || sectionSeals.length > 0 || needsRe
 
 `collectWorkflowEnforcementForPage(pageId, atlassianId, eventVersion)` — new fn, mirrors
 `collectSectionSealsForPage`'s early-bail discipline (T4, NO ADF read):
-1. `GET .../properties?key=sentinel-vault-workflow`. Absent OR `value.enforce !== true` → `return null`.
-   (Fast path: unrelated/non-enforced page costs the property GET only.)
-2. Authoritative `readPageWorkflow(pageId)` → `record`. Re-confirm enforce via
+1. (8.14.0) Authoritative `readPageWorkflow(pageId)` → `record`, one KVS get — the first and only read. No
+   record or `!record.enforce` → `return null`; the record cannot be read → `{ action: "unknown" }` (nothing
+   undone, accepted or demoted; seal passes stand down). The `sentinel-vault-workflow` page property is a mirror
+   for CQL and the UI and is NEVER read here: anyone who can edit the page can delete it. (Superseded design:
+   step 1 was a property GET that returned null when the property was absent.)
+2. With that `record`: Re-confirm enforce via
    `findState(await resolveWorkflowDef(record.spaceKey), record.stateId).enforce === true`; if not → `return
    null`. Read `record.approvedVersion`, `record.approvers`, `record.spaceKey`.
 3. **Privileged check (§0.D + §0.E).** Read `settings = await getSpaceWorkflowSettings(record.spaceKey)`

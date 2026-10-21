@@ -11,6 +11,7 @@ import { isOperatorSteward, isOperatorSiteAdmin } from "../../shared/steward-che
 // records and API clients may still send them — accepted when well-formed, ignored by every reader.
 import { validateRibbonSettings, DEFAULT_RIBBON_MODE, DEFAULT_RIBBON_THRESHOLD_RANK } from "../../../ui/kit/ribbon-rules.js";
 import { queueBylineRefreshSiteWide, queueBylineRefreshForKey } from "../page-details/byline-fanout.js";
+import { errText } from "../../shared/action-log.js";
 
 // SECURITY (audit A1): these resolvers write admin-settings-* — including the steward list
 // (adminUsers) and the force-override toggle — so an UNGATED write is a full privilege
@@ -146,7 +147,7 @@ const storePolicy = async (req) => {
       try {
         const { extendAllSealsBy } = await import("../jira-seals/store.js");
         extended += await extendAllSealsBy(pauseDuration);
-      } catch (e) { console.error("Auto-unseal resume: Jira seals not extended:", e); }
+      } catch (e) { console.error("Auto-unseal resume: Jira seals not extended:", errText(e)); }
       console.info(`Auto-unseal resume: extended ${extended} seal(s) by ${Math.round(pauseDuration / 1000)}s`);
 
       data.autoUnlockPausedAt = null;
@@ -206,7 +207,7 @@ export const enumerateRealmRulesets = async (req) => {
     );
     return realmRulesets;
   } catch (error) {
-    console.error("Error fetching all realm rulesets:", error);
+    console.error("Error fetching all realm rulesets:", errText(error));
     return [];
   }
 };

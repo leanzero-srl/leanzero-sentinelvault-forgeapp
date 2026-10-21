@@ -20,6 +20,7 @@ import {
   isFullValidationConfig,
   storeValidationConfig,
   readValidationState,
+  isUnknownValidationState,
   writeValidationState,
   resolveEffectiveConfig,
   resolveAiConfig,
@@ -35,6 +36,7 @@ import {
   mergeEffectiveRules,
 } from "./logic.js";
 import { isForgeLlmModelAllowed, FORGE_LLM_DEFAULT_MODEL, listForgeLlmModels } from "../../infra/forge-llm.js";
+import { errText } from "../../shared/action-log.js";
 
 // it57: ai-validation-queue is constructed LAZILY at push time (see enqueue paths below) so this
 // module is import-safe for the dev test-hook (no Queue at module load — the it17 trap).
@@ -188,7 +190,7 @@ async function judgePage(pageId, rules) {
     const { passed, violations } = evaluateRules(adfDoc, labels, rules);
     return { checked: true, version, passed, violations };
   } catch (e) {
-    console.error("[VALIDATE-NOW] failed:", e);
+    console.error("[VALIDATE-NOW] failed:", errText(e));
     // SV-m3: do NOT fail open — a page-read error must not render as "all checks passed".
     return { checked: false, version: null, failureReason: "Could not read this page to check it. Try again in a moment.", error: String(e?.message || e) };
   }
@@ -242,6 +244,10 @@ const recheckPageValidation = async (req) => {
   const rules = effective.enabled ? (effective.rules || []) : await resolveRules(spaceKey);
   const stored = await readValidationState(pageId);
   if (!rules.length) return { success: true, passed: true, violations: [], noRules: true, state: null, persisted: false };
+  // The stored status could not be read: never write over it (it may be a space admin's Approve anyway).
+  if (isUnknownValidationState(stored)) {
+    return { ok: false, passed: false, violations: [], failureReason: "Could not read this page's validation status right now. Nothing was stored. Try again in a moment.", reason: "Could not read this page's validation status right now. Nothing was stored. Try again in a moment.", state: null, persisted: false };
+  }
 
   const r = await judgePage(pageId, rules);
   if (!r.checked) {
@@ -286,6 +292,12 @@ const getValidationState = async (req) => {
   // was written → `stale`, and the panel re-checks instead of showing the old verdict.
   const effective = await resolveEffectiveConfig(await pageSpaceKey(req, pageId));
   const stored = await readValidationState(pageId);
+  if (isUnknownValidationState(stored)) {
+    // Pass/fail off or no rule: there is no status to show, whatever could not be read.
+    const none = reconcileStoredState({ effective, stored: null, fingerprint: rulesFingerprint(effective.rules) });
+    if (none.why === "gate-off" || none.why === "no-rules") return { state: null, stale: false, applies: false };
+    return { state: null, unknown: true, reason: "Could not read this page's validation status right now. Try again in a moment." };
+  }
   const { state, stale, applies } = reconcileStoredState({ effective, stored, fingerprint: rulesFingerprint(effective.rules) });
   return { state, stale, applies: applies === true };
 };
@@ -316,7 +328,8 @@ const approvePageGate = async (req) => {
   try { version = (await readDocBody(pageId)).pageData?.version?.number ?? null; }
   catch (_) { return { success: false, reason: "Could not read the page. Try again in a moment." }; }
 
-  const stored = await readValidationState(pageId);
+  const storedRead = await readValidationState(pageId);
+  const stored = isUnknownValidationState(storedRead) ? null : storedRead; // only the activity row's "previous"
   const state = { state: "passed", violations: [], version, approvedBy: accountId, approvedAt: new Date().toISOString(), checkedAt: new Date().toISOString(), rulesFp: rulesFingerprint(effective.rules) };
   await writeValidationState(pageId, state);
   await recordActivity({

@@ -13,6 +13,7 @@ import {
 } from "./engine.js";
 import * as store from "./store.js";
 import { BACKUP_QUEUE_KEY, DIRTY_KEY } from "./hook.js";
+import { errText, safeKey } from "../../shared/action-log.js";
 
 const STALE_MS = 24 * 3600000;
 const LEASE_KEY = "backup-lease";
@@ -37,7 +38,8 @@ export async function withLease(fn, { waitMs = 120000 } = {}) {
   finally { await releaseLock(LEASE_KEY, token); }
 }
 const nowIso = () => new Date().toISOString();
-const errText = (e) => String(e?.message || e).slice(0, 300);
+// The error text kept in job/status rows and returned reasons. Never printed: log lines use errText.
+const errMessage = (e) => String(e?.message || e).slice(0, 300);
 
 /** Site-level audit entry (activity-site- leg). `actor` null = the app (a schedule or a save). */
 export async function audit(type, actor, details) {
@@ -79,7 +81,7 @@ async function executeJobUnleased(job) {
         await runBackupAndAudit({ reason: "after-restore", actor: null });
         return r;
       } catch (e) {
-        await audit("backup.restore-failed", job.actor, { generationId: p.generationId || null, error: errText(e) });
+        await audit("backup.restore-failed", job.actor, { generationId: p.generationId || null, error: errMessage(e) });
         throw e;
       }
     }
@@ -100,9 +102,9 @@ async function executeJobUnleased(job) {
       // otherwise keep a full copy of the setup that nobody knows is there.
       let oldPage = null;
       if (r.ok && before?.pageId && before.pageId !== where.pageId) {
-        const d = await store.emptyAndTrashBackupPage(before.pageId).catch((e) => ({ ok: false, state: "unknown", error: errText(e) }));
+        const d = await store.emptyAndTrashBackupPage(before.pageId).catch((e) => ({ ok: false, state: "unknown", error: errMessage(e) }));
         oldPage = { pageId: before.pageId, removed: !!d.ok, state: d.state || null };
-        if (!d.ok) console.error(`[BACKUP] relocate: the old backup page ${before.pageId} could not be moved to the trash (${d.state || d.error})`);
+        if (!d.ok) console.error(`[BACKUP] relocate: the old backup page ${before.pageId} could not be moved to the trash (state=${d.state || "unknown"})`);
       }
       await audit("backup.location-set", job.actor, { from: before?.spaceKey || null, to: where.spaceKey, pageId: where.pageId, ...(oldPage && !oldPage.removed ? { oldPageLeft: oldPage.pageId } : {}) });
       return { ...r, spaceKey: where.spaceKey, pageId: where.pageId, ...(oldPage ? { oldPage } : {}) };
@@ -161,7 +163,7 @@ export async function deleteAllBackups(actor) {
   const d = await discoverBackups();
   const mine = d.backups.filter((b) => b.sameEnvironment && b.restricted);
   const outcomes = [];
-  for (const b of mine) outcomes.push({ pageId: b.pageId, ...(await store.emptyAndTrashBackupPage(b.pageId).catch((e) => ({ ok: false, state: "unknown", error: errText(e) }))) });
+  for (const b of mine) outcomes.push({ pageId: b.pageId, ...(await store.emptyAndTrashBackupPage(b.pageId).catch((e) => ({ ok: false, state: "unknown", error: errMessage(e) }))) });
   const failed = outcomes.filter((o) => !o.ok);
   const done = outcomes.filter((o) => o.ok).map((o) => o.pageId);
   const purged = outcomes.reduce((n, o) => n + (o.purged || 0), 0);
@@ -204,13 +206,13 @@ export async function backupConsumer(event) {
     // After Delete the backup, a run queued BEFORE the delete finds no dirty flag (the delete clears
     // it) and must not bring the backup back; a change made after the delete re-raises the flag.
     const st = (await kvs.get(STATUS_KEY).catch(() => null)) || {};
-    if (st.deletedAt && !(await kvs.get(DIRTY_KEY).catch(() => null))) { console.log(`[BACKUP] ${body.reason || "save"} run skipped: the backup was deleted ${st.deletedAt}`); return; }
+    if (st.deletedAt && !(await kvs.get(DIRTY_KEY).catch(() => null))) { console.log(`[BACKUP] ${safeKey(body.reason, "save")} run skipped: the backup was deleted ${st.deletedAt}`); return; }
     // An automatic run that finds another run going simply skips: the dirty flag / next hour retries.
     try { await withLease(() => runBackupAndAudit({ reason: body.reason || "save", actor: null }), { waitMs: 0 }); }
     catch (e) { console.log(`[BACKUP] automatic run skipped: ${errText(e)}`); }
     return;
   }
-  if (body.kind !== "job" || !body.jobId) { console.warn("[BACKUP] consumer: unknown event", JSON.stringify(body).slice(0, 200)); return; }
+  if (body.kind !== "job" || !body.jobId) { console.warn(`[BACKUP] consumer: unknown event kind=${safeKey(body.kind, "none")} jobId=${body.jobId ? "present" : "missing"}`); return; }
   const job = await readJob(body.jobId);
   if (!job || job.status !== "queued") { console.warn(`[BACKUP] job ${body.jobId} is ${job?.status || "missing"}; not running`); return; }
   const startedAt = nowIso();
@@ -222,16 +224,16 @@ export async function backupConsumer(event) {
   } catch (e) {
     // A privacy erasure that only met another run's lease (a restore can hold it longer than the
     // 120 s wait) is queued again in 5 minutes rather than waiting for next week's sweep (review low 3).
-    if (job.kind === "privacy-erase" && LEASE_BUSY.test(errText(e)) && (job.attempts || 0) < PRIVACY_ERASE_RETRIES) {
+    if (job.kind === "privacy-erase" && LEASE_BUSY.test(errMessage(e)) && (job.attempts || 0) < PRIVACY_ERASE_RETRIES) {
       // queuedAt: if the push below fails, the "queued" row goes stale (privacy jobAlive) and the
       // next sweep starts a new job instead of waiting on this one forever (review L1).
-      await writeJob({ ...job, status: "queued", queuedAt: nowIso(), attempts: (job.attempts || 0) + 1, lastError: errText(e), startedAt: null });
+      await writeJob({ ...job, status: "queued", queuedAt: nowIso(), attempts: (job.attempts || 0) + 1, lastError: errMessage(e), startedAt: null });
       await new Queue({ key: BACKUP_QUEUE_KEY }).push({ body: { kind: "job", jobId: job.id }, delayInSeconds: 300 });
       console.warn(`[BACKUP] privacy-erase job ${job.id} re-queued in 5 min (attempt ${(job.attempts || 0) + 1}): ${errText(e)}`);
       return;
     }
-    console.error(`[BACKUP] job ${job.id} (${job.kind}) failed:`, e);
-    await writeJob({ ...job, status: "failed", startedAt, finishedAt: nowIso(), error: errText(e) });
+    console.error(`[BACKUP] job ${job.id} (${job.kind}) failed:`, errText(e));
+    await writeJob({ ...job, status: "failed", startedAt, finishedAt: nowIso(), error: errMessage(e) });
   }
 }
 
@@ -264,7 +266,7 @@ export async function backupSweep(context) {
     if (!reason) return;
     await new Queue({ key: BACKUP_QUEUE_KEY }).push({ body: { kind: "backup", reason } });
   } catch (e) {
-    console.error("[BACKUP] sweep failed:", e);
+    console.error("[BACKUP] sweep failed:", errText(e));
   }
 }
 

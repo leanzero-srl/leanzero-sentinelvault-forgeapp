@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from "react";
 import { createRoot } from "react-dom/client";
 import { view } from "@forge/bridge";
 import { enablePaletteSync } from "../../kit/palette-sync";
+import { errText } from "../../kit/error-facts.js";
 
 // ── Icons ────────────────────────────────────────────
 
@@ -59,7 +60,7 @@ const withDeadline = (promise, ms, what) => new Promise((resolve, reject) => {
   Promise.resolve(promise).then((v) => { clearTimeout(t); resolve(v); }, (e) => { clearTimeout(t); reject(e); });
 });
 const bridgeClose = () => {
-  try { const r = view.close(); if (r && r.catch) r.catch((e) => console.info("[PANEL-SETUP] view.close rejected:", e?.message || e)); } catch (e) { console.info("[PANEL-SETUP] view.close unavailable:", e?.message || e); }
+  try { const r = view.close(); if (r && r.catch) r.catch((e) => console.info("[PANEL-SETUP] view.close rejected:", errText(e))); } catch (e) { console.info("[PANEL-SETUP] view.close unavailable:", errText(e)); }
 };
 
 const INITIAL_CONFIG = {
@@ -131,7 +132,7 @@ const GridLayoutEditor = () => {
     (async () => {
       setLoading(true);
       setInitError(null);
-      try { await withDeadline(enablePaletteSync(), CONTEXT_WAIT_MS, "the theme bridge"); } catch (e) { console.info("[PANEL-SETUP] palette sync skipped:", e?.message || e); }
+      try { await withDeadline(enablePaletteSync(), CONTEXT_WAIT_MS, "the theme bridge"); } catch (e) { console.info("[PANEL-SETUP] palette sync skipped:", errText(e)); }
       try {
         const ctx = await withDeadline(view.getContext(), CONTEXT_WAIT_MS, "the editor");
         const saved = ctx?.extension?.config;
@@ -144,7 +145,7 @@ const GridLayoutEditor = () => {
           });
         }
       } catch (e) {
-        console.error("[PANEL-SETUP] could not read the saved preferences:", e);
+        console.error("[PANEL-SETUP] could not read the saved preferences:", errText(e));
         // The form still renders (defaults) so the dialog never hangs; Apply would overwrite
         // the saved preferences with defaults, so the banner says so and offers a retry.
         if (!cancelled) setInitError(e?.message || "The editor did not answer.");
@@ -179,7 +180,7 @@ const GridLayoutEditor = () => {
       // The editor keeps the dialog open after a submit it accepted (P1-6); close it ourselves.
       bridgeClose();
     } catch (e) {
-      console.error("[PANEL-SETUP] submit failed:", e);
+      console.error("[PANEL-SETUP] submit failed:", errText(e));
       setStatus({ type: "error", message: `Could not apply the preferences — ${e?.message || "the editor refused the change"}.` });
     } finally {
       setBusy(false);

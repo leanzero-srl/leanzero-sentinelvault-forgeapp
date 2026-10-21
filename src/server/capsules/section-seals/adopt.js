@@ -20,6 +20,8 @@ import { hashAdf } from "../../infra/doc-surgery.js";
 import { resolveSealHoldPeriod } from "../sealing/logic.js";
 import { currentUserProfile } from "../../shared/user-or-app.js";
 import { recordActivity } from "../../infra/activity-log.js";
+import { errText } from "../../shared/action-log.js";
+import { markGuardedPage } from "../../shared/guarded-page.js"; // the page's seal marker (KVS authority)
 
 export const INSERT_INTENT_PREFIX = "section-insert-pending-";
 export const INSERT_INTENT_TTL_MS = 48 * 3600 * 1000;
@@ -68,6 +70,9 @@ export async function adoptInsertedSection({ pageId, spaceKey, spaceId, pageTitl
     sectionTitle, sealedVersion: version ?? null, contentHash, originalIndex: originalIndex ?? null,
     note: null, adoptedOnInsert: true,
   };
+  // The page's marker first: the pipeline finds this page's seals by it. No marker, no seal (the
+  // caller logs it, keeps the insert marker and releases its claim: the next publish adopts the wrapper).
+  if (!(await markGuardedPage(pageId))) throw new Error("the page's seal marker could not be written");
   await kvs.set(`section-protection-${sectionId}`, record);
   await kvs.set(`section-snapshot-${sectionId}`, { wrapperNode: JSON.parse(JSON.stringify(node)), bodyContent: body, hash: contentHash, version: version ?? null, originalIndex: originalIndex ?? null });
   if (sid) {
@@ -81,6 +86,6 @@ export async function adoptInsertedSection({ pageId, spaceKey, spaceId, pageTitl
     target: { kind: "section", id: sectionId, name: sectionTitle },
     details: { expiresAt, lockDuration: holdPeriod, blocks: body.length, adoptedOnInsert: true },
     version: version ?? null,
-  }).catch((e) => console.warn("[SECTION-ADOPT] activity:", e?.message || e));
+  }).catch((e) => console.warn("[SECTION-ADOPT] activity:", errText(e)));
   return { sectionId, record };
 }

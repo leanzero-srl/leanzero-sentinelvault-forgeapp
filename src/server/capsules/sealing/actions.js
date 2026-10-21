@@ -1,5 +1,7 @@
 import { asUser, asApp, route } from "@forge/api";
-import { appConfluence, userConfluence } from "../../shared/confluence-call.js";
+import { markGuardedPage } from "../../shared/guarded-page.js"; // the page's seal marker (KVS authority)
+import { appConfluence, userConfluence, rateLimitOf, busyReason } from "../../shared/confluence-call.js";
+import { classifyTrashAnswer, trashRefusal, purgeTrashedAsCaller, isNeedsConsent, unprovenGone, NAME_TAKEN, markPanelRestore, settlePanelRestore } from "../../shared/trash-rights.js";
 import { requestUserOrApp, currentUserProfile } from "../../shared/user-or-app.js";
 import { kvs, WhereConditions } from "@forge/kvs";
 
@@ -22,7 +24,7 @@ import {
 // Import from capsule logic
 import { countPageAttachments, writeSealContentProp, removeSealContentProp, touchSealTimestamp, resolveSealHoldPeriod } from "./logic.js";
 import { readDocBody } from "../../infra/doc-surgery.js";
-import { confirmAttachmentPurged, putAttachmentCurrent } from "../../infra/attachment-status.js";
+import { attachmentPurgeVerdict, confirmAttachmentPurged, putAttachmentCurrent } from "../../infra/attachment-status.js";
 import { findSealedMediaSingle, capturePresentation } from "../../infra/media-presentation.js";
 import { purgeAllSealState } from "./confluence-sync.js";
 import { releaseSeal } from "./release.js";
@@ -43,6 +45,7 @@ import { isLiveAttachmentSeal } from "../../shared/live-seal.js"; // a trashedOn
 import { getActiveEditGrant, getActiveSectionEditGrant, listPendingRequestsForOwner, listPendingSectionRequestsForOwner, resolveEditCooldownMs } from "../editreq/logic.js";
 import { retryAtFor } from "../../shared/edit-cooldown.js"; // SEC-8: the ribbon's declined state
 import { listMyApprovals, describeWorkflowForPage } from "../workflow/approvals.js";
+import { errText, safeKey, reasonText } from "../../shared/action-log.js";
 
 /**
  * Get attachments for the current page with seal status
@@ -77,9 +80,8 @@ const enumerateDocArtifacts = async (req) => {
     const response = await userConfluence(url);
 
     if (!response.ok) {
-      const errorText = await response.text();
       console.error(
-        `Failed to fetch attachments: ${response.status} - ${errorText}`,
+        `Failed to fetch attachments: ${response.status}`,
       );
       return {
         attachments: [],
@@ -140,7 +142,7 @@ const enumerateDocArtifacts = async (req) => {
             }));
           }
         } catch (e) {
-          console.warn(`[ENUMERATE-DOC-ARTIFACTS] Failed to fetch labels for ${att.id}:`, e);
+          console.warn(`[ENUMERATE-DOC-ARTIFACTS] Failed to fetch labels for ${att.id}:`, errText(e));
         }
 
         return {
@@ -173,7 +175,7 @@ const enumerateDocArtifacts = async (req) => {
       } catch (e) {
         console.warn(
           `[ENUMERATE-DOC-ARTIFACTS] Failed to parse cursor from _links.next: ${data._links.next}`,
-          e,
+          errText(e),
         );
       }
     }
@@ -183,7 +185,7 @@ const enumerateDocArtifacts = async (req) => {
     let counts = null;
     if (!cursor || cursor === "0") {
       try { counts = await countPageAttachments(contentId, req.context.accountId, (u) => userConfluence(u)); }
-      catch (e) { console.warn("[ENUMERATE-DOC-ARTIFACTS] counts failed:", e?.message || e); }
+      catch (e) { console.warn("[ENUMERATE-DOC-ARTIFACTS] counts failed:", errText(e)); }
     }
     return {
       attachments: artifactsWithSealState,
@@ -192,7 +194,7 @@ const enumerateDocArtifacts = async (req) => {
       counts,
     };
   } catch (error) {
-    console.error("Error fetching attachments:", error);
+    console.error("Error fetching attachments:", errText(error));
     return {
       attachments: [],
       hasMore: false,
@@ -280,7 +282,7 @@ const sealArtifact = async (req) => {
     const prof = await currentUserProfile(operatorAccountId);
     operatorDisplayName = prof.displayName || "Current User";
   } catch (error) {
-    console.warn("Failed to fetch operator display name:", error);
+    console.warn("Failed to fetch operator display name:", errText(error));
   }
 
   // Fetch artifact details
@@ -307,7 +309,7 @@ const sealArtifact = async (req) => {
       artifactPageId = artifactData.pageId || artifactData.blogPostId || null;
     }
   } catch (error) {
-    console.warn("Failed to fetch artifact details:", error);
+    console.warn("Failed to fetch artifact details:", errText(error));
   }
 
   // SV-SEC-1. attachmentId is payload-supplied and nothing above this point checked the caller
@@ -343,10 +345,14 @@ const sealArtifact = async (req) => {
   // privileged set — a new personal seal would hand one person control of a file on a page that
   // is meant to change only through its approvers. Dynamic import: no cycle with workflow.
   if (contentId) {
-    const { workflowPrivilegeForPage, ENFORCED_SEAL_REFUSAL } = await import("../workflow/privilege.js");
-    const p = await workflowPrivilegeForPage(contentId, operatorAccountId).catch(() => ({ enforced: false }));
-    if (p.enforced && !p.privileged) return { success: false, reason: ENFORCED_SEAL_REFUSAL };
+    // privilege.js sealGateForPage: the one gate for a new seal (fails closed when it cannot check).
+    const { sealGateForPage } = await import("../workflow/privilege.js");
+    const refused = await sealGateForPage(contentId, operatorAccountId);
+    if (refused) return refused;
   }
+  // The page's KVS marker before anything is written: the pipeline finds this page's seals by it
+  // (shared/guarded-page.js). No marker, no seal — nothing else is written.
+  if (contentId && !(await markGuardedPage(contentId))) return { success: false, reason: "Could not save the seal right now. Nothing was changed. Try again in a moment." };
   // The caller has passed every gate — only now is the record this seal replaces torn down.
   if (staleSeal) {
     // Sweep the prior owner's edit-access records (it55; parity with every other teardown —
@@ -392,7 +398,7 @@ const sealArtifact = async (req) => {
         pageTitle = pageData.title || "Unknown Page";
       }
     } catch (error) {
-      console.warn("Failed to fetch page title:", error);
+      console.warn("Failed to fetch page title:", errText(error));
     }
   }
 
@@ -412,7 +418,7 @@ const sealArtifact = async (req) => {
       embedded = sealedNode != null;
       mediaBaseline = capturePresentation(sealedNode);
     } catch (e) {
-      console.warn(`[SEAL] presentation-baseline capture failed for ${attachmentId} (attr protection inactive):`, e?.message);
+      console.warn(`[SEAL] presentation-baseline capture failed for ${attachmentId} (attr protection inactive):`, errText(e));
     }
   }
 
@@ -450,7 +456,7 @@ const sealArtifact = async (req) => {
   await kvs.delete(`fifty-percent-reminder-sent-${attachmentId}`).catch(() => {});
   await kvs.delete(`reminder-sent-${attachmentId}`).catch(() => {});
 
-  // Store seal record
+  // Store seal record (the page's marker first: the pipeline finds this page's seals by it)
   await kvs.set(`protection-${attachmentId}`, sealPayload);
   await touchSealTimestamp();
   // A1: the seal exists from this write on — record it here, before the best-effort tail
@@ -492,7 +498,7 @@ const sealArtifact = async (req) => {
     } catch (indexError) {
       console.warn(
         `[SEAL-ARTIFACT] Failed to write realm-seal index:`,
-        indexError,
+        errText(indexError),
       );
     }
   }
@@ -509,7 +515,7 @@ const sealArtifact = async (req) => {
     console.warn("Seal confirmation notice is disabled - skipping");
   } else if (!contentId) {
     console.warn(
-      `No contentId found for artifact - cannot post comment. Context: ${JSON.stringify(req.context.extension)}`,
+      `No contentId found for artifact - cannot post comment (module ${safeKey(req.context?.moduleKey, "none")})`,
     );
   } else {
     try {
@@ -530,11 +536,11 @@ const sealArtifact = async (req) => {
 
       if (!noticeResult.success) {
         console.error(
-          `Seal confirmation notice failed: ${noticeResult.reason}`,
+          `Seal confirmation notice failed: ${reasonText(noticeResult.reason)}`,
         );
       }
     } catch (error) {
-      console.error("Error posting seal confirmation notice:", error);
+      console.error("Error posting seal confirmation notice:", errText(error));
     }
   }
 
@@ -543,10 +549,10 @@ const sealArtifact = async (req) => {
     try {
       await triggerPanelEmbed(contentId, realmKey);
     } catch (e) {
-      console.warn("[SEAL-ARTIFACT] Panel auto-insert failed:", e);
+      console.warn("[SEAL-ARTIFACT] Panel auto-insert failed:", errText(e));
     }
   }
-  if (contentId) await refreshByline(contentId).catch((e) => console.warn("[BYLINE] seal refresh failed:", e?.message || e));
+  if (contentId) await refreshByline(contentId).catch((e) => console.warn("[BYLINE] seal refresh failed:", errText(e)));
 
   return { success: true };
 };
@@ -654,7 +660,7 @@ const unsealArtifact = async (req) => {
       } catch (noticeError) {
         console.error(
           "[UNSEAL] Failed to post steward override notice:",
-          noticeError,
+          errText(noticeError),
         );
       }
     }
@@ -766,13 +772,13 @@ export const extendSeal = async (req) => {
       const indexRow = await kvs.get(indexKey);
       if (indexRow) await kvs.set(indexKey, { ...indexRow, expiresAt: newExpiresAt });
     } catch (e) {
-      console.warn("[EXTEND-SEAL] index row update failed:", e);
+      console.warn("[EXTEND-SEAL] index row update failed:", errText(e));
     }
   }
 
   if (sealRecord.contentId) {
     await writeSealContentProp(sealRecord.contentId, updated).catch((e) =>
-      console.warn("[EXTEND-SEAL] content property update failed:", e));
+      console.warn("[EXTEND-SEAL] content property update failed:", errText(e)));
   }
 
   // Edit grants were written with a KVS TTL pinned to the OLD expiry so they die with the
@@ -789,7 +795,7 @@ export const extendSeal = async (req) => {
       await setUntil(key, { ...value, expiresAt: newExpiresAt }, new Date(newExpiresAt).getTime());
     }
   } catch (e) {
-    console.warn("[EXTEND-SEAL] edit-grant TTL extension failed:", e);
+    console.warn("[EXTEND-SEAL] edit-grant TTL extension failed:", errText(e));
   }
 
   // Restart the lapse cycle: the sweep's notice counter and its dedup flags describe the
@@ -870,7 +876,7 @@ const enumerateOperatorSeals = async (req) => {
       } catch (queryError) {
         console.error(
           `[ENUMERATE-OPERATOR-SEALS] Error on iteration ${iteration}:`,
-          queryError,
+          errText(queryError),
         );
         break;
       }
@@ -947,7 +953,7 @@ const enumerateOperatorSeals = async (req) => {
         } catch (attErr) {
           console.warn(
             `[ENUMERATE-OPERATOR-SEALS] probe failed for ${artifactId} — keeping seal, skipping row:`,
-            attErr,
+            errText(attErr),
           );
           continue;
         }
@@ -980,12 +986,12 @@ const enumerateOperatorSeals = async (req) => {
                     realmKey = realmData.key || realmKey;
                   }
                 } catch (realmErr) {
-                  console.warn("Failed to fetch realm info:", realmErr);
+                  console.warn("Failed to fetch realm info:", errText(realmErr));
                 }
               }
             }
           } catch (pageErr) {
-            console.warn(`Failed to fetch page ${value.contentId}:`, pageErr);
+            console.warn(`Failed to fetch page ${value.contentId}:`, errText(pageErr));
           }
         }
 
@@ -1012,7 +1018,7 @@ const enumerateOperatorSeals = async (req) => {
           mediaType: attMediaType,
         });
       } catch (sealErr) {
-        console.error(`Error processing seal ${key}:`, sealErr);
+        console.error(`Error processing seal ${key}:`, errText(sealErr));
       }
     }
 
@@ -1027,7 +1033,7 @@ const enumerateOperatorSeals = async (req) => {
       total,
     };
   } catch (error) {
-    console.error("Error fetching operator's sealed artifacts:", error);
+    console.error("Error fetching operator's sealed artifacts:", errText(error));
     return {
       attachments: [],
       hasMore: false,
@@ -1149,7 +1155,7 @@ const enumeratePageSeals = async (req) => {
 
     return { claimedArtifacts };
   } catch (error) {
-    console.error("[ENUMERATE-PAGE-SEALS] Error:", error);
+    console.error("[ENUMERATE-PAGE-SEALS] Error:", errText(error));
     return { claimedArtifacts: [] };
   }
 };
@@ -1245,35 +1251,54 @@ export const restoreSealedArtifact = async (req) => {
     return { success: false, reason: "Cannot determine attachment version" };
   }
 
-  // A newer file with the same name on the page makes Confluence refuse the restore (409); the
-  // file then comes back as "<name> (restored).<ext>" and the caller is told (tester 2026-09-30).
+  // A newer file with the same name on the page makes Confluence refuse the restore (409); a trashed
+  // file cannot be renamed first (measured), so the person is told to rename or remove the other one.
+  // The restore runs WITH THE CALLER'S OWN RIGHTS (shared/trash-rights.js): the gate above is
+  // Sentinel Vault's floor, Confluence's trash rights are the ceiling.
   const originalTitle = probeData.title || sealRecord?.attachmentName || "Unknown";
-  const put = await putAttachmentCurrent(pageId, attachmentId, originalTitle, currentVersion);
-  if (!put.ok) {
-    console.error(`[RESTORE] Failed ${attachmentId}: ${put.status} — ${put.text || ""}`);
-    return { success: false, reason: put.status === 409 ? "Could not restore: a file with this name is already on the page and no free name was found." : `Restore failed: ${put.status}` };
+  // The restore's own update event carries THIS person's account: the marker plus an unchanged file
+  // lets the seal's enforcement tell it from a change (shared/trash-rights.js). A marker that cannot
+  // be written is simply absent: the enforcement then treats the update as it treats any other.
+  await markPanelRestore(attachmentId, operatorAccountId, currentVersion, probeData.fileId || null)
+    .catch((e) => console.warn(`[RESTORE] ${attachmentId} marker not written:`, errText(e)));
+  let put;
+  try {
+    put = await putAttachmentCurrent(pageId, attachmentId, originalTitle, currentVersion, { as: "user" });
+  } catch (err) {
+    await settlePanelRestore(attachmentId, operatorAccountId, false).catch(() => {});
+    if (isNeedsConsent(err)) throw err; // Forge shows the consent prompt
+    console.warn(`[RESTORE] ${attachmentId} could not run as the caller:`, errText(err));
+    return trashRefusal("restore", "no-user");
   }
-  if (put.renamed) console.warn(`[RESTORE] ${attachmentId} restored as "${put.title}" — a newer "${originalTitle}" is on the page`);
+  await settlePanelRestore(attachmentId, operatorAccountId, put.ok)
+    .catch((e) => console.warn(`[RESTORE] ${attachmentId} marker not settled:`, errText(e)));
+  if (!put.ok) {
+    console.error(`[RESTORE] Failed ${attachmentId}: ${put.status}`);
+    if (put.nameTaken) return { ...NAME_TAKEN };
+    return trashRefusal("restore", classifyTrashAnswer(put.status), put.status);
+  }
 
   // Clean up tracking-only records (not real seals) after restore
   if (sealRecord?.trashedOnly) {
     await kvs.delete(`protection-${attachmentId}`);
     // Review F2: the seal is gone for good — requests and grants against it would otherwise
     // outlive it as ghost rows on "My work" that Approve can no longer act on.
-    await sweepEditAccess(attachmentId).catch((e) => console.warn("[RESTORE] edit-access sweep failed:", e));
+    await sweepEditAccess(attachmentId).catch((e) => console.warn("[RESTORE] edit-access sweep failed:", errText(e)));
   }
 
   await touchSealTimestamp();
   console.warn(`[RESTORE] Restored attachment ${attachmentId}`);
-  return put.renamed
-    ? { success: true, renamedTo: put.title, notice: `Restored as "${put.title}" — a newer file named "${originalTitle}" is already on the page.` }
-    : { success: true };
+  return { success: true };
 };
 
 /**
  * Purge an attachment permanently and clean up all seal state.
  * This is a destructive action — the attachment cannot be recovered.
  */
+/** The settle before a 404 is re-checked (confirmAttachmentPurged); tests lower it. */
+export let PURGE_SETTLE_MS = 1500;
+export const setPurgeSettleMs = (ms) => { PURGE_SETTLE_MS = ms; };
+
 export const purgeSealRecord = async (req) => {
   const { attachmentId } = req.payload;
   const operatorAccountId = req.context.accountId;
@@ -1293,12 +1318,15 @@ export const purgeSealRecord = async (req) => {
   // Where the file LIVES, read before anything is decided (a read-only asApp GET). The trashed
   // attachment's v2 body names its page; the seal record names the page it was sealed on.
   let probeData = null;
+  let probeStatus = null; // null = no answer at all
   try {
     const probeRes = await appConfluence(route`/wiki/api/v2/attachments/${attachmentId}`);
+    probeStatus = probeRes.status;
     if (probeRes.ok) probeData = await probeRes.json();
   } catch (err) {
-    console.warn(`[PURGE] probe of ${attachmentId} failed:`, err);
+    console.warn(`[PURGE] probe of ${attachmentId} failed:`, errText(err));
   }
+  if (probeData && typeof probeData.status !== "string") { probeData = null; probeStatus = null; } // unreadable body: unknown
   // The attachment's own container first: a trashedOnly record's contentId can be a display hint
   // written from the deleter's context when the attachment read failed (panels deleteArtifact).
   const objectPageId = probeData?.pageId || probeData?.blogPostId || sealRecord?.contentId || null;
@@ -1332,32 +1360,36 @@ export const purgeSealRecord = async (req) => {
     }
   }
 
-  // Permanently delete the attachment from Confluence (if it still exists)
-  try {
-    // First check if attachment is trashed — must trash before purging
-    if (probeData) {
-      if (probeData.status === "current") {
-        // Trash it first
-        const trashRes = await userConfluence(
-          route`/wiki/api/v2/attachments/${attachmentId}`,
-          { method: "DELETE" },
-        );
-        if (!trashRes.ok && trashRes.status !== 204) {
-          return { success: false, reason: `Failed to trash attachment: ${trashRes.status}` };
-        }
-      }
-      // Now permanently delete
-      const purgeRes = await appConfluence(
-        route`/wiki/api/v2/attachments/${attachmentId}?purge=true`,
-        { method: "DELETE" },
-      );
-      if (!purgeRes.ok && purgeRes.status !== 204 && purgeRes.status !== 404) {
-        console.warn(`[PURGE] Permanent delete returned ${purgeRes.status} for ${attachmentId}`);
-      }
+  // 2026-10-21: Seal Cleanup changes trash state only WITH THE CALLER'S OWN RIGHTS
+  // (shared/trash-rights.js). The gate above is Sentinel Vault's floor; Confluence's trash rights
+  // (purge needs the space's manage/content) are the ceiling. Three cases, decided by the app's read:
+  //   gone (404)  → only the app's own records go; no Confluence call is made
+  //   trashed     → purged as the caller; Confluence's refusal is shown and NOTHING is removed
+  //   anything else (a current file, an unreadable answer) → refused, nothing removed. A current
+  //   file is never trashed-then-purged from here (the panel's Delete sends a file to the trash).
+  // Records are removed only after Confluence's yes, or once the file is proven gone.
+  if (!probeData) {
+    if (probeStatus !== 404) {
+      const rl = rateLimitOf();
+      return probeStatus === 429
+        ? { success: false, busy: true, retryAfterSeconds: rl?.retryAfterSeconds ?? null, reason: busyReason(rl?.retryAfterSeconds ?? null, { what: "the file could not be checked", nothingChanged: true }) }
+        : { success: false, reason: "Could not check the file in Confluence. Nothing was changed." };
     }
-    // 404 = already gone — that's fine
-  } catch (err) {
-    console.warn(`[PURGE] Error deleting attachment ${attachmentId}:`, err);
+    // One 404 is not proof (a trash-propagation window can 404 a file that is still there): the
+    // same two-witness rule the seal's own cleanup uses (attachment-status.js confirmAttachmentPurged).
+    // A witness counts only on the file's CURRENT container: the page a tracking row records as read
+    // from the attachment itself (or from the trash event) when it was trashed. A seal's page, or a
+    // row's display page, may be one the file has since left.
+    const trashedFrom = sealRecord?.trashedOnly === true && sealRecord.trashedFromPage ? String(sealRecord.trashedFromPage) : null;
+    const v = await attachmentPurgeVerdict(attachmentId, PURGE_SETTLE_MS, { pageId: trashedFrom || objectPageId, containerCurrent: !!trashedFrom });
+    if (v.verdict !== "gone") return unprovenGone(v);
+    // Purged in Confluence: fall through to removing the app's own records.
+  } else if (probeData.status !== "trashed") {
+    return { success: false, reason: "This file is not in the trash, so it cannot be deleted permanently from here." };
+  } else {
+    const containerType = probeData.blogPostId ? "blogpost" : probeData.pageId ? "page" : null;
+    const purged = await purgeTrashedAsCaller(attachmentId, { pageId: objectPageId, containerType, containerCurrent: !!(probeData.pageId || probeData.blogPostId), settleMs: PURGE_SETTLE_MS });
+    if (!purged.ok) return purged.result;
   }
 
   // Clean up seal state if present
@@ -1382,7 +1414,7 @@ export const purgeSealRecord = async (req) => {
   // Clear any Edit Requests / grants tied to this seal
   await sweepEditAccess(attachmentId);
 
-  console.warn(`[PURGE] Permanently removed ${sealRecord?.attachmentName || attachmentId}`);
+  console.warn(`[PURGE] Permanently removed ${attachmentId}`);
   return { success: true };
 };
 
@@ -1411,7 +1443,7 @@ const ribbonSummary = async (req) => {
     attachments: 0, sealedAttachments: 0, sealedByMe: false, sectionSeals: 0, trashedSeals: 0, reason: "none",
   };
   const empty = (reason, detail) => {
-    console.warn(`[RIBBON] summary empty — ${reason}: page=${out.pageId} ctx=${contextId} type=${contentType} ${detail || ""}`.trim());
+    console.warn(`[RIBBON] summary empty — ${safeKey(reason, "other")}: page=${out.pageId} ctx=${contextId} type=${safeKey(contentType, "-")} ${safeKey(detail, "")}`.trim());
     return { ...out, reason };
   };
 
@@ -1425,7 +1457,7 @@ const ribbonSummary = async (req) => {
   out.pageId = pageId;
   if (!pageId) return empty("no-context-id");
   // The byline's workflow status, read alongside the attachments (lazy byline refresh, below).
-  const workflowRead = describeWorkflowForPage(pageId).catch((e) => { console.warn("[RIBBON] workflow for the byline:", e?.message || e); return undefined; });
+  const workflowRead = describeWorkflowForPage(pageId).catch((e) => { console.warn("[RIBBON] workflow for the byline:", errText(e)); return undefined; });
 
   // Attachments as the app: the count is the page's, not the caller's (a viewer whose user
   // token gets a 403 on attachments still sees the seal exists). v2 has one collection per
@@ -1455,7 +1487,7 @@ const ribbonSummary = async (req) => {
     status = await fetchAll(collection);
     if (status === 404 && collection === "pages" && !contentType) status = await fetchAll("blogposts");
   } catch (e) {
-    console.error("[RIBBON] attachments fetch threw:", e);
+    console.error("[RIBBON] attachments fetch threw:", errText(e));
     status = 0;
   }
   // Classification review 2026-09-30 (B): a failed attachments read used to return HERE, before the
@@ -1489,14 +1521,14 @@ const ribbonSummary = async (req) => {
       const trecords = await Promise.all(tids.map((id) => kvs.get(`protection-${id}`).catch(() => null)));
       for (const r of trecords) if (r) out.trashedSeals += 1;
     }
-  } catch (e) { console.warn("[RIBBON] trashed-attachment probe failed:", e?.message || e); }
+  } catch (e) { console.warn("[RIBBON] trashed-attachment probe failed:", errText(e)); }
 
   let sectionRecords = [];
   try {
     sectionRecords = (await listSectionSealRecordsForPage(pageId)).filter((s) => s?.lockedBy);
     out.sectionSeals = sectionRecords.length;
   } catch (e) {
-    console.error(`[RIBBON] section-seal listing threw for ${pageId}:`, e);
+    console.error(`[RIBBON] section-seal listing threw for ${pageId}:`, errText(e));
   }
 
   // ── 5.0 (mockup §2/§3): what the ROW shows. Every read below is bounded by this page's own
@@ -1524,7 +1556,7 @@ const ribbonSummary = async (req) => {
       // inputs; set only when the workflow read lands inside the bound below (a later answer carries it).
       out.byline = composeByline(bylineInputs);
       return writeBylineFor(pageId, bylineInputs, { lazy: true });
-    })().catch((e) => console.warn("[RIBBON] byline refresh failed:", e?.message || e));
+    })().catch((e) => console.warn("[RIBBON] byline refresh failed:", errText(e)));
     await Promise.race([write, new Promise((r) => setTimeout(r, 1500))]);
   }
   if (!attachmentsOk) return empty(`attachments-http-${status}`);
@@ -1551,7 +1583,7 @@ async function ribbonViewerHalf({ pageId, accountId, liveSeals, sectionRecords }
     waitingOnMe: { requests: 0, approvals: 0, grantsActive: [] },
     lockedFor: null,
   };
-  const settle = (label, p, fallback) => p.catch((e) => { console.warn(`[RIBBON] ${label} failed:`, e?.message || e); return fallback; });
+  const settle = (label, p, fallback) => p.catch((e) => { console.warn(`[RIBBON] ${label} failed:`, errText(e)); return fallback; });
 
   // CLS-1: the switch is read FIRST; off = the level is never read and the ribbon is told so
   // (`classification.enabled:false` → only seal / workflow / validation states open the row, and

@@ -1,5 +1,6 @@
 import { kvs } from "@forge/kvs";
 import { BASELINE_HOLD_SPAN } from "../../shared/baseline.js";
+import { errText } from "../../shared/action-log.js";
 
 /**
  * Get storage key for policy based on scope
@@ -36,7 +37,7 @@ export async function getPolicyRuleset(scope, realmKey) {
     // Return default values if no ruleset exists
     return ruleset || {};
   } catch (error) {
-    console.error(`Failed to get policy ruleset (${scope}):`, error);
+    console.error(`Failed to get policy ruleset (${scope}):`, errText(error));
     return {};
   }
 }
@@ -79,7 +80,7 @@ export async function savePolicyRuleset(scope, realmKey, data) {
 
     return { success: true };
   } catch (error) {
-    console.error(`Failed to save policy ruleset (${scope}):`, error);
+    console.error(`Failed to save policy ruleset (${scope}):`, errText(error));
     throw new Error(error.message || "Could not save configuration");
   }
 }

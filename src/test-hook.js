@@ -7,6 +7,7 @@
  * and grants — the deterministic state the harness asserts against.
  */
 import { appConfluence } from "./server/shared/confluence-call.js";
+import { withHookVersionAuthor } from "./server/shared/hook-author.js";
 import { kvs, WhereConditions } from "@forge/kvs";
 import { pageGuardSweep, guardPageNow, pageContentTrigger, expirySweepTask, workflowSweep, collectWorkflowEnforcementForPage, sweepRevertToApproved, handleSealedArtifactDeleted, handleSealedArtifactTrash, lifecycleTrigger, recurringNudgeTask } from "./server/triggers";
 import {
@@ -468,11 +469,18 @@ export async function testStateTrigger(req) {
       // itself is authored by the harness user. Dev-only, stripped from production with the hook.
       if (fn === "pageEvent") {
         const ver = parseInt(q(req, "version"), 10);
-        const out = await pageContentTrigger({
+        const runEvent = () => pageContentTrigger({
           eventType: q(req, "eventType") || "avi:confluence:updated:page",
           atlassianId: q(req, "actor"),
           content: { id: String(q(req, "pageId")), version: { number: Number.isFinite(ver) ? ver : undefined } },
         });
+        // The harness wrote this version with its own (privileged) token; the run treats `actor` as the
+        // version's author, as a real event's actor always is (shared/hook-author.js). `realAuthor=1`
+        // keeps Confluence's author (a late event for an older version needs no flag: only `version`
+        // itself is named).
+        const out = q(req, "realAuthor") === "1" || !q(req, "actor")
+          ? await runEvent()
+          : await withHookVersionAuthor({ pageId: q(req, "pageId"), version: ver, accountId: q(req, "actor") }, runEvent);
         // { workflowAction, demoted } — what the run did to the workflow (2026-10-16).
         return json(200, { invoked: fn, result: { ran: true, ...(out || {}) } });
       }

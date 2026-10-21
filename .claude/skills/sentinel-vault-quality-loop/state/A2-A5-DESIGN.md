@@ -16,6 +16,19 @@ resolved target must be a state that (a) exists in the definition, (b) is not an
 Both demote sites use ONE helper `resolveDemoteTarget(def, settings)` (pure, unit-tested; falls
 back to initial when the configured state has vanished from a re-saved definition).
 
+**2026-10-21 — a demote that cannot be made is a revert, never a no-op.** Only a CUSTOM target was
+validated; "the first state" was taken on trust, so a custom workflow with no transition from the
+enforce state to it (or whose first state is itself enforced) refused the move, the refusal was only
+logged, and the edit stood. Decision: the demote keeps following the workflow's edges (it is a move
+like any other: logged, hands seals back, starts the state's review clock; a system move the admin
+never connected would still have no answer for an enforced target), and when it cannot be made the
+engine reverts instead (`enforce-rules.js enforcementPlan` over `state-machine.js planDemote`, the one
+rule for the event path, the sweep, the proposal move-back, the saves and the Workflow tab), with
+`demoteFallback` on the activity row and a line in the editor's notice. Saves refuse it: an enforced
+first state (`validateDefinition`), a demote setting the default or a label workflow cannot carry out
+(`setSpaceWorkflowSettings`, `storeSpaceWorkflow`, the bundle, `store-workflow-config`). The tab shows
+a configuration saved before the check. Guard: `test/workflow-demote-fallback.test.mjs`.
+
 The demote comment and the A1 `workflow.enforced` row already name the editor; both gain the
 editor's page version (`driftedVersion`) and the target state name. Settings editor: a custom
 dropdown "When an Approved page is edited without approval, move it to" listing the non-enforce

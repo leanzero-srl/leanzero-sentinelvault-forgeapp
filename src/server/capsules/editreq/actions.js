@@ -3,7 +3,7 @@ import { appConfluence } from "../../shared/confluence-call.js";
 import { kvs, WhereConditions } from "@forge/kvs";
 
 import { authorizeSteward, isAccountStewardAsApp } from "../../shared/steward-checks.js";
-import { proposalAskees, proposalNotifyTargets, mayDecideProposal } from "./proposal-rules.js";
+import { proposalAskees, proposalNotifyTargets, mayDecideProposal, proposalDecision } from "./proposal-rules.js";
 import { resolveBulletinToggles } from "../../shared/bulletin-flags.js";
 import { setUntil } from "../../shared/kvs-ttl.js";
 import { currentUserProfile } from "../../shared/user-or-app.js";
@@ -22,9 +22,10 @@ import {
 import { retryAtFor } from "../../shared/edit-cooldown.js";
 import { DECLINED_REASON } from "../../../ui/kit/status-language.js";
 import { listMyStewardRequestsCore } from "../realms/actions.js";
-import { listMyApprovals } from "../workflow/approvals.js";
+import { listMyApprovals, newApproverCheck, approverRefusal } from "../workflow/approvals.js";
 import { canReadPage, isStewardOfSeal } from "../../shared/content-access.js";
 import { recordActivity } from "../../infra/activity-log.js";
+import { errText } from "../../shared/action-log.js";
 
 // The wait after a declined request is the site setting `editRequestCooldownHours`
 // (shared/edit-cooldown.js is its one home). A refusal names WHEN the person may ask again.
@@ -71,6 +72,39 @@ async function proposalApproversFor(pageId) {
     return Array.isArray(rec?.approvers) ? rec.approvers.filter(Boolean) : [];
   } catch (_) { return []; }
 }
+/**
+ * 8.14: the approver arm of a proposal decision. Being listed on the proposal (its approver snapshot)
+ * counts only while the caller is still one of the approvers of the space the page's workflow lives
+ * in (workflow/approvals.js approverStatusNow — the one rule). One read of that list per call:
+ * `const approverNow = proposalApproverCheck(pageId)`, then `approverNow(request, accountId)`.
+ */
+function proposalApproverCheck(pageId) {
+  const check = newApproverCheck();
+  let space = null;
+  return async (request, accountId) => {
+    space ??= (async () => {
+      try {
+        const { readPageWorkflow } = await import("../workflow/logic.js");
+        return (await readPageWorkflow(pageId))?.spaceKey || request?.spaceKey || null;
+      } catch (_) { return request?.spaceKey || null; }
+    })();
+    return check(request?.approvers, accountId, await space);
+  };
+}
+
+/**
+ * SEC-2 (e) + 8.14: may `accountId` decide this PROPOSAL? The seal's owner/steward answer
+ * (`authorized`) stands only on a seal the approval no longer holds; otherwise the page's approvers
+ * (still on the space's list) or a space admin. `{ authorized, refusal }` — `refusal` is set when
+ * the approver list could not be read (never a yes) so the caller answers "try again".
+ */
+async function proposalAuthority(request, accountId, seal, pageId, authorized) {
+  if (!isWorkflowHeld(seal) && authorized) return { authorized: true, refusal: null };
+  const approverNow = proposalApproverCheck(pageId);
+  const d = await proposalDecision(request, accountId, () => stewardOfSeal(isAccountStewardAsApp, accountId, seal), () => approverNow(request, accountId));
+  return { authorized: d.may, refusal: d.unknown ? approverRefusal("unknown") : null };
+}
+
 async function moveBackForProposal(pageId, approverAccountId, request) {
   const wf = await import("../workflow/logic.js");
   const record = await wf.readPageWorkflow(pageId);
@@ -81,8 +115,11 @@ async function moveBackForProposal(pageId, approverAccountId, request) {
   if (hold) return { success: false, reason: hold.reason };
   const def = await wf.resolveWorkflowDef(record.spaceKey, record.workflowId);
   const settings = await wf.getSpaceWorkflowSettings(record.spaceKey);
-  const target = wf.resolveDemoteTarget(def, settings, record.stateId);
-  if (!target?.id) return { success: false, reason: "This workflow has no state to move the page back to" };
+  // The same plan the enforcement uses (state-machine.js planDemote): a move this workflow cannot make
+  // is refused here with the reason, before the transition would refuse it with an internal one.
+  const plan = wf.planDemote(def, settings, record.stateId);
+  if (!plan.ok) return { success: false, reason: plan.reason };
+  const target = plan.target;
   let actorName = null;
   try { actorName = (await currentUserProfile(approverAccountId))?.displayName || null; } catch (_) { /* best effort */ }
   const r = await wf.transitionPageWorkflow({ pageId, spaceKey: record.spaceKey, toStateId: target.id, actorAccountId: approverAccountId, actorName: actorName || "Approver", reason: `proposal by ${request?.requesterName || "a requester"} accepted — moved back to ${target.name || target.id} for the change` });
@@ -166,9 +203,9 @@ const requestEditAccess = async (req) => {
   // K1: the index row goes with the record (read back by key: the set is strongly consistent) —
   // the owner's row, or (SEC-2 (e)) one per approver for a proposal.
   const written = await kvs.get(`edit-request-${attachmentId}-${accountId}`);
-  if (proposal) await writeProposalIndex(written).catch((e) => console.warn("[EDIT-ACCESS] proposal index", e));
-  else await writeOwnerIndex(written).catch((e) => console.warn("[EDIT-ACCESS] owner index", e));
-  await writeMineIndex({ requesterAccountId: accountId, kind: "attachment", id: attachmentId, name: seal.attachmentName || null, pageId: seal.contentId || null, spaceKey: seal.spaceKey || null }).catch((e) => console.warn("[EDIT-ACCESS] mine index", e)); // SEC-8
+  if (proposal) await writeProposalIndex(written).catch((e) => console.warn("[EDIT-ACCESS] proposal index", errText(e)));
+  else await writeOwnerIndex(written).catch((e) => console.warn("[EDIT-ACCESS] owner index", errText(e)));
+  await writeMineIndex({ requesterAccountId: accountId, kind: "attachment", id: attachmentId, name: seal.attachmentName || null, pageId: seal.contentId || null, spaceKey: seal.spaceKey || null }).catch((e) => console.warn("[EDIT-ACCESS] mine index", errText(e))); // SEC-8
   // A1: the request exists from this write on.
   await recordActivity({
     type: "editreq.requested",
@@ -185,7 +222,7 @@ const requestEditAccess = async (req) => {
       for (const to of proposal ? proposalNotifyTargets(approvers) : [seal.lockedBy]) {
         await mailEditRequest(to, accountId, requesterName, seal.attachmentName || "Unknown Attachment", seal.contentId, requestReason);
       }
-    } catch (e) { console.error("[EDIT-REQ] notify failed:", e); }
+    } catch (e) { console.error("[EDIT-REQ] notify failed:", errText(e)); }
   }
 
   return { success: true };
@@ -241,7 +278,8 @@ export const listEditRequests = async (req) => {
   let admin = null;
   const isAdmin = async () => (admin ??= await stewardOfSeal(isAccountStewardAsApp, accountId, seal));
   const requests = [];
-  for (const r of pending) if (await mayDecideProposal(r, accountId, isAdmin)) requests.push(r);
+  const approverNow = proposalApproverCheck(seal.contentId);
+  for (const r of pending) if (await mayDecideProposal(r, accountId, isAdmin, () => approverNow(r, accountId))) requests.push(r);
   // Same answer as a refusal when there is nothing for this caller — no oracle on "is it held".
   if (!requests.length && !authorized) return { requests: [], reason: "Not authorized" };
   return { requests };
@@ -274,7 +312,11 @@ export const approveEditRequest = async (req) => {
   // SEC-2 (e): a proposal is decided by the page's approvers (or a steward, as always).
   // SEC-2 (e): a proposal is a workflow decision — the page's approvers or a space admin, never the
   // proposer, and the seal's owner only as one of those (tester 2026-09-30).
-  if (request0?.proposal) authorized = (!isWorkflowHeld(seal) && authorized) || await mayDecideProposal(request0, accountId, () => stewardOfSeal(isAccountStewardAsApp, accountId, seal));
+  if (request0?.proposal) {
+    const pa = await proposalAuthority(request0, accountId, seal, seal.contentId, authorized);
+    if (pa.refusal) return pa.refusal;
+    authorized = pa.authorized;
+  }
   if (!authorized) return { success: false, reason: request0?.proposal ? "Only this page's approvers or a space admin can decide a proposed change" : "Not the seal owner" };
   if (isWorkflowHeld(seal)) {
     if (!request0?.proposal) { const held = heldRefusal(seal, "grant"); if (held) return { success: false, reason: held }; } // SEC-2
@@ -333,7 +375,7 @@ export const approveEditRequest = async (req) => {
   if (seal.contentId && (await notifyEnabled())) {
     try {
       await mailEditApproved(requesterAccountId, seal.attachmentName || "Unknown Attachment", seal.contentId);
-    } catch (e) { console.error("[EDIT-REQ] notify approve failed:", e); }
+    } catch (e) { console.error("[EDIT-REQ] notify approve failed:", errText(e)); }
   }
 
   return { success: true };
@@ -351,7 +393,11 @@ export const denyEditRequest = async (req) => {
   if (!seal) return { success: false, reason: "Seal not found" };
   const requestKey = `edit-request-${attachmentId}-${requesterAccountId}`;
   const existing = await kvs.get(requestKey);
-  if (existing?.proposal) authorized = (!isWorkflowHeld(seal) && authorized) || await mayDecideProposal(existing, accountId, () => stewardOfSeal(isAccountStewardAsApp, accountId, seal)); // SEC-2 (e)
+  if (existing?.proposal) { // SEC-2 (e)
+    const pa = await proposalAuthority(existing, accountId, seal, seal.contentId, authorized);
+    if (pa.refusal) return pa.refusal;
+    authorized = pa.authorized;
+  }
   if (!authorized) return { success: false, reason: existing?.proposal ? "Only this page's approvers or a space admin can decide a proposed change" : "Not the seal owner" };
   if (!existing?.proposal) { const held = heldRefusal(seal, "grant"); if (held) return { success: false, reason: held }; } // SEC-2
   if (!existing) return { success: false, reason: "Request not found" };
@@ -371,7 +417,7 @@ export const denyEditRequest = async (req) => {
   if (seal.contentId && (await notifyEnabled())) {
     try {
       await mailEditDenied(requesterAccountId, seal.attachmentName || "Unknown Attachment", seal.contentId, null, { targetKind: "attachment", reason: deniedReason });
-    } catch (e) { console.error("[EDIT-REQ] notify deny failed:", e); }
+    } catch (e) { console.error("[EDIT-REQ] notify deny failed:", errText(e)); }
   }
 
   return { success: true };
@@ -486,7 +532,7 @@ async function grantDirect({ scope, id, seal, pageId, name, accountId, editorAcc
   });
   if (pageId && (await notifyEnabled())) {
     try { await mailEditApproved(editorAccountId, name, pageId, null, { targetKind: section ? "section" : "attachment" }); } // SEC-9
-    catch (e) { console.error("[EDIT-REQ] notify direct grant failed:", e); }
+    catch (e) { console.error("[EDIT-REQ] notify direct grant failed:", errText(e)); }
   }
   return { success: true, grant: { editorAccountId, editorName, grantedAt: grant.grantedAt, expiresAt: grant.expiresAt } };
 }
@@ -538,7 +584,7 @@ export const searchGrantees = async (req) => {
       .map((u) => ({ accountId: u.accountId, displayName: u.displayName || "Unknown user", avatar: u.profilePicture?.path || null }));
     return { users };
   } catch (e) {
-    console.error("[EDIT-REQ] grantee search failed:", e);
+    console.error("[EDIT-REQ] grantee search failed:", errText(e));
     return { users: [], reason: "Search failed" };
   }
 };
@@ -602,9 +648,9 @@ export const requestSectionEdit = async (req) => {
   // P1-3: the index row goes with the record (read back by key: the set is strongly consistent) —
   // the owner's row, or (SEC-2 (e)) one per approver for a proposal.
   const written = await kvs.get(`section-edit-request-${sectionId}-${accountId}`);
-  if (proposal) await writeSectionProposalIndex(written).catch((e) => console.warn("[SECTION-EDIT-REQ] proposal index", e));
-  else await writeSectionOwnerIndex(written).catch((e) => console.warn("[SECTION-EDIT-REQ] owner index", e));
-  await writeMineIndex({ requesterAccountId: accountId, kind: "section", id: sectionId, name: sectionTitle, pageId: seal.pageId || null, spaceKey: seal.spaceKey || null }).catch((e) => console.warn("[SECTION-EDIT-REQ] mine index", e)); // SEC-8
+  if (proposal) await writeSectionProposalIndex(written).catch((e) => console.warn("[SECTION-EDIT-REQ] proposal index", errText(e)));
+  else await writeSectionOwnerIndex(written).catch((e) => console.warn("[SECTION-EDIT-REQ] owner index", errText(e)));
+  await writeMineIndex({ requesterAccountId: accountId, kind: "section", id: sectionId, name: sectionTitle, pageId: seal.pageId || null, spaceKey: seal.spaceKey || null }).catch((e) => console.warn("[SECTION-EDIT-REQ] mine index", errText(e))); // SEC-8
   // A1 (section scope)
   await recordActivity({
     type: "editreq.requested",
@@ -626,7 +672,7 @@ export const requestSectionEdit = async (req) => {
       for (const to of proposal ? proposalNotifyTargets(approvers) : [seal.lockedBy]) {
         await mailEditRequest(to, accountId, requesterName, sectionTitle, seal.pageId, reason, null, { targetKind: "section" });
       }
-    } catch (e) { console.error("[SECTION-EDIT-REQ] notify failed:", e); }
+    } catch (e) { console.error("[SECTION-EDIT-REQ] notify failed:", errText(e)); }
   }
   return { success: true };
 };
@@ -664,7 +710,8 @@ export const listSectionEditRequests = async (req) => {
     return admin;
   };
   const requests = [];
-  for (const r of pending) if (await mayDecideProposal(r, accountId, isAdmin)) requests.push(r);
+  const approverNow = proposalApproverCheck(seal.pageId);
+  for (const r of pending) if (await mayDecideProposal(r, accountId, isAdmin, () => approverNow(r, accountId))) requests.push(r);
   // Same answer as a refusal when there is nothing for this caller — no oracle on "is it held".
   if (!requests.length && !authorized) return { requests: [], reason: "Not authorized" };
   return { requests };
@@ -677,7 +724,11 @@ export const approveSectionEdit = async (req) => {
   let { seal, authorized } = await loadSectionForOwnerAction(sectionId, accountId);
   if (!seal) return { success: false, reason: "Section not found" };
   const request0 = await kvs.get(`section-edit-request-${sectionId}-${requesterAccountId}`);
-  if (request0?.proposal) authorized = (!isWorkflowHeld(seal) && authorized) || await mayDecideProposal(request0, accountId, () => stewardOfSeal(isAccountStewardAsApp, accountId, seal)); // SEC-2 (e)
+  if (request0?.proposal) { // SEC-2 (e)
+    const pa = await proposalAuthority(request0, accountId, seal, seal.pageId, authorized);
+    if (pa.refusal) return pa.refusal;
+    authorized = pa.authorized;
+  }
   if (!authorized) return { success: false, reason: request0?.proposal ? "Only this page's approvers or a space admin can decide a proposed change" : "Not the section owner" };
   if (isWorkflowHeld(seal)) {
     if (!request0?.proposal) { const held = heldRefusal(seal, "grant"); if (held) return { success: false, reason: held }; } // SEC-2
@@ -733,7 +784,11 @@ export const denySectionEdit = async (req) => {
   if (!seal) return { success: false, reason: "Section not found" };
   const requestKey = `section-edit-request-${sectionId}-${requesterAccountId}`;
   const existing = await kvs.get(requestKey);
-  if (existing?.proposal) authorized = (!isWorkflowHeld(seal) && authorized) || await mayDecideProposal(existing, accountId, () => stewardOfSeal(isAccountStewardAsApp, accountId, seal)); // SEC-2 (e)
+  if (existing?.proposal) { // SEC-2 (e)
+    const pa = await proposalAuthority(existing, accountId, seal, seal.pageId, authorized);
+    if (pa.refusal) return pa.refusal;
+    authorized = pa.authorized;
+  }
   if (!authorized) return { success: false, reason: existing?.proposal ? "Only this page's approvers or a space admin can decide a proposed change" : "Not the section owner" };
   if (!existing?.proposal) { const held = heldRefusal(seal, "grant"); if (held) return { success: false, reason: held }; } // SEC-2
   if (!existing) return { success: false, reason: "Request not found" };
@@ -843,7 +898,7 @@ const listMyRequestsAction = async (req) => {
 const countMyWork = async (req) => {
   const accountId = req.context.accountId;
   if (!accountId) return { approvals: 0, fileRequests: 0, sectionRequests: 0, accessRequests: 0, total: 0 };
-  const settle = async (p) => { try { return (await p).length; } catch (e) { console.warn("[MY-WORK] count", e); return 0; } };
+  const settle = async (p) => { try { return (await p).length; } catch (e) { console.warn("[MY-WORK] count", errText(e)); return 0; } };
   const [approvals, fileRequests, sectionRequests, accessRequests] = await Promise.all([
     settle(listMyApprovals(accountId)),
     settle(listPendingRequestsForOwner(accountId)),

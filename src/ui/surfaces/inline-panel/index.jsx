@@ -21,6 +21,7 @@ import { expiryWarning } from "../../../server/capsules/page-details/row-state.j
 import { attachmentRow, sectionRow, rowActions, statusChip, copyText } from "../../kit/seal-row.js";
 import { when, sealSentence, refusalText } from "../../kit/status-language.js"; // SEC-3: one vocabulary, one clock
 import { PrimarySlot, ReasonBar, RequestInbox, GrantInbox, ErrorRow, CopiedNote, DeclinedReason } from "../../kit/SealRowParts";
+import { errText } from "../../kit/error-facts.js";
 
 // ── Icon components ──────────────────────────────────
 
@@ -114,7 +115,7 @@ const LabelCluster = ({ labels, artifactId, onRefresh }) => {
       setAdding(false);
       onRefresh();
     } catch (e) {
-      console.error("Failed to add label:", e);
+      console.error("Failed to add label:", errText(e));
     } finally {
       setBusy(false);
     }
@@ -126,7 +127,7 @@ const LabelCluster = ({ labels, artifactId, onRefresh }) => {
       await invoke("unlabel-artifact", { attachmentId: artifactId, labelName });
       onRefresh();
     } catch (e) {
-      console.error("Failed to remove label:", e);
+      console.error("Failed to remove label:", errText(e));
     } finally {
       setBusy(false);
     }
@@ -214,7 +215,7 @@ const UploadZone = ({ onUploadComplete }) => {
         setUploadError(result.reason || "Transfer unsuccessful");
       }
     } catch (e) {
-      console.error("Upload error:", e);
+      console.error("Upload error:", errText(e));
       setUploadError("Transfer unsuccessful. File size may exceed the limit.");
     } finally {
       setUploading(false);
@@ -360,7 +361,7 @@ const ArtifactCard = ({ att, onRefresh, columns, siteUrl, spaceKey, pageId, page
       if (refresh) onRefresh();
       return true;
     } catch (e) {
-      console.error(`[PANEL] ${action} failed:`, e);
+      console.error(`[PANEL] ${action} failed:`, errText(e));
       setActionError("Could not reach Sentinel Vault. Try again.");
       return false;
     } finally {
@@ -376,7 +377,7 @@ const ArtifactCard = ({ att, onRefresh, columns, siteUrl, spaceKey, pageId, page
       if (r?.success) setMyGrants((p) => (p || []).filter((g) => g.editorAccountId !== editorAccountId));
       else setActionError(r?.reason || "Could not revoke this editor's access");
     } catch (e) {
-      console.error("Revoke edit grant failed:", e);
+      console.error("Revoke edit grant failed:", errText(e));
       setActionError("Could not reach Sentinel Vault. Try again.");
     } finally {
       setGrantBusy(null);
@@ -404,7 +405,7 @@ const ArtifactCard = ({ att, onRefresh, columns, siteUrl, spaceKey, pageId, page
         setActionError(r?.reason || (action === "approve" ? "Could not grant edit access" : "Could not decline the request"));
       }
     } catch (e) {
-      console.error("Resolve edit request failed:", e);
+      console.error("Resolve edit request failed:", errText(e));
       setActionError("Could not reach Sentinel Vault. Try again.");
     } finally {
       setReqBusy(null);
@@ -728,7 +729,7 @@ const AiReviewGroup = ({ pageId }) => {
   const setFindingState = async (fid, state) => {
     setLatest((prev) => prev ? { ...prev, findings: (prev.findings || []).map((f) => f.id === fid ? { ...f, state } : f) } : prev);
     try { await invoke("set-ai-finding-state", { pageId, findingId: fid, state }); }
-    catch (e) { console.error("Set finding state failed:", e); }
+    catch (e) { console.error("Set finding state failed:", errText(e)); }
   };
 
   const poll = async (taskId, tries = 0) => {
@@ -854,6 +855,8 @@ const ValidationStatus = ({ pageId, viewer }) => {
     invoke("get-validation-state", { pageId })
       .then((r) => {
         if (cancelled) return;
+        // The stored status could not be read: say so, never show or re-judge over it.
+        if (r?.unknown) { setState({ state: "none" }); setError(r.reason || "Could not read this page's validation status. Try again in a moment."); setLoaded(true); return; }
         // Never judged yet but a rule applies: show the group and judge it now (tester 2026-09-25).
         const neverChecked = !r?.state && r?.applies === true;
         setState(r?.state || (neverChecked ? { state: "none" } : null));
@@ -882,7 +885,7 @@ const ValidationStatus = ({ pageId, viewer }) => {
         else if (r?.noRules) setState(null); // no rule applies any more — the group goes away
       }
     } catch (e) {
-      console.error("Re-check failed:", e);
+      console.error("Re-check failed:", errText(e));
       setResult(null);
       setError("Could not check this page. Try again in a moment.");
     } finally {
@@ -898,7 +901,7 @@ const ValidationStatus = ({ pageId, viewer }) => {
       if (r?.success) { setState(r.state || { state: "passed", violations: [] }); setResult(null); setStale(false); }
       else setError(r?.reason || "Could not approve this page.");
     } catch (e) {
-      console.error("Approve anyway failed:", e);
+      console.error("Approve anyway failed:", errText(e));
       setError("Could not approve this page.");
     } finally {
       setApproving(false);
@@ -1041,7 +1044,7 @@ const SectionRow = ({ section: s, onUnseal, unsealing, viewer, siteUrl, pageId, 
       const r = await invoke("request-section-edit", { sectionId: s.sectionId, reason: reasonText.trim() });
       if (r?.success) { setEditStatus("pending"); setBar(null); setReasonText(""); }
       else setError(refusalText(r) || "Could not send the request.");
-    } catch (e) { console.error("Section edit request failed:", e); setError("Could not reach Sentinel Vault. Try again."); }
+    } catch (e) { console.error("Section edit request failed:", errText(e)); setError("Could not reach Sentinel Vault. Try again."); }
     finally { setBusy(false); }
   };
 
@@ -1062,7 +1065,7 @@ const SectionRow = ({ section: s, onUnseal, unsealing, viewer, siteUrl, pageId, 
         if (action === "approve" && s.workflowHeld) onChanged?.(); // the page moved back — every row changes
       }
       else setError(r?.reason || (action === "approve" ? "Could not grant edit access." : "Could not decline the request."));
-    } catch (e) { console.error("Resolve section request failed:", e); setError("Could not reach Sentinel Vault. Try again."); }
+    } catch (e) { console.error("Resolve section request failed:", errText(e)); setError("Could not reach Sentinel Vault. Try again."); }
     finally { setReqBusy(null); }
   };
 
@@ -1072,7 +1075,7 @@ const SectionRow = ({ section: s, onUnseal, unsealing, viewer, siteUrl, pageId, 
       const r = await signedInvoke("revoke-section-edit-grant", { sectionId: s.sectionId, editorAccountId });
       if (r?.success) setGrants((p) => (p || []).filter((g) => g.editorAccountId !== editorAccountId));
       else setError(r?.reason || "Could not revoke this editor's access.");
-    } catch (e) { console.error("Revoke section grant failed:", e); setError("Could not reach Sentinel Vault. Try again."); }
+    } catch (e) { console.error("Revoke section grant failed:", errText(e)); setError("Could not reach Sentinel Vault. Try again."); }
     finally { setGrantBusy(null); }
   };
 
@@ -1083,7 +1086,7 @@ const SectionRow = ({ section: s, onUnseal, unsealing, viewer, siteUrl, pageId, 
       const r = await signedInvoke("extend-section", { sectionId: s.sectionId });
       if (r?.success) { if (onChanged) onChanged(); }
       else setError(r?.reason || "Could not extend this seal.");
-    } catch (e) { console.error("Extend section failed:", e); setError("Could not reach Sentinel Vault. Try again."); }
+    } catch (e) { console.error("Extend section failed:", errText(e)); setError("Could not reach Sentinel Vault. Try again."); }
     finally { setBusy(false); }
   };
 
@@ -1199,7 +1202,7 @@ const SealedSectionsGroup = ({ pageId, onChanged, viewer, siteUrl }) => {
       const r = await invoke("enumerate-section-seals", { pageId });
       setSections(r?.sections || []);
     } catch (e) {
-      console.error("Section seals load failed:", e);
+      console.error("Section seals load failed:", errText(e));
     } finally {
       setLoading(false);
     }
@@ -1216,7 +1219,7 @@ const SealedSectionsGroup = ({ pageId, onChanged, viewer, siteUrl }) => {
       setHeadings(r?.headings || []);
       if (r && r.success === false) setSealError(r.reason || "Could not read the page headings.");
     } catch (e) {
-      console.error("List headings failed:", e);
+      console.error("List headings failed:", errText(e));
       setHeadings([]);
       setSealError("Could not reach Sentinel Vault. Try again.");
     } finally {
@@ -1242,11 +1245,11 @@ const SealedSectionsGroup = ({ pageId, onChanged, viewer, siteUrl }) => {
       } else {
         // A refusal has a reason (permission, page changed, already sealed, write failed) — the
         // user must see it. Silently warning to the console read as "it just doesn't work".
-        console.warn("seal-section declined:", r?.reason);
+        console.warn("seal-section declined:", r?.busy ? "busy" : "refused");
         setSealError(r?.reason || "Could not seal this section.");
       }
     } catch (e) {
-      console.error("Seal section failed:", e);
+      console.error("Seal section failed:", errText(e));
       setSealError("Could not reach Sentinel Vault. Try again.");
     } finally {
       setSealingIndex(null);
@@ -1266,7 +1269,7 @@ const SealedSectionsGroup = ({ pageId, onChanged, viewer, siteUrl }) => {
         setSealError(r?.reason || "Could not release this section.");
       }
     } catch (e) {
-      console.error("Unseal section failed:", e);
+      console.error("Unseal section failed:", errText(e));
       setSealError("Could not reach Sentinel Vault. Try again.");
     } finally {
       setBusy(null);
@@ -1503,7 +1506,7 @@ const ArtifactGridView = () => {
       setNextCursor(result.nextCursor || null);
       if (result.counts) setCounts(result.counts);
     } catch (e) {
-      console.error("[PANEL-UI] Error fetching artifacts:", e);
+      console.error("[PANEL-UI] Error fetching artifacts:", errText(e));
       setError("Unable to retrieve files.");
     } finally {
       setLoading(false);
@@ -1587,7 +1590,7 @@ const ArtifactGridView = () => {
         try {
           await invoke("discover-panel-key", { pageId: pid });
         } catch (e) {
-          console.warn("[PANEL-UI] Failed to discover extension key:", e);
+          console.warn("[PANEL-UI] Failed to discover extension key:", errText(e));
         }
       }
 
@@ -1603,7 +1606,7 @@ const ArtifactGridView = () => {
             hasPhase1 = true;
           }
         } catch (e) {
-          console.warn("[PANEL-UI] Fast seal fetch failed, falling back:", e);
+          console.warn("[PANEL-UI] Fast seal fetch failed, falling back:", errText(e));
         }
         // Phase 2: Full list from Confluence API (merges with Phase 1)
         retrieveFileData(pid, false, null, hasPhase1);

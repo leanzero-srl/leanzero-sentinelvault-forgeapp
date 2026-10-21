@@ -17,6 +17,7 @@ import {
   resolveExtensionKey,
 } from "../../infra/doc-surgery.js";
 import { resolveArtifactPreview } from "../../infra/artifact-fetch.js";
+import { errText } from "../../shared/action-log.js";
 
 /**
  * Get attachments for a page with seal status, labels, and version comments
@@ -101,7 +102,7 @@ const enumeratePanelArtifacts = async (req) => {
             }));
           }
         } catch (e) {
-          console.warn(`[PANEL] Failed to fetch labels for ${att.id}:`, e);
+          console.warn(`[PANEL] Failed to fetch labels for ${att.id}:`, errText(e));
         }
 
         // Version comment from the attachment itself
@@ -150,7 +151,7 @@ const enumeratePanelArtifacts = async (req) => {
         const urlObj = new URL(data._links.next, "https://example.com");
         nextCursor = urlObj.searchParams.get("cursor");
       } catch (e) {
-        console.warn("[PANEL] Failed to parse cursor:", e);
+        console.warn("[PANEL] Failed to parse cursor:", errText(e));
       }
     }
 
@@ -158,11 +159,11 @@ const enumeratePanelArtifacts = async (req) => {
     let counts = null;
     if (!cursor || cursor === "0") {
       try { const { countPageAttachments } = await import("../sealing/logic.js"); counts = await countPageAttachments(contentId, operatorAccountId, (u) => userConfluence(u)); }
-      catch (e) { console.warn("[PANEL] counts failed:", e?.message || e); }
+      catch (e) { console.warn("[PANEL] counts failed:", errText(e)); }
     }
     return { attachments: enrichedArtifacts, hasMore, nextCursor, counts };
   } catch (error) {
-    console.error("[PANEL] Error fetching panel artifacts:", error);
+    console.error("[PANEL] Error fetching panel artifacts:", errText(error));
     return { attachments: [], hasMore: false, nextCursor: null };
   }
 };
@@ -191,11 +192,10 @@ const labelArtifact = async (req) => {
       return { success: true };
     }
 
-    const errorText = await response.text();
-    console.error(`[PANEL] Failed to add label: ${response.status} - ${errorText}`);
+    console.error(`[PANEL] Failed to add label: ${response.status}`);
     return { success: false, reason: `API error: ${response.status}` };
   } catch (error) {
-    console.error("[PANEL] Error adding label:", error);
+    console.error("[PANEL] Error adding label:", errText(error));
     return { success: false, reason: error.message };
   }
 };
@@ -220,11 +220,10 @@ const unlabelArtifact = async (req) => {
       return { success: true };
     }
 
-    const errorText = await response.text();
-    console.error(`[PANEL] Failed to remove label: ${response.status} - ${errorText}`);
+    console.error(`[PANEL] Failed to remove label: ${response.status}`);
     return { success: false, reason: `API error: ${response.status}` };
   } catch (error) {
-    console.error("[PANEL] Error removing label:", error);
+    console.error("[PANEL] Error removing label:", errText(error));
     return { success: false, reason: error.message };
   }
 };
@@ -327,6 +326,9 @@ export const deleteArtifact = async (req) => {
           trashedOnly: true,
           trashedBy: req.context.accountId,
           trashedAt: new Date().toISOString(),
+          // The page read from the attachment itself (its current container when it was trashed);
+          // null when that read failed — the context page above is a display hint, never a witness.
+          trashedFromPage: attPageId || null,
         });
         const { touchSealTimestamp } = await import("../sealing/logic.js");
         await touchSealTimestamp();
@@ -347,7 +349,7 @@ export const deleteArtifact = async (req) => {
         // Review F2: the live seal ended here — pending requests and grants end with it, or
         // "My work" keeps offering an Approve that mints a grant on a file in the trash.
         const { sweepEditAccess } = await import("../editreq/logic.js");
-        await sweepEditAccess(attachmentId).catch((e) => console.warn("[DELETE] edit-access sweep failed:", e));
+        await sweepEditAccess(attachmentId).catch((e) => console.warn("[DELETE] edit-access sweep failed:", errText(e)));
         // A1: the seal ended here by the owner's own delete (A1 review F6).
         await recordActivity({
           type: "seal.released",
@@ -367,11 +369,10 @@ export const deleteArtifact = async (req) => {
       return { success: true };
     }
 
-    const errorText = await response.text();
-    console.error(`[PANEL] Failed to delete attachment: ${response.status} - ${errorText}`);
+    console.error(`[PANEL] Failed to delete attachment: ${response.status}`);
     return { success: false, reason: `API error: ${response.status}` };
   } catch (error) {
-    console.error("[PANEL] Error deleting attachment:", error);
+    console.error("[PANEL] Error deleting attachment:", errText(error));
     return { success: false, reason: error.message };
   }
 };
@@ -400,7 +401,7 @@ const checkPanelStatus = async (req) => {
     const { adfDoc } = await readDocBody(pageId);
     panelExists = panelExistsInDoc(adfDoc);
   } catch (e) {
-    console.warn("[PANEL] Failed to check panel existence:", e);
+    console.warn("[PANEL] Failed to check panel existence:", errText(e));
   }
 
   // Get page-level settings from content property
@@ -415,7 +416,7 @@ const checkPanelStatus = async (req) => {
       panelDisabled = pageSetting?.macroDisabled === true;
     }
   } catch (e) {
-    console.warn("[PANEL] Failed to get page panel settings:", e);
+    console.warn("[PANEL] Failed to get page panel settings:", errText(e));
   }
 
   return { macroExists: panelExists, macroDisabled: panelDisabled };
@@ -499,13 +500,13 @@ const storeDocPanelPrefs = async (req) => {
       try {
         await removePanelNode(pageId);
       } catch (e) {
-        console.warn("[PANEL] Failed to remove panel after disabling:", e);
+        console.warn("[PANEL] Failed to remove panel after disabling:", errText(e));
       }
     }
 
     return { success: true };
   } catch (error) {
-    console.error("[PANEL] Error saving page panel settings:", error);
+    console.error("[PANEL] Error saving page panel settings:", errText(error));
     return { success: false, reason: error.message };
   }
 };
@@ -553,9 +554,8 @@ const uploadArtifact = async (req) => {
       return { success: true };
     }
 
-    const errorText = await response.text();
     console.error(
-      `[PANEL] Failed to upload artifact: ${response.status} - ${errorText}`,
+      `[PANEL] Failed to upload artifact: ${response.status}`,
     );
     // Confluence refuses a NEW attachment whose name is already on the page (400, "Cannot add a
     // new attachment with same file name"). "Add a file" only adds; say so, and where a new
@@ -565,7 +565,7 @@ const uploadArtifact = async (req) => {
     }
     return { success: false, reason: `Upload failed: ${response.status}` };
   } catch (error) {
-    console.error("[PANEL] Error uploading artifact:", error);
+    console.error("[PANEL] Error uploading artifact:", errText(error));
     return { success: false, reason: error.message };
   }
 };
@@ -599,7 +599,7 @@ const discoverPanelKey = async (req) => {
     if (!extensionKey) return { success: false, reason: "Could not determine the panel's key" };
     return { success: true, extensionKey };
   } catch (error) {
-    console.error("[PANEL] Error resolving extension key:", error);
+    console.error("[PANEL] Error resolving extension key:", errText(error));
     return { success: false, reason: error.message };
   }
 };

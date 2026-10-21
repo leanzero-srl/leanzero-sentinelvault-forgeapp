@@ -375,6 +375,7 @@ try {
     ok("busy reason in seconds", /in 30 seconds/.test(d.busyReason?.(28) || ""));
     ok("busy reason in minutes", /in about 30 minutes/.test(d.busyReason?.(1790) || ""));
     eq("log paths drop the query (account ids)", d.pathForLog?.("/wiki/rest/api/user?accountId=712020:abc"), "/wiki/rest/api/user");
+    eq("log paths drop a label name (typed text)", d.pathForLog?.("/wiki/rest/api/content/123/label/jane-doe-review"), "/wiki/rest/api/content/123/label/*");
     eq("call kinds for the per-invocation count", ["/wiki/api/v2/spaces/9/permissions?limit=250", "/wiki/rest/api/user/memberof?accountId=a", "/wiki/rest/api/user?accountId=a", "/rest/api/group?start=0", "/wiki/api/v2/spaces?keys=X", "/wiki/api/v2/pages/1"].map((p) => d.callKind?.(p)), ["perms", "groups", "users", "groups", "spaces", "other"]);
     if (d.runInvocation) {
       const lines = [];

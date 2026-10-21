@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from "react";
 import { invoke } from "./bridge";
 import { workflowRuleSentence } from "./workflow-rule.js"; // WF-11: the effective rule, one sentence
+import { demoteConfigProblem } from "../../server/capsules/workflow/enforce-rules.js"; // pure: one demote rule for the engine, the saves and this tab
+import { errText } from "./error-facts.js";
 
 // Per-space document-workflow settings (#42). Mirrors ValidationsEditor's shape and
 // reuses the same host classes (settings-panel / settings-row / form-checkbox /
@@ -361,6 +363,9 @@ export const WorkflowApprovalSection = ({ settings, setSettings, def, spaceKey =
 
 export const WorkflowProtectionSection = ({ settings, setSettings, def }) => {
   const { enforceName, expiredName, demoteOpts, clockStates, enforceState } = deriveStates(def);
+  // 2026-10-21: the same rule the server saves and enforces by (enforce-rules.js demoteConfigProblem),
+  // on the definition being edited, so the problem shows before Save refuses it.
+  const demoteProblem = def ? demoteConfigProblem(def, { ...settings, enforceMode: settings.enforceMode || "demote" }) : null;
   return (
         <Section title={`Protecting ${enforceName} pages`} description={`${enforceName} pages are protected: an edit by someone who is not an approver or a space admin is undone or sends the page back, and every ${enforceName} page carries a review date.`} testId="wf-section-protection">
           <SettingsRow
@@ -389,6 +394,7 @@ export const WorkflowProtectionSection = ({ settings, setSettings, def }) => {
                   onChange={(demoteTo) => setSettings((p) => ({ ...p, demoteTo }))}
                 />
               </SettingsRow>
+              {demoteProblem && <p className="settings-row-reason" role="status" data-testid="wf-demote-problem-inline">{demoteProblem}.</p>}
             </div>
           )}
 
@@ -457,6 +463,7 @@ export default function WorkflowSettingsEditor({ spaceKey = null, defRev = 0, on
   const [settings, setSettings] = useState({ enabled: false, autoAssignNew: false, workflowId: "default", approval: null, enforceMode: "demote", demoteTo: "initial", reviewAfterDays: null, reviewAfterDaysByState: {}, entryConditions: {}, syncLabels: false, readConfirmation: null, requireSignature: false });
   const [def, setDef] = useState(null);
   const [protectionOff, setProtectionOff] = useState(false); // the site switch has enforcement off
+  const [demoteProblem, setDemoteProblem] = useState(null); // a saved demote setting the workflows cannot carry out (2026-10-21)
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [applying, setApplying] = useState(false);
@@ -470,8 +477,9 @@ export default function WorkflowSettingsEditor({ spaceKey = null, defRev = 0, on
         if (r?.settings) setSettings(settingsFromServer(r));
         if (r?.def) setDef(r.def);
         setProtectionOff(r?.protectionOff === true);
+        setDemoteProblem(typeof r?.demoteProblem === "string" && r.demoteProblem ? r.demoteProblem : null);
       } catch (e) {
-        console.error("Load workflow settings failed:", e);
+        console.error("Load workflow settings failed:", errText(e));
       } finally {
         setLoading(false);
       }
@@ -486,7 +494,9 @@ export default function WorkflowSettingsEditor({ spaceKey = null, defRev = 0, on
       // { success:false, reason } (e.g. a non-steward) rather than throwing, so a blind
       // "saved" would be a false success.
       const r = await invoke("set-space-workflow-settings", { spaceKey, settings: cleanSettingsForSave(settings, def) });
-      if (r?.success) setMsg({ type: "success", text: "Workflow settings saved." });
+      // The save refuses a demote setting it changes and cannot run; one saved earlier and left as it is
+      // comes back as a warning and stays on screen.
+      if (r?.success) { setMsg(r.warning ? { type: "error", text: `Saved, but: ${r.warning}` } : { type: "success", text: "Workflow settings saved." }); if (!r.warning) setDemoteProblem(null); }
       else setMsg({ type: "error", text: r?.reason || "Could not save workflow settings." });
     } catch (e) {
       setMsg({ type: "error", text: "Could not save workflow settings." });
@@ -536,7 +546,12 @@ export default function WorkflowSettingsEditor({ spaceKey = null, defRev = 0, on
   return (
     <div className="settings-panel">
       {/* WF-11: what the settings below add up to, as one sentence — read it, then change it. */}
-      <p className="wf-rule" data-testid="wf-rule">{workflowRuleSentence(settings, def, { protectionOff })}</p>
+      <p className="wf-rule" data-testid="wf-rule">{workflowRuleSentence(settings, def, { protectionOff, demoteProblem })}</p>
+      {demoteProblem && settings.enforceMode !== "revert" && (
+        <div role="status" className="alert-error" data-testid="wf-demote-problem">
+          Edits to approved pages are reverted, not moved back: {demoteProblem}.
+        </div>
+      )}
       <SettingsRow
         label="Enable document workflow"
         description="Track a review/approval state on pages in this space. When on, pages carry a workflow state shown on the Sentinel Vault ribbon, and approvers and space admins move it along the workflow."
