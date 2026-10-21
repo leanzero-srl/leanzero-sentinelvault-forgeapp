@@ -18,7 +18,9 @@
  *                     inline, 100 per request: current pages in every space, archived spaces included
  *                     (content/search leaves those out: the personal spaces of people who left);
  *   phase "archived"  /wiki/api/v2/pages?status=archived, each page's property read on its own (CQL never
- *                     returns these, and the v1 content list answers 410 Gone to an app);
+ *                     returns these, and the v1 content list answers 410 Gone to an app). Confluence
+ *                     refuses changes to an archived page, so an old one is counted (archivedLeft) and
+ *                     rewritten when the page leaves the archive (scrubOnePageMirror, from the trigger);
  *   phase "trashed"   /wiki/api/v2/pages?status=trashed, the same way;
  *   phase "retry"     the pages whose write failed, re-read one by one, at most RETRY_ROUNDS times,
  *                     each at least an hour after the last; what still fails then is counted as
@@ -122,7 +124,10 @@ async function scrubOne(pageId, prop) {
       status = await putProperty(pageId, fresh, await cleanValueFor(pageId, fresh.value));
     }
     if (status === 429) return "limited";
-    return status >= 200 && status < 300 ? "scrubbed" : "failed";
+    if (status >= 200 && status < 300) return "scrubbed";
+    // Confluence refuses any change to an ARCHIVED page's properties (v2 404, v1 403 — measured on
+    // wolfaenpak, 2026-10-22): such a page is cleaned when it leaves the archive (scrubOnePageMirror).
+    return status === 404 || status === 403 ? "refused" : "failed";
   } catch (e) {
     console.warn("[VALIDATION-MIRROR] rewrite failed:", errText(e));
     return "failed";
@@ -187,7 +192,7 @@ export async function runValidationMirrorScrub({ budgetMs = 600000, now = () => 
   const finish = async (skipped = 0) => {
     if (skipped) console.warn(`[VALIDATION-MIRROR] ${skipped} page(s) could not be rewritten after ${RETRY_ROUNDS} retries; skipped`);
     await kvs.delete(SCRUB_STATE_KEY).catch(() => {});
-    return { done: true, phase: null, pages: state.pages, scrubbed: state.scrubbed, failed: skipped, skipped, skippedPhases: state.skippedPhases };
+    return { done: true, phase: null, pages: state.pages, scrubbed: state.scrubbed, failed: skipped, skipped, skippedPhases: state.skippedPhases, archivedLeft: state.readOnly || 0 };
   };
   // After the lists or a retry round: what is left, and whether another round may still run.
   const settle = async () => {
@@ -214,7 +219,7 @@ export async function runValidationMirrorScrub({ budgetMs = 600000, now = () => 
         if (r === "limited") { state.failedIds = [...still, ...state.failedIds.slice(i)]; return limited(); }
         state.hourPages += 1;
         if (r === "scrubbed") state.scrubbed += 1;
-        if (r === "failed") still.push(id);
+        if (r === "failed" || r === "refused") still.push(id);
       }
       state.failedIds = still;
       return settle();
@@ -256,7 +261,8 @@ export async function runValidationMirrorScrub({ budgetMs = 600000, now = () => 
       // this batch is counted yet, and the pages already rewritten are clean on the re-read).
       if (r === "limited") { state.scrubbed += scrubbed; for (const id of failed) noteFailed(id); state.hourPages += reads; return limited(); }
       if (r === "scrubbed") scrubbed += 1;
-      if (r === "failed") failed.push(it.pageId);
+      if (r === "refused" && state.phase === "archived") state.readOnly = (state.readOnly || 0) + 1;
+      else if (r === "failed" || r === "refused") failed.push(it.pageId);
     }
     state.pages += batch.items.length;
     state.hourPages += batch.items.length + reads + scrubbed;
@@ -270,4 +276,17 @@ export async function runValidationMirrorScrub({ budgetMs = 600000, now = () => 
   }
   await save();
   return out();
+}
+
+/**
+ * One page, when it leaves the archive (trigger `avi:confluence:unarchived:page`): Confluence refuses
+ * changes to an archived page, so its old property is rewritten the moment it is a page again.
+ * → "clean" | "scrubbed" | "failed" | "refused" | "limited"
+ */
+export async function scrubOnePageMirror(pageId) {
+  if (!pageId) return "clean";
+  const prop = await readProperty(String(pageId)).catch(() => undefined);
+  if (prop === "limited") return "limited";
+  if (prop === undefined) return "failed";
+  return scrubOne(String(pageId), prop);
 }
