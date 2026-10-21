@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { invoke } from "@forge/bridge";
+import { invoke } from "./bridge";
 import UnsavedFloat from "./UnsavedFloat";
 import { ruleConfigProblem, ruleListRefusal } from "../../server/shared/rule-config.js"; // one completeness rule, shared with the save resolver
 

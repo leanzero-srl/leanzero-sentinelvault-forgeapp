@@ -24,6 +24,15 @@ import { canEditPage } from "../../shared/content-access.js";
 import { BACKUP_OPS } from "./admission.js";
 import { runBackupOp } from "../backup/rest.js";
 import { scheduleBackup } from "../backup/hook.js";
+import { emit as emitAction, safeKey as safeId, reasonSlug } from "../../shared/action-log.js";
+
+// The action log: one line per REST operation, by resolver key and result status (never its reason
+// text unless that is a literal of the source, never its payload).
+const STEP_OUTCOME = { applied: "ok", refused: "refused", failed: "error", skipped: "skipped" };
+function logStep(step, r, ms) {
+  const reason = reasonSlug(r?.reason);
+  emitAction({ via: "rest", action: `rest.${safeId(step?.resolverKey)}`, surface: "rest-api", outcome: STEP_OUTCOME[r?.status] || "error", ...(reason ? { reason } : {}), ms });
+}
 
 const nowIso = () => new Date().toISOString();
 
@@ -167,7 +176,9 @@ export async function runJob(jobId) {
         receipt.summary = { applied: 0, refused: 0, failed: 0, skipped: receipt.results.length };
       } else {
         for (const step of plan) {
+          const stepStarted = Date.now();
           const r = await runStep(step, accountId);
+          logStep(step, r, Date.now() - stepStarted);
           receipt.results.push({ path: step.path, status: r.status, ...(r.reason ? { reason: r.reason } : {}), ...(r.note ? { note: r.note } : {}), ...(r.removed ? { removed: r.removed } : {}) });
         }
         const s = summarize(receipt.results);
@@ -212,5 +223,5 @@ export async function runJob(jobId) {
 export async function configApiConsumer(event) {
   const jobId = event?.body?.jobId || event?.payload?.jobId;
   if (!jobId) { console.warn("[CONFIG-API] consumer: no jobId in event"); return; }
-  await runJob(String(jobId));
+  return runJob(String(jobId)); // the action log reads { ok, status }
 }

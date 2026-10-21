@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { invoke } from "@forge/bridge";
+import { invoke } from "./bridge";
 
 /**
  * The viewer's edit-access status for every file sealed by SOMEONE ELSE, fetched by the list

@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { invoke } from "@forge/bridge";
+import { invoke } from "./bridge";
 import { MiniSelect, WorkflowApprovalSection, WorkflowProtectionSection, settingsFromServer, cleanSettingsForSave } from "./WorkflowSettingsEditor";
 import { bundleFailureText } from "../../server/capsules/workflow/bundle.js"; // WF-11: pure, no Forge import
 
