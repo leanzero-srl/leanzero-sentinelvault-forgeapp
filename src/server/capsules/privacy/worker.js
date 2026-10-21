@@ -113,6 +113,7 @@ export async function queuePrivacySweep(reason = "manual") {
 // ── One-time scrub of the pre-8.14 validation mirrors (8.14.1, validations/mirror-scrub.js) ───────
 const SCRUB_KICK_KEY = "privacy-validation-scrub-kick";
 const SCRUB_KICK_EVERY_MS = 30 * 60000;
+const SCRUB_EVENT = "validation-scrub"; // the queue event kind (not a storage key)
 let scrubKnownDone = false; // per instance: once the flag is seen, the five-minute kick costs nothing
 
 /** Run the scrub under its own lock and record the flag when it finishes. Never throws. */
@@ -150,7 +151,7 @@ export async function kickValidationMirrorScrub(context = null) {
     const kick = await kvs.get(SCRUB_KICK_KEY);
     if (kick?.at && Date.now() - Date.parse(kick.at) < SCRUB_KICK_EVERY_MS) return false;
     await kvs.set(SCRUB_KICK_KEY, { at: nowIso() });
-    await new Queue({ key: PRIVACY_QUEUE_KEY }).push({ body: { kind: "validation-scrub" } });
+    await new Queue({ key: PRIVACY_QUEUE_KEY }).push({ body: { kind: SCRUB_EVENT } });
     return true;
   } catch (e) {
     console.warn("[VALIDATION-MIRROR] could not start the scrub:", errText(e));
@@ -163,10 +164,10 @@ export const _resetScrubMemo = () => { scrubKnownDone = false; };
 
 export async function privacyConsumer(event) {
   const body = event?.body || event?.payload || {};
-  if (body.kind === "validation-scrub") {
+  if (body.kind === SCRUB_EVENT) {
     const r = await runValidationMirrorScrubLocked();
     // Not finished: hand on (a busy lock means the weekly sweep is running it; look again later).
-    if (!r.done) await new Queue({ key: PRIVACY_QUEUE_KEY }).push({ body: { kind: "validation-scrub" }, delayInSeconds: r.busy || r.error ? 300 : 5 }).catch((e) => console.error("[VALIDATION-MIRROR] could not hand on:", errText(e)));
+    if (!r.done) await new Queue({ key: PRIVACY_QUEUE_KEY }).push({ body: { kind: SCRUB_EVENT }, delayInSeconds: r.busy || r.error ? 300 : 5 }).catch((e) => console.error("[VALIDATION-MIRROR] could not hand on:", errText(e)));
     return;
   }
   if (body.kind !== "sweep") { console.warn(`[PRIVACY] consumer: unknown event kind=${safeKey(body.kind, "none")}`); return; }
