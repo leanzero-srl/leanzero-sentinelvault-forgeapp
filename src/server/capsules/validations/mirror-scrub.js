@@ -48,7 +48,8 @@ export const FAILED_CAP = 500;
 export const HOURLY_PAGES = 3000;
 /** The share in force: HOURLY_PAGES, or the environment variable SV_SCRUB_HOURLY_PAGES where one is set (the
  * development environment, so a test can walk a whole test site in minutes). Production sets none. */
-export const hourlyPages = () => { const v = Number(process.env.SV_SCRUB_HOURLY_PAGES); return Number.isFinite(v) && v >= 100 ? v : HOURLY_PAGES; };
+export const HOURLY_PAGES_MAX = 20000; // a mistaken production setting can never undo the pacing
+export const hourlyPages = () => { const v = Number(process.env.SV_SCRUB_HOURLY_PAGES); return Number.isFinite(v) && v >= 100 ? Math.min(v, HOURLY_PAGES_MAX) : HOURLY_PAGES; };
 /** A list that keeps failing this many times in a row is given up (recorded as a skipped phase). */
 export const LIST_FAILURES_MAX = 24;
 const JITTER_MS = 15 * 60000;
@@ -153,7 +154,7 @@ async function fetchBatch(phase, cursor) {
   return { status: res.status, items, next: more ? String((Number(cursor) || 0) + rows.length) : null, near };
 }
 
-const fresh = (t0) => ({ phase: LIST_PHASES[0], cursor: null, pages: 0, scrubbed: 0, failedIds: [], overflow: 0, retryRound: 0, waitUntil: null, backoffS: 0, listFailures: 0, skippedPhases: [], hourStart: t0, hourPages: 0, startedAt: new Date(t0).toISOString() });
+const fresh = (t0) => ({ phase: LIST_PHASES[0], cursor: null, pages: 0, scrubbed: 0, failedIds: [], overflow: 0, retryRound: 0, waitUntil: null, backoffS: 0, listFailures: 0, skippedPhases: [], hourStart: Math.floor(t0 / 3600000) * 3600000, hourPages: 0, startedAt: new Date(t0).toISOString() });
 
 /**
  * Run the scrub until it is done, the budget is spent, or it has to wait.
@@ -164,12 +165,15 @@ export async function runValidationMirrorScrub({ budgetMs = 600000, now = () => 
   const over = () => now() - t0 > budgetMs;
   let state = (await kvs.get(SCRUB_STATE_KEY).catch(() => null)) || null;
   if (!state || ![...LIST_PHASES, "retry"].includes(state.phase)) state = fresh(t0);
-  state = { listFailures: 0, skippedPhases: [], hourStart: t0, hourPages: 0, ...state };
+  state = { listFailures: 0, skippedPhases: [], hourStart: Math.floor(t0 / 3600000) * 3600000, hourPages: 0, ...state };
   const out = (extra = {}) => ({ done: false, waitUntil: state.waitUntil || null, phase: state.phase, pages: state.pages, scrubbed: state.scrubbed, failed: state.failedIds.length + (state.overflow || 0), ...extra });
   const save = () => kvs.set(SCRUB_STATE_KEY, { ...state, at: new Date(now()).toISOString() });
   if (state.waitUntil && state.waitUntil > t0) return out();
   state.waitUntil = null;
-  if (t0 - state.hourStart >= 3600000) { state.hourStart = t0; state.hourPages = 0; }
+  // The share is per CLOCK hour, like Confluence's pool (it resets at the top of each hour): a run that
+  // wakes after the reset always finds a fresh share.
+  const hourOf = (ms) => Math.floor(ms / 3600000) * 3600000;
+  if (hourOf(t0) !== state.hourStart) { state.hourStart = hourOf(t0); state.hourPages = 0; }
   const limited = () => wait(afterReset(now(), rand));
   // The site's hourly share: once it is used, wait for the next hour (with jitter).
   const cap = hourlyPages();
