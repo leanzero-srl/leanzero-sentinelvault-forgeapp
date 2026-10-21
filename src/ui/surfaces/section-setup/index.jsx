@@ -4,6 +4,7 @@ import { view, invoke, router } from "../../kit/bridge";
 import { enablePaletteSync } from "../../kit/palette-sync";
 import { when, sealSentence } from "../../kit/status-language.js"; // SEC-3: one vocabulary, one clock
 import { visibleTimeout } from "../../kit/visible-timeout.js";
+import { errText } from "../../kit/error-facts.js";
 
 // The "was undone" notice can be closed, and stays closed for THAT restore across reloads (owner,
 // 2026-09-25: it came back on every reload for minutes, with no way to dismiss it). The key is the
@@ -87,7 +88,7 @@ const fetchSealStatus = async (sectionId) => {
     const r = await invoke("section-seal-status", { sectionId });
     return r && typeof r === "object" ? r : { sealed: false };
   } catch (e) {
-    console.warn("[SECTION-UI] section-seal-status failed:", e?.message);
+    console.warn("[SECTION-UI] section-seal-status failed:", errText(e));
     return { sealed: false };
   }
 };
@@ -164,7 +165,7 @@ const SectionMacro = () => {
             // The guard moved the page out of Approved (a demote — no page write): the workflow
             // handed this seal back, so "Locked by the approval of this page" is stale. Re-read it.
             if (sectionId && g?.workflowChanged === true) fetchSealStatus(sectionId).then(setSeal).catch(() => {});
-          }).catch((e) => console.warn("[SECTION-UI] guard-page-now failed:", e?.message));
+          }).catch((e) => console.warn("[SECTION-UI] guard-page-now failed:", errText(e)));
         }
 
         // Best-effort: render the protected body inline in view mode (the dialog never shows it).
@@ -173,11 +174,11 @@ const SectionMacro = () => {
             const props = await view.createAdfRendererIframeProps(context);
             if (props && typeof props === "object") setBodyProps(props);
           } catch (e) {
-            console.warn("[SECTION-UI] ADF renderer unavailable:", e?.message);
+            console.warn("[SECTION-UI] ADF renderer unavailable:", errText(e));
           }
         }
       } catch (e) {
-        console.warn("[SECTION-UI] getContext failed:", e?.message);
+        console.warn("[SECTION-UI] getContext failed:", errText(e));
       }
       setReady(true);
     })();
@@ -244,7 +245,7 @@ const SectionMacro = () => {
   const [error, setError] = useState(null);
   const onCancel = () => {
     // The editor owns the dialog; close() dismisses it without touching the node's config.
-    try { const r = view.close(); if (r && r.catch) r.catch((e) => console.info("[SECTION-UI] view.close rejected:", e?.message || e)); } catch (e) { console.info("[SECTION-UI] view.close unavailable:", e?.message || e); }
+    try { const r = view.close(); if (r && r.catch) r.catch((e) => console.info("[SECTION-UI] view.close rejected:", errText(e))); } catch (e) { console.info("[SECTION-UI] view.close unavailable:", errText(e)); }
   };
   const onInsert = async () => {
     setError(null);
@@ -260,12 +261,12 @@ const SectionMacro = () => {
       // so the publish reads the body and seals the wrapper to whoever publishes it.
       if (!cfg.sectionId) {
         const pageId = ctxRef.current?.extension?.content?.id || null;
-        if (pageId) invoke("section-insert-intent", { pageId }).catch((e) => console.info("[SECTION-UI] insert intent:", e?.message || e));
+        if (pageId) invoke("section-insert-intent", { pageId }).catch((e) => console.info("[SECTION-UI] insert intent:", errText(e)));
       }
       await view.submit({ config: cfg });
       setStatus(cfg.sectionId ? "Saved" : "Inserted");
     } catch (e) {
-      console.error("[SECTION-UI] submit failed:", e);
+      console.error("[SECTION-UI] submit failed:", errText(e));
       setStatus("Could not insert");
       setError(e?.message || "The editor refused the insert. Close this dialog and try again.");
     }

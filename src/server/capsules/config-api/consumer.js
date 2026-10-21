@@ -16,7 +16,7 @@ import { setWithTtl } from "../../shared/kvs-ttl.js";
 import { invoke } from "./resolvers.js";
 import { planBundle, touchedSpaceKeys } from "./bundle.js";
 import { isFullValidationConfig } from "../validations/logic.js";
-import { interpretResult, mergeValidationConfig, summarize, findHeadingIndex, isStaleRunning, staleFailureReceipt } from "./pure.js";
+import { interpretResult, mergeValidationConfig, summarize, findHeadingIndex, isStaleRunning, staleFailureReceipt, bundlePathForLog } from "./pure.js";
 import { JOB_TTL_MS, CONSUMER_TIMEOUT_MS, jobKvsKey, activeJobKvsKey } from "./admission.js";
 import { mirrorReceipt, mirrorSpaceConfig, mirrorSiteConfig, spaceIdByKey } from "./mirror.js";
 import { exportSpaceConfig, exportSiteConfig } from "./export.js";
@@ -24,7 +24,7 @@ import { canEditPage } from "../../shared/content-access.js";
 import { BACKUP_OPS } from "./admission.js";
 import { runBackupOp } from "../backup/rest.js";
 import { scheduleBackup } from "../backup/hook.js";
-import { emit as emitAction, safeKey as safeId, reasonSlug } from "../../shared/action-log.js";
+import { emit as emitAction, safeKey as safeId, reasonSlug, errText, spaceKeyForLog } from "../../shared/action-log.js";
 
 // The action log: one line per REST operation, by resolver key and result status (never its reason
 // text unless that is a literal of the source, never its payload).
@@ -88,7 +88,7 @@ async function runStep(step, accountId) {
     }
     return interpretResult(await invoke(resolverKey, payload, accountId));
   } catch (e) {
-    console.error(`[CONFIG-API] step ${step.path} (${resolverKey}) threw:`, e);
+    console.error(`[CONFIG-API] step ${bundlePathForLog(step.path)} (${resolverKey}) threw:`, errText(e));
     return { status: "failed", reason: String(e?.message || e).slice(0, 300), errorType: e?.name }; // errorType: the action log only
   }
 }
@@ -154,7 +154,7 @@ export async function runJob(jobId) {
   // Remember the receipt page so UI config writes can keep the site mirror current too.
   if (receiptPageId && !BACKUP_OPS.includes(job.op)) {
     try { const g = (await kvs.get("admin-settings-global")) || {}; if (g.apiReceiptPageId !== receiptPageId) await kvs.set("admin-settings-global", { ...g, apiReceiptPageId: receiptPageId }); }
-    catch (e) { console.warn("[CONFIG-API] could not remember receiptPageId:", e?.message || e); }
+    catch (e) { console.warn("[CONFIG-API] could not remember receiptPageId:", errText(e)); }
   }
   try {
     if (job.op === "whoami") {
@@ -198,30 +198,32 @@ export async function runJob(jobId) {
         receipt.configMirror = { site: null, spaces: {} };
         for (const k of spacesTouched) {
           try { receipt.configMirror.spaces[k] = await mirrorSpaceConfig(k, await exportSpaceConfig(k, accountId)); }
-          catch (e) { console.warn(`[CONFIG-API] config mirror for ${k} failed:`, e?.message || e); receipt.configMirror.spaces[k] = false; }
+          catch (e) { console.warn(`[CONFIG-API] config mirror for ${spaceKeyForLog(k)} failed:`, errText(e)); receipt.configMirror.spaces[k] = false; }
         }
         if (siteTouched && receiptPageId) {
           try { receipt.configMirror.site = await mirrorSiteConfig(receiptPageId, await exportSiteConfig(accountId)); }
-          catch (e) { console.warn("[CONFIG-API] site config mirror failed:", e?.message || e); receipt.configMirror.site = false; }
+          catch (e) { console.warn("[CONFIG-API] site config mirror failed:", errText(e)); receipt.configMirror.site = false; }
         }
       }
     }
   } catch (e) {
-    console.error(`[CONFIG-API] job ${jobId} crashed:`, e);
+    console.error(`[CONFIG-API] job ${jobId} crashed:`, errText(e));
     receipt.status = "failed";
     receipt.error = String(e?.message || e).slice(0, 300);
   }
   receipt.finishedAt = nowIso();
   receipt.touchedSpaces = spaceKeys;
-  await setWithTtl(key, receipt, JOB_TTL_MS);
-  await kvs.delete(activeJobKvsKey(job.tokenId)).catch(() => {});
+  // The receipt settles WITH its mirror outcome: a reader that sees it done (the REST GET, the live
+  // spec) also sees receiptMirror. Storing "done" first and the mirror in a second write left a
+  // window of a few Confluence calls where a settled receipt had no receiptMirror (2026-10-21).
   try {
     receipt.receiptMirror = await mirrorReceipt(
       { id: receipt.id, op: receipt.op, status: receipt.status, submittedBy: receipt.submittedBy, role: receipt.role, submittedAt: receipt.submittedAt, finishedAt: receipt.finishedAt, summary: receipt.summary, results: receipt.results, ...(receipt.backup ? { backup: receipt.backup } : {}) },
       { spaceKeys, receiptPageId },
     );
-    await setWithTtl(key, receipt, JOB_TTL_MS);
-  } catch (e) { console.warn("[CONFIG-API] receipt mirror failed:", e?.message || e); }
+  } catch (e) { console.warn("[CONFIG-API] receipt mirror failed:", errText(e)); }
+  await setWithTtl(key, receipt, JOB_TTL_MS);
+  await kvs.delete(activeJobKvsKey(job.tokenId)).catch(() => {});
   console.log(`[CONFIG-API] job ${jobId} ${receipt.status} applied=${receipt.summary.applied} refused=${receipt.summary.refused} failed=${receipt.summary.failed} skipped=${receipt.summary.skipped}`);
   return { ok: true, status: receipt.status, summary: receipt.summary, crashed: !!receipt.error }; // the action log reads these
 }

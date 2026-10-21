@@ -42,5 +42,7 @@ eq("a group NAME is not a group id", isGroupId("confluence-users-wolfaenpak"), f
 
 const status = readFileSync(resolve(root, "infra/attachment-status.js"), "utf8");
 ok("purge confirmation lists the page's attachments (current + trashed)", /\/wiki\/api\/v2\/pages\/\$\{pageId\}\/attachments\?status=current&status=trashed/.test(status));
-ok("no page id → not confirmed", /if \(!pageId\) \{[\s\S]{0,200}return false;/.test(status));
+ok("purge confirmation lists a blog post's attachments too", /\/wiki\/api\/v2\/blogposts\/\$\{pageId\}\/attachments\?status=current&status=trashed/.test(status));
+// No container id → "unknown" (never gone); the behaviour is proven in test/trash-rights.test.mjs.
+ok("no page id → not confirmed", /if \(!pageId\) \{[\s\S]{0,200}return unknown\(\);/.test(status));
 report("dead-endpoints");

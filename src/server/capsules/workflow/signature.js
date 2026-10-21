@@ -51,7 +51,7 @@ async function noteFailure(accountId) {
   const count = (cur.count || 0) + 1;
   const rec = { count, at: new Date().toISOString(), until: count >= MAX_FAILS ? new Date(Date.now() + LOCKOUT_MS).toISOString() : null };
   await setWithTtl(failKey(accountId), rec, LOCKOUT_MS);
-  if (count >= MAX_FAILS) console.warn(`[SIGNATURE] ${MAX_FAILS} wrong codes for ${accountId} — refusing signatures for ${LOCKOUT_MS / 60000} minutes`);
+  if (count >= MAX_FAILS) console.warn(`[SIGNATURE] ${MAX_FAILS} wrong codes for one account — refusing its signatures for ${LOCKOUT_MS / 60000} minutes`);
   return rec;
 }
 

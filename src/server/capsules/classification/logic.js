@@ -1,3 +1,5 @@
+// The pure formatter (this module is bundled into the UI too: action-log.js pulls @forge/api).
+import { errText } from "../../../ui/kit/error-facts.js";
 /**
  * Classification capsule — PURE core (Part 3.1 + 3.2).
  *
@@ -293,7 +295,7 @@ export async function mirrorProperty(request, base, value, log = () => {}, key =
     if (!res.ok) log(`[CLASSIFICATION] property write on ${base} → ${res.status}`);
     return !!res.ok;
   } catch (e) {
-    log(`[CLASSIFICATION] property mirror on ${base} threw: ${e?.message || e}`);
+    log(`[CLASSIFICATION] property mirror on ${base} threw: ${errText(e)}`);
     return false;
   }
 }

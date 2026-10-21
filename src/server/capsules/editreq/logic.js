@@ -1,5 +1,6 @@
 import { kvs, WhereConditions } from "@forge/kvs";
 import { cooldownMsFrom } from "../../shared/edit-cooldown.js";
+import { errText } from "../../shared/action-log.js";
 
 // Edit Requests — shared helpers.
 //
@@ -62,12 +63,31 @@ function ownerIndex({ indexPrefix, recordPrefix, idField }) {
     const prefix = `${indexPrefix}-${ownerAccountId}-`;
     let query = kvs.query().where("key", WhereConditions.beginsWith(prefix)).limit(100);
     let iterations = 0;
+    // 8.14: a PROPOSAL waits on its approvers only while they are still approvers of the space the
+    // page's workflow lives in (workflow/approvals.js approverStatusNow, the one rule). This runs on
+    // every page view (the ribbon's count), so no group is read: "unknown" stays listed and the
+    // decision itself checks fully. Dynamic imports: no module cycle with the workflow capsule.
+    let approverNow = null;
+    const spaceOf = new Map();
+    const stillApprover = async (record) => {
+      const wf = await import("../workflow/logic.js");
+      if (!approverNow) approverNow = (await import("../workflow/approvals.js")).newApproverCheck({ expandGroups: false });
+      const pageId = String(record.contentId || record.pageId || "");
+      if (!spaceOf.has(pageId)) spaceOf.set(pageId, pageId ? wf.readPageWorkflow(pageId).then((r) => r?.spaceKey || record.spaceKey || null).catch(() => record.spaceKey || null) : Promise.resolve(record.spaceKey || null));
+      return (await approverNow(record.approvers, ownerAccountId, await spaceOf.get(pageId))) !== "no";
+    };
     do {
       const { results, nextCursor } = await query.getMany();
       for (const { key: k, value: row } of results || []) {
         if (!row?.[idField] || !row?.requesterAccountId) { await kvs.delete(k).catch(() => {}); continue; }
         const record = await kvs.get(recordKey(row[idField], row.requesterAccountId));
-        if (record?.status === "pending" && (record.ownerAccountId === ownerAccountId || (record.proposal && (record.approvers || []).includes(ownerAccountId)))) { out.push(record); continue; }
+        if (record?.status === "pending" && record.ownerAccountId === ownerAccountId && !record.proposal) { out.push(record); continue; }
+        if (record?.status === "pending" && record.proposal && (record.approvers || []).includes(ownerAccountId)) {
+          // Taken off the list: not waiting on them now; the row stays (being put back restores it).
+          if (await stillApprover(record)) out.push(record);
+          continue;
+        }
+        if (record?.status === "pending" && record.ownerAccountId === ownerAccountId) { out.push(record); continue; }
         await kvs.delete(k).catch(() => {});
       }
       if (!nextCursor || ++iterations >= 15) break;
@@ -90,7 +110,7 @@ function ownerIndex({ indexPrefix, recordPrefix, idField }) {
           if (await kvs.get(key(rec.ownerAccountId, rec[idField], rec.requesterAccountId))) continue;
           await write(rec);
           backfilled++;
-        } catch (e) { console.warn(`[EDIT-ACCESS] ${indexPrefix} backfill`, e); }
+        } catch (e) { console.warn(`[EDIT-ACCESS] ${indexPrefix} backfill`, errText(e)); }
       }
       if (!nextCursor || ++iterations >= 20) break;
       query = kvs.query().where("key", WhereConditions.beginsWith(`${recordPrefix}-`)).limit(100).cursor(nextCursor);
@@ -232,7 +252,7 @@ async function backfillSpaceIndex() {
         if (await kvs.get(stewardreqSpaceKeyOf(rec.spaceKey))) continue;
         await writeSpaceIndex(rec);
         backfilled++;
-      } catch (e) { console.warn("[EDIT-ACCESS] stewardreq-space backfill", e); }
+      } catch (e) { console.warn("[EDIT-ACCESS] stewardreq-space backfill", errText(e)); }
     }
     if (!nextCursor || ++iterations >= 20) break;
     query = kvs.query().where("key", WhereConditions.beginsWith("steward-request-")).limit(100).cursor(nextCursor);
@@ -281,7 +301,7 @@ export async function sweepEditAccess(attachmentId) {
         if (prefix.startsWith("edit-request-")) await dropOwnerIndex(value); // the owner index row goes with the request
       }
     } catch (e) {
-      console.warn(`[EDIT-ACCESS] sweep failed for ${prefix}:`, e);
+      console.warn(`[EDIT-ACCESS] sweep failed for ${prefix}:`, errText(e));
     }
   }
 }
@@ -311,7 +331,7 @@ export async function sweepSectionEditAccess(sectionId) {
         if (prefix.startsWith("section-edit-request-")) await dropSectionOwnerIndex(value); // the owner index row goes with the request
       }
     } catch (e) {
-      console.warn(`[EDIT-ACCESS] section sweep failed for ${prefix}:`, e);
+      console.warn(`[EDIT-ACCESS] section sweep failed for ${prefix}:`, errText(e));
     }
   }
 }
@@ -323,5 +343,5 @@ export async function sweepSectionEditAccess(sectionId) {
  */
 export async function resolveEditCooldownMs() {
   try { return cooldownMsFrom(await kvs.get("admin-settings-global")); }
-  catch (e) { console.warn("[EDIT-ACCESS] cooldown read failed — default used:", e?.message || e); return cooldownMsFrom(null); }
+  catch (e) { console.warn("[EDIT-ACCESS] cooldown read failed — default used:", errText(e)); return cooldownMsFrom(null); }
 }

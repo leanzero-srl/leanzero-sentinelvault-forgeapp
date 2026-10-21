@@ -1,5 +1,6 @@
 import { asUser, route } from "@forge/api";
 import { appConfluence, userConfluence } from "../shared/confluence-call.js";
+import { errText } from "../shared/action-log.js";
 
 // Attachment preview for the Custom UI surfaces (panels resolve-artifact-preview).
 //
@@ -76,7 +77,7 @@ export async function resolveArtifactPreview(artifactId, contentId) {
 
     return { dataUri };
   } catch (error) {
-    console.error(`[PREVIEW] Error generating preview for ${artifactId}:`, error);
+    console.error(`[PREVIEW] Error generating preview for ${artifactId}:`, errText(error));
     return null;
   }
 }

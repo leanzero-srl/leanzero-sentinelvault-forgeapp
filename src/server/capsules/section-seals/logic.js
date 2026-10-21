@@ -1,6 +1,7 @@
 import { kvs, WhereConditions } from "@forge/kvs";
 import { route } from "@forge/api";
 import { appConfluence } from "../../shared/confluence-call.js";
+import { errText } from "../../shared/action-log.js";
 
 // Content Sealing (section-level) — storage helpers.
 //
@@ -117,7 +118,7 @@ export async function writeSectionContentProp(pageId, sections) {
       );
     }
   } catch (e) {
-    console.error("[SECTION-PROP] write failed:", e);
+    console.error("[SECTION-PROP] write failed:", errText(e));
   }
 }
 
@@ -139,7 +140,7 @@ export async function removeSectionContentProp(pageId) {
       { method: "DELETE" },
     );
   } catch (e) {
-    console.error("[SECTION-PROP] delete failed:", e);
+    console.error("[SECTION-PROP] delete failed:", errText(e));
   }
 }
 

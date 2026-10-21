@@ -17,6 +17,7 @@ import {
 import { recordActivity } from "../../infra/activity-log.js";
 import { canEditPage, objectSpaceKeyOf, isStewardOfSeal } from "../../shared/content-access.js";
 import { validateReleaseReason } from "../../shared/release-reason.js";
+import { errText, spaceKeyForLog } from "../../shared/action-log.js";
 
 // Queue for background realm scanning
 // it57: realm-audit-queue is constructed lazily at push time (see launch-realm-audit) so this module
@@ -55,7 +56,7 @@ async function resolveRealmIdFromKey(spaceKey) {
     const body = await res.json();
     return body?.results?.[0]?.id ? String(body.results[0].id) : null;
   } catch (e) {
-    console.warn(`[REALM] Could not resolve space id for ${spaceKey}:`, e?.message);
+    console.warn(`[REALM] Could not resolve space id for ${spaceKeyForLog(spaceKey)}:`, errText(e));
     return null;
   }
 }
@@ -163,7 +164,7 @@ const enumerateRealmSeals = async (req) => {
       nextCursor: nextCursor || null,
     };
   } catch (error) {
-    console.error("[REALM-SEALS] Error querying realm-seal index:", error);
+    console.error("[REALM-SEALS] Error querying realm-seal index:", errText(error));
     return {
       attachments: [],
       hasMore: false,
@@ -223,7 +224,7 @@ const launchRealmAudit = async (req) => {
     body: { jobId, spaceKey, spaceId },
   });
 
-  console.log(`[REALM-AUDIT] Queued scan job ${jobId} for realm ${spaceKey}`);
+  console.log(`[REALM-AUDIT] Queued scan job ${jobId} for realm ${spaceKeyForLog(spaceKey)}`);
 
   return { jobId, status: "queued" };
 };
@@ -409,7 +410,7 @@ const stewardUnseal = async (req) => {
     } catch (noticeError) {
       console.error(
         "[STEWARD-UNSEAL] Failed to post steward override notice:",
-        noticeError,
+        errText(noticeError),
       );
     }
   }
@@ -429,7 +430,7 @@ async function dropUnrecordedIndexRow(attachmentId, sealRecord, objectSpaceKey) 
     const sid = await resolveRealmIdFromKey(objectSpaceKey);
     if (sid) await kvs.delete(`space-protection-${sid}-${attachmentId}`);
   } catch (e) {
-    console.warn("[STEWARD-UNSEAL] index row cleanup failed:", e?.message || e);
+    console.warn("[STEWARD-UNSEAL] index row cleanup failed:", errText(e));
   }
 }
 
@@ -450,7 +451,7 @@ export const checkUserRole = async (req) => {
     const site = isSteward ? await kvs.get("admin-settings-global").catch(() => null) : null;
     return { role: isSteward ? "steward" : "user", canForceRelease: isSteward && site?.allowAdminOverride !== false };
   } catch (e) {
-    console.warn("[CHECK-USER-ROLE] Error:", e);
+    console.warn("[CHECK-USER-ROLE] Error:", errText(e));
     return { role: "user" };
   }
 };
@@ -522,10 +523,10 @@ export const requestStewardAccess = async (req) => {
       status: "pending",
     });
     // P1-3: the space joins the "someone is waiting" index with the record (read back by key).
-    await writeSpaceIndex(await kvs.get(key)).catch((e) => console.warn("[REQUEST-STEWARD] space index", e));
+    await writeSpaceIndex(await kvs.get(key)).catch((e) => console.warn("[REQUEST-STEWARD] space index", errText(e)));
     return { success: true };
   } catch (e) {
-    console.error("[REQUEST-STEWARD] Error:", e);
+    console.error("[REQUEST-STEWARD] Error:", errText(e));
     return { success: false, reason: e.message };
   }
 };
@@ -582,7 +583,7 @@ const listStewardRequests = async (req) => {
     }
     return { requests: allRequests };
   } catch (e) {
-    console.error("[LIST-STEWARD-REQUESTS] Error:", e);
+    console.error("[LIST-STEWARD-REQUESTS] Error:", errText(e));
     return { requests: [] };
   }
 };
@@ -623,7 +624,7 @@ const approveStewardRequest = async (req) => {
 
     return { success: true };
   } catch (e) {
-    console.error("[APPROVE-STEWARD] Error:", e);
+    console.error("[APPROVE-STEWARD] Error:", errText(e));
     return { success: false, reason: e.message };
   }
 };
@@ -654,7 +655,7 @@ const denyStewardRequest = async (req) => {
     await listPendingStewardRequestsInSpace(spaceKey).catch(() => {}); // heals the space index row
     return { success: true };
   } catch (e) {
-    console.error("[DENY-STEWARD] Error:", e);
+    console.error("[DENY-STEWARD] Error:", errText(e));
     return { success: false, reason: e.message };
   }
 };
@@ -699,7 +700,7 @@ export async function listMyStewardRequestsCore(accountId) {
 
 const listMyStewardRequests = async (req) => {
   try { return await listMyStewardRequestsCore(req.context?.accountId); }
-  catch (e) { console.error("[LIST-MY-STEWARD-REQUESTS] Error:", e); throw e; } // a failure must reach the UI as one, not as "nothing waiting"
+  catch (e) { console.error("[LIST-MY-STEWARD-REQUESTS] Error:", errText(e)); throw e; } // a failure must reach the UI as one, not as "nothing waiting"
 };
 
 export const actions = [

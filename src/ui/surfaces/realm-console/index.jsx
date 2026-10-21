@@ -25,6 +25,7 @@ import { BUILD_INFO } from "../../../build-info.js";
 import {
   control, readAllEffective, readEffective, formatDefault, formatValue, dependencyState,
 } from "../../../server/capsules/policies/settings-schema.js";
+import { errText } from "../../kit/error-facts.js";
 
 /**
  * A settings row drawn from its descriptor: label, one-line effect, "Effective default" and —
@@ -763,14 +764,14 @@ const RealmPolicyDashboard = () => {
           ]);
         } else {
           console.error("No realm key found in context.extension.space.key");
-          console.error("Extension object:", context?.extension);
+          console.error("Extension keys:", Object.keys(context?.extension || {}).join(","));
           setMessage(
             "Unable to determine space identifier. Review console for specifics.",
           );
           setMessageType("error");
         }
       } catch (err) {
-        console.error("Failed to initialize realm console:", err);
+        console.error("Failed to initialize realm console:", errText(err));
         setMessage(`Space settings could not be loaded: ${err.message}`);
         setMessageType("error");
       } finally {
@@ -841,7 +842,7 @@ const RealmPolicyDashboard = () => {
       const result = await invoke("enumerate-operator-seals", { cursor: null, limit: 50 });
       setMyClaimedFiles(result?.attachments || []);
     } catch (e) {
-      console.error("Failed to fetch my claims:", e);
+      console.error("Failed to fetch my claims:", errText(e));
     } finally {
       setMyClaimsLoading(false);
     }
@@ -861,7 +862,7 @@ const RealmPolicyDashboard = () => {
       else if (r?.success === false) setStewardRequestError(r.reason || "The request could not be sent. Try again in a moment.");
       else setStewardRequestSent(true);
     } catch (e) {
-      console.error("Steward request failed:", e);
+      console.error("Steward request failed:", errText(e));
       setStewardRequestError("The request could not be sent. Try again in a moment.");
     } finally {
       setStewardRequestBusy(false);
@@ -875,7 +876,7 @@ const RealmPolicyDashboard = () => {
       const result = await invoke("list-steward-requests", { spaceKey: realmKey });
       setPendingRequests(result?.requests || []);
     } catch (e) {
-      console.error("Failed to fetch steward requests:", e);
+      console.error("Failed to fetch steward requests:", errText(e));
     } finally {
       setPendingRequestsLoading(false);
     }
@@ -899,7 +900,7 @@ const RealmPolicyDashboard = () => {
         setMessageType("error");
       }
     } catch (e) {
-      console.error("Approve request failed:", e);
+      console.error("Approve request failed:", errText(e));
       setMessage("Failed to approve request.");
       setMessageType("error");
     } finally {
@@ -915,7 +916,7 @@ const RealmPolicyDashboard = () => {
       setMessage("Request denied.");
       setMessageType("success");
     } catch (e) {
-      console.error("Deny request failed:", e);
+      console.error("Deny request failed:", errText(e));
     } finally {
       setRequestActionBusy(null);
     }
@@ -928,7 +929,7 @@ const RealmPolicyDashboard = () => {
       const result = await invoke("list-my-edit-requests", {});
       setEditRequests(result?.requests || []);
     } catch (e) {
-      console.error("Fetch edit requests failed:", e);
+      console.error("Fetch edit requests failed:", errText(e));
       setEditRequests([]);
     } finally {
       setEditRequestsLoading(false);
@@ -948,7 +949,7 @@ const RealmPolicyDashboard = () => {
         setMessageType("error");
       }
     } catch (e) {
-      console.error("Approve edit failed:", e);
+      console.error("Approve edit failed:", errText(e));
     } finally {
       setEditReqBusy(null);
     }
@@ -971,7 +972,7 @@ const RealmPolicyDashboard = () => {
         setMessageType("error");
       }
     } catch (e) {
-      console.error("Deny edit failed:", e);
+      console.error("Deny edit failed:", errText(e));
     } finally {
       setEditReqBusy(null);
     }
@@ -1251,7 +1252,7 @@ const RealmPolicyDashboard = () => {
           setMessageType("error");
         }
       } catch (err) {
-        console.error("Error polling scan status:", err);
+        console.error("Error polling scan status:", errText(err));
       }
     }, 5000); // Poll every 5 seconds
 
@@ -1290,7 +1291,7 @@ const RealmPolicyDashboard = () => {
         setMessageType("error");
       }
     } catch (err) {
-      console.error("Failed to save realm settings:", err);
+      console.error("Failed to save realm settings:", errText(err));
       setMessage(`Could not save space settings: ${err.message}`);
       setMessageType("error");
     } finally {
@@ -1398,7 +1399,7 @@ const RealmPolicyDashboard = () => {
         nextFileCursor,
       );
     } catch (error) {
-      console.error("Error loading more artifacts:", error);
+      console.error("Error loading more artifacts:", errText(error));
     } finally {
       setFetchingMoreFiles(false);
     }
@@ -1417,7 +1418,7 @@ const RealmPolicyDashboard = () => {
         await fetchInitialOperators(true, nextOperatorsStart);
       }
     } catch (error) {
-      console.error("Error loading more operators:", error);
+      console.error("Error loading more operators:", errText(error));
     } finally {
       setIsLoadingMoreOperators(false);
     }
@@ -1432,7 +1433,7 @@ const RealmPolicyDashboard = () => {
     try {
       await fetchAllTeams(true, nextTeamsStart);
     } catch (error) {
-      console.error("Error loading more teams:", error);
+      console.error("Error loading more teams:", errText(error));
     } finally {
       setIsLoadingMoreTeams(false);
     }
@@ -1562,7 +1563,7 @@ const RealmPolicyDashboard = () => {
         }
       }
     } catch (err) {
-      console.error("Failed to toggle dispatch:", err);
+      console.error("Failed to toggle dispatch:", errText(err));
     } finally {
       setBusyAction(null);
     }
@@ -1583,7 +1584,7 @@ const RealmPolicyDashboard = () => {
             }));
           }
         } catch (err) {
-          console.error("Failed to check dispatch status:", err);
+          console.error("Failed to check dispatch status:", errText(err));
         }
       }
     };
@@ -1847,7 +1848,7 @@ const RealmPolicyDashboard = () => {
                       const r = await invoke("unseal-artifact", { attachmentId: id });
                       if (r && r.success === false) { setMessage(r.reason || "Could not release this file."); setMessageType("error"); }
                       else fetchMyClaimedFiles();
-                    } catch (e) { console.error("Release failed:", e); }
+                    } catch (e) { console.error("Release failed:", errText(e)); }
                     finally { setBusyAction(null); }
                   }}
                   onExtend={async (id) => {
@@ -1862,7 +1863,7 @@ const RealmPolicyDashboard = () => {
                         setMessage(r?.reason || "Could not extend this seal.");
                         setMessageType("error");
                       }
-                    } catch (e) { console.error("Extend failed:", e); }
+                    } catch (e) { console.error("Extend failed:", errText(e)); }
                     finally { setBusyAction(null); }
                   }}
                 />

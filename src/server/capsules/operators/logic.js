@@ -1,5 +1,6 @@
 import { route } from "@forge/api";
 import { userConfluence } from "../../shared/confluence-call.js";
+import { errText } from "../../shared/action-log.js";
 
 /**
  * Get operator information by account ID
@@ -33,7 +34,7 @@ export async function identifyOperatorById(accountId, cloudId) {
       profilePicture: profilePictureUrl,
     };
   } catch (error) {
-    console.error(`Failed to fetch operator info for ${accountId}:`, error);
+    console.error("Failed to fetch operator info:", errText(error));
     return {
       accountId,
       displayName: `User ${accountId.slice(-4)}`,
@@ -110,11 +111,9 @@ export async function searchOperatorsByName(query, limit = 50, cloudId) {
     }
 
     console.warn(`Operator search failed: ${response.status}`);
-    const errorText = await response.text();
-    console.warn(`Error details: ${errorText}`);
     return [];
   } catch (error) {
-    console.error("Error searching operators:", error);
+    console.error("Error searching operators:", errText(error));
     return [];
   }
 }
@@ -168,7 +167,7 @@ export async function getInitialOperators(cloudId) {
 
     return [];
   } catch (error) {
-    console.error("Error fetching initial operators:", error);
+    console.error("Error fetching initial operators:", errText(error));
     return [];
   }
 }

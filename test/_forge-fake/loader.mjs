@@ -13,5 +13,11 @@ const MAP = {
 
 export async function resolve(specifier, context, next) {
   if (MAP[specifier]) return { url: new URL(MAP[specifier], import.meta.url).href, shortCircuit: true };
-  return next(specifier, context);
+  try {
+    return await next(specifier, context);
+  } catch (e) {
+    // webpack resolves a relative import with no extension (src/test-hook.js does that); node does not.
+    if (e?.code === "ERR_MODULE_NOT_FOUND" && /^\.{1,2}\//.test(specifier) && !/\.[cm]?jsx?$/.test(specifier)) return next(`${specifier}.js`, context);
+    throw e;
+  }
 }

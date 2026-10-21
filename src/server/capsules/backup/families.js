@@ -67,6 +67,7 @@ export const FAMILIES = Object.freeze([
   { prefix: "read-ack-", cls: "config", group: "workflow", label: "Read confirmations" },
   // ── validation state ────────────────────────────────────────────────────────────────────
   { prefix: "validation-lastgood-", cls: "config", group: "validation", label: "Last passing version per page" },
+  { prefix: "validation-state-", cls: "config", group: "validation", label: "Validation status per page" }, // the authority since 8.14.0 (a space admin's "Approve anyway" cannot be rebuilt)
   { prefix: "ai-finding-state-", cls: "config", group: "validation", label: "AI review triage decisions" },
   { prefix: "ai-latest-", cls: "config", group: "validation", label: "Latest AI review per page" },
   { prefix: "ai-usage-", cls: "config", group: "validation", label: "AI budget used this month" },
@@ -99,6 +100,10 @@ export const FAMILIES = Object.freeze([
   { prefix: "authz-", cls: "runtime" },
   { prefix: "space-scan-status-", cls: "runtime" },
   { prefix: "page-guard-", cls: "runtime" },
+  { prefix: "guarded-page-", cls: "runtime" }, // which pages carry a seal (shared/guarded-page.js); rebuilt by the five-minute sweep
+  { prefix: "guard-marker-backfill-", cls: "runtime" }, // the marker rebuild: done flag, generation, resume cursors (re-opened by a restore)
+  { prefix: "panel-restore-", cls: "runtime" }, // minutes-long marker: the panel restore's own versions (trash-rights.js)
+  { prefix: "restore-recheck-", cls: "runtime" }, // a deferred restore-vs-change decision, re-judged by the five-minute sweep
   { prefix: "section-restore-pending-", cls: "runtime" },
   { prefix: "section-insert-pending-", cls: "runtime" },
   { prefix: "section-adopt-claim-", cls: "runtime" },

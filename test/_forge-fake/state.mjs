@@ -12,7 +12,7 @@ export function resetFake() {
   fake.unhandled = [];
 }
 
-/** Register a Confluence route: `match(method, path, body)` returns a response spec or undefined. */
+/** Register a Confluence route: `match(method, path, body, who)` (who: "app" | "user") returns a response spec or undefined. */
 export function onConfluence(match) { fake.handlers.push(match); }
 
 // Response headers answer get() case-insensitively, like the platform's Headers.
@@ -32,13 +32,13 @@ export function respond(status, body, headers = {}) {
   };
 }
 
-export async function dispatchConfluence(path, init = {}) {
+export async function dispatchConfluence(path, init = {}, who = "app") {
   const method = (init.method || "GET").toUpperCase();
   let body = null;
   try { body = init.body ? JSON.parse(init.body) : null; } catch (_) { body = init.body; }
-  fake.calls.push({ method, path, body });
+  fake.calls.push({ method, path, body, who });
   for (let i = fake.handlers.length - 1; i >= 0; i--) {
-    const r = await fake.handlers[i](method, path, body);
+    const r = await fake.handlers[i](method, path, body, who);
     if (r) return respond(r.status ?? 200, r.body, r.headers);
   }
   fake.unhandled.push(`${method} ${path}`);

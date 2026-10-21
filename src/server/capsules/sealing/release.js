@@ -7,6 +7,7 @@ import { triggerPanelEmbed, removePanelNode } from "../../infra/doc-surgery.js";
 import { recordActivity } from "../../infra/activity-log.js";
 import { refreshByline } from "../page-details/byline.js"; // 5.0 byline chip
 import { listSectionSealRecordsForPage } from "../section-seals/logic.js";
+import { errText } from "../../shared/action-log.js";
 
 /**
  * Tear a seal down completely.
@@ -71,7 +72,7 @@ export async function releaseSeal(attachmentId, sealRecord, { fallbackSpaceKey =
   }
 
   // The page property and the panel are ONE per page: both stay while any other seal still
-  // targets it (the property gates the media fast path for those seals). One paginated scan
+  // targets it (the property mirrors those seals for CQL and the UI). One paginated scan
   // answers both — pageHasOtherLiveSeals fails toward "yes", i.e. toward keeping them.
   const otherSealsOnPage = sealRecord.contentId
     ? await pageHasOtherLiveSeals(sealRecord.contentId, attachmentId)
@@ -82,12 +83,12 @@ export async function releaseSeal(attachmentId, sealRecord, { fallbackSpaceKey =
 
   if (sealRecord.spaceId) {
     await kvs.delete(`space-protection-${sealRecord.spaceId}-${attachmentId}`).catch((indexError) =>
-      console.warn("[RELEASE] Failed to delete space-seal index:", indexError));
+      console.warn("[RELEASE] Failed to delete space-seal index:", errText(indexError)));
   }
 
   // Clear any Edit Requests / grants tied to this seal.
   await sweepEditAccess(attachmentId).catch((e) =>
-    console.warn("[RELEASE] edit-access sweep failed:", e));
+    console.warn("[RELEASE] edit-access sweep failed:", errText(e)));
 
   // The expiry sweep's dedup/reminder bookkeeping is scoped to the seal that produced
   // it. Leaving it behind would silence the FIRST lapse notice of the next seal on the
@@ -100,7 +101,7 @@ export async function releaseSeal(attachmentId, sealRecord, { fallbackSpaceKey =
     await notifyWatchers(attachmentId, {
       attachmentName: sealRecord.attachmentName,
       contentId: sealRecord.contentId,
-    }).catch((e) => console.warn("[RELEASE] watcher notify failed:", e));
+    }).catch((e) => console.warn("[RELEASE] watcher notify failed:", errText(e)));
   }
   // Only after the notices: what is left are watches whose notice failed, and they must
   // not outlive the seal they were about (see sweepWatchers).
@@ -122,7 +123,7 @@ export async function releaseSeal(attachmentId, sealRecord, { fallbackSpaceKey =
       let pageHasSectionSeals = false;
       if (!pageHasSeals) {
         try { pageHasSectionSeals = (await listSectionSealRecordsForPage(sealRecord.contentId)).some((s) => s?.lockedBy); }
-        catch (e) { console.warn("[RELEASE] section seal read failed — keeping the panel:", e?.message || e); pageHasSectionSeals = true; }
+        catch (e) { console.warn("[RELEASE] section seal read failed — keeping the panel:", errText(e)); pageHasSectionSeals = true; }
       }
       if ((pageHasSeals || pageHasSectionSeals) && spaceKeyForPanel) {
         await triggerPanelEmbed(sealRecord.contentId, spaceKeyForPanel);
@@ -130,10 +131,10 @@ export async function releaseSeal(attachmentId, sealRecord, { fallbackSpaceKey =
         await removePanelNode(sealRecord.contentId);
       }
     } catch (panelErr) {
-      console.warn("[RELEASE] Panel management failed:", panelErr);
+      console.warn("[RELEASE] Panel management failed:", errText(panelErr));
     }
   }
-  if (sealRecord.contentId) await refreshByline(sealRecord.contentId).catch((e) => console.warn("[BYLINE] release refresh failed:", e?.message || e));
+  if (sealRecord.contentId) await refreshByline(sealRecord.contentId).catch((e) => console.warn("[BYLINE] release refresh failed:", errText(e)));
 
   return { success: true };
 }

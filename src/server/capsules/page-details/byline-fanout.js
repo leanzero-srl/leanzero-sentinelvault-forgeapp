@@ -18,6 +18,7 @@ import { route } from "@forge/api";
 import { appConfluence } from "../../shared/confluence-call.js";
 import { kvs, WhereConditions } from "@forge/kvs";
 import { mapLimited } from "../../shared/map-limited.js";
+import { errText, spaceKeyForLog } from "../../shared/action-log.js";
 
 export const FANOUT_KIND = "byline-refresh";
 const QUEUE_KEY = "realm-audit-queue";
@@ -49,7 +50,7 @@ export async function queueBylineRefresh(spaceIds, why = "") {
     console.info(`[BYLINE-FANOUT] queued ${events.length} space(s) (${why})`);
     return events.length;
   } catch (e) {
-    console.warn(`[BYLINE-FANOUT] queue failed (${why}):`, e?.message || e);
+    console.warn(`[BYLINE-FANOUT] queue failed (${why}):`, errText(e));
     return 0;
   }
 }
@@ -62,7 +63,7 @@ export async function queueBylineRefreshForKey(spaceKey, why = "") {
     const id = res.ok ? (await res.json())?.results?.[0]?.id : null;
     return id != null ? queueBylineRefresh([String(id)], why) : 0;
   } catch (e) {
-    console.warn(`[BYLINE-FANOUT] space ${spaceKey} lookup failed:`, e?.message || e);
+    console.warn(`[BYLINE-FANOUT] space ${spaceKeyForLog(spaceKey)} lookup failed:`, errText(e));
     return 0;
   }
 }
@@ -82,7 +83,7 @@ export async function queueBylineRefreshSiteWide(why = "") {
       if (!nextCursor) break;
       q = kvs.query().where("key", WhereConditions.beginsWith("classification-space-")).limit(100).cursor(nextCursor);
     }
-  } catch (e) { console.warn("[BYLINE-FANOUT] space-default scan failed:", e?.message || e); }
+  } catch (e) { console.warn("[BYLINE-FANOUT] space-default scan failed:", errText(e)); }
   return queueBylineRefresh(ids.slice(0, MAX_SITE_SPACES), why);
 }
 
@@ -106,7 +107,7 @@ export async function runBylineRefreshJob(body) {
     const data = await res.json();
     const ids = (data?.results || []).map((p) => String(p?.id || "")).filter((id) => NUMERIC.test(id));
     await mapLimited(ids, CONCURRENCY, async (id) => {
-      const r = await refreshByline(id).catch((e) => { console.warn(`[BYLINE-FANOUT] ${id}:`, e?.message || e); return null; });
+      const r = await refreshByline(id).catch((e) => { console.warn(`[BYLINE-FANOUT] ${id}:`, errText(e)); return null; });
       if (r?.wrote) wrote++;
     });
     done += ids.length;
@@ -117,6 +118,6 @@ export async function runBylineRefreshJob(body) {
   console.info(`[BYLINE-FANOUT] ${spaceId} ${coll} hop ${hop}: ${done} checked, ${wrote} rewritten`);
   // Continue: the same collection from the cursor, else blogposts after pages; never past MAX_HOPS.
   const follow = next ? { coll, cursor: next } : coll === "pages" ? { coll: "blogposts", cursor: null } : null;
-  if (follow && hop + 1 < MAX_HOPS) await push([{ kind: FANOUT_KIND, spaceId: String(spaceId), token, hop: hop + 1, ...follow }]).catch((e) => console.warn("[BYLINE-FANOUT] continuation failed:", e?.message || e));
+  if (follow && hop + 1 < MAX_HOPS) await push([{ kind: FANOUT_KIND, spaceId: String(spaceId), token, hop: hop + 1, ...follow }]).catch((e) => console.warn("[BYLINE-FANOUT] continuation failed:", errText(e)));
   return { ok: true, done, wrote };
 }

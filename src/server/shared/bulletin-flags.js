@@ -1,6 +1,7 @@
 import { kvs } from "@forge/kvs";
 import { DISPATCH_DEFAULTS } from "../shared/baseline.js";
 import { NOTIFICATIONS_MODE_NORMAL, normalizeNotificationsMode } from "./notice-policy.js";
+import { errText, spaceKeyForLog } from "./action-log.js";
 
 /**
  * Resolve notification feature flags from steward settings.
@@ -60,7 +61,7 @@ export async function resolveBulletinToggles(existingConfig = null) {
         stewardConfig?.enablePeriodicReminderEmail !== false,
     };
   } catch (error) {
-    console.error("Error fetching notification flags, using defaults:", error);
+    console.error("Error fetching notification flags, using defaults:", errText(error));
     return DISPATCH_DEFAULTS;
   }
 }
@@ -84,8 +85,8 @@ export async function resolveSpaceNotificationsMode(spaceKey) {
     return normalizeNotificationsMode(realmConfig?.notificationsMode);
   } catch (error) {
     console.error(
-      `[NOTIFY] Could not read notificationsMode for space ${spaceKey} — treating as "normal" (fail open):`,
-      error,
+      `[NOTIFY] Could not read notificationsMode for space ${spaceKeyForLog(spaceKey)} — treating as "normal" (fail open):`,
+      errText(error),
     );
     return NOTIFICATIONS_MODE_NORMAL;
   }

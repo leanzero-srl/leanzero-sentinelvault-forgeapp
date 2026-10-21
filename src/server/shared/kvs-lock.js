@@ -20,6 +20,7 @@
  * reads, FAIL_IF_EXISTS) — both repros are RED on the previous version and GREEN here.
  */
 import { kvs as forgeKvs } from "@forge/kvs";
+import { errText } from "./action-log.js";
 
 export const CLAIM_MS = 120000;
 const CLAIM_DEPTH = 3;
@@ -55,7 +56,7 @@ export function makeLocks(kvs = forgeKvs) {
     if (c === "failed" || c === "absent" || !lockIsStale(c, Date.now(), CLAIM_MS)) return null;
     if (depth < CLAIM_DEPTH - 1) return claim(ck, c.token, token, depth + 1);
     if (!lockIsStale(c, Date.now(), 3 * CLAIM_MS)) return null;
-    console.warn(`[LOCK] ${ck}: a claim chain ${CLAIM_DEPTH} deep, dead for 3× ${CLAIM_MS} ms — cleared`);
+    console.warn(`[LOCK] ${ck.split(":takeover:")[0]} takeover claim: a chain ${CLAIM_DEPTH} deep, dead for 3× ${CLAIM_MS} ms — cleared`);
     try { await kvs.delete(ck); } catch (_) { return null; }
     return (await tryPut(ck, token, CLAIM_MS)) ? ck : null;
   }
@@ -82,13 +83,13 @@ export function makeLocks(kvs = forgeKvs) {
       const again = await read(key);
       if (again === "failed") return giveUp();
       if (again !== "absent" && again.token !== cur.token) return giveUp();
-      console.warn(`[LOCK] ${key}: taking over a stale lock from ${cur.at || "unknown"} (token ${cur.token || "?"})`);
+      console.warn(`[LOCK] ${key}: taking over a stale lock from ${cur.at || "unknown"}`);
       if (again !== "absent") await kvs.delete(key); // L2: a throw here is caught below
       const won = await tryPut(key, token, holdMs);
       await kvs.delete(ck).catch(() => {});
       return won;
     } catch (e) {
-      console.warn(`[LOCK] ${key}: takeover aborted (${String(e?.message || e).slice(0, 120)})`);
+      console.warn(`[LOCK] ${key}: takeover aborted (${errText(e)})`);
       return giveUp();
     }
   }

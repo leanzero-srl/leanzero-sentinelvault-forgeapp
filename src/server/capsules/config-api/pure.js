@@ -3,6 +3,8 @@
  * can import them in plain node. consumer.js and mirror.js are their only production callers.
  */
 import { readSet } from "./bundle.js";
+import { setOwn } from "../../shared/own-key.js";
+import { spaceKeyForLog } from "../../../ui/kit/error-facts.js";
 
 export const RECEIPTS_KEPT = 20;
 
@@ -25,7 +27,7 @@ export function mergeValidationConfig(existing, data) {
     if (k === "rules") continue;
     if (k === "effectiveAi") continue; // derived on load (the site AI ceiling), never stored
     if (k === "modes" && v && typeof v === "object" && base.modes && typeof base.modes === "object") out.modes = { ...base.modes, ...v };
-    else out[k] = v;
+    else setOwn(out, k, v); // a REST body's own "__proto__" key stays a key (shared/own-key.js)
   }
   const set = data && data.rules !== undefined ? readSet(data.rules) : null;
   if (set) {
@@ -140,4 +142,22 @@ export function staleFailureReceipt(job, nowIso) {
     summary: { applied: 0, refused: 0, failed: 0, skipped: 0 },
     results: Array.isArray(rest.results) ? rest.results : [],
   };
+}
+
+// The fixed tails planBundle (bundle.js) puts after "spaces.<key>"; a space key may itself hold dots.
+const SPACE_STEP_TAIL_RE = /^spaces\.(.+)\.(classificationDefault|classification|policy|spaceAdmins|validation|workflowSettings|workflows\.\$replace|workflows\[\d+\])$/;
+/**
+ * PURE. A bundle step path as a log line may print it: "spaces.<key>.<tail>" keeps its fixed tail; a
+ * personal key (it starts with "~" or an encoded "~"), dots and all, becomes "~personal", a global key
+ * (MY_SPACE included) prints as it is; any other path ("site.policy", "content[3]") is printed with
+ * every personal token masked.
+ */
+export function bundlePathForLog(path) {
+  if (typeof path !== "string") return "?";
+  const m = path.match(SPACE_STEP_TAIL_RE);
+  // Only a key that starts with "~" (or its encoded forms) is personal; a global key prints as it is.
+  const personal = (k) => /^(?:~|%7e|#7e\.)/i.test(k);
+  if (m) return `spaces.${personal(m[1]) ? "~personal" : m[1]}.${m[2]}`;
+  if (path.startsWith("spaces.") && personal(path.slice(7))) return "spaces.~personal";
+  return spaceKeyForLog(path);
 }

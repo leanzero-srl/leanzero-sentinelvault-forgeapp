@@ -107,9 +107,9 @@ Uninstall wipes all keys (`lifecycleTrigger`).
 
 | Key | Content | Role |
 |---|---|---|
-| `protection-` | Full seal payload (one per page, last seal wins) | CQL + trigger fast-probe for media pass |
-| `section-protection-` | Compact array `[{sectionId, lockedBy, expiresAt}]` rebuilt from KVS | Trigger fast-probe for sections pass |
-| `sentinel-vault-validation` | Gate state `{state: passed/failed, violations, version, checkedAt, approvedBy?}` | Panel/ribbon status, gate approval |
+| `protection-` | Seal summary (one per page, account id + timestamps only) | CQL/UI mirror — not read by the trigger (8.14.0: KVS `guarded-page-{pageId}` is the fast path) |
+| `section-protection-` | Compact array `[{sectionId, lockedBy, expiresAt}]` rebuilt from KVS | CQL/UI mirror — not read by the trigger (8.14.0) |
+| `sentinel-vault-validation` | Mirror of the gate state `{state, violations, version, checkedAt, approved?}` (no account ids; 8.14.0) | CQL only — the panel/ribbon status and Approve anyway are KVS `validation-state-{pageId}` |
 | `sentinel-vault-page-settings` | `{macroDisabled}` | Panel visibility preference |
 
 ---
@@ -131,7 +131,7 @@ Env in `test-harness/.env` (gitignored): `SV_EMAIL`, `SV_TOKEN`, `SV_BASE` (requ
 | Command (from `test-harness/`) | What it proves |
 |---|---|
 | `npm run health` | Creds + connectivity (`GET /rest/api/user/current`) |
-| `node scripts/live-trigger-e2e.mjs` | Creates/edits/deletes a throwaway page → fires deployed `pageContentTrigger` → probes the 3 content-property fast paths → self-cleans (~10 checks) |
+| `node scripts/live-trigger-e2e.mjs` | Creates/edits/deletes a throwaway page → fires deployed `pageContentTrigger` → checks the trigger's fast paths (8.14.0: KVS markers, not content properties) → self-cleans (~10 checks) |
 | `npm run seal-e2e` | Smoke-checks a pre-existing seal on `SV_PAGE_ID` + log scan (log-unavailable only WARNS here) |
 | `npm run forge-logs` | `forge logs` grep for signals: crash / http5xx / http4xx-egress / `[FORGE-LLM] error` / JSON-parse; exit 1 on unreadable logs OR any signal |
 

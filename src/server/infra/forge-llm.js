@@ -13,6 +13,7 @@
 // recovered with the tolerant parser below.
 import { chat as forgeLlmChatApi, list as forgeLlmListApi } from "@forge/llm";
 import { parseAIJson } from "./json-salvage.js";
+import { errText, safeKey } from "../shared/action-log.js";
 
 // Re-export so existing importers can keep getting parseAIJson from here.
 export { parseAIJson } from "./json-salvage.js";
@@ -50,7 +51,7 @@ export const isTransientAIError = (status, error = "") =>
 export const callForgeLlmChat = async ({ model, messages, jsonMode, maxTokens = 4096 }) => {
   // Billing backstop: never let a stale config bill a larger model.
   if (!isForgeLlmModelAllowed(model)) {
-    console.warn(`[FORGE-LLM] model "${model}" not allowed — clamping to ${FORGE_LLM_DEFAULT_MODEL}`);
+    console.warn(`[FORGE-LLM] model "${safeKey(model, "unlisted")}" not allowed — clamping to ${FORGE_LLM_DEFAULT_MODEL}`);
     model = FORGE_LLM_DEFAULT_MODEL;
   }
 
@@ -120,7 +121,7 @@ export const callForgeLlmChat = async ({ model, messages, jsonMode, maxTokens = 
     };
   } catch (err) {
     const detail = err?.message || String(err);
-    console.error("[FORGE-LLM] error:", err?.status, detail);
+    console.error("[FORGE-LLM] error:", errText(err));
     return {
       ok: false,
       status: err?.status || 500,
@@ -171,7 +172,7 @@ export const listForgeLlmModels = async () => {
     if (ids.length === 0) ids = [...FORGE_LLM_FALLBACK_MODELS];
     return ids;
   } catch (e) {
-    console.warn("[FORGE-LLM] list() failed — using documented fallback models:", e?.message);
+    console.warn("[FORGE-LLM] list() failed — using documented fallback models:", errText(e));
     return [...FORGE_LLM_FALLBACK_MODELS];
   }
 };

@@ -1,4 +1,4 @@
-import { errorFacts } from "../../shared/action-log.js";
+import { errorFacts, errText } from "../../shared/action-log.js";
 import { setWithTtl } from "../../shared/kvs-ttl.js";
 import { readDocBody, readDocBodyAtVersion, extractPlainText } from "../../infra/doc-surgery.js";
 import { runForgeLlmJson, isForgeLlmModelAllowed, FORGE_LLM_DEFAULT_MODEL } from "../../infra/forge-llm.js";
@@ -61,7 +61,7 @@ async function handleGateReview(body) {
       : null;
     await applyAiVerdict(pageId, pinnedVersion, status, reason);
   } catch (e) {
-    console.error("[AI-GATE] review error:", e);
+    console.error("[AI-GATE] review error:", errText(e));
     try { await applyAiVerdict(pageId, pinnedVersion, "failed", "AI review error — please retry."); } catch (_) { /* best effort */ }
     return { outcome: "error", ...errorFacts(e) };
   }
@@ -142,14 +142,14 @@ export async function aiValidationConsumer(event) {
         try {
           await postAiFindingsComment({ pageId, recipientAccountId: authorId, findings: qualifying, pageTitle });
         } catch (e) {
-          console.error("[AI-VALIDATE] comment failed:", e);
+          console.error("[AI-VALIDATE] comment failed:", errText(e));
         }
       }
     }
 
     await setStatus({ status: "done", result: payload });
   } catch (e) {
-    console.error("[AI-VALIDATE] consumer error:", e);
+    console.error("[AI-VALIDATE] consumer error:", errText(e));
     try {
       await setStatus({ status: "error", error: String(e?.message || e).slice(0, 300), pageId });
     } catch (_) { /* best effort */ }

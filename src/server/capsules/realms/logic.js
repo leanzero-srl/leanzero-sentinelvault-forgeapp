@@ -1,6 +1,7 @@
 import { asUser, route } from "@forge/api";
 import { userConfluence } from "../../shared/confluence-call.js";
 import { kvs, WhereConditions } from "@forge/kvs";
+import { errText, spaceKeyForLog } from "../../shared/action-log.js";
 
 /**
  * Resolve realm (space) details by realm key.
@@ -36,12 +37,12 @@ export async function resolveRealm(realmKey) {
         };
       }
     } else {
-      console.warn(`[REALM] resolveRealm ${realmKey}: v2 spaces answered ${response.status}`);
+      console.warn(`[REALM] resolveRealm ${spaceKeyForLog(realmKey)}: v2 spaces answered ${response.status}`);
     }
 
     return { key: realmKey, name: "Current Space", id: null };
   } catch (error) {
-    console.error("Error getting realm info:", error);
+    console.error("Error getting realm info:", errText(error));
     return { key: realmKey, name: "Current Space", id: null };
   }
 }
@@ -103,7 +104,7 @@ export async function listRealmSeals(realmId, cursor = null, limit = 50) {
       nextCursor: nextCursor || null,
     };
   } catch (error) {
-    console.error("[REALM-SEALS] Error querying realm-seal index:", error);
+    console.error("[REALM-SEALS] Error querying realm-seal index:", errText(error));
     return {
       attachments: [],
       hasMore: false,

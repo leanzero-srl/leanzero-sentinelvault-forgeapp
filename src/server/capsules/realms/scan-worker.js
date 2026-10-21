@@ -1,8 +1,10 @@
 import { route } from "@forge/api";
 import { appConfluence } from "../../shared/confluence-call.js";
+import { markGuardedPage, reopenGuardBackfill } from "../../shared/guarded-page.js"; // the page's seal marker (KVS authority)
 import { kvs, WhereConditions } from "@forge/kvs";
 import { Queue } from "@forge/events";
 import { isLiveAttachmentSeal } from "../../shared/live-seal.js";
+import { errText } from "../../shared/action-log.js";
 
 /**
  * Async queue consumer for rebuilding the realm-seal index.
@@ -115,6 +117,7 @@ export async function realmScanConsumer(event) {
               if (!sealRecord.spaceId) {
                 const fresh = await kvs.get(`protection-${artifact.id}`);
                 if (isLiveAttachmentSeal(fresh) && !fresh.spaceId && fresh.lockedBy === sealRecord.lockedBy && fresh.timestamp === sealRecord.timestamp) {
+                  if (!(await markGuardedPage(fresh.contentId))) await reopenGuardBackfill(); // self-heal: a seal record always has its page marker (the backfill rebuilds it)
                   await kvs.set(`protection-${artifact.id}`, {
                     ...fresh,
                     spaceId: realmId,
@@ -128,7 +131,7 @@ export async function realmScanConsumer(event) {
         } catch (artifactError) {
           console.error(
             `[REALM-SCAN] Error processing page ${page.id}:`,
-            artifactError,
+            errText(artifactError),
           );
         }
       }
@@ -186,7 +189,7 @@ export async function realmScanConsumer(event) {
     } catch (cleanupError) {
       console.warn(
         `[REALM-SCAN] Error during stale key cleanup:`,
-        cleanupError,
+        errText(cleanupError),
       );
     }
 
@@ -205,7 +208,7 @@ export async function realmScanConsumer(event) {
     });
 
   } catch (error) {
-    console.error(`[REALM-SCAN] Job ${jobId} failed:`, error);
+    console.error(`[REALM-SCAN] Job ${jobId} failed:`, errText(error));
 
     await kvs.set(`space-scan-status-${realmId}`, {
       jobId,

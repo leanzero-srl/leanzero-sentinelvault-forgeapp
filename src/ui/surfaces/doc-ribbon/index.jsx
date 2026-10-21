@@ -31,6 +31,7 @@ import { sourcePhrase } from "../../../server/capsules/classification/logic.js";
 import BusyVeil from "../../kit/BusyVeil";
 import { detailsModalSize } from "../../kit/modal-size.js";
 import { reviewedVersionOf, restoredLabel } from "../../../server/capsules/workflow/baseline.js"; // B2: the version that was approved
+import { errText, safeKey } from "../../kit/error-facts.js";
 
 /**
  * Workflow state chip + transition control (#42). Shows the page's current
@@ -146,7 +147,7 @@ const WorkflowDetails = ({ workflow, siteUrl, pageId, isSteward, host, onSaved, 
   if (enforced) {
     if (!ar) summary = `Approved on ${fmtDate(record.approvedAt)} (details were not recorded for this approval).`;
     else if (decisions.length === 0) summary = `${outcomeWord} by ${ar.completedByName || "a space admin"} on ${fmtDate(ar.completedAt)}.`;
-    else summary = `${outcomeWord} for version ${reviewedVersion} on ${fmtDate(ar.completedAt)} · ${modeLabel(ar.mode, ar.min)}`;
+    else summary = `${outcomeWord} for version ${reviewedVersion} on ${fmtDate(ar.completedAt)} · ${ar.approverListUnknown || (Array.isArray(ar.effectiveApprovers) && ar.effectiveApprovers.length === 0) ? "decided by a space admin" : modeLabel(ar.mode, ar.effectiveMin ?? ar.min)}`;
   }
 
   // --- Review date ---
@@ -251,6 +252,7 @@ const WorkflowDetails = ({ workflow, siteUrl, pageId, isSteward, host, onSaved, 
                       <span className={`wf-appr-badge wf-appr-${d.decision === "denied" ? "denied" : d.decision === "approved" ? "approved" : "pending"}`}>{d.decision === "denied" ? "Denied" : d.decision === "approved" ? "Approved" : "No decision before completion"}</span>
                       <span className="wf-appr-date">{fmtDate(d.decidedAt)}</span>
                       {d.signed ? <span className="wf-appr-signed" title="Signed with the approver's enrolled authenticator" data-testid="wf-evidence-signed">Signed</span> : null}
+                      {d.counted === false ? <span className="wf-appr-date" title="This decision did not count toward the outcome">Not counted</span> : null}
                       {d.reason ? <span className="wf-appr-reason">“{d.reason}”</span> : null}
                     </li>
                   ))}
@@ -489,7 +491,7 @@ const WorkflowControl = ({ workflow, approvals, operatorId, pageId, spaceKey, si
     setRerequestBusy(true); setDecideMsg(null);
     try {
       const r = await invoke("rerequest-approval", { pageId });
-      if (r?.success) { say(`Re-requested for v${r.pinnedVersion} — approvers decide on the current version now.`); await onTransitioned(); }
+      if (r?.success) { say(r.approversRefreshed && r.fromVersion === r.pinnedVersion ? "Re-requested — the space's current approvers decide now." : `Re-requested for v${r.pinnedVersion} — approvers decide on the current version now.`); await onTransitioned(); }
       else setDecideMsg(r?.reason || "Could not re-request this approval.");
     } catch (_) { setDecideMsg("Could not re-request this approval."); }
     finally { setRerequestBusy(false); }
@@ -549,7 +551,9 @@ const WorkflowControl = ({ workflow, approvals, operatorId, pageId, spaceKey, si
     const approverList = pendingApproval.approvers || [];
     // The count is over the LISTED approvers; a space admin who decided shows in the list but is
     // not one of the required approvers (owner, 2026-09-25).
-    const listedApprovers = approverList.filter((a) => !a.admin);
+    // 8.14: only the request's approvers who are approvers NOW count (`current: false` = taken off
+    // the space's list since; their earlier decision no longer counts).
+    const listedApprovers = approverList.filter((a) => !a.admin && a.current !== false);
     const approvedCount = listedApprovers.filter((a) => a.status === "approved").length;
     const rawTarget = pendingApproval.toStateId || "";
     const targetName = workflow.def?.states?.find((s) => s.id === rawTarget)?.name
@@ -559,10 +563,13 @@ const WorkflowControl = ({ workflow, approvals, operatorId, pageId, spaceKey, si
     // The requester never decides their own request (segregation of duties — the server refuses
     // it); the card used to offer Approve and only then say so (tester 2026-09-29).
     const iAmRequester = !!operatorId && pendingApproval.requestedBy === operatorId;
-    const iCanDecide = !iAmRequester && ((mine && mine.status === "pending") || (!mine && pendingApproval.adminCanDecide === true));
+    // 8.14: listed, but taken off the space's approver list since the request (the server says so):
+    // no Approve/Deny as an approver; a space admin still decides as one (adminCanDecide).
+    const removedApprover = !!mine && !mine.admin && (pendingApproval.myApproverRemoved === true || mine.current === false);
+    const iCanDecide = !iAmRequester && ((mine && mine.status === "pending" && !removedApprover) || ((!mine || removedApprover) && pendingApproval.adminCanDecide === true));
     const others = approverList.filter((a) => a.accountId !== operatorId);
     // Mirrors evaluateApproval: admin approvals count toward "min"; "all" needs every LISTED approver.
-    const approvedAny = approverList.filter((a) => a.status === "approved").length;
+    const approvedAny = approverList.filter((a) => a.status === "approved" && a.current !== false).length; // removed approvers' votes no longer count
     const wouldComplete = pendingApproval.mode === "any"
       ? true
       : pendingApproval.mode === "min"
@@ -583,7 +590,7 @@ const WorkflowControl = ({ workflow, approvals, operatorId, pageId, spaceKey, si
             <path d="M4 22V4a1 1 0 0 1 1-1h13l-3 4 3 4H5" />
           </svg>
           <span className="wf-chip-label">{iCanDecide ? "Awaiting your approval" : "Awaiting approval"}</span>
-          <span className="wf-chip-count" aria-hidden="true">{approvedCount} of {listedApprovers.length}</span>
+          {listedApprovers.length > 0 && <span className="wf-chip-count" aria-hidden="true">{approvedCount} of {listedApprovers.length}</span>}
           <span className="wf-chip-caret" aria-hidden="true">▾</span>
         </button>
         {panelOpen && inHost(host, (
@@ -594,7 +601,9 @@ const WorkflowControl = ({ workflow, approvals, operatorId, pageId, spaceKey, si
               Requested by {pendingApproval.requestedByName || "a colleague"} · {MODE_TEXT[pendingApproval.mode] || MODE_TEXT.any}
               {pendingApproval.mode === "min" ? ` (at least ${pendingApproval.min})` : ""}
             </div>
-            <div className="wf-appr-progress">{approvedCount} of {listedApprovers.length} approved</div>
+            {listedApprovers.length > 0
+              ? <div className="wf-appr-progress">{approvedCount} of {listedApprovers.length} approved</div>
+              : approverList.some((a) => !a.admin) && <div className="wf-appr-progress">No one on this request is one of the space&apos;s approvers now</div>}
             {freezeLine && <div className="wf-appr-sub wf-appr-freeze" data-testid="wf-appr-freeze">{freezeLine}</div>}
             {pendingApproval.pinnedVersion != null && (
               <VersionLink siteUrl={siteUrl} pageId={pageId} version={pendingApproval.pinnedVersion} testId="wf-pinned-version-link">
@@ -605,7 +614,7 @@ const WorkflowControl = ({ workflow, approvals, operatorId, pageId, spaceKey, si
               {approverList.map((a) => (
                 <li key={a.accountId} className="wf-appr-row">
                   <span className={`wf-appr-badge wf-appr-${a.status || "pending"}`}>{APPR_STATUS[a.status] || "Pending"}</span>
-                  <span className="wf-appr-name">{a.name || "Approver"}{a.admin ? " (space admin)" : ""}{a.accountId === operatorId ? " (you)" : ""}</span>
+                  <span className="wf-appr-name">{a.name || "Approver"}{a.admin ? " (space admin)" : ""}{a.accountId === operatorId ? " (you)" : ""}{!a.admin && a.current === false ? " (no longer an approver, not counted)" : ""}</span>
                   {a.reason ? <span className="wf-appr-reason">“{a.reason}”</span> : null}
                 </li>
               ))}
@@ -624,6 +633,25 @@ const WorkflowControl = ({ workflow, approvals, operatorId, pageId, spaceKey, si
                 This page changed after the request (reviewed v{pendingApproval.pinnedVersion}, now v{pendingApproval.liveVersion ?? "?"}). Approving will not move it.
                 <button type="button" className="wf-appr-rerequest" onClick={doRerequest} disabled={rerequestBusy} data-testid="wf-appr-rerequest">
                   {rerequestBusy ? "Re-requesting…" : `Re-request for v${pendingApproval.liveVersion ?? "current"}`}
+                </button>
+              </div>
+            )}
+            {(pendingApproval.needsRerequest || pendingApproval.listChanged) && !pendingApproval.stale && (
+              <div className="wf-appr-stale" role="alert" data-testid="wf-appr-needs-rerequest">
+                {pendingApproval.needsRerequest
+                  ? "The space's approvers have changed since this request was made, so it needs re-requesting before it can be decided."
+                  : "The space's approvers have changed since this request was made. Only the current approvers' decisions count; re-requesting asks the current approvers and resets every decision."}
+                {(iAmRequester || pendingApproval.adminCanDecide === true) && (
+                  <button type="button" className="wf-appr-rerequest" onClick={doRerequest} disabled={rerequestBusy} data-testid="wf-appr-rerequest-approvers">
+                    {rerequestBusy ? "Re-requesting…" : "Re-request with the current approvers"}
+                  </button>
+                )}
+              </div>
+            )}
+            {!pendingApproval.needsRerequest && !pendingApproval.listChanged && pendingApproval.listCheck === "unknown" && !pendingApproval.stale && iAmRequester && (
+              <div className="wf-appr-withdraw-row">
+                <button type="button" className="ribbon-inline-link" onClick={doRerequest} disabled={rerequestBusy} title="Asks the space's current approvers again and resets every decision" data-testid="wf-appr-refresh-approvers">
+                  {rerequestBusy ? "Re-requesting…" : "Approvers changed? Re-request with the current approvers"}
                 </button>
               </div>
             )}
@@ -677,12 +705,13 @@ const WorkflowControl = ({ workflow, approvals, operatorId, pageId, spaceKey, si
                 ? "You asked for this move, so you can't approve it yourself — another approver or a space admin decides. You can withdraw the request."
                 : mine && mine.status !== "pending" ? "You have already responded."
                   // 8.12.0: Confluence's rate limit left the space-admin check open: say so, never "not yours to decide".
-                  : !mine && pendingApproval.adminCheck === "unknown" ? (
+                  : (!mine || removedApprover) && pendingApproval.adminCheck === "unknown" ? (
                     <span data-testid="wf-appr-admin-unknown">
                       Sentinel Vault couldn't check right now whether you can decide as a space admin, because Confluence is limiting requests.{" "}
                       <button type="button" className="ribbon-inline-link" onClick={() => onTransitioned()} data-testid="wf-appr-admin-recheck">Check again</button>
                     </span>
-                  ) : "Waiting on the approvers above."}
+                  ) : removedApprover ? "You are no longer one of this space's approvers, so this request isn't yours to decide."
+                    : "Waiting on the approvers above."}
                 {iAmRequester && (
                   <div className="wf-appr-withdraw-row">
                     <button type="button" className="wf-appr-rerequest" onClick={doWithdraw} disabled={withdrawBusy} data-testid="wf-appr-withdraw">
@@ -791,8 +820,8 @@ const dismissKey = (pageId, stateKey) => `sv-ribbon-dismissed:${pageId}:${stateK
 const memoryDismissed = new Set(); // fallback when the sandbox denies sessionStorage
 const isDismissed = (key) => { try { if (window.sessionStorage.getItem(key)) return true; } catch (_) { /* sandboxed */ } return memoryDismissed.has(key); };
 const rememberDismissed = (key) => { memoryDismissed.add(key); try { window.sessionStorage.setItem(key, "1"); } catch (_) { /* sandboxed */ } };
-const bridgeClose = () => { try { const r = view.close(); if (r && r.catch) r.catch((e) => console.info("[ribbon] view.close rejected", e?.message || e)); } catch (e) { console.info("[ribbon] view.close unavailable", e?.message || e); } };
-const bridgeOpen = () => { try { const r = view.open?.(); if (r && r.catch) r.catch((e) => console.info("[ribbon] view.open rejected", e?.message || e)); } catch (e) { console.info("[ribbon] view.open unavailable", e?.message || e); } };
+const bridgeClose = () => { try { const r = view.close(); if (r && r.catch) r.catch((e) => console.info("[ribbon] view.close rejected", errText(e))); } catch (e) { console.info("[ribbon] view.close unavailable", errText(e)); } };
+const bridgeOpen = () => { try { const r = view.open?.(); if (r && r.catch) r.catch((e) => console.info("[ribbon] view.open rejected", errText(e))); } catch (e) { console.info("[ribbon] view.open unavailable", errText(e)); } };
 
 // One sentence per alert kind the server actually RECORDS (recordDispatch call sites, 2026-09-15):
 // SEAL_CONFLICT (legacy: its only writer, artifact-fetch.js artifactEventHandler, was never wired
@@ -941,13 +970,13 @@ const DocumentRibbon = () => {
       } else {
         res = await invoke("ribbon-summary", { pageId: id });
       }
-      console.info("[ribbon] summary", res);
+      console.info("[ribbon] summary", `ok=${res?.ok === true} reason=${safeKey(res?.reason, "-")} attachments=${res?.attachments ?? "-"} sealed=${res?.sealedAttachments ?? "-"} sections=${res?.sectionSeals ?? "-"} trashed=${res?.trashedSeals ?? "-"}`);
       // 8.11.0: the byline item under the title is rendered by Confluence from a content property it
       // reads once, at load. When the answer's byline changed (a move made elsewhere reached this
       // banner through the workflow stamp, or this banner made one), hand it to Confluence.
       const step = bylineSyncStep(bylineRef.current, id, res?.byline || null);
       bylineRef.current = step.state;
-      if (step.push) updateBylineProperties({ propertyKey: BYLINE_KEY, valueUpdate: step.push }).catch((e) => console.info("[ribbon] byline update failed", e?.message || e));
+      if (step.push) updateBylineProperties({ propertyKey: BYLINE_KEY, valueUpdate: step.push }).catch((e) => console.info("[ribbon] byline update failed", errText(e)));
       const failed = !res || typeof res !== "object" || (res.ok !== true && res.reason !== "none");
       // B (2026-09-30): an answer that could not list the attachments still carries the level —
       // keep it, so the row shows the classification and names what could not be checked.
@@ -955,7 +984,7 @@ const DocumentRibbon = () => {
       setSummary(failed ? partial : res);
       return failed ? { res: partial, error: res?.reason || "no-summary" } : { res, error: null };
     } catch (err) {
-      console.error("[ribbon] ribbon-summary failed:", err);
+      console.error("[ribbon] ribbon-summary failed:", errText(err));
       setSummary(null);
       return { res: null, error: err?.message || "threw" };
     }
@@ -971,7 +1000,7 @@ const DocumentRibbon = () => {
       setAlerts(relevant);
       return relevant;
     } catch (err) {
-      console.error("[ribbon] recent-dispatches failed:", err);
+      console.error("[ribbon] recent-dispatches failed:", errText(err));
       setAlerts([]);
       return [];
     }
@@ -989,7 +1018,7 @@ const DocumentRibbon = () => {
       const ctxSpaceKey = context?.extension?.content?.space?.key || context?.extension?.space?.key || null;
       const contentType = context?.extension?.content?.type || null;
       const operator = context?.accountId || null;
-      console.info("[ribbon] evaluate", why, { pageId: ctxPageId, contentType, location: context?.extension?.location || null });
+      console.info("[ribbon] evaluate", why, { pageId: ctxPageId, contentType });
 
       // Only the content-type check remains: any page-like content the context reports is
       // supported (page, blogpost, and Live Docs whatever type string they carry). The old
@@ -1051,15 +1080,15 @@ const DocumentRibbon = () => {
         const guardStub = readGuardStub();
         (guardStub ? Promise.resolve().then(guardStub) : invoke("guard-page-now", {}))
           .then((g) => { const again = guardReevaluateReason(g); if (again && pageIdRef.current === ctxPageId) evaluateRef.current?.(again); })
-          .catch((e) => console.info("[ribbon] guard-page-now failed", e?.message || e));
+          .catch((e) => console.info("[ribbon] guard-page-now failed", errText(e)));
       }
 
       if (sumRes?.error) {
         // Not a confirmed "nothing to show": say so in the row instead of vanishing (P1-7). With an
         // active classification the row is the level block plus that sentence, never an error row.
         setSummaryError(sumRes.error);
-        console.info("[ribbon] decision", `${sum ? "level + error sentence" : "error row"} (summary: ${sumRes.error})`);
-        applyVisibility(true, `summary failed: ${sumRes.error}`);
+        console.info("[ribbon] decision", `${sum ? "level + error sentence" : "error row"} (summary: ${safeKey(sumRes.error, "error")})`);
+        applyVisibility(true, `summary failed: ${safeKey(sumRes.error, "error")}`);
         return;
       }
       setSummaryError(null);
@@ -1079,10 +1108,10 @@ const DocumentRibbon = () => {
       console.info("[ribbon] decision", branch);
       applyVisibility(show && (!dismissed || decision.active), branch);
     } catch (err) {
-      console.error("[ribbon] evaluate error:", err);
+      console.error("[ribbon] evaluate error:", errText(err));
       if (!stale()) {
         setSummaryError(err?.message || "evaluate threw");
-        applyVisibility(true, `evaluate threw: ${err?.message || err}`);
+        applyVisibility(true, `evaluate threw: ${errText(err)}`);
       }
     } finally {
       if (!stale()) { setLoading(false); setBooting(false); }
@@ -1102,7 +1131,7 @@ const DocumentRibbon = () => {
         const history = await view.createHistory();
         if (history?.listen) unlisten = history.listen(() => evaluate("history"));
       } catch (e) {
-        console.info("[ribbon] createHistory unavailable:", e?.message || e);
+        console.info("[ribbon] createHistory unavailable:", errText(e));
       }
     })();
     // … plus focus/visibility: re-read the context and re-evaluate when the content id moved.
@@ -1167,7 +1196,7 @@ const DocumentRibbon = () => {
       await invoke("acknowledge-dispatch", { dispatchId: alertId });
       setAlerts((prev) => prev.filter((a) => a.id !== alertId));
     } catch (err) {
-      console.error("Failed to dismiss alert:", err);
+      console.error("Failed to dismiss alert:", errText(err));
     }
   }, []);
 

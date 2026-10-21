@@ -20,6 +20,7 @@ import { appConfluence } from "../../shared/confluence-call.js";
 import { mirrorProperty } from "../classification/logic.js";
 import { confluenceRequest } from "../classification/provider.js";
 import { pushReceipt, redactConfigForMirror, RECEIPTS_KEPT } from "./pure.js";
+import { errText } from "../../shared/action-log.js";
 export { RECEIPTS_KEPT };
 
 export const RECEIPT_PROPERTY_KEY = "sentinel-vault-receipt";
@@ -130,7 +131,7 @@ export async function refreshConfigMirror(target, accountId) {
         const r = await appConfluence(route`/wiki/api/v2/spaces/${id}`);
         const key = r.ok ? (await r.json())?.key : null;
         if (key) out.push(await mirrorSpaceConfig(key, await exportSpaceConfig(key, accountId)));
-      } catch (e) { log(`[CONFIG-API] space ${id} mirror skipped: ${e?.message || e}`); }
+      } catch (e) { log(`[CONFIG-API] space ${id} mirror skipped: ${errText(e)}`); }
     }
     return out;
   }

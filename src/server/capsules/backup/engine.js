@@ -14,6 +14,7 @@ import { kvs, MetadataField, WhereConditions } from "@forge/kvs";
 import { getAppContext } from "@forge/api";
 import { setWithTtl } from "../../shared/kvs-ttl.js";
 import { familyOf, isBackedUp } from "./families.js";
+import { reopenGuardBackfill, ensureGuardMarkers, sealPageOf } from "../../shared/guarded-page.js";
 import {
   FORMAT, FORMAT_VERSION, EXPORT_FORMAT, ChunkBuilder, sealManifest, verifyManifest, verifyChunk, parseChunk,
   manifestName, isManifestName, isChunkName, chunkName, newGenerationId, contentFingerprint, tallyFamily, secretsInventory,
@@ -21,6 +22,7 @@ import {
 } from "./snapshot.js";
 import * as store from "./store.js";
 import { entriesMentionOutsideContent, textNamesPerson } from "../privacy/accounts.js";
+import { errText, safeKey, spaceKeyForLog } from "../../shared/action-log.js";
 
 export const SETTINGS_KEY = "backup-settings";
 export const STATUS_KEY = "backup-status";
@@ -31,7 +33,8 @@ export const STAGE_PREFIX = "backup-stage-";
 const JOB_TTL_MS = 7 * 86400000;
 
 const nowIso = () => new Date().toISOString();
-const errText = (e) => String(e?.message || e).slice(0, 300);
+// The error text kept in job/status rows and returned reasons. Never printed: log lines use errText.
+const errMessage = (e) => String(e?.message || e).slice(0, 300);
 
 /** What this invocation is: version, environment, installation. Never throws. */
 export function appInfo() {
@@ -93,7 +96,7 @@ export async function ensureBackupPage({ preferSpaceKey = null } = {}) {
       const next = { pageId: page.pageId, spaceId: s.spaceId, spaceKey: s.spaceKey, spaceName: s.spaceName, title: page.title };
       await kvs.set(SETTINGS_KEY, next);
       return next;
-    } catch (e) { lastErr = e; console.warn(`[BACKUP] page in ${s.spaceKey} failed: ${errText(e)}`); }
+    } catch (e) { lastErr = e; console.warn(`[BACKUP] page in ${spaceKeyForLog(s.spaceKey)} failed: ${errText(e)}`); }
   }
   throw lastErr || new Error("No space found where the app can keep its backup page.");
 }
@@ -201,13 +204,13 @@ export async function runBackup({ reason = "manual", actor = null } = {}) {
     const { deletedAt: _d, deletedBy: _b, ...prevStatus } = (await kvs.get(STATUS_KEY)) || {};
     const status = { ...prevStatus, lastBackup: { ...row, pageId: where.pageId, spaceKey: where.spaceKey, spaceName: where.spaceName, uploaded }, lastCheckAt: startedAt, lastError: null };
     await kvs.set(STATUS_KEY, status);
-    console.log(`[BACKUP] generation ${generationId} reason=${reason} keys=${keys} bytes=${bytes} chunks=${chunks.length} uploaded=${uploaded}`);
+    console.log(`[BACKUP] generation ${generationId} reason=${safeKey(reason)} keys=${keys} bytes=${bytes} chunks=${chunks.length} uploaded=${uploaded}`);
     return { ok: true, unchanged: false, generationId, keys, bytes, chunks: chunks.length, uploaded };
   } catch (e) {
-    console.error("[BACKUP] failed:", e);
-    const status = { ...((await kvs.get(STATUS_KEY).catch(() => null)) || {}), lastError: { at: startedAt, message: errText(e), reason } };
+    console.error("[BACKUP] failed:", errText(e));
+    const status = { ...((await kvs.get(STATUS_KEY).catch(() => null)) || {}), lastError: { at: startedAt, message: errMessage(e), reason } };
     await kvs.set(STATUS_KEY, status).catch(() => {});
-    return { ok: false, reason: errText(e) };
+    return { ok: false, reason: errMessage(e) };
   }
 }
 
@@ -331,7 +334,7 @@ export async function purgeGenerationsMentioning(needles) {
     }
   } catch (e) {
     console.warn(`[BACKUP] privacy purge aborted, nothing dropped: ${errText(e)}`);
-    return { pageId, dropped: 0, kept: gens.length, newestMentions: false, aborted: errText(e) };
+    return { pageId, dropped: 0, kept: gens.length, newestMentions: false, aborted: errMessage(e) };
   }
   const dropped = drop.length;
   if (dropped) {
@@ -456,11 +459,30 @@ async function writeEntries(entries) {
     } catch (e) { console.warn(`[BACKUP] batchSet failed, falling back to single writes: ${errText(e)}`); }
     if (!ok) {
       for (const it of items) {
-        try { await kvs.set(it.key, it.value, it.options); written += 1; } catch (e) { failed.push({ key: it.key, reason: errText(e) }); }
+        try { await kvs.set(it.key, it.value, it.options); written += 1; } catch (e) { failed.push({ key: it.key, reason: errMessage(e) }); }
       }
     }
   }
   return { written, failed };
+}
+
+/**
+ * Write a restore's entries. Every seal it brings back gets its page marker FIRST (shared/
+ * guarded-page.js: the pipeline finds a page's seals by it), then the records are written, then a new
+ * backfill generation starts — AFTER the writes, so a sweep that ran during the restore can never keep
+ * a "markers complete" flag over a scan that missed records written later. The flag is cleared before
+ * the writes too: the pipeline scans every page while the restore runs.
+ */
+export async function writeRestoredEntries(toWrite) {
+  await reopenGuardBackfill();
+  const marks = await ensureGuardMarkers(toWrite.map((d) => sealPageOf(d.key, d.value)).filter(Boolean));
+  // A marker that could not be written does not stop the restore: the flag is open (every page is
+  // scanned, so those seals are enforced meanwhile) and the sweep's self-heal writes it. Failing the
+  // restore instead would leave the site with none of its configuration back.
+  if (marks.failed) console.warn(`[BACKUP] restore: ${marks.failed} seal page marker(s) could not be written — every page is scanned until the sweep writes them`);
+  const out = await writeEntries(toWrite);
+  await reopenGuardBackfill();
+  return { ...out, markerFailures: marks.failed };
 }
 
 /**
@@ -496,7 +518,7 @@ export async function runRestore({ pageId, generationId, actor = null, source = 
   // never leave automations off with no way back in the UI.
   const at = nowIso();
   if (paused.length) await kvs.set(PAUSED_KEY, { restoredAt: at, generationId: manifest.generationId, items: paused });
-  const { written, failed } = await writeEntries(toWrite);
+  const { written, failed } = await writeRestoredEntries(toWrite);
   const lastRestore = { at, generationId: manifest.generationId, createdAt: manifest.createdAt, source, pageId, written, failed: failed.length, expired, paused: paused.length, actor, fromInstallation: manifest.app?.installationId || null };
   await kvs.set(STATUS_KEY, { ...((await kvs.get(STATUS_KEY)) || {}), lastRestore });
   console.log(`[BACKUP] restored generation ${manifest.generationId} written=${written} failed=${failed.length} expired=${expired} paused=${paused.length}`);
@@ -525,7 +547,7 @@ export async function resumePaused(ids, invoke) {
     try {
       const r = await resumeOne(item, invoke);
       if (r?.success === false) failed.push({ id: item.id, reason: r.reason || "Refused" }); else done.push(item.id);
-    } catch (e) { failed.push({ id: item.id, reason: errText(e) }); }
+    } catch (e) { failed.push({ id: item.id, reason: errMessage(e) }); }
   }
   const left = state.items.filter((i) => !done.includes(i.id));
   if (left.length) await kvs.set(PAUSED_KEY, { ...state, items: left }); else await kvs.delete(PAUSED_KEY);

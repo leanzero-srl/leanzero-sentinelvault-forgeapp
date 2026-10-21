@@ -29,6 +29,7 @@ import { sweepSectionEditAccess } from "../editreq/logic.js";
 import { recordActivity } from "../../infra/activity-log.js";
 import { touchSealTimestamp } from "../sealing/logic.js";
 import { refreshByline } from "../page-details/byline.js";
+import { errText } from "../../shared/action-log.js";
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -58,7 +59,7 @@ export async function releaseSectionSeal(sectionId, record, { autoRelease = null
   const pageId = record.pageId || null;
   let unwrapped = false;
   try { unwrapped = await unwrapSectionOnPage(pageId, sectionId); }
-  catch (e) { console.warn(`[SECTION-RELEASE] unwrap of ${sectionId} failed:`, e?.message || e); }
+  catch (e) { console.warn(`[SECTION-RELEASE] unwrap of ${sectionId} failed:`, errText(e)); }
 
   await kvs.delete(`section-protection-${sectionId}`);
   await kvs.delete(`section-snapshot-${sectionId}`).catch(() => {});
@@ -80,7 +81,7 @@ export async function releaseSectionSeal(sectionId, record, { autoRelease = null
         unwrapped,
       },
       version: null,
-    }).catch((e) => console.warn("[SECTION-RELEASE] activity:", e?.message || e));
+    }).catch((e) => console.warn("[SECTION-RELEASE] activity:", errText(e)));
   }
   if (record.spaceId) await kvs.delete(`space-section-protection-${record.spaceId}-${sectionId}`).catch(() => {});
   await sweepSectionEditAccess(sectionId).catch(() => {});
@@ -90,6 +91,6 @@ export async function releaseSectionSeal(sectionId, record, { autoRelease = null
   await kvs.delete(`fifty-percent-reminder-sent-${sectionId}`).catch(() => {});
   if (pageId) await refreshSectionContentProp(pageId).catch(() => {});
   await touchSealTimestamp().catch(() => {});
-  if (pageId) await refreshByline(pageId).catch((e) => console.warn("[BYLINE] section release refresh failed:", e?.message || e));
+  if (pageId) await refreshByline(pageId).catch((e) => console.warn("[BYLINE] section release refresh failed:", errText(e)));
   return { success: true, unwrapped };
 }

@@ -1,8 +1,9 @@
 /*
  * The `protection-` page content property — what it may carry (PURE, no imports).
  *
- * The property exists so the page-content trigger can tell cheaply that a page carries a seal
- * (triggers.js collectMediaSealsForPage reads only its presence). It is readable by ANYONE who
+ * The property mirrors "this page carries a seal" for CQL and the UI. The page-content pipeline
+ * never reads it (an editor can delete a page property): it finds a page's seals by the app's own
+ * KVS marker (shared/guarded-page.js). It is readable by ANYONE who
  * can read the page over REST, so it used to publish the whole seal record: the sealer's email
  * address (bypassing their profile's email-visibility setting), their display name and the
  * free-text seal note. Since 2026-10-04 it carries the account id and timestamps only; a name is

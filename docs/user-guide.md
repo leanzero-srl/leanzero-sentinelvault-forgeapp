@@ -75,8 +75,9 @@ Depending on site settings:
 - **Upload** -- Drop files onto the upload zone (panel or Seal attachments…). Maximum size is 4 MB per file.
 - **Labels** -- Add or remove labels on an attachment.
 - **Delete** -- Send an unsealed attachment to the trash. Needs **Allow Attachment Removal from Page** (off by default).
-- **Restore** -- Restore a trashed attachment that still carries a seal. Needs **Allow Attachment Restore from Page** (off by default).
-- **Cleanup** -- Remove seal records left behind by permanently deleted attachments. Needs **Allow Seal Cleanup from Page** (off by default).
+- **Restore** -- Restore a file from the trash. Needs **Allow Attachment Restore from Page** (off by default), and Confluence must let you restore it yourself.
+- **Delete permanently** -- Permanently delete a file that is in the trash, with its seal records. This cannot be undone. Needs **Allow Seal Cleanup from Page** (off by default), and Confluence must let you purge it yourself (Confluence asks for the space's manage content permission).
+- **Remove record** -- For a file that is already gone from Confluence, remove the seal records left behind. Needs **Allow Seal Cleanup from Page**; the seal owner or a space admin can do it.
 
 ### The inline panel
 

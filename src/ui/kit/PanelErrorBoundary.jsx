@@ -1,4 +1,5 @@
 import React from "react";
+import { errText } from "./error-facts.js";
 
 /**
  * A crash while drawing must never leave a blank space (2026-09-24: user B saw NOTHING where the
@@ -16,7 +17,7 @@ export default class PanelErrorBoundary extends React.Component {
   }
 
   componentDidCatch(error, info) {
-    console.error("[SENTINEL-VAULT] panel crashed while drawing:", error, info?.componentStack);
+    console.error("[SENTINEL-VAULT] panel crashed while drawing:", errText(error), info?.componentStack);
   }
 
   render() {

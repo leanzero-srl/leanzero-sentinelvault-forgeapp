@@ -1,56 +1,48 @@
 import { route } from "@forge/api";
-import { appConfluence } from "../shared/confluence-call.js";
+import { appConfluence, userConfluence } from "../shared/confluence-call.js";
+import { errText } from "../shared/action-log.js";
 
-/**
- * PURE. The name a trashed file comes back under when a NEWER file with its name is already on
- * the page (Confluence refuses the restore with 409 "newer Content exists … with title X" —
- * tester 2026-09-30). "Test sentinel.docx" → "Test sentinel (restored).docx", then "(restored 2)".
- */
-export function restoredTitle(title, n = 1) {
-  const t = String(title || "Unknown");
-  const dot = t.lastIndexOf(".");
-  const hasExt = dot > 0 && dot >= t.length - 8;
-  const base = hasExt ? t.slice(0, dot) : t;
-  const ext = hasExt ? t.slice(dot) : "";
-  return `${base} (restored${n > 1 ? ` ${n}` : ""})${ext}`;
-}
 /** PURE. Is this restore refusal "a newer file already holds the name"? */
 export const isNameTakenConflict = (status, text) => status === 409 && /newer Content exists/i.test(String(text || ""));
 
 /**
- * PUT a trashed attachment back to "current"; when a newer file holds its name, retry under
- * restoredTitle() (up to 3 names). Returns { ok, status, title, renamed, text }.
+ * PUT a trashed attachment back to "current". Returns { ok, status, text, nameTaken }.
+ *
+ * Measured on wolfaenpak (2026-10-21): the restore keeps the attachment's version number and its
+ * fileId; a trashed attachment cannot be updated at all (renaming it in the trash answers 404
+ * "Trashed content cannot be updated"). So when a newer file holds its name, Confluence refuses the
+ * restore with 409 and there is nothing to retry: `nameTaken` says so and the caller tells the person.
+ *
+ * `as`: "user" when a PERSON asked for the restore (the panel's Restore): the PUT runs with their own
+ * rights, so Confluence's trash rights decide (shared/trash-rights.js). "app" only for a live seal
+ * putting its own file back (the seal's enforcement in triggers.js). A thrown asUser call (no user
+ * context, or no consent yet) propagates to the caller.
  */
-export async function putAttachmentCurrent(pageId, attachmentId, title, version) {
-  const putRoute = route`/wiki/rest/api/content/${pageId}/child/attachment/${attachmentId}`;
-  const put = (status, name, ver) => appConfluence(putRoute, {
+export async function putAttachmentCurrent(pageId, attachmentId, title, version, { as = "app" } = {}) {
+  const conf = as === "user" ? userConfluence : appConfluence;
+  const res = await conf(route`/wiki/rest/api/content/${pageId}/child/attachment/${attachmentId}`, {
     method: "PUT", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ id: attachmentId, type: "attachment", status, title: name, version: { number: ver + 1 } }),
+    body: JSON.stringify({ id: attachmentId, type: "attachment", status: "current", title, version: { number: version + 1 } }),
   });
-  const res = await put("current", title, version);
-  if (res.ok) return { ok: true, status: res.status, title, renamed: false };
+  if (res.ok) return { ok: true, status: res.status, title, nameTaken: false };
   const text = await res.text().catch(() => "");
-  if (!isNameTakenConflict(res.status, text)) return { ok: false, status: res.status, text, title, renamed: false };
-  // Confluence checks the TRASHED title before applying one sent with the restore, so the file is
-  // renamed while still in the trash (its own version), then restored under the new name.
-  let ver = version;
-  let last = { status: res.status, text };
-  for (let n = 1; n <= 3; n++) {
-    const name = restoredTitle(title, n);
-    const ren = await put("trashed", name, ver);
-    if (!ren.ok) {
-      last = { status: ren.status, text: await ren.text().catch(() => "") };
-      console.warn(`[RESTORE] rename-in-trash to "${name}" refused: ${last.status} — ${String(last.text).slice(0, 300)}`);
-      continue;
-    }
-    ver += 1;
-    const back = await put("current", name, ver);
-    if (back.ok) return { ok: true, status: back.status, title: name, renamed: true };
-    last = { status: back.status, text: await back.text().catch(() => "") };
-    console.warn(`[RESTORE] restore as "${name}" refused: ${last.status} — ${String(last.text).slice(0, 300)}`);
-    if (!isNameTakenConflict(last.status, last.text)) break;
+  return { ok: false, status: res.status, text, title, nameTaken: isNameTakenConflict(res.status, text) };
+}
+
+/** PURE. The fileId of one attachment version from its v2 GET answer: { fileId, busy }. */
+export function fileIdAnswer(status, body) {
+  if (status === 429 || status >= 500) return { fileId: null, busy: true };
+  if (status >= 200 && status < 300) return { fileId: body?.fileId ? String(body.fileId) : null, busy: false };
+  return { fileId: null, busy: false };
+}
+/** The fileId of version `version` of an attachment, read with the app's identity: { fileId, busy }. */
+export async function fileIdAtVersion(attachmentId, version) {
+  try {
+    const r = await appConfluence(route`/wiki/api/v2/attachments/${attachmentId}?version=${version}`);
+    return fileIdAnswer(r.status, r.ok ? await r.json().catch(() => null) : null);
+  } catch (_) {
+    return { fileId: null, busy: true }; // a thrown read is not an answer
   }
-  return { ok: false, status: last.status, text: last.text, title, renamed: false };
 }
 
 /**
@@ -123,7 +115,7 @@ export async function probeAttachmentStatus(attachmentId) {
         await new Promise((r) => setTimeout(r, 500));
         continue;
       }
-      console.error(`[ATT-STATUS] probe failed for ${attachmentId}:`, e);
+      console.error(`[ATT-STATUS] probe failed for ${attachmentId}:`, errText(e));
       return { status: "unknown", version: null, title: null, pageId: null, fileId: null };
     }
   }
@@ -159,15 +151,14 @@ export async function restoreAttachmentFromTrash({ attachmentId, pageId, title, 
   for (let attempt = 0; attempt < 3; attempt++) {
     const r = await putAttachmentCurrent(effPageId, attachmentId, effTitle, version);
     if (r.ok) {
-      if (r.renamed) console.warn(`[ATT-STATUS] restored ${attachmentId} as "${r.title}" — a newer file holds "${effTitle}"`);
-      return { ok: true, probe, renamedTo: r.renamed ? r.title : null };
+      return { ok: true, probe };
     }
     lastStatus = r.status;
     if ((r.status === 429 || r.status >= 500) && attempt < 2) {
       await new Promise((res) => setTimeout(res, Math.pow(2, attempt) * 500));
       continue;
     }
-    console.error(`[ATT-STATUS] restore PUT failed for ${attachmentId}: ${r.status} — ${String(r.text || "").slice(0, 200)}`);
+    console.error(`[ATT-STATUS] restore PUT failed for ${attachmentId}: ${r.status}`);
     break;
   }
   // Adversarial-vet F1: one UI delete fires trashed:attachment AND updated:page — the trash
@@ -196,28 +187,85 @@ export const sameAttachmentId = (a, b) => String(a ?? "").replace(/^att/, "") ==
  * or a list that does not answer 200, means the negative is UNPROVEN → false (keep the seal).
  * Hunt F8: settle default is 1.5s — these sleeps serialize per candidate inside a 25s budget.
  */
-export async function confirmAttachmentPurged(attachmentId, settleMs = 1500, { pageId = null } = {}) {
-  await new Promise((r) => setTimeout(r, settleMs));
+export async function confirmAttachmentPurged(attachmentId, settleMs = 1500, { pageId = null, containerType = null, containerCurrent = false } = {}) {
+  return (await attachmentPurgeVerdict(attachmentId, settleMs, { pageId, containerType, containerCurrent })).verdict === "gone";
+}
+
+/** PURE. Which container collections to ask, from what the record or the attachment names. */
+export function containerCollections(containerType) {
+  if (containerType === "blogpost" || containerType === "blogposts") return ["blogposts"];
+  if (containerType === "page" || containerType === "pages") return ["pages"];
+  return ["pages", "blogposts"]; // a seal record keeps only the id: try both
+}
+const isBusy = (status) => status === 429 || status >= 500;
+
+/**
+ * The verdict behind confirmAttachmentPurged: { verdict: "gone" | "present" | "unknown", rateLimited }.
+ *
+ * A 404 is never proof on its own: v2 answers 404 for "not found" AND for "you may not see it". "gone"
+ * needs a POSITIVE witness on the file's own container, read with the app's identity:
+ *   1. after the settle, the attachment's own v2 GET still 404s (current/trashed → present);
+ *   2. its container's attachment list (the page's, or the blog post's: v2 has one per collection)
+ *      answers 200 and does not carry the id → gone;
+ *   3. otherwise, the container's own GET (every status) answers 200 with status "deleted" → gone.
+ * The witness must be the file's CURRENT container (`containerCurrent`): one read from the
+ * attachment's own body, from a Confluence event about it, or a tracking row of a file deleted from
+ * that page. A container known only from a seal record may be one the file has since left (moved to
+ * a page the app cannot see): its list proves nothing, "unknown".
+ * Everything else is "unknown" and keeps the records: a container that answers 404 everywhere (a
+ * purged page does, and so does a page hidden from the app; `why: "container-unseen"`), one that
+ * exists while its list will not answer, a list that never ends. A 429/5xx anywhere is "unknown" with
+ * rateLimited set (the caller says "try again").
+ */
+export async function attachmentPurgeVerdict(attachmentId, settleMs = 1500, { pageId = null, containerType = null, containerCurrent = false } = {}) {
+  const sleep = () => new Promise((r) => setTimeout(r, settleMs));
+  const unknown = (rateLimited = false, why = null) => ({ verdict: "unknown", rateLimited, why });
+  await sleep();
   const again = await probeAttachmentStatus(attachmentId);
-  if (again.status !== "deleted") return false;
+  if (again.status === "current" || again.status === "trashed") return { verdict: "present", rateLimited: false };
+  if (again.status !== "deleted") return unknown(isBusy(Number(again.httpStatus)));
   if (!pageId) {
-    console.warn(`[ATT-STATUS] purge of ${attachmentId} not corroborated — no page id to list; keeping the seal`);
-    return false;
+    console.warn(`[ATT-STATUS] purge of ${attachmentId} not corroborated — no container id to list; keeping the seal`);
+    return unknown();
   }
   try {
-    let res = await appConfluence(route`/wiki/api/v2/pages/${pageId}/attachments?status=current&status=trashed&status=archived&limit=250`);
-    for (let i = 0; i < 20; i++) {
-      if (!res.ok) return false; // the page's list must be readable (positive control on the same object)
-      const body = await res.json();
-      if ((body?.results || []).some((a) => sameAttachmentId(a?.id, attachmentId))) return false; // still there
-      const next = body?._links?.next;
-      const cursor = next ? new URL(next, "https://x.invalid").searchParams.get("cursor") : null;
-      if (!cursor) return true;
-      res = await appConfluence(route`/wiki/api/v2/pages/${pageId}/attachments?status=current&status=trashed&status=archived&limit=250&cursor=${cursor}`);
+    const colls = containerCollections(containerType);
+    for (const coll of colls) {
+      const base = coll === "blogposts" ? "blogposts" : "pages";
+      let res = base === "blogposts"
+        ? await appConfluence(route`/wiki/api/v2/blogposts/${pageId}/attachments?status=current&status=trashed&status=archived&limit=250`)
+        : await appConfluence(route`/wiki/api/v2/pages/${pageId}/attachments?status=current&status=trashed&status=archived&limit=250`);
+      if (res.status === 404) continue; // not this collection, or the container is gone or hidden: step 3
+      for (let i = 0; i < 20; i++) {
+        if (!res.ok) return unknown(isBusy(res.status)); // the list must be readable (positive control on the same object)
+        const body = await res.json();
+        if ((body?.results || []).some((a) => sameAttachmentId(a?.id, attachmentId))) return { verdict: "present", rateLimited: false };
+        const next = body?._links?.next;
+        const cursor = next ? new URL(next, "https://x.invalid").searchParams.get("cursor") : null;
+        if (!cursor) return containerCurrent ? { verdict: "gone", rateLimited: false } : unknown(false, "container-not-current");
+        res = base === "blogposts"
+          ? await appConfluence(route`/wiki/api/v2/blogposts/${pageId}/attachments?status=current&status=trashed&status=archived&limit=250&cursor=${cursor}`)
+          : await appConfluence(route`/wiki/api/v2/pages/${pageId}/attachments?status=current&status=trashed&status=archived&limit=250&cursor=${cursor}`);
+      }
+      return unknown(); // a list that never ended proves nothing
     }
-    return false; // a list that never ended proves nothing
+    // Every collection's list answered 404: only the container's own word that it is deleted proves it.
+    for (const coll of colls) {
+      // Every status, trashed included: a page in the trash still holds its files (not gone).
+      const res = coll === "blogposts"
+        ? await appConfluence(route`/wiki/api/v2/blogposts/${pageId}?status=current&status=trashed&status=deleted&status=historical`)
+        : await appConfluence(route`/wiki/api/v2/pages/${pageId}?status=current&status=archived&status=trashed&status=deleted&status=historical`);
+      if (res.status === 404) continue; // not found OR not visible: never proof
+      if (res.ok) {
+        const body = await res.json().catch(() => null);
+        if (body?.status !== "deleted") return unknown();
+        return containerCurrent ? { verdict: "gone", rateLimited: false } : unknown(false, "container-not-current");
+      }
+      return unknown(isBusy(res.status));
+    }
+    return unknown(false, "container-unseen");
   } catch (e) {
-    console.error(`[ATT-STATUS] purge corroboration errored for ${attachmentId} — treating as NOT confirmed:`, e);
-    return false;
+    console.error(`[ATT-STATUS] purge corroboration errored for ${attachmentId} — treating as NOT confirmed:`, errText(e));
+    return unknown();
   }
 }

@@ -203,6 +203,10 @@ eq("page trigger, unmoved Approved page edited by an admin of its space: privile
 async function pendingOn(pageId) {
   await kvs.set(`workflow-pending-${pageId}`, { pageId, toStateId: APPROVED, toStateName: "Approved", requestedBy: REQUESTER, requestedByName: "Req", requestedAt: "2026-10-02T00:00:00.000Z", pinnedVersion: 3, approvers: ["acct-listed"], mode: "any", min: 1, spaceKey: "AAA" });
   await kvs.set(`workflow-approval-${pageId}-${APPROVED}-approval-acct-listed`, { approverAccountId: "acct-listed", status: "pending" });
+  // "acct-listed" is still one of the space's approvers (a decision needs the snapshot AND the
+  // current list: test/approver-revocation.test.mjs).
+  const ws = await kvs.get("workflow-settings-AAA");
+  await kvs.set("workflow-settings-AAA", { ...ws, approval: { approvers: [{ id: "acct-listed", type: "user", name: "Listed" }], mode: "any" } });
 }
 const NOT_APPROVER = "You are not an approver for this transition";
 await world(); await pendingOn(MOVED);
@@ -364,6 +368,7 @@ eq("AI verdict on an unmoved page: completes (control)", (await applyAiVerdict(S
 await world({ stateId: APPROVED });
 { const sr = await kvs.get("protection-att-moved"); await kvs.set("protection-att-moved", { ...sr, workflowHeld: { pageId: MOVED, stateId: APPROVED } }); }
 await kvs.set("edit-request-att-moved-" + REQUESTER, { requesterAccountId: REQUESTER, requesterName: "Req", status: "pending", proposal: true, approvers: ["acct-listed"], requestedAt: "2026-10-02T00:00:00.000Z" });
+{ const ws = await kvs.get("workflow-settings-AAA"); await kvs.set("workflow-settings-AAA", { ...ws, approval: { approvers: [{ id: "acct-listed", type: "user", name: "Listed" }], mode: "any" } }); }
 ok("approve-edit-request (a proposal), moved page, a listed approver: held", said(await as(editreq.get("approve-edit-request"), "acct-listed", { attachmentId: "att-moved", requesterAccountId: REQUESTER }), HOLD));
 ok("approve-edit-request (a proposal), moved page: still Approved", (await kvs.get(`workflow-state-${MOVED}`))?.stateId === APPROVED);
 // The old space empties Approved's exits (demote cannot apply): a moved page is reverted instead.

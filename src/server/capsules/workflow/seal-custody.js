@@ -15,6 +15,7 @@ import { collectPageSeals, readPageMeta } from "../page-details/logic.js";
 import { refreshSectionContentProp } from "../section-seals/logic.js";
 import { recordActivity } from "../../infra/activity-log.js";
 import { holdSeal, handBackSeal, isWorkflowHeld } from "../../shared/seal-authority.js";
+import { errText } from "../../shared/action-log.js";
 
 async function pageSeals(pageId) {
   const meta = await readPageMeta(pageId).catch(() => null);
@@ -29,7 +30,7 @@ async function writeSeal(item, next) {
   await kvs.set(item.key, next);
   if (item.indexKey) {
     try { const row = await kvs.get(item.indexKey); if (row) await kvs.set(item.indexKey, { ...row, expiresAt: next.expiresAt ?? null, workflowHeld: next.workflowHeld || null }); }
-    catch (e) { console.warn(`[SEAL-CUSTODY] index row ${item.indexKey}:`, e?.message || e); }
+    catch (e) { console.warn(`[SEAL-CUSTODY] index row ${item.indexKey}:`, errText(e)); }
   }
 }
 
@@ -43,7 +44,7 @@ export async function holdPageSeals({ pageId, record, stateName, actorAccountId,
     try {
       await writeSeal(item, holdSeal(item.record, { record: { ...record, pageId }, stateName, now }));
       held.push({ kind: item.kind, id: item.id, name: item.name });
-    } catch (e) { console.warn(`[SEAL-CUSTODY] hold ${item.key} failed:`, e?.message || e); }
+    } catch (e) { console.warn(`[SEAL-CUSTODY] hold ${item.key} failed:`, errText(e)); }
   }
   if (sections.length) await refreshSectionContentProp(pageId).catch(() => {});
   if (held.length) {
@@ -68,7 +69,7 @@ export async function handBackPageSeals({ pageId, record, actorAccountId, actorN
     try {
       await writeSeal(item, handBackSeal(item.record, { now }));
       back.push({ kind: item.kind, id: item.id, name: item.name });
-    } catch (e) { console.warn(`[SEAL-CUSTODY] hand back ${item.key} failed:`, e?.message || e); }
+    } catch (e) { console.warn(`[SEAL-CUSTODY] hand back ${item.key} failed:`, errText(e)); }
   }
   if (sections.length) await refreshSectionContentProp(pageId).catch(() => {});
   if (back.length) {

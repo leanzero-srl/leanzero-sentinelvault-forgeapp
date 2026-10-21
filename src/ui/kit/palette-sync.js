@@ -7,6 +7,7 @@
  */
 
 import { view } from "@forge/bridge";
+import { errText } from "./error-facts.js";
 
 let paletteInitialized = false;
 let initializationPromise = null;
@@ -40,7 +41,7 @@ async function initializePalette() {
     await view.theme.enable();
     paletteInitialized = true;
   } catch (error) {
-    console.warn("Failed to enable theme detection:", error);
+    console.warn("Failed to enable theme detection:", errText(error));
     paletteInitialized = true;
   }
 }

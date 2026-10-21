@@ -41,6 +41,7 @@ const VERB_PHRASES = {
   "permanently-deleted": "permanently delete",
   "revert-failed": "modify",
   "layout-changed": "change the presentation of",
+  "section-restore-failed": "edit",
 };
 
 // Truthful outcome per verb. "delete" previously claimed "restored" even on the
@@ -51,6 +52,7 @@ const VERB_OUTCOMES = {
   "permanently-deleted": "It cannot be restored — the file is permanently gone and the seal has been released.",
   "revert-failed": "Sentinel Vault could NOT automatically restore it. Please review the page and recover the file from the trash or version history if needed.",
   "layout-changed": "The sealed presentation has been restored.",
+  "section-restore-failed": "Sentinel Vault could NOT check or restore it, because its sealed copy is missing. Please compare it with the page's version history and seal it again if needed.",
 };
 
 // F2 (owner feedback 2026-08-27): "without a specific notification for me or for the owner;
@@ -65,6 +67,7 @@ const VERB_EDITOR_LINES = {
   "permanently-deleted": "the file you deleted was sealed. It could not be recovered.",
   "revert-failed": "this file is sealed and your change should not have applied.",
   "layout-changed": "your presentation change was undone — this file's on-page layout is sealed.",
+  "section-restore-failed": "this section is sealed and your change should not have applied.",
 };
 
 export function composeViolationLayout({

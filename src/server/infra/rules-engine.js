@@ -5,6 +5,7 @@
 // "validate now" action. Rule types operate on ADF structure via the shared
 // walkers in doc-surgery.js.
 import { collectHeadings, countNodes, extractPlainText } from "./doc-surgery.js";
+import { errText } from "../shared/action-log.js";
 
 function headingMatches(headings, { text, level }) {
   return headings.filter((h) => {
@@ -100,7 +101,7 @@ export function evaluateRules(adfDoc, pageLabels, rules) {
     try {
       message = evalRule(adfDoc, pageLabels, rule);
     } catch (e) {
-      console.error(`[RULES] rule ${rule.id} (${rule.type}) threw:`, e);
+      console.error(`[RULES] rule ${rule.id} (${rule.type}) threw:`, errText(e));
       message = null;
     }
     if (message) {

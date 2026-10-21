@@ -1,5 +1,6 @@
 import { route } from "@forge/api";
 import { userConfluence, isRateLimited, rateLimitOf, busyReason } from "../../shared/confluence-call.js";
+import { errText } from "../../shared/action-log.js";
 
 /**
  * Get operator information by account ID
@@ -33,7 +34,7 @@ const identifyOperator = async (req) => {
       profilePicture: profilePictureUrl,
     };
   } catch (error) {
-    console.error(`Failed to fetch operator info for ${accountId}:`, error);
+    console.error("Failed to fetch operator info:", errText(error));
     return {
       accountId,
       displayName: `User ${accountId.slice(-4)}`,
@@ -118,7 +119,7 @@ const searchOperators = async (req) => {
       nextStart,
     };
   } catch (error) {
-    console.error("Error searching operators:", error);
+    console.error("Error searching operators:", errText(error));
     return {
       users: [],
       hasMore: false,
@@ -168,7 +169,7 @@ const whoami = async (req) => {
       profilePicture: profilePictureUrl,
     };
   } catch (error) {
-    console.error("Error fetching current operator:", error);
+    console.error("Error fetching current operator:", errText(error));
     return {
       accountId: req.context.accountId,
       displayName: "Current User",
@@ -243,7 +244,7 @@ const enumerateOperators = async (req) => {
       nextStart: null,
     };
   } catch (error) {
-    console.error("Error fetching initial operators:", error);
+    console.error("Error fetching initial operators:", errText(error));
     return {
       users: [],
       hasMore: false,
@@ -276,8 +277,7 @@ const enumerateTeams = async (req) => {
     // "fallback" (the same path), which doubled the traffic exactly while Confluence was limiting it.
     // A 429 is said as such ("couldn't load the groups right now"), not as an empty group list.
     if (!response.ok) {
-      const errorText = (await response.text().catch(() => "")).slice(0, 200);
-      console.error(`Teams API failed with status ${response.status}: ${errorText}`);
+      console.error(`Teams API failed with status ${response.status}`);
       if (isRateLimited(response)) {
         const s = rateLimitOf()?.retryAfterSeconds ?? null;
         return { groups: [], hasMore: false, nextStart: null, unavailable: true, retryAfterSeconds: s, reason: busyReason(s, { what: "the groups could not be loaded", nothingChanged: false }) };
@@ -311,7 +311,7 @@ const enumerateTeams = async (req) => {
       };
     }
   } catch (error) {
-    console.error("Failed to fetch teams from Confluence:", error);
+    console.error("Failed to fetch teams from Confluence:", errText(error));
     return {
       groups: [],
       hasMore: false,

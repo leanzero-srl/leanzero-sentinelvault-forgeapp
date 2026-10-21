@@ -19,6 +19,7 @@ import { SEALED_GROUPS, groupSealedFiles } from "../../kit/sealed-groups.js";
 import { attachmentRow, rowActions, statusChip, copyText } from "../../kit/seal-row.js";
 import { when } from "../../kit/status-language.js";
 import { PrimarySlot, ReasonBar, RequestInbox, GrantInbox, ErrorRow, CopiedNote, DeclinedReason } from "../../kit/SealRowParts";
+import { errText } from "../../kit/error-facts.js";
 
 // ── Column definitions ──────────────────────────────────
 const OVERLAY_COLUMNS = [
@@ -157,7 +158,7 @@ const OperatorTag = ({ accountId }) => {
         const data = await invoke("identify-operator", { accountId });
         setOperatorInfo(data);
       } catch (error) {
-        console.error(`Failed to fetch operator info for ${accountId}:`, error);
+        console.error("Failed to fetch operator info:", errText(error));
         setOperatorInfo({ displayName: `User ${accountId.slice(-4)}`, accountId });
       } finally {
         setLoading(false);
@@ -684,7 +685,7 @@ const ArtifactControlPanel = () => {
         `[OVERLAY] Updated: hasMore=${hasMore}, nextCursor=${nextCursor}`,
       );
     } catch (err) {
-      console.error("Failed to fetch artifacts:", err);
+      console.error("Failed to fetch artifacts:", errText(err));
       setError("Unable to retrieve files. Please try again.");
       setFileList([]);
     } finally {
@@ -709,7 +710,7 @@ const ArtifactControlPanel = () => {
         setPageId(ctx.extension?.content?.id || null);
         setPageLocation(ctx.extension?.location || null);
       } catch (e) {
-        console.warn("[OVERLAY] Failed to get context:", e);
+        console.warn("[OVERLAY] Failed to get context:", errText(e));
       }
 
       // Phase 1: Show claimed files instantly from KVS
@@ -723,7 +724,7 @@ const ArtifactControlPanel = () => {
           hasPhase1 = true;
         }
       } catch (e) {
-        console.warn("[OVERLAY] Fast seal fetch failed:", e);
+        console.warn("[OVERLAY] Fast seal fetch failed:", errText(e));
       }
 
       // Phase 2 (slow Confluence file enrichment), global settings, and panel status are
@@ -738,7 +739,7 @@ const ArtifactControlPanel = () => {
             const globalSettings = await invoke("load-policy", { scope: "global" });
             setExpiryAlertsActive(globalSettings?.expiryAlertsActive !== false);
           } catch (error) {
-            console.warn("Failed to get auto-unlock setting, defaulting to enabled:", error);
+            console.warn("Failed to get auto-unlock setting, defaulting to enabled:", errText(error));
           } finally {
             setSettingsLoaded(true);
           }
@@ -748,7 +749,7 @@ const ArtifactControlPanel = () => {
             const panelStatus = await invoke("check-panel-status", { pageId: null });
             setPanelHidden(panelStatus?.macroDisabled === true);
           } catch (error) {
-            console.warn("Failed to get panel status:", error);
+            console.warn("Failed to get panel status:", errText(error));
           } finally {
             setPanelConfigReady(true);
           }
@@ -803,7 +804,7 @@ const ArtifactControlPanel = () => {
     try {
       await retrieveFileData(true, nextFileCursor);
     } catch (error) {
-      console.error("Error loading more artifacts:", error);
+      console.error("Error loading more artifacts:", errText(error));
     } finally {
       setFetchingMoreFiles(false);
     }
@@ -869,7 +870,7 @@ const ArtifactControlPanel = () => {
       }
       return true;
     } catch (err) {
-      console.error(`[OVERLAY] ${action} failed:`, err);
+      console.error(`[OVERLAY] ${action} failed:`, errText(err));
       setCardErrors((p) => ({ ...p, [artifactId]: "Could not reach Sentinel Vault. Try again." }));
       return false;
     } finally {
@@ -895,7 +896,7 @@ const ArtifactControlPanel = () => {
             }));
           }
         } catch (err) {
-          console.error("Failed to check dispatch status:", err);
+          console.error("Failed to check dispatch status:", errText(err));
         }
       }
     };
@@ -927,7 +928,7 @@ const ArtifactControlPanel = () => {
             });
           }
         } catch (error) {
-          console.warn("Failed to show expiry dispatch:", error);
+          console.warn("Failed to show expiry dispatch:", errText(error));
         }
       }
     };
@@ -1115,7 +1116,7 @@ const ArtifactControlPanel = () => {
                 });
                 setPanelHidden(newValue);
               } catch (err) {
-                console.error("Failed to save panel settings:", err);
+                console.error("Failed to save panel settings:", errText(err));
               } finally {
                 setPanelConfigUpdating(false);
               }

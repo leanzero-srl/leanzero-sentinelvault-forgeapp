@@ -6,6 +6,7 @@
 import { postCommentWithMention } from "./outbound-notify.js";
 import { restoredLabel } from "../capsules/workflow/baseline.js"; // B2: one wording for what a revert gave back
 import { NOTICE_EDITOR_REVERT } from "../shared/notice-policy.js";
+import { errText } from "../shared/action-log.js";
 
 const HEADER = "🛡️ Sentinel Vault";
 
@@ -34,7 +35,7 @@ export async function notifyApprovalRequested({ pageId, targetName, approvers, r
   try {
     return await postCommentWithMention({ pageId, storageBody });
   } catch (e) {
-    console.error("[APPROVAL-NOTICE] request notify failed:", e);
+    console.error("[APPROVAL-NOTICE] request notify failed:", errText(e));
     return { success: false };
   }
 }
@@ -79,8 +80,13 @@ export function enforceCommentBody(pageId, editorId, kind, opts = {}) {
     ? `<a href="${escapeXml(`/wiki/pages/viewpage.action?pageId=${pageId}&pageVersion=${opts.revertedVersion}`)}">open your version (v${escapeXml(opts.revertedVersion)})</a>`
     : `<a href="${escapeXml(historyUrl)}">view previous versions</a>`;
   const heading = label && !label.startsWith("approved ") ? `Reverted to v${escapeXml(opts.approvedVersion)}` : "Reverted to the approved version";
+  // 2026-10-21: the space is set to move edited pages back for review, but its workflow cannot make
+  // that move, so the app reverted instead. Said on the page, where the space admins watching it read it.
+  const fallback = opts.demoteFallback
+    ? `\n<p>This space is set to move edited pages back for review, but its workflow cannot make that move, so the approved version was restored instead. A space admin can fix this in the space's Workflow settings.</p>`
+    : "";
   return `<p>${HEADER} — <strong>${heading}</strong></p>
-<p>${m}this page is Approved and protected, so your change was reverted to ${backTo}. Your text is not lost: it is kept in the page history — ${myVersion}. To change an approved page, ask an approver or space admin to move it out of Approved first, or request approval for your version.</p>`;
+<p>${m}this page is Approved and protected, so your change was reverted to ${backTo}. Your text is not lost: it is kept in the page history — ${myVersion}. To change an approved page, ask an approver or space admin to move it out of Approved first, or request approval for your version.</p>${fallback}`;
 }
 
 export async function postEnforceComment(pageId, editorId, kind, opts = {}) {
@@ -90,7 +96,7 @@ export async function postEnforceComment(pageId, editorId, kind, opts = {}) {
   try {
     return await postCommentWithMention({ pageId, storageBody: body.trim(), noticeType });
   } catch (e) {
-    console.error("[APPROVAL-NOTICE] enforce comment failed:", e);
+    console.error("[APPROVAL-NOTICE] enforce comment failed:", errText(e));
     return { success: false };
   }
 }
@@ -148,7 +154,7 @@ export async function notifyApprovalResolved({ pageId, requestedBy, outcome, tar
   try {
     return await postCommentWithMention({ pageId, storageBody });
   } catch (e) {
-    console.error("[APPROVAL-NOTICE] resolve notify failed:", e);
+    console.error("[APPROVAL-NOTICE] resolve notify failed:", errText(e));
     return { success: false };
   }
 }

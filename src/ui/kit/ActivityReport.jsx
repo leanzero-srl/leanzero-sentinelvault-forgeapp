@@ -6,6 +6,7 @@ import {
   ACTIVITY_CATEGORIES, activityToCsv, actorName, formatAbsolute, formatActivity, pageTitleOf, relativeTime,
 } from "./activity-format";
 import { nextSelection, selectAll, clearAll, isAllOn } from "./activity-filter";
+import { errText } from "./error-facts.js";
 
 // A1 — the space Activity report (realm console, stewards only). Reads `get-space-activity`
 // with the category + date filters applied SERVER-SIDE (a fetched page may come back short —
@@ -78,7 +79,7 @@ export default function ActivityReport({ spaceKey, siteUrl = null }) {
     setLoading(true); setError(false); setExportNote("");
     fetchPage(null, PAGE_LIMIT)
       .then((r) => { if (!cancelled && alive.current) { setEntries(r.entries); setNextCursor(r.nextCursor); setLoading(false); } })
-      .catch((e) => { console.warn("Activity report load failed:", e); if (!cancelled && alive.current) { setError(true); setLoading(false); } });
+      .catch((e) => { console.warn("Activity report load failed:", errText(e)); if (!cancelled && alive.current) { setError(true); setLoading(false); } });
     return () => { cancelled = true; };
   }, [fetchPage, spaceKey, activeCats.length]);
 
@@ -91,7 +92,7 @@ export default function ActivityReport({ spaceKey, siteUrl = null }) {
       setEntries((prev) => [...prev, ...r.entries]);
       setNextCursor(r.nextCursor);
     } catch (e) {
-      console.warn("Activity report load-more failed:", e);
+      console.warn("Activity report load-more failed:", errText(e));
       if (alive.current) setError(true);
     } finally {
       if (alive.current) setLoadingMore(false);
@@ -133,7 +134,7 @@ export default function ActivityReport({ spaceKey, siteUrl = null }) {
         ? `Exported the newest ${fmtInt(EXPORT_CAP)} rows — narrow the filters to reach older activity.`
         : `Exported ${fmtInt(rows.length)} row${rows.length === 1 ? "" : "s"}.`);
     } catch (e) {
-      console.warn("Activity export failed:", e);
+      console.warn("Activity export failed:", errText(e));
       setExportNote("Couldn’t export activity right now. Reload the page to try again.");
     } finally {
       if (alive.current) setExporting(null);

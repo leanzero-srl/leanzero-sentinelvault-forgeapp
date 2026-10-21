@@ -40,10 +40,10 @@ export function advancesSealedVersion(prevVersion, nextVersion) {
 /**
  * PURE. Does this KVS row keep `pageId` "carrying a seal" once `excludeAttachmentId` is gone?
  *
- * The `protection-` page content property is ONE per page and gates the media fast path
- * (triggers.js collectMediaSealsForPage reads only its presence), and the inline panel is one
- * per page too. Releasing one seal must therefore leave both in place while any OTHER seal still
- * targets the page.
+ * The `protection-` page content property is ONE per page (a mirror for CQL and the UI; the
+ * pipeline finds a page's seals by its KVS marker, shared/guarded-page.js), and the inline panel
+ * is one per page too. Releasing one seal must therefore leave both in place while any OTHER seal
+ * still targets the page.
  *
  * - The record being released is excluded by its key AND by its attachmentId: kvs.query is
  *   eventually consistent and will happily still return a row we just deleted, and an old record

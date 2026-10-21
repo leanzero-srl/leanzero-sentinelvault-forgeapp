@@ -78,7 +78,10 @@ In the page-details modal and the inline panel, **Force release…** appears und
 These are disabled by default. Enable each individually in Site settings → Settings → Protection:
 - **Allow Attachment Removal from Page** -- enables Delete
 - **Allow Attachment Restore from Page** -- enables Restore
-- **Allow Seal Cleanup from Page** -- enables Purge
+- **Allow Seal Cleanup from Page** -- enables Purge (Delete permanently / Remove record)
+
+**"Confluence does not let you restore this file" / "Confluence does not let you permanently delete this file":**
+Restore and permanent delete run with your own Confluence permissions, so the panel can never do more than Confluence itself would let you. A permanent delete needs the space's manage content permission in Confluence. Ask a space admin. Being on Sentinel Vault's own space admins list does not add these rights.
 
 **Space console not showing space admin tabs:**
 The full tab set (Sealed Files, Access Control, Seal Duration, Macro, Validations, Workflow, Activity) only appears for users with space admin role. Regular users only see "My Sealed Files." Space admin status requires: space ADMINISTER permission, membership in a configured space admin group, explicit space admin delegation, or site admin status.

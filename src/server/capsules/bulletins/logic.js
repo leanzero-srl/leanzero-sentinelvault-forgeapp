@@ -2,6 +2,8 @@ import { kvs, WhereConditions } from "@forge/kvs";
 import { mailReleaseNotice, mailViolationAlert } from "../../infra/notice-composer.js";
 import { resolveBulletinToggles } from "../../shared/bulletin-flags.js";
 import { setWithTtl } from "../../shared/kvs-ttl.js";
+import { errText, reasonText } from "../../shared/action-log.js";
+import { touchBannerStamp } from "../page-details/byline-touch.js";
 
 /**
  * Post a Confluence footer comment with mentions of the seal owner and the
@@ -76,8 +78,10 @@ export async function recordDispatch(eventData) {
     recentBulletins.events = recentBulletins.events.slice(0, 10);
 
     await setWithTtl("recent-notifications", recentBulletins, 3600000);
+    // An open banner on this page re-reads it now and shows the alert (byline-touch.js).
+    if (eventData?.pageId) await touchBannerStamp(String(eventData.pageId));
   } catch (error) {
-    console.error("Error storing dispatch event:", error);
+    console.error("Error storing dispatch event:", errText(error));
   }
 }
 
@@ -155,14 +159,14 @@ export async function notifyWatchers(
         } else {
           result.failed++;
           console.warn(
-            `[NOTIFY-ME] Failed to notify ${value.accountId}: ${noticeResult.reason}`,
+            `[NOTIFY-ME] Failed to notify a watcher of ${artifactId}: ${reasonText(noticeResult.reason)}`,
           );
         }
       } catch (noticeError) {
         result.failed++;
         console.error(
-          `[NOTIFY-ME] Error notifying ${value.accountId}:`,
-          noticeError,
+          `[NOTIFY-ME] Error notifying a watcher of ${artifactId}:`,
+          errText(noticeError),
         );
       }
     }
@@ -171,7 +175,7 @@ export async function notifyWatchers(
       `[NOTIFY-ME] Processed ${watcherRequests.length} requests: ${result.sent} sent, ${result.failed} failed`,
     );
   } catch (error) {
-    console.error("[NOTIFY-ME] Error processing notify-me requests:", error);
+    console.error("[NOTIFY-ME] Error processing notify-me requests:", errText(error));
   }
 
   return result;
@@ -206,7 +210,7 @@ export async function sweepWatchers(artifactId) {
       removed++;
     }
   } catch (e) {
-    console.warn(`[NOTIFY-ME] watcher sweep failed for ${artifactId}:`, e);
+    console.warn(`[NOTIFY-ME] watcher sweep failed for ${artifactId}:`, errText(e));
   }
   return removed;
 }

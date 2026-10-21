@@ -34,10 +34,11 @@ import {
   sanitize,
   listSpaceWorkflows,
   storeSpaceWorkflow,
-  deleteSpaceWorkflow, restoreSpaceDefaultWorkflow, removeRefusal } from "./logic.js";
+  deleteSpaceWorkflow, restoreSpaceDefaultWorkflow, removeRefusal,
+  validateDefinition, demoteProblemForSpace } from "./logic.js";
 import { runBundle } from "./bundle.js"; // WF-11
 import { movedPageHold, MOVED_HOLD_REASON, MOVED_UNKNOWN_REASON } from "./moved-hold.js";
-import { shownEnforcement, contentProtectionEnabled } from "./enforce-rules.js"; // 2026-10-16: the words follow what the engine does
+import { shownEnforcement, contentProtectionEnabled, demoteConfigProblem } from "./enforce-rules.js"; // 2026-10-16: the words follow what the engine does
 import {
   extractApprovalConfig,
   resolveApproverIds,
@@ -51,6 +52,7 @@ import {
   applyAiVerdict,
   buildApprovalRecord,
   MAX_REQUEST_APPROVERS,
+  newApproverCheck,
 } from "./approvals.js";
 import { enqueueAiGate, resolveRules } from "../validations/actions.js";
 import { confirmRead, readStatus, readReport, readConfirmationRequired, requiredVersion } from "./read-acks.js";
@@ -59,6 +61,7 @@ import { evaluateRules } from "../../infra/rules-engine.js";
 import { readDocBody } from "../../infra/doc-surgery.js";
 import { fetchPageLabelsChecked } from "../../infra/labels.js";
 import { rulesNeedLabels } from "../../shared/rule-config.js";
+import { errText } from "../../shared/action-log.js";
 
 // #46 Part A: content-conditions gate — the space's block-severity validation rules must
 // pass before the page may enter the target state. Reuses evaluateRules verbatim (sync).
@@ -167,7 +170,8 @@ const getWorkflow = async (req) => {
     // A4: the ribbon's "changed since approval" line says what happens to the edit: the space's
     // enforce mode, or "off" while the site's content-protection switch has enforcement off.
     const movedSpace = !!(result.record?.spaceKey && pageSpaceKey && result.record.spaceKey !== pageSpaceKey);
-    result.enforceMode = shownEnforcement(settings, await kvs.get("admin-settings-global").catch(() => null), { moved: movedSpace });
+    // With the page's definition and state: a demote this workflow cannot make is a revert (2026-10-21).
+    result.enforceMode = shownEnforcement(settings, await kvs.get("admin-settings-global").catch(() => null), { moved: movedSpace, def: result.def || null, stateId: result.record?.stateId || null });
     // A5: the ribbon turns the "Review due" chip into a button only for someone set-review-due
     // would accept — a steward of the page's own space (the edit check runs on the write).
     result.canSetReviewDue = !!(req.context?.accountId && result.record?.spaceKey)
@@ -560,7 +564,16 @@ const getPageApprovals = async (req) => {
     status.requireSignature = !!settings?.requireSignature;
     // A space admin who is not listed may still decide (owner, 2026-09-25) — the ribbon offers it.
     const me = req.context?.accountId;
-    const listed = (status.approvers || []).some((a) => a.accountId === me);
+    let listed = (status.approvers || []).some((a) => a.accountId === me && !a.admin);
+    // 8.14: listed on the request but taken off the space's approver list since: the banner says so
+    // instead of offering Approve/Deny the server refuses (approvals.js approverStatusNow). Such a
+    // person may still decide as a space admin (checked below). "unknown" keeps the buttons: the
+    // decision itself then says to try again.
+    if (me && listed && me !== status.requestedBy) {
+      const snapshot = (status.approvers || []).filter((a) => !a.admin).map((a) => a.accountId);
+      // No group read on a banner view (Confluence points): a group member stays "unknown" here.
+      if ((await newApproverCheck({ expandGroups: false })(snapshot, me, spaceKey || null)) === "no") { status.myApproverRemoved = true; listed = false; }
+    }
     if (me && !listed && me !== status.requestedBy && settings?.approval?.adminsCanApprove !== false) {
       // The SAME check decideApproval uses (isAccountStewardAsApp, asApp): the asUser steward check
       // failed with NEEDS_AUTHENTICATION for an admin without user consent, and followed the
@@ -718,7 +731,25 @@ const storeConfig = async (req) => {
   if (!authorized) {
     return { success: false, reason: scope === "space" ? "Only a space admin can edit workflow definitions" : "Only a site admin can edit the global workflow definition" };
   }
-  return storeWorkflowConfig(scope || "global", key, def);
+  // 2026-10-21: this door stored any definition with a state in it, past every check the definition
+  // editor runs (validateDefinition, a state that still holds pages, the demote check). A space
+  // definition now goes through the editor's own door (logic.js storeSpaceWorkflow); the site-wide one
+  // is validated and warns about the demote, since each space chooses its own mode.
+  if (scope === "space") {
+    const sk = key || spaceKeyOf(req);
+    if (!sk) return { success: false, reason: "spaceKey required" };
+    const r = await storeSpaceWorkflow(sk, { workflowId: "default", def });
+    return r?.success ? { success: true, ...(r.warning ? { warning: r.warning } : {}) } : r;
+  }
+  const v = validateDefinition(def);
+  if (!v.ok) return { success: false, reason: v.reason };
+  const r = await storeWorkflowConfig("global", key, v.value);
+  const problem = demoteConfigProblem(v.value, { enforceMode: "demote", demoteTo: "initial" });
+  if (r?.success && problem) {
+    const note = `Spaces that move edited pages back for review will restore the approved version instead: ${problem}`;
+    return { ...r, warning: r.warning ? `${r.warning} ${note}` : note };
+  }
+  return r;
 };
 
 // B1: the definition editor. The space IS the object here (the payload names it, the gate is
@@ -731,8 +762,10 @@ const listSpaceWorkflowsAction = async (req) => {
 const storeSpaceWorkflowAction = async (req) => {
   const spaceKey = spaceKeyOf(req);
   if (!spaceKey || !(await authorizeSteward(req.context?.accountId, spaceKey))) return { success: false, reason: "Only a space admin can edit workflow definitions" };
-  const { workflowId, def, labels, priority } = req.payload || {};
-  return storeSpaceWorkflow(spaceKey, { workflowId: typeof workflowId === "string" ? workflowId : null, def, labels, priority });
+  const { workflowId, def, labels, priority, settings } = req.payload || {};
+  // `settings`: the settings this definition is saved WITH (the config import), for the demote check
+  // only — never written here. Safety does not rest on it: the engine reverts what it cannot move back.
+  return storeSpaceWorkflow(spaceKey, { workflowId: typeof workflowId === "string" ? workflowId : null, def, labels, priority, settings: settings && typeof settings === "object" ? settings : null });
 };
 // WF-11: ONE Save for the default workflow's states AND the approval / protection settings — two
 // records, all-or-nothing: the definition first, then the settings; a refused settings write puts
@@ -746,7 +779,8 @@ const saveWorkflowBundleAction = async (req) => {
   const prevSource = prev?.source || "builtin";
   const prevDef = prevSource === "space" ? prev.default : null;
   return runBundle({
-    storeDef: () => storeSpaceWorkflow(spaceKey, { workflowId: "default", def, labels, priority }),
+    // The definition is judged with the settings it is saved with (a demote-mode check), not the stored ones.
+    storeDef: () => storeSpaceWorkflow(spaceKey, { workflowId: "default", def, labels, priority, settings }),
     storeSettings: () => setSpaceWorkflowSettings(spaceKey, settings || {}),
     restoreDef: () => restoreSpaceDefaultWorkflow(spaceKey, prevSource, prevDef),
   });
@@ -771,7 +805,10 @@ const getSpaceSettings = async (req) => {
   // The tab's rule sentence says Approved pages are protected; that is only true while the site's
   // "Protect Sealed Attachments in Page Body" is on (2026-10-16).
   const enforcement = shownEnforcement(settings, await kvs.get("admin-settings-global").catch(() => null));
-  return { settings, def, protectionOff: enforcement === "off" }; // def.states power the read-only preview chips in the config UI
+  // 2026-10-21: a demote configuration saved before the save-time check, that this space's
+  // workflows cannot carry out (the engine reverts those edits instead). The tab shows it.
+  const demoteProblem = await demoteProblemForSpace(spaceKey, settings, def);
+  return { settings, def, protectionOff: enforcement === "off", demoteProblem }; // def.states power the read-only preview chips in the config UI
 };
 
 const setSpaceSettings = async (req) => {
@@ -913,7 +950,7 @@ const sealsToFreezeAction = async (req) => {
     // while the site's content-protection switch is off (2026-10-16).
     const protectionOff = !contentProtectionEnabled(await kvs.get("admin-settings-global").catch(() => null));
     return { ...(await describeSealsToFreeze(pageId)), protectionOff };
-  } catch (e) { console.warn("[SEAL-CUSTODY] seals-to-freeze failed:", e?.message || e); return { sections: [], attachments: [] }; }
+  } catch (e) { console.warn("[SEAL-CUSTODY] seals-to-freeze failed:", errText(e)); return { sections: [], attachments: [] }; }
 };
 
 export const actions = [

@@ -1,4 +1,5 @@
 import { asApp, route } from "@forge/api";
+import { markGuardedPage } from "../../shared/guarded-page.js"; // the page's seal marker (KVS authority)
 import { appConfluence } from "../../shared/confluence-call.js";
 import { currentUserProfile } from "../../shared/user-or-app.js";
 import { kvs, WhereConditions } from "@forge/kvs";
@@ -34,6 +35,7 @@ import { heldRefusal, isWorkflowHeld, heldLabel } from "../../shared/seal-author
 import { releaseSectionSeal, unwrapSectionOnPage } from "./release.js"; // SEC-7 (d): one teardown with the expiry sweep
 import { insertIntentKey, INSERT_INTENT_TTL_MS } from "./adopt.js"; // SEC-4 (a): seal on insert
 import { setWithTtl } from "../../shared/kvs-ttl.js";
+import { errText } from "../../shared/action-log.js";
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const newSectionId = () => {
@@ -86,7 +88,7 @@ export const listPageHeadings = async (req) => {
     }
     return { headings, hasSealedSections: sealed > 0 };
   } catch (e) {
-    console.error("[SECTION] listPageHeadings failed:", e);
+    console.error("[SECTION] listPageHeadings failed:", errText(e));
     return { headings: [], hasSealedSections: false };
   }
 };
@@ -120,7 +122,7 @@ export const enumerateSectionSeals = async (req) => {
       }));
     return { sections };
   } catch (e) {
-    console.error("[SECTION] enumerate failed:", e);
+    console.error("[SECTION] enumerate failed:", errText(e));
     return { sections: [] };
   }
 };
@@ -174,9 +176,10 @@ export const sealSection = async (req) => {
   }
   // SEC-2 (tester 2026-09-25): no new personal seal on an Approved page except by its privileged set.
   {
-    const { workflowPrivilegeForPage, ENFORCED_SEAL_REFUSAL } = await import("../workflow/privilege.js");
-    const p = await workflowPrivilegeForPage(pageId, operatorAccountId).catch(() => ({ enforced: false }));
-    if (p.enforced && !p.privileged) return { success: false, reason: ENFORCED_SEAL_REFUSAL };
+    // privilege.js sealGateForPage: the one gate for a new seal (fails closed when it cannot check).
+    const { sealGateForPage } = await import("../workflow/privilege.js");
+    const refused = await sealGateForPage(pageId, operatorAccountId);
+    if (refused) return refused;
   }
 
   const extensionKey = await resolveSealedSectionKey();
@@ -194,6 +197,10 @@ export const sealSection = async (req) => {
     const prof = await currentUserProfile(operatorAccountId);
     operatorName = prof.displayName || operatorName; // the email is not stored (2026-10-04)
   } catch (_) { /* best effort */ }
+
+  // The page's KVS marker before anything is written: the pipeline finds this page's seals by it
+  // (shared/guarded-page.js). No marker, no seal — nothing else is written.
+  if (!(await markGuardedPage(pageId))) return { success: false, reason: "Could not save the seal right now. Nothing was changed. Try again in a moment." };
 
   let result = null;
   for (let attempt = 0; attempt < 3; attempt++) {
@@ -277,7 +284,7 @@ export const sealSection = async (req) => {
   await refreshSectionContentProp(pageId);
   await touchSealTimestamp();
   if (pageId) await restampIfEnforced(pageId); // #44 §2.7: keep an enforced baseline seal-complete
-  await refreshByline(pageId).catch((e) => console.warn("[BYLINE] seal-section refresh failed:", e?.message || e));
+  await refreshByline(pageId).catch((e) => console.warn("[BYLINE] seal-section refresh failed:", errText(e)));
   return { success: true, sectionId };
 };
 
@@ -370,7 +377,7 @@ export const unsealSection = async (req) => {
         { targetKind: "section", lapsed: !viaSteward },
       );
     } catch (e) {
-      console.error("[SECTION-UNSEAL] owner notice failed:", e?.message || e);
+      console.error("[SECTION-UNSEAL] owner notice failed:", errText(e));
     }
   }
   return { success: true };
@@ -461,7 +468,7 @@ const sectionSealStatus = async (req) => {
       workflowHeld: isWorkflowHeld(record), heldLabel: heldLabel(record), // SEC-2: the macro badge says so
     };
   } catch (e) {
-    console.error("[SECTION] status failed:", e);
+    console.error("[SECTION] status failed:", errText(e));
     return closed;
   }
 };
@@ -510,7 +517,7 @@ const guardPageNowAction = async (req) => {
       sectionIds: [...new Set([...(r.restored ? (r.sectionIds || []) : []), ...mineEvents.map((e) => e.sectionId)])],
     };
   } catch (e) {
-    console.error("[PAGE-GUARD] view check failed:", e);
+    console.error("[PAGE-GUARD] view check failed:", errText(e));
     return { checked: false, restored: false };
   }
 };
@@ -557,13 +564,13 @@ export const extendSection = async (req) => {
       await setUntil(key, { ...value, expiresAt: newExpiresAt }, newExpiryMs);
       grantsMoved++;
     }
-  } catch (e) { console.warn("[EXTEND-SECTION] grants carry-forward failed:", e?.message || e); }
+  } catch (e) { console.warn("[EXTEND-SECTION] grants carry-forward failed:", errText(e)); }
   if (record.spaceId) {
     try {
       const indexKey = `space-section-protection-${record.spaceId}-${sectionId}`;
       const indexRow = await kvs.get(indexKey);
       if (indexRow) await kvs.set(indexKey, { ...indexRow, expiresAt: newExpiresAt });
-    } catch (e) { console.warn("[EXTEND-SECTION] index row update failed:", e?.message || e); }
+    } catch (e) { console.warn("[EXTEND-SECTION] index row update failed:", errText(e)); }
   }
   await touchSealTimestamp();
   await recordActivity({
@@ -576,7 +583,7 @@ export const extendSection = async (req) => {
     version: null,
   });
   if (record.pageId) await refreshSectionContentProp(record.pageId).catch(() => {});
-  if (record.pageId) await refreshByline(record.pageId).catch((e) => console.warn("[BYLINE] extend-section refresh failed:", e?.message || e));
+  if (record.pageId) await refreshByline(record.pageId).catch((e) => console.warn("[BYLINE] extend-section refresh failed:", errText(e)));
   return { success: true, expiresAt: newExpiresAt, extensionCount: updated.extensionCount, grantsMoved };
 };
 

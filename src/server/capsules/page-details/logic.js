@@ -18,6 +18,7 @@ import { route } from "@forge/api";
 import { appConfluence } from "../../shared/confluence-call.js";
 import { kvs } from "@forge/kvs";
 import { listSectionSealRecordsForPage } from "../section-seals/logic.js";
+import { errText } from "../../shared/action-log.js";
 
 // The pure row-state rules live in row-state.js (zero imports, shared with the browser bundle).
 export { primaryActionFor, menuActionsFor } from "./row-state.js";
@@ -85,7 +86,7 @@ export async function collectPageSeals(pageId, contentType = "page") {
   const current = all.map((a) => a.id);
   let trashed = [];
   try { trashed = (await listAttachments(pageId, collection, "trashed")).map((a) => a.id).filter((id) => !current.includes(id)); }
-  catch (e) { console.warn("[PAGE-DETAILS] trashed-attachment probe failed:", e?.message || e); }
+  catch (e) { console.warn("[PAGE-DETAILS] trashed-attachment probe failed:", errText(e)); }
   const readBatch = async (ids, isTrashed) => {
     for (let i = 0; i < ids.length; i += 25) {
       const records = await Promise.all(ids.slice(i, i + 25).map((id) => kvs.get(`protection-${id}`).catch(() => null)));

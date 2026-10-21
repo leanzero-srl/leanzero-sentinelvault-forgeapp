@@ -2,6 +2,7 @@ import { kvs } from "@forge/kvs";
 import { route } from "@forge/api";
 import { appConfluence } from "../../shared/confluence-call.js";
 import { setWithTtl, setUntil } from "../../shared/kvs-ttl.js";
+import { errText } from "../../shared/action-log.js";
 
 // Conditions & Validations — config + state storage.
 //
@@ -231,26 +232,59 @@ export function aiGateRefusal(spend, onBudgetExhausted) {
   return { enqueued: false, verdict: "passed", reason: "AI review isn't enabled — condition skipped." };
 }
 
-// --- Page validation-state content property ---
+// --- Page validation status ---
+// KVS `validation-state-{pageId}` is the authority (2026-10-21). The page property
+// `sentinel-vault-validation` mirrors it for CQL and the UI only: anyone who may edit a page may also
+// change its properties, so the status shown, the "Approve anyway" attribution and the re-check rules
+// never come from it. The mirror carries no account ids (`approved: true` instead of who approved).
+// A page whose only status is a property written before 8.14.0 reads as not checked yet: the panel
+// checks it now, and the next save or re-check writes the KVS row.
 const STATE_KEY = "sentinel-vault-validation";
+export const VALIDATION_STATE_PREFIX = "validation-state-";
+const stateKey = (pageId) => `${VALIDATION_STATE_PREFIX}${pageId}`;
 
+/** What readValidationState answers when the KVS row could not be read: never "no status". */
+export const VALIDATION_STATE_UNKNOWN = Object.freeze({ unknown: true });
+export const isUnknownValidationState = (s) => !!s && s.unknown === true;
+
+/**
+ * The stored status, null when there is none, or VALIDATION_STATE_UNKNOWN when KVS could not be
+ * read — a caller must not write over a status it could not read (an "Approve anyway" included).
+ */
 export async function readValidationState(pageId) {
   if (!pageId) return null;
   try {
-    const res = await appConfluence(
-      route`/wiki/api/v2/pages/${pageId}/properties?key=${STATE_KEY}`,
-    );
-    if (!res.ok) return null;
-    const body = await res.json();
-    return body.results?.[0]?.value || null;
+    return (await kvs.get(stateKey(pageId))) || null;
   } catch (e) {
-    console.error("[VALIDATION-STATE] read failed:", e);
-    return null;
+    console.error("[VALIDATION-STATE] read failed:", errText(e));
+    return VALIDATION_STATE_UNKNOWN;
   }
+}
+
+/** PURE. What the page property may carry: the verdict, never who checked or approved it. */
+export function validationMirrorValue(state) {
+  if (!state || typeof state !== "object") return null;
+  const out = {};
+  for (const k of ["state", "violations", "version", "checkedAt", "approvedAt", "rulesFp", "source"]) if (state[k] !== undefined) out[k] = state[k];
+  if (state.approvedBy) out.approved = true;
+  return out;
 }
 
 export async function writeValidationState(pageId, state) {
   if (!pageId) return;
+  try {
+    await kvs.set(stateKey(pageId), state);
+  } catch (e) {
+    console.error("[VALIDATION-STATE] write failed:", errText(e));
+    return; // no mirror of a status that was not stored
+  }
+  await mirrorValidationState(pageId, state);
+}
+
+/** The page property mirror (CQL and the UI). Best-effort; never read back for a decision. */
+export async function mirrorValidationState(pageId, state) {
+  if (!pageId) return;
+  const value = validationMirrorValue(state);
   try {
     const getRes = await appConfluence(
       route`/wiki/api/v2/pages/${pageId}/properties?key=${STATE_KEY}`,
@@ -264,7 +298,7 @@ export async function writeValidationState(pageId, state) {
         {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ key: STATE_KEY, value: state, version: { number: (existing.version?.number || 1) + 1 } }),
+          body: JSON.stringify({ key: STATE_KEY, value, version: { number: (existing.version?.number || 1) + 1 } }),
         },
       );
     } else {
@@ -273,12 +307,12 @@ export async function writeValidationState(pageId, state) {
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ key: STATE_KEY, value: state }),
+          body: JSON.stringify({ key: STATE_KEY, value }),
         },
       );
     }
   } catch (e) {
-    console.error("[VALIDATION-STATE] write failed:", e);
+    console.error("[VALIDATION-STATE] mirror write failed:", errText(e));
   }
 }
 

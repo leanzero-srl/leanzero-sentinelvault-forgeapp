@@ -60,6 +60,9 @@ export function capturePresentation(mediaSingleNode) {
   };
 }
 
+/** PURE. A presentation as a log line prints it: the protect-list attrs only (layout and sizes). */
+export const presentationText = (p) => (p ? ["layout", "width", "widthType", "mediaWidth", "mediaHeight"].map((k) => `${k}=${p[k] ?? "-"}`).join(",") : "none");
+
 /** true when any protect-list attr differs (null-safe exact equality). */
 export function presentationDiffers(baseline, current) {
   if (!baseline || !current) return false; // no baseline → no attr protection (legacy seals)

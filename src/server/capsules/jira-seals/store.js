@@ -15,6 +15,7 @@ import { createHash } from "node:crypto";
 import {
   JIRA_SEAL_PREFIX, copyPartRange, jiraCopyGcKey, safeMimeType, jiraSealKey, jiraIssueIndexKey, jiraIssueIndexPrefix, jiraLapseKey, jiraLostKey, jiraNoticeKey, jiraOwnerIndexKey, jiraOwnerIndexPrefix, normId, sealIdOf,
 } from "./logic.js";
+import { errText } from "../../shared/action-log.js";
 
 const asJsonHeaders = { Accept: "application/json", "Content-Type": "application/json" };
 
@@ -38,7 +39,7 @@ export async function putSeal(record, { create = false } = {}) {
   await kvs.set(jiraOwnerIndexKey(record.lockedBy, sealIdOf(record)), {
     attachmentId: record.attachmentId, issueId: record.issueId, issueKey: record.issueKey,
     attachmentName: record.attachmentName, expiresAt: record.expiresAt,
-  }).catch((e) => console.warn("[JIRA-SEAL] owner index write failed:", e?.message || e));
+  }).catch((e) => console.warn("[JIRA-SEAL] owner index write failed:", errText(e)));
   return true;
 }
 
@@ -69,7 +70,7 @@ export async function dropSeal(record, opts = {}) {
   await kvs.delete(jiraSealKey(id));
   const still = await kvs.get(jiraSealKey(id));
   if (still) return { ok: false, reason: "Seal removal could not be confirmed" };
-  await kvs.delete(jiraIssueIndexKey(record.issueId, id)).catch((e) => console.warn("[JIRA-SEAL] index row delete failed:", e?.message || e));
+  await kvs.delete(jiraIssueIndexKey(record.issueId, id)).catch((e) => console.warn("[JIRA-SEAL] index row delete failed:", errText(e)));
   // A MOVE (a restore re-keying the seal onto the re-uploaded file) keeps the seal's bookkeeping and
   // copy: both are keyed by the seal's first attachment id, so they follow the seal, and dropping the
   // notice marker here would reopen the comment window a delete loop must not reopen.
@@ -103,7 +104,7 @@ export async function deleteCopy(copyKey) {
     await kvs.delete(jiraCopyGcKey(copyKey)).catch(() => {});
     return true;
   } catch (e) {
-    console.warn(`[JIRA-SEAL] copy ${copyKey} delete failed, the sweep retries it:`, e?.message || e);
+    console.warn(`[JIRA-SEAL] copy ${copyKey} delete failed, the sweep retries it:`, errText(e));
     const prev = await kvs.get(jiraCopyGcKey(copyKey)).catch(() => null);
     await kvs.set(jiraCopyGcKey(copyKey), {
       copyKey, attempts: (prev?.attempts || 0) + 1, firstAt: prev?.firstAt || new Date().toISOString(), lastError: String(e?.message || e).slice(0, 200),
@@ -171,7 +172,7 @@ export async function syncIssueProperty(issueId, { add = null, removeId = null }
       : await api.asApp().requestJira(path, { method: "DELETE" });
     if (!res.ok && res.status !== 404) console.warn(`[JIRA-SEAL] issue property on ${issueId} answered ${res.status}`);
   } catch (e) {
-    console.warn("[JIRA-SEAL] issue property sync failed:", e?.message || e);
+    console.warn("[JIRA-SEAL] issue property sync failed:", errText(e));
   }
 }
 
@@ -208,7 +209,7 @@ export async function callerPermissions(issueId, { projectId = null } = {}) {
     if (!res.ok) { console.warn(`[JIRA-SEAL] mypermissions answered ${res.status}`); return {}; }
     return (await res.json())?.permissions || {};
   } catch (e) {
-    console.warn("[JIRA-SEAL] mypermissions failed:", e?.message || e);
+    console.warn("[JIRA-SEAL] mypermissions failed:", errText(e));
     return {};
   }
 }
@@ -287,13 +288,12 @@ export async function postIssueComment(issueId, adf) {
       method: "POST", headers: asJsonHeaders, body: JSON.stringify({ body: adf }),
     });
     if (!res.ok) {
-      const t = await res.text();
-      console.warn(`[JIRA-SEAL] comment on ${issueId} refused ${res.status}: ${t.slice(0, 200)}`);
+      console.warn(`[JIRA-SEAL] comment on ${issueId} refused ${res.status}`);
       return { ok: false, status: res.status };
     }
     return { ok: true, status: res.status };
   } catch (e) {
-    console.warn("[JIRA-SEAL] comment failed:", e?.message || e);
+    console.warn("[JIRA-SEAL] comment failed:", errText(e));
     return { ok: false, status: null };
   }
 }

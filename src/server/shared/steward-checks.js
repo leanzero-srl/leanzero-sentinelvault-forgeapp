@@ -2,6 +2,7 @@ import { route } from "@forge/api";
 import { kvs } from "@forge/kvs";
 import { appConfluence, userConfluence, isRateLimited, invocationMemo, noteAuthzUnknown, MEMO_TTL_MS } from "./confluence-call.js";
 import { setWithTtl } from "./kvs-ttl.js";
+import { errText, spaceKeyForLog } from "./action-log.js";
 
 /**
  * Check if the operator is a realm steward
@@ -99,7 +100,7 @@ export function freshCached(v, ttlMs, now = Date.now()) {
 const cacheGet = async (key) => { try { return await kvs.get(key); } catch (_) { return null; } };
 // `at` is when the READ STARTED (a slow read must not look fresher than what it saw).
 const cachePut = async (key, value, ttlMs, at) => {
-  try { await setWithTtl(key, { ...value, at }, ttlMs); } catch (e) { console.warn(`[AUTHZ] cache write ${key.split("-").slice(0, 3).join("-")} failed:`, e?.message || e); }
+  try { await setWithTtl(key, { ...value, at }, ttlMs); } catch (e) { console.warn(`[AUTHZ] cache write ${(key.match(/^authz-(?:space-id|space-admins|groups)/) || ["authz-cache"])[0]} failed:`, errText(e)); }
 };
 
 /** The account's groups ({ ids, names }), RATE_LIMITED, or null when Confluence would not say. */
@@ -127,8 +128,8 @@ async function spaceRefOf(spaceKey) {
     if (freshCached(hit, SPACE_ID_TTL_MS) && hit.key === spaceKey && hit.id) return { id: String(hit.id), key: spaceKey, sourceAt: Number(hit.at) };
     const startedAt = Date.now();
     const sres = await appConfluence(route`/wiki/api/v2/spaces?keys=${spaceKey}&limit=1`, { headers: { Accept: "application/json" } });
-    if (isRateLimited(sres)) { console.warn(`[AUTHZ] space lookup ${spaceKey} -> 429; could not check (nothing granted)`); return RATE_LIMITED; }
-    if (!sres.ok) { console.warn(`[AUTHZ] space lookup ${spaceKey} -> ${sres.status}; not a space admin`); return null; }
+    if (isRateLimited(sres)) { console.warn(`[AUTHZ] space lookup ${spaceKeyForLog(spaceKey)} -> 429; could not check (nothing granted)`); return RATE_LIMITED; }
+    if (!sres.ok) { console.warn(`[AUTHZ] space lookup ${spaceKeyForLog(spaceKey)} -> ${sres.status}; not a space admin`); return null; }
     const space = (await sres.json())?.results?.[0];
     if (!space?.id || space.key !== spaceKey) return null;
     await cachePut(key, { id: String(space.id), key: spaceKey }, SPACE_ID_TTL_MS, startedAt);
@@ -160,8 +161,8 @@ async function spaceAdminSetOf(space) {
           : route`/wiki/api/v2/spaces/${space.id}/permissions?limit=${SPACE_PERMISSION_PAGE}`,
         JH,
       );
-      if (isRateLimited(res)) { console.warn(`[AUTHZ] space permissions ${space.key} -> 429; could not check (nothing granted)`); return RATE_LIMITED; }
-      if (!res.ok) { console.warn(`[AUTHZ] space permissions ${space.key} -> ${res.status}; not a space admin`); return null; }
+      if (isRateLimited(res)) { console.warn(`[AUTHZ] space permissions ${spaceKeyForLog(space.key)} -> 429; could not check (nothing granted)`); return RATE_LIMITED; }
+      if (!res.ok) { console.warn(`[AUTHZ] space permissions ${spaceKeyForLog(space.key)} -> ${res.status}; not a space admin`); return null; }
       const body = await res.json();
       for (const a of body?.results || []) {
         if (a?.operation?.key !== "administer" || a?.operation?.targetType !== "space" || !a?.principal?.id) continue;
@@ -178,7 +179,7 @@ async function spaceAdminSetOf(space) {
       if (seen.has(cursor)) return null; // a cursor that does not advance: the list cannot be read whole
       seen.add(cursor);
     }
-    console.warn(`[AUTHZ] space permissions ${space.key}: more than ${SPACE_PERMISSION_MAX_PAGES} pages; not a space admin`);
+    console.warn(`[AUTHZ] space permissions ${spaceKeyForLog(space.key)}: more than ${SPACE_PERMISSION_MAX_PAGES} pages; not a space admin`);
     return null;
   });
 }
@@ -351,7 +352,7 @@ export async function spaceAdminStatus(accountId, spaceKey, { groupIds = null, s
     const mine = new Set(ids.filter(Boolean).map(String));
     return { admin: set.groups.some((gid) => mine.has(String(gid))), unknown: false };
   } catch (e) {
-    console.error("[AUTHZ] space admin check threw; not a space admin:", e);
+    console.error("[AUTHZ] space admin check threw; not a space admin:", errText(e));
     return { admin: false, unknown: false };
   }
 }
@@ -420,7 +421,7 @@ async function stewardCohortsStatus(operatorAccountId, realmKey) {
 
     return { steward: false, unknown: false };
   } catch (error) {
-    console.error("Error checking steward groups:", error);
+    console.error("Error checking steward groups:", errText(error));
     return { steward: false, unknown: false };
   }
 }
@@ -475,7 +476,7 @@ async function siteAdminStatus(operatorAccountId) {
 
     return { admin: false, unknown: false };
   } catch (error) {
-    console.error("Failed to check site admin status:", error);
+    console.error("Failed to check site admin status:", errText(error));
     return { admin: false, unknown: false };
   }
 }

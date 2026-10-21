@@ -35,6 +35,7 @@ import { resolveBulletinToggles } from "../../shared/bulletin-flags.js";
 import { decideLapseAction, priorNoticeCount, resolveLapsePolicy } from "../../shared/lapse-policy.js";
 import { setUntil } from "../../shared/kvs-ttl.js";
 import { scheduleBackup } from "../backup/hook.js";
+import { errText } from "../../shared/action-log.js";
 
 const activity = (rec, type, actorId, details = {}) => recordActivity({
   type,
@@ -124,7 +125,7 @@ export async function restoreSealedFile(record, { deletedBy = null, requestedBy 
     }
   } catch (e) {
     const error = String(e?.message || e).slice(0, 200);
-    console.error(`[JIRA-SEAL] restore of ${record.attachmentId} on issue ${record.issueId} failed:`, error);
+    console.error(`[JIRA-SEAL] restore of ${record.attachmentId} on issue ${record.issueId} failed:`, errText(error));
     await markLost(record, { reason: "failed", error, retryable: true, deletedBy });
     await activity(record, ACTIVITY.RESTORE_FAILED, told.actorId, { ...told.details, error });
     const flags = await resolveBulletinToggles();
@@ -227,7 +228,7 @@ export async function handleJiraAttachmentDeleted(event) {
     await new Queue({ key: RESTORE_QUEUE }).push({ body: { attachmentId: attId, actorId } });
     return { outcome: "queued" };
   } catch (e) {
-    console.error("[JIRA-SEAL] restore queue push failed, restoring inline:", e?.message || e);
+    console.error("[JIRA-SEAL] restore queue push failed, restoring inline:", errText(e));
     const r = await restoreWithClaim(attId, { deletedBy: actorId });
     await kvs.delete(jiraQueuedKey(attId)).catch(() => {});
     return r;
@@ -241,7 +242,7 @@ export async function jiraRestoreConsumer(event) {
   const body = event?.body || event?.payload || {};
   if (body.kind === "issue-deleted") {
     const r = await handleJiraIssueDeleted({ issue: { id: body.issueId }, atlassianId: body.atlassianId, attempt: body.attempt });
-    console.warn(`[JIRA-SEAL] issue ${body.issueId} deleted (retry ${body.attempt}): ${JSON.stringify(r)}`);
+    console.warn(`[JIRA-SEAL] issue ${body.issueId} deleted (retry ${body.attempt}): orphaned=${r?.orphaned ?? 0} busy=${r?.busy ?? 0}`);
     return;
   }
   const attId = normId(body.attachmentId);
@@ -292,7 +293,7 @@ export async function handleJiraIssueDeleted(event) {
         body: { kind: "issue-deleted", issueId, atlassianId: event?.atlassianId || null, attempt: attempt + 1 },
         delayInSeconds: 30,
       });
-    } catch (e) { console.error(`[JIRA-SEAL] issue ${issueId}: could not queue the busy seals' retry:`, e?.message || e); }
+    } catch (e) { console.error(`[JIRA-SEAL] issue ${issueId}: could not queue the busy seals' retry:`, errText(e)); }
   }
   return { orphaned, busy };
 }
@@ -308,7 +309,7 @@ export async function jiraAttachmentEventTrigger(event) {
     if (type === "avi:jira:deleted:issue") return await handleJiraIssueDeleted(event);
     return { outcome: "ignored" };
   } catch (e) {
-    console.error("[JIRA-SEAL] event handler failed:", e);
+    console.error("[JIRA-SEAL] event handler failed:", errText(e));
     return { outcome: "error" };
   }
 }
@@ -426,7 +427,7 @@ export async function jiraSealSweep({ budgetMs = 100000 } = {}) {
       try { page = await sealPage(cursor); }
       catch (e) {
         if (!cursor) throw e;
-        console.warn("[JIRA-SEAL] sweep cursor refused, starting from the top:", e?.message || e);
+        console.warn("[JIRA-SEAL] sweep cursor refused, starting from the top:", errText(e));
         cursor = undefined;
         continue;
       }
@@ -460,10 +461,10 @@ export async function jiraSealSweep({ budgetMs = 100000 } = {}) {
     }
 
   } catch (e) {
-    console.error("[JIRA-SEAL] sweep failed:", e);
+    console.error("[JIRA-SEAL] sweep failed:", errText(e));
   } finally {
     await releaseLock("jira-seal-sweep-lock", lock);
   }
-  if (out.retried || out.checked || out.orphansEnded || out.copiesDeleted) console.warn(`[JIRA-SEAL] sweep: ${JSON.stringify(out)}`);
+  if (out.retried || out.checked || out.orphansEnded || out.copiesDeleted) console.warn(`[JIRA-SEAL] sweep: retried=${out.retried} restored=${out.restored} orphansEnded=${out.orphansEnded} checked=${out.checked} reminded=${out.reminded} released=${out.released} copiesDeleted=${out.copiesDeleted}`);
   return out;
 }

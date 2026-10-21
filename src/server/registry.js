@@ -25,7 +25,7 @@ import { SIGNED_SEAL_ACTION_KEYS, signSealActionsOn } from "./shared/seal-signat
 import { verifySignature } from "./capsules/workflow/signature.js";
 import { kvs } from "@forge/kvs";
 import { runInvocation, authzUnknownOf, rateLimitOf, busyReason } from "./shared/confluence-call.js";
-import { withActionLog, LOGGED } from "./shared/action-log.js";
+import { withActionLog, LOGGED, errText } from "./shared/action-log.js";
 
 const router = new Resolver();
 
@@ -61,7 +61,7 @@ const withConfigMirror = (key, fn) => async (req) => {
   const result = await fn(req);
   if (result && result.success !== false && result.ok !== false) {
     try { await refreshConfigMirror(scopeOfConfigWrite(key, req?.payload, result), req?.context?.accountId); }
-    catch (e) { console.warn(`[CONFIG-API] mirror after ${key} failed:`, e?.message || e); }
+    catch (e) { console.warn(`[CONFIG-API] mirror after ${key} failed:`, errText(e)); }
   }
   return result;
 };
@@ -87,9 +87,12 @@ const withSealSignature = (key, fn) => async (req) => {
 // authorization question unanswered. When that note is set and the action REFUSED, the answer says
 // so ("Confluence is limiting requests … try again") instead of the refusal it fell back to; the
 // refusal itself stands (nothing is granted on a 429) and its own wording is kept in deniedReason.
-// Answers that succeeded are never touched.
+// Answers that succeeded are never touched, and neither is a refusal that names who decided it
+// (`refusedBy`, shared/trash-rights.js): Confluence's own "no" to a call made after the gate passed is
+// final, whatever an earlier check met on the way.
 export function busyAware(result) {
   if (!authzUnknownOf() || !result || typeof result !== "object" || Array.isArray(result)) return result;
+  if (result.refusedBy) return result;
   const refused = result.success === false || (typeof result.error === "string" && result.success !== true);
   if (!refused) return result;
   const rl = rateLimitOf();

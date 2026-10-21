@@ -7,6 +7,7 @@ import { sealPropertyValue } from "./seal-property.js";
 // owner-or-steward release with partial teardowns) lived here with zero callers; deleted. Releases
 // go through release.js releaseSeal; lapsed seals through the expiry sweep (F5).
 import { isOtherSealOnPage } from "../../shared/live-seal.js";
+import { errText } from "../../shared/action-log.js";
 
 /**
  * Resolve the effective seal hold period, in seconds, for a space.
@@ -48,7 +49,7 @@ export async function touchSealTimestamp() {
   try {
     await kvs.set("protections-last-modified", Date.now());
   } catch (err) {
-    console.warn("[touchSealTimestamp] Failed to update timestamp:", err);
+    console.warn("[touchSealTimestamp] Failed to update timestamp:", errText(err));
   }
 }
 
@@ -103,9 +104,8 @@ export async function writeSealContentProp(contentId, sealData) {
           },
         );
         if (!putResponse.ok) {
-          const errorText = await putResponse.text();
           console.error(
-            `[SEAL-PROPERTY] Failed to update seal property: ${putResponse.status} - ${errorText}`,
+            `[SEAL-PROPERTY] Failed to update seal property: ${putResponse.status}`,
           );
         }
       } else {
@@ -122,20 +122,18 @@ export async function writeSealContentProp(contentId, sealData) {
           },
         );
         if (!postResponse.ok) {
-          const errorText = await postResponse.text();
           console.error(
-            `[SEAL-PROPERTY] Failed to create seal property: ${postResponse.status} - ${errorText}`,
+            `[SEAL-PROPERTY] Failed to create seal property: ${postResponse.status}`,
           );
         }
       }
     } else {
-      const errorText = await getResponse.text();
       console.error(
-        `[SEAL-PROPERTY] Failed to check existing property: ${getResponse.status} - ${errorText}`,
+        `[SEAL-PROPERTY] Failed to check existing property: ${getResponse.status}`,
       );
     }
   } catch (error) {
-    console.error(`[SEAL-PROPERTY] Error storing seal property:`, error);
+    console.error(`[SEAL-PROPERTY] Error storing seal property:`, errText(error));
   }
 }
 
@@ -157,9 +155,8 @@ export async function removeSealContentProp(contentId) {
     if (!getResponse.ok) {
       // 404 means page not found — property is effectively gone
       if (getResponse.status === 404) return;
-      const errorText = await getResponse.text();
       console.error(
-        `[SEAL-PROPERTY] Failed to look up seal property for deletion: ${getResponse.status} - ${errorText}`,
+        `[SEAL-PROPERTY] Failed to look up seal property for deletion: ${getResponse.status}`,
       );
       return;
     }
@@ -177,25 +174,22 @@ export async function removeSealContentProp(contentId) {
     );
 
     if (!response.ok && response.status !== 404) {
-      const errorText = await response.text();
       console.error(
-        `[SEAL-PROPERTY] Failed to delete seal property: ${response.status} - ${errorText}`,
+        `[SEAL-PROPERTY] Failed to delete seal property: ${response.status}`,
       );
     }
   } catch (error) {
-    console.error(`[SEAL-PROPERTY] Error deleting seal property:`, error);
+    console.error(`[SEAL-PROPERTY] Error deleting seal property:`, errText(error));
   }
 }
 
 /**
  * Does any OTHER attachment seal still target this page?
  *
- * The `protection-` content property is ONE per page and gates the media fast path
- * (triggers.js collectMediaSealsForPage), and the inline panel is one per page as well. This
- * used to live in triggers.js (vet F2) while releaseSeal carried its own first-100-rows copy and
- * three other removers did not ask at all — so releasing one seal switched page-body protection
- * off for every other seal on the page. One copy now, cursor-paginated (a single limit(100)
- * misses the page's seals once the site holds more than 100), and every remover asks it.
+ * The `protection-` content property is ONE per page (a mirror for CQL and the UI; the pipeline
+ * finds a page's seals by its KVS marker, shared/guarded-page.js), and the inline panel is one per
+ * page as well. One copy of this question, cursor-paginated (a single limit(100) misses the page's
+ * seals once the site holds more than 100), and every remover asks it.
  * What counts is the pure rule in shared/live-seal.js (isOtherSealOnPage).
  *
  * Fails toward TRUE (keep the property / panel): a scan that throws, or one that hits the
@@ -212,7 +206,7 @@ export async function pageHasOtherLiveSeals(pageId, excludeAttachmentId) {
       query = kvs.query().where("key", WhereConditions.beginsWith("protection-")).limit(100).cursor(nextCursor);
     }
   } catch (e) {
-    console.warn(`[SEAL-PROPERTY] other-seal scan for page ${pageId} failed — keeping the property:`, e?.message || e);
+    console.warn(`[SEAL-PROPERTY] other-seal scan for page ${pageId} failed — keeping the property:`, errText(e));
   }
   return true;
 }
@@ -236,7 +230,7 @@ export async function releaseSealContentPropIfLast(pageId, excludeAttachmentId, 
     await removeSealContentProp(pageId);
     return true;
   } catch (e) {
-    console.warn(`[SEAL-PROPERTY] conditional removal on ${pageId} failed:`, e?.message || e);
+    console.warn(`[SEAL-PROPERTY] conditional removal on ${pageId} failed:`, errText(e));
     return false;
   }
 }

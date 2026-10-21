@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { invoke } from "./bridge";
 import UnsavedFloat from "./UnsavedFloat";
 import { ruleConfigProblem, ruleListRefusal } from "../../server/shared/rule-config.js"; // one completeness rule, shared with the save resolver
+import { errText } from "./error-facts.js";
 
 // Shared Conditions & Validations editor — used by the steward console (global
 // scope) and the realm console (per-space scope). Self-contained: its own
@@ -152,7 +153,7 @@ export default function ValidationsEditor({ scope = "global", spaceKey = null })
           setGlobalRules(Array.isArray(g?.rules) ? g.rules : []);
         }
       } catch (e) {
-        console.error("Load validation config failed:", e);
+        console.error("Load validation config failed:", errText(e));
       } finally {
         setLoading(false);
       }
