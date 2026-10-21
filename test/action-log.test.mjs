@@ -48,11 +48,17 @@ eq("templated id with data → *", names.nameOfId("cls-space-row-FINANCE"), "cls
 eq("templated id with an attachment id → *", names.nameOfId("jv-seal-10042"), "jv-seal-*");
 eq("testId prop + fixed tail", names.nameOfId("sv-decline-confirm"), "sv-decline-confirm");
 eq("unknown id → nothing", names.nameOfId("john-smith"), null);
+// A site-defined slug that equals a word of the source is still not printed (review 2026-10-21).
+eq("classification level slug → *", names.nameOfId("pd-level-option-high"), "pd-level-option-*");
+eq("workflow state slug → *", names.nameOfId("pd-wf-move-draft"), "pd-wf-move-*");
+eq("menu item id (code-only list) is kept", names.nameOfId("pd-menu-extend"), "pd-menu-extend");
+{ const { PREFIXES } = await import("../src/ui/kit/ui-action-ids.gen.js"); eq("every code-only prefix is a real templated head", names.CODE_ONLY_PREFIXES.filter((p) => !PREFIXES.includes(p)), []); }
 eq("non-string → nothing", names.nameOfId(42), null);
 for (const bad of ["john.smith", "a@b.c", "pd-close~1", "pd-close>div", "secret-AKIA1234", "pd-tab-FINANCE", "x".repeat(200), "cls-space-row-finance"]) {
   ok(`server refuses trail entry ${JSON.stringify(bad).slice(0, 40)}`, !names.isKnownName(bad));
 }
 for (const good of ["pd-close", "pd-close~3", "jv-row-*>button", "cls-space-row-*", "pd-tab-activity"]) ok(`server accepts ${good}`, names.isKnownName(good));
+ok("server refuses a level slug in full", !names.isKnownName("pd-level-option-high"));
 eq("repeat collapses", names.pushName(names.pushName(["pd-close"], "pd-close"), "pd-close"), ["pd-close~3"]);
 eq("trail keeps the newest 20", names.pushName(Array.from({ length: 20 }, (_, i) => (i % 2 ? "pd-close" : "pd-modal")), "pd-tab-overview").length, 20);
 
@@ -78,6 +84,8 @@ eq("every wrappedActions entry is wrapped", wrappedActions.filter(([, fn]) => !f
   const server = walk(join(root, "src/server")).concat([join(root, "src/boot.js")]);
   const resolvers = server.filter((f) => /new Resolver\(/.test(readFileSync(f, "utf8")));
   eq("exactly one Resolver in the backend", resolvers.map((f) => f.slice(root.length + 1)), ["src/server/registry.js"]);
+  const everywhere = walk(join(root, "src"));
+  eq("no makeResolver / second Resolver anywhere in src", everywhere.filter((f) => /makeResolver\(|from ["']@forge\/resolver["']/.test(readFileSync(f, "utf8"))).map((f) => f.slice(root.length + 1)), ["src/server/registry.js"]);
   const reg = read("src/server/registry.js");
   eq("router.define is called only inside define()", (reg.match(/router\.define\(/g) || []).length, 1);
   ok("define() wraps whatever is not wrapped", /const define = \(key, fn\) => router\.define\(key, fn\[LOGGED\] \? fn : withActionLog\(/.test(reg));
@@ -117,6 +125,16 @@ eq("every wrappedActions entry is wrapped", wrappedActions.filter(([, fn]) => !f
   const [l] = take();
   eq("heartbeat is logged", [l && l.action, l && l.outcome, l && l.surface], ["app.heartbeat", "ok", "none"]);
 }
+{
+  // A real resolver that throws: the line names the source file:line, the message never.
+  let thrown = null;
+  try { await actionRouter.get("check-audit-status")({ payload: {}, context: { accountId: SECRETS.accountId, moduleKey: "realm-console" } }); } catch (e) { thrown = e; }
+  ok("the resolver's throw reaches the caller", thrown && /Space ID is required/.test(thrown.message));
+  const [l] = take();
+  eq("error line from a real resolver", [l && l.action, l && l.outcome, l && l.errorType], ["realms.check-audit-status", "error", "Error"]);
+  ok(`error step is the source line (got ${l && l.step})`, /^server\/capsules\/realms\/actions\.js:\d+$/.test(l && l.step));
+  ok("error line carries no message", !JSON.stringify(l).includes("Space ID"));
+}
 
 // ── C. the wrapper itself ────────────────────────────────────────────────────────────────────
 {
@@ -125,7 +143,7 @@ eq("every wrappedActions entry is wrapped", wrappedActions.filter(([, fn]) => !f
   await w({ payload: { pageId: SECRETS.page, __lzTrail: ["pd-close"] }, context: {} });
   eq("the action never sees the trail", seen, { pageId: SECRETS.page });
   await w({ payload: { __lzTrail: ["pd-close"], __lzBare: 1 }, context: {} });
-  eq("a bare call gets undefined back", seen, undefined);
+  eq("a bare call gets {} (what @forge/resolver hands a payload-less call)", seen, {});
   await w({ payload: [1, 2], context: {} });
   eq("a non-object payload passes untouched", seen, [1, 2]);
   take();
@@ -147,6 +165,17 @@ eq("every wrappedActions entry is wrapped", wrappedActions.filter(([, fn]) => !f
   const e = new Error(`x\n    at ${SECRETS.space}Steal (evil)`);
   eq("step ignores frames inside the message", AL.stepOf(e) === `${SECRETS.space}Steal`, false);
   eq("non-identifier error names are not printed", AL.errorFacts({ name: SECRETS.content }).errorType, "thrown-object");
+  const hostile = { get stack() { throw new Error("getter boom"); }, get name() { throw new Error("getter boom"); } };
+  eq("a throwing getter never escapes errorFacts", AL.errorFacts(hostile).errorType, "unreadable");
+  const revoked = Proxy.revocable({}, {}); revoked.revoke();
+  eq("a revoked proxy never escapes errorFacts", AL.errorFacts(revoked.proxy).errorType, "unreadable");
+  const viaAll = await Promise.all([(async function realStep() { await null; throw new Error("x"); })()]).catch((e) => e);
+  ok("Promise.all frames are not the step", AL.stepOf(viaAll) !== "all");
+  // The wrapper rethrows the ORIGINAL value even when it is hostile.
+  let caught = null;
+  try { await AL.withActionLog("a", "b", async () => { throw hostile; })({ payload: {}, context: {} }); } catch (e) { caught = e; }
+  ok("the hostile value itself reaches the caller", caught === hostile);
+  take();
 }
 {
   // Classification of answers.
@@ -155,12 +184,15 @@ eq("every wrappedActions entry is wrapped", wrappedActions.filter(([, fn]) => !f
   eq("dynamic refusal text: no reason", AL.classifyResult({ success: false, reason: `Sealed by ${SECRETS.title}` }), { outcome: "refused" });
   eq("permission refusal: denied", AL.classifyResult({ success: false, reason: "Only a space admin can edit workflow definitions" }).outcome, "denied");
   eq("permission refusal built at runtime: denied without text", AL.classifyResult({ success: false, reason: `You do not have permission to edit ${SECRETS.title}` }), { outcome: "denied" });
+  for (const t of ["Each level must be an object", "Rules must be a list.", "levels must be an array", "Only a label-scoped workflow can be removed", "Missing params"]) eq(`input refusal stays refused: ${t}`, AL.classifyResult({ success: false, reason: t }).outcome, "refused");
+  for (const t of ["Not the seal owner", "Not the section owner", "You are not an approver for this transition", "You cannot read that page.", "Not signed in", "Not authorized", "Only a space admin can edit workflow definitions"]) eq(`permission refusal is denied: ${t}`, AL.classifyResult({ success: false, reason: t }).outcome, "denied");
   eq("signature", AL.classifyResult({ success: false, reason: "x", signatureRequired: true }).outcome, "denied");
   eq("busy", AL.classifyResult({ success: false, busy: true, reason: "Confluence is limiting requests" }), { outcome: "busy" });
   eq("error string", AL.classifyResult({ error: "Not authorized" }).outcome, "denied");
   eq("job: own outcome re-checked", AL.classifyJob({ outcome: "error", step: SECRETS.title, errorType: "TypeError" }), { outcome: "error", errorType: "TypeError" });
   eq("job: failed status", AL.classifyJob({ ok: true, status: "failed" }), { outcome: "error" });
   eq("job: ok false", AL.classifyJob({ ok: false }), { outcome: "refused" });
+  eq("job: an identifier step from errorFacts is kept", AL.classifyJob({ outcome: "error", step: "sealTheFile" }), { outcome: "error", step: "sealTheFile" });
 }
 {
   // Timeout: a line before the platform limit, then the real outcome marked afterTimeout.
@@ -180,6 +212,7 @@ const boot = await import("../src/server/logged-entrypoints.js");
   const bootSrc = read("src/boot.js");
   const handlers = [...manifest.matchAll(/handler:\s*boot\.(\w+)/g)].map((m) => m[1]);
   ok("manifest lists the functions (sanity)", handlers.length >= 15);
+  eq("every manifest handler lives in boot.js", [...manifest.matchAll(/handler:\s*([\w.]+)/g)].map((m) => m[1]).filter((h) => !h.startsWith("boot.")), []);
   const reexport = bootSrc.match(/export \{([^}]*)\} from "\.\/server\/logged-entrypoints\.js"/);
   const fromLogged = reexport ? reexport[1].split(",").map((x) => x.trim()).filter(Boolean) : [];
   const exported = (h) => new RegExp(`export (?:const|async function|function) ${h}\\b|export \\{[^}]*\\b${h}\\b[^}]*\\}`).test(bootSrc);
@@ -209,6 +242,8 @@ const boot = await import("../src/server/logged-entrypoints.js");
   const [l] = take();
   eq("job line for a missing REST job", [l.via, l.action, l.outcome], ["job", "job.config-api", "refused"]);
   eq("job line leaks nothing", leaks(l), []);
+  const rj = (r) => boot.__classifyRestJob(r).outcome;
+  eq("REST job outcomes", [rj({ ok: true, status: "done", summary: { failed: 0 } }), rj({ ok: true, status: "failed", summary: { failed: 0, refused: 2 } }), rj({ ok: true, status: "partial", summary: { failed: 1 } }), rj({ ok: true, status: "failed", crashed: true, summary: { failed: 0 } }), rj({ ok: false })], ["ok", "refused", "error", "error", "refused"]);
   await boot.privacyConsumer({ body: { kind: SECRETS.space } });
   const [l2] = take();
   eq("an unknown job kind is not printed", l2.action, "job.privacy");
@@ -219,7 +254,7 @@ const boot = await import("../src/server/logged-entrypoints.js");
   const ui = walk(join(root, "src/ui")).filter((f) => !f.endsWith("kit/bridge.js"));
   const direct = ui.filter((f) => {
     const s = readFileSync(f, "utf8");
-    return /import\s*\{[^}]*\binvoke\b[^}]*\}\s*from\s*["']@forge\/bridge["']/.test(s) || /\{\s*[^}]*\binvoke\b[^}]*\}\s*=\s*await import\(["']@forge\/bridge["']\)/.test(s) || /@forge\/bridge["']\)\.then\([^)]*invoke/.test(s);
+    return /import\s*\*\s*as\s*\w+\s*from\s*["']@forge\/bridge["']/.test(s) || /import\s+\w+\s*(?:,\s*\{[^}]*\})?\s*from\s*["']@forge\/bridge["']/.test(s) || /export\s*\{[^}]*\binvoke\b[^}]*\}\s*from\s*["']@forge\/bridge["']/.test(s) || /import\s*\{[^}]*\binvoke\b[^}]*\}\s*from\s*["']@forge\/bridge["']/.test(s) || /\{\s*[^}]*\binvoke\b[^}]*\}\s*=\s*await import\(["']@forge\/bridge["']\)/.test(s) || /@forge\/bridge["']\)\.then\([^)]*invoke/.test(s);
   }).map((f) => f.slice(root.length + 1));
   eq("no UI file takes invoke straight from @forge/bridge", direct, []);
   const attrs = ui.flatMap((f) => [...readFileSync(f, "utf8").matchAll(/data-lz=\{/g)].map(() => f.slice(root.length + 1)));
