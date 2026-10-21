@@ -153,7 +153,10 @@ export async function runValidationMirrorScrubLocked({ budgetMs = SWEEP_BUDGET_M
  * in the last SCRUB_ALIVE_MS) or waiting (a rate-limit reset, a back-off, a retry round) is left alone.
  * Confluence installation only. Never throws.
  */
-export async function kickValidationMirrorScrub(context = null) {
+export async function kickValidationMirrorScrub(context = null, { fresh = false } = {}) {
+  // `fresh`: the caller has just read privacy-migrations itself (the sweep) and found no flag, so what
+  // this instance remembered is out of date (a flag can only go away by a restore or by hand).
+  if (fresh) scrubKnownDone = false;
   if (scrubKnownDone) return false;
   try {
     if (context && !isConfluenceInstall(context)) return false;
@@ -623,7 +626,7 @@ export async function runPrivacySweep({ reason = "manual", nowMs = Date.now(), r
     // The scrub runs in its own queue chain (never inside this sweep, so it can never hold up reporting).
     const validationScrubDone = !!migrations[SCRUB_FLAG];
     summary.validationMirror = validationScrubDone && typeof migrations[SCRUB_FLAG] === "object" ? { done: true, ...migrations[SCRUB_FLAG] } : { done: validationScrubDone };
-    if (!validationScrubDone) await kickValidationMirrorScrub();
+    if (!validationScrubDone) await kickValidationMirrorScrub(null, { fresh: true });
 
     // Report what is due (≤ once per cycle per account), 90 at a time, saving after each batch.
     const plan = planReport(prior, seen, nowMs, { cycleMs, exclude });
