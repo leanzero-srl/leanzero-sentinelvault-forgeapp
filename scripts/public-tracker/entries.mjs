@@ -42,6 +42,9 @@ export const COMPONENTS = {
 const JIRA_ON = "It works once a site admin has connected Jira to Sentinel Vault in Atlassian Administration.";
 
 export const ENTRIES = {
+  // 8.13.0: written by the release door on 2026-10-21 (rows: model; review pass: model).
+  "c64fc647c00462b6": ["Each action now writes one line to the app's logs, with no names, IDs, page content or anything typed", "D", {"withhold":"touches security, permissions, isolation or keys (release door net)"}],
+
   // 8.12.0 (2026-10-18). Outcome wording only (this file is public).
   f5edf7b2eb1d89de: ["A permission change in Confluence reaches Sentinel Vault within a minute", "C"],
   // The public text says only what 8.12.0 does (review 2026-10-18): the in-app line's "says so and asks you to try
