@@ -58,6 +58,7 @@ export const ACTION_LOG_EXEMPT = Object.freeze({
   testStateTrigger: "the dev-only harness hook; production strips it",
   artifactEventTrigger: "a Confluence product event, not a user action in the app",
   pageContentTrigger: "a Confluence product event, not a user action in the app",
+  pageUnarchivedTrigger: "a Confluence product event (a page left the archive), not a user action in the app",
   lifecycleTrigger: "install / uninstall events",
   jiraAttachmentEventTrigger: "a Jira product event; the restore it queues is logged as job.jira-restore",
   expirySweepTask: "a scheduled sweep",

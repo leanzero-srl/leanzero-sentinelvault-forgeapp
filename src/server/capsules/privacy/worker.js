@@ -134,10 +134,10 @@ export async function runValidationMirrorScrubLocked({ budgetMs = SWEEP_BUDGET_M
     if (r.done) {
       const m = (await kvs.get(MIGRATIONS_KEY).catch(() => null)) || {};
       // What could not be done is kept with the flag (and shown in the sweep's status), not only logged.
-      await kvs.set(MIGRATIONS_KEY, { ...m, [SCRUB_FLAG]: { at: nowIso(), pages: r.pages, scrubbed: r.scrubbed, skipped: r.skipped || 0, skippedPhases: r.skippedPhases || [] } });
+      await kvs.set(MIGRATIONS_KEY, { ...m, [SCRUB_FLAG]: { at: nowIso(), pages: r.pages, scrubbed: r.scrubbed, skipped: r.skipped || 0, skippedPhases: r.skippedPhases || [], archivedLeft: r.archivedLeft || 0 } });
     }
     const waitS = r.waitUntil ? Math.max(0, Math.round((r.waitUntil - Date.now()) / 1000)) : 0;
-    console.info(`[VALIDATION-MIRROR] scrub pages=${r.pages} scrubbed=${r.scrubbed} failed=${r.failed} done=${r.done}${r.skipped ? ` skipped=${r.skipped}` : ""}${r.skippedPhases?.length ? ` skippedPhases=${r.skippedPhases.map((x) => safeKey(x)).join(",")}` : ""}${r.phase ? ` next=${safeKey(r.phase)}` : ""}${waitS ? ` wait=${waitS}s` : ""}`);
+    console.info(`[VALIDATION-MIRROR] scrub pages=${r.pages} scrubbed=${r.scrubbed} failed=${r.failed} done=${r.done}${r.skipped ? ` skipped=${r.skipped}` : ""}${r.skippedPhases?.length ? ` skippedPhases=${r.skippedPhases.map((x) => safeKey(x)).join(",")}` : ""}${r.archivedLeft ? ` archivedLeft=${r.archivedLeft}` : ""}${r.phase ? ` next=${safeKey(r.phase)}` : ""}${waitS ? ` wait=${waitS}s` : ""}`);
     // Erasures stay open while the scrub runs: once it is done, a sweep finishes them now, not in a week.
     if (r.done) await queuePrivacySweep("validation-scrub").catch((e) => console.warn("[VALIDATION-MIRROR] could not queue the sweep:", errText(e)));
     return r;

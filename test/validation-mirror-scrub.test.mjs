@@ -343,6 +343,20 @@ try {
     const idx2 = await kvs.get("privacy-accounts-0000");
     ok("[9] ...and only then is the person marked erased", !!idx2?.[ADMIN]?.x);
   }
+  // 11. An archived page cannot be changed (Confluence answers 404/403): counted, no retry rounds, and
+  // cleaned by the unarchive trigger the moment it is a page again.
+  {
+    const { w } = site(12);
+    onConfluence((method, rawPath) => (method === "PUT" && decodeURIComponent(rawPath).includes("/pages/2001/properties/") ? { status: 404, body: {} } : undefined));
+    const r = await scrub.runValidationMirrorScrub({ budgetMs: 60000, rand: () => 0 });
+    eq("[11] the job finishes without retry rounds", [r.done, r.skipped, r.archivedLeft], [true, 0, 1]);
+    ok("[11] ...the archived page still holds its old property (Confluence refused)", ids(propOf(w, "2001")).length > 0);
+    fake.handlers.pop(); // the page left the archive
+    const { pageUnarchivedTrigger } = await import("../src/boot.js");
+    await pageUnarchivedTrigger({ eventType: "avi:confluence:unarchived:page", content: { id: "2001" } });
+    eq("[11] the unarchive trigger cleans it", ids(propOf(w, "2001")).length, 0);
+    eq("[11] ...and a clean page is left alone", await scrub.scrubOnePageMirror("2001"), "clean");
+  }
   // 10. Pure helpers.
   {
     eq("[10] an old property needs the scrub", scrub.mirrorNeedsScrub(old()), true);
