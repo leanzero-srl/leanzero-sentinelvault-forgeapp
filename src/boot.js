@@ -14,6 +14,15 @@ export const lifecycleTrigger = asInvocation(lifecycleTriggerCore, { label: "lif
 export const expirySweepTask = asInvocation(expirySweepTaskCore, { label: "expirySweepTask" });
 export const workflowSweep = asInvocation(workflowSweepCore, { label: "workflowSweep" });
 export const pageGuardSweep = asInvocation(pageGuardSweepCore, { label: "pageGuardSweep" });
+// 8.14.1: a page that leaves the archive gets its pre-8.14 validation property rewritten without account
+// ids (Confluence refuses changes while a page is archived; validations/mirror-scrub.js).
+import { scrubOnePageMirror } from "./server/capsules/validations/mirror-scrub.js";
+export const pageUnarchivedTrigger = asInvocation(async (event) => {
+  const id = event?.content?.id;
+  if (!id) return;
+  const r = await scrubOnePageMirror(String(id));
+  if (r !== "clean") console.info(`[VALIDATION-MIRROR] unarchived page: ${r}`);
+}, { label: "pageUnarchivedTrigger" });
 import { sealIndexCron as sealIndexCronCore } from "./server/capsules/realms/scan-worker.js";
 import { backupSweep } from "./server/capsules/backup/worker.js";
 import { privacySweepCheck } from "./server/capsules/privacy/worker.js";

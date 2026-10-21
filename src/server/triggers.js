@@ -2960,9 +2960,13 @@ export async function sweepRestoreRechecks({ limit = 20 } = {}) {
   return { judged, enforced, left };
 }
 
-export async function pageGuardSweep() {
+export async function pageGuardSweep(event = null, context = null) {
   const started = Date.now();
   await sweepRestoreRechecks();
+  // 8.14.1: the one-time scrub of pre-8.14 validation mirrors starts from here (one KVS read per fresh
+  // instance once it is done, nothing after that). Confluence installation only.
+  try { const { kickValidationMirrorScrub } = await import("./capsules/privacy/worker.js"); await kickValidationMirrorScrub(context || event?.context || null); }
+  catch (e) { console.warn("[VALIDATION-MIRROR] kick failed:", errText(e)); }
   // Once after an upgrade or a restore: every page with a seal record gets its KVS marker.
   try { const b = await backfillGuardMarkers(); if (!b.skipped) console.info(`[GUARD-MARKER] backfill written=${b.written} done=${b.done}`); }
   catch (e) { console.error("[GUARD-MARKER] backfill failed:", errText(e)); }

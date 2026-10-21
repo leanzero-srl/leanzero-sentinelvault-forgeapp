@@ -185,6 +185,8 @@ modules:
       handler: boot.pageGuardSweep
     - key: page-content-trigger
       handler: boot.pageContentTrigger
+    - key: page-unarchived-trigger
+      handler: boot.pageUnarchivedTrigger
     - key: ai-validation-fn
       handler: boot.aiValidationConsumer
       timeoutSeconds: 120
@@ -245,6 +247,11 @@ modules:
       events:
         - avi:confluence:updated:page
         - avi:confluence:created:page
+    # 8.14.1 — a page leaving the archive: its pre-8.14 validation property is rewritten without ids.
+    - key: page-unarchived-events
+      function: page-unarchived-trigger
+      events:
+        - avi:confluence:unarchived:page
     - key: app-lifecycle-events
       function: lifecycle-trigger
       events:

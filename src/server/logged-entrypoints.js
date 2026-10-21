@@ -50,7 +50,7 @@ export const configApiConsumer = withJobLog("config-api", configApiConsumerCore,
 export const realmScanConsumer = withJobLog("realm-audit", realmScanConsumerCore, { kinds: ["byline-refresh"] });
 export const aiValidationConsumer = withJobLog("ai-validation", aiValidationConsumerCore, { kinds: ["gate"], kindOf: (e) => e?.body?.mode, limitMs: 120_000 });
 export const backupConsumer = withJobLog("backup", backupConsumerCore, { kinds: ["backup", "job"] });
-export const privacyConsumer = withJobLog("privacy", privacyConsumerCore, { kinds: ["sweep"] });
+export const privacyConsumer = withJobLog("privacy", privacyConsumerCore, { kinds: ["sweep", "validation-scrub"] });
 export const jiraRestoreConsumer = withJobLog("jira-restore", jiraRestoreConsumerCore, { kinds: ["issue-deleted"], limitMs: 300_000 });
 
 /** Manifest functions that are NOT user actions, and why (test/action-log.test.mjs reads this). */
@@ -58,6 +58,7 @@ export const ACTION_LOG_EXEMPT = Object.freeze({
   testStateTrigger: "the dev-only harness hook; production strips it",
   artifactEventTrigger: "a Confluence product event, not a user action in the app",
   pageContentTrigger: "a Confluence product event, not a user action in the app",
+  pageUnarchivedTrigger: "a Confluence product event (a page left the archive), not a user action in the app",
   lifecycleTrigger: "install / uninstall events",
   jiraAttachmentEventTrigger: "a Jira product event; the restore it queues is logged as job.jira-restore",
   expirySweepTask: "a scheduled sweep",
