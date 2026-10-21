@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { invoke } from "@forge/bridge";
+import { invoke } from "./bridge";
 import { MiniSelect } from "./WorkflowSettingsEditor";
 import { ActivityGlyph } from "./ActivityFeed";
 import {

@@ -8,7 +8,7 @@
  * card's error row shows it.
  */
 import React, { useCallback, useState } from "react";
-import { invoke, view, router } from "@forge/bridge";
+import { invoke, view, router } from "./bridge";
 import Dialog from "./Dialog";
 import { myWorkPath } from "./my-work-path.js";
 

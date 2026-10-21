@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { invoke } from "@forge/bridge";
+import { invoke } from "./bridge";
 import { workflowRuleSentence } from "./workflow-rule.js"; // WF-11: the effective rule, one sentence
 
 // Per-space document-workflow settings (#42). Mirrors ValidationsEditor's shape and

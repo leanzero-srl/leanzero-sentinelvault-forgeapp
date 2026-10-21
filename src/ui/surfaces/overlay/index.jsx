@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { createRoot } from "react-dom/client";
-import { invoke, view, router } from "@forge/bridge";
+import { invoke, view, router } from "../../kit/bridge";
 import { enablePaletteSync } from "../../kit/palette-sync";
 import { flashArtifactSealed, flashArtifactUnsealed } from "../../kit/flash-messages";
 import ThumbnailPreview from "../../kit/ThumbnailPreview";

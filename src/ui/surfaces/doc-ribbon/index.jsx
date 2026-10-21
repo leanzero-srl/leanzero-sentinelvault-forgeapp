@@ -16,7 +16,7 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { createRoot } from "react-dom/client";
 import { createPortal } from "react-dom";
-import { invoke, view, Modal, router } from "@forge/bridge";
+import { invoke, view, Modal, router } from "../../kit/bridge";
 import { updateBylineProperties } from "@forge/confluence-bridge"; // 8.11.0: keep the byline item under the title in step
 import { bylineSyncStep } from "../../kit/byline-sync.js";
 import { enablePaletteSync } from "../../kit/palette-sync";

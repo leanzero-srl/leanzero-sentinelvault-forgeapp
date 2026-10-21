@@ -6,7 +6,7 @@ import { ConfirmDialog } from "../../kit/Dialog";
 import { orphanLetGoCopy } from "../../kit/jira-release-copy.js";
 import { assembleCopy } from "../../kit/jira-copy-download.js";
 import { shouldPoll, POLL_MS } from "../../kit/my-work-refresh.js";
-import { invoke, router } from "@forge/bridge";
+import { invoke, router } from "../../kit/bridge";
 import { enablePaletteSync } from "../../kit/palette-sync";
 import { when, sealSentence, WORDS } from "../../kit/status-language.js"; // SEC-3: one vocabulary, one clock
 import WorkflowInbox from "../../kit/WorkflowInbox";

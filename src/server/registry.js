@@ -25,30 +25,34 @@ import { SIGNED_SEAL_ACTION_KEYS, signSealActionsOn } from "./shared/seal-signat
 import { verifySignature } from "./capsules/workflow/signature.js";
 import { kvs } from "@forge/kvs";
 import { runInvocation, authzUnknownOf, rateLimitOf, busyReason } from "./shared/confluence-call.js";
+import { withActionLog, LOGGED } from "./shared/action-log.js";
 
 const router = new Resolver();
 
-export const allActions = [
-  ...sealingActions,
-  ...policyActions,
-  ...realmActions,
-  ...operatorActions,
-  ...bulletinActions,
-  ...entitlementActions,
-  ...panelActions,
-  ...editReqActions,
-  ...sectionSealActions,
-  ...validationActions,
-  ...workflowActions,
-  ...activityActions,
-  ...classificationActions,
-  ...pageDetailsActions,
-  ...configApiActions,
-  ...backupActions,
-  ...privacyActions,
-  ...jiraSealActions,
-  ...ribbonActions,
-];
+// The capsule each action comes from names its area in the action log ("sealing.lock-attachment").
+export const CAPSULES = Object.freeze([
+  ["sealing", sealingActions],
+  ["policies", policyActions],
+  ["realms", realmActions],
+  ["operators", operatorActions],
+  ["bulletins", bulletinActions],
+  ["entitlements", entitlementActions],
+  ["panels", panelActions],
+  ["editreq", editReqActions],
+  ["section-seals", sectionSealActions],
+  ["validations", validationActions],
+  ["workflow", workflowActions],
+  ["activity", activityActions],
+  ["classification", classificationActions],
+  ["page-details", pageDetailsActions],
+  ["config-api", configApiActions],
+  ["backup", backupActions],
+  ["privacy", privacyActions],
+  ["jira-seals", jiraSealActions],
+  ["ribbon", ribbonActions],
+]);
+export const allActions = CAPSULES.flatMap(([, list]) => list);
+const areaOf = new Map(CAPSULES.flatMap(([area, list]) => list.map(([key]) => [key, area])));
 
 // One home for "a config write refreshes the Confluence-side mirror": every UI save of site or
 // space configuration passes through here, so the export a customer GETs over Confluence REST
@@ -109,10 +113,14 @@ export const wrappedActions = allActions.map(([key, fn]) => {
   let wrapped = CONFIG_WRITER_KEYS.includes(key) ? withConfigMirror(key, fn) : fn;
   if (WRITE_ACTIONS.includes(key)) wrapped = withBackupHook(key, wrapped);
   if (SIGNED_SEAL_ACTION_KEYS.includes(key)) wrapped = withSealSignature(key, wrapped);
-  return [key, withInvocation(key, wrapped)]; // outermost: the backup, mirror and signature wrappers run inside it
+  // The action log is the OUTERMOST wrapper: it strips the UI trail before anything reads the payload,
+  // and its one line sees the answer the caller gets (busyAware included) and the whole time taken.
+  return [key, withActionLog(areaOf.get(key), key, withInvocation(key, wrapped))]; // the backup, mirror and signature wrappers run inside
 });
-wrappedActions.forEach(([key, fn]) => router.define(key, fn));
+// ONE door to the router: every definition goes through the action log (test/action-log.test.mjs).
+const define = (key, fn) => router.define(key, fn[LOGGED] ? fn : withActionLog("app", key, fn));
+wrappedActions.forEach(([key, fn]) => define(key, fn));
 
-router.define("heartbeat", async () => "Sentinel Vault operational");
+define("heartbeat", async () => "Sentinel Vault operational");
 
 export const actionRouter = router.getDefinitions();

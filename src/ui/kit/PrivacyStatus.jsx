@@ -4,7 +4,7 @@
  * only). Renders inside the group card as one more settings row.
  */
 import React, { useState, useEffect, useCallback } from "react";
-import { invoke } from "@forge/bridge";
+import { invoke } from "./bridge";
 import { describeSweep, whenText as when } from "./privacy-format.js";
 
 export default function PrivacyStatus() {

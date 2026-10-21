@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { invoke, view, router, Modal } from "@forge/bridge";
+import { invoke, view, router, Modal } from "../../kit/bridge";
 import { enablePaletteSync } from "../../kit/palette-sync";
 import ActivityFeed, { ActivityRow } from "../../kit/ActivityFeed";
 import { ACTIVITY_CATEGORIES, categoryOf } from "../../kit/activity-format";

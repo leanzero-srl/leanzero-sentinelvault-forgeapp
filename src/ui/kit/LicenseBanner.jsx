@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { invoke, router } from "@forge/bridge";
+import { invoke, router } from "./bridge";
 import { shouldShowLicenseBanner } from "./license.js";
 
 // Non-blocking "unlicensed" nag banner for the admin surfaces. Calls check-license once; renders
