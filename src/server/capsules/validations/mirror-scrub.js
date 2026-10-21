@@ -17,8 +17,9 @@
  *   phase "search"    /wiki/rest/api/search with includeArchivedSpaces=true, the property expanded
  *                     inline, 100 per request: current pages in every space, archived spaces included
  *                     (content/search leaves those out: the personal spaces of people who left);
- *   phase "archived"  /wiki/rest/api/content?status=archived, same expansion (CQL never returns these);
- *   phase "trashed"   /wiki/rest/api/content?status=trashed, same expansion;
+ *   phase "archived"  /wiki/api/v2/pages?status=archived, each page's property read on its own (CQL never
+ *                     returns these, and the v1 content list answers 410 Gone to an app);
+ *   phase "trashed"   /wiki/api/v2/pages?status=trashed, the same way;
  *   phase "retry"     the pages whose write failed, re-read one by one, at most RETRY_ROUNDS times,
  *                     each at least an hour after the last; what still fails then is counted as
  *                     skipped and logged, and the job ends (a page the app may not write can never
@@ -58,7 +59,6 @@ const MIRROR_FIELDS = new Set(["state", "violations", "version", "checkedAt", "a
 const LIST_PHASES = ["search", "archived", "trashed"];
 const CQL = "type = page order by id";
 const EXPAND_SEARCH = `content.metadata.properties.${PROP}`;
-const EXPAND_CONTENT = `metadata.properties.${PROP}`;
 
 /** PURE. Does a stored property value carry anything a mirror may not (an account id field above all)? */
 export function mirrorNeedsScrub(value) {
@@ -137,8 +137,11 @@ async function fetchBatch(phase, cursor) {
       ? await appConfluence(route`/wiki/rest/api/search?cql=${CQL}&includeArchivedSpaces=${"true"}&limit=${"100"}&expand=${EXPAND_SEARCH}&cursor=${cursor}`)
       : await appConfluence(route`/wiki/rest/api/search?cql=${CQL}&includeArchivedSpaces=${"true"}&limit=${"100"}&expand=${EXPAND_SEARCH}`);
   } else {
-    const start = String(Number(cursor) || 0);
-    res = await appConfluence(route`/wiki/rest/api/content?type=${"page"}&status=${phase}&limit=${"100"}&start=${start}&expand=${EXPAND_CONTENT}`);
+    // v2: the v1 content list answers 410 Gone to an app for archived and trashed pages (measured on
+    // wolfaenpak dev, 2026-10-21), so these are listed with v2 and each property is read on its own.
+    res = cursor
+      ? await appConfluence(route`/wiki/api/v2/pages?status=${phase}&limit=${"250"}&cursor=${cursor}`)
+      : await appConfluence(route`/wiki/api/v2/pages?status=${phase}&limit=${"250"}`);
   }
   if (!res.ok) return { status: res.status, items: [], next: null };
   const near = nearLimit(res);
@@ -149,9 +152,8 @@ async function fetchBatch(phase, cursor) {
       .map((c) => ({ pageId: String(c.id), prop: asProp(c?.metadata?.properties?.[PROP]) }));
     return { status: res.status, items, next: cursorOf(data?._links?.next), near };
   }
-  const items = rows.filter((c) => c && c.id).map((c) => ({ pageId: String(c.id), prop: asProp(c?.metadata?.properties?.[PROP]) }));
-  const more = rows.length > 0 && !!data?._links?.next;
-  return { status: res.status, items, next: more ? String((Number(cursor) || 0) + rows.length) : null, near };
+  const items = rows.filter((c) => c && c.id).map((c) => ({ pageId: String(c.id), prop: null, needsRead: true }));
+  return { status: res.status, items, next: rows.length > 0 ? cursorOf(data?._links?.next) : null, near };
 }
 
 const fresh = (t0) => ({ phase: LIST_PHASES[0], cursor: null, pages: 0, scrubbed: 0, failedIds: [], overflow: 0, retryRound: 0, waitUntil: null, backoffS: 0, listFailures: 0, skippedPhases: [], hourStart: Math.floor(t0 / 3600000) * 3600000, hourPages: 0, startedAt: new Date(t0).toISOString() });
@@ -239,16 +241,24 @@ export async function runValidationMirrorScrub({ budgetMs = 600000, now = () => 
     }
     let scrubbed = 0;
     const failed = [];
+    let reads = 0;
     for (const it of batch.items) {
-      const r = await scrubOne(it.pageId, it.prop);
+      let prop = it.prop;
+      if (it.needsRead) {
+        reads += 1;
+        prop = await readProperty(it.pageId).catch(() => undefined);
+        if (prop === "limited") { state.scrubbed += scrubbed; for (const id of failed) noteFailed(id); state.hourPages += reads; return limited(); }
+        if (prop === undefined) { failed.push(it.pageId); continue; }
+      }
+      const r = await scrubOne(it.pageId, prop);
       // A 429 on a write: resume this batch after the reset (the cursor stays on it; nothing of
       // this batch is counted yet, and the pages already rewritten are clean on the re-read).
-      if (r === "limited") { state.scrubbed += scrubbed; for (const id of failed) noteFailed(id); return limited(); }
+      if (r === "limited") { state.scrubbed += scrubbed; for (const id of failed) noteFailed(id); state.hourPages += reads; return limited(); }
       if (r === "scrubbed") scrubbed += 1;
       if (r === "failed") failed.push(it.pageId);
     }
     state.pages += batch.items.length;
-    state.hourPages += batch.items.length + scrubbed;
+    state.hourPages += batch.items.length + reads + scrubbed;
     state.scrubbed += scrubbed;
     for (const id of failed) noteFailed(id);
     if (batch.near) { if (batch.next) state.cursor = batch.next; else { const k = LIST_PHASES.indexOf(state.phase); if (k < LIST_PHASES.length - 1) { state.phase = LIST_PHASES[k + 1]; state.cursor = null; } else return settle(); } return limited(); }
