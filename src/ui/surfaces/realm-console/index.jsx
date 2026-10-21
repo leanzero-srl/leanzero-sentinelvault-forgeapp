@@ -3,7 +3,7 @@
 import { useDeclineReason } from "../../kit/DeclineReason";
 import React, { useState, useEffect, useRef } from "react";
 import { createRoot } from "react-dom/client";
-import { invoke, view, router } from "@forge/bridge";
+import { invoke, view, router } from "../../kit/bridge";
 import { enablePaletteSync } from "../../kit/palette-sync";
 import ThumbnailPreview from "../../kit/ThumbnailPreview";
 import UnsavedFloat from "../../kit/UnsavedFloat";

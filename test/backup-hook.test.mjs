@@ -25,7 +25,7 @@ eq("no action is both", WRITE_ACTIONS.filter((k) => READ_ACTIONS.includes(k)), [
 // Registry wiring: the wrapper is applied to WRITE_ACTIONS (one home: registry.js).
 const registry = readFileSync(resolve(here, "../src/server/registry.js"), "utf8");
 ok("registry wraps WRITE_ACTIONS with withBackupHook", /WRITE_ACTIONS\.includes\(key\)\) wrapped = withBackupHook\(key, wrapped\)/.test(registry));
-ok("registry registers the backup capsule", registry.includes("...backupActions"));
+ok("registry registers the backup capsule", registry.includes("[\"backup\", backupActions]"));
 // The REST bundle path schedules one too.
 ok("config-api consumer schedules a backup after an applied bundle", /scheduleBackup\("rest-bundle"\)/.test(readFileSync(resolve(capsules, "config-api/consumer.js"), "utf8")));
 

@@ -6,7 +6,7 @@
  */
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { backupReasonText } from "./backup-reason.js";
-import { invoke } from "@forge/bridge";
+import { invoke } from "./bridge";
 import Dialog, { ConfirmDialog } from "./Dialog";
 import { formatActivity, fmtBytes } from "./activity-format";
 

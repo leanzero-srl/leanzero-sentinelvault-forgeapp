@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { invoke } from "@forge/bridge";
+import { invoke } from "./bridge";
 
 // F3 (owner feedback 2026-08-27): "the images are not displaying their name inside the document
 // … currently it is not predictable who image-20230720-212157.png is". The preview used to be

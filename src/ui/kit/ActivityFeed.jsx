@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { invoke } from "@forge/bridge";
+import { invoke } from "./bridge";
 import { actorName, formatActivity, formatAbsolute, relativeTime } from "./activity-format";
 
 // A1 — Document Activity feed. One list, three homes (inline panel group, overlay section, and

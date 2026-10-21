@@ -24,6 +24,17 @@ import { canEditPage } from "../../shared/content-access.js";
 import { BACKUP_OPS } from "./admission.js";
 import { runBackupOp } from "../backup/rest.js";
 import { scheduleBackup } from "../backup/hook.js";
+import { emit as emitAction, safeKey as safeId, reasonSlug } from "../../shared/action-log.js";
+
+// The action log: one line per REST operation, by resolver key and result status (never its reason
+// text unless that is a literal of the source, never its payload).
+const STEP_OUTCOME = { applied: "ok", refused: "refused", failed: "error", skipped: "skipped" };
+const ERROR_TYPE_RE = /^[A-Za-z_$][\w$]{0,59}$/;
+function logStep(op, r, ms) {
+  const reason = reasonSlug(r?.reason);
+  const errorType = typeof r?.errorType === "string" && ERROR_TYPE_RE.test(r.errorType) ? r.errorType : null;
+  emitAction({ via: "rest", action: `rest.${safeId(op)}`, surface: "rest-api", outcome: STEP_OUTCOME[r?.status] || "error", ...(errorType ? { errorType } : {}), ...(reason ? { reason } : {}), ms });
+}
 
 const nowIso = () => new Date().toISOString();
 
@@ -78,7 +89,7 @@ async function runStep(step, accountId) {
     return interpretResult(await invoke(resolverKey, payload, accountId));
   } catch (e) {
     console.error(`[CONFIG-API] step ${step.path} (${resolverKey}) threw:`, e);
-    return { status: "failed", reason: String(e?.message || e).slice(0, 300) };
+    return { status: "failed", reason: String(e?.message || e).slice(0, 300), errorType: e?.name }; // errorType: the action log only
   }
 }
 
@@ -147,11 +158,14 @@ export async function runJob(jobId) {
   }
   try {
     if (job.op === "whoami") {
+      logStep("whoami", { status: "applied" }, 0);
       receipt.status = "done";
       receipt.identity = { accountId, role: job.role, tokenId: job.tokenId || null, tokenName: job.tokenName || null };
     } else if (BACKUP_OPS.includes(job.op)) {
       // Pillar 12: one op, one result; the details ride on `receipt.backup`.
+      const opStarted = Date.now();
       const r = await runBackupOp(job.op, job.bundle || {}, accountId);
+      logStep(job.op, { status: r?.status === "done" ? "applied" : "failed" }, Date.now() - opStarted);
       const { status, reason, ...details } = r || {};
       receipt.results.push({ path: `op.${job.op}`, status: status === "done" ? "applied" : status === "partial" ? "failed" : (status || "failed"), ...(reason ? { reason } : {}) });
       receipt.backup = details;
@@ -162,12 +176,15 @@ export async function runJob(jobId) {
       spaceKeys = touchedSpaceKeys(plan);
       receipt.plan = plan.map(({ path, resolverKey, payload }) => ({ path, resolverKey, payload }));
       if (job.op === "dry-run") {
+        logStep("dry-run", { status: "applied" }, 0);
         receipt.status = "done";
         receipt.results = [...receipt.results, ...plan.map(({ path }) => ({ path, status: "skipped", reason: "dry-run" }))];
         receipt.summary = { applied: 0, refused: 0, failed: 0, skipped: receipt.results.length };
       } else {
         for (const step of plan) {
+          const stepStarted = Date.now();
           const r = await runStep(step, accountId);
+          logStep(step.resolverKey, r, Date.now() - stepStarted);
           receipt.results.push({ path: step.path, status: r.status, ...(r.reason ? { reason: r.reason } : {}), ...(r.note ? { note: r.note } : {}), ...(r.removed ? { removed: r.removed } : {}) });
         }
         const s = summarize(receipt.results);
@@ -206,11 +223,11 @@ export async function runJob(jobId) {
     await setWithTtl(key, receipt, JOB_TTL_MS);
   } catch (e) { console.warn("[CONFIG-API] receipt mirror failed:", e?.message || e); }
   console.log(`[CONFIG-API] job ${jobId} ${receipt.status} applied=${receipt.summary.applied} refused=${receipt.summary.refused} failed=${receipt.summary.failed} skipped=${receipt.summary.skipped}`);
-  return { ok: true, status: receipt.status };
+  return { ok: true, status: receipt.status, summary: receipt.summary, crashed: !!receipt.error }; // the action log reads these
 }
 
 export async function configApiConsumer(event) {
   const jobId = event?.body?.jobId || event?.payload?.jobId;
   if (!jobId) { console.warn("[CONFIG-API] consumer: no jobId in event"); return; }
-  await runJob(String(jobId));
+  return runJob(String(jobId)); // the action log reads { ok, status }
 }

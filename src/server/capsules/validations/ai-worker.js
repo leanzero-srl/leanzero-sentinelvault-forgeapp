@@ -1,3 +1,4 @@
+import { errorFacts } from "../../shared/action-log.js";
 import { setWithTtl } from "../../shared/kvs-ttl.js";
 import { readDocBody, readDocBodyAtVersion, extractPlainText } from "../../infra/doc-surgery.js";
 import { runForgeLlmJson, isForgeLlmModelAllowed, FORGE_LLM_DEFAULT_MODEL } from "../../infra/forge-llm.js";
@@ -27,7 +28,7 @@ async function handleGateReview(body) {
     if (!spend.ok) {
       const refusal = aiGateRefusal(spend, onBudgetExhausted);
       await applyAiVerdict(pageId, pinnedVersion, refusal.verdict, refusal.reason);
-      return;
+      return { outcome: "refused", step: "spend-gate" }; // these returns are read by the action log only
     }
     const { ai } = spend;
     let model = ai.model || FORGE_LLM_DEFAULT_MODEL;
@@ -44,12 +45,12 @@ async function handleGateReview(body) {
     if (res.usage) await accrueTokenUsage(realmKey || spaceKey, res.usage);
     if (!res.ok || !res.parsed) {
       await applyAiVerdict(pageId, pinnedVersion, "failed", "AI review failed — please retry.");
-      return;
+      return { outcome: "error", step: res.ok ? "llm-parse" : "llm-call" };
     }
     // audit C7: a truncated LLM response can drop findings — never grant a gate PASS on it.
     if (res.truncated) {
       await applyAiVerdict(pageId, pinnedVersion, "failed", "AI review was cut off (too long) — please retry.");
-      return;
+      return { outcome: "error", step: "llm-truncated" };
     }
     const norm = normalizeFindings(res.parsed);
     const bar = severityRank(threshold || "medium");
@@ -62,6 +63,7 @@ async function handleGateReview(body) {
   } catch (e) {
     console.error("[AI-GATE] review error:", e);
     try { await applyAiVerdict(pageId, pinnedVersion, "failed", "AI review error — please retry."); } catch (_) { /* best effort */ }
+    return { outcome: "error", ...errorFacts(e) };
   }
 }
 
@@ -77,7 +79,7 @@ export async function aiValidationConsumer(event) {
   const { taskId, pageId, spaceKey, realmKey, requestedBy } = event?.body || {};
   if (!taskId || !pageId) {
     console.error("[AI-VALIDATE] missing taskId or pageId in event body");
-    return;
+    return { outcome: "refused", step: "missing-input" }; // read by the action log only
   }
   const statusKey = `ai-validation-status-${taskId}`;
   const STATUS_TTL_MS = 3600000;
@@ -92,7 +94,7 @@ export async function aiValidationConsumer(event) {
     const spend = await checkAiSpend(spaceKey);
     if (!spend.ok) {
       await setStatus({ status: "error", error: spend.reason, pageId });
-      return;
+      return { outcome: "refused", step: "spend-gate" }; // read by the action log only
     }
     const { ai } = spend;
 
@@ -113,7 +115,7 @@ export async function aiValidationConsumer(event) {
 
     if (!res.ok) {
       await setStatus({ status: "error", error: res.error || "LLM call failed", pageId });
-      return;
+      return { outcome: "error", step: "llm-call" };
     }
 
     if (!res.parsed) {
@@ -121,7 +123,7 @@ export async function aiValidationConsumer(event) {
       const payload = { pageId, pageTitle, parseError: true, findings: [], summary: "", model, truncated, usage: res.usage, at: new Date().toISOString() };
       await storeFindings(pageId, payload);
       await setStatus({ status: "done", result: payload });
-      return;
+      return { outcome: "error", step: "llm-parse" };
     }
 
     const norm = normalizeFindings(res.parsed);
@@ -152,5 +154,6 @@ export async function aiValidationConsumer(event) {
       await setStatus({ status: "error", error: String(e?.message || e).slice(0, 300), pageId });
     } catch (_) { /* best effort */ }
     // Manual flow: do NOT rethrow (avoid retry double-billing).
+    return { outcome: "error", ...errorFacts(e) };
   }
 }

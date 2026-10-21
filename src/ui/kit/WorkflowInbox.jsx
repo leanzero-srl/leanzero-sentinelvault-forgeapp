@@ -1,6 +1,6 @@
 import BusyVeil from "./BusyVeil";
 import React, { useState, useEffect, useCallback } from "react";
-import { invoke, view, router } from "@forge/bridge";
+import { invoke, view, router } from "./bridge";
 
 // "Approvals waiting on you" (#43). Self-contained: fetches the current user's pending
 // approvals across all pages and lets them Approve/Deny inline or open the page.

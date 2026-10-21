@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
-import { invoke } from "@forge/bridge";
+import { invoke } from "./bridge";
 import Dialog from "./Dialog";
 import { useVisiblePlacement } from "./visible-placement";
 import { isDowngrade, findLevel, REASON_MAX } from "../../server/capsules/classification/logic.js"; // P5: the one downgrade rule
