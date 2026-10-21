@@ -44,6 +44,10 @@ import { errText } from "../../shared/action-log.js";
 export const SCRUB_STATE_KEY = "privacy-validation-scrub";
 export const SCRUB_FLAG = "validationMirrorV1"; // in privacy-migrations
 export const SCRUB_LOCK_KEY = "privacy-validation-scrub-lock";
+/** Archived pages left as they were (Confluence refuses changes): re-tried weekly, besides the unarchive event. */
+export const ARCHIVED_LEFT_KEY = "privacy-validation-scrub-archived";
+export const ARCHIVED_LEFT_CAP = 2000;
+export const ARCHIVED_RECHECK_PER_SWEEP = 200;
 export const RETRY_ROUNDS = 3;
 export const RETRY_AFTER_MS = 3600000;
 export const FAILED_CAP = 500;
@@ -191,6 +195,7 @@ export async function runValidationMirrorScrub({ budgetMs = 600000, now = () => 
 
   const finish = async (skipped = 0) => {
     if (skipped) console.warn(`[VALIDATION-MIRROR] ${skipped} page(s) could not be rewritten after ${RETRY_ROUNDS} retries; skipped`);
+    if (state.archivedIds?.length) await kvs.set(ARCHIVED_LEFT_KEY, { ids: state.archivedIds, at: new Date(now()).toISOString() }).catch(() => {});
     await kvs.delete(SCRUB_STATE_KEY).catch(() => {});
     return { done: true, phase: null, pages: state.pages, scrubbed: state.scrubbed, failed: skipped, skipped, skippedPhases: state.skippedPhases, archivedLeft: state.readOnly || 0 };
   };
@@ -261,7 +266,11 @@ export async function runValidationMirrorScrub({ budgetMs = 600000, now = () => 
       // this batch is counted yet, and the pages already rewritten are clean on the re-read).
       if (r === "limited") { state.scrubbed += scrubbed; for (const id of failed) noteFailed(id); state.hourPages += reads; return limited(); }
       if (r === "scrubbed") scrubbed += 1;
-      if (r === "refused" && state.phase === "archived") state.readOnly = (state.readOnly || 0) + 1;
+      if (r === "refused" && state.phase === "archived") {
+        state.readOnly = (state.readOnly || 0) + 1;
+        if (!state.archivedIds) state.archivedIds = [];
+        if (state.archivedIds.length < ARCHIVED_LEFT_CAP && !state.archivedIds.includes(it.pageId)) state.archivedIds.push(it.pageId);
+      }
       else if (r === "failed" || r === "refused") failed.push(it.pageId);
     }
     state.pages += batch.items.length;
@@ -289,4 +298,30 @@ export async function scrubOnePageMirror(pageId) {
   if (prop === "limited") return "limited";
   if (prop === undefined) return "failed";
   return scrubOne(String(pageId), prop);
+}
+
+/**
+ * The weekly fallback for archived pages (the unarchive event can be missed: the app disabled at the
+ * time, a dropped event): re-try up to ARCHIVED_RECHECK_PER_SWEEP of them. A page that took the
+ * rewrite, is clean or is gone leaves the list; one Confluence still refuses (still archived) stays.
+ * @returns {Promise<{ checked: number, cleaned: number, left: number }>}
+ */
+export async function recheckArchivedMirrors({ limit = ARCHIVED_RECHECK_PER_SWEEP } = {}) {
+  const row = await kvs.get(ARCHIVED_LEFT_KEY).catch(() => null);
+  const ids = Array.isArray(row?.ids) ? row.ids : [];
+  if (!ids.length) return { checked: 0, cleaned: 0, left: 0 };
+  const batch = ids.slice(0, limit);
+  const keep = [];
+  let cleaned = 0;
+  for (const id of batch) {
+    const r = await scrubOnePageMirror(id).catch(() => "failed");
+    if (r === "scrubbed") cleaned += 1;
+    if (r === "refused" || r === "failed" || r === "limited") keep.push(id);
+    if (r === "limited") { keep.push(...batch.slice(batch.indexOf(id) + 1)); break; }
+  }
+  // Re-checked ones go to the back, so a long list is walked in turn, week by week.
+  const next = [...ids.slice(batch.length), ...keep];
+  if (next.length) await kvs.set(ARCHIVED_LEFT_KEY, { ids: next, at: new Date().toISOString() });
+  else await kvs.delete(ARCHIVED_LEFT_KEY);
+  return { checked: batch.length, cleaned, left: next.length };
 }
