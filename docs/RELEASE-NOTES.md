@@ -2,6 +2,14 @@
 
 GENERATED from `src/server/shared/release-notes.js` by `scripts/render-release-notes.mjs`. Do not edit.
 
+## 8.13.0 — 2026-10-21
+
+**Sentinel Vault's logs say which action ran, and never hold your data**
+
+- Changed: each action in Sentinel Vault, such as a button that seals, approves or saves, a REST API call or a background job someone started, now writes one line to the app's logs on the Atlassian platform: which action it was, from which screen, how it ended and how long it took, with the buttons pressed just before it. A line never holds names, account IDs, page or space names or keys, file names, page content or anything typed. Sites share an app's logs with its developer unless a site admin turns Logs access off for the app in Atlassian Administration, so when you report a problem we can see which action failed and where.
+
+**Do this:** Nothing to do.
+
 ## 8.12.0 — 2026-10-18
 
 **Space admins keep their rights while Confluence is limiting requests**

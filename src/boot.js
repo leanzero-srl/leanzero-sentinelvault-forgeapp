@@ -20,18 +20,11 @@ import { privacySweepCheck } from "./server/capsules/privacy/worker.js";
 // Privacy sweep (capsules/privacy): retention + Atlassian's personal data reporting, weekly. It
 // rides the DAILY recurring-nudge trigger for the same reason the backup check rides the hourly
 // cron — the manifest is at Forge's limit of 5 scheduled triggers. privacySweepCheck never throws.
-export { privacyConsumer } from "./server/capsules/privacy/worker.js";
 export const recurringNudgeTask = asInvocation(async (event, context) => {
   try { return await recurringNudgeTaskCore(event, context); } finally { await privacySweepCheck(context || event?.context); }
 }, { label: "recurringNudgeTask" });
-export { realmScanConsumer } from "./server/capsules/realms/scan-worker.js";
-export { aiValidationConsumer } from "./server/capsules/validations/ai-worker.js";
-// Config REST API (docs/REST-CONFIG-API.md): the static web trigger and its queue consumer.
-export { configApiTrigger } from "./server/capsules/config-api/trigger.js";
-export { configApiConsumer } from "./server/capsules/config-api/consumer.js";
 // Pillar 12 — backup and restore: the queue consumer, and the hourly check folded into the hourly
 // index cron (the manifest is at Forge's limit of 5 scheduled triggers). backupSweep never throws.
-export { backupConsumer } from "./server/capsules/backup/worker.js";
 export const sealIndexCron = asInvocation(async (event, context) => {
   try { return await sealIndexCronCore(event, context); } finally {
     // The backup check only queues and is cheap: it goes first so a long Jira sweep never starves it.
@@ -40,7 +33,13 @@ export const sealIndexCron = asInvocation(async (event, context) => {
   }
 }, { budgetMs: 270_000, label: "sealIndexCron" }); // timeoutSeconds 300 in the manifest
 // 8.0 — Jira attachment seals: the product-event handler; the hourly lapse sweep rides the index cron.
-export { jiraAttachmentEventTrigger, jiraRestoreConsumer } from "./server/capsules/jira-seals/trigger.js";
+export { jiraAttachmentEventTrigger } from "./server/capsules/jira-seals/trigger.js";
 import { jiraSealSweep } from "./server/capsules/jira-seals/trigger.js";
 // DEV-ONLY harness test-state web trigger (gated by HARNESS_SECRET; 404 in prod)
 export { testStateTrigger } from "./test-hook.js";
+
+// The config REST API trigger and the queue consumers that run work a user started, each wrapped by
+// the action log (server/logged-entrypoints.js; product events and sweeps are exempt there, by name).
+export {
+  configApiTrigger, configApiConsumer, realmScanConsumer, aiValidationConsumer, backupConsumer, privacyConsumer, jiraRestoreConsumer,
+} from "./server/logged-entrypoints.js";

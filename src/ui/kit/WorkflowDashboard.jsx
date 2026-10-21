@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { invoke } from "@forge/bridge";
+import { invoke } from "./bridge";
 
 // Review dates are stored as the END of a calendar day in UTC (A5) and shown in UTC everywhere,
 // so a steward in Sydney and one in Denver read the same day the picker offered.

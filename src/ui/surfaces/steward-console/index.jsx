@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { createRoot } from "react-dom/client";
-import { invoke, view, router } from "@forge/bridge";
+import { invoke, view, router } from "../../kit/bridge";
 import { enablePaletteSync } from "../../kit/palette-sync";
 import UnsavedFloat from "../../kit/UnsavedFloat";
 import ValidationsEditor from "../../kit/ValidationsEditor";

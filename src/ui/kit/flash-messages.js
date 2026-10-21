@@ -8,7 +8,7 @@
  */
 
 import { showFlag } from "@forge/bridge";
-import { invoke } from "@forge/bridge";
+import { invoke } from "./bridge";
 
 /**
  * Check if flash messages are enabled

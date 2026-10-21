@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import { createRoot } from "react-dom/client";
-import { view, invoke, router } from "@forge/bridge";
+import { view, invoke, router } from "../../kit/bridge";
 import { enablePaletteSync } from "../../kit/palette-sync";
 import { when, sealSentence } from "../../kit/status-language.js"; // SEC-3: one vocabulary, one clock
 import { visibleTimeout } from "../../kit/visible-timeout.js";

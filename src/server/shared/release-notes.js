@@ -12,6 +12,16 @@ const note = (n) => Object.freeze({ ...n, changes: Object.freeze([...(n.changes 
 
 export const RELEASE_NOTES = Object.freeze([
   note({
+    version: "8.13.0",
+    date: "2026-10-21",
+    headline: "Sentinel Vault's logs say which action ran, and never hold your data",
+    changes: [
+      "Changed: each action in Sentinel Vault, such as a button that seals, approves or saves, a REST API call or a background job someone started, now writes one line to the app's logs on the Atlassian platform: which action it was, from which screen, how it ended and how long it took, with the buttons pressed just before it. A line never holds names, account IDs, page or space names or keys, file names, page content or anything typed. Sites share an app's logs with its developer unless a site admin turns Logs access off for the app in Atlassian Administration, so when you report a problem we can see which action failed and where.",
+    ],
+    fixes: [],
+    action: "Nothing to do.",
+  }),
+  note({
     version: "8.12.0",
     date: "2026-10-18",
     headline: "Space admins keep their rights while Confluence is limiting requests",

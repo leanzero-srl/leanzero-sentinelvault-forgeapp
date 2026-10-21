@@ -8,7 +8,7 @@
  * `grant-section-edit`, and every refusal reason the server gives is shown as-is.
  */
 import React, { useEffect, useRef, useState } from "react";
-import { invoke } from "@forge/bridge";
+import { invoke } from "./bridge";
 import Dialog from "./Dialog";
 
 export default function GiveAccessDialog({ target, name, onClose, onGranted, testId = "sv-give-access", invoker = invoke }) {

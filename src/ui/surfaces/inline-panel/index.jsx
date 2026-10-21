@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { createRoot } from "react-dom/client";
-import { invoke, view, router } from "@forge/bridge";
+import { invoke, view, router } from "../../kit/bridge";
 // SEC-2 (e): the proposal bar opens with this reason already typed — the approvers see what it is at a glance.
 const PROPOSE_PREFILL = "Proposed change to an approved page";
 import { enablePaletteSync } from "../../kit/palette-sync";

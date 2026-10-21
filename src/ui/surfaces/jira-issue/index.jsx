@@ -12,7 +12,7 @@ import { createRoot } from "react-dom/client";
 import { events } from "@forge/bridge";
 import { enablePaletteSync } from "../../kit/palette-sync";
 import { useSignedInvoke } from "../../kit/SignedInvoke";
-import { invoke } from "@forge/bridge";
+import { invoke } from "../../kit/bridge";
 import Dialog, { ConfirmDialog } from "../../kit/Dialog";
 import ActionMenu from "../../kit/ActionMenu";
 import { listenOutside } from "../../kit/outside-close.js";
