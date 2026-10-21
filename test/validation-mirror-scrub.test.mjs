@@ -70,15 +70,14 @@ function site(n = 230) {
       const next = start + limit < pool.length ? `/rest/api/search?next=true&cursor=${start + limit}&limit=${limit}` : undefined;
       return { body: { results, size: results.length, _links: next ? { next } : {} } };
     }
-    if (method === "GET" && u.pathname === "/wiki/rest/api/content") {
+    if (method === "GET" && u.pathname === "/wiki/api/v2/pages") {
       searchCalls.lists += 1;
       const st = u.searchParams.get("status");
       const list = extra[st] || [];
       const limit = Number(u.searchParams.get("limit")) || 25;
-      const start = Number(u.searchParams.get("start") || 0);
-      const ex = (u.searchParams.get("expand") || "").includes(`metadata.properties.${PROP}`);
+      const start = Number(u.searchParams.get("cursor") || 0);
       const slice = list.slice(start, start + limit);
-      return { body: { results: slice.map((id) => ({ ...entry(id, ex), status: st })), size: slice.length, _links: start + limit < list.length ? { next: "/rest/api/content?more" } : {} } };
+      return { body: { results: slice.map((id) => ({ id, status: st })), _links: start + limit < list.length ? { next: `/wiki/api/v2/pages?status=${st}&cursor=${start + limit}` } : {} } };
     }
     return undefined;
   });
@@ -109,7 +108,7 @@ try {
     eq("[1] a trashed page is reached", ids(propOf(w, "2002")).length, 0);
     eq("[1] the resume state is gone once done", await kvs.get(scrub.SCRUB_STATE_KEY), undefined);
     eq("[1] the counts add up (every page looked at, every old one rewritten)", [r.pages, r.scrubbed, r.failed], [233, 80, 0]);
-    eq("[1] archived and trashed come in lists, never one read per page", searchCalls.lists, 2);
+    eq("[1] archived and trashed are listed with v2 (the v1 list answers 410 to an app)", searchCalls.lists, 2);
   }
   // 2. Resumable under a budget: a run that stops after its first batch continues where it stopped.
   {
@@ -239,7 +238,7 @@ try {
   // 6d. A list that never answers is given up after LIST_FAILURES_MAX tries and recorded; the job ends.
   {
     site(10);
-    onConfluence((method, rawPath) => (method === "GET" && decodeURIComponent(rawPath).includes("/wiki/rest/api/content?") && decodeURIComponent(rawPath).includes("status=trashed") ? { status: 403, body: {} } : undefined));
+    onConfluence((method, rawPath) => (method === "GET" && decodeURIComponent(rawPath).includes("/wiki/api/v2/pages?") && decodeURIComponent(rawPath).includes("status=trashed") ? { status: 403, body: {} } : undefined));
     let t = Date.parse("2026-10-22T08:00:00Z");
     let r; let runs = 0;
     for (; runs < 60; runs++) { r = await scrub.runValidationMirrorScrub({ budgetMs: 60000, now: () => t, rand: () => 0 }); if (r.done) break; t = (r.waitUntil || t) + 1000; }
