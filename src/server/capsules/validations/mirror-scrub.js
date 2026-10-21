@@ -139,9 +139,10 @@ async function fetchBatch(phase, cursor) {
   } else {
     // v2: the v1 content list answers 410 Gone to an app for archived and trashed pages (measured on
     // wolfaenpak dev, 2026-10-21), so these are listed with v2 and each property is read on its own.
+    // 50 a batch: a batch is the unit of progress, so it must fit in a drained hour and a run's budget.
     res = cursor
-      ? await appConfluence(route`/wiki/api/v2/pages?status=${phase}&limit=${"250"}&cursor=${cursor}`)
-      : await appConfluence(route`/wiki/api/v2/pages?status=${phase}&limit=${"250"}`);
+      ? await appConfluence(route`/wiki/api/v2/pages?status=${phase}&limit=${"50"}&cursor=${cursor}`)
+      : await appConfluence(route`/wiki/api/v2/pages?status=${phase}&limit=${"50"}`);
   }
   if (!res.ok) return { status: res.status, items: [], next: null };
   const near = nearLimit(res);
