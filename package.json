@@ -35,7 +35,7 @@
     "brace-expansion@5": "^5.0.9",
     "undici": "^7.29.0",
     "fast-uri": "^3.1.8",
-    "markdown-it": "^14.3.0",
+    "markdown-it": "^14.3.3",
     "prosemirror-view": "1.42.6"
   },
   "devDependencies": {
