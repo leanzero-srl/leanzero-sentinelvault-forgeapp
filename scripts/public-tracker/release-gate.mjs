@@ -31,9 +31,10 @@
 // `post` records the deployed release (and the commit) in production-release.json, the tracker's LAST_VERSION, then
 // runs the tracker's apply, verify and public --reprove itself, commits what they wrote and pushes main. A failure
 // there is logged and never changes the deploy's exit code; the daily digest's tracker check catches the drift.
-// `try-first` (owner 2026-10-20) waits for the Marketplace to list the version the deploy reported, then re-applies the
-// "Try it first" top message of the version's More details (a per-version field) through forge-app-marketing's
-// publisher on the workhorse's signed-in vendor browser (release-autopilot.mjs tryFirstAfterDeploy). Logged only.
+// `try-first` (owner 2026-10-20; since 2026-10-22 release-autopilot 1.4.0 tryFirstHandOff) hands the "Try it first" top
+// message of the new version's More details (a per-version field) to the watcher on the workhorse (forge-app-marketing
+// apps/try-first/watcher.mjs, every 10 min, puts it on once the Marketplace lists the version): it kicks the watcher once
+// and logs its heartbeat. It never waits for the listing. Logged only.
 
 import { execFileSync, spawn } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
@@ -235,11 +236,11 @@ if (cmd === "marketplace-latest") {
 } else if (cmd === "try-first") {
   const forgeVersion = /^\d+\.\d+\.\d+$/.test(String(process.argv[3] || "")) ? process.argv[3] : null;
   const beforeBuild = process.argv[4] || null;
-  const waitMs = process.env.RELEASE_GATE_TRYFIRST_WAIT_MS ? Number(process.env.RELEASE_GATE_TRYFIRST_WAIT_MS) : undefined;
-  const r = await A.tryFirstAfterDeploy({ app: TRY_FIRST_APP, addonKey: MARKETPLACE_ADDON_KEY, forgeVersion, beforeBuild, run: capture, log, fetchImpl, ...(waitMs !== undefined ? { waitMs, everyMs: Math.min(waitMs, 30000) || 1 } : {}) });
+  void beforeBuild; // the build before the deploy only fed the old wait for the listing
+  const r = await A.tryFirstHandOff({ app: TRY_FIRST_APP, forgeVersion, run: capture });
   log(r.ok
-    ? `==> Marketplace: the "Try it first" message is on ${r.version || forgeVersion} (build ${r.build || "?"})${r.wrote ? ", written and read back" : ", already there"}`
-    : `==> Marketplace: the "Try it first" message was NOT re-applied (${r.why}). The release stands; the next production deploy re-applies it.`);
+    ? `==> Marketplace: ${r.note}`
+    : `==> Marketplace: the "Try it first" message was NOT handed off (${r.why}). The release stands; on the workhorse run node ~/Projects/forge-app-marketing/apps/try-first/watcher.mjs (one tick; it takes the vendor-browser lock itself).`);
   process.exit(0);
 } else if (cmd === "prepare") {
   try {

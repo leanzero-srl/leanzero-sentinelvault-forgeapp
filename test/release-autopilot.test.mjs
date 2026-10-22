@@ -221,6 +221,26 @@ try {
   ok(!boom.ok && /ssh exploded/.test(boom.why), "a runner that throws is a reported failure, never an exception");
   const noMp = await A.marketplaceLatest("k", async () => { throw new Error("offline"); });
   ok(noMp === null, "an unreadable Marketplace is null");
+  // core 1.4.0: the door hands off to the workhorse watcher and never waits for the listing
+  const T0 = Date.parse("2026-10-22T10:00:00Z"), now = () => T0;
+  const st = (o) => `KICK=0\n${JSON.stringify({ lastTickAt: "2026-10-22T09:55:00Z", health: { status: "ok" }, apps: { cr: { appliedVersion: "7.18.0", appliedBuild: "2001360" } }, ...o })}`;
+  const hc = []; const h = await A.tryFirstHandOff({ app: "cr", forgeVersion: "7.19.0", now, onWorkhorse: false, run: async (c, a) => { hc.push([c, ...a]); return { code: 0, stdout: st(), stderr: "" }; } });
+  ok(h.ok && h.deferred && /last tick 5 min ago; cr last confirmed on 7\.18\.0 \(build 2001360\)/.test(h.note) && /on 7\.19\.0 within ~10 min/.test(h.note), `a live watcher is a pass that waits for nothing (${JSON.stringify(h)})`);
+  ok(hc.length === 1 && hc[0][0] === "ssh" && hc[0].includes("workhorse") && /launchctl kickstart gui\/\$\(id -u\)\/net\.leanzero\.tryfirst-watcher/.test(hc[0][hc[0].length - 1]) && !/mp-more-details-try-first|mkdir/.test(hc[0][hc[0].length - 1]), "one ssh call that kicks the watcher; the door never drives the vendor browser");
+  const hl = []; await A.tryFirstHandOff({ app: "sv", now, onWorkhorse: true, run: async (c, a) => { hl.push([c, ...a]); return { code: 0, stdout: st(), stderr: "" }; } });
+  ok(hl[0][0] === "zsh" && /kickstart/.test(hl[0][2]), "on the workhorse itself it kicks locally");
+  const stale = await A.tryFirstHandOff({ app: "cr", now, onWorkhorse: false, run: async () => ({ code: 0, stdout: st({ lastTickAt: "2026-10-22T08:00:00Z" }), stderr: "" }) });
+  ok(!stale.ok && /last ran 120 min ago/.test(stale.why), "a watcher that stopped ticking is reported");
+  const out = await A.tryFirstHandOff({ app: "cr", now, onWorkhorse: false, run: async () => ({ code: 0, stdout: st({ health: { status: "fail", detail: "vendor Chrome is not signed in" } }), stderr: "" }) });
+  ok(!out.ok && /failing: vendor Chrome is not signed in/.test(out.why), "a failing (e.g. signed-out) watcher is reported");
+  const gone = await A.tryFirstHandOff({ app: "cr", now, onWorkhorse: false, run: async () => ({ code: 0, stdout: "KICK=113\n{}", stderr: "" }) });
+  ok(!gone.ok && /not loaded .*exit 113/.test(gone.why), "a watcher that is not installed is reported with the install command");
+  const off = await A.tryFirstHandOff({ app: "cr", now, onWorkhorse: false, run: async () => ({ code: 255, stdout: "", stderr: "ssh: connect to host workhorse port 22: Operation timed out" }) });
+  ok(!off.ok && /could not be reached \(exit 255: ssh: connect/.test(off.why), "an unreachable workhorse is reported");
+  const none = await A.tryFirstHandOff({ app: "cr", now, onWorkhorse: false, run: async () => ({ code: 0, stdout: "KICK=0\n{}", stderr: "" }) });
+  ok(!none.ok && /no recorded tick/.test(none.why), "a watcher with no state is reported");
+  const hboom = await A.tryFirstHandOff({ app: "cr", now, onWorkhorse: false, run: async () => { throw new Error("ssh exploded"); } });
+  ok(!hboom.ok && /ssh exploded/.test(hboom.why), "a runner that throws is a reported failure, never an exception");
 }
 
 console.log(`release-autopilot: ${pass} passed, ${fail} failed`);

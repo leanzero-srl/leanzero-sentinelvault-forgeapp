@@ -26,11 +26,12 @@
  *   3. AFTER THE DEPLOY the door runs the tracker's apply / verify / public --reprove itself and
  *      commits the receipt. A failure there is logged and never blocks (the daily digest's tracker
  *      check catches the drift next morning).
- *   4. AFTER THE DEPLOY (CogniRunner, LeanZero Management, Sentinel Vault; not Cost Slasher) the door
- *      waits for the new Marketplace version and re-applies the "Try it first" top message of its
- *      More details (a VERSION field, so every production deploy needs it again): forge-app-marketing
- *      apps/try-first/mp-more-details-try-first.mjs, on the workhorse's signed-in vendor browser.
- *      Logged, never blocks, never needs a person.
+ *   4. AFTER THE DEPLOY (CogniRunner, LeanZero Management, Sentinel Vault; not Cost Slasher) the
+ *      "Try it first" top message of the new Marketplace version's More details (a VERSION field, so
+ *      every production deploy needs it again) is put on by the WATCHER on the workhorse
+ *      (forge-app-marketing apps/try-first/watcher.mjs, launchd net.leanzero.tryfirst-watcher, every
+ *      10 min). Since core 1.4.0 the door does not wait for the listing: tryFirstHandOff kicks the
+ *      watcher once, reads its heartbeat and returns. Logged, never blocks, never needs a person.
  *
  * A missed line is fine: nothing here refuses a release. Dependency-free (node builtins only); the
  * model is reached through the `claude` CLI on the machine running the door (laptop or workhorse).
@@ -44,7 +45,7 @@ import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import os from "node:os";
 
-export const AUTOPILOT_VERSION = "1.3.0";
+export const AUTOPILOT_VERSION = "1.4.0";
 
 export const hashOf = (line) => createHash("sha256").update(line).digest("hex").slice(0, 16);
 const SEMVER = /^\d+\.\d+\.\d+$/;
@@ -625,3 +626,46 @@ export const tryFirstAfterDeploy = async ({ app, addonKey, forgeVersion, beforeB
   } catch (e) { return { ok: false, why: String(e && e.message) }; }
 };
 
+/**
+ * Core 1.4.0 (2026-10-22): the door no longer waits up to 20 minutes for the listing. The watcher on the workhorse
+ * (forge-app-marketing apps/try-first/watcher.mjs, LaunchAgent net.leanzero.tryfirst-watcher, every 10 min) puts the
+ * message on every newly listed version, typing only when its DRY read differs. tryFirstAfterDeploy above stays for a
+ * by-hand run; the doors call tryFirstHandOff.
+ */
+export const TRY_FIRST_WATCHER = Object.freeze({
+  label: "net.leanzero.tryfirst-watcher",
+  state: "/Users/workhorse/.local/state/leanzero-tryfirst/state.json",
+  staleMs: 60 * 60000, // a worst-case watcher tick lasts ~40 min
+});
+
+/** The shell line that kicks the watcher (launchd starts no second copy while one runs) and prints its state. */
+export const tryFirstHandOffCommand = () =>
+  `launchctl kickstart gui/$(id -u)/${TRY_FIRST_WATCHER.label} >/dev/null 2>&1; echo "KICK=$?"; cat ${TRY_FIRST_WATCHER.state} 2>/dev/null || echo "{}"`;
+
+/**
+ * After a production deploy: kick the watcher once and read its heartbeat, so a watcher that is not installed,
+ * stopped, or signed out shows in the release log. Never waits for the listing, NEVER throws; returns
+ * { ok, deferred: true, note | why, lastTickAt?, applied? } for the caller to log.
+ */
+export const tryFirstHandOff = async ({ app, forgeVersion, run, now = () => Date.now(), onWorkhorse = /works-mac-studio|worksmacstudio/i.test(os.hostname()) }) => {
+  try {
+    const cmd = tryFirstHandOffCommand();
+    const r = onWorkhorse ? await run("zsh", ["-lc", cmd], {}) : await run("ssh", ["-o", "ConnectTimeout=10", "-o", "BatchMode=yes", TRY_FIRST.host, `zsh -lc ${shq(cmd)}`], {});
+    const out = String((r && r.stdout) || "");
+    const kick = /KICK=(\d+)/.exec(out);
+    if (!kick) return { ok: false, deferred: true, why: `the workhorse could not be reached (exit ${r && r.code}: ${String((r && r.stderr) || "").trim().slice(0, 200)})` };
+    // 0 = kicked; 37 = a tick is already running. Anything else: the agent is not loaded.
+    if (kick[1] !== "0" && kick[1] !== "37") return { ok: false, deferred: true, why: `the watcher is not loaded on the workhorse (launchctl kickstart exit ${kick[1]}); install it: zsh ~/Projects/forge-app-marketing/apps/try-first/install-watcher.sh` };
+    let st = null;
+    try { st = JSON.parse(out.slice(out.indexOf("{"))); } catch { st = null; }
+    const last = st && Date.parse(st.lastTickAt || "");
+    if (!last) return { ok: false, deferred: true, why: "the watcher has no recorded tick yet (its state file is missing or unreadable)" };
+    const mins = Math.max(0, Math.round((now() - last) / 60000));
+    if (now() - last > TRY_FIRST_WATCHER.staleMs) return { ok: false, deferred: true, lastTickAt: st.lastTickAt, why: `the watcher last ran ${mins} min ago (every 10 min expected)` };
+    const h = st.health || {};
+    if (h.status === "fail") return { ok: false, deferred: true, lastTickAt: st.lastTickAt, why: `the watcher is failing: ${String(h.detail || "").slice(0, 300)}` };
+    const a = (st.apps && st.apps[app]) || {};
+    const applied = a.appliedVersion ? `${a.appliedVersion} (build ${a.appliedBuild})` : "nothing yet";
+    return { ok: true, deferred: true, lastTickAt: st.lastTickAt, applied, note: `the "Try it first" message is handed to the watcher on the workhorse (kicked; last tick ${mins} min ago; ${app} last confirmed on ${applied}). It puts the message on ${forgeVersion || "the new version"} within ~10 min of the Marketplace listing it; nothing waits here.` };
+  } catch (e) { return { ok: false, deferred: true, why: String(e && e.message) }; }
+};
