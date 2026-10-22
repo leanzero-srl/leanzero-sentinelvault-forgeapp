@@ -57,6 +57,7 @@ kvs.get = async (key) => {
 kvs.set = async (key, value) => (isStopped() ? never() : real.set(key, value));
 kvs.delete = async (key) => (isStopped() ? never() : real.delete(key));
 let failIndexReads = 0;
+let lookupCostMs = 0; // what the per-index-page status lookup costs (before any row is judged)
 kvs.query = (...a) => {
   const q = real.query(...a);
   let idx = false;
@@ -82,7 +83,7 @@ async function run() {
 
 async function world({ filler = [] } = {}) {
   resetFake();
-  cost.clear(); reads.clear(); warnings.length = 0; failIndexReads = 0;
+  cost.clear(); reads.clear(); warnings.length = 0; failIndexReads = 0; lookupCostMs = 0;
   const w = createWorld({ appAccountId: APP, spaceKey: SPACE });
   w.addUser(APP, { displayName: "Sentinel Vault" }).addUser(APPROVER, { displayName: "Ana Approver" }).addUser(PLAIN, { displayName: "Pat Plain" })
     .addPage(PAGE, { versions: [{ authorId: PLAIN, text: "first draft" }, { authorId: PLAIN, text: "the text that was approved" }] });
@@ -93,6 +94,8 @@ async function world({ filler = [] } = {}) {
     const path = decodeURIComponent(rawPath);
     const [base, qs = ""] = path.split("?");
     if (base !== "/wiki/api/v2/pages" || method !== "GET") return undefined;
+    skew += lookupCostMs;
+    if (isStopped()) return never();
     const q = Object.fromEntries(qs.split("&").filter(Boolean).map((kv) => { const i = kv.indexOf("="); return [kv.slice(0, i), kv.slice(i + 1)]; }));
     const ids = String(q.id || "").split(",").filter(Boolean);
     const statuses = String(q.status || "current").split(",");
@@ -187,6 +190,31 @@ try {
     const r1 = await run(); const r2 = await run(); const r3 = await run();
     ok("[4] the two runs whose index read failed end with the error", !!r1.threw && !!r2.threw);
     eq("[4] the next run judges every row: nothing is passed over", [r3.skippedStuck, r3.reverted], [0, 1]);
+  }
+
+  // ── 4b. Runs stopped BEFORE judging any row (a slow page lookup) are not counted ────────────
+  {
+    await world({ filler: fillers(5, 0) });
+    lookupCostMs = 30_000;
+    const stoppedRuns = [await run(), await run(), await run()];
+    ok("[4b] three runs stopped in the page lookup, before any row", stoppedRuns.every((r) => r.stopped));
+    lookupCostMs = 0;
+    const r = await run();
+    eq("[4b] the next run passes over nothing (no row was being judged) and reaches the edit", [r.skippedStuck, r.reverted], [0, 1]);
+  }
+
+  // ── 4c. The time budget is checked per row ────────────────────────────────────────────────────
+  {
+    await world({ filler: fillers(5, 0) });
+    const limits = triggers.WORKFLOW_SWEEP_LIMITS;
+    const keep = limits.loopMs; limits.loopMs = 0;
+    const walkedPerRun = [], places = [];
+    try {
+      for (let i = 0; i < 6; i++) { walkedPerRun.push((await run()).walked); places.push((await real.get(RESUME))?.doneKey ?? null); }
+    } finally { limits.loopMs = keep; }
+    eq("[4c] budget spent: each run judges exactly one row (the first row of a run is always judged)", walkedPerRun, [1, 1, 1, 1, 1, 1]);
+    eq("[4c] …and the place moves on by one row each run, to the end of the index",
+      places, ["workflow-idx-AA-approved-900000", "workflow-idx-AA-approved-900001", "workflow-idx-AA-approved-900002", "workflow-idx-AA-approved-900003", "workflow-idx-AA-approved-900004", null]);
   }
 
   // ── 5. Small sites: one run walks everything, as before ───────────────────────────────────────
