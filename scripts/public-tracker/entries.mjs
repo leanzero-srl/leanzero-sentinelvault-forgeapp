@@ -42,6 +42,10 @@ export const COMPONENTS = {
 const JIRA_ON = "It works once a site admin has connected Jira to Sentinel Vault in Atlassian Administration.";
 
 export const ENTRIES = {
+  // 8.19.0: written by the release door on 2026-10-22 (rows: deterministic; review pass: none, deterministic net only).
+  "64d4cf1d83a49d4d": ["If the page a sealed file is on is deleted permanently from the space's trash, the...", "S", {"fold":"known-purged-page-seal-missing-from-owner-lists","d":"This problem is fixed."}],
+  "12509ab24a178a82": ["On sites with very many pages in workflows, the hourly workflow check could fail to...", "S", {"fold":"known-workflow-hourly-check-stuck","d":"This problem is fixed."}],
+
   // 8.18.0: written by the release door on 2026-10-22 (rows: deterministic; review pass: none, deterministic net only).
   "597ca43774416fb5": ["When Sentinel Vault could not read a page, its hourly check removed the page's...", "S", {"withhold":"the review pass did not answer (release door: no review, no publication)"}],
   "63c181cd7a77ea4d": ["A seal whose time ran out on a page Sentinel Vault could not read was released at...", "S", {"withhold":"the review pass did not answer (release door: no review, no publication)"}],
@@ -569,22 +573,6 @@ export const KNOWN = [
     where: "Space settings, Activity tab, and its Export CSV file.",
     workaround: "Note the page's title before you delete it from the trash. The number shown is the page's ID, so an export taken while the page still existed links the two.",
   },
-  // 2026-10-22: found while reviewing the 8.18.0 release; confirmed on the 8.18.0 code, fix scheduled.
-  {
-    k: "known-workflow-hourly-check-stuck", c: "W", affects: "8.18.0", fix: "scheduled",
-    t: "On sites with many pages in workflows, the hourly workflow check can keep starting again at the same place",
-    see: "Once an hour Sentinel Vault goes through the pages in workflows, for example to move a page whose review date has passed to Expired and to keep state labels in step. On a site with very many pages in workflows, this check can fail to finish and start again at the same place the next hour. Pages that come later in the list can then stay in their state after their review date has passed, with no overdue comment on the page, and their state labels can fall out of step.",
-    where: "Spaces with workflows turned on: review dates, the Expired state and state labels.",
-    workaround: "Where the page's workflow allows it, open the Sentinel Vault banner on a page whose review date has passed and use Move to… to move it on, or set a new review date there.",
-  },
-  // 2026-10-22: found while testing, live, the release of a lapsed seal on a page deleted from the trash; confirmed on the 8.18.0 code, fix scheduled.
-  {
-    k: "known-purged-page-seal-missing-from-owner-lists", c: "S", affects: "8.18.0", fix: "scheduled",
-    t: "A sealed file whose page was deleted from the trash disappears from your own list of sealed files",
-    see: "If the page a file is on is deleted permanently from the space's trash, the file's seal is kept, but the file no longer appears under Files you hold sealed in My work or under My Sealed Files in space settings, so you cannot release it yourself.",
-    where: "My work, Files you hold sealed; space settings, My Sealed Files.",
-    workaround: "Ask a space admin to release it. Space admins still see the file on the Sealed Files tab in space settings, marked Missing, and can release it there with a reason while the site setting Allow space admins to force-unseal is on.",
-  },
 ];
 
 // Known bugs a release closed (folded into that release's note line, so the issue is Done with it).
@@ -607,5 +595,25 @@ export const CLOSED = [
     see: "The total at the top of My work can count an approval request or a proposed change that the lists below leave out, for example one on a page you cannot view or a page in the trash, or an approval whose AI review did not pass, or approvals past the first 25, which is as many as the approvals list shows. The page banner's Waiting for you count can also count an approval whose AI review did not pass. After you approve or deny from the approvals list on My work, the total keeps the old number until you reload the page.",
     where: "My work, the total at the top; the page banner, Waiting for you.",
     workaround: "Use the lists on My work: they show what you can act on. Reload My work after you decide to see the total update.",
+  },
+
+  // closed by 8.19.0 (SVT-150), moved out of KNOWN by the release door on 2026-10-22
+  // 2026-10-22: found while testing, live, the release of a lapsed seal on a page deleted from the trash; confirmed on the 8.18.0 code, fix scheduled.
+  {
+    k: "known-purged-page-seal-missing-from-owner-lists", c: "S", affects: "8.18.0", fix: "scheduled",
+    t: "A sealed file whose page was deleted from the trash disappears from your own list of sealed files",
+    see: "If the page a file is on is deleted permanently from the space's trash, the file's seal is kept, but the file no longer appears under Files you hold sealed in My work or under My Sealed Files in space settings, so you cannot release it yourself.",
+    where: "My work, Files you hold sealed; space settings, My Sealed Files.",
+    workaround: "Ask a space admin to release it. Space admins still see the file on the Sealed Files tab in space settings, marked Missing, and can release it there with a reason while the site setting Allow space admins to force-unseal is on.",
+  },
+
+  // closed by 8.19.0 (SVT-149), moved out of KNOWN by the release door on 2026-10-22
+  // 2026-10-22: found while reviewing the 8.18.0 release; confirmed on the 8.18.0 code, fix scheduled.
+  {
+    k: "known-workflow-hourly-check-stuck", c: "W", affects: "8.18.0", fix: "scheduled",
+    t: "On sites with many pages in workflows, the hourly workflow check can keep starting again at the same place",
+    see: "Once an hour Sentinel Vault goes through the pages in workflows, for example to move a page whose review date has passed to Expired and to keep state labels in step. On a site with very many pages in workflows, this check can fail to finish and start again at the same place the next hour. Pages that come later in the list can then stay in their state after their review date has passed, with no overdue comment on the page, and their state labels can fall out of step.",
+    where: "Spaces with workflows turned on: review dates, the Expired state and state labels.",
+    workaround: "Where the page's workflow allows it, open the Sentinel Vault banner on a page whose review date has passed and use Move to… to move it on, or set a new review date there.",
   },
 ];
