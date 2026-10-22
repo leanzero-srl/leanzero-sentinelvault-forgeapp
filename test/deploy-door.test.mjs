@@ -52,7 +52,9 @@ try {
   git("commit", "-q", "--allow-empty", "-m", "the change being deployed"); // ... and a newer commit to deploy
 
   fs.mkdirSync(bin);
+  const FORGE_LOG = path.join(tmp, "forge.log");
   fs.writeFileSync(path.join(bin, "forge"), `#!/bin/bash
+printf '%s\\n' "$*" >> ${JSON.stringify(FORGE_LOG)}
 case "$1" in
   lint) echo "No issues found."; exit 0 ;;
   deploy) echo "Deployed to production"; exit 0 ;;
@@ -65,6 +67,13 @@ exit 0
 [[ "$1 $2" == "run build" ]] || exit 0
 for p in $(sed -n 's/^ *path: *\\(static\\/[^ ]*\\).*/\\1/p' manifest.yml | sort -u); do mkdir -p "$p"; echo ok > "$p/index.html"; done
 echo "export const BUILD = \\"$(git rev-parse --short HEAD)\\";" > src/build-info.js
+# FAKE_SNEAK: something other than the door changes what Forge packages AFTER the start check and the build (a
+# concurrent commit, an edit, a new file), so only the check right before \`forge deploy\` can see it
+case "$FAKE_SNEAK" in
+  commit) echo "export const sneak = 1;" > src/server/sneak.js; git add src/server/sneak.js; git commit -q -m "not the door" -- src/server/sneak.js ;;
+  dirty) echo "// edited during the run" >> src/server/door-test-change.js ;;
+  untracked) echo "export const sneak = 1;" > src/server/sneak.js ;;
+esac
 `, { mode: 0o755 });
 
   const ELIGIBLE = "The version of your app [98.1.0] that's deployed to [production] is eligible for the Runs on Atlassian program.";
@@ -90,14 +99,20 @@ exit 0
   const BASE_ENV = { RELEASE_GATE_MARKETPLACE_FAKE: JSON.stringify({ name: "98.1.0", buildNumber: 500 }), RELEASE_AUTOPILOT_MODEL: "off", RELEASE_GATE_TRACKER: path.join(bin, "tracker-stub.mjs"), RELEASE_GATE_NO_PUSH: "1",
     GIT_AUTHOR_NAME: "door-test", GIT_AUTHOR_EMAIL: "door-test@invalid", GIT_COMMITTER_NAME: "door-test", GIT_COMMITTER_EMAIL: "door-test@invalid" };
   let last = null;
-  const door = (env, args = []) => {
+  // Every real run names the commit being released (--sha); by default the commit the case starts from, i.e. the
+  // checkout's own HEAD. `{ sha: null }` leaves the flag out, `{ sha: "<x>" }` names something else.
+  const door = (env, args = [], { sha } = {}) => {
     const start = git("rev-parse", "HEAD");
-    for (const f of [TRK_LOG, PUB_LOG]) { try { fs.rmSync(f); } catch { /* none */ } }
+    if (sha === undefined) args = [...args, "--sha", start];
+    else if (sha !== null) args = [...args, "--sha", sha];
+    for (const f of [TRK_LOG, PUB_LOG, FORGE_LOG]) { try { fs.rmSync(f); } catch { /* none */ } }
     const { RELEASE_AUTOPILOT_MODEL: _m, ...outer } = process.env;
     const r = spawnSync("bash", ["scripts/deploy-prod.sh", ...args], { cwd: repo, encoding: "utf8", env: { ...outer, PATH: `${bin}:${outer.PATH}`, ...BASE_ENV, ...env } });
     const read = (f) => { try { return fs.readFileSync(f, "utf8"); } catch { return null; } };
     last = { recorded: read(PROD_F), entries: read(ENTRIES_F), notes: read(path.join(repo, "src/server/shared/release-notes.js")), doc: read(path.join(repo, "docs/RELEASE-NOTES.md")),
-      tracker: (read(TRK_LOG) || "").trim().split("\n").filter(Boolean), publisher: (read(PUB_LOG) || "").trim().split("\n").filter(Boolean), log: git("log", "--format=%s", `${start}..HEAD`), build: read(path.join(repo, "src/build-info.js")), head: git("rev-parse", "--short", "HEAD") };
+      tracker: (read(TRK_LOG) || "").trim().split("\n").filter(Boolean), publisher: (read(PUB_LOG) || "").trim().split("\n").filter(Boolean), log: git("log", "--format=%s", `${start}..HEAD`), build: read(path.join(repo, "src/build-info.js")), head: git("rev-parse", "--short", "HEAD"),
+      forge: (read(FORGE_LOG) || "").trim().split("\n").filter(Boolean) };
+    last.deployed = last.forge.some((l) => /^deploy\b/.test(l));
     last.desired = null;
     if (env.WANT_DESIRED) {
       // the tracker's own desired state in the clone, after the deploy (Marketplace read stubbed: everything is listed)
@@ -226,6 +241,85 @@ let p = ""; process.stdin.on("data", (d) => (p += d)); process.stdin.on("end", (
   // the model is off here, so the fix text was never reviewed: the issue closes with a generic sentence, never the raw line
   ok(`...and the tracker builds SVT-47's issue as a Done Bug with ${NEXT} as its fix version (unreviewed text: the generic sentence) (${JSON.stringify(last.desired).slice(0, 300)})`,
     d.type === "Bug" && d.status === "Done" && d.version === NEXT && !d.known && d.text === "This problem is fixed." && !/SVT-47/.test(d.text));
+
+  // THE DOOR RELEASES THE COMMIT IT IS TOLD TO, OR NOTHING (2026-10-22). A door packages the working tree of the
+  // checkout it runs in; when that checkout's HEAD is not the commit that was tested (local main could not
+  // fast-forward to the tested branch), it used to deploy the OLDER code with no warning (CogniRunner, two dev
+  // redeploys). A real run must name the commit (--sha), HEAD must be exactly it, the packaged paths clean, and right
+  // before `forge deploy` the only differences from it may be the files the door itself committed.
+  const L = ["--licensing-live"];
+  const full = (ref) => git("rev-parse", ref);
+  const base = full("HEAD");
+  // the stale checkout: `tested` has the newer, tested commit; main has an extra commit `tested` lacks
+  git("checkout", "-q", "-b", "tested");
+  fs.writeFileSync(path.join(repo, "src/server/door-test-change.js"), "export const x = 3; // the tested code\n"); git("commit", "-qam", "the tested change");
+  const testedSha = full("HEAD");
+  git("checkout", "-q", "main");
+  fs.writeFileSync(path.join(repo, "src/server/main-only.js"), "export const y = 1;\n"); git("add", "-A", "src"); git("commit", "-qm", "a commit only main has");
+  const mainSha = full("HEAD");
+  r = door({ FAKE_ELIG: ELIGIBLE }, L, { sha: "tested" });
+  ok("STALE CHECKOUT (main diverged from the tested branch), --sha tested: the door refuses and never reaches forge deploy", r.status === 1 && !last.deployed && /DIVERGED/.test(r.stdout));
+  ok("...naming both full shas and the way out (merge, then fast-forward)", r.stdout.includes(testedSha) && r.stdout.includes(mainSha) && /merge/i.test(r.stdout) && /fast-forward/i.test(r.stdout));
+  ok("...before anything was written, committed or built", last.log === "" && !/Building every bundle/.test(r.stdout) && !/Release notes and public tracker/.test(r.stdout) && last.forge.length === 0);
+  r = door({ FAKE_ELIG: ELIGIBLE }, L, { sha: testedSha });
+  ok("...the same with the tested commit's full sha", r.status === 1 && !last.deployed && /DIVERGED/.test(r.stdout));
+  git("reset", "-q", "--hard", base); // main is now simply BEHIND tested
+  r = door({ FAKE_ELIG: ELIGIBLE }, L, { sha: "tested" });
+  ok("main BEHIND the named commit: refused, says BEHIND and to fast-forward, names both shas", r.status === 1 && !last.deployed && /BEHIND/.test(r.stdout) && /fast-forward/i.test(r.stdout)
+    && r.stdout.includes(testedSha) && r.stdout.includes(base));
+  git("checkout", "-q", "tested");
+  r = door({ FAKE_ELIG: ELIGIBLE }, L, { sha: base });
+  ok("checkout AHEAD of the named commit: refused, says AHEAD, names both shas", r.status === 1 && !last.deployed && /AHEAD/.test(r.stdout) && r.stdout.includes(testedSha) && r.stdout.includes(base));
+  r = door({ FAKE_ELIG: ELIGIBLE }, L, { sha: "tested" });
+  ok("in the tested checkout, --sha tested (branch name): HEAD matches, the door deploys", r.status === 0 && last.deployed && /Deployed to production/.test(r.stdout));
+  r = door({ FAKE_ELIG: ELIGIBLE }, L, { sha: testedSha.slice(0, 10) });
+  ok("...and with a short hex sha", r.status === 0 && last.deployed);
+  git("checkout", "-q", "main"); git("branch", "-q", "-D", "tested");
+
+  r = door({ FAKE_ELIG: ELIGIBLE }, L, { sha: null });
+  ok("a real run with no --sha: refused before anything, says --sha is needed and prints HEAD", r.status === 1 && !last.deployed && last.forge.length === 0 && /--sha/.test(r.stdout) && r.stdout.includes(base));
+  for (const bad of ["HEAD", "@", "HEAD~1", "HEAD^", "@~1", "@{-1}", "ORIG_HEAD", "main~1"]) {
+    r = door({ FAKE_ELIG: ELIGIBLE }, L, { sha: bad });
+    ok(`--sha ${bad}: refused (it means "whatever is checked out", or is not a sha or a branch)`, r.status === 1 && !last.deployed && last.forge.length === 0 && last.log === "");
+  }
+  r = door({ FAKE_ELIG: ELIGIBLE }, L, { sha: "0123456789abcdef0123456789abcdef01234567" });
+  ok("--sha that resolves to no commit: refused", r.status === 1 && !last.deployed && /does not resolve to a commit/.test(r.stdout));
+  r = door({ FAKE_ELIG: ELIGIBLE }, [...L, "--sha"], { sha: null });
+  ok("--sha with no value: refused", r.status === 1 && !last.deployed);
+  r = door({ FAKE_ELIG: ELIGIBLE }, L, { sha: "main" });
+  ok("--sha main while main is HEAD: the door deploys", r.status === 0 && last.deployed);
+  ok("...and --sha never reaches forge deploy's own arguments", last.forge.filter((l) => /^deploy\b/.test(l)).every((l) => !/--sha|main/.test(l)));
+  r = door({ FAKE_ELIG: ELIGIBLE }, [...L, `--sha=${base}`], { sha: null });
+  ok("--sha=<commit> works too", r.status === 0 && last.deployed);
+
+  fs.writeFileSync(path.join(repo, "src/server/untracked.js"), "export const z = 1;\n");
+  r = door({ FAKE_ELIG: ELIGIBLE }, L);
+  ok("an UNTRACKED file in a packaged path (src/): refused, named, nothing built", r.status === 1 && !last.deployed && /src\/server\/untracked\.js/.test(r.stdout) && !/Building every bundle/.test(r.stdout));
+  fs.rmSync(path.join(repo, "src/server/untracked.js"));
+  fs.writeFileSync(path.join(repo, "notes-outside.txt"), "scratch\n");
+  r = door({ FAKE_ELIG: ELIGIBLE }, L);
+  ok("an untracked file outside the packaged paths does not stop the door", r.status === 0 && last.deployed);
+  fs.rmSync(path.join(repo, "notes-outside.txt"));
+
+  r = door({ FAKE_ELIG: ELIGIBLE, FAKE_SNEAK: "commit" }, L);
+  ok("a NON-door file committed between the named commit and HEAD before the deploy: refused right before forge deploy, naming it", r.status === 1 && !last.deployed
+    && /Building every bundle/.test(r.stdout) && /src\/server\/sneak\.js/.test(r.stdout) && !/not built from HEAD/.test(r.stdout));
+  r = door({ FAKE_ELIG: ELIGIBLE, FAKE_SNEAK: "dirty" }, L);
+  ok("a packaged file edited (uncommitted) during the run: refused before forge deploy", r.status === 1 && !last.deployed && /src\/server\/door-test-change\.js/.test(r.stdout));
+  r = door({ FAKE_ELIG: ELIGIBLE, FAKE_SNEAK: "untracked" }, L);
+  ok("a new untracked packaged file during the run: refused before forge deploy", r.status === 1 && !last.deployed && /src\/server\/sneak\.js/.test(r.stdout));
+  try { fs.rmSync(path.join(repo, "src/server/sneak.js")); } catch { /* none */ }
+  // The door's OWN commits (its note, its tracker rows) between the named commit and the deploy are allowed: the note
+  // and tracker-row cases above commit them and deploy with --sha = the commit they started from.
+
+  // DRY RUN: checks, writes nothing, builds nothing, deploys nothing
+  r = door({ FAKE_ELIG: ELIGIBLE }, [...L, "--dry-run"], { sha: null });
+  ok("--dry-run without --sha: exit 0, says a real run needs --sha <the commit being released> and prints HEAD", r.status === 0 && /needs --sha/.test(r.stdout) && r.stdout.includes(base)
+    && last.forge.length === 0 && last.log === "" && !/Building every bundle/.test(r.stdout));
+  r = door({ FAKE_ELIG: ELIGIBLE }, [...L, "--dry-run"]);
+  ok("--dry-run --sha <HEAD>: exit 0, the check passes, nothing deployed", r.status === 0 && /matches/.test(r.stdout) && last.forge.length === 0 && last.log === "");
+  r = door({ FAKE_ELIG: ELIGIBLE }, [...L, "--dry-run"], { sha: "HEAD" });
+  ok("--dry-run --sha HEAD: refused (exit 1)", r.status === 1 && last.forge.length === 0);
 
   ok("the tree is clean after every run (manifest and build stamp restored)", git("status", "--porcelain", "--untracked-files=no") === "");
 } finally {
