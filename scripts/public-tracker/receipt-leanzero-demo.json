@@ -43,7 +43,8 @@
     "8.13.0": "10655",
     "8.14.0": "10754",
     "8.15.0": "10820",
-    "8.16.0": "10853"
+    "8.16.0": "10853",
+    "8.17.0": "10889"
   },
   "issues": {
     "02dc09e3ae3c6c5a": {
@@ -629,7 +630,7 @@
     ],
     "assigned": true
   },
-  "updatedAt": "2026-10-22T10:39:56.693Z",
+  "updatedAt": "2026-10-22T11:28:41.667Z",
   "projectId": "10278",
   "issueTypeScheme": {
     "id": "10636",
@@ -662,6 +663,16 @@
       "version": "8.2.0",
       "into": "10453af12a85f805",
       "key": "SVT-49"
+    },
+    "d6d43e89ed3fe4f5": {
+      "version": "8.17.0",
+      "into": "known-approval-vote-not-applied",
+      "key": "SVT-146"
+    },
+    "0cf9c8fa7f0c26f9": {
+      "version": "8.17.0",
+      "into": "known-waiting-count-higher-than-lists",
+      "key": "SVT-147"
     }
   },
   "public": {
@@ -671,7 +682,7 @@
     "undo": "DELETE /rest/api/3/permissionscheme/10265/permission/11703",
     "proof": {
       "GET /rest/api/3/issue/SVT-1": 200,
-      "GET /rest/api/3/issue/SVT-145": 200,
+      "GET /rest/api/3/issue/SVT-147": 200,
       "GET /rest/api/3/issue/ATLAS-2361": 404,
       "GET /rest/api/3/issue/CRBAK-1": 404,
       "GET /rest/api/3/issue/CRD-30": 404,
@@ -696,24 +707,24 @@
       "GET /rest/api/3/issue/SEC-1225": 404,
       "GET /rest/api/3/issue/VOY-1992": 404,
       "anonymous site-wide search (bounded, all pages): issues per project": {
-        "SVT": 141,
+        "SVT": 143,
         "CRT": 441,
         "LZMT": 376,
         "CST": 37
       },
-      "anonymous listing of SVT": "141 issues (receipt holds 141; 已完成 110, Backlog 31)",
+      "anonymous listing of SVT": "143 issues (receipt holds 143; 已完成 112, Backlog 31)",
       "other projects whose scheme lets anyone browse": "CRT,CST,LZMT",
       "public trackers (allowlist)": "CRT,SVT,LZMT,CST",
       "negative control": "13 fake broken answers, each failed the verdict",
       "GET /jira/software/c/projects/SVT/issues": 200
     },
-    "provenAt": "2026-10-22T10:01:12.880Z",
+    "provenAt": "2026-10-22T11:28:41.667Z",
     "proofFailures": []
   },
   "verified": {
-    "through": "8.16.0",
-    "at": "2026-10-22T10:00:41.534Z",
-    "issues": 141,
+    "through": "8.17.0",
+    "at": "2026-10-22T11:28:13.899Z",
+    "issues": 143,
     "failures": 0
   }
 }

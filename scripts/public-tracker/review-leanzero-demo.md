@@ -1,16 +1,16 @@
 # Sentinel Vault Public Tracker - verify file
 
-Generated 2026-10-22T10:00:41.530Z by scripts/public-tracker/tracker.mjs verify.
+Generated 2026-10-22T11:28:13.898Z by scripts/public-tracker/tracker.mjs verify.
 Site https://leanzero-demo.atlassian.net. Project SVT (id 10278), permission scheme "Sentinel Vault Public Tracker permissions" (id 10265, used by: SVT), anonymous grants: BROWSE_PROJECTS.
-Issues checked: 141 of 141. Verification failures: 0. Withheld release-note lines: 1.
+Issues checked: 143 of 143. Verification failures: 0. Withheld release-note lines: 1.
 
 ## Counts
 
-- status: Done 110; Backlog 31
-- version: 6.4.0 5; 6.5.0 1; 6.6.0 6; 6.7.0 8; 6.9.0 4; 6.10.0 4; 6.11.0 1; 7.0.0 5; 7.1.0 8; 8.0.0 16; 8.1.0 1; 8.2.0 2; 8.3.0 1; 8.4.0 1; 8.5.0 1; 8.6.0 13; 8.7.0 1; 8.8.0 1; 8.9.0 5; 8.10.0 5; 8.11.0 3; 8.12.0 3; 8.13.0 1; 8.14.0 10; 8.15.0 1; 8.16.0 3; open, affects 7.1.0 6; open, affects 8.12.0 25
-- component: Classification 4; Sealed files and sections 18; Edit requests and access 4; REST API 5; Backup and restore 13; Layout and accessibility 10; Privacy and personal data 11; Space and site settings 17; Workflow and approvals 25; App permissions and updates 4; Page banner and Sentinel Vault window 10; Activity report 2; Jira issue attachments 13; My work 5
-- type: Improvement 55; Bug 86
-- versions in Jira: 6.4.0 released 2026-09-30, 6.5.0 released 2026-09-30, 6.6.0 released 2026-10-02, 6.7.0 released 2026-10-04, 6.9.0 released 2026-10-04, 6.10.0 released 2026-10-04, 6.11.0 released 2026-10-04, 7.0.0 released 2026-10-05, 7.1.0 released 2026-10-09, 8.0.0 released 2026-10-14, 8.1.0 released 2026-10-14, 8.2.0 released 2026-10-14, 8.3.0 released 2026-10-14, 8.4.0 released 2026-10-14, 8.5.0 released 2026-10-14, 8.6.0 released 2026-10-17, 8.7.0 released 2026-10-17, 8.8.0 released 2026-10-17, 8.9.0 released 2026-10-18, 8.10.0 released 2026-10-18, 8.11.0 released 2026-10-18, 8.12.0 released 2026-10-18, 8.13.0 released 2026-10-21, 8.14.0 released 2026-10-21, 8.15.0 released 2026-10-21, 8.16.0 released 2026-10-22
+- status: Done 112; Backlog 31
+- version: 6.4.0 5; 6.5.0 1; 6.6.0 6; 6.7.0 8; 6.9.0 4; 6.10.0 4; 6.11.0 1; 7.0.0 5; 7.1.0 8; 8.0.0 16; 8.1.0 1; 8.2.0 2; 8.3.0 1; 8.4.0 1; 8.5.0 1; 8.6.0 13; 8.7.0 1; 8.8.0 1; 8.9.0 5; 8.10.0 5; 8.11.0 3; 8.12.0 3; 8.13.0 1; 8.14.0 10; 8.15.0 1; 8.16.0 3; open, affects 7.1.0 6; open, affects 8.12.0 25; 8.17.0 2
+- component: Classification 4; Sealed files and sections 18; Edit requests and access 4; REST API 5; Backup and restore 13; Layout and accessibility 10; Privacy and personal data 11; Space and site settings 17; Workflow and approvals 26; App permissions and updates 4; Page banner and Sentinel Vault window 10; Activity report 2; Jira issue attachments 13; My work 6
+- type: Improvement 55; Bug 88
+- versions in Jira: 6.4.0 released 2026-09-30, 6.5.0 released 2026-09-30, 6.6.0 released 2026-10-02, 6.7.0 released 2026-10-04, 6.9.0 released 2026-10-04, 6.10.0 released 2026-10-04, 6.11.0 released 2026-10-04, 7.0.0 released 2026-10-05, 7.1.0 released 2026-10-09, 8.0.0 released 2026-10-14, 8.1.0 released 2026-10-14, 8.2.0 released 2026-10-14, 8.3.0 released 2026-10-14, 8.4.0 released 2026-10-14, 8.5.0 released 2026-10-14, 8.6.0 released 2026-10-17, 8.7.0 released 2026-10-17, 8.8.0 released 2026-10-17, 8.9.0 released 2026-10-18, 8.10.0 released 2026-10-18, 8.11.0 released 2026-10-18, 8.12.0 released 2026-10-18, 8.13.0 released 2026-10-21, 8.14.0 released 2026-10-21, 8.15.0 released 2026-10-21, 8.16.0 released 2026-10-22, 8.17.0 unreleased
 
 ## Issues
 
@@ -1065,4 +1065,18 @@ Issues checked: 141 of 141. Verification failures: 0. Withheld release-note line
 
 > When a request's AI review passed while the approvers' rights could not be checked, the request could stay open for good. Sentinel Vault now completes it at the next hourly check after the rights can be checked, if its approvals still meet what it needs.
 > Fixed in Sentinel Vault 8.16.0. A site still on version 7 or earlier gets it once a site admin approves the update in Confluence administration, Apps, Manage apps.
+
+### SVT-146 - An approval request can stay open after enough approvers decided, when Confluence was limiting requests at that moment
+
+- type: Bug; status: Done (Done); fixVersion: 8.17.0; component: Workflow and approvals
+
+> An approval request could stay open although enough approvers had decided, when Confluence was limiting Sentinel Vault's requests or answering with errors at the moment of the deciding approval, or when two approvers decided at the same time. Sentinel Vault now finishes such a request at one of its hourly checks once Confluence answers again.
+> Fixed in Sentinel Vault 8.17.0, which is waiting for Marketplace approval and is not yet listed on the Marketplace.
+
+### SVT-147 - The number of things waiting on you can be higher than the lists show
+
+- type: Bug; status: Done (Done); fixVersion: 8.17.0; component: My work
+
+> The total at the top of My work and the page banner's Waiting for you count now count exactly what the lists show: approval requests on pages in the trash and approval requests whose AI review did not pass are no longer counted. The approvals list says how many wait in all when there are more than it shows, the total updates after you decide from that list, and when Confluence could not answer for some of them right now, My work says so.
+> Fixed in Sentinel Vault 8.17.0, which is waiting for Marketplace approval and is not yet listed on the Marketplace.
 
