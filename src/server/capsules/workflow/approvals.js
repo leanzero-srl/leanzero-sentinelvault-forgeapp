@@ -31,13 +31,28 @@ import { workflowStatus, approvalSummary } from "./status.js";
 import { touchByline } from "../page-details/byline-touch.js"; // WF-6
 import { notifyApprovalRequested, notifyApprovalResolved } from "../../infra/approval-blueprints.js";
 import { recordActivity } from "../../infra/activity-log.js";
-import { isAccountStewardAsApp } from "../../shared/steward-checks.js";
-import { isStewardOfRecord } from "../../shared/content-access.js";
+import { isAccountStewardAsApp, accountStewardStatusAsApp } from "../../shared/steward-checks.js";
+import { isStewardOfRecord, recordAuthority, stewardOfSpacesStatus, canReadPage, accountContentAccessStatus, READ } from "../../shared/content-access.js";
 import { movedPageHold } from "./moved-hold.js";
 import { verifySignature } from "./signature.js";
 import { errText } from "../../shared/action-log.js";
 
 const APPROVAL_ID = "approval"; // v1 single default round; schema carries the segment for future named rounds
+// 8.16: the one refusal for a decider who cannot view the page (approval requests and proposals). A
+// literal `reason:` so the action log can name it (scripts/gen-action-names.mjs).
+export const cannotViewToDecide = () => ({ success: false, reason: "You don't have access to view this page, so you can't decide on it. Nothing was recorded." });
+/**
+ * 8.16: the view check before a decision (approval requests, proposals, Approve anyway): null when
+ * the decider can view the page, else the refusal. A Confluence answer that could not be had (5xx, a
+ * thrown call) is "try again", never "you don't have access"; a 429 is noted, so the resolver says
+ * Confluence is limiting requests (registry.js busyAware).
+ */
+export async function viewToDecideRefusal(accountId, pageId) {
+  const st = await accountContentAccessStatus(accountId, pageId, READ);
+  if (st.allowed) return null;
+  if (st.unknown) return { success: false, reason: "Your access to this page could not be checked right now. Nothing was recorded. Try again in a moment." };
+  return cannotViewToDecide();
+}
 
 // --- Pure decision (unit-tested). decisions: array of "approved"|"denied"|"pending". ---
 // `adminDecisions` (owner, 2026-09-25): space admins may decide without being listed, and count
@@ -133,6 +148,65 @@ export function quorumOutcome(pending, effective, listedRecords, adminRecords, {
   const records = (listedRecords || []).filter((r) => eff.includes(r?.approverAccountId));
   const { decisions, adminOnly } = listedDecisionsFor({ ...pending, approvers: eff, min }, records);
   return { outcome: evaluateApproval(pending?.mode, min, decisions, adminDecisions, { adminOnly }), needsRerequest, min, rejudged: removed > 0, withRemovedPending };
+}
+
+/**
+ * PURE (8.16). Would a request asking `approvers` (mode/min, opened by `requestedBy`) be one nobody can
+ * finish, given the approvers who cannot view the page (`cannotView`)? Deciding needs read access to
+ * the page (decideApproval), so: "all" needs every listed approver but the requester to see it (a space
+ * admin never stands in for a listed approver there); "any"/"min" are stuck only when the approvers who
+ * can see it cannot reach the count and space admins may not decide (an admin fills a slot otherwise).
+ */
+export function unreachableByView({ approvers = [], mode = "any", min = 1, requestedBy = null, adminsMay = true } = {}, cannotView = []) {
+  const deciders = (approvers || []).filter((id) => id && id !== requestedBy);
+  const viewers = deciders.filter((id) => !(cannotView || []).includes(id));
+  if (!deciders.length) return false; // admin-only requests: settled by a space admin (who can view it)
+  if (mode === "all") return viewers.length < deciders.length;
+  if (adminsMay) return false;
+  if (mode === "min") return viewers.length < Math.max(1, min || 1);
+  return viewers.length === 0;
+}
+
+/**
+ * 8.16: which of `approvers` cannot view the page (Confluence, per account). `{ unknown, ids, unknownIds }`
+ * — `unknown` when any answer could not be had (a 429); `unknownIds` are those people.
+ */
+export async function approversWhoCannotView(pageId, approvers) {
+  const ids = [];
+  let unknown = false;
+  const unknownIds = [];
+  const list = [...new Set((approvers || []).filter(Boolean))];
+  for (let i = 0; i < list.length; i += 10) { // at most 50 people (MAX_REQUEST_APPROVERS), ten at a time
+    const chunk = list.slice(i, i + 10);
+    const answers = await Promise.all(chunk.map((id) => accountContentAccessStatus(id, pageId, READ)));
+    answers.forEach((st, k) => { if (st.unknown) { unknown = true; unknownIds.push(chunk[k]); } else if (!st.allowed) ids.push(chunk[k]); });
+  }
+  return { unknown, ids, unknownIds };
+}
+
+/**
+ * 8.16: the request-time check: refuse a request (or re-request) that could never be finished because
+ * approvers cannot view the page, naming them; "try again" when it could not be checked. null = fine.
+ */
+export async function viewReachabilityRefusal(pageId, { approvers, mode, min, requestedBy, spaceKey, names = {} }) {
+  if (!approvers?.length) return null;
+  const adminsMay = (await getSpaceWorkflowSettings(spaceKey))?.approval?.adminsCanApprove !== false;
+  const shape = { approvers, mode, min, requestedBy, adminsMay };
+  // Nothing to check when access cannot change the answer: any-of/min-of with space admins allowed to
+  // decide (an admin who can view it fills the slot), or a request already unreachable for another
+  // reason (not this check's to refuse, and never with a wrong reason).
+  if (!unreachableByView(shape, approvers)) return null; // even with nobody able to view it, it can finish
+  if (unreachableByView(shape, [])) return null;
+  const cv = await approversWhoCannotView(pageId, approvers.filter((id) => id !== requestedBy));
+  if (cv.unknown) {
+    // Refuse on "could not check" only when the people who could not be checked could make it unreachable.
+    if (!unreachableByView(shape, [...cv.ids, ...cv.unknownIds])) return null;
+    return { success: false, reason: "Could not check who can view this page right now. Nothing was changed — try again in a moment." };
+  }
+  if (!cv.ids.length || !unreachableByView(shape, cv.ids)) return null;
+  const who = cv.ids.map((id) => names[id]).filter(Boolean);
+  const list = who.length === cv.ids.length ? `: ${who.join(", ")}` : "";
+  return { success: false, cannotView: cv.ids.length, reason: `${cv.ids.length === 1 ? "One approver can't" : `${cv.ids.length} approvers can't`} view this page${list}. Approvers decide only pages they can view, so this request could never be completed. Give them access to the page, or a space admin can change the approvers in the space's Workflow settings.` };
 }
 
 /** Everyone whose decision record may exist for a pending request: listed approvers + admins who decided. */
@@ -523,7 +597,8 @@ async function finalizeApprovedTransition(pageId, stateId, pending, actorAccount
     const qz = quorum || await quorumNow(pageId, pending).catch(() => ({ unknown: true }));
     // The list could not be read (only an admin's "any" approval completes then): the admins who
     // decided are what counted, and the record says the approver list was not readable.
-    const evidenceQuorum = quorum || (qz && !qz.unknown ? { counted: qz.counted, effective: qz.effective, min: qz.min } : { counted: [...(pending.adminDeciders || [])], listUnknown: true });
+    // 8.16: only the admins who are admins NOW (adminsNow) are named as counted.
+    const evidenceQuorum = quorum || (qz && !qz.unknown ? { counted: qz.counted, effective: qz.effective, min: qz.min } : await listUnknownEvidence(pageId, pending));
     if (pending.pinnedVersion != null && live !== pending.pinnedVersion) {
       // WF-1: decideApproval refuses a stale approve BEFORE recording it (see there), so this
       // branch is only the race (the page changed between that check and here) and the AI path.
@@ -579,23 +654,94 @@ async function finalizeApprovedTransition(pageId, stateId, pending, actorAccount
  * (quorumOutcome). `{ unknown: true }` when any of its approvers could not be judged (a group could
  * not be read): nothing may be decided or completed on that, the caller says "try again".
  */
-async function quorumNow(pageId, pending, check = newApproverCheck()) {
+async function quorumNow(pageId, pending, check = newApproverCheck(), { judgeAdmins = true, knownAdmins = [], knownNotAdmins = [], assume = null, forAi = false } = {}) {
   const snapshot = pending?.approvers || [];
   let effective = [];
   const space = pending?.spaceKey || (await readPageWorkflow(pageId))?.spaceKey || null;
   if (snapshot.length) {
     const statuses = await Promise.all(snapshot.map((id) => check(snapshot, id, space)));
-    if (statuses.includes("unknown")) return { unknown: true, space };
+    if (statuses.includes("unknown")) return { unknown: true, unknownCause: "list", space };
     effective = snapshot.filter((_, i) => statuses[i] === "yes");
   }
   const adminsMay = (await getSpaceWorkflowSettings(space))?.approval?.adminsCanApprove !== false;
-  const adminIds = (pending?.adminDeciders || []).filter((id) => !effective.includes(id));
-  const [listedRecords, adminRecords] = await Promise.all([
+  let adminIds = (pending?.adminDeciders || []).filter((id) => !effective.includes(id));
+  // 8.16: an admin's vote counts only while that person is an admin NOW (adminsNow), the rule the
+  // listed approvers follow since 8.14. `judgeAdmins: false` is for the banner's read model, which
+  // shows no outcome and must not spend a role check per admin on every page view. `knownAdmins`
+  // are people this invocation already proved admins (the deciding admin): not asked again.
+  let unsure = [];
+  let notAdmins = [];
+  if (judgeAdmins && adminIds.length) {
+    const now = await adminsNow(pageId, pending, adminIds, { adminsMay, known: knownAdmins, knownNo: knownNotAdmins });
+    adminIds = now.ids;
+    unsure = now.unknownIds;
+    notAdmins = now.noIds;
+  }
+  // `assume` ({ accountId, status }): judge as if that person's decision were already recorded (the
+  // decide path asks BEFORE recording a vote whether its outcome can be told at all).
+  const as = (list) => (assume ? list.map((r) => (r?.approverAccountId === assume.accountId ? { ...r, status: assume.status } : r)) : list);
+  const [listedRecords, adminRecords, unsureRecords] = (await Promise.all([
     readApprovalRecords(pageId, pending.toStateId, effective),
     adminIds.length ? readApprovalRecords(pageId, pending.toStateId, adminIds) : [],
-  ]);
+    unsure.length ? readApprovalRecords(pageId, pending.toStateId, unsure) : [],
+  ])).map(as);
   const out = quorumOutcome(pending, effective, listedRecords, adminRecords, { adminsMay });
-  return { unknown: false, effective, listedRecords, adminRecords, ...out, counted: [...effective, ...adminIds] };
+  // An admin whose role could not be checked (a 429) is left out. That only matters when their
+  // approval would change the outcome: an admin's denial counts only in all-of and admin-only
+  // requests, where it closes the request the moment it is given, so none counts on an open one.
+  // Then the outcome is unknown and nothing is decided on it ("try again"; the AI pass waits). A vote
+  // reads `outcome` only; the AI pass also reads `withRemovedPending` (humanQuorumState), so `forAi`
+  // compares that too.
+  if (unsure.length && unsureRecords.some((r) => r?.status === "approved")) {
+    const withThem = quorumOutcome(pending, effective, listedRecords, [...adminRecords, ...unsureRecords.filter((r) => r?.status === "approved")], { adminsMay });
+    if (withThem.outcome !== out.outcome || (forAi && withThem.withRemovedPending !== out.withRemovedPending)) return { unknown: true, unknownCause: "admins", space };
+  }
+  // `admins` / `notAdmins`: the role answers this judgement rests on (proven, never unknown), so a
+  // second judgement in the same decision reuses them; `unsure` those that could not be told.
+  return { unknown: false, effective, listedRecords, adminRecords, ...out, counted: [...effective, ...adminIds], admins: adminIds, notAdmins, unsure, adminsMay };
+}
+
+/**
+ * 8.16: the evidence quorum when the approver list could not be read (only an admin's "any" approval
+ * completes then): the deciding admins who are admins NOW, and the record says the list was not
+ * readable. `known` names people already proven admins in this call (the deciding admin), kept when
+ * the others cannot be judged.
+ */
+async function listUnknownEvidence(pageId, pending, known = []) {
+  const now = await adminsNow(pageId, pending, pending?.adminDeciders || [], { known }).catch(() => ({ ids: [...known] }));
+  return { counted: [...new Set([...now.ids, ...known])], listUnknown: true };
+}
+
+/**
+ * 8.16: which of `ids` (people who decided as a space admin) are admins of the page's space NOW: the
+ * same test decideApproval's admin arm uses (isStewardOfRecord over the space the page is in now and,
+ * if it moved since the request, the request's space; isAccountStewardAsApp), with "could not tell"
+ * kept apart. None while the space does not let admins decide. `{ unknown: true }` when any of them
+ * could not be judged (a 429): nothing may be decided or completed on that, the caller says "try
+ * again". Never counts a vote on unknown.
+ */
+async function adminsNow(pageId, pending, ids, { adminsMay = null, known = [], knownNo = [] } = {}) {
+  const list = [...new Set((ids || []).filter(Boolean))];
+  if (!list.length) return { ids: [], unknownIds: [], noIds: [] };
+  const may = adminsMay ?? ((await getSpaceWorkflowSettings(pending?.spaceKey || (await readPageWorkflow(pageId))?.spaceKey || null))?.approval?.adminsCanApprove !== false);
+  if (!may) return { ids: [], unknownIds: [], noIds: list };
+  // `known` / `knownNo`: answers this call already has (the deciding admin; an earlier judgement in
+  // the same decision) — never asked again, so two judgements in one decision cannot disagree.
+  const proven = list.filter((id) => (known || []).includes(id));
+  const provenNo = list.filter((id) => !proven.includes(id) && (knownNo || []).includes(id));
+  const ask = list.filter((id) => !proven.includes(id) && !provenNo.includes(id));
+  if (!ask.length) return { ids: proven, unknownIds: [], noIds: provenNo };
+  const auth = await recordAuthority({ contentId: pageId, storedKey: pending?.spaceKey || null });
+  if (!auth.known) { if (auth.rateLimited) noteAuthzUnknown(); return { ids: proven, unknownIds: ask, noIds: provenNo }; }
+  // strict: a read with no answer at all (5xx, a throw) is "could not tell", never "no longer an
+  // admin" — dropping someone's vote needs a proven negative.
+  const statuses = await Promise.all(ask.map((id) => stewardOfSpacesStatus((a, k) => accountStewardStatusAsApp(a, k, { strict: true }), id, auth.spaces)));
+  if (statuses.some((st) => st.unknown)) noteAuthzUnknown();
+  return {
+    ids: [...proven, ...ask.filter((_, i) => statuses[i].steward === true)],
+    unknownIds: ask.filter((_, i) => statuses[i].unknown === true),
+    noIds: [...provenNo, ...ask.filter((_, i) => statuses[i].steward !== true && statuses[i].unknown !== true)],
+  };
 }
 
 // Whether the human approval axis is satisfied for the AI pass (vacuously true for an AI-only
@@ -604,21 +750,48 @@ async function quorumNow(pageId, pending, check = newApproverCheck()) {
 // complete it: an explicit human approval completes it (decideApproval, which finalizes once the
 // AI has passed) or it is re-requested — a quorum met only because approvers were removed, or one
 // standing next to a denial, is never turned into an approval by the AI pass.
-async function humanQuorumMet(pageId, pending) {
-  if (!pending.approvers || pending.approvers.length === 0) return true;
-  const q = await quorumNow(pageId, pending);
+/**
+ * 8.16, the ONE rule for "a former admin's approval is holding this request back" (the banner's
+ * listChanged and the re-request reset both read it): approvals (never denials) recorded by people
+ * who decided as admins, are not on the request's current approver list, are PROVEN no longer admins
+ * (or the space stopped letting admins decide), and whose approvals would change the outcome if they
+ * still counted. In an all-of request admin approvals never count, so it never matters there.
+ * `{ matters, ids }`; "could not tell" never matters.
+ */
+async function formerAdminApprovals(pageId, pending, check = newApproverCheck()) {
+  if (!(pending?.adminDeciders || []).length || (pending?.mode || "any") === "all") return { matters: false, ids: [] };
+  const q = await quorumNow(pageId, pending, check);
+  if (q.unknown || !q.notAdmins?.length) return { matters: false, ids: [] };
+  const former = (await readApprovalRecords(pageId, pending.toStateId, q.notAdmins)).filter((r) => r?.status === "approved");
+  if (!former.length) return { matters: false, ids: [] };
+  const withThem = quorumOutcome(pending, q.effective, q.listedRecords, [...q.adminRecords, ...former], { adminsMay: true });
+  // `cause`: "setting" when the space no longer lets admins decide (every admin's approval stopped
+  // counting), else "role" (the people are no longer admins).
+  return { matters: withThem.outcome !== q.outcome, ids: former.map((r) => r.approverAccountId), cause: q.adminsMay === false ? "setting" : "role" };
+}
+
+// 8.16: `{ met, unknown }` — `unknown` when it could not be told (the approver list or a deciding
+// admin's role could not be read); never met on unknown. humanQuorumMet is the boolean.
+async function humanQuorumState(pageId, pending) {
+  if (!pending.approvers || pending.approvers.length === 0) return { met: true, unknown: false };
+  const q = await quorumNow(pageId, pending, newApproverCheck(), { forAi: true });
   if (q.unknown) {
     // While the list cannot be read, an "any" request a space admin approved is met: the admin's
     // approval decides it whatever the listed approvers say (the decide path's rule).
-    if ((pending.mode || "any") !== "any" || !(pending.adminDeciders || []).length) return false;
-    const adminRecords = await readApprovalRecords(pageId, pending.toStateId, pending.adminDeciders);
-    return adminRecords.some((r) => r?.status === "approved");
+    // 8.16: only the approval of someone who is an admin NOW (adminsNow); "could not tell" is a no.
+    if (q.unknownCause !== "list" || (pending.mode || "any") !== "any" || !(pending.adminDeciders || []).length) return { met: false, unknown: true };
+    const admins = await adminsNow(pageId, pending, pending.adminDeciders);
+    const adminRecords = admins.ids.length ? await readApprovalRecords(pageId, pending.toStateId, admins.ids) : [];
+    if (adminRecords.some((r) => r?.status === "approved")) return { met: true, unknown: false, quorum: { counted: admins.ids, listUnknown: true } };
+    return { met: false, unknown: true };
   }
-  if (q.outcome !== "approved") return false;
+  if (q.outcome !== "approved") return { met: false, unknown: false };
   // After a removal: met only when the request judged as asked (removed approvers still pending)
   // is already met — the removal changed nothing; otherwise an explicit approval or a re-request.
-  return !q.rejudged || q.withRemovedPending === "approved";
+  // `quorum` is what counted, handed to the finalizer so the evidence is the judgement just made.
+  return { met: !q.rejudged || q.withRemovedPending === "approved", unknown: false, quorum: { counted: q.counted, effective: q.effective, min: q.min } };
 }
+async function humanQuorumMet(pageId, pending) { return (await humanQuorumState(pageId, pending)).met; }
 
 // #46 Part B: the AI review verdict lands here (from aiValidationConsumer's gate branch, or a
 // simulated verdict / the reaper). Writes the verdict onto the SAME pending record as an
@@ -652,15 +825,65 @@ export async function applyAiVerdict(pageId, reviewedVersion, status, reason) {
   await kvs.set(pendingKey(pageId), pending);
   if (pending.aiGate.status !== "passed") return { applied: true, status: pending.aiGate.status };
   // AI passed — complete iff the human axis is also met (else wait for the last human vote).
-  if (!(await humanQuorumMet(pageId, pending))) return { applied: true, status: "passed", waiting: "humans" };
+  const humans = await humanQuorumState(pageId, pending);
+  if (!humans.met) {
+    // 8.16: the human axis could not be told (a group or a deciding admin's role unreadable): the
+    // verdict is kept and the request is marked, so the hourly sweep finishes it once it can be told
+    // (completeWhenKnown). Without that a request whose approvers had all voted stayed open for good.
+    if (humans.unknown) await markQuorumUnknown(pageId);
+    return { applied: true, status: "passed", waiting: "humans", ...(humans.unknown ? { humansUnknown: true } : {}) };
+  }
   // The AI was a CONDITION; the authority was the steward who requested the transition. The hold was
   // asked above only if the quorum was met then; otherwise the finalizer asks it now.
-  const res = await finalizeApprovedTransition(pageId, pending.toStateId, pending, pending.requestedBy || null, pending.requestedByName || "Sentinel Vault", "approved (AI review + approvals)", { holdChecked: quorumAlready === true });
+  const res = await finalizeApprovedTransition(pageId, pending.toStateId, pending, pending.requestedBy || null, pending.requestedByName || "Sentinel Vault", "approved (AI review + approvals)", { holdChecked: quorumAlready === true, quorum: humans.quorum || null });
   return { applied: true, status: "passed", ...res };
+}
+
+// 8.16: an AI-passed request whose human quorum could not be told when the verdict landed carries
+// `quorumUnknownAt`; the hourly sweep finishes it (completeWhenKnown). Votes are never deferred: the
+// decide path refuses up front ("try again") when the outcome of the vote could not be told.
+// Read-modify-write like every pending write (KVS has no compare-and-set): skipped while a completion
+// holds its claim, and re-read right before the write so a closed request is not brought back.
+async function markQuorumUnknown(pageId) {
+  try {
+    if (await kvs.get(completingKey(pageId))) return;
+    const cur = await kvs.get(pendingKey(pageId));
+    if (!cur || cur.quorumUnknownAt || cur.aiGate?.status !== "passed") return;
+    await kvs.set(pendingKey(pageId), { ...cur, quorumUnknownAt: Date.now() });
+  } catch (e) { console.warn("[APPROVALS] quorum-unknown mark failed:", errText(e)); }
+}
+async function clearQuorumUnknown(pageId) {
+  if (await kvs.get(completingKey(pageId))) return;
+  const cur = await kvs.get(pendingKey(pageId));
+  if (cur?.quorumUnknownAt) { const { quorumUnknownAt, ...rest } = cur; await kvs.set(pendingKey(pageId), rest); }
+}
+
+/**
+ * 8.16 (hourly, workflowSweep): finish a marked request (markQuorumUnknown) once its quorum can be told.
+ * Met: completed exactly as the AI pass would have (the requester's authority, the AI as condition,
+ * the finalizer's version and moved-page guards). Known not met, or the AI review no longer passed:
+ * the mark is cleared (the next vote judges it as usual). Still unknown: kept for the next run.
+ */
+export async function completeWhenKnown(pageId) {
+  const pending = await kvs.get(pendingKey(pageId));
+  if (!pending?.quorumUnknownAt) return { done: false, reason: "not waiting" };
+  if (pending.aiGate?.required && pending.aiGate.status !== "passed") { await clearQuorumUnknown(pageId); return { done: false, reason: "ai review" }; }
+  const humans = await humanQuorumState(pageId, pending);
+  if (humans.unknown) return { done: false, reason: "still unknown" };
+  if (!humans.met) { await clearQuorumUnknown(pageId); return { done: false, reason: "not met" }; }
+  const res = await finalizeApprovedTransition(pageId, pending.toStateId, pending, pending.requestedBy || null, pending.requestedByName || "Sentinel Vault", "approved (AI review + approvals)", { quorum: humans.quorum || null });
+  return { done: res?.transitioned === true, ...res };
 }
 
 // An approver records a decision; if the threshold resolves, complete or clear the transition.
 export async function decideApproval({ pageId, approverAccountId, decision, reason, actorName, signatureCode }) {
+  // 8.16: a decision is about content the decider can SEE. Asked of Confluence for this account
+  // (content-access.js canReadPage, fails closed; a 429 answers "try again" via busyAware) before
+  // anything is read or recorded (no answer about whether a request exists on a page you cannot
+  // see), for every kind of decider: a listed approver and a space admin alike. The
+  // page id may come from the payload (the approvals inbox, a REST client), so nothing else proves it.
+  const viewRefusal = await viewToDecideRefusal(approverAccountId, pageId);
+  if (viewRefusal) return viewRefusal;
   const pending = await kvs.get(pendingKey(pageId));
   if (!pending) return { success: false, reason: "No approval is pending for this page" };
   // Segregation of duties: the requester cannot approve their own transition.
@@ -721,9 +944,18 @@ export async function decideApproval({ pageId, approverAccountId, decision, reas
   // One exception: in "any", a space admin's own decision does not depend on the listed approvers
   // (an admin's approval completes it, an admin's "no" leaves it open), so it proceeds.
   const byAdmin = asAdmin || record.admin === true;
-  const q0 = await quorumNow(pageId, pending, check);
-  const adminDespiteUnknown = q0.unknown && byAdmin && (pending.mode || "any") === "any";
-  if (q0.unknown && !adminDespiteUnknown) return approverRefusal("unknown", {}, { unreadGroups: await check.unreadGroups(space) });
+  // 8.16: the deciding admin was proved an admin above (isAdmin): not asked again in this call.
+  const knownAdmins = byAdmin ? [approverAccountId] : [];
+  // 8.16: judged as if this decision were already recorded, so a vote whose outcome cannot be told
+  // (it would hinge on an admin whose role could not be read) is refused before anything is recorded.
+  // A listed approver taken off the list who decides as an admin is added to the deciding admins only
+  // when the vote is recorded below: judged here as one already.
+  const pendingAsIfRecorded = byAdmin && !(pending.adminDeciders || []).includes(approverAccountId) ? { ...pending, adminDeciders: [...(pending.adminDeciders || []), approverAccountId] } : pending;
+  const q0 = await quorumNow(pageId, pendingAsIfRecorded, check, { knownAdmins, assume: (decision === "approved" || decision === "denied") ? { accountId: approverAccountId, status: decision } : null });
+  // Only an unreadable approver LIST lets an admin's own any-of decision through (it does not depend
+  // on the listed approvers).
+  const adminDespiteUnknown = q0.unknown && q0.unknownCause === "list" && byAdmin && (pending.mode || "any") === "any";
+  if (q0.unknown && !adminDespiteUnknown) return approverRefusal("unknown", {}, { unreadGroups: q0.unknownCause === "list" ? await check.unreadGroups(space) : [] });
   // An approval of a page that moved to another space since the request is held (moved-hold.js) —
   // before anything is recorded. A "no" still closes the request.
   if (decision === "approved") {
@@ -773,14 +1005,17 @@ export async function decideApproval({ pageId, approverAccountId, decision, reas
   // (quorumNow; the list read above is reused) plus the admins who decided.
   const q = adminDespiteUnknown
     ? { listedRecords: [], adminRecords: [record], outcome: decision === "approved" ? "approved" : "pending", counted: null }
-    : await quorumNow(pageId, pending, check);
-  if (q.unknown) return approverRefusal("unknown", {}, { unreadGroups: await check.unreadGroups(space) }); // the list was read above: not expected
-  const records = [...q.listedRecords, ...q.adminRecords]; // the vote summary names every counted decider
+    : await quorumNow(pageId, pending, check, { knownAdmins: [...knownAdmins, ...(q0.admins || [])], knownNotAdmins: q0.notAdmins || [] });
+  // 8.16: the outcome was told before the vote was recorded (q0, judged with it). Should it turn
+  // unknown in between (a 429 starting within this call), nothing completes on it: the vote stands and
+  // the request stays open for the next decision.
+  const later = q.unknown === true;
+  const records = later ? [] : [...q.listedRecords, ...q.adminRecords]; // the vote summary names every counted decider
   // A "no" never completes a request: when the quorum reads "approved" after a DENIAL (the approvals
   // already in meet a minimum that re-clamped when approvers left the list), the request stays
   // open; an approver's or admin's next approval completes it, or it is re-requested.
-  const outcome = decision === "denied" && q.outcome === "approved" ? "pending" : q.outcome;
-  const evidenceQuorum = q.counted ? { counted: q.counted, effective: q.effective, min: q.min } : { counted: [...(pending.adminDeciders || [])], listUnknown: true };
+  const outcome = later ? "pending" : (decision === "denied" && q.outcome === "approved" ? "pending" : q.outcome);
+  const evidenceQuorum = later ? null : (q.counted ? { counted: q.counted, effective: q.effective, min: q.min } : await listUnknownEvidence(pageId, pending, [approverAccountId]));
 
   // A1: the vote is recorded (kvs.set above) — witness it with the outcome the vote produced.
   // `outcome` here is what the quorum says; the finalizer may still turn "approved" into
@@ -807,6 +1042,7 @@ export async function decideApproval({ pageId, approverAccountId, decision, reas
     return result;
   };
 
+  if (later) return decided({ success: true, outcome: "pending" });
   if (outcome === "approved") {
     // #46: the human quorum is met — the transition completes only when the AI axis (if
     // required) has also passed. RE-READ the pending fresh so a verdict that landed AFTER our
@@ -897,18 +1133,31 @@ export async function getPageApprovalStatus(pageId) {
   // count) and whether it must be re-requested to reach the space's current approvers. The banner
   // reads this on every view of the page: no group is read here (Confluence points), so with an
   // approver GROUP the flags stay unset and the decision itself checks fully.
-  const q = await quorumNow(pageId, pending, newApproverCheck({ expandGroups: false }));
-  const currentOf = (id) => (q.unknown || !(pending.approvers || []).includes(id) ? undefined : q.effective.includes(id));
+  const q = await quorumNow(pageId, pending, newApproverCheck({ expandGroups: false }), { judgeAdmins: false });
+  // 8.16: an admin's approval that would count toward the ribbon's "min" sum is judged NOW (adminsNow)
+  // so the ribbon does not count a former admin's vote. Only admins' approvals in requests where they
+  // can count (not all-of) are asked about, and only when there is one: an open request holds such a
+  // record only in min mode or while an AI review is pending, so the common case spends nothing.
+  const adminApproved = (pending.mode || "any") === "all" ? [] : records.filter((r) => r.admin === true && r.status === "approved" && !(pending.approvers || []).includes(r.approverAccountId)).map((r) => r.approverAccountId);
+  const adminNow = adminApproved.length ? await adminsNow(pageId, pending, adminApproved).catch(() => ({ ids: [], unknownIds: adminApproved, noIds: [] })) : { ids: [], unknownIds: [], noIds: [] };
+  const currentOf = (id) => {
+    if (adminApproved.includes(id)) return adminNow.ids.includes(id) ? true : (adminNow.unknownIds.includes(id) ? undefined : false);
+    return q.unknown || !(pending.approvers || []).includes(id) ? undefined : q.effective.includes(id);
+  };
   // listChanged: the space's approver list differs from the request's (someone on the request is
   // off it, or someone named on it is not on the request): the requester or a space admin is
   // offered a re-request, which asks the current list and resets every decision. `listCheck`
   // "unknown" when that cannot be told without reading a group (the re-request is still offered).
   const snapshot = pending.approvers || [];
-  let listChanged; let listCheck = "known";
+  let listChanged; let listCheck = "known"; let formerAdmin = false;
   if (snapshot.length) {
     const plan = extractApprovalConfig((await getSpaceWorkflowSettings(pending.spaceKey || current?.spaceKey || null))?.approval);
     const added = (plan?.userIds || []).some((id) => !snapshot.includes(id));
-    if (added || (!q.unknown && q.effective.length < snapshot.length)) listChanged = true;
+    // 8.16: the re-request's own rule (formerAdminApprovals), asked only when a proven former admin's
+    // approval is on the request, so the banner offers exactly the re-request the server performs.
+    const fa = adminNow.noIds.length > 0 ? await formerAdminApprovals(pageId, pending).catch(() => ({ matters: false })) : { matters: false };
+    formerAdmin = fa.matters ? (fa.cause || "role") : false;
+    if (added || formerAdmin || (!q.unknown && q.effective.length < snapshot.length)) listChanged = true;
     else if (q.unknown || (plan?.groups?.length || 0) > 0) listCheck = "unknown";
     else listChanged = false;
   }
@@ -916,6 +1165,7 @@ export async function getPageApprovalStatus(pageId) {
     pending: true, toStateId: pending.toStateId, mode: pending.mode, min: q.unknown ? pending.min : q.min,
     needsRerequest: !q.unknown && q.needsRerequest === true,
     ...(snapshot.length ? { listChanged: listChanged === true, listCheck: listChanged === true ? "known" : listCheck } : {}),
+    ...(formerAdmin ? { formerAdminApproval: formerAdmin } : {}),
     requestedBy: pending.requestedBy, requestedByName: pending.requestedByName, requestedAt: pending.requestedAt,
     pinnedVersion: pending.pinnedVersion, stale, liveVersion, currentStateId: current?.stateId || null,
     approvers: records.map((r) => ({ accountId: r.approverAccountId, name: r.approverName, status: r.status, reason: r.reason, decidedAt: r.decidedAt, signed: !!r.signature, admin: r.admin === true, current: currentOf(r.approverAccountId) })),
@@ -968,9 +1218,22 @@ export async function rerequestApproval({ pageId, actorAccountId, actorName, isS
     next = { approvers: spec.approvers, mode: spec.mode || "any", min: spec.min || 1 };
     (settings?.approval?.approvers || []).forEach((a) => { if (a?.id) names[a.id] = a.name || null; });
   }
+  // 8.16: never re-open onto approvers who cannot view the page when that leaves it unfinishable.
+  if (next.approvers.length) {
+    const refusal = await viewReachabilityRefusal(pageId, { approvers: next.approvers, mode: next.mode, min: next.min, requestedBy: pending.requestedBy, spaceKey: space, names });
+    if (refusal) return refusal;
+  }
   const sameList = next.approvers.length === approvers.length && next.approvers.every((id) => approvers.includes(id)) && next.mode === pending.mode && next.min === pending.min;
   const versionChanged = pending.pinnedVersion !== live;
-  if (!versionChanged && sameList) return { success: true, changed: false, pinnedVersion: live };
+  // 8.16: when a former admin's approval is holding the request back (formerAdminApprovals, the rule
+  // the banner shows), the requester or a space admin may re-ask with nothing else changed, so the
+  // request can always be finished; otherwise one whose approvers had all voted could only be
+  // withdrawn. Never an approver's call (it resets everyone's decisions), never on "could not tell".
+  let formerAdminVote = false;
+  if (!versionChanged && sameList && (isSteward || actorAccountId === pending.requestedBy)) {
+    formerAdminVote = (await formerAdminApprovals(pageId, pending)).matters;
+  }
+  if (!versionChanged && sameList && !formerAdminVote) return { success: true, changed: false, pinnedVersion: live };
   // An approver (not the requester, not a space admin) re-requests to bring the request to a new
   // version, or when someone on it is off the space's list; a list that only GAINED people is the
   // requester's or a space admin's call (a re-request resets the decisions already made).
@@ -993,7 +1256,8 @@ export async function rerequestApproval({ pageId, actorAccountId, actorName, isS
     await kvs.set(key, { ...rec, admin: undefined, status: "pending", requestedAt, decidedAt: null, reason: null, signature: undefined, decidedVersion: undefined, pinnedVersion: live });
     await kvs.set(inboxKey(acc, pageId), { pageId, stateId: pending.toStateId, requestedAt });
   }
-  const updated = { ...pending, approvers: next.approvers, mode: next.mode, min: next.min, adminDeciders: [], pinnedVersion: live, rerequestedAt: requestedAt, rerequestedBy: actorAccountId || null, rerequestedByName: actorName || null };
+  const { quorumUnknownAt: _mark, ...rest } = pending; // 8.16: the votes are reset, so is the sweep's mark
+  const updated = { ...rest, approvers: next.approvers, mode: next.mode, min: next.min, adminDeciders: [], pinnedVersion: live, rerequestedAt: requestedAt, rerequestedBy: actorAccountId || null, rerequestedByName: actorName || null };
   if (versionChanged && updated.aiGate?.required) updated.aiGate = { ...updated.aiGate, status: "pending", reviewedVersion: null, reason: null, enqueuedAt: Date.now() };
   await kvs.set(pendingKey(pageId), updated);
   await touchByline(pageId); // WF-6: decisions were reset → "Awaiting approval 0 of N"
@@ -1135,6 +1399,9 @@ export async function listMyApprovalRequests(accountId, now = Date.now()) {
         const lastDecision = pending ? null : lastDecisionFrom(await getWorkflowLog(row.pageId));
         const c = classifyMyApprovalRequest({ row: { ...row, requesterAccountId: accountId }, pending, record, lastDecision, decided, now });
         if (!c.keep) { await kvs.delete(key).catch(() => {}); continue; }
+        // 8.16: the title and decisions are read as the app; a page the requester can no longer view
+        // is not listed (the index row stays: access given back brings it back).
+        if (!(await canReadPage(accountId, row.pageId))) continue;
         let pageTitle = null;
         try {
           const pr = await appConfluence(route`/wiki/api/v2/pages/${row.pageId}`);

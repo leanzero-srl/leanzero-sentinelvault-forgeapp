@@ -491,7 +491,8 @@ const WorkflowControl = ({ workflow, approvals, operatorId, pageId, spaceKey, si
     setRerequestBusy(true); setDecideMsg(null);
     try {
       const r = await invoke("rerequest-approval", { pageId });
-      if (r?.success) { say(r.approversRefreshed && r.fromVersion === r.pinnedVersion ? "Re-requested — the space's current approvers decide now." : `Re-requested for v${r.pinnedVersion} — approvers decide on the current version now.`); await onTransitioned(); }
+      if (r?.success && r.changed === false) setDecideMsg("Nothing to re-request: this request already asks the space's current approvers about the current version.");
+      else if (r?.success) { say(r.approversRefreshed && r.fromVersion === r.pinnedVersion ? "Re-requested — the space's current approvers decide now." : `Re-requested for v${r.pinnedVersion} — approvers decide on the current version now.`); await onTransitioned(); }
       else setDecideMsg(r?.reason || "Could not re-request this approval.");
     } catch (_) { setDecideMsg("Could not re-request this approval."); }
     finally { setRerequestBusy(false); }
@@ -640,8 +641,12 @@ const WorkflowControl = ({ workflow, approvals, operatorId, pageId, spaceKey, si
               <div className="wf-appr-stale" role="alert" data-testid="wf-appr-needs-rerequest">
                 {pendingApproval.needsRerequest
                   ? "The space's approvers have changed since this request was made, so it needs re-requesting before it can be decided."
-                  : "The space's approvers have changed since this request was made. Only the current approvers' decisions count; re-requesting asks the current approvers and resets every decision."}
-                {(iAmRequester || pendingApproval.adminCanDecide === true) && (
+                  : pendingApproval.formerAdminApproval === "setting"
+                    ? "This space no longer lets space admins decide approvals, so a space admin's approval on this request no longer counts. Re-requesting asks the current approvers and resets every decision."
+                    : pendingApproval.formerAdminApproval
+                    ? "An approval on this request came from someone who is no longer a space admin, so it no longer counts. Re-requesting asks the current approvers and resets every decision."
+                    : "The space's approvers have changed since this request was made. Only the current approvers' decisions count; re-requesting asks the current approvers and resets every decision."}
+                {(pendingApproval.canRerequest === true || (pendingApproval.canRerequest === undefined && (iAmRequester || pendingApproval.adminCanDecide === true))) && (
                   <button type="button" className="wf-appr-rerequest" onClick={doRerequest} disabled={rerequestBusy} data-testid="wf-appr-rerequest-approvers">
                     {rerequestBusy ? "Re-requesting…" : "Re-request with the current approvers"}
                   </button>

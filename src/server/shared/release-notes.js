@@ -12,6 +12,19 @@ const note = (n) => Object.freeze({ ...n, changes: Object.freeze([...(n.changes 
 
 export const RELEASE_NOTES = Object.freeze([
   note({
+    version: "8.16.0",
+    date: "2026-10-22",
+    headline: "Approval decisions count only from people who hold the right now and can view the page",
+    changes: [
+      "Changed: a space admin's approval counts only while that person is still an admin of the page's space and the space still lets admins decide. When an approval from someone who is no longer a space admin is what would complete a request, the request says so, and the person who asked or a space admin can request it again.",
+      "Changed: approving or declining an approval request, deciding a proposed change and Approve anyway on a page's validation status need permission to view the page. Approval requests and proposed changes on pages you can't view are no longer listed for you in My work. A new request, or a request asked again, that could never be completed because approvers can't view the page is refused, and the message says which approvers, or how many, can't view it.",
+    ],
+    fixes: [
+      "When a request's AI review passed while the approvers' rights could not be checked, the request could stay open for good. Sentinel Vault now completes it at the next hourly check after the rights can be checked, if its approvals still meet what it needs.",
+    ],
+    action: "If an open approval request says an approval came from someone who is no longer a space admin, request it again so the current approvers can decide.",
+  }),
+  note({
     version: "8.15.0",
     date: "2026-10-21",
     headline: "Validation statuses saved on pages before 8.14.0 no longer name anyone",

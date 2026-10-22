@@ -53,6 +53,7 @@ import {
   buildApprovalRecord,
   MAX_REQUEST_APPROVERS,
   newApproverCheck,
+  viewReachabilityRefusal,
 } from "./approvals.js";
 import { enqueueAiGate, resolveRules } from "../validations/actions.js";
 import { confirmRead, readStatus, readReport, readConfirmationRequired, requiredVersion } from "./read-acks.js";
@@ -377,6 +378,10 @@ export const requestTransition = async (req) => {
     }
     const names = {};
     (wfSettings.approval?.approvers || []).forEach((a) => { if (a.id) names[a.id] = a.name; });
+    // 8.16: approvers decide only pages they can view (decideApproval): a request that could never be
+    // finished because of that is refused up front, naming who cannot view the page.
+    const unreachable = await viewReachabilityRefusal(pageId, { approvers: spec?.approvers || [], mode: spec?.mode || "any", min: spec?.min || 1, requestedBy: actorAccountId, spaceKey, names });
+    if (unreachable) return unreachable;
     const result = await requestApprovalTransition({
       pageId, toStateId, toStateName: target?.name || toStateId, spaceKey,
       approvers: spec?.approvers || [], mode: spec?.mode || "any", min: spec?.min || 1,
@@ -586,6 +591,13 @@ const getPageApprovals = async (req) => {
       if (st.unknown) status.adminCheck = "unknown";
     }
     if (status.requireSignature) status.signatureEnrolled = (await signatureStatus(req.context?.accountId)).enrolled;
+    // 8.16: who may re-request when the request's approvers changed (or a former admin's approval holds
+    // it back): the requester, or a space admin as rerequest-approval itself checks (authorizeSteward
+    // via stewardOfPageRecord), so the banner offers exactly what the server allows — also when the
+    // space does not let admins decide (adminCanDecide is not worked out then).
+    if (me && (status.listChanged || status.needsRerequest)) {
+      status.canRerequest = me === status.requestedBy || (spaceKey ? await stewardOfPageRecord(authorizeSteward, req, pageId, spaceKey) : false);
+    }
   }
   return status;
 };
@@ -622,6 +634,9 @@ const listMyApprovalsAction = async (req) => {
   for (const r of head) {
     const place = status.get(String(r.pageId));
     if (place && ["trashed", "missing"].includes(place.status)) continue;
+    // 8.16: the titles above are read as the app. A request on a page the caller cannot view is not
+    // listed (no title, no requester): they could not decide it (decideApproval refuses) anyway.
+    if (!(await canReadPage(req.context?.accountId, r.pageId))) continue;
     const pending = await kvs.get(`workflow-pending-${r.pageId}`);
     if (!pending) continue; // resolved since; skip stale record
     if (pending.aiGate?.status === "failed") continue; // #46: AI review blocked it — the

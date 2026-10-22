@@ -71,7 +71,16 @@ export function mustVerify(payloadId, contextId) {
  * Denies on every failure path: non-2xx, malformed body, thrown error.
  */
 export async function accountCanAccessContent(accountId, contentId, operation) {
-  if (!accountId || !contentId) return false;
+  return (await accountContentAccessStatus(accountId, contentId, operation)).allowed;
+}
+
+/**
+ * accountCanAccessContent with "could not tell" kept apart (8.16): `{ allowed, unknown }`. `unknown`
+ * only when Confluence answered 429 (still not allowed). For callers that must tell "no" from
+ * "try again" (approvals.js approversWhoCannotView); never grants on unknown.
+ */
+export async function accountContentAccessStatus(accountId, contentId, operation) {
+  if (!accountId || !contentId) return { allowed: false, unknown: false };
   try {
     // A read-only question asked with POST: retried on 429 like a read (confluence-call.js).
     const res = await appConfluence(
@@ -90,16 +99,17 @@ export async function accountCanAccessContent(accountId, contentId, operation) {
       // Still a no (fail closed), but the resolver's answer says "try again", not "not allowed".
       noteAuthzUnknown();
       console.warn(`[AUTHZ] permission/check ${operation} on ${contentId} -> 429; could not check (denying for now)`);
-      return false;
+      return { allowed: false, unknown: true };
     }
     if (!res.ok) {
       console.warn(`[AUTHZ] permission/check ${operation} on ${contentId} → ${res.status}; denying`);
-      return false;
+      // 8.16: a 5xx is no answer (never a proven "cannot"); a 4xx is Confluence's own answer.
+      return { allowed: false, unknown: res.status >= 500 };
     }
-    return grantsAccess(true, await res.json());
+    return { allowed: grantsAccess(true, await res.json()), unknown: false };
   } catch (e) {
     console.error("[AUTHZ] permission/check threw; denying:", errText(e));
-    return false;
+    return { allowed: false, unknown: true }; // no answer from Confluence: never a yes, never a proven no
   }
 }
 

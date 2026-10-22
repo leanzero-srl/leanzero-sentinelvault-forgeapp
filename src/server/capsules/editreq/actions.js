@@ -22,7 +22,7 @@ import {
 import { retryAtFor } from "../../shared/edit-cooldown.js";
 import { DECLINED_REASON } from "../../../ui/kit/status-language.js";
 import { listMyStewardRequestsCore } from "../realms/actions.js";
-import { listMyApprovals, newApproverCheck, approverRefusal } from "../workflow/approvals.js";
+import { listMyApprovals, newApproverCheck, approverRefusal, cannotViewToDecide, viewToDecideRefusal } from "../workflow/approvals.js";
 import { canReadPage, isStewardOfSeal } from "../../shared/content-access.js";
 import { recordActivity } from "../../infra/activity-log.js";
 import { errText } from "../../shared/action-log.js";
@@ -100,9 +100,33 @@ function proposalApproverCheck(pageId) {
  */
 async function proposalAuthority(request, accountId, seal, pageId, authorized) {
   if (!isWorkflowHeld(seal) && authorized) return { authorized: true, refusal: null };
+  // 8.16: deciding a proposal is a workflow decision on the page: the decider must be able to view
+  // it (workflow/approvals.js decideApproval, the same rule and refusal). A page that cannot be named
+  // is a no.
+  const viewRefusal = pageId ? await viewToDecideRefusal(accountId, pageId) : cannotViewToDecide();
+  if (viewRefusal) return { authorized: false, refusal: viewRefusal };
   const approverNow = proposalApproverCheck(pageId);
   const d = await proposalDecision(request, accountId, () => stewardOfSeal(isAccountStewardAsApp, accountId, seal), () => approverNow(request, accountId));
   return { authorized: d.may, refusal: d.unknown ? approverRefusal("unknown") : null };
+}
+
+/**
+ * 8.16: My work's request lists name the file or section, the proposer and the page. A PROPOSAL row
+ * (addressed to the page's approvers) is listed only for someone who can view its page, asked once
+ * per page; the seal owner's own requests are unchanged. The counts (ribbon, badge) run on every
+ * page view and stay index-only; a count can be one higher than this list for such a row.
+ */
+async function viewableProposals(rows, accountId) {
+  const seen = new Map();
+  const out = [];
+  for (const r of rows || []) {
+    if (!r?.proposal) { out.push(r); continue; }
+    const pageId = String(r.contentId || r.pageId || "");
+    if (!pageId) continue;
+    if (!seen.has(pageId)) seen.set(pageId, canReadPage(accountId, pageId));
+    if (await seen.get(pageId)) out.push(r);
+  }
+  return out;
 }
 
 async function moveBackForProposal(pageId, approverAccountId, request) {
@@ -279,7 +303,9 @@ export const listEditRequests = async (req) => {
   const isAdmin = async () => (admin ??= await stewardOfSeal(isAccountStewardAsApp, accountId, seal));
   const requests = [];
   const approverNow = proposalApproverCheck(seal.contentId);
-  for (const r of pending) if (await mayDecideProposal(r, accountId, isAdmin, () => approverNow(r, accountId))) requests.push(r);
+  // 8.16: proposals are offered only to someone who can view the page (proposalAuthority's rule).
+  const mayView = seal.contentId ? await canReadPage(accountId, seal.contentId) : false;
+  if (mayView) for (const r of pending) if (await mayDecideProposal(r, accountId, isAdmin, () => approverNow(r, accountId))) requests.push(r);
   // Same answer as a refusal when there is nothing for this caller — no oracle on "is it held".
   if (!requests.length && !authorized) return { requests: [], reason: "Not authorized" };
   return { requests };
@@ -295,7 +321,7 @@ const listMyEditRequests = async (req) => {
   // K1 index discipline: the owner's OWN prefix, confirmed by key — never a site-wide scan of
   // every request filtered client-side (which went blind past ~1,000 records, like the
   // approvals inbox did before it61).
-  const requests = await listPendingRequestsForOwner(accountId);
+  const requests = await viewableProposals(await listPendingRequestsForOwner(accountId), accountId);
   return { requests };
 };
 
@@ -711,7 +737,9 @@ export const listSectionEditRequests = async (req) => {
   };
   const requests = [];
   const approverNow = proposalApproverCheck(seal.pageId);
-  for (const r of pending) if (await mayDecideProposal(r, accountId, isAdmin, () => approverNow(r, accountId))) requests.push(r);
+  // 8.16: proposals are offered only to someone who can view the page (proposalAuthority's rule).
+  const mayView = seal.pageId ? await canReadPage(accountId, seal.pageId) : false;
+  if (mayView) for (const r of pending) if (await mayDecideProposal(r, accountId, isAdmin, () => approverNow(r, accountId))) requests.push(r);
   // Same answer as a refusal when there is nothing for this caller — no oracle on "is it held".
   if (!requests.length && !authorized) return { requests: [], reason: "Not authorized" };
   return { requests };
@@ -870,7 +898,7 @@ export const listSectionEditGrants = async (req) => {
 const listMySectionEditRequests = async (req) => {
   const accountId = req.context.accountId;
   if (!accountId) return { requests: [] };
-  const requests = await listPendingSectionRequestsForOwner(accountId);
+  const requests = await viewableProposals(await listPendingSectionRequestsForOwner(accountId), accountId);
   return { requests };
 };
 

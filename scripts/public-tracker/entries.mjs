@@ -42,6 +42,11 @@ export const COMPONENTS = {
 const JIRA_ON = "It works once a site admin has connected Jira to Sentinel Vault in Atlassian Administration.";
 
 export const ENTRIES = {
+  // 8.16.0 (2026-10-22). Worded as what holds now (this file is public).
+  "404db31677f1c667": ["A space admin's approval counts only while that person is still a space admin", "W"],
+  "b6fec327b429123b": ["Deciding an approval request, a proposed change or Approve anyway needs permission to view the page", "W"],
+  "7dca295bdf7d4542": ["A request whose AI review passed while approver rights could not be checked could stay open", "W"],
+
   // 8.15.0 (noted as 8.14.1 until Forge numbered it 8.15.0: the manifest gained a trigger): written by the release door on 2026-10-21 (rows: model; review pass: model).
   "51e4df6a02478bf4": ["Pages validated before 8.14.0 still stored who had checked and approved them", "D"],
 
