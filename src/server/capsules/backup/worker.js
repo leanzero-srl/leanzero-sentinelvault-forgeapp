@@ -57,7 +57,9 @@ export async function startJob(kind, payload, actor) {
 
 async function runBackupAndAudit({ reason, actor }) {
   const r = await runBackup({ reason, actor });
-  if (!r.ok) await audit("backup.failed", actor, { reason, error: r.reason });
+  // The paused state (no space) writes its history row when it begins, not on every quiet re-check;
+  // a person's Back up now / Move is always recorded.
+  if (!r.ok) { if (!r.noSpace || r.announce || actor) await audit("backup.failed", actor, { reason, error: r.reason }); }
   else if (!r.unchanged || actor) await audit("backup.taken", actor, { reason, generationId: r.generationId, keys: r.keys, bytes: r.bytes, unchanged: !!r.unchanged });
   return r;
 }

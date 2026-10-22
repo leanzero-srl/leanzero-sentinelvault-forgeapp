@@ -37,6 +37,13 @@ global space (an admin can move it), restricted (read and update) to the app's a
 labelled `sentinel-vault-backup`. A page is only ever treated as a backup page if the app created it, it carries
 that title and it is restricted to the app alone.
 
+With no space to keep the page in (Confluence answers that the app sees no global space, or refuses it a page in
+every one it sees) backups are PAUSED, not failed: one stored state (`backup-status.noSpace`, cause `none-visible`
+or `not-allowed`) that the Backup tab shows with the way out (Move to another space), one log line and one history
+row when it begins, then a quiet re-check once a day, after a change and on Back up now. The next backup ends it.
+A space list Confluence did not answer (429, 5xx) is an ordinary failure, never the paused state. Personal spaces
+are never used.
+
 ## The format (snapshot.js)
 
 A generation = a manifest attachment + content-addressed chunk attachments (`sv-chunk-<sha256>.json`). One full KVS

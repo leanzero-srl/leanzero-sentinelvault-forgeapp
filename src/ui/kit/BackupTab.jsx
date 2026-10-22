@@ -336,7 +336,14 @@ export default function BackupTab() {
           </div>
         ) : st.deletedAt
           ? <p className="api-empty" data-testid="bk-none">The backup was deleted {when(st.deletedAt)}. A new one is taken only after the next change anyone makes in the app or over REST, or when you press Back up now.</p>
-          : <p className="api-empty" data-testid="bk-none">No backup yet. The first one is taken after the next change, within the hour, or now.</p>}
+          : !st.noSpace && <p className="api-empty" data-testid="bk-none">No backup yet. The first one is taken after the next change, within the hour, or now.</p>}
+        {st.noSpace && (
+          <div className="api-inline-error" role="status" data-testid="bk-no-space">
+            Backups are paused since {when(st.noSpace.since)}: {st.noSpace.cause === "not-allowed"
+              ? "Sentinel Vault may not add its backup page in any space it sees."
+              : "Sentinel Vault sees no space it can keep its backup page in."} Choose a space with Move to another space. The app also checks again once a day and after each change.
+          </div>
+        )}
         {st.waiting === "restore-pending" && <p className="api-explain" data-testid="bk-waiting">Automatic backups wait until you restore the earlier setup or choose to start fresh, so they cannot crowd out the backup you came back for.</p>}
         {st.lastError && (!last || String(st.lastError.at) > String(st.lastCheckAt || "")) && <div className="api-inline-error" role="alert" data-testid="bk-last-error">The last backup failed ({when(st.lastError.at)}): {st.lastError.message}</div>}
         {status.settings?.spaceKey && (
