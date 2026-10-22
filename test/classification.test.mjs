@@ -8,9 +8,8 @@ import { eq, ok, report } from "./_assert.mjs";
 
 // Part 3.1 + 3.2 — the pure core of the classification capsule. Everything the providers decide
 // is exercised here with an injected KVS and an injected fetch-like `request`, the way
-// notice-dedup.js is tested: no Forge runtime, no live site. Live, the Native provider is
-// unreachable (scope not in the manifest; both test sites answer `[]` / 404 "Feature is disabled"),
-// so THIS file is the only proof the Native provider's request shapes are right.
+// notice-dedup.js is tested: no Forge runtime, no live site. The Native provider's request shapes
+// are checked here and, against what Confluence answered live, in classification-native.test.mjs.
 
 // ── stubs ──────────────────────────────────────────────────────────────────────────────────
 const res = (status, body) => ({ ok: status >= 200 && status < 300, status, json: async () => body });
@@ -108,14 +107,16 @@ eq("400 is NOT unavailable (a real error, not a missing feature)", nativeUnavail
 }
 {
   const native = [
-    { id: "n1", status: "PUBLISHED", order: 2, name: "Secret", description: "d", guideline: "g", color: "#ff0000" },
-    { id: "n0", status: "PUBLISHED", order: 1, name: "Open", color: "#00ff00" },
+    // Confluence's order: 1 = the MOST sensitive (Atlassian's rule); colours are names (RED) or hex.
+    { id: "n1", status: "PUBLISHED", order: 1, name: "Secret", description: "d", guideline: "g", color: "RED" },
+    { id: "n0", status: "PUBLISHED", order: 2, name: "Open", color: "#00ff00" },
     { id: "n9", status: "ARCHIVED", order: 9, name: "Old", color: "#000000" },
   ];
   const { request } = scripted({ "GET /wiki/api/v2/classification-levels": res(200, native) });
   const levels = await createNativeProvider({ request }).listLevels();
   eq("native levels are normalised to { id, name, color, rank, description }",
-    levels.find((l) => l.id === "n1"), { id: "n1", name: "Secret", color: "#ff0000", rank: 2, description: "d" });
+    levels.find((l) => l.id === "n1"), { id: "n1", name: "Secret", color: "#B91C1C", rank: 2, description: "d" });
+  eq("native levels come least sensitive first, ranked 1..n (Confluence's order 1 = most sensitive)", levels.map((l) => `${l.id}:${l.rank}`), ["n0:1", "n1:2"]);
   eq("archived native levels are dropped", levels.map((l) => l.id).sort(), ["n0", "n1"]);
   eq("a `results`-wrapped body is accepted too",
     (await createNativeProvider({ request: scripted({ "GET /wiki/api/v2/classification-levels": res(200, { results: native }) }).request }).listLevels()).length, 2);
@@ -138,9 +139,10 @@ eq("400 is NOT unavailable (a real error, not a missing feature)", nativeUnavail
   eq("clearing the space default is a DELETE", t.calls.at(-1).method, "DELETE");
   await p.setPageLevel("900", "n1");
   eq("page PUT route", t.calls.at(-1).path, "/wiki/api/v2/pages/900/classification-level");
-  eq("page PUT body is { id }", t.calls.at(-1).body, { id: "n1" });
+  eq("page PUT body is { id, status: current } (Confluence answers 400 without status)", t.calls.at(-1).body, { id: "n1", status: "current" });
   await p.resetPage("900");
   eq("reset is POST …/classification-level/reset", `${t.calls.at(-1).method} ${t.calls.at(-1).path}`, "POST /wiki/api/v2/pages/900/classification-level/reset");
+  eq("reset body is { status: current } (Confluence answers 400 without it)", t.calls.at(-1).body, { status: "current" });
   await p.setPageLevel("900", null);
   eq("setPageLevel(null) is the reset", t.calls.at(-1).path, "/wiki/api/v2/pages/900/classification-level/reset");
   eq("getPageLevel reads the id", await p.getPageLevel("900"), "n1");
@@ -157,10 +159,14 @@ eq("400 is NOT unavailable (a real error, not a missing feature)", nativeUnavail
 }
 {
   // effectiveLevel on native: page override present → page; absent → space default via the page's spaceId.
-  const levels = [{ id: "n0", status: "PUBLISHED", order: 1, name: "Open", color: "#00ff00" }, { id: "n1", status: "PUBLISHED", order: 2, name: "Secret", color: "#ff0000" }];
+  // Confluence's page GET answers the level the page SHOWS (its own, else the space default), so the
+  // page's own level is the one that differs from the space default.
+  const levels = [{ id: "n0", status: "PUBLISHED", order: 2, name: "Open", color: "#00ff00" }, { id: "n1", status: "PUBLISHED", order: 1, name: "Secret", color: "#ff0000" }];
   const t = scripted({
     "GET /wiki/api/v2/classification-levels": res(200, levels),
     "GET /wiki/api/v2/pages/900/classification-level": res(200, { id: "n1" }),
+    "GET /wiki/api/v2/pages/900": res(200, { id: "900", spaceId: "77" }),
+    "GET /wiki/api/v2/pages/901/classification-level": res(200, { id: "n0" }),
     "GET /wiki/api/v2/pages/901": res(200, { id: "901", spaceId: "77" }),
     "GET /wiki/api/v2/spaces/77/classification-level/default": res(200, { id: "n0" }),
   });

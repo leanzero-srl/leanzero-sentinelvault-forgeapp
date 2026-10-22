@@ -169,6 +169,7 @@ export const setSpaceDefault = async (req) => {
       return { spaceId, ok: true, key: space.key, defaultLevelId: levelId, from: current ?? null };
     } catch (e) {
       console.error(`[CLASSIFICATION] set-space-default ${spaceId} failed:`, errText(e));
+      if (e?.code === "CLASSIFICATION_UNREADABLE") return { spaceId, ok: false, busy: true, reason: BUSY_SCHEME };
       return { spaceId, ok: false, reason: e?.message || "Could not set the default" };
     }
   });
@@ -242,7 +243,13 @@ export const setPage = async (req) => {
     const { provider, levels } = await getClassificationProvider();
     if (levelId != null && !findLevel(levels, levelId)) return { ok: false, reason: `Unknown classification level "${levelId}"` };
     const [before, pageBefore] = await Promise.all([provider.effectiveLevel(pageId), provider.getPageLevel(pageId)]);
-    if (String(pageBefore ?? "") === String(levelId ?? "")) return { ok: true, unchanged: true, effective: before, pageLevelId: levelId };
+    if (String(pageBefore ?? "") === String(levelId ?? "")) {
+      // Confluence's own scheme: a page level equal to the space default reads as following it (logic.js
+      // place), so "use space default" still sends the reset, and a page can never stay pinned to a level
+      // the person asked it to stop holding. Confluence answers 204 when there is nothing to reset.
+      if (levelId == null && provider.name === "native") await provider.resetPage(pageId);
+      return { ok: true, unchanged: true, effective: before, pageLevelId: levelId };
+    }
     // P5: what a reader sees BEFORE vs AFTER — "use space default" lands on the space's default.
     let toId = levelId;
     if (toId == null) {
