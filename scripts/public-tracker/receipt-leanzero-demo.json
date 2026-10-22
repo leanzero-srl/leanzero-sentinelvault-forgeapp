@@ -633,6 +633,18 @@
     "known-purged-page-seal-missing-from-owner-lists": {
       "key": "SVT-150",
       "id": "28700"
+    },
+    "known-backup-no-space-fails-hourly": {
+      "key": "SVT-151",
+      "id": "28804"
+    },
+    "known-native-classification-page-change-fails": {
+      "key": "SVT-152",
+      "id": "28805"
+    },
+    "known-backup-busy-second-page": {
+      "key": "SVT-153",
+      "id": "28806"
     }
   },
   "permissionScheme": {
@@ -645,7 +657,7 @@
     ],
     "assigned": true
   },
-  "updatedAt": "2026-10-22T23:08:41.767Z",
+  "updatedAt": "2026-10-22T23:40:53.064Z",
   "projectId": "10278",
   "issueTypeScheme": {
     "id": "10636",
@@ -749,7 +761,7 @@
     "undo": "DELETE /rest/api/3/permissionscheme/10265/permission/11703",
     "proof": {
       "GET /rest/api/3/issue/SVT-1": 200,
-      "GET /rest/api/3/issue/SVT-150": 200,
+      "GET /rest/api/3/issue/SVT-153": 200,
       "GET /rest/api/3/issue/ATLAS-2361": 404,
       "GET /rest/api/3/issue/CRBAK-1": 404,
       "GET /rest/api/3/issue/CRD-30": 404,
@@ -774,24 +786,24 @@
       "GET /rest/api/3/issue/SEC-1225": 404,
       "GET /rest/api/3/issue/VOY-1992": 404,
       "anonymous site-wide search (bounded, all pages): issues per project": {
+        "SVT": 149,
         "CRT": 459,
-        "SVT": 146,
         "LZMT": 376,
         "CST": 37
       },
-      "anonymous listing of SVT": "146 issues (receipt holds 146; 已完成 114, Backlog 31, Selected for Development 1)",
+      "anonymous listing of SVT": "149 issues (receipt holds 149; 已完成 114, Backlog 31, Selected for Development 4)",
       "other projects whose scheme lets anyone browse": "CRT,CST,LZMT",
       "public trackers (allowlist)": "CRT,SVT,LZMT,CST",
       "negative control": "13 fake broken answers, each failed the verdict",
       "GET /jira/software/c/projects/SVT/issues": 200
     },
-    "provenAt": "2026-10-22T23:08:41.767Z",
+    "provenAt": "2026-10-22T23:40:53.064Z",
     "proofFailures": []
   },
   "verified": {
     "through": "8.20.0",
-    "at": "2026-10-22T23:08:13.959Z",
-    "issues": 146,
+    "at": "2026-10-22T23:40:22.545Z",
+    "issues": 149,
     "failures": 0
   }
 }

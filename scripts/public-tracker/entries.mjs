@@ -578,6 +578,30 @@ export const KNOWN = [
     where: "Space settings, Activity tab, and its Export CSV file.",
     workaround: "Note the page's title before you delete it from the trash. The number shown is the page's ID, so an export taken while the page still existed links the two.",
   },
+  // 2026-10-23: found in the production logs (one site, hourly); confirmed on the 8.20.0 code, fix scheduled.
+  {
+    k: "known-backup-no-space-fails-hourly", c: "B", affects: "8.20.0", fix: "scheduled",
+    t: "On a site with no space Sentinel Vault can keep its backup page in, the automatic backup fails every hour",
+    see: "When Sentinel Vault sees no space it can keep its backup page in, Backup and restore says the last backup failed and gives the reason, and the site history gets a new backup failed entry every hour.",
+    where: "Site settings, Backup and restore, and its history.",
+    workaround: "Choose a space for the backup with Move to another space. It must be a space where Sentinel Vault can view and add pages.",
+  },
+  // 2026-10-23: reproduced on the test site; confirmed on the 8.20.0 code, fix scheduled.
+  {
+    k: "known-native-classification-page-change-fails", c: "L", affects: "8.20.0", fix: "scheduled",
+    t: "Changing a page's classification fails on sites that use Confluence's own classification levels",
+    see: "On a site where Sentinel Vault uses Confluence's own classification levels, choosing a level for a page, or choosing to follow the space default, shows an error and the page keeps its level. Raising a level also asks for the reason meant for lowering one, and a page that follows its space default says its level was set on the page.",
+    where: "The page's classification chip and page details, and the classification settings in space and site settings.",
+    workaround: "Set the page's level with Confluence's own classification control on the page. Setting a space's default level from Sentinel Vault works, though raising it asks for a reason.",
+  },
+  // 2026-10-23: found while fixing the backup row above; confirmed on the 8.20.0 code, fix scheduled.
+  {
+    k: "known-backup-busy-second-page", c: "B", affects: "8.20.0", fix: "scheduled",
+    t: "When Confluence is busy, a backup can start a second backup page",
+    see: "If Confluence is limiting requests or answers with an error while a backup looks for its backup page, the backup can create a new backup page and keep its later backups there. The earlier backups stay on the earlier page.",
+    where: "Site settings, Backup and restore.",
+    workaround: "None needed to keep your backups: the earlier ones are not deleted and stay on the earlier backup page.",
+  },
 ];
 
 // Known bugs a release closed (folded into that release's note line, so the issue is Done with it).

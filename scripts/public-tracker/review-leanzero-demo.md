@@ -1,16 +1,16 @@
 # Sentinel Vault Public Tracker - verify file
 
-Generated 2026-10-22T23:08:13.957Z by scripts/public-tracker/tracker.mjs verify.
+Generated 2026-10-22T23:40:22.543Z by scripts/public-tracker/tracker.mjs verify.
 Site https://leanzero-demo.atlassian.net. Project SVT (id 10278), permission scheme "Sentinel Vault Public Tracker permissions" (id 10265, used by: SVT), anonymous grants: BROWSE_PROJECTS.
-Issues checked: 146 of 146. Verification failures: 0. Withheld release-note lines: 8.
+Issues checked: 149 of 149. Verification failures: 0. Withheld release-note lines: 8.
 
 ## Counts
 
-- status: Done 114; Backlog 31; Selected for Development 1
-- version: 6.4.0 5; 6.5.0 1; 6.6.0 6; 6.7.0 8; 6.9.0 4; 6.10.0 4; 6.11.0 1; 7.0.0 5; 7.1.0 8; 8.0.0 16; 8.1.0 1; 8.2.0 2; 8.3.0 1; 8.4.0 1; 8.5.0 1; 8.6.0 13; 8.7.0 1; 8.8.0 1; 8.9.0 5; 8.10.0 5; 8.11.0 3; 8.12.0 3; 8.13.0 1; 8.14.0 10; 8.15.0 1; 8.16.0 3; open, affects 7.1.0 6; open, affects 8.12.0 25; open, affects 8.17.0 1; 8.17.0 2; 8.19.0 2
-- component: Classification 4; Sealed files and sections 19; Edit requests and access 4; REST API 5; Backup and restore 13; Layout and accessibility 10; Privacy and personal data 11; Space and site settings 17; Workflow and approvals 27; App permissions and updates 4; Page banner and Sentinel Vault window 10; Activity report 3; Jira issue attachments 13; My work 6
-- type: Improvement 55; Bug 91
-- versions in Jira: 6.4.0 released 2026-09-30, 6.5.0 released 2026-09-30, 6.6.0 released 2026-10-02, 6.7.0 released 2026-10-04, 6.9.0 released 2026-10-04, 6.10.0 released 2026-10-04, 6.11.0 released 2026-10-04, 7.0.0 released 2026-10-05, 7.1.0 released 2026-10-09, 8.0.0 released 2026-10-14, 8.1.0 released 2026-10-14, 8.2.0 released 2026-10-14, 8.3.0 released 2026-10-14, 8.4.0 released 2026-10-14, 8.5.0 released 2026-10-14, 8.6.0 released 2026-10-17, 8.7.0 released 2026-10-17, 8.8.0 released 2026-10-17, 8.9.0 released 2026-10-18, 8.10.0 released 2026-10-18, 8.11.0 released 2026-10-18, 8.12.0 released 2026-10-18, 8.13.0 released 2026-10-21, 8.14.0 released 2026-10-21, 8.15.0 released 2026-10-21, 8.16.0 released 2026-10-22, 8.17.0 released 2026-10-22, 8.18.0 released 2026-10-22, 8.19.0 released 2026-10-22, 8.20.0 unreleased
+- status: Done 114; Backlog 31; Selected for Development 4
+- version: 6.4.0 5; 6.5.0 1; 6.6.0 6; 6.7.0 8; 6.9.0 4; 6.10.0 4; 6.11.0 1; 7.0.0 5; 7.1.0 8; 8.0.0 16; 8.1.0 1; 8.2.0 2; 8.3.0 1; 8.4.0 1; 8.5.0 1; 8.6.0 13; 8.7.0 1; 8.8.0 1; 8.9.0 5; 8.10.0 5; 8.11.0 3; 8.12.0 3; 8.13.0 1; 8.14.0 10; 8.15.0 1; 8.16.0 3; open, affects 7.1.0 6; open, affects 8.12.0 25; open, affects 8.17.0 1; open, affects 8.20.0 3; 8.17.0 2; 8.19.0 2
+- component: Classification 5; Sealed files and sections 19; Edit requests and access 4; REST API 5; Backup and restore 15; Layout and accessibility 10; Privacy and personal data 11; Space and site settings 17; Workflow and approvals 27; App permissions and updates 4; Page banner and Sentinel Vault window 10; Activity report 3; Jira issue attachments 13; My work 6
+- type: Improvement 55; Bug 94
+- versions in Jira: 6.4.0 released 2026-09-30, 6.5.0 released 2026-09-30, 6.6.0 released 2026-10-02, 6.7.0 released 2026-10-04, 6.9.0 released 2026-10-04, 6.10.0 released 2026-10-04, 6.11.0 released 2026-10-04, 7.0.0 released 2026-10-05, 7.1.0 released 2026-10-09, 8.0.0 released 2026-10-14, 8.1.0 released 2026-10-14, 8.2.0 released 2026-10-14, 8.3.0 released 2026-10-14, 8.4.0 released 2026-10-14, 8.5.0 released 2026-10-14, 8.6.0 released 2026-10-17, 8.7.0 released 2026-10-17, 8.8.0 released 2026-10-17, 8.9.0 released 2026-10-18, 8.10.0 released 2026-10-18, 8.11.0 released 2026-10-18, 8.12.0 released 2026-10-18, 8.13.0 released 2026-10-21, 8.14.0 released 2026-10-21, 8.15.0 released 2026-10-21, 8.16.0 released 2026-10-22, 8.17.0 released 2026-10-22, 8.18.0 released 2026-10-22, 8.19.0 released 2026-10-22, 8.20.0 released 2026-10-22
 
 ## Issues
 
@@ -1102,4 +1102,31 @@ Issues checked: 146 of 146. Verification failures: 0. Withheld release-note line
 
 > This problem is fixed.
 > Fixed in Sentinel Vault 8.19.0. A site still on version 7 or earlier gets it once a site admin approves the update in Confluence administration, Apps, Manage apps.
+
+### SVT-151 - On a site with no space Sentinel Vault can keep its backup page in, the automatic backup fails every hour
+
+- type: Bug; status: Selected for Development; affects: 8.20.0; component: Backup and restore
+
+> What you see: When Sentinel Vault sees no space it can keep its backup page in, Backup and restore says the last backup failed and gives the reason, and the site history gets a new backup failed entry every hour.
+> Where: Site settings, Backup and restore, and its history.
+> Workaround: Choose a space for the backup with Move to another space. It must be a space where Sentinel Vault can view and add pages.
+> Confirmed on Sentinel Vault 8.20.0. Status: open, fix scheduled.
+
+### SVT-152 - Changing a page's classification fails on sites that use Confluence's own classification levels
+
+- type: Bug; status: Selected for Development; affects: 8.20.0; component: Classification
+
+> What you see: On a site where Sentinel Vault uses Confluence's own classification levels, choosing a level for a page, or choosing to follow the space default, shows an error and the page keeps its level. Raising a level also asks for the reason meant for lowering one, and a page that follows its space default says its level was set on the page.
+> Where: The page's classification chip and page details, and the classification settings in space and site settings.
+> Workaround: Set the page's level with Confluence's own classification control on the page. Setting a space's default level from Sentinel Vault works, though raising it asks for a reason.
+> Confirmed on Sentinel Vault 8.20.0. Status: open, fix scheduled.
+
+### SVT-153 - When Confluence is busy, a backup can start a second backup page
+
+- type: Bug; status: Selected for Development; affects: 8.20.0; component: Backup and restore
+
+> What you see: If Confluence is limiting requests or answers with an error while a backup looks for its backup page, the backup can create a new backup page and keep its later backups there. The earlier backups stay on the earlier page.
+> Where: Site settings, Backup and restore.
+> Workaround: None needed to keep your backups: the earlier ones are not deleted and stay on the earlier backup page.
+> Confirmed on Sentinel Vault 8.20.0. Status: open, fix scheduled.
 
