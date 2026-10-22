@@ -108,8 +108,6 @@ if [[ $LINT_RC -ne 0 ]]; then
   fi
 fi
 
-# The Marketplace's newest build before the deploy (the "Try it first" step after it waits for a newer one).
-MP_BEFORE="$(node scripts/public-tracker/release-gate.mjs marketplace-latest 2>/dev/null || true)"
 echo "==> Deploying to production"
 if [[ "$APPROVE_MAJOR" == "1" ]]; then forge deploy -e production --approve MAJOR_VERSION_RULE "$@"; else forge deploy -e production "$@"; fi
 
@@ -132,7 +130,8 @@ echo "==> Eligible for Runs on Atlassian"
 # deploy (the daily digest's tracker check catches the drift the next morning).
 node scripts/public-tracker/release-gate.mjs post || echo "==> The public tracker step did not finish; production is deployed and eligible"
 
-# The Marketplace "Try it first" message (owner 2026-10-20): More details is per Marketplace version, so every production
-# deploy re-applies it once the Marketplace lists the version this deploy reported. Logged, never fails the deploy.
+# The Marketplace "Try it first" message (owner 2026-10-20): More details is per Marketplace version. Since release-autopilot
+# 1.4.0 the workhorse watcher puts it on each newly listed version; this step only kicks it and logs its heartbeat (no wait).
+# Logged, never fails the deploy.
 DEPLOYED_FORGE="$(grep -oE 'version of your app \[[0-9]+\.[0-9]+\.[0-9]+\]' <<<"$ELIG_OUT" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1 || true)"
-node scripts/public-tracker/release-gate.mjs try-first "${DEPLOYED_FORGE:-}" "${MP_BEFORE:-}" || echo "==> The Try it first step did not finish; production is deployed and eligible"
+node scripts/public-tracker/release-gate.mjs try-first "${DEPLOYED_FORGE:-}" || echo "==> The Try it first step did not finish; production is deployed and eligible"
