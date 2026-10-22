@@ -12,6 +12,16 @@ const note = (n) => Object.freeze({ ...n, changes: Object.freeze([...(n.changes 
 
 export const RELEASE_NOTES = Object.freeze([
   note({
+    version: "8.17.0",
+    date: "2026-10-22",
+    headline: "Approval requests finish once enough approvers decided, and the waiting counts match the lists",
+    changes: [],
+    fixes: [
+      "An approval request could stay open although enough approvers had decided, when Confluence was limiting Sentinel Vault's requests or answering with errors at the moment of the deciding approval, or when two approvers decided at the same time. Sentinel Vault now finishes such a request at one of its hourly checks once Confluence answers again. Fixes SVT-146.",
+      "The total at the top of My work and the page banner's Waiting for you count now count exactly what the lists show: approval requests on pages you can't view or that are in the trash, proposed changes on pages you can't view, and approval requests whose AI review did not pass are no longer counted. The approvals list says how many wait in all when there are more than it shows, the total updates after you decide from that list, and when Confluence could not check some of them right now, My work says so. Fixes SVT-147.",
+    ],
+  }),
+  note({
     version: "8.16.0",
     date: "2026-10-22",
     headline: "Approval decisions count only from people who hold the right now and can view the page",
