@@ -46,7 +46,8 @@
     "8.16.0": "10853",
     "8.17.0": "10889",
     "8.18.0": "10955",
-    "8.19.0": "10988"
+    "8.19.0": "10988",
+    "8.20.0": "11087"
   },
   "issues": {
     "02dc09e3ae3c6c5a": {
@@ -644,7 +645,7 @@
     ],
     "assigned": true
   },
-  "updatedAt": "2026-10-22T15:33:22.252Z",
+  "updatedAt": "2026-10-22T23:08:41.767Z",
   "projectId": "10278",
   "issueTypeScheme": {
     "id": "10636",
@@ -682,6 +683,24 @@
     {
       "h": "c28206f875846bd9",
       "version": "8.18.0",
+      "kind": "fixes",
+      "why": "the review pass did not answer (release door: no review, no publication)"
+    },
+    {
+      "h": "874557d2ab1e7aad",
+      "version": "8.20.0",
+      "kind": "fixes",
+      "why": "the review pass did not answer (release door: no review, no publication)"
+    },
+    {
+      "h": "ec4220d32fdb1924",
+      "version": "8.20.0",
+      "kind": "fixes",
+      "why": "touches security, permissions, isolation or keys (release door, deterministic rule)"
+    },
+    {
+      "h": "31d7c334c2616930",
+      "version": "8.20.0",
       "kind": "fixes",
       "why": "the review pass did not answer (release door: no review, no publication)"
     }
@@ -735,7 +754,7 @@
       "GET /rest/api/3/issue/CRBAK-1": 404,
       "GET /rest/api/3/issue/CRD-30": 404,
       "GET /rest/api/3/issue/CRS-9": 404,
-      "GET /rest/api/3/issue/CRT-452": 200,
+      "GET /rest/api/3/issue/CRT-459": 200,
       "GET /rest/api/3/issue/CS-1223": 404,
       "GET /rest/api/3/issue/CST-37": 200,
       "GET /rest/api/3/issue/DACC-5": 404,
@@ -755,8 +774,8 @@
       "GET /rest/api/3/issue/SEC-1225": 404,
       "GET /rest/api/3/issue/VOY-1992": 404,
       "anonymous site-wide search (bounded, all pages): issues per project": {
+        "CRT": 459,
         "SVT": 146,
-        "CRT": 452,
         "LZMT": 376,
         "CST": 37
       },
@@ -766,12 +785,12 @@
       "negative control": "13 fake broken answers, each failed the verdict",
       "GET /jira/software/c/projects/SVT/issues": 200
     },
-    "provenAt": "2026-10-22T15:33:22.252Z",
+    "provenAt": "2026-10-22T23:08:41.767Z",
     "proofFailures": []
   },
   "verified": {
-    "through": "8.19.0",
-    "at": "2026-10-22T15:32:53.442Z",
+    "through": "8.20.0",
+    "at": "2026-10-22T23:08:13.959Z",
     "issues": 146,
     "failures": 0
   }
