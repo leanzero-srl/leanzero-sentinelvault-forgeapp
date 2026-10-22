@@ -553,6 +553,13 @@ export async function describeWorkflowForPage(pageId, { spaceKey = null, log = n
 // Strongly-consistent read of the approval records over the KNOWN approver list —
 // never kvs.query() (eventually consistent: could miss a just-written vote or return
 // empty and mis-resolve the quorum).
+// SVT-146 (review): a decided record stamped with another request (requestedAt ≠ the request's time) is a
+// vote cast on an older request that landed on this one's records during a re-request: it never counts.
+// Records without a stamp (made before the stamp existed) count as before.
+function votesOf(pending, records) {
+  const id = requestIdOf(pending);
+  return (records || []).map((r) => (r?.status && r.status !== "pending" && r.requestedAt && id && r.requestedAt !== id ? { ...r, status: "pending", strayVote: true } : r));
+}
 async function readApprovalRecords(pageId, stateId, approvers) {
   return Promise.all((approvers || []).map(async (acc) =>
     (await kvs.get(approvalKey(pageId, stateId, acc))) || { approverAccountId: acc, status: "pending" }));
@@ -657,7 +664,7 @@ async function finalizeApprovedTransition(pageId, stateId, pending, actorAccount
       // A4: the decisions are about to be deleted; a stale outcome must not erase who said what.
       try {
         const staleRecord = buildApprovalRecord({
-          pending, records: await readApprovalRecords(pageId, stateId, approvers), outcome: "stale", quorum: evidenceQuorum,
+          pending, records: votesOf(pending, await readApprovalRecords(pageId, stateId, approvers)), outcome: "stale", quorum: evidenceQuorum,
           completedBy: actorAccountId || null, completedByName: actorName || null,
         });
         const current = await readPageWorkflow(pageId);
@@ -675,7 +682,7 @@ async function finalizeApprovedTransition(pageId, stateId, pending, actorAccount
     // A4: snapshot the evidence from the strong per-key records NOW — clearPageApprovals below
     // deletes them, and the snapshot is what the page keeps (record.approvalRecord + the log).
     const approvalRecord = buildApprovalRecord({
-      pending, records: await readApprovalRecords(pageId, stateId, approvers), outcome: "approved", quorum: evidenceQuorum,
+      pending, records: votesOf(pending, await readApprovalRecords(pageId, stateId, approvers)), outcome: "approved", quorum: evidenceQuorum,
       completedBy: actorAccountId || null, completedByName: actorName || null,
     });
     const res = await transitionPageWorkflow({
@@ -730,7 +737,10 @@ async function quorumNow(pageId, pending, check = newApproverCheck(), { judgeAdm
   }
   // `assume` ({ accountId, status }): judge as if that person's decision were already recorded (the
   // decide path asks BEFORE recording a vote whether its outcome can be told at all).
-  const as = (list) => (assume ? list.map((r) => (r?.approverAccountId === assume.accountId ? { ...r, status: assume.status } : r)) : list);
+  const as = (list) => {
+    const own = votesOf(pending, list);
+    return assume ? own.map((r) => (r?.approverAccountId === assume.accountId ? { ...r, status: assume.status } : r)) : own;
+  };
   const [listedRecords, adminRecords, unsureRecords] = (await Promise.all([
     readApprovalRecords(pageId, pending.toStateId, effective),
     adminIds.length ? readApprovalRecords(pageId, pending.toStateId, adminIds) : [],
@@ -979,12 +989,20 @@ export async function decideApproval({ pageId, approverAccountId, decision, reas
       }
       return { success: false, reason: "You are not an approver for this transition" };
     }
-    record = { approverAccountId, status: "pending", admin: true, approverName: actorName || null, createdAt: new Date().toISOString() };
+    record = { approverAccountId, status: "pending", admin: true, approverName: actorName || null, createdAt: new Date().toISOString(), requestedAt: requestIdOf(pending) };
     await kvs.set(key, record);
     const fresh = (await kvs.get(pendingKey(pageId))) || pending;
     fresh.adminDeciders = [...new Set([...(fresh.adminDeciders || []), approverAccountId])];
     await kvs.set(pendingKey(pageId), fresh);
     pending.adminDeciders = fresh.adminDeciders;
+  }
+  // SVT-146 (review): a record stamped with another request than the one read (requestedAt is the
+  // request's time, opened or re-requested): pending = re-requested while this call ran (decide again
+  // on the new request); decided = a vote cast on an older request that landed here, which never
+  // counts (votesOf) and is decided afresh.
+  if (record.requestedAt && requestIdOf(pending) && record.requestedAt !== requestIdOf(pending)) {
+    if (!record.status || record.status === "pending") return { success: false, rerequested: true, reason: "This request was asked again while you decided, so your decision was not recorded. Decide again on the new request." };
+    record = { ...record, status: "pending", decidedAt: null, reason: null, signature: undefined, decidedVersion: undefined, requestedAt: requestIdOf(pending) };
   }
   if (record.status && record.status !== "pending") {
     return { success: false, reason: "Your decision has already been recorded" };
@@ -1066,7 +1084,8 @@ export async function decideApproval({ pageId, approverAccountId, decision, reas
   // racing votes is recorded second now sees the other.
   let latest;
   // A storage error here is not "closed": the vote stands with its marker and the sweep applies it.
-  try { latest = (await kvs.get(pendingKey(pageId))) || null; } catch (_) { return { success: true, outcome: "pending" }; }
+  let latestUnreadable = false;
+  try { latest = (await kvs.get(pendingKey(pageId))) || null; } catch (_) { latestUnreadable = true; latest = pending; }
   if (!latest || requestIdOf(latest) !== requestIdOf(pending)) {
     // SVT-146 (review): the request was withdrawn, completed or asked again while this decision ran.
     // The vote belongs to a request that is no longer open: it must not count on the new one (a
@@ -1092,7 +1111,7 @@ export async function decideApproval({ pageId, approverAccountId, decision, reas
   // 8.16: the outcome was told before the vote was recorded (q0, judged with it). Should it turn
   // unknown in between (a 429 starting within this call), nothing completes on it: the vote stands and
   // the request stays open for the next decision.
-  const later = q.unknown === true;
+  const later = q.unknown === true || latestUnreadable; // could not judge: the marker stays for the sweep
   const records = later ? [] : [...q.listedRecords, ...q.adminRecords]; // the vote summary names every counted decider
   // A "no" never completes a request: when the quorum reads "approved" after a DENIAL (the approvals
   // already in meet a minimum that re-clamped when approvers left the list), the request stays
@@ -1181,7 +1200,7 @@ async function applyDenial(pageId, pending, { by, byName, reason, quorum }) {
       // readers can tell it apart: the page did NOT move, it stays in `from`.
       const approvalRecord = buildApprovalRecord({
         // The evidence names everyone asked (a removed approver's earlier vote included), as before.
-        pending, records: await readApprovalRecords(pageId, stateId, deciderIds(pending)), outcome: "denied", quorum,
+        pending, records: votesOf(pending, await readApprovalRecords(pageId, stateId, deciderIds(pending))), outcome: "denied", quorum,
         completedBy: by, completedByName: byName || null,
       });
       await appendWorkflowLog(pageId, {
@@ -1265,7 +1284,7 @@ export async function settleRecordedVotes(pageId) {
     return { done: true, why: "cleaned up" };
   }
   const records = await readApprovalRecords(pageId, stateId, mine.map((m) => m.accountId));
-  const votes = mine.map((m, i) => ({ ...m, record: records[i] })).filter((v) => v.record?.status === v.decision);
+  const votes = mine.map((m, i) => ({ ...m, record: votesOf(pending, [records[i]])[0] })).filter((v) => v.record?.status === v.decision);
   await drop(mine.filter((m) => !votes.some((v) => v.key === m.key)));
   if (!votes.length) return { done: false, why: "no recorded vote" };
   let approval = votes.find((v) => v.decision === "approved");
@@ -1488,6 +1507,10 @@ export async function rerequestApproval({ pageId, actorAccountId, actorName, isS
   if (versionChanged && updated.aiGate?.required) updated.aiGate = { ...updated.aiGate, status: "pending", reviewedVersion: null, reason: null, enqueuedAt: Date.now() };
   const claimToken = await claimTake(pageId, pending.toStateId);
   try {
+    // The request read above must still be the open one (completed, withdrawn or asked again since:
+    // never brought back or rewritten on that read).
+    const open = await sameRequestOpen(pageId, requestIdOf(pending));
+    if (open !== true) return { success: false, reason: "This request changed while you asked again. Nothing was changed. Reload the page and try again." };
     // Every recorded decision was about the old request: the dropped approvers' and the admins'
     // records go, every current approver starts again at pending.
     const dropped = [...approvers.filter((id) => !next.approvers.includes(id)), ...(pending.adminDeciders || []).filter((id) => !next.approvers.includes(id))];

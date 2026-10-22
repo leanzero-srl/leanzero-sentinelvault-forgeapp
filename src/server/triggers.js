@@ -1716,6 +1716,41 @@ export async function workflowSweep() {
   let reverted = 0, demoted = 0, healed = 0, expired = 0, overdue = 0, skippedTrashed = 0, purgedPages = 0;
   const nowMs = Date.now();
   const protectionOn = contentProtectionEnabled(await kvs.get("admin-settings-global").catch(() => null));
+
+  // SVT-146: votes recorded whose outcome was never applied (decideApproval's second judgement could not
+  // be made, the completion failed, the function died) are applied FIRST, before the long walks below
+  // (the function has 25 s), for at most 10 s, most due marker first. A marker that cannot be applied
+  // yet waits 1, 2, 4 ... 24 h between tries, so it never crowds out the rest. One KVS query when there
+  // are none (the idle case); at most 50 pages a run. A marker older than 30 days is dropped (its request
+  // is still open: the requester can withdraw or re-request it).
+  let votesSettled = 0;
+  try {
+    const SETTLE_BUDGET_MS = 10000, SETTLE_MAX_AGE_MS = 30 * 24 * 3600 * 1000;
+    const oldest = new Map(); // pageId -> oldest marker time
+    let sq = kvs.query().where("key", WhereConditions.beginsWith(SETTLE_PREFIX)).limit(100);
+    let siter = 0;
+    do {
+      const { results, nextCursor } = await sq.getMany();
+      for (const { key, value } of results || []) {
+        if (!value?.pageId) continue;
+        const at = Number(value.at) || 0;
+        if (at && nowMs - at > SETTLE_MAX_AGE_MS) { await kvs.delete(key).catch(() => {}); console.warn(`[WORKFLOW-SWEEP] settle marker dropped after 30 days page=${value.pageId}`); continue; }
+        const due = Number(value.nextAt) || at; // a marker that could not be applied yet waits (settle's backoff)
+        if (due > nowMs) continue;
+        const id = String(value.pageId);
+        if (!oldest.has(id) || due < oldest.get(id)) oldest.set(id, due);
+      }
+      if (!nextCursor || ++siter >= 20) break;
+      sq = kvs.query().where("key", WhereConditions.beginsWith(SETTLE_PREFIX)).limit(100).cursor(nextCursor);
+    } while (true);
+    const pages = [...oldest.entries()].sort((x, y) => x[1] - y[1]).slice(0, 50).map(([id]) => id);
+    for (const pageId of pages) {
+      if (Date.now() - nowMs > SETTLE_BUDGET_MS) break; // the rest next hour
+      try { if ((await settleRecordedVotes(pageId))?.done) votesSettled++; }
+      catch (e) { console.error(`[WORKFLOW-SWEEP] settle page=${pageId}`, errText(e)); }
+    }
+  } catch (e) { console.error("[WORKFLOW-SWEEP] settle", errText(e)); }
+
   const defCache = new Map(); // per-space def cache — most pages in a space share one workflow
   const settingsCache = new Map(); // per-space settings (B4 label sync reads them per row)
   const spaceKeyById = new Map(); // workflowSweep: space id -> key, once per run
@@ -2017,43 +2052,6 @@ export async function workflowSweep() {
     if (!nextCursor || ++piter >= 20) break;
     pq = kvs.query().where("key", WhereConditions.beginsWith("workflow-pending-")).limit(100).cursor(nextCursor);
   } while (true);
-
-  // SVT-146: votes recorded whose outcome was never applied (decideApproval's second judgement could not
-  // be made, the completion failed, the function died) are applied now: before the inbox housekeeping
-  // (long on a big site, and it only tidies), until 18 s into the run (the function has 25 s), most due
-  // marker first; a marker that cannot be applied yet waits 1, 2, 4 ... 24 h between tries, so it never
-  // crowds out the rest. One KVS query when there are none (the idle case); at most 50 pages a run. A marker older than 30 days is dropped (its request is still open: the
-  // requester can withdraw or re-request it).
-  let votesSettled = 0;
-  try {
-    const SETTLE_BUDGET_MS = 18000, SETTLE_MAX_AGE_MS = 30 * 24 * 3600 * 1000;
-    const oldest = new Map(); // pageId -> oldest marker time
-    let sq = kvs.query().where("key", WhereConditions.beginsWith(SETTLE_PREFIX)).limit(100);
-    let siter = 0;
-    do {
-      const { results, nextCursor } = await sq.getMany();
-      for (const { key, value } of results || []) {
-        if (!value?.pageId) continue;
-        const at = Number(value.at) || 0;
-        if (at && nowMs - at > SETTLE_MAX_AGE_MS) { await kvs.delete(key).catch(() => {}); console.warn(`[WORKFLOW-SWEEP] settle marker dropped after 30 days page=${value.pageId}`); continue; }
-        const due = Number(value.nextAt) || at; // a marker that could not be applied yet waits (settle's backoff)
-        if (due > nowMs) continue;
-        const id = String(value.pageId);
-        if (!oldest.has(id) || due < oldest.get(id)) oldest.set(id, due);
-      }
-      if (!nextCursor || ++siter >= 20) break;
-      sq = kvs.query().where("key", WhereConditions.beginsWith(SETTLE_PREFIX)).limit(100).cursor(nextCursor);
-    } while (true);
-    const pages = [...oldest.entries()].sort((x, y) => x[1] - y[1]).slice(0, 50).map(([id]) => id);
-    for (const [i, pageId] of pages.entries()) {
-      // The rest next hour; the most due page is always tried while the run is under 21 s, so a long
-      // walk above never leaves every marker waiting forever.
-      const used = Date.now() - nowMs;
-      if (used > SETTLE_BUDGET_MS && !(i === 0 && used < 21000)) break;
-      try { if ((await settleRecordedVotes(pageId))?.done) votesSettled++; }
-      catch (e) { console.error(`[WORKFLOW-SWEEP] settle page=${pageId}`, errText(e)); }
-    }
-  } catch (e) { console.error("[WORKFLOW-SWEEP] settle", errText(e)); }
 
   // Inbox index housekeeping (2026-09-05): backfill rows for in-flight approvals, drop orphans.
   let inbox = { backfilled: 0, orphansRemoved: 0 };
