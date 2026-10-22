@@ -24,7 +24,7 @@ import {
 // Import from capsule logic
 import { countPageAttachments, writeSealContentProp, removeSealContentProp, touchSealTimestamp, resolveSealHoldPeriod } from "./logic.js";
 import { readDocBody } from "../../infra/doc-surgery.js";
-import { attachmentPurgeVerdict, confirmAttachmentPurged, putAttachmentCurrent } from "../../infra/attachment-status.js";
+import { attachmentPurgeVerdict, putAttachmentCurrent } from "../../infra/attachment-status.js";
 import { findSealedMediaSingle, capturePresentation } from "../../infra/media-presentation.js";
 import { purgeAllSealState } from "./confluence-sync.js";
 import { releaseSeal } from "./release.js";
@@ -929,16 +929,43 @@ const enumerateOperatorSeals = async (req) => {
             route`/wiki/api/v2/attachments/${artifactId}`,
           );
           if (!artifactResponse.ok) {
-            if (
-              artifactResponse.status === 404 &&
-              (await confirmAttachmentPurged(artifactId, undefined, { pageId: value.contentId || null }))
-            ) {
+            const purge = artifactResponse.status === 404
+              ? await attachmentPurgeVerdict(artifactId, PURGE_SETTLE_MS, { pageId: value.contentId || null })
+              : null;
+            if (purge?.verdict === "gone") {
               await kvs.delete(`protection-${artifactId}`);
               if (value.spaceId) {
                 await kvs.delete(`space-protection-${value.spaceId}-${artifactId}`);
               }
+              continue;
             }
-            continue;
+            // The file's page answers 404 everywhere (deleted from the trash, or out of reach): the
+            // seal stays (attachmentPurgeVerdict "container-unseen"; the expiry sweep holds it too),
+            // so it is listed to its owner as unavailable, with the name it was sealed under and no
+            // page link. Skipping it left the owner no way to see or release it here (8.18.0 note:
+            // "stays listed until its owner or a space admin releases it").
+            if (purge?.why === "container-unseen") {
+              sealedArtifacts.push({
+                id: artifactId,
+                title: artifactTitle,
+                fileSize,
+                pageTitle: "Page not available",
+                pageUrl: "",
+                pageId: null,
+                spaceKey: value.spaceKey || "",
+                spaceName: "",
+                lockedOn: value.timestamp,
+                expiresAt: value.expiresAt,
+                isExpired: !!(value.expiresAt && new Date(value.expiresAt) < new Date()),
+                workflowHeld: isWorkflowHeld(value),
+                isStale: true,
+                staleReason: "unavailable",
+                autoUnlockEnabled: autoUnsealActive,
+                downloadLink: null,
+                mediaType: null,
+              });
+            }
+            continue; // anything else (a 404 not proven either way, a 5xx, a 429): skipped for this render
           }
           const artifactData = await artifactResponse.json();
           if (artifactData.status && artifactData.status !== "current") {

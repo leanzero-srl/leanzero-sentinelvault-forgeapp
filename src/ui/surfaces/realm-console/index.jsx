@@ -377,8 +377,11 @@ const MyClaimedCard = ({ artifact, onRelease, onExtend, busyAction, siteUrl }) =
   const [expanded, setExpanded] = useState(false);
   const [cachedPreview, setCachedPreview] = useState(null);
   const isExpired = artifact.isExpired || (artifact.expiresAt && new Date(artifact.expiresAt) < new Date());
-  const statusClass = isExpired ? "expired" : "locked-by-me";
-  const statusText = isExpired ? "Expired" : "Sealed by you"; // SEC-3
+  // The file's page can no longer be read (deleted from the trash): the seal is still listed so its
+  // owner can release it, with the space console's word for it and nothing to extend.
+  const unavailable = artifact.isStale === true && artifact.staleReason === "unavailable"; // only that row: another status (archived) keeps Extend
+  const statusClass = unavailable ? "stale" : isExpired ? "expired" : "locked-by-me";
+  const statusText = unavailable ? "Missing" : isExpired ? "Expired" : "Sealed by you"; // SEC-3
   const isImage = artifact.mediaType?.startsWith("image/");
   const numericAttId = artifact.id ? artifact.id.replace(/^att/, "") : null;
   const downloadHref = siteUrl && artifact.pageId && artifact.title
@@ -442,7 +445,7 @@ const MyClaimedCard = ({ artifact, onRelease, onExtend, busyAction, siteUrl }) =
         <span className="card-row-right">
           <span className={`status-lozenge ${statusClass}`}>{statusText}</span>
           {/* F4: renew the retention period rather than unseal-and-seal-again. */}
-          {onExtend && (
+          {onExtend && !unavailable && (
             <button className={`action-btn extend ${busyAction === "extend" ? "is-busy" : ""}`} onClick={() => onExtend(artifact.id)} disabled={busyAction && busyAction !== "extend"} title="Give this seal a fresh retention period">
               {busyAction === "extend" ? <>Extending<span className="btn-busy-bar" /></> : "Extend"}
             </button>
