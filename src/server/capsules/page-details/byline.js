@@ -192,8 +192,11 @@ export async function refreshByline(pageId, opts = {}) {
     describeWorkflowForPage(id).catch((e) => { console.warn("[BYLINE] workflow:", errText(e)); return null; }),
   ]);
   const classification = sw.active
-    ? await getClassificationProvider().then(({ provider }) => provider.effectiveLevel(id)).catch((e) => { console.warn("[BYLINE] classification:", errText(e)); return { level: null, source: "none" }; })
+    ? await getClassificationProvider().then(({ provider }) => provider.effectiveLevel(id)).catch((e) => { console.warn("[BYLINE] classification:", errText(e)); return null; })
     : { level: null, source: "none" };
+  // On but unreadable (Confluence busy, a failed read): write nothing rather than "Unclassified" over a
+  // classified page; the next refresh writes the real level.
+  if (!classification) return { byline: null, wrote: false, reason: "classification unreadable" };
   const sealCount = seals.attachments.filter((a) => !a.trashed).length + seals.sections.length;
   return writeBylineFor(id, { level: classification.level, source: classification.source, sealCount, classificationEnabled: sw.active, workflow: wf?.status || null }, opts);
 }

@@ -1279,6 +1279,7 @@ const DocumentRibbon = () => {
 
   const decision = decideRibbon(ribbonInput({ summary, workflow, alerts, validationState }));
   const level = decision.classification?.level || null;
+  const levelUnknown = !level && decision.classification?.unknown === true;
   const source = decision.classification?.source || "none";
   // CLS-1: classification off → the left block is the app's name, never a level or "Unclassified".
   const classificationOff = !decision.active;
@@ -1359,9 +1360,9 @@ const DocumentRibbon = () => {
             <span className="rb-lvname">Sentinel Vault</span>
           </div>
         ) : (
-          <div className={`rb-class${level ? "" : " rb-class--none"}`} style={levelColor ? { background: levelColor } : undefined} data-testid="ribbon-class" title={level ? `Classification: ${level.name}${sourceText ? ` · ${sourceText}` : ""}` : "This page has no classification level"}>
+          <div className={`rb-class${level ? "" : " rb-class--none"}`} style={levelColor ? { background: levelColor } : undefined} data-testid="ribbon-class" title={level ? `Classification: ${level.name}${sourceText ? ` · ${sourceText}` : ""}` : levelUnknown ? "The classification could not be read right now; reload the page to try again" : "This page has no classification level"}>
             <span className="rb-glyph" data-glyph={hasSeal ? "lock" : "dot"}>{glyph}</span>
-            <span className="rb-lvname" data-testid="ribbon-level">{level ? level.name : "Unclassified"}</span>
+            <span className="rb-lvname" data-testid="ribbon-level">{level ? level.name : levelUnknown ? "Classification unavailable" : "Unclassified"}</span>
             {level && sourceText && <span className="rb-lvsrc" data-testid="ribbon-source">· {sourceText}</span>}
           </div>
         )}

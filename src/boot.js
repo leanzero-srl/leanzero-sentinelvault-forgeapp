@@ -42,8 +42,8 @@ export const sealIndexCron = asInvocation(async (event, context) => {
   }
 }, { budgetMs: 270_000, label: "sealIndexCron" }); // timeoutSeconds 300 in the manifest
 // 8.0 — Jira attachment seals: the product-event handler; the hourly lapse sweep rides the index cron.
-export { jiraAttachmentEventTrigger } from "./server/capsules/jira-seals/trigger.js";
-import { jiraSealSweep } from "./server/capsules/jira-seals/trigger.js";
+import { jiraSealSweep, jiraAttachmentEventTrigger as jiraAttachmentEventTriggerCore } from "./server/capsules/jira-seals/trigger.js";
+export const jiraAttachmentEventTrigger = asInvocation(jiraAttachmentEventTriggerCore, { label: "jiraAttachmentEventTrigger" });
 // DEV-ONLY harness test-state web trigger (gated by HARNESS_SECRET; 404 in prod)
 export { testStateTrigger } from "./test-hook.js";
 

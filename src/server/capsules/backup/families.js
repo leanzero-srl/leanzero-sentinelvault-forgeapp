@@ -102,6 +102,8 @@ export const FAMILIES = Object.freeze([
   { prefix: "page-guard-", cls: "runtime" },
   { prefix: "guarded-page-", cls: "runtime" }, // which pages carry a seal (shared/guarded-page.js); rebuilt by the five-minute sweep
   { prefix: "guard-marker-backfill-", cls: "runtime" }, // the marker rebuild: done flag, generation, resume cursors (re-opened by a restore)
+  { prefix: "activity-refile-", cls: "runtime" }, // the one-time 8.20.0 walk of activity rows (infra/activity-refile.js): cursor, counts, done
+  { prefix: "classification-scheme-cache", cls: "runtime" }, // the site's classification scheme and levels, kept a minute (classification/provider.js)
   { prefix: "panel-restore-", cls: "runtime" }, // minutes-long marker: the panel restore's own versions (trash-rights.js)
   { prefix: "restore-recheck-", cls: "runtime" }, // a deferred restore-vs-change decision, re-judged by the five-minute sweep
   { prefix: "unseen-page-", cls: "runtime" }, // a day-long note that the app could not read a page (expiry sweep: asked again after)

@@ -18,6 +18,7 @@
  */
 import api, { route } from "@forge/api";
 import { appConfluence } from "../../shared/confluence-call.js";
+import { resolveAppAccountId } from "../../shared/app-account.js";
 
 export const BACKUP_LABEL = "sentinel-vault-backup";
 export const INDEX_PROPERTY = "sentinel-vault-backup-index";
@@ -37,14 +38,12 @@ export const backupPageTitle = (environmentType) => {
   return env === "PRODUCTION" ? "Sentinel Vault backup" : `Sentinel Vault backup (${env.toLowerCase()})`;
 };
 
-let appAccountCache = null;
+// The app's own account ON THIS SITE: the shared resolver keeps it in this site's KVS (per
+// installation). Never in module scope: one Forge process serves several sites.
 export async function appAccountId() {
-  if (appAccountCache) return appAccountCache;
-  const res = await conf(route`/wiki/rest/api/user/current`);
-  if (!res.ok) throw new Error(`Could not read the app's own account (${res.status})`);
-  appAccountCache = (await readJson(res))?.accountId || null;
-  if (!appAccountCache) throw new Error("The app's own account id is empty");
-  return appAccountCache;
+  const id = await resolveAppAccountId();
+  if (!id) throw new Error("Could not read the app's own account");
+  return id;
 }
 
 /** Pages carrying the backup label that the app can open (CQL, as the app). */

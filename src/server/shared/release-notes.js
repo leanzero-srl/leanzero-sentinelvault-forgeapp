@@ -12,6 +12,17 @@ const note = (n) => Object.freeze({ ...n, changes: Object.freeze([...(n.changes 
 
 export const RELEASE_NOTES = Object.freeze([
   note({
+    version: "8.20.0",
+    date: "2026-10-23",
+    headline: "Classification settings and the Activity history always use your own site's data",
+    changes: [],
+    fixes: [
+      "Sentinel Vault could answer a request with a result it had looked up for another Confluence site shortly before: the classification scheme and its levels, the space an activity event is filed under, or a person's display name in the Activity history. Each of these is now looked up for your own site and never reused from another site's request.",
+      "Activity events recorded since 8.9.0 under a space key that is not a space on your site are moved in the background to the space their page is in now. Events that cannot be shown to be misfiled, including those under a key that holds events of several pages, are left as they are.",
+      "When Confluence is limiting requests, the banner says Classification unavailable instead of Unclassified, a page's classification chip is left as it is, classification changes and lists say to try again instead of acting on an empty answer, and a configuration export fails instead of saving the classification as switched off or a space as having no default.",
+    ],
+  }),
+  note({
     version: "8.19.0",
     date: "2026-10-22",
     headline: "Your sealed files stay listed after their page is deleted, and the hourly workflow check always moves on",

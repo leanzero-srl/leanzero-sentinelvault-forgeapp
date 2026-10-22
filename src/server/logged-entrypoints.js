@@ -8,6 +8,7 @@
  * (test/action-log.test.mjs: every manifest function is logged or listed here).
  */
 import { logged, withJobLog } from "./shared/action-log.js";
+import { asInvocation } from "./shared/confluence-call.js";
 import { privacyConsumer as privacyConsumerCore } from "./capsules/privacy/worker.js";
 import { realmScanConsumer as realmScanConsumerCore } from "./capsules/realms/scan-worker.js";
 import { aiValidationConsumer as aiValidationConsumerCore } from "./capsules/validations/ai-worker.js";
@@ -32,7 +33,12 @@ const REST_OUTCOME = {
   [REST_OUTPUT.conflict]: { outcome: "refused", reason: "conflict" },
   [REST_OUTPUT.busy]: { outcome: "busy" },
 };
-export const configApiTrigger = logged(configApiTriggerCore, {
+// 8.20.0: each REST call and each queued job is ONE invocation (shared/confluence-call.js), like the
+// resolvers and the triggers: what one run asks Confluence once (a page's space, a person's name, the
+// app's own account, the site's classification scheme) is shared inside that run and never outside it.
+// The retry deadline is the function's own limit less a margin.
+const job = (core, timeoutS, label) => asInvocation(core, { budgetMs: timeoutS * 1000 - 30_000, label });
+export const configApiTrigger = logged(asInvocation(configApiTriggerCore, { label: "configApiTrigger" }), {
   describe: (req) => ({ via: "rest", action: `rest.${restOpOf(req)}`, surface: "rest-api" }),
   classify: (r) => REST_OUTCOME[r?.outputKey] || { outcome: "error", errorType: "unknown-output" },
 });
@@ -46,12 +52,12 @@ const classifyRestJob = (r) => {
   return { outcome: "ok" };
 };
 export const __classifyRestJob = classifyRestJob; // tests
-export const configApiConsumer = withJobLog("config-api", configApiConsumerCore, { classify: classifyRestJob });
-export const realmScanConsumer = withJobLog("realm-audit", realmScanConsumerCore, { kinds: ["byline-refresh"] });
-export const aiValidationConsumer = withJobLog("ai-validation", aiValidationConsumerCore, { kinds: ["gate"], kindOf: (e) => e?.body?.mode, limitMs: 120_000 });
-export const backupConsumer = withJobLog("backup", backupConsumerCore, { kinds: ["backup", "job"] });
-export const privacyConsumer = withJobLog("privacy", privacyConsumerCore, { kinds: ["sweep", "validation-scrub"] });
-export const jiraRestoreConsumer = withJobLog("jira-restore", jiraRestoreConsumerCore, { kinds: ["issue-deleted"], limitMs: 300_000 });
+export const configApiConsumer = withJobLog("config-api", job(configApiConsumerCore, 900, "configApiConsumer"), { classify: classifyRestJob });
+export const realmScanConsumer = withJobLog("realm-audit", job(realmScanConsumerCore, 900, "realmScanConsumer"), { kinds: ["byline-refresh"] });
+export const aiValidationConsumer = withJobLog("ai-validation", job(aiValidationConsumerCore, 120, "aiValidationConsumer"), { kinds: ["gate"], kindOf: (e) => e?.body?.mode, limitMs: 120_000 });
+export const backupConsumer = withJobLog("backup", job(backupConsumerCore, 900, "backupConsumer"), { kinds: ["backup", "job"] });
+export const privacyConsumer = withJobLog("privacy", job(privacyConsumerCore, 900, "privacyConsumer"), { kinds: ["sweep", "validation-scrub"] });
+export const jiraRestoreConsumer = withJobLog("jira-restore", job(jiraRestoreConsumerCore, 300, "jiraRestoreConsumer"), { kinds: ["issue-deleted"], limitMs: 300_000 });
 
 /** Manifest functions that are NOT user actions, and why (test/action-log.test.mjs reads this). */
 export const ACTION_LOG_EXEMPT = Object.freeze({
