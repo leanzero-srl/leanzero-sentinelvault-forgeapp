@@ -179,14 +179,18 @@ function boundDetails(details) {
  * @param {boolean} [entry.site]         also (or only) record it on the site leg `activity-site-`
  * @returns {Promise<{id:string}|null>}   the stored id, or null when nothing was written
  */
-// Where a page is now, for filing. Remembered for THIS invocation only (one invocation often records
-// several events for one page): page ids repeat across sites and one Forge process serves several
-// sites, so a module-level memo keyed by the page id filed one site's event under another site's
-// space key. null when Confluence cannot say (the caller's space is then used, as before); a failed
-// lookup is not remembered, the next event asks again.
-async function currentSpaceKeyOfPage(pageId) {
-  return invocationMemo(`activity-page-space|${pageId}`, async () => {
-    try { const live = await liveContentSpace(pageId); return live.status === "found" ? live.spaceKey : null; } catch (_) { return null; }
+// Where a page is now, for filing, and its title then: `{ key, title }`, or null when Confluence cannot
+// say (the caller's space is then used, as before, and no title is kept). Remembered for THIS
+// invocation only (one invocation often records several events for one page): page ids repeat across
+// sites and one Forge process serves several sites, so a module-level memo keyed by the page id filed
+// one site's event under another site's space key. A failed lookup is not remembered, the next event
+// asks again.
+async function currentPlaceOfPage(pageId) {
+  return invocationMemo(`activity-page-place|${pageId}`, async () => {
+    try {
+      const live = await liveContentSpace(pageId);
+      return live.status === "found" ? { key: live.spaceKey, title: live.title || null } : null;
+    } catch (_) { return null; }
   });
 }
 
@@ -204,7 +208,8 @@ export async function recordActivity(entry) {
     // the app's own record (seal, workflow), which stays behind when the page moves; filing by it
     // kept sending a moved page's new events to the space it left. Its earlier history stays there.
     const givenSpaceKey = entry.spaceKey != null && entry.spaceKey !== "" ? String(entry.spaceKey) : null;
-    const spaceKey = pageId && givenSpaceKey ? ((await currentSpaceKeyOfPage(pageId)) || givenSpaceKey) : givenSpaceKey;
+    const place = pageId && givenSpaceKey ? await currentPlaceOfPage(pageId) : null;
+    const spaceKey = place?.key || givenSpaceKey;
     const issueId = entry.issueId != null && entry.issueId !== "" ? String(entry.issueId) : null;
     const { id, pageKey, spaceKey: spaceStoreKey, siteKey, issueKey: issueStoreKey } = buildActivityKeys({ pageId, spaceKey, tsMs, rand: randomSuffix(), site: entry.site === true, issueId });
     if (!pageKey && !spaceStoreKey && !siteKey && !issueStoreKey) {
@@ -233,6 +238,9 @@ export async function recordActivity(entry) {
       ts: new Date(tsMs).toISOString(),
       type,
       pageId,
+      // The page's title when the event happened, so the history can still name a page deleted
+      // from the trash later. Who may see it is the space report's call (activity/actions.js).
+      ...(place?.title ? { pageTitle: String(place.title).slice(0, 255) } : {}),
       spaceKey,
       ...(issueId ? { issueId } : {}),
       actor,

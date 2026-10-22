@@ -153,7 +153,7 @@ export async function resolvePageSpace(pageId) {
 
 /**
  * Where a piece of content (a page or a blog post) is NOW, with a failed read told apart from
- * content Confluence no longer has: `{ status: "found", spaceId, spaceKey }`, `{ status: "gone" }`
+ * content Confluence no longer has: `{ status: "found", spaceId, spaceKey, title }`, `{ status: "gone" }`
  * (404 as a page AND as a blog post; a trashed page still answers, with its space), or
  * `{ status: "error" }` (anything else). "gone" means only that the APP cannot read it: Confluence
  * answers the app 404 for a purged page and for a live page whose view restriction leaves the app
@@ -170,13 +170,14 @@ export async function liveContentSpace(contentId) {
     if (pres.status === 404) return { status: "gone" };
     if (isRateLimited(pres)) { noteAuthzUnknown(); return { status: "error", rateLimited: true }; }
     if (!pres.ok) return { status: "error" };
-    const spaceId = (await pres.json())?.spaceId;
+    const content = await pres.json();
+    const spaceId = content?.spaceId;
     if (!spaceId) return { status: "error" };
     const sres = await appConfluence(route`/wiki/api/v2/spaces/${spaceId}`);
     if (isRateLimited(sres)) { noteAuthzUnknown(); return { status: "error", rateLimited: true }; }
     if (!sres.ok) return { status: "error" };
     const spaceKey = (await sres.json())?.key || null;
-    return spaceKey ? { status: "found", spaceId: String(spaceId), spaceKey } : { status: "error" };
+    return spaceKey ? { status: "found", spaceId: String(spaceId), spaceKey, title: content?.title || null } : { status: "error" };
   } catch (_) { /* deny on failure */ }
   return { status: "error" };
 }

@@ -22,6 +22,8 @@ const { recentDispatches } = await import("../src/server/capsules/bulletins/acti
 const wfActions = new Map((await import("../src/server/capsules/workflow/actions.js")).actions);
 const sealing = new Map((await import("../src/server/capsules/sealing/actions.js")).actions);
 const { pageDetailsSummary } = await import("../src/server/capsules/page-details/actions.js");
+const { getSpaceActivity } = await import("../src/server/capsules/activity/actions.js");
+const { pageTitleOf, activityToCsv } = await import("../src/ui/kit/activity-format.js");
 
 const APP = "app-account";
 const APPROVER = "acct-approver";
@@ -46,7 +48,7 @@ async function approvedPage({ enforceMode = "demote", namedApprovers = true, con
     .addUser(APPROVER, { displayName: "Ana Approver" })
     .addUser(ADMIN, { displayName: "Sam Admin" })
     .addUser(PLAIN, { displayName: "Pat Plain" })
-    .addPage(PAGE, { versions: [{ authorId: PLAIN, text: "first draft" }, { authorId: PLAIN, text: "the text that was approved" }] });
+    .addPage(PAGE, { title: "Travel policy", versions: [{ authorId: PLAIN, text: "first draft" }, { authorId: PLAIN, text: "the text that was approved" }] });
   w.spaceAdmins.add(ADMIN);
   w.readers.add("*");
   await kvs.set("app-account-id", APP);
@@ -255,6 +257,23 @@ try {
     const stale = await move("draft"); // tab B still shows Draft
     eq("[6] tab B's move is refused", stale.success, false);
     eq("[6] tab B is told the page's real state", stale.reason, "This page is already In Review.");
+  }
+
+  // ---------------------------------------------------------------------------------------------
+  // 7. An Approved page is deleted from the trash for good: the space's Activity report and its
+  // CSV export must still name the page for a space admin.
+  {
+    const world = await approvedPage();
+    const report = async (accountId) => (await getSpaceActivity({ payload: { spaceKey: SPACE }, context: { accountId } })).entries;
+    world.pages.get(PAGE).spaceId = "7777"; // now in another space: not this space's title to show any more
+    eq("[7] a page moved away is not named", [...new Set((await report(ADMIN)).map(pageTitleOf))], [`Page ${PAGE}`]);
+    world.pages.delete(PAGE); // purged: Confluence answers 404 from now on
+    const entries = await report(ADMIN);
+    ok("[7] the report still has the page's history", entries.length > 0);
+    eq("[7] every row names the purged page", [...new Set(entries.map(pageTitleOf))], ["Travel policy"]);
+    eq("[7] so does the CSV's title column", [...new Set(activityToCsv(entries).split("\r\n").slice(1).map((r) => r.split(",")[4]))], ['"Travel policy"']);
+    await kvs.set(`admin-settings-space-${SPACE}`, { adminUsers: [PLAIN] }); // a steward the app names, not a space admin
+    eq("[7] that steward sees only the page's id", [...new Set((await report(PLAIN)).map(pageTitleOf))], [`Page ${PAGE}`]);
   }
 } finally {
   loud();
