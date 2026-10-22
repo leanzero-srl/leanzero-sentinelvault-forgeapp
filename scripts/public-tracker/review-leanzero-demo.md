@@ -1,16 +1,16 @@
 # Sentinel Vault Public Tracker - verify file
 
-Generated 2026-10-22T00:24:51.748Z by scripts/public-tracker/tracker.mjs verify.
+Generated 2026-10-22T10:00:41.530Z by scripts/public-tracker/tracker.mjs verify.
 Site https://leanzero-demo.atlassian.net. Project SVT (id 10278), permission scheme "Sentinel Vault Public Tracker permissions" (id 10265, used by: SVT), anonymous grants: BROWSE_PROJECTS.
-Issues checked: 138 of 138. Verification failures: 0. Withheld release-note lines: 1.
+Issues checked: 141 of 141. Verification failures: 0. Withheld release-note lines: 1.
 
 ## Counts
 
-- status: Done 107; Backlog 31
-- version: 6.4.0 5; 6.5.0 1; 6.6.0 6; 6.7.0 8; 6.9.0 4; 6.10.0 4; 6.11.0 1; 7.0.0 5; 7.1.0 8; 8.0.0 16; 8.1.0 1; 8.2.0 2; 8.3.0 1; 8.4.0 1; 8.5.0 1; 8.6.0 13; 8.7.0 1; 8.8.0 1; 8.9.0 5; 8.10.0 5; 8.11.0 3; 8.12.0 3; 8.13.0 1; 8.14.0 10; 8.15.0 1; open, affects 7.1.0 6; open, affects 8.12.0 25
-- component: Classification 4; Sealed files and sections 18; Edit requests and access 4; REST API 5; Backup and restore 13; Layout and accessibility 10; Privacy and personal data 11; Space and site settings 17; Workflow and approvals 22; App permissions and updates 4; Page banner and Sentinel Vault window 10; Activity report 2; Jira issue attachments 13; My work 5
-- type: Improvement 53; Bug 85
-- versions in Jira: 6.4.0 released 2026-09-30, 6.5.0 released 2026-09-30, 6.6.0 released 2026-10-02, 6.7.0 released 2026-10-04, 6.9.0 released 2026-10-04, 6.10.0 released 2026-10-04, 6.11.0 released 2026-10-04, 7.0.0 released 2026-10-05, 7.1.0 released 2026-10-09, 8.0.0 released 2026-10-14, 8.1.0 released 2026-10-14, 8.2.0 released 2026-10-14, 8.3.0 released 2026-10-14, 8.4.0 released 2026-10-14, 8.5.0 released 2026-10-14, 8.6.0 released 2026-10-17, 8.7.0 released 2026-10-17, 8.8.0 released 2026-10-17, 8.9.0 released 2026-10-18, 8.10.0 released 2026-10-18, 8.11.0 released 2026-10-18, 8.12.0 released 2026-10-18, 8.13.0 released 2026-10-21, 8.14.0 released 2026-10-21, 8.15.0 released 2026-10-21
+- status: Done 110; Backlog 31
+- version: 6.4.0 5; 6.5.0 1; 6.6.0 6; 6.7.0 8; 6.9.0 4; 6.10.0 4; 6.11.0 1; 7.0.0 5; 7.1.0 8; 8.0.0 16; 8.1.0 1; 8.2.0 2; 8.3.0 1; 8.4.0 1; 8.5.0 1; 8.6.0 13; 8.7.0 1; 8.8.0 1; 8.9.0 5; 8.10.0 5; 8.11.0 3; 8.12.0 3; 8.13.0 1; 8.14.0 10; 8.15.0 1; 8.16.0 3; open, affects 7.1.0 6; open, affects 8.12.0 25
+- component: Classification 4; Sealed files and sections 18; Edit requests and access 4; REST API 5; Backup and restore 13; Layout and accessibility 10; Privacy and personal data 11; Space and site settings 17; Workflow and approvals 25; App permissions and updates 4; Page banner and Sentinel Vault window 10; Activity report 2; Jira issue attachments 13; My work 5
+- type: Improvement 55; Bug 86
+- versions in Jira: 6.4.0 released 2026-09-30, 6.5.0 released 2026-09-30, 6.6.0 released 2026-10-02, 6.7.0 released 2026-10-04, 6.9.0 released 2026-10-04, 6.10.0 released 2026-10-04, 6.11.0 released 2026-10-04, 7.0.0 released 2026-10-05, 7.1.0 released 2026-10-09, 8.0.0 released 2026-10-14, 8.1.0 released 2026-10-14, 8.2.0 released 2026-10-14, 8.3.0 released 2026-10-14, 8.4.0 released 2026-10-14, 8.5.0 released 2026-10-14, 8.6.0 released 2026-10-17, 8.7.0 released 2026-10-17, 8.8.0 released 2026-10-17, 8.9.0 released 2026-10-18, 8.10.0 released 2026-10-18, 8.11.0 released 2026-10-18, 8.12.0 released 2026-10-18, 8.13.0 released 2026-10-21, 8.14.0 released 2026-10-21, 8.15.0 released 2026-10-21, 8.16.0 released 2026-10-22
 
 ## Issues
 
@@ -1044,4 +1044,25 @@ Issues checked: 138 of 138. Verification failures: 0. Withheld release-note line
 
 > A page's validation status saved before 8.14.0 still named, in the page's sentinel-vault-validation property, who had checked the page and who had approved it anyway. A one-time background job now removes those names from every page Sentinel Vault can read, including trashed pages and pages in archived spaces, and keeps the verdict. Confluence does not allow changes to an archived page, so an archived page is cleaned when it is restored from the archive, and the weekly privacy sweep checks those pages again. It works through about 3,000 pages an hour, so a large site can take a day or more. A page it cannot change is tried again a few times over the following hours, then skipped and counted in the app's logs. What the Sentinel Vault panel shows does not change. Erasing the data of a closed Atlassian account is not counted as finished until that job has finished.
 > Fixed in Sentinel Vault 8.15.0. A site still on version 7 or earlier gets it once a site admin approves the update in Confluence administration, Apps, Manage apps.
+
+### SVT-143 - A space admin's approval counts only while that person is still a space admin
+
+- type: Improvement; status: Done (Done); fixVersion: 8.16.0; component: Workflow and approvals
+
+> A space admin's approval counts only while that person is still an admin of the page's space and the space still lets admins decide. When an approval from someone who is no longer a space admin is what would complete a request, the request says so, and the person who asked or a space admin can request it again.
+> Added in Sentinel Vault 8.16.0. A site still on version 7 or earlier gets it once a site admin approves the update in Confluence administration, Apps, Manage apps.
+
+### SVT-144 - Deciding an approval request, a proposed change or Approve anyway needs permission to view the page
+
+- type: Improvement; status: Done (Done); fixVersion: 8.16.0; component: Workflow and approvals
+
+> Approving or declining an approval request, deciding a proposed change and Approve anyway on a page's validation status need permission to view the page. Approval requests and proposed changes on pages you can't view are no longer listed for you in My work. A new request, or a request asked again, that could never be completed because approvers can't view the page is refused, and the message says which approvers, or how many, can't view it.
+> Added in Sentinel Vault 8.16.0. A site still on version 7 or earlier gets it once a site admin approves the update in Confluence administration, Apps, Manage apps.
+
+### SVT-145 - A request whose AI review passed while approver rights could not be checked could stay open
+
+- type: Bug; status: Done (Done); fixVersion: 8.16.0; component: Workflow and approvals
+
+> When a request's AI review passed while the approvers' rights could not be checked, the request could stay open for good. Sentinel Vault now completes it at the next hourly check after the rights can be checked, if its approvals still meet what it needs.
+> Fixed in Sentinel Vault 8.16.0. A site still on version 7 or earlier gets it once a site admin approves the update in Confluence administration, Apps, Manage apps.
 

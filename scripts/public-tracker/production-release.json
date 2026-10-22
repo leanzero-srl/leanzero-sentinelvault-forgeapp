@@ -1,6 +1,6 @@
 {
-  "release": "8.15.0",
-  "at": "2026-10-21",
-  "sha": "0dd15614",
+  "release": "8.16.0",
+  "at": "2026-10-22",
+  "sha": "38ffd8aa",
   "note": "The release production carries and the commit it was deployed from, written by scripts/deploy-prod.sh (release-gate.mjs post) after an eligible production deploy; the public tracker's LAST_VERSION."
 }
