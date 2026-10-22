@@ -53,6 +53,9 @@ function world() {
       if (method === "PUT") {
         if (body?.status == null) return bad("status: must not be null");
         if (body.status !== "current") return bad("status: unexpected");
+        // Measured: a level less sensitive (higher order) than the space default is refused.
+        const rank = (id) => LEVELS.find((l) => l.id === id)?.order;
+        if (spaceDefault && rank(body.id) > rank(spaceDefault)) return { status: 400, body: { errors: [{ status: 400, code: "BAD_REQUEST", title: `Level with ID ${body.id} is not permitted for the content`, detail: null }] } };
         pageOwn = body.id; return { status: 204 };
       }
     }
@@ -99,8 +102,8 @@ const writes = () => fake.calls.filter((c) => c.method !== "GET" && c.path.inclu
   eq("raising Internal to Restricted needs no reason", [r.ok, r.needsReason ?? false], [true, false]);
   await setup();
   pageOwn = R;
-  const low = await call("classification-set-page", { pageId: "900", levelId: P });
-  eq("lowering Restricted to Public asks for a reason", [low.ok, low.needsReason], [false, true]);
+  const low = await call("classification-set-page", { pageId: "900", levelId: I });
+  eq("lowering Restricted to Internal asks for a reason", [low.ok, low.needsReason], [false, true]);
   eq("... and nothing was written", writes().length, 0);
   await setup();
   const d = await call("classification-set-space-default", { spaceId: "11", levelId: P });
@@ -152,6 +155,29 @@ const writes = () => fake.calls.filter((c) => c.method !== "GET" && c.path.inclu
   eq("a level Confluence refuses is reported, not claimed", r.ok, false);
   ok("... in words that say Confluence refused it and nothing changed", /Confluence did not accept/.test(String(r.reason)) && /Nothing was changed/.test(String(r.reason)));
   ok("... without Confluence's raw text", !/level not allowed|INVALID_REQUEST_BODY/.test(String(r.reason)));
+}
+{
+  // Confluence refuses a page level below the space default (measured on the test site): the app says
+  // so with the way out, and sends no write Confluence would refuse.
+  await setup();
+  const before = writes().length;
+  const r = await call("classification-set-page", { pageId: "900", levelId: P, reason: "public now" });
+  eq("a page level below the space default is refused", [r.ok, r.belowSpaceDefault], [false, true]);
+  ok("... naming the space default and what to do", /below its space's default level \(Internal\)/.test(String(r.reason)) && /Choose Internal or higher/.test(String(r.reason)));
+  eq("... and no write is sent", writes().length, before);
+  eq("the page keeps following the space", pageOwn, null);
+  const same = await call("classification-set-page", { pageId: "900", levelId: R });
+  eq("a level above the default still works", [same.ok, pageOwn], [true, R]);
+  // Once the space default is lowered, the same level is allowed.
+  await setup();
+  spaceDefault = P;
+  const ok2 = await call("classification-set-page", { pageId: "900", levelId: P });
+  eq("with a Public space default, Public on the page is allowed", [ok2.ok, pageOwn], [true, P]);
+  // A space default Confluence cannot read right now: busy, not "no default".
+  await setup();
+  onConfluence((method, rawPath) => (decodeURIComponent(rawPath).split("?")[0] === "/wiki/api/v2/spaces/11/classification-level/default" && method === "GET" ? { status: 503, body: {} } : undefined));
+  const busy = await call("classification-set-page", { pageId: "900", levelId: P, reason: "x" });
+  eq("an unreadable space default answers busy and writes nothing", [busy.ok, busy.busy, pageOwn], [false, true, null]);
 }
 
 report("classification-native");

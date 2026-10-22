@@ -224,6 +224,8 @@ export const getPage = async (req) => {
   }
 };
 
+const belowSpaceDefaultRefusal = (floor) => `Confluence does not allow a page below its space's default level (${floor.name}). Choose ${floor.name} or higher, or ask a space admin to lower the space default.`;
+
 export const setPage = async (req) => {
   const ctxPageId = req.context?.extension?.content?.id;
   const pageId = req.payload?.pageId || ctxPageId;
@@ -249,6 +251,16 @@ export const setPage = async (req) => {
       // the person asked it to stop holding. Confluence answers 204 when there is nothing to reset.
       if (levelId == null && provider.name === "native") await provider.resetPage(pageId);
       return { ok: true, unchanged: true, effective: before, pageLevelId: levelId };
+    }
+    // Confluence's own scheme refuses a page level LESS sensitive than the space's default (HTTP 400
+    // "Level ... is not permitted for the content"; measured 2026-10-23: below the default refused, the
+    // default or above accepted, and the same level accepted once the space default was lowered). Said
+    // here, with the way out, instead of sending a write Confluence will refuse. A default that cannot
+    // be read throws (busy), never "no default".
+    if (levelId != null && provider.name === "native") {
+      const spaceId = await resolveSpaceId(confluenceRequest, pageId);
+      const floor = spaceId ? findLevel(levels, await provider.getSpaceDefault(spaceId)) : null;
+      if (floor && isDowngrade(floor.id, levelId, levels)) return { ok: false, belowSpaceDefault: true, reason: belowSpaceDefaultRefusal(floor) };
     }
     // P5: what a reader sees BEFORE vs AFTER — "use space default" lands on the space's default.
     let toId = levelId;
