@@ -179,5 +179,15 @@ const writes = () => fake.calls.filter((c) => c.method !== "GET" && c.path.inclu
   const busy = await call("classification-set-page", { pageId: "900", levelId: P, reason: "x" });
   eq("an unreadable space default answers busy and writes nothing", [busy.ok, busy.busy, pageOwn], [false, true, null]);
 }
+{
+  // "Use space default" on a page pinned at the space's own level (it reads as following): the pin is
+  // removed and the removal is kept in the page's activity.
+  await setup();
+  pageOwn = I;
+  const r = await call("classification-set-page", { pageId: "900", levelId: null });
+  eq("the pin equal to the space default is removed", [r.ok, pageOwn], [true, null]);
+  const rows = [...fake.kvs.entries()].filter(([k]) => k.startsWith("activity-page-900-")).map(([, v]) => v);
+  eq("... and the page's activity records it", rows.map((v) => [v.type, v.details?.source]), [["classification.page-set", "space"]]);
+}
 
 report("classification-native");
