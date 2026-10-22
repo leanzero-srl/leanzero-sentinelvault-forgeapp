@@ -38,7 +38,7 @@ import {
   autoAssignOnEvent, getSpaceWorkflowSettings, resolveWorkflowDef, findState, validateTransition, restampIfEnforced,
   transitionPageWorkflow, readPageWorkflow, purgePageWorkflow, mirrorStateLabel, readLabelStamp, clearStateLabel, restampApprovedVersion, fetchLivePageVersion,
 } from "./capsules/workflow/logic.js";
-import { applyAiVerdict, completeWhenKnown, sweepApprovalIndex, clearPageApprovals } from "./capsules/workflow/approvals.js";
+import { applyAiVerdict, completeWhenKnown, sweepApprovalIndex, clearPageApprovals, settleRecordedVotes, SETTLE_PREFIX } from "./capsules/workflow/approvals.js";
 import { fetchPageStatuses } from "./shared/page-status.js";
 import { postEnforceComment, buildWorkflowEnforcementDispatch } from "./infra/approval-blueprints.js";
 import { postValidationComment } from "./infra/validation-blueprints.js";
@@ -2018,11 +2018,31 @@ export async function workflowSweep() {
     pq = kvs.query().where("key", WhereConditions.beginsWith("workflow-pending-")).limit(100).cursor(nextCursor);
   } while (true);
 
+  // SVT-146: votes recorded whose outcome was never applied (decideApproval's second judgement could not
+  // be made, the completion failed, the function died) are applied now. One KVS query when there are
+  // none (the idle case); at most 50 pages a run, the rest next hour.
+  let votesSettled = 0;
+  try {
+    const pages = new Set();
+    let sq = kvs.query().where("key", WhereConditions.beginsWith(SETTLE_PREFIX)).limit(100);
+    let siter = 0;
+    do {
+      const { results, nextCursor } = await sq.getMany();
+      for (const { value } of results || []) if (value?.pageId) pages.add(String(value.pageId));
+      if (!nextCursor || pages.size >= 50 || ++siter >= 5) break;
+      sq = kvs.query().where("key", WhereConditions.beginsWith(SETTLE_PREFIX)).limit(100).cursor(nextCursor);
+    } while (true);
+    for (const pageId of [...pages].slice(0, 50)) {
+      try { if ((await settleRecordedVotes(pageId))?.done) votesSettled++; }
+      catch (e) { console.error(`[WORKFLOW-SWEEP] settle page=${pageId}`, errText(e)); }
+    }
+  } catch (e) { console.error("[WORKFLOW-SWEEP] settle", errText(e)); }
+
   // Inbox index housekeeping (2026-09-05): backfill rows for in-flight approvals, drop orphans.
   let inbox = { backfilled: 0, orphansRemoved: 0 };
   try { inbox = await sweepApprovalIndex({ nowMs }); } catch (e) { console.error("[WORKFLOW-SWEEP] inbox index", errText(e)); }
 
-  return { body: JSON.stringify({ reverted, demoted, healed, expired, overdue, skippedTrashed, purgedPages, labelsSynced, aiTimedOut, completedLate, inboxBackfilled: inbox.backfilled, orphanApprovalsRemoved: inbox.orphansRemoved }) };
+  return { body: JSON.stringify({ reverted, demoted, healed, expired, overdue, skippedTrashed, purgedPages, labelsSynced, aiTimedOut, completedLate, votesSettled, inboxBackfilled: inbox.backfilled, orphanApprovalsRemoved: inbox.orphansRemoved }) };
 }
 
 // --- Conditions & Validations phase (runs after the body-protection pipeline) ---

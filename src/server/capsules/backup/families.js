@@ -118,6 +118,7 @@ export const FAMILIES = Object.freeze([
   { prefix: "workflow-integrity-notified-", cls: "runtime" },
   { prefix: "workflow-autoassigned-", cls: "runtime" },
   { prefix: "workflow-completing-", cls: "runtime" },
+  { prefix: "workflow-settle-", cls: "runtime" }, // SVT-146: votes waiting to be applied; the hourly sweep settles them
   { prefix: "workflow-label-", cls: "runtime" },
   { prefix: "validation-checked-", cls: "runtime" },
   { prefix: "ai-validation-status-", cls: "runtime" },

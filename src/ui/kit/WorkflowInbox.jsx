@@ -11,6 +11,7 @@ import { invoke, view, router } from "./bridge";
 // silently dropped.
 export default function WorkflowInbox({ emptyText = null, onDecided = null } = {}) {
   const [items, setItems] = useState(null);
+  const [total, setTotal] = useState(0); // SVT-147: how many wait in all (the list shows at most 25)
   const [siteUrl, setSiteUrl] = useState("");
   const [busy, setBusy] = useState(null);
   const [msg, setMsg] = useState(null);
@@ -19,8 +20,10 @@ export default function WorkflowInbox({ emptyText = null, onDecided = null } = {
     try {
       const r = await invoke("list-my-approvals", {});
       setItems(r?.approvals || []);
+      setTotal(typeof r?.total === "number" ? r.total : (r?.approvals || []).length);
     } catch (_) {
       setItems([]);
+      setTotal(0);
     }
   }, []);
 
@@ -68,8 +71,9 @@ export default function WorkflowInbox({ emptyText = null, onDecided = null } = {
     <div className="wf-inbox" data-testid="wf-inbox">
       <div className="wf-inbox-head">
         <span className="wf-inbox-title">Approvals waiting on you</span>
-        <span className="wf-inbox-count">{items.length}</span>
+        <span className="wf-inbox-count">{Math.max(total, items.length)}</span>
       </div>
+      {total > items.length && <p className="wf-inbox-more" data-testid="wf-inbox-more">Showing {items.length} of {total}. Decide these to see the rest.</p>}
       {msg && <div role="status" aria-live="polite" className={msg.type === "success" ? "alert-success" : "alert-error"}>{msg.text}</div>}
       <ul className="wf-inbox-list">
         {items.map((it) => (

@@ -44,7 +44,8 @@ import { heldRefusal, isWorkflowHeld } from "../../shared/seal-authority.js"; //
 import { isLiveAttachmentSeal } from "../../shared/live-seal.js"; // a trashedOnly stub is not a seal
 import { getActiveEditGrant, getActiveSectionEditGrant, listPendingRequestsForOwner, listPendingSectionRequestsForOwner, resolveEditCooldownMs } from "../editreq/logic.js";
 import { retryAtFor } from "../../shared/edit-cooldown.js"; // SEC-8: the ribbon's declined state
-import { listMyApprovals, describeWorkflowForPage } from "../workflow/approvals.js";
+import { waitingApprovals, describeWorkflowForPage } from "../workflow/approvals.js";
+import { viewableProposals } from "../editreq/viewable.js";
 import { errText, safeKey, reasonText } from "../../shared/action-log.js";
 
 /**
@@ -1599,16 +1600,18 @@ async function ribbonViewerHalf({ pageId, accountId, liveSeals, sectionRecords }
   }
   if (!accountId) return half;
 
-  // Waiting on ME, on THIS page: the same owner/approver index reads count-my-work uses, filtered
-  // to this page (every record carries the page id it belongs to).
+  // Waiting on ME, on THIS page: the rows My work lists and counts (SVT-147: the same rule —
+  // waitingApprovals, viewableProposals), filtered to this page. The viewer is proven to view this
+  // page (ribbonSummary: the context, or the payload id checked), so no view check is spent on it.
   const same = (id) => String(id || "") === String(pageId);
+  const mineHere = (rows) => viewableProposals((rows || []).filter((r) => same(r.pageId)), accountId, { knownReadable: [pageId] });
   const [fileReqs, sectionReqs, approvals] = await Promise.all([
-    settle("file requests", listPendingRequestsForOwner(accountId), []),
-    settle("section requests", listPendingSectionRequestsForOwner(accountId), []),
-    settle("approvals", listMyApprovals(accountId), []),
+    settle("file requests", listPendingRequestsForOwner(accountId).then(mineHere), []),
+    settle("section requests", listPendingSectionRequestsForOwner(accountId).then(mineHere), []),
+    settle("approvals", waitingApprovals(accountId, { pageId, knownReadable: [pageId] }), []),
   ]);
-  half.waitingOnMe.requests = fileReqs.filter((r) => same(r.pageId)).length + sectionReqs.filter((r) => same(r.pageId)).length;
-  half.waitingOnMe.approvals = approvals.filter((r) => same(r.pageId)).length;
+  half.waitingOnMe.requests = fileReqs.length + sectionReqs.length;
+  half.waitingOnMe.approvals = approvals.length;
 
   // The seals the viewer does NOT own on this page: grants (Edit now) and the first locked one.
   const foreign = [

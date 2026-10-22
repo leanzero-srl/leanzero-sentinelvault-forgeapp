@@ -229,7 +229,9 @@ export const pageDetailsSummary = async (req) => {
   const attachments = attachmentsAll.map((a) => ({ id: a.id, name: a.title || "Unknown file", fileSize: a.fileSize, mediaType: a.mediaType, createdAt: a.createdAt, version: a.version, sealed: sealedIds.has(a.id) }));
   let sealDefaults = { holdSeconds: null };
   try { sealDefaults = { holdSeconds: await resolveSealHoldPeriod(spaceKey, undefined) }; } catch (e) { console.warn("[PAGE-DETAILS] hold period:", errText(e)); }
-  const waitingOnMe = seals.reduce((n, r) => n + (r.isMine ? r.pendingRequests.length : 0), 0);
+  // SVT-147: the rows carry exactly the requests this viewer may decide (their own seals' requests,
+  // and the proposals on held seals they decide); the count is those rows, never more or fewer.
+  const waitingOnMe = seals.reduce((n, r) => n + (r.pendingRequests?.length || 0), 0);
 
   // ── workflow (WF-6: the modal's Workflow block, above Seals) ────────────────────────────────
   // The same read the byline uses (describeWorkflowForPage), plus what the block offers the

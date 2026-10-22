@@ -45,7 +45,7 @@ import {
   requestApprovalTransition,
   decideApproval,
   getPageApprovalStatus,
-  listMyApprovals,
+  waitingApprovals,
   listMyApprovalRequests, // WF-3 (c)
   rerequestApproval,
   withdrawApproval,
@@ -625,22 +625,13 @@ const listMyApprovalRequestsAction = async (req) => {
   return { requests: await listMyApprovalRequests(accountId) };
 };
 const listMyApprovalsAction = async (req) => {
-  const raw = await listMyApprovals(req.context?.accountId);
+  // SVT-147: the rows come from the one rule (approvals.js waitingApprovals: open request, AI review
+  // not failed, page not in the trash or gone, the caller can view it) that My work's total and the
+  // page banner's count use too, so the count is never higher than this list. At most 25 are listed
+  // (a working list, not a report); `total` says how many there are.
+  const rows = await waitingApprovals(req.context?.accountId);
   const out = [];
-  const head = raw.slice(0, 25); // bounded — the inbox is a working list, not a report
-  // One batch lookup for title + where the page is: an approval on a page that sits in the
-  // trash (or is gone) is not something an approver can act on, so it is not shown.
-  const status = await fetchPageStatuses(head.map((r) => r.pageId));
-  for (const r of head) {
-    const place = status.get(String(r.pageId));
-    if (place && ["trashed", "missing"].includes(place.status)) continue;
-    // 8.16: the titles above are read as the app. A request on a page the caller cannot view is not
-    // listed (no title, no requester): they could not decide it (decideApproval refuses) anyway.
-    if (!(await canReadPage(req.context?.accountId, r.pageId))) continue;
-    const pending = await kvs.get(`workflow-pending-${r.pageId}`);
-    if (!pending) continue; // resolved since; skip stale record
-    if (pending.aiGate?.status === "failed") continue; // #46: AI review blocked it — the
-    // requester must revise + re-request; don't nag approvers with a currently-blocked item
+  for (const { record: r, pending, place } of rows.slice(0, 25)) {
     // WF-1: the inbox says when the page moved on since the request, so a blind Approve there
     // meets the same refusal the ribbon shows — and the row explains it first.
     const liveVersion = pending.pinnedVersion != null ? await fetchLivePageVersion(r.pageId) : null;
@@ -657,7 +648,7 @@ const listMyApprovalsAction = async (req) => {
       mode: pending.mode || "any",
     });
   }
-  return { approvals: out };
+  return { approvals: out, total: rows.length };
 };
 
 // The approver pickers search the site's people and groups AS THE APP, so they answer only the
