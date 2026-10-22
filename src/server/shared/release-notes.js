@@ -12,6 +12,16 @@ const note = (n) => Object.freeze({ ...n, changes: Object.freeze([...(n.changes 
 
 export const RELEASE_NOTES = Object.freeze([
   note({
+    version: "8.19.0",
+    date: "2026-10-22",
+    headline: "Your sealed files stay listed after their page is deleted, and the hourly workflow check always moves on",
+    changes: [],
+    fixes: [
+      "If the page a sealed file is on is deleted permanently from the space's trash, the file now stays under Files you hold sealed in My work and under My Sealed Files in space settings, shown as missing, so you can still release its seal yourself from My Sealed Files. Fixes SVT-150.",
+      "On sites with very many pages in workflows, the hourly workflow check could fail to finish and start again at the same place every hour, so pages later in the list could miss their review-date expiry and state-label updates. It now continues from the last page it checked and always moves on. Fixes SVT-149.",
+    ],
+  }),
+  note({
     version: "8.18.0",
     date: "2026-10-22",
     headline: "A page Sentinel Vault cannot read keeps its workflow and its history",
