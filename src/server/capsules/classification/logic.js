@@ -21,11 +21,12 @@ import { errText } from "../../../ui/kit/error-facts.js";
  * Two providers:
  *
  *   NativeProvider — Confluence's own data-classification (v2 REST). Needs
- *   read:configuration:confluence for the levels list and write:space:confluence for writes,
- *   NEITHER of which is in manifest.yml yet (the owner batches scope additions into a later
- *   major). Live fact (2026-09-14): both test sites answer `[]` from /classification-levels and
- *   the page endpoint answers 404 "Feature is disabled". So live, the App provider is what runs;
- *   the Native provider is proven by the stubbed-request tests only.
+ *   read:configuration:confluence for the levels list and write:space:confluence for writes (both in
+ *   manifest.yml since 7.0). A site whose organisation defines levels uses it. Live facts (wolfaenpak,
+ *   2026-10-23, 4 published levels): the page PUT needs { id, status } and the reset { status }
+ *   (400 "status: must not be null" otherwise); the page GET answers the level the page SHOWS (its
+ *   own, else the space default); `order` 1 is the MOST sensitive level; `color` is a name (BLUE).
+ *   test/classification-native.test.mjs drives the resolvers against a fake that answers that way.
  *
  *   AppProvider — the app's own scheme. Levels in KVS `classification-levels`; a space default in
  *   KVS `classification-space-{spaceId}` (the READ path) mirrored to a space property
@@ -183,15 +184,44 @@ export function nativeUnavailable(status) {
   return status === 401 || status === 403 || status === 404 || status >= 500;
 }
 
+// Confluence names a level's colour (ClassificationLevelColor: RED, RED_BOLD, ORANGE, YELLOW, GREEN,
+// BLUE, NAVY, TEAL, PURPLE, GREY, LIME), not a hex value; the chips, the byline icon and the text
+// contrast all need a hex. Solid hues, each dark enough for white text (or dark text on yellow/lime).
+export const NATIVE_COLORS = Object.freeze({
+  RED: "#B91C1C", RED_BOLD: "#7F1D1D", ORANGE: "#C2410C", YELLOW: "#CA8A04", GREEN: "#15803D", BLUE: "#1D4ED8",
+  NAVY: "#1E3A8A", TEAL: "#0F766E", PURPLE: "#7E22CE", GREY: "#475569", LIME: "#65A30D",
+});
+const NEUTRAL_LEVEL_COLOR = "#64748B";
+/** PURE. A native colour name (or a hex, kept) → a hex value. */
+export function nativeColor(c) {
+  const v = String(c ?? "").trim();
+  if (HEX.test(v)) return v;
+  return NATIVE_COLORS[v.toUpperCase()] || NEUTRAL_LEVEL_COLOR;
+}
+
 /** Native level objects carry `id, status, order, name, description, guideline, color`. */
 export function normalizeNativeLevel(l) {
   return {
     id: String(l.id),
     name: l.name || String(l.id),
-    color: l.color || "#64748B",
+    color: nativeColor(l.color),
     rank: Number.isFinite(Number(l.order)) ? Number(l.order) : 0,
     description: l.description || l.guideline || "",
   };
+}
+
+/**
+ * PURE. Confluence's `order` runs the other way from our rank: Atlassian ranks the MOST sensitive level
+ * 1 ("The most sensitive classification level should be ranked 1"), while this app's rank 1 is the
+ * LEAST sensitive (DEFAULT_LEVELS, isDowngrade). So the published levels are put in Confluence's order
+ * and ranked from the end: the last (least sensitive) gets 1, the first gets the count. A level with no
+ * usable order goes last (least sensitive). The result comes least sensitive first, like App levels.
+ */
+export function rankNativeLevels(raw) {
+  const withOrder = (raw || []).map((l, i) => ({ l, i, o: Number.isFinite(Number(l?.order)) ? Number(l.order) : Infinity }));
+  withOrder.sort((a, b) => a.o - b.o || a.i - b.i);
+  const n = withOrder.length;
+  return withOrder.map(({ l }, i) => ({ ...normalizeNativeLevel(l), rank: n - i })).sort((a, b) => a.rank - b.rank);
 }
 
 const readJson = async (res) => { try { return await res.json(); } catch (_) { return null; } };
@@ -214,58 +244,112 @@ export const transientStatus = (status) => status === 429 || status >= 500;
  * already passed isContentId(). `listLevels` returns null when native is UNAVAILABLE (see
  * nativeUnavailable) so the selector can fall back; on a 2xx it returns the active levels.
  */
+// What Confluence wants as `status` on a page level write or reset (required: without it the PUT and
+// the reset answer 400 "status: must not be null", measured 2026-10-23). The app classifies published
+// pages, never drafts.
+export const NATIVE_CONTENT_STATUS = "current";
+
+/**
+ * A refused native write, in words the person can act on. Confluence's own text is never passed on
+ * (it can name the level or the content); the status is. A 429/5xx is "Confluence is busy" (BUSY_CODE,
+ * the resolvers answer busy): nothing was changed either way.
+ */
+export function nativeWriteError(status) {
+  if (transientStatus(status)) {
+    const e = new Error(`Confluence could not answer the classification change (${status})`);
+    e.code = BUSY_CODE;
+    return e;
+  }
+  return new Error(`Confluence did not accept this classification change (HTTP ${status}). Nothing was changed.`);
+}
+
 export function createNativeProvider({ request }) {
   const json = { Accept: "application/json", "Content-Type": "application/json" };
+  // Reads are kept for the life of THIS provider object (one per invocation: provider.js builds it per
+  // request, never in module scope), so a view that asks for the effective level and the page's own
+  // level reads each Confluence path once. Any write forgets them all. A failed read is not kept.
+  const reads = new Map();
+  const read = (path) => {
+    if (!reads.has(path)) {
+      const p = (async () => {
+        const res = await request(path, { headers: { Accept: "application/json" } });
+        return { ok: !!res.ok, status: res.status, body: res.ok ? await readJson(res) : null };
+      })();
+      reads.set(path, p);
+      p.then((r) => { if (!r.ok && transientStatus(r.status)) reads.delete(path); }, () => reads.delete(path));
+    }
+    return reads.get(path);
+  };
+  const write = async (path, init) => { reads.clear(); try { return await request(path, init); } finally { reads.clear(); } };
   const levelOf = async (path) => {
-    const res = await request(path, { headers: { Accept: "application/json" } });
+    const res = await read(path);
     if (!res.ok && transientStatus(res.status)) throw busyError(res.status);
     if (!res.ok) return null;
-    const body = await readJson(res);
-    return body?.id != null ? String(body.id) : null;
+    return res.body?.id != null ? String(res.body.id) : null;
+  };
+  const spaceDefaultPath = (spaceId) => `/wiki/api/v2/spaces/${spaceId}/classification-level/default`;
+  const pageLevelPath = (pageId) => `/wiki/api/v2/pages/${pageId}/classification-level`;
+  const spaceIdOf = async (pageId) => {
+    const res = await read(`/wiki/api/v2/pages/${pageId}`);
+    if (!res.ok && transientStatus(res.status)) throw busyError(res.status);
+    if (!res.ok) return null;
+    return res.body?.spaceId != null ? String(res.body.spaceId) : null;
+  };
+  // Confluence's page GET answers the level the page SHOWS: its own, else the space default (measured
+  // 2026-10-23: a page with no level of its own answers the space default; 404 only when neither is
+  // set). Its own level is therefore told apart by comparing with the space default: equal = the page
+  // follows the space. (A page level set equal to the default reads as following it; a reader sees the
+  // same level either way, and "use space default" always sends the reset, so it can never stay pinned.)
+  const place = async (pageId) => {
+    const shown = await levelOf(pageLevelPath(pageId));
+    if (shown == null) return { own: null, space: null, known: true };
+    const spaceId = await spaceIdOf(pageId);
+    const space = spaceId ? await levelOf(spaceDefaultPath(spaceId)) : null;
+    return { own: String(shown) === String(space ?? "") ? null : shown, space, known: !!spaceId };
   };
   const provider = {
     name: "native",
     async listLevels() {
-      const res = await request("/wiki/api/v2/classification-levels", { headers: { Accept: "application/json" } });
+      const res = await read("/wiki/api/v2/classification-levels");
       if (!res.ok) return nativeUnavailable(res.status) ? null : [];
-      const body = await readJson(res);
+      const body = res.body;
       const arr = Array.isArray(body) ? body : Array.isArray(body?.results) ? body.results : [];
-      return arr.filter((l) => l && (l.status == null || String(l.status).toLowerCase() === "published")).map(normalizeNativeLevel);
+      return rankNativeLevels(arr.filter((l) => l && (l.status == null || String(l.status).toLowerCase() === "published")));
     },
-    getSpaceDefault: (spaceId) => (isContentId(spaceId) ? levelOf(`/wiki/api/v2/spaces/${spaceId}/classification-level/default`) : Promise.resolve(null)),
+    getSpaceDefault: (spaceId) => (isContentId(spaceId) ? levelOf(spaceDefaultPath(spaceId)) : Promise.resolve(null)),
     async setSpaceDefault(spaceId, levelId) {
       if (!isContentId(spaceId)) throw new Error("Invalid space id");
       const res = levelId == null
-        ? await request(`/wiki/api/v2/spaces/${spaceId}/classification-level/default`, { method: "DELETE" })
-        : await request(`/wiki/api/v2/spaces/${spaceId}/classification-level/default`, { method: "PUT", headers: json, body: JSON.stringify({ id: String(levelId) }) });
-      if (!res.ok) throw new Error(`Confluence refused the space default (${res.status})`);
+        ? await write(spaceDefaultPath(spaceId), { method: "DELETE" })
+        : await write(spaceDefaultPath(spaceId), { method: "PUT", headers: json, body: JSON.stringify({ id: String(levelId) }) });
+      if (!res.ok) throw nativeWriteError(res.status);
     },
-    getPageLevel: (pageId) => (isContentId(pageId) ? levelOf(`/wiki/api/v2/pages/${pageId}/classification-level`) : Promise.resolve(null)),
+    /** The page's OWN level (null when it follows the space default or has none). */
+    async getPageLevel(pageId) {
+      if (!isContentId(pageId)) return null;
+      return (await place(pageId)).own;
+    },
     async setPageLevel(pageId, levelId) {
       if (!isContentId(pageId)) throw new Error("Invalid page id");
       if (levelId == null) return provider.resetPage(pageId);
-      const res = await request(`/wiki/api/v2/pages/${pageId}/classification-level`, { method: "PUT", headers: json, body: JSON.stringify({ id: String(levelId) }) });
-      if (!res.ok) throw new Error(`Confluence refused the page level (${res.status})`);
+      const res = await write(pageLevelPath(pageId), { method: "PUT", headers: json, body: JSON.stringify({ id: String(levelId), status: NATIVE_CONTENT_STATUS }) });
+      if (!res.ok) throw nativeWriteError(res.status);
       return undefined;
     },
     async resetPage(pageId) {
       if (!isContentId(pageId)) throw new Error("Invalid page id");
-      const res = await request(`/wiki/api/v2/pages/${pageId}/classification-level/reset`, { method: "POST", headers: json });
-      if (!res.ok) throw new Error(`Confluence refused the page reset (${res.status})`);
+      const res = await write(`${pageLevelPath(pageId)}/reset`, { method: "POST", headers: json, body: JSON.stringify({ status: NATIVE_CONTENT_STATUS }) });
+      if (!res.ok) throw nativeWriteError(res.status);
     },
     async effectiveLevel(pageId) {
-      // Native's GET on a page already returns the inherited level, but it does not say WHERE it
-      // came from; the source is what the ribbon shows, so it is derived here the same way as App.
+      // The source is what the ribbon shows ("set on this page" / "from space default"), derived from
+      // the page's own level and the space default the same way as App.
       // This provider was SELECTED, so a levels answer of "unavailable" here is Confluence being busy.
       const levels = await provider.listLevels();
       if (levels === null) throw busyError("levels");
-      const page = await provider.getPageLevel(pageId);
-      let space = null;
-      if (page == null) {
-        const spaceId = await resolveSpaceId(request, pageId);
-        space = spaceId ? await provider.getSpaceDefault(spaceId) : null;
-      }
-      return decideEffective(page, space, levels);
+      if (!isContentId(pageId)) return decideEffective(null, null, levels);
+      const { own, space } = await place(pageId);
+      return decideEffective(own, space, levels);
     },
   };
   return provider;

@@ -7,10 +7,9 @@
  * one warm Forge process serves several sites, and until 8.20.0 a module-level Map here handed one
  * site's scheme and level list to the next site the process served.
  *
- * Live (2026-09-14): read:configuration:confluence is not in manifest.yml, so the native levels
- * call answers 401/403 → null → App provider. When the owner ships the scope in a later major,
- * a site that defines native levels flips to native with no code change; a site that answers `[]`
- * (both test sites today) stays on App, because an empty scheme has nothing to assign.
+ * A site whose organisation defines Confluence classification levels uses them (native); a site that
+ * answers `[]`, or 401/403/404 ("Feature is disabled"), stays on App, because an empty scheme has
+ * nothing to assign.
  */
 import { asApp, assumeTrustedRoute } from "@forge/api";
 import { appConfluence, invocationMemo, forgetInvocationMemo } from "../../shared/confluence-call.js";
@@ -65,11 +64,16 @@ const PROVIDER_MEMO = "classification-provider";
 export const SCHEME_CACHE_KEY = "classification-scheme-cache";
 export const SCHEME_CACHE_MS = 60_000;
 export const SCHEME_STALE_OK_MS = 24 * 3_600_000;
+// The stored row's shape. 2 (8.21.0): Confluence's levels are ranked least sensitive first with hex
+// colours (logic.js rankNativeLevels); a row stored before carries Confluence's order as the rank
+// (reversed) and colour names, so it is not used.
+export const SCHEME_CACHE_VERSION = 2;
 const LEVELS_PATH = "/wiki/api/v2/classification-levels";
 
 /** PURE. A stored selection usable at `now`: younger than `maxAgeMs`, not from the future. */
 export function freshScheme(row, now = Date.now(), maxAgeMs = SCHEME_CACHE_MS) {
   if (!row || (row.name !== "native" && row.name !== "app") || !Array.isArray(row.levels)) return null;
+  if (row.name === "native" && row.v !== SCHEME_CACHE_VERSION) return null;
   const at = Number(row.at);
   return Number.isFinite(at) && at <= now && now - at < maxAgeMs ? row : null;
 }
@@ -104,7 +108,7 @@ async function selectForSite() {
   }
   const name = selected.provider.name;
   if (levelsStatus != null && levelsStatus < 500) {
-    await kvs.set(SCHEME_CACHE_KEY, { name, levels: name === "native" ? selected.levels : [], at: now }).catch(() => {});
+    await kvs.set(SCHEME_CACHE_KEY, { name, levels: name === "native" ? selected.levels : [], at: now, v: SCHEME_CACHE_VERSION }).catch(() => {});
   }
   return { provider: name === "native" ? createNativeProvider({ request }) : selected.provider, levels: selected.levels };
 }

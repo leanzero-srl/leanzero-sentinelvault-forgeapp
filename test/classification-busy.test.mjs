@@ -14,7 +14,8 @@ const { exportSpaceConfig } = await import("../src/server/capsules/config-api/ex
 console.warn = () => {}; console.error = () => {}; console.info = () => {};
 
 const ADMIN = "acct-site-admin";
-const LEVELS = [{ id: "L1", name: "Low", order: 1, status: "PUBLISHED" }, { id: "L2", name: "High", order: 2, status: "PUBLISHED" }];
+// Confluence's order: 1 = the most sensitive.
+const LEVELS = [{ id: "L1", name: "Low", order: 2, status: "PUBLISHED" }, { id: "L2", name: "High", order: 1, status: "PUBLISHED" }];
 let busy = new Set(); // path prefixes answered 429
 let spaceDefault = "L2";
 let pageLevel = "L2";
