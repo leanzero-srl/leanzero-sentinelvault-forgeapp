@@ -17,7 +17,7 @@
 import { route } from "@forge/api";
 import { appConfluence } from "../../shared/confluence-call.js";
 import { canReadPage, mustVerify } from "../../shared/content-access.js";
-import { isOperatorSteward } from "../../shared/steward-checks.js";
+import { isOperatorSteward, isOperatorSiteAdmin, isSpaceAdministrator } from "../../shared/steward-checks.js";
 import {
   readActivity,
   matchesActivityFilter,
@@ -38,10 +38,10 @@ const clampLimit = (limit, fallback) => {
 const cursorOf = (v) => (typeof v === "string" && v ? v : undefined);
 
 // The report lists events across many pages, and a row that says "Page 265912321" is not a
-// report a steward can read. Entries deliberately carry no title (a title changes; the record
-// must not), so the READER resolves titles for the distinct page ids of the page it just
-// fetched — bounded (≤100 ids), parallel, best-effort, as the app, exactly the way the
-// workflow dashboard does. A page the app cannot read keeps its id.
+// report a steward can read. The READER shows the current title for the distinct page ids of the
+// page it just fetched — bounded (≤100 ids), parallel, best-effort, as the app, exactly the way the
+// workflow dashboard does. An entry also keeps the title its page had when it was written
+// (activity-log.js), so a page deleted from the trash is still named, to a space or site admin only.
 // Same idea for WHO: an entry written from a path with no user session (the hourly sweep, the
 // harness hook) carries the seal record's fallback "Current User", no name at all — or the
 // accountId itself in the name (BN-04, 2026-10-07: the report then read "Someone approved…" for an
@@ -50,28 +50,63 @@ const cursorOf = (v) => (typeof v === "string" && v ? v : undefined);
 // The decision is pure (./actor-names.js, test/activity-names.test.mjs).
 const decorateActorNames = (entries) => decorateNames(entries, resolveActorName);
 
-async function decoratePageTitles(entries, spaceKey) {
-  const ids = [...new Set(entries.map((e) => e?.pageId).filter(Boolean))].slice(0, 100);
-  if (!ids.length) return entries;
-  // A page can be MOVED to another space after its events were recorded under this one; the
-  // record stays (it is history), but its current title is that other space's to disclose,
-  // not this steward's (A1 review F7). The v2 page read carries spaceId, so this costs nothing.
-  let spaceId = null;
+// A Confluence site admin, or an admin of this space by the space's own permissions: not a steward the
+// app's lists name. Fails closed (both checks answer "no" when Confluence does not answer).
+const isNativeAdmin = async (accountId, spaceKey) => {
   try {
-    const sres = await appConfluence(route`/wiki/api/v2/spaces?keys=${String(spaceKey)}`, { headers: { Accept: "application/json" } });
-    if (sres.ok) spaceId = String((await sres.json())?.results?.[0]?.id || "");
-  } catch (_) { /* best-effort */ }
-  const titles = new Map();
-  await Promise.all(ids.map(async (id) => {
+    return (await isOperatorSiteAdmin(accountId)) || (await isSpaceAdministrator(accountId, String(spaceKey)));
+  } catch (_) { return false; }
+};
+
+// What the app can tell about one page id NOW: `{ state: "found", spaceId, title }` (as a page or a blog
+// post; a trashed page still answers), `{ state: "gone" }` (a real 404 as a page AND as a blog post), or
+// `{ state: "error" }` (429, 5xx, a timeout, a throw: Confluence did not say).
+async function contentNow(id) {
+  try {
+    let res = await appConfluence(route`/wiki/api/v2/pages/${id}`);
+    if (res.status === 404) res = await appConfluence(route`/wiki/api/v2/blogposts/${id}`);
+    if (res.status === 404) return { state: "gone" };
+    if (!res.ok) return { state: "error" };
+    const p = await res.json();
+    return { state: "found", spaceId: p?.spaceId != null ? String(p.spaceId) : null, title: p?.title || null };
+  } catch (_) { return { state: "error" }; }
+}
+
+// Per row, one of three outcomes:
+//  - the page is in THIS space now: its current title, for every reader of the report (as before);
+//  - the page is in another space now (A1 review F7: that title is the other space's to disclose), or
+//    this space's id could not be read so a move cannot be ruled out: no title at all;
+//  - Confluence answered a real 404 (deleted from the trash; it answers the app the same for a page
+//    whose view restriction leaves the app out): the title the row recorded, only to a Confluence site
+//    admin or space admin of this space, and removed from the answer for anyone else, so the CSV
+//    export can never carry it. Any other failed read (429, 5xx, a timeout) removes it too.
+// Rows written before titles were recorded have none, so they keep showing the page's id.
+async function decoratePageTitles(entries, spaceKey, mayShowRecorded) {
+  const ids = [...new Set(entries.map((e) => e?.pageId).filter(Boolean).map(String))].slice(0, 100);
+  let spaceId = null;
+  if (ids.length) {
     try {
-      const res = await appConfluence(route`/wiki/api/v2/pages/${id}`);
-      if (res.ok) {
-        const p = await res.json();
-        if (p?.title && (!spaceId || String(p.spaceId) === spaceId)) titles.set(String(id), p.title);
-      }
-    } catch (_) { /* best-effort */ }
-  }));
-  return entries.map((e) => (titles.has(String(e?.pageId)) ? { ...e, pageTitle: titles.get(String(e.pageId)) } : e));
+      const sres = await appConfluence(route`/wiki/api/v2/spaces?keys=${String(spaceKey)}`, { headers: { Accept: "application/json" } });
+      if (sres.ok) spaceId = String((await sres.json())?.results?.[0]?.id || "") || null;
+    } catch (_) { /* hide titles below */ }
+  }
+  const now = new Map();
+  await Promise.all(ids.map(async (id) => { now.set(id, await contentNow(id)); }));
+  const liveTitle = (e) => {
+    const n = now.get(String(e?.pageId));
+    return n?.state === "found" && spaceId && n.spaceId === spaceId ? n.title : null;
+  };
+  const recordedShowable = (e) => !!(e?.pageTitle && spaceId && now.get(String(e.pageId))?.state === "gone");
+  const showRecorded = entries.some(recordedShowable) && (await mayShowRecorded());
+  return entries.map((e) => {
+    const title = liveTitle(e);
+    if (title) return { ...e, pageTitle: title };
+    if (!e || typeof e !== "object" || !("pageTitle" in e)) return e;
+    if (showRecorded && recordedShowable(e)) return e;
+    const hidden = { ...e };
+    delete hidden.pageTitle;
+    return hidden;
+  });
 }
 
 export const getPageActivity = async (req) => {
@@ -120,7 +155,7 @@ export const getSpaceActivity = async (req) => {
     // Filters apply server-side to the page just fetched: a page may return fewer than `limit`
     // (even zero) while `nextCursor` keeps walking, which is what lets the CSV export sweep a
     // space in bounded fetches without ever loading the whole prefix.
-    const matched = await decorateActorNames(await decoratePageTitles(entries.filter((e) => matchesActivityFilter(e, filter)), spaceKey));
+    const matched = await decorateActorNames(await decoratePageTitles(entries.filter((e) => matchesActivityFilter(e, filter)), spaceKey, () => isNativeAdmin(accountId, spaceKey)));
     return { entries: matched, nextCursor, scanned: entries.length };
   } catch (e) {
     console.error("[ACTIVITY] get-space-activity failed:", errText(e));

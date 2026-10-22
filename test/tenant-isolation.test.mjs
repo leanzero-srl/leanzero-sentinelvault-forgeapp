@@ -104,6 +104,17 @@ const event = (spaceKey) => ({ type: "seal.created", pageId: PAGE, spaceKey, act
   eq("unscoped: site B's row is filed under B's space", rowsUnder("B", "activity-space-").map((r) => r.spaceKey), ["BRAVO"]);
 }
 {
+  // SVT-148: the row also keeps the page's title. Same page id on both sites: B's row carries B's
+  // title, never the one A's invocation just read.
+  world();
+  await on("A", () => recordActivity(event("ALPHA")));
+  eq("site A's row keeps A's page title", rowsUnder("A", "activity-space-").map((r) => r.pageTitle), ["Page on A"]);
+  await on("B", () => recordActivity(event("BRAVO")));
+  eq("site B's space row keeps B's page title, never A's", rowsUnder("B", "activity-space-").map((r) => r.pageTitle), ["Page on B"]);
+  eq("site B's page feed row keeps B's page title", rowsUnder("B", "activity-page-").map((r) => r.pageTitle), ["Page on B"]);
+  ok("no row on B carries site A's title", !JSON.stringify([...store.B.values()]).includes("Page on A"));
+}
+{
   // Within ONE invocation the lookup is still asked once (a sweep records several events per page).
   world();
   const one = await on("B", async () => { await recordActivity(event("BRAVO")); await recordActivity(event("BRAVO")); });
