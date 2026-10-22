@@ -131,7 +131,7 @@ between is built and verified on dev but not shipped:
 - **A4 + A6** Approval record kept after the approval; "View approved version" links.
 - **A2 + A5** Configurable demote target; per-state review clocks and a space admin-editable review
   date on the page (UTC end-of-day, custom date picker).
-- Trashed pages leave the workflow dashboard, inbox and sweep; purged pages lose their keys.
+- Trashed pages leave the workflow dashboard, inbox and sweep and keep their state. A page the app can no longer read leaves them too and keeps its workflow record and history; the sweep picks it up again once the app can read it.
 - **A7** Cross-space "My work" global page (approvals, edit requests on my seals, my seals).
 - Edit-request owner index (the last site-wide scan filtered client-side).
 - **Tier B (owner: "do the Tier B items too now", 2026-09-05):** B4 label sync (`sv-state-{id}`),

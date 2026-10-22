@@ -136,21 +136,23 @@ export function lapseSubject(kind, key, value) {
  * several times per run. A page that is not there is not a transient failure.
  *
  * `pageStatus` is the CONFIRMED status (shared/page-status.js vocabulary):
- *   "missing" — gone for good: both page lookups succeeded and neither returned it, AND a direct
- *               read of it as a page and as a blog post both answered 404 (the batched lookup only
- *               knows pages, so a blog post reads as missing there). Nothing left to protect and
- *               nowhere to post → "release-silently". (The sweep downgrades this to
- *               "undeliverable" when the policy never auto-releases — limit 0 — because a page the
- *               app can no longer see answers with the same two 404s.)
+ *   "unseen"  — both page lookups succeeded and neither returned it, AND a direct read of it as a
+ *               page and as a blog post both answered 404. That is a page purged from the trash OR
+ *               a live page whose view restriction leaves the app out: Confluence answers the app
+ *               the same for both (measured 2026-10-22). → "hold": no reminder is counted and
+ *               nothing is released while the app cannot read the page; the countdown resumes when
+ *               it can. Releasing (at once, as before 8.18.0, or after reminders counted but never
+ *               posted) would let anyone able to restrict a page end a lapsed seal with its owner
+ *               never told. A purged page's seal record simply stays, as its file's record does.
  *   "trashed" — Confluence keeps the page but refuses a comment on it → "undeliverable": the
  *               reminder is counted as sent (logged) so the normal lapse policy runs to its end,
  *               and the page can still be restored with its seal intact until then.
  *   anything else ("current", "archived", "unknown", null) → "deliver", exactly as before: an
  *               unproven negative never changes what the sweep does.
- * @returns {"deliver"|"undeliverable"|"release-silently"}
+ * @returns {"deliver"|"undeliverable"|"hold"}
  */
 export function decideLapseDelivery(pageStatus) {
-  if (pageStatus === "missing") return "release-silently";
+  if (pageStatus === "unseen") return "hold";
   if (pageStatus === "trashed") return "undeliverable";
   return "deliver";
 }

@@ -36,9 +36,9 @@ import { rulesNeedLabels } from "./shared/rule-config.js";
 import { rulesFingerprint } from "./capsules/validations/recheck.js";
 import {
   autoAssignOnEvent, getSpaceWorkflowSettings, resolveWorkflowDef, findState, validateTransition, restampIfEnforced,
-  transitionPageWorkflow, readPageWorkflow, purgePageWorkflow, mirrorStateLabel, readLabelStamp, clearStateLabel, restampApprovedVersion, fetchLivePageVersion,
+  transitionPageWorkflow, readPageWorkflow, mirrorStateLabel, readLabelStamp, clearStateLabel, restampApprovedVersion, fetchLivePageVersion,
 } from "./capsules/workflow/logic.js";
-import { applyAiVerdict, completeWhenKnown, sweepApprovalIndex, clearPageApprovals, settleRecordedVotes, SETTLE_PREFIX } from "./capsules/workflow/approvals.js";
+import { applyAiVerdict, completeWhenKnown, sweepApprovalIndex, settleRecordedVotes, SETTLE_PREFIX } from "./capsules/workflow/approvals.js";
 import { fetchPageStatuses } from "./shared/page-status.js";
 import { postEnforceComment, buildWorkflowEnforcementDispatch } from "./infra/approval-blueprints.js";
 import { postValidationComment } from "./infra/validation-blueprints.js";
@@ -1710,10 +1710,16 @@ export async function sweepRevertToApproved(pageId, record, targetVersion = null
 
 // §4.2: hourly integrity sweep — the durable backstop for dropped events. Cursor-paginated,
 // author-aware (never reverts an authorized dropped-event edit), self-healing, dedup-guarded.
+export const WORKFLOW_SWEEP_RESUME = "workflow-sweep-resume";
+// Per run: at most `pages` index pages (of 100 rows), and no new page once `loopMs` has passed since
+// the walk began (the function has 25 s, and the reaper and inbox housekeeping run after the walk).
+// Mutable only so a test can shorten the budget.
+export const WORKFLOW_SWEEP_LIMITS = { pages: 20, loopMs: 12_000 };
+
 export async function workflowSweep() {
   const systemAccountId = await resolveAppAccountId();
   if (!systemAccountId) return { body: JSON.stringify({ swept: 0, reason: "no app account" }) };
-  let reverted = 0, demoted = 0, healed = 0, expired = 0, overdue = 0, skippedTrashed = 0, purgedPages = 0;
+  let reverted = 0, demoted = 0, healed = 0, expired = 0, overdue = 0, skippedTrashed = 0, skippedUnseen = 0;
   const nowMs = Date.now();
   const protectionOn = contentProtectionEnabled(await kvs.get("admin-settings-global").catch(() => null));
 
@@ -1757,14 +1763,34 @@ export async function workflowSweep() {
   let labelsSynced = 0;
   const LABEL_SYNC_PER_RUN = 40;
   const defFor = async (sk, wid = null) => { const k = `${sk}|${wid || ""}`; if (!defCache.has(k)) defCache.set(k, await resolveWorkflowDef(sk, wid)); return defCache.get(k); };
-  let query = kvs.query().where("key", WhereConditions.beginsWith("workflow-idx-")).limit(100);
+  // 20 pages of 100 index rows per run, resumed where the last run stopped (WORKFLOW_SWEEP_RESUME):
+  // rows past the first 2,000 used to be never swept at all, and rows of pages the app cannot read
+  // are kept for good (page-status.js), so a run must not always restart from the top.
+  const idxQuery = (cursor) => {
+    const q = kvs.query().where("key", WhereConditions.beginsWith("workflow-idx-")).limit(100);
+    return cursor ? q.cursor(cursor) : q;
+  };
+  let resumeFrom = null;
+  try { resumeFrom = (await kvs.get(WORKFLOW_SWEEP_RESUME))?.cursor || null; } catch (_) { resumeFrom = null; }
+  let query = idxQuery(resumeFrom);
   let iterations = 0;
+  const walkStart = Date.now();
   do {
-    const { results, nextCursor } = await query.getMany();
+    let page;
+    try { page = await query.getMany(); }
+    catch (e) {
+      if (!(iterations === 0 && resumeFrom)) throw e;
+      // A stored cursor Confluence's storage no longer accepts: start from the top.
+      resumeFrom = null; query = idxQuery(null); page = await query.getMany();
+    }
+    const { results, nextCursor } = page;
     // Where each page IS, one batch call per query page: a trashed page keeps its record (it
-    // may be restored) but gets no enforcement, expiry or comment while it is in the trash; a
-    // page Confluence has forgotten (purged) has its workflow keys purged too — the dashboard
-    // otherwise lists it forever. `unknown` (a failed lookup) is left alone this tick.
+    // may be restored) but gets no enforcement, expiry or comment while it is in the trash. An
+    // `unseen` page (page-status.js: purged, OR live behind a view restriction that leaves the app
+    // out — Confluence answers both the same) is held exactly as it is: nothing is deleted,
+    // expired or enforced while the app cannot read it, and the next run that can read it picks
+    // up from the record (an unapproved edit made meanwhile is reverted or demoted then). The
+    // dashboard and the inbox leave unseen pages out. `unknown` (a failed lookup) is left alone too.
     const places = await fetchPageStatuses((results || []).map((r) => r?.value?.pageId).filter(Boolean));
     // The batch above already says which space each page is in now; its key is read once per space.
     const liveKeyOfSpaceId = async (spaceId) => {
@@ -1780,11 +1806,7 @@ export async function workflowSweep() {
       try {
         const place = places.get(String(idx?.pageId))?.status || "unknown";
         if (place === "trashed") { skippedTrashed++; continue; }
-        if (place === "missing") {
-          await purgePageWorkflow(idx.pageId, { clearApprovals: clearPageApprovals });
-          purgedPages++;
-          continue;
-        }
+        if (place === "unseen") { skippedUnseen++; continue; }
         const record = await readPageWorkflow(idx.pageId);
         if (!record) continue;
         const def = await defFor(record.spaceKey, record.workflowId);
@@ -2020,8 +2042,11 @@ export async function workflowSweep() {
         }
       } catch (e) { console.error("[WORKFLOW-SWEEP]", errText(e)); }
     }
-    if (!nextCursor || ++iterations >= 20) break;
-    query = kvs.query().where("key", WhereConditions.beginsWith("workflow-idx-")).limit(100).cursor(nextCursor);
+    if (!nextCursor) { await kvs.delete(WORKFLOW_SWEEP_RESUME).catch(() => {}); break; }
+    // Saved after EVERY page: a run the platform stops mid-walk still moves the next one on.
+    await kvs.set(WORKFLOW_SWEEP_RESUME, { cursor: nextCursor, at: new Date().toISOString() }).catch(() => {});
+    if (++iterations >= WORKFLOW_SWEEP_LIMITS.pages || Date.now() - walkStart >= WORKFLOW_SWEEP_LIMITS.loopMs) break;
+    query = idxQuery(nextCursor);
   } while (true);
 
   // #46 reaper: fail a transition AI review whose worker delivery never arrived (the pending
@@ -2057,7 +2082,7 @@ export async function workflowSweep() {
   let inbox = { backfilled: 0, orphansRemoved: 0 };
   try { inbox = await sweepApprovalIndex({ nowMs }); } catch (e) { console.error("[WORKFLOW-SWEEP] inbox index", errText(e)); }
 
-  return { body: JSON.stringify({ reverted, demoted, healed, expired, overdue, skippedTrashed, purgedPages, labelsSynced, aiTimedOut, completedLate, votesSettled, inboxBackfilled: inbox.backfilled, orphanApprovalsRemoved: inbox.orphansRemoved }) };
+  return { body: JSON.stringify({ reverted, demoted, healed, expired, overdue, skippedTrashed, skippedUnseen, labelsSynced, aiTimedOut, completedLate, votesSettled, inboxBackfilled: inbox.backfilled, orphanApprovalsRemoved: inbox.orphansRemoved }) };
 }
 
 // --- Conditions & Validations phase (runs after the body-protection pipeline) ---
@@ -3093,10 +3118,10 @@ export async function expirySweepTask() {
   }
 }
 
-// Confirm a page the batched lookup reported `missing` before the sweep acts on it: the batch
-// only knows PAGES (a blog post always reads as missing there), so ask for the id directly as a
-// page and as a blog post. "missing" only when both answer 404; a trashed copy reads as trashed;
-// any other answer is "unknown" — an unproven negative must not release anything.
+// Ask again about a page the batched lookup reported `unseen`: the batch only knows PAGES (a blog
+// post always reads as unseen there), so ask for the id directly as a page and as a blog post.
+// "unseen" when both answer 404 (purged, or hidden from the app: the same answer); a trashed copy
+// reads as trashed; any other answer is "unknown".
 async function confirmContainerStatus(id) {
   let sawOnly404 = true;
   for (const coll of ["pages", "blogposts"]) {
@@ -3112,7 +3137,7 @@ async function confirmContainerStatus(id) {
       if (res.status !== 404) sawOnly404 = false;
     } catch (_) { sawOnly404 = false; }
   }
-  return sawOnly404 ? "missing" : "unknown";
+  return sawOnly404 ? "unseen" : "unknown";
 }
 
 async function expirySweepSeals() {
@@ -3186,8 +3211,8 @@ async function expirySweepSeals() {
     // Where each page that may get a notice this run IS (2026-10-11): a seal on a trashed or
     // purged page used to retry its notice every hour forever (404 "Could not find container",
     // counter never advanced, never released). One batched lookup for the pages of the lapsed and
-    // halfway-due seals; a `missing` answer is re-checked per page (confirmContainerStatus) before
-    // anything is released on it. decideLapseDelivery (pure, shared/lapse-policy.js) decides.
+    // halfway-due seals; an `unseen` answer is re-checked per page (confirmContainerStatus: a blog
+    // post reads as unseen in the batch). decideLapseDelivery (pure, shared/lapse-policy.js) decides.
     const statusPageIds = new Set();
     for (const s of subjects) {
       if (!s.pageId) continue;
@@ -3205,7 +3230,12 @@ async function expirySweepSeals() {
       const key = String(pageId);
       if (!confirmedStatuses.has(key)) {
         let st = batchedStatuses.get(key)?.status || "unknown";
-        if (st === "missing") st = await confirmContainerStatus(key);
+        // A page confirmed unseen in the last day is not asked again (two reads each, every hour,
+        // for every seal held on it): the batch above still says at once when it is readable again.
+        if (st === "unseen" && !(await kvs.get(`unseen-page-${key}`).catch(() => null))) {
+          st = await confirmContainerStatus(key);
+          if (st === "unseen") await setUntil(`unseen-page-${key}`, { at: new Date().toISOString() }, Date.now() + 864e5).catch(() => {});
+        }
         confirmedStatuses.set(key, st);
       }
       return decideLapseDelivery(confirmedStatuses.get(key));
@@ -3220,27 +3250,11 @@ async function expirySweepSeals() {
 
         // --- Lapsed seal: remind, then release (F5) ---
         if (now >= expiresAt) {
-          // The page is gone for good (confirmed): nothing left to protect and nowhere to post.
-          // Release now, without a notice — whatever the reminder countdown says. Not when the
-          // policy never auto-releases (limit 0): "gone" is two 404s, and a page the app can no
-          // longer SEE answers the same way, so a site that chose never to release keeps the seal;
-          // its one reminder is counted as undeliverable instead (below) and the retries stop.
-          let delivery = await deliveryFor(subjectPageId);
-          if (delivery === "release-silently" && !(lapseNoticeLimit > 0)) delivery = "undeliverable";
-          if (delivery === "release-silently") {
-            const sentSoFar = priorNoticeCount(await kvs.get(dedupKey));
-            const autoRelease = { reason: "page-deleted", noticeCount: sentSoFar, noticeLimit: lapseNoticeLimit };
-            const released = isSection
-              ? await releaseSectionSeal(artifactId, value, { autoRelease })
-              : await releaseSeal(artifactId, value, { autoRelease, notify: false });
-            if (!released.success) {
-              console.error(`[EXPIRY-SWEEP] release of ${kind} ${artifactId} on deleted page ${subjectPageId} failed: ${reasonText(released.reason)}`);
-              continue;
-            }
-            autoReleasedCount++;
-            console.warn(`[EXPIRY-SWEEP] released ${kind} ${artifactId} without notice — its page ${subjectPageId} no longer exists`);
-            continue;
-          }
+          // An unseen page (purged OR behind a view restriction that leaves the app out) holds
+          // the countdown: nothing counted, posted or released until the app can read it again.
+          // A trashed page cannot take the notice; it is counted as undeliverable (below).
+          const delivery = await deliveryFor(subjectPageId);
+          if (delivery === "hold") continue;
           const noticeDeliverable = delivery === "deliver";
 
           const prior = await kvs.get(dedupKey);
@@ -3406,12 +3420,14 @@ async function expirySweepSeals() {
           if (previouslySent) {
             continue;
           }
-          // A page in the trash (or gone) refuses the comment every hour until the seal lapses —
-          // mark the halfway reminder handled instead (as a suppressed one is); the lapse branch
-          // above takes it from there.
-          if ((await deliveryFor(subjectPageId)) !== "deliver") {
+          // A page in the trash refuses the comment every hour until the seal lapses — mark the
+          // halfway reminder handled instead (as a suppressed one is); the lapse branch above takes
+          // it from there. An unseen page is held: asked again next run.
+          const halfwayDelivery = await deliveryFor(subjectPageId);
+          if (halfwayDelivery === "hold") continue;
+          if (halfwayDelivery !== "deliver") {
             await setUntil(halfwayKey, { sentAt: now.toISOString(), undeliverable: true }, expiresAt.getTime() + 7 * 86400000);
-            console.warn(`[EXPIRY-SWEEP] halfway reminder for ${kind} ${artifactId} is undeliverable — page ${subjectPageId} is trashed or gone`);
+            console.warn(`[EXPIRY-SWEEP] halfway reminder for ${kind} ${artifactId} is undeliverable — page ${subjectPageId} is trashed`);
             continue;
           }
 

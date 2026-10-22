@@ -104,6 +104,8 @@ export const FAMILIES = Object.freeze([
   { prefix: "guard-marker-backfill-", cls: "runtime" }, // the marker rebuild: done flag, generation, resume cursors (re-opened by a restore)
   { prefix: "panel-restore-", cls: "runtime" }, // minutes-long marker: the panel restore's own versions (trash-rights.js)
   { prefix: "restore-recheck-", cls: "runtime" }, // a deferred restore-vs-change decision, re-judged by the five-minute sweep
+  { prefix: "unseen-page-", cls: "runtime" }, // a day-long note that the app could not read a page (expiry sweep: asked again after)
+  { prefix: "workflow-sweep-resume", cls: "runtime" }, // where the hourly workflow sweep continues
   { prefix: "section-restore-pending-", cls: "runtime" },
   { prefix: "section-insert-pending-", cls: "runtime" },
   { prefix: "section-adopt-claim-", cls: "runtime" },

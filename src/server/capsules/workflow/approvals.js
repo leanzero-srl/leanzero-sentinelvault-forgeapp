@@ -1635,7 +1635,7 @@ export async function waitingApprovals(accountId, { pageId = null, knownReadable
     const verdicts = await Promise.all(chunk.map(async (r) => {
       const id = String(r.record.pageId);
       const place = places.get(id);
-      if (place && (place.status === "trashed" || place.status === "missing")) return null;
+      if (place && (place.status === "trashed" || place.status === "unseen")) return null;
       if (!proven.has(id)) {
         if (!views.has(id)) views.set(id, viewStatus(accountId, id));
         const st = await views.get(id);

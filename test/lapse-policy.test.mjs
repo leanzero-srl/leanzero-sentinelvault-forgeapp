@@ -139,7 +139,7 @@ ok("null → null", lapseSubject("section", "k", null) === null);
 eq("a section without a title still has a name", lapseSubject("section", "section-protection-s2", { ...sec, sectionId: "s2", sectionTitle: "" }).name, "Sealed section");
 
 // --- 2026-10-11: a seal on a trashed / purged page must not loop forever on a 404 notice -------
-eq("purged page (confirmed missing) → release now, no notice", decideLapseDelivery("missing"), "release-silently");
+eq("unseen page (purged, or hidden from the app by a restriction: the same 404s) → hold: nothing counted, posted or released until the app can read it", decideLapseDelivery("unseen"), "hold");
 eq("trashed page → the notice is undeliverable, the countdown still advances", decideLapseDelivery("trashed"), "undeliverable");
 eq("current page → deliver", decideLapseDelivery("current"), "deliver");
 eq("archived page → deliver (unchanged)", decideLapseDelivery("archived"), "deliver");

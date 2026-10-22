@@ -2,6 +2,17 @@
 
 GENERATED from `src/server/shared/release-notes.js` by `scripts/render-release-notes.mjs`. Do not edit.
 
+## 8.18.0 — 2026-10-22
+
+**A page Sentinel Vault cannot read keeps its workflow and its history**
+
+
+Fixed:
+- When Sentinel Vault could not read a page, its hourly check removed the page's workflow state and its whole workflow history, as if the page had been deleted for good. A page Sentinel Vault cannot read now keeps its workflow state and history and stays off the workflow dashboard and the approvals list. Sentinel Vault cannot check a page while it cannot read it; once it can, the page is checked again, and an edit made in the meantime by someone other than an approver or space admin is undone or sent back for review.
+- A seal whose time ran out on a page Sentinel Vault could not read was released at once, without the reminders. Its reminders and release now wait until Sentinel Vault can read the page again; a lapsed seal on a page deleted for good stays listed until its owner or a space admin releases it.
+- The workflow dashboard says how many pages Sentinel Vault cannot read right now. Removing a workflow state or a label workflow is no longer held back by pages Sentinel Vault cannot read.
+- On sites with more than 2,000 pages under workflow, the hourly check now works through all of them in turn, continuing where the previous check stopped; before, pages after the first 2,000 were never checked.
+
 ## 8.17.0 — 2026-10-22
 
 **Approval requests finish once enough approvers decided, and the waiting counts match the lists**
