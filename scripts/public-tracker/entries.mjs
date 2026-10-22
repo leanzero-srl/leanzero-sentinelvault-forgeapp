@@ -42,6 +42,12 @@ export const COMPONENTS = {
 const JIRA_ON = "It works once a site admin has connected Jira to Sentinel Vault in Atlassian Administration.";
 
 export const ENTRIES = {
+  // 8.18.0: written by the release door on 2026-10-22 (rows: deterministic; review pass: none, deterministic net only).
+  "597ca43774416fb5": ["When Sentinel Vault could not read a page, its hourly check removed the page's...", "S", {"withhold":"the review pass did not answer (release door: no review, no publication)"}],
+  "63c181cd7a77ea4d": ["A seal whose time ran out on a page Sentinel Vault could not read was released at...", "S", {"withhold":"the review pass did not answer (release door: no review, no publication)"}],
+  "490c2644a51ea4ee": ["The workflow dashboard says how many pages Sentinel Vault cannot read right now", "S", {"withhold":"the review pass did not answer (release door: no review, no publication)"}],
+  "c28206f875846bd9": ["On sites with more than 2,000 pages under workflow, the hourly check now works through...", "S", {"withhold":"the review pass did not answer (release door: no review, no publication)"}],
+
   // 8.17.0: written by the release door on 2026-10-22 (rows: model; review pass: model).
   "d6d43e89ed3fe4f5": ["An approval request could stay open after enough approvers had decided", "W", {"fold":"known-approval-vote-not-applied","d":"An approval request could stay open although enough approvers had decided, when Confluence was limiting Sentinel Vault's requests or answering with errors at the moment of the deciding approval, or when two approvers decided at the same time. Sentinel Vault now finishes such a request at one of its hourly checks once Confluence answers again."}],
   "0cf9c8fa7f0c26f9": ["The My work total and the banner's Waiting for you count didn't match the lists", "M", {"fold":"known-waiting-count-higher-than-lists","d":"The total at the top of My work and the page banner's Waiting for you count now count exactly what the lists show: approval requests on pages in the trash and approval requests whose AI review did not pass are no longer counted. The approvals list says how many wait in all when there are more than it shows, the total updates after you decide from that list, and when Confluence could not answer for some of them right now, My work says so."}],
