@@ -75,12 +75,16 @@ echo "export const BUILD = \\"$(git rev-parse --short HEAD)\\";" > src/build-inf
   // the tracker driver is a stand-in that logs its argv; nothing is pushed.
   const TRK_LOG = path.join(tmp, "tracker.log");
   fs.writeFileSync(path.join(bin, "tracker-stub.mjs"), `import fs from "node:fs"; fs.appendFileSync(${JSON.stringify(TRK_LOG)}, process.argv.slice(2).join(" ") + "\\n"); process.exit(process.env.FAKE_TRACKER_FAIL === process.argv[2] ? 1 : 0);\n`);
-  // The Marketplace "Try it first" publisher runs over ssh (or zsh -lc on the workhorse): both are stand-ins here that log
-  // the command and print the publisher's JSON (FAKE_PUBLISHER=error prints its error form). The real publisher never runs.
+  // The Marketplace "Try it first" hand-off kicks the workhorse watcher over ssh (or zsh -lc on the workhorse): both are
+  // stand-ins here that log the command and print KICK=<code> + the watcher's state (FAKE_PUBLISHER=error: a failing
+  // watcher, =gone: the agent is not loaded). Nothing real runs.
   const PUB_LOG = path.join(tmp, "publisher.log");
   for (const name of ["ssh", "zsh"]) fs.writeFileSync(path.join(bin, name), `#!/bin/bash
 printf '%s\\n' "${name} $*" >> ${JSON.stringify(PUB_LOG)}
-if [[ "$FAKE_PUBLISHER" == "error" ]]; then echo '{"error":"the vendor browser is not signed in"}'; else echo '{"apps":{"sv":{"ok":true,"version":"98.1.0","build":"500"}}}'; fi
+NOW=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+if [[ "$FAKE_PUBLISHER" == "error" ]]; then echo KICK=0; printf '{"lastTickAt":"%s","health":{"status":"fail","detail":"the vendor browser is not signed in"}}\\n' "$NOW";
+elif [[ "$FAKE_PUBLISHER" == "gone" ]]; then echo KICK=113; echo '{}';
+else echo KICK=0; printf '{"lastTickAt":"%s","health":{"status":"ok"},"apps":{"sv":{"appliedVersion":"98.0.0","appliedBuild":"499"}}}\\n' "$NOW"; fi
 exit 0
 `, { mode: 0o755 });
   const BASE_ENV = { RELEASE_GATE_MARKETPLACE_FAKE: JSON.stringify({ name: "98.1.0", buildNumber: 500 }), RELEASE_AUTOPILOT_MODEL: "off", RELEASE_GATE_TRACKER: path.join(bin, "tracker-stub.mjs"), RELEASE_GATE_NO_PUSH: "1",
@@ -151,13 +155,13 @@ process.exitCode = 0;
   ok("...and runs the tracker's apply, verify and public --reprove ITSELF, after the eligibility verdict", last.tracker.join("|") === "apply|verify|public --reprove"
     && /applied, verified and re-proved public/.test(r.stdout) && r.stdout.indexOf("Public tracker: " + CUT + " applied") > r.stdout.indexOf("Eligible for Runs on Atlassian"));
   ok("...and prints no manual tracker instructions", !/PUBLIC TRACKER \(required/.test(r.stdout) && !/then commit/.test(r.stdout));
-  ok("...then re-applies the Marketplace \"Try it first\" message to the version the deploy reported, through the publisher, after the tracker step",
-    last.publisher.length === 1 && /APPS=sv/.test(last.publisher[0]) && /mp-more-details-try-first\.mjs/.test(last.publisher[0]) && !/DRY=1/.test(last.publisher[0])
-    && /"Try it first" message is on 98\.1\.0 \(build 500\), written and read back/.test(r.stdout) && r.stdout.indexOf("Try it first\" message is on") > r.stdout.indexOf(`Public tracker: ${CUT} applied`));
+  ok("...then hands the Marketplace \"Try it first\" message of the version the deploy reported to the workhorse watcher (one kick, no wait, never the publisher), after the tracker step",
+    last.publisher.length === 1 && /launchctl kickstart gui\/\$\(id -u\)\/net\.leanzero\.tryfirst-watcher/.test(last.publisher[0]) && !/mp-more-details-try-first/.test(last.publisher[0])
+    && /"Try it first" message is handed to the watcher on the workhorse \(kicked; last tick 0 min ago; sv last confirmed on 98\.0\.0 \(build 499\)\)\. It puts the message on 98\.1\.0/.test(r.stdout) && r.stdout.indexOf("Try it first\" message is handed") > r.stdout.indexOf(`Public tracker: ${CUT} applied`));
   r = door({ FAKE_ELIG: ELIGIBLE, FAKE_PUBLISHER: "error" }, ["--licensing-live"]);
-  ok("a publisher error is logged and does NOT fail the deploy", r.status === 0 && /"Try it first" message was NOT re-applied \(the vendor browser is not signed in\)/.test(r.stdout));
-  r = door({ FAKE_ELIG: ELIGIBLE, RELEASE_GATE_MARKETPLACE_FAKE: JSON.stringify({ name: "98.0.0", buildNumber: 499 }), RELEASE_GATE_TRYFIRST_WAIT_MS: "0" }, ["--licensing-live"]);
-  ok("a version the Marketplace does not list yet: no publisher run, logged, exit 0", r.status === 0 && last.publisher.length === 0 && /did not list 98\.1\.0/.test(r.stdout));
+  ok("a failing (signed-out) watcher is logged and does NOT fail the deploy", r.status === 0 && /"Try it first" message was NOT handed off \(the watcher is failing: the vendor browser is not signed in\)/.test(r.stdout));
+  r = door({ FAKE_ELIG: ELIGIBLE, FAKE_PUBLISHER: "gone" }, ["--licensing-live"]);
+  ok("a watcher that is not installed is logged with the install command, exit 0", r.status === 0 && /NOT handed off \(the watcher is not loaded on the workhorse \(launchctl kickstart exit 113\); install it/.test(r.stdout));
 
   r = door({ FAKE_ELIG: ELIGIBLE, FAKE_TRACKER_FAIL: "verify" }, ["--licensing-live"]);
   ok("a tracker step that fails does NOT fail the deploy (exit 0), names the step and stops there", r.status === 0 && /stopped at tracker\.mjs verify/.test(r.stdout) && last.tracker.join("|") === "apply|verify"
