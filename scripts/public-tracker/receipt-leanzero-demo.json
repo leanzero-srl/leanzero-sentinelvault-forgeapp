@@ -42,7 +42,8 @@
     "8.12.0": "10502",
     "8.13.0": "10655",
     "8.14.0": "10754",
-    "8.15.0": "10820"
+    "8.15.0": "10820",
+    "8.16.0": "10853"
   },
   "issues": {
     "02dc09e3ae3c6c5a": {
@@ -596,6 +597,18 @@
     "51e4df6a02478bf4": {
       "key": "SVT-142",
       "id": "28614"
+    },
+    "404db31677f1c667": {
+      "key": "SVT-143",
+      "id": "28682"
+    },
+    "b6fec327b429123b": {
+      "key": "SVT-144",
+      "id": "28683"
+    },
+    "7dca295bdf7d4542": {
+      "key": "SVT-145",
+      "id": "28684"
     }
   },
   "permissionScheme": {
@@ -608,7 +621,7 @@
     ],
     "assigned": true
   },
-  "updatedAt": "2026-10-22T00:25:13.775Z",
+  "updatedAt": "2026-10-22T10:01:12.880Z",
   "projectId": "10278",
   "issueTypeScheme": {
     "id": "10636",
@@ -650,12 +663,12 @@
     "undo": "DELETE /rest/api/3/permissionscheme/10265/permission/11703",
     "proof": {
       "GET /rest/api/3/issue/SVT-1": 200,
-      "GET /rest/api/3/issue/SVT-142": 200,
+      "GET /rest/api/3/issue/SVT-145": 200,
       "GET /rest/api/3/issue/ATLAS-2361": 404,
       "GET /rest/api/3/issue/CRBAK-1": 404,
       "GET /rest/api/3/issue/CRD-30": 404,
       "GET /rest/api/3/issue/CRS-9": 404,
-      "GET /rest/api/3/issue/CRT-439": 200,
+      "GET /rest/api/3/issue/CRT-441": 200,
       "GET /rest/api/3/issue/CS-1223": 404,
       "GET /rest/api/3/issue/CST-37": 200,
       "GET /rest/api/3/issue/DACC-5": 404,
@@ -666,7 +679,7 @@
       "GET /rest/api/3/issue/ITHELP-1223": 404,
       "GET /rest/api/3/issue/KAN-1": 404,
       "GET /rest/api/3/issue/LEDGER-1225": 404,
-      "GET /rest/api/3/issue/LICW-42": 404,
+      "GET /rest/api/3/issue/LICW-43": 404,
       "GET /rest/api/3/issue/LZMT-376": 200,
       "GET /rest/api/3/issue/ORBIT-91": 404,
       "GET /rest/api/3/issue/PLATSUP-1222": 404,
@@ -675,24 +688,24 @@
       "GET /rest/api/3/issue/SEC-1225": 404,
       "GET /rest/api/3/issue/VOY-1992": 404,
       "anonymous site-wide search (bounded, all pages): issues per project": {
-        "SVT": 138,
-        "CRT": 439,
+        "SVT": 141,
+        "CRT": 441,
         "LZMT": 376,
         "CST": 37
       },
-      "anonymous listing of SVT": "138 issues (receipt holds 138; 已完成 107, Backlog 31)",
+      "anonymous listing of SVT": "141 issues (receipt holds 141; 已完成 110, Backlog 31)",
       "other projects whose scheme lets anyone browse": "CRT,CST,LZMT",
       "public trackers (allowlist)": "CRT,SVT,LZMT,CST",
       "negative control": "13 fake broken answers, each failed the verdict",
       "GET /jira/software/c/projects/SVT/issues": 200
     },
-    "provenAt": "2026-10-22T00:25:13.775Z",
+    "provenAt": "2026-10-22T10:01:12.880Z",
     "proofFailures": []
   },
   "verified": {
-    "through": "8.15.0",
-    "at": "2026-10-22T00:24:51.750Z",
-    "issues": 138,
+    "through": "8.16.0",
+    "at": "2026-10-22T10:00:41.534Z",
+    "issues": 141,
     "failures": 0
   }
 }
