@@ -18,7 +18,7 @@ export const RELEASE_NOTES = Object.freeze([
     changes: [],
     fixes: [
       "The Activity tab keeps the title of the page each event was recorded on, so space admins still see which page a deleted page's events belong to. Events recorded before this version still show the page's ID. Fixes SVT-148.",
-      "On sites that use Confluence's own classification levels, choosing a level for a page, or choosing to follow the space default, works again. Raising a level no longer asks for the reason meant for lowering one, levels show the colours set in Confluence, and a page that follows its space default says so. When Confluence does not accept a change, Sentinel Vault says so and that nothing was changed. Fixes SVT-152.",
+      "On sites that use Confluence's own classification levels, choosing a level for a page, or choosing to follow the space default, works again. Raising a level no longer asks for the reason meant for lowering one, levels show the colours set in Confluence, and a page that follows its space default says so. Levels below the space default, which Confluence does not allow on a page, are no longer offered, and when Confluence does not accept a change, Sentinel Vault says so and that nothing was changed. Fixes SVT-152.",
       "On a site where Sentinel Vault has no space it can keep its backup page in, automatic backups now pause instead of failing every hour, and Backup and restore says why and how to choose a space. Fixes SVT-151.",
       "When Confluence is busy, a backup no longer starts a second backup page; it fails and tries again later. Fixes SVT-153.",
     ],

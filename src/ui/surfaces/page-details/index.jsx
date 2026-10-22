@@ -86,6 +86,9 @@ const ClassificationBlock = ({ c, sealed, pageId, onChanged }) => {
   const source = c?.effective?.source || "none";
   const canChange = !!c?.canChange;
   const levels = c?.levels || [];
+  // Confluence's own scheme refuses a page level below the space's default (classification-set-page
+  // says so too): those levels are not offered.
+  const offered = c?.provider === "native" && c?.spaceDefault ? levels.filter((l) => !isDowngrade(c.spaceDefault.id, l.id, levels)) : levels;
   const fromId = level?.id ?? null;
   const landsOn = (levelId) => (levelId != null ? levelId : c?.spaceDefault?.id ?? null); // what readers see after
   const save = async (levelId, reason) => {
@@ -133,7 +136,7 @@ const ClassificationBlock = ({ c, sealed, pageId, onChanged }) => {
         <span className="pd-desc" data-testid="pd-level-desc">{desc}</span>
         {canChange && levels.length > 0 && (
           <span className="pd-override">
-            <LevelPicker levels={levels} value={c.pageLevelId} onPick={pick} disabled={busy} />
+            <LevelPicker levels={offered} value={c.pageLevelId} onPick={pick} disabled={busy} />
             <button type="button" className="pd-btn quiet" disabled={busy || c.pageLevelId == null} onClick={() => pick(null)} data-testid="pd-use-space-default">Use space default</button>
           </span>
         )}

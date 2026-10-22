@@ -71,6 +71,7 @@ const setup = async () => { world(); await kvs.set("admin-settings-global", { cl
 }
 {
   await setup();
+  spaceDefault = "L1"; // Confluence refuses a page level below the space default: lower to the default itself
   // The write lands; only the read of the new effective level after it is busy.
   let writes = 0;
   onConfluence((method, rawPath) => {
