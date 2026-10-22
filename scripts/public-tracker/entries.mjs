@@ -551,4 +551,19 @@ export const KNOWN = [
     where: "My work; Space settings, Sealed Files and Access Control tabs.",
     workaround: "Wait a moment and reload the page before you rely on an empty list.",
   },
+  // 2026-10-22: two open defects found while releasing 8.16.0, confirmed on 8.16.0 and fixed in the next release.
+  {
+    k: "known-approval-vote-not-applied", c: "W", affects: "8.16.0", fix: "scheduled",
+    t: "An approval request can stay open after enough approvers decided, when Confluence was limiting requests at that moment",
+    see: "When Confluence is limiting Sentinel Vault's requests or answering with errors at the moment the deciding approval is given, the approval can be recorded without the request being completed. The approver can be told the approval was not applied, and trying again says the decision has already been recorded. The page stays where it was and the request stays open, although enough approvers have decided.",
+    where: "Approval requests in a space that uses a Sentinel Vault workflow.",
+    workaround: "The person who asked can press Withdraw request on the page banner and then ask for approval again. The approvers then need to decide again.",
+  },
+  {
+    k: "known-waiting-count-higher-than-lists", c: "M", affects: "8.16.0", fix: "scheduled",
+    t: "The number of things waiting on you can be higher than the lists show",
+    see: "The total at the top of My work can count an approval request or a proposed change that the lists below leave out, for example one on a page you cannot view or a page in the trash, or an approval whose AI review did not pass, or approvals past the first 25, which is as many as the approvals list shows. The page banner's Waiting for you count can also count an approval whose AI review did not pass. After you approve or deny from the approvals list on My work, the total keeps the old number until you reload the page.",
+    where: "My work, the total at the top; the page banner, Waiting for you.",
+    workaround: "Use the lists on My work: they show what you can act on. Reload My work after you decide to see the total update.",
+  },
 ];
