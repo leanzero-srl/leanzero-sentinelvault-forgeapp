@@ -28,7 +28,7 @@ try {
   // clone reads to the door as a rollback from a tag, so the note-writing cases would fail only there (v8.13.0, 2026-10-21).
   git("checkout", "-q", "-B", "main");
   // the working copy under test (the clone holds the last commit; the door is copied in as it is on disk now)
-  for (const f of ["scripts/deploy-prod.sh", "scripts/strip-dev-modules.mjs", "manifest.yml", "scripts/public-tracker/coverage.mjs", "scripts/public-tracker/release-gate.mjs",
+  for (const f of ["scripts/deploy-prod.sh", "scripts/check-installed-deps.mjs", "scripts/strip-dev-modules.mjs", "manifest.yml", "scripts/public-tracker/coverage.mjs", "scripts/public-tracker/release-gate.mjs",
     "scripts/public-tracker/tracker.mjs", "scripts/release-autopilot.mjs"]) fs.copyFileSync(path.join(root, f), path.join(repo, f));
   // The tracker gate reads the clone's own rows, receipt and production-release.json: a row for every note line,
   // production recorded one release behind the one being cut, and a receipt verified through it.
@@ -46,7 +46,10 @@ try {
   writeTracker(allRows, LIVE);
   git("add", "-A", "scripts");
   if (git("status", "--porcelain", "--untracked-files=no")) git("commit", "-qam", "door under test");
-  fs.symlinkSync(path.join(root, "node_modules"), path.join(repo, "node_modules"));
+  // node_modules: a REAL directory whose entries link to the checkout's packages (the door refuses a symlinked root
+  // node_modules, and checks every locked non-dev package is installed at its version). Never write through these links.
+  fs.mkdirSync(path.join(repo, "node_modules"));
+  for (const e of fs.readdirSync(path.join(root, "node_modules"))) fs.symlinkSync(path.join(root, "node_modules", e), path.join(repo, "node_modules", e));
   for (const t of git("tag", "--list").split("\n").filter(Boolean)) git("tag", "-d", t);
   git("tag", "v98.0.0", "HEAD"); // a release that already shipped licensing (this manifest has it on) ...
   git("commit", "-q", "--allow-empty", "-m", "the change being deployed"); // ... and a newer commit to deploy
@@ -56,7 +59,7 @@ try {
   fs.writeFileSync(path.join(bin, "forge"), `#!/bin/bash
 printf '%s\\n' "$*" >> ${JSON.stringify(FORGE_LOG)}
 case "$1" in
-  lint) echo "No issues found."; exit 0 ;;
+  lint) if [[ -n "$FAKE_LINT_RC" ]]; then echo "1 error"; exit "$FAKE_LINT_RC"; fi; echo "No issues found."; exit 0 ;;
   deploy) echo "Deployed to production"; exit 0 ;;
   eligibility) printf '%s\\n' "$FAKE_ELIG"; exit "\${FAKE_ELIG_RC:-0}" ;;
 esac
@@ -101,7 +104,7 @@ exit 0
   let last = null;
   // Every real run names the commit being released (--sha); by default the commit the case starts from, i.e. the
   // checkout's own HEAD. `{ sha: null }` leaves the flag out, `{ sha: "<x>" }` names something else.
-  const door = (env, args = [], { sha } = {}) => {
+  const door = (env, args = [], { sha, keep } = {}) => {
     const start = git("rev-parse", "HEAD");
     if (sha === undefined) args = [...args, "--sha", start];
     else if (sha !== null) args = [...args, "--sha", sha];
@@ -129,7 +132,7 @@ process.exitCode = 0;
       last.desired = m ? JSON.parse(m[1]) : { error: `${dr.stdout}\n${dr.stderr}`.slice(-600) };
     }
     if (process.env.DOOR_DEBUG) console.log(`---- door ${args.join(" ")}\n${r.stdout}\n${r.stderr}`);
-    git("reset", "-q", "--hard", start);
+    if (!keep) git("reset", "-q", "--hard", start);
     return r;
   };
 
@@ -267,18 +270,31 @@ let p = ""; process.stdin.on("data", (d) => (p += d)); process.stdin.on("end", (
   r = door({ FAKE_ELIG: ELIGIBLE }, L, { sha: "tested" });
   ok("main BEHIND the named commit: refused, says BEHIND and to fast-forward, names both shas", r.status === 1 && !last.deployed && /BEHIND/.test(r.stdout) && /fast-forward/i.test(r.stdout)
     && r.stdout.includes(testedSha) && r.stdout.includes(base));
+  ok("...and the recovery command it prints carries --sha", /deploy-prod\.sh --sha /.test(r.stdout));
+  // git merge-base failing for another reason (exit 128: missing objects, a shallow clone) is said as such, not as BEHIND/DIVERGED
+  const bin2 = path.join(tmp, "bin2"); fs.mkdirSync(bin2);
+  const realGit = execFileSync("bash", ["-lc", "command -v git"], { encoding: "utf8" }).trim();
+  fs.writeFileSync(path.join(bin2, "git"), `#!/bin/bash\nif [[ "$1" == merge-base && -n "$FAKE_MB_RC" ]]; then exit "$FAKE_MB_RC"; fi\nexec ${JSON.stringify(realGit)} "$@"\n`, { mode: 0o755 });
+  r = door({ FAKE_ELIG: ELIGIBLE, FAKE_MB_RC: "128", PATH: `${bin2}:${bin}:${process.env.PATH}` }, L, { sha: "tested" });
+  ok("git merge-base exiting 128: refused, says git could not compare (exit 128), not BEHIND/AHEAD/DIVERGED, recovery carries --sha", r.status === 1 && !last.deployed
+    && /could not compare.*exit 128/.test(r.stdout) && !/BEHIND|AHEAD|DIVERGED/.test(r.stdout) && /deploy-prod\.sh --sha /.test(r.stdout));
   git("checkout", "-q", "tested");
   r = door({ FAKE_ELIG: ELIGIBLE }, L, { sha: base });
-  ok("checkout AHEAD of the named commit: refused, says AHEAD, names both shas", r.status === 1 && !last.deployed && /AHEAD/.test(r.stdout) && r.stdout.includes(testedSha) && r.stdout.includes(base));
+  ok("checkout AHEAD of the named commit: refused, says AHEAD, names both shas, lists the change and a --sha recovery", r.status === 1 && !last.deployed && /AHEAD/.test(r.stdout) && r.stdout.includes(testedSha) && r.stdout.includes(base)
+    && /src\/server\/door-test-change\.js/.test(r.stdout) && /deploy-prod\.sh --sha /.test(r.stdout));
   r = door({ FAKE_ELIG: ELIGIBLE }, L, { sha: "tested" });
-  ok("in the tested checkout, --sha tested (branch name): HEAD matches, the door deploys", r.status === 0 && last.deployed && /Deployed to production/.test(r.stdout));
+  ok("--sha <the branch checked out HERE> (tested, run in the tested checkout): refused, it always equals HEAD", r.status === 1 && !last.deployed && last.forge.length === 0
+    && /checked out in THIS checkout/.test(r.stdout) && /rev-parse HEAD/.test(r.stdout));
   r = door({ FAKE_ELIG: ELIGIBLE }, L, { sha: testedSha.slice(0, 10) });
-  ok("...and with a short hex sha", r.status === 0 && last.deployed);
-  git("checkout", "-q", "main"); git("branch", "-q", "-D", "tested");
+  ok("...a (short) hex sha in the tested checkout is accepted (it cannot be told apart from a copied one; docs say where to take it)", r.status === 0 && last.deployed);
+  git("checkout", "-q", "main"); git("merge", "-q", "--ff-only", "tested");
+  r = door({ FAKE_ELIG: ELIGIBLE }, L, { sha: "tested" });
+  ok("THE INTENDED FLOW: main fast-forwarded to the tested branch, door run in main with --sha tested: deploys", r.status === 0 && last.deployed && /Deployed to production/.test(r.stdout));
+  git("reset", "-q", "--hard", base); git("branch", "-q", "-D", "tested");
 
   r = door({ FAKE_ELIG: ELIGIBLE }, L, { sha: null });
   ok("a real run with no --sha: refused before anything, says --sha is needed and prints HEAD", r.status === 1 && !last.deployed && last.forge.length === 0 && /--sha/.test(r.stdout) && r.stdout.includes(base));
-  for (const bad of ["HEAD", "@", "HEAD~1", "HEAD^", "@~1", "@{-1}", "ORIG_HEAD", "main~1"]) {
+  for (const bad of ["HEAD", "head", "@", "HEAD~1", "HEAD^", "@~1", "@{-1}", "ORIG_HEAD", "FETCH_HEAD", "main~1", "main^", "main:src"]) {
     r = door({ FAKE_ELIG: ELIGIBLE }, L, { sha: bad });
     ok(`--sha ${bad}: refused (it means "whatever is checked out", or is not a sha or a branch)`, r.status === 1 && !last.deployed && last.forge.length === 0 && last.log === "");
   }
@@ -287,10 +303,51 @@ let p = ""; process.stdin.on("data", (d) => (p += d)); process.stdin.on("end", (
   r = door({ FAKE_ELIG: ELIGIBLE }, [...L, "--sha"], { sha: null });
   ok("--sha with no value: refused", r.status === 1 && !last.deployed);
   r = door({ FAKE_ELIG: ELIGIBLE }, L, { sha: "main" });
-  ok("--sha main while main is HEAD: the door deploys", r.status === 0 && last.deployed);
-  ok("...and --sha never reaches forge deploy's own arguments", last.forge.filter((l) => /^deploy\b/.test(l)).every((l) => !/--sha|main/.test(l)));
+  ok("--sha main run in a main checkout (the stale-main case's vacuous form): refused", r.status === 1 && !last.deployed && /checked out in THIS checkout/.test(r.stdout));
   r = door({ FAKE_ELIG: ELIGIBLE }, [...L, `--sha=${base}`], { sha: null });
   ok("--sha=<commit> works too", r.status === 0 && last.deployed);
+  ok("...and --sha never reaches forge deploy's own arguments", last.forge.filter((l) => /^deploy\b/.test(l)).every((l) => !/--sha/.test(l) && !l.includes(base)));
+  for (const name of ["head-fix", "fix@2"]) {
+    git("branch", name, "HEAD");
+    r = door({ FAKE_ELIG: ELIGIBLE }, L, { sha: name });
+    ok(`a legal branch name that only looks special (${name}), not checked out here: accepted, deploys`, r.status === 0 && last.deployed);
+    git("branch", "-q", "-D", name);
+  }
+  // every recovery command the door prints names --sha (a hint without it would be refused anyway)
+  const doorSrc = fs.readFileSync(path.join(root, "scripts/deploy-prod.sh"), "utf8");
+  const hints = doorSrc.split("\n").filter((l) => /\becho\b/.test(l) && /deploy-prod\.sh|\$\{CMD\}/.test(l));
+  ok(`every printed door command carries --sha (${hints.length} lines)`, hints.length >= 8 && hints.every((l) => /--sha/.test(l)));
+
+  // node_modules must be the locked one: Forge bundles the root node_modules
+  const nmDir = path.join(repo, "node_modules"), nmAside = path.join(tmp, "nm-aside");
+  fs.renameSync(nmDir, nmAside); fs.symlinkSync(path.join(root, "node_modules"), nmDir);
+  r = door({ FAKE_ELIG: ELIGIBLE }, L);
+  ok("a SYMLINKED node_modules (another checkout's dependencies): refused before anything, says npm ci", r.status === 1 && !last.deployed && last.forge.length === 0 && /symlink/.test(r.stdout) && /npm ci/.test(r.stdout));
+  fs.rmSync(nmDir); fs.renameSync(nmAside, nmDir);
+  const lockPkgs = JSON.parse(fs.readFileSync(path.join(repo, "package-lock.json"), "utf8")).packages;
+  const shipped = Object.keys(lockPkgs).find((k) => /^node_modules\/[^@/][^/]*$/.test(k) && !lockPkgs[k].dev && !lockPkgs[k].devOptional && !lockPkgs[k].optional);
+  const shippedLink = path.join(repo, shipped), shippedTarget = fs.readlinkSync(shippedLink);
+  fs.unlinkSync(shippedLink);
+  r = door({ FAKE_ELIG: ELIGIBLE }, L);
+  ok(`a locked shipped package not installed (${shipped}): refused, named, says npm ci`, r.status === 1 && !last.deployed && r.stdout.includes(shipped) && /npm ci/.test(r.stdout));
+  r = door({ FAKE_ELIG: ELIGIBLE }, [...L, "--dry-run"], { sha: null });
+  ok("...a dry run says the same (exit 1)", r.status === 1 && r.stdout.includes(shipped));
+  fs.symlinkSync(shippedTarget, shippedLink);
+
+  // A RUN THAT STOPPED after the door committed its note / tracker rows, re-run naming the SAME tested commit: accepted
+  const S = full("HEAD");
+  r = door({ FAKE_ELIG: ELIGIBLE, FAKE_LINT_RC: "1" }, L, { keep: true });
+  ok("a run that stops at forge lint AFTER the door committed (note / tracker rows)", r.status === 1 && !last.deployed && full("HEAD") !== S && /written by the release door|release door/.test(last.log));
+  const afterStop = full("HEAD");
+  r = door({ FAKE_ELIG: ELIGIBLE }, L, { sha: S, keep: true });
+  ok("...re-run naming the same tested sha: accepted (HEAD = it plus only the door's own commits) and deploys", r.status === 0 && last.deployed && /only this door's own commits \(a re-run\); accepted/.test(r.stdout));
+  r = door({ FAKE_ELIG: ELIGIBLE }, L, { sha: S });
+  ok("...and a redeploy of it after that deploy's own record commit (production-release.json, receipt) is accepted too", r.status === 0 && last.deployed);
+  git("reset", "-q", "--hard", afterStop);
+  fs.writeFileSync(path.join(repo, "src/server/door-test-change.js"), "export const x = 4; // not tested\n"); git("commit", "-qam", "a change after the stopped run");
+  r = door({ FAKE_ELIG: ELIGIBLE }, L, { sha: S });
+  ok("...but a re-run with any NON-door commit on top is refused as AHEAD, naming the file", r.status === 1 && !last.deployed && /AHEAD/.test(r.stdout) && /src\/server\/door-test-change\.js/.test(r.stdout));
+  git("reset", "-q", "--hard", S);
 
   fs.writeFileSync(path.join(repo, "src/server/untracked.js"), "export const z = 1;\n");
   r = door({ FAKE_ELIG: ELIGIBLE }, L);
