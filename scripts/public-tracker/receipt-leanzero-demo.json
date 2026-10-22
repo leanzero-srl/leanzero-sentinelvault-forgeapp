@@ -44,7 +44,8 @@
     "8.14.0": "10754",
     "8.15.0": "10820",
     "8.16.0": "10853",
-    "8.17.0": "10889"
+    "8.17.0": "10889",
+    "8.18.0": "10955"
   },
   "issues": {
     "02dc09e3ae3c6c5a": {
@@ -630,7 +631,7 @@
     ],
     "assigned": true
   },
-  "updatedAt": "2026-10-22T11:28:41.667Z",
+  "updatedAt": "2026-10-22T14:00:14.945Z",
   "projectId": "10278",
   "issueTypeScheme": {
     "id": "10636",
@@ -646,6 +647,30 @@
       "version": "6.7.0",
       "kind": "changes",
       "why": "How authenticator codes for signed actions are stored (secret storage); security mechanism topic, as the CogniRunner tracker withholds secrets lines."
+    },
+    {
+      "h": "597ca43774416fb5",
+      "version": "8.18.0",
+      "kind": "fixes",
+      "why": "the review pass did not answer (release door: no review, no publication)"
+    },
+    {
+      "h": "63c181cd7a77ea4d",
+      "version": "8.18.0",
+      "kind": "fixes",
+      "why": "the review pass did not answer (release door: no review, no publication)"
+    },
+    {
+      "h": "490c2644a51ea4ee",
+      "version": "8.18.0",
+      "kind": "fixes",
+      "why": "the review pass did not answer (release door: no review, no publication)"
+    },
+    {
+      "h": "c28206f875846bd9",
+      "version": "8.18.0",
+      "kind": "fixes",
+      "why": "the review pass did not answer (release door: no review, no publication)"
     }
   ],
   "folds": {
@@ -687,7 +712,7 @@
       "GET /rest/api/3/issue/CRBAK-1": 404,
       "GET /rest/api/3/issue/CRD-30": 404,
       "GET /rest/api/3/issue/CRS-9": 404,
-      "GET /rest/api/3/issue/CRT-441": 200,
+      "GET /rest/api/3/issue/CRT-452": 200,
       "GET /rest/api/3/issue/CS-1223": 404,
       "GET /rest/api/3/issue/CST-37": 200,
       "GET /rest/api/3/issue/DACC-5": 404,
@@ -707,8 +732,8 @@
       "GET /rest/api/3/issue/SEC-1225": 404,
       "GET /rest/api/3/issue/VOY-1992": 404,
       "anonymous site-wide search (bounded, all pages): issues per project": {
+        "CRT": 452,
         "SVT": 143,
-        "CRT": 441,
         "LZMT": 376,
         "CST": 37
       },
@@ -718,12 +743,12 @@
       "negative control": "13 fake broken answers, each failed the verdict",
       "GET /jira/software/c/projects/SVT/issues": 200
     },
-    "provenAt": "2026-10-22T11:28:41.667Z",
+    "provenAt": "2026-10-22T14:00:14.945Z",
     "proofFailures": []
   },
   "verified": {
-    "through": "8.17.0",
-    "at": "2026-10-22T11:28:13.899Z",
+    "through": "8.18.0",
+    "at": "2026-10-22T13:59:42.560Z",
     "issues": 143,
     "failures": 0
   }
