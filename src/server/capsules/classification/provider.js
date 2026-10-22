@@ -14,7 +14,7 @@
 import { asApp, assumeTrustedRoute } from "@forge/api";
 import { appConfluence, invocationMemo, forgetInvocationMemo } from "../../shared/confluence-call.js";
 import { kvs } from "@forge/kvs";
-import { createAppProvider, createNativeProvider, selectProvider, classificationActive } from "./logic.js";
+import { createAppProvider, createNativeProvider, selectProvider, classificationActive, rankNativeLevels } from "./logic.js";
 import { resolvePageSpaceKey } from "../../shared/content-access.js";
 import { errText } from "../../shared/action-log.js";
 
@@ -78,6 +78,21 @@ export function freshScheme(row, now = Date.now(), maxAgeMs = SCHEME_CACHE_MS) {
   return Number.isFinite(at) && at <= now && now - at < maxAgeMs ? row : null;
 }
 
+/**
+ * PURE. A stored choice for when Confluence is busy (429/5xx): any version, younger than `maxAgeMs`. A
+ * native row stored before version 2 still says the site uses Confluence's own levels, so it is
+ * re-ranked the version-2 way (its rank is Confluence's order, its colours are names) instead of being
+ * dropped: dropping it flipped a native site to the App's levels on a 5xx, or failed it on a 429.
+ * Only the fresh path (freshScheme alone) refuses old rows, so they are replaced at the next answer.
+ */
+export function staleOkScheme(row, now = Date.now(), maxAgeMs = SCHEME_STALE_OK_MS) {
+  if (row?.name === "native" && row.v !== SCHEME_CACHE_VERSION && Array.isArray(row.levels)) {
+    const levels = rankNativeLevels(row.levels.map((l) => ({ id: l?.id, name: l?.name, color: l?.color, order: l?.rank, description: l?.description })));
+    return freshScheme({ ...row, levels, v: SCHEME_CACHE_VERSION }, now, maxAgeMs);
+  }
+  return freshScheme(row, now, maxAgeMs);
+}
+
 async function fromStored(row) {
   if (row.name === "native") return { provider: createNativeProvider({ request }), levels: row.levels };
   const app = createAppProvider({ kvs, request, log });
@@ -99,9 +114,10 @@ async function selectForSite() {
   const selected = await selectProvider({ native, app });
   // A 5xx keeps the App fallback only when the site has no stored choice from the last day; with one,
   // that choice is used (a site on Confluence's own levels does not flip to the App's for an outage).
-  if (levelsStatus != null && levelsStatus >= 500 && freshScheme(stored, now, SCHEME_STALE_OK_MS)) return fromStored(stored);
+  const staleOk = staleOkScheme(stored, now);
+  if (levelsStatus != null && levelsStatus >= 500 && staleOk) return fromStored(staleOk);
   if (levelsStatus === 429) {
-    if (freshScheme(stored, now, SCHEME_STALE_OK_MS)) return fromStored(stored);
+    if (staleOk) return fromStored(staleOk);
     const e = new Error("Confluence is limiting requests; the classification scheme could not be read");
     e.code = "RATE_LIMITED";
     throw e;
