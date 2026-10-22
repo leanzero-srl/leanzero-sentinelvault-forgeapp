@@ -66,7 +66,8 @@ function serve(root) {
   });
 }
 const servers = {};
-const urlOf = async (app) => { if (!servers[app]) servers[app] = await serve(path.join(BUNDLES, app)); return servers[app].url; };
+// One server per surface, also when several scenarios ask for it at the same moment (the promise is shared).
+const urlOf = async (app) => { if (!servers[app]) servers[app] = serve(path.join(BUNDLES, app)); return (await servers[app]).url; };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 const browser = await chromium.launch();
@@ -96,6 +97,10 @@ async function open(app, shot, w, h, { touch = false } = {}) {
   await sleep(1200);
   return { ctx, page, errors };
 }
+
+/** The scenarios below are queued here and run at the end of the file (see "run the scenarios"). */
+const tasks = [];
+const task = (name, fn) => { tasks.push({ name, fn }); };
 
 // ── in-page measurements ────────────────────────────────────────────────────────────────────────
 const CONTROL = 'button, input, textarea, select, a[href], label, [role="button"], [role="switch"], [role="option"], [role="radio"], [role="checkbox"], [role="listbox"], [role="menu"], [tabindex]:not([tabindex="-1"])';
@@ -173,9 +178,10 @@ async function press(page, loc, { tall = true } = {}) {
   return { moved, from: Math.round(a.y), to: b ? Math.round(b.y) : null };
 }
 
+const floatSkipped = [];
 const checkFloat = async (page, label) => {
   const c = await floatCovers(page);
-  if (!c) return;
+  if (!c) { floatSkipped.push(label); return; }
   ok(`BR-03 ${label}: the reminder found a clear spot (${c.spot} ${JSON.stringify(c.rect)})`, /^clear/.test(c.spot));
   eq(`BR-03 ${label}: the reminder covers no control`, c.controls, []);
   eq(`BR-03 ${label}: the reminder covers no text`, c.text, []);
@@ -190,7 +196,7 @@ const PANELS = [
   { app: "realm-console", shot: "realm-steward", tab: '.tab-navigation .tab-button:has-text("Validations")', name: "space validations" },
   { app: "realm-console", shot: "realm-steward", tab: '.tab-navigation .tab-button:has-text("Access Control")', name: "space access" },
 ];
-for (const app of ["steward-console", "realm-console"]) {
+for (const app of ["steward-console", "realm-console"]) task(`BR-01 ${app}`, async () => {
   const panels = PANELS.filter((p) => p.app === app);
   const { ctx, page, errors } = await open(app, panels[0].shot, 994, 900);
   for (const w of [620, 636, 664, 754, 834, 994, 1474]) {
@@ -204,10 +210,10 @@ for (const app of ["steward-console", "realm-console"]) {
   }
   eq(`${app}: no page errors`, errors, []);
   await ctx.close();
-}
+});
 
 // ── BR-02 + BR-03 on a settings list: six toggles in a row, each by mouse ───────────────────────
-for (const w of [636, 834, 994, 1474]) {
+for (const w of [636, 834, 994, 1474]) task(`BR-02/03 site settings @${w}`, async () => {
   const { ctx, page } = await open("steward-console", "steward", w, 900);
   const sw = page.locator('.settings-row .settings-row-control input[type="checkbox"]:not(:disabled)');
   const n = Math.min(6, await sw.count());
@@ -221,14 +227,14 @@ for (const w of [636, 834, 994, 1474]) {
     await checkFloat(page, `site settings @${w} after toggle #${i}`);
   }
   await ctx.close();
-}
+});
 
 // ── BR-02 + BR-03 on the Validations editors: modes, + Add rule, the new rule's picker and × ────
 for (const [app, shot, tab, name] of [
   ["realm-console", "realm-steward", '.tab-navigation .tab-button:has-text("Validations")', "space validations"],
   ["steward-console", "steward", '[data-testid="tab-validations"]', "site validations"],
 ]) {
-  for (const w of [620, 754, 834, 850, 994]) {
+  for (const w of [620, 754, 834, 850, 994]) task(`BR-02/03 ${name} @${w}`, async () => {
     const { ctx, page } = await open(app, shot, w, 900);
     await page.locator(tab).first().click();
     await sleep(800);
@@ -262,7 +268,7 @@ for (const [app, shot, tab, name] of [
     eq(`BR-02 ${name} @${w} the new rule's ×: one press removed it`, await cards.count(), n1 - 1);
     await checkFloat(page, `${name} @${w} after ×`);
     await ctx.close();
-  }
+  });
 }
 
 // ── Phones, as Confluence builds them: the console is a 620/636 px CONTENT-TALL iframe inside a
@@ -305,7 +311,7 @@ const checkFloatIn = async (frame, label) => {
   ok(`BR-03 ${label}: the reminder is inside the part of the frame on screen`, band.left >= 0 && band.right <= 999);
 };
 for (const [vw, vh] of [[360, 780], [390, 844]]) {
-  {
+  task(`BR-02/03 phone ${vw} site settings`, async () => {
     const { ctx, page, frame, fit, F } = await openFramed("steward-console", "steward", 636, vw, vh);
     const sw = F.locator('.settings-row .settings-row-control input[type="checkbox"]:not(:disabled)');
     const n = Math.min(8, await sw.count());
@@ -319,8 +325,8 @@ for (const [vw, vh] of [[360, 780], [390, 844]]) {
       ok(`BR-03 phone ${vw} site settings toggle #${i}: the reminder is on the phone's screen (${onScreen && Math.round(onScreen.left)}-${onScreen && Math.round(onScreen.right)} of ${vw})`, !!onScreen && onScreen.left >= 0 && onScreen.right <= onScreen.w);
     }
     await ctx.close();
-  }
-  {
+  });
+  task(`BR-02/03 phone ${vw} space validations`, async () => {
     const { ctx, page, frame, fit, F } = await openFramed("realm-console", "realm-steward", 620, vw, vh);
     await F.locator('.tab-navigation .tab-button:has-text("Validations")').first().click();
     await sleep(700);
@@ -346,7 +352,7 @@ for (const [vw, vh] of [[360, 780], [390, 844]]) {
     ok(`BR-02 phone ${vw} the new rule's ×: did not move`, !rx.moved);
     eq(`BR-02 phone ${vw} the new rule's ×: removed it`, await cards.count(), n0);
     await ctx.close();
-  }
+  });
 }
 
 // ── BR-04: a card whose name fits beside its actions stays on one line (desktop density) ───────
@@ -373,7 +379,7 @@ for (const [app, shot, w, h, name] of [
   ["realm-console", "realm-steward", 994, 900, "space console cards @994"],
   ["realm-console", "realm-steward", 834, 900, "space console cards @834 (1280 laptop)"],
   ["realm-console", "realm-steward", 1120, 900, "space console cards @1120"],
-]) {
+]) task(`BR-04 ${name}`, async () => {
   const { ctx, page } = await open(app, shot, w, h);
   const cards = await cardLines(page);
   ok(`BR-04 ${name}: cards measured`, cards.length >= 3);
@@ -391,10 +397,10 @@ for (const [app, shot, w, h, name] of [
   }).filter(Boolean));
   eq(`BR-04 ${name}: the meta line keeps its button beside it when 180 px are left for the text`, metas.filter((m) => m.roomy && !m.beside).map((m) => m.title), []);
   await ctx.close();
-}
+});
 
 // ── BN-01 / BN-02: Seal attachments with files ticked ─────────────────────────────────────────────
-for (const [w, h] of [[800, 720], [430, 720], [390, 720]]) {
+for (const [w, h] of [[800, 720], [430, 720], [390, 720]]) task(`BN-01/02 seal @${w}x${h}`, async () => {
   const { ctx, page } = await open("page-details", "pd-seal", w, h, { touch: w < 500 });
   const boxes = page.locator('[data-testid="pd-attachment-check"]:not(:disabled)');
   await boxes.nth(0).click(); await boxes.nth(1).click();
@@ -464,18 +470,18 @@ for (const [w, h] of [[800, 720], [430, 720], [390, 720]]) {
   ok(`BN-02 seal @${w}x${h}: Tab visited list controls`, stops >= 5);
   eq(`BN-02 seal @${w}x${h}: focus never landed under the pinned form`, under, 0);
   await ctx.close();
-}
+});
 
 // ── BN-02, first tick (breaker round 2): the tick that PINS the form does not hide that row ─────
 // scroll-padding only steers LATER focus scrolls; the first tick pinned the form over the row just
 // ticked (1440: checkbox 581-597 under the form at 581-659). Scroll an unsealed row to the bottom of
 // the visible body and tick it with a mouse, a finger and the keyboard: the row, and the focused
 // checkbox, must end above the form. A row the form does not cover must not scroll anything.
-for (const [w, h, how] of [[800, 720, "mouse"], [800, 720, "keyboard"], [390, 720, "touch"], [430, 720, "keyboard"]]) {
+for (const [w, h, how] of [[800, 720, "mouse"], [800, 720, "keyboard"], [390, 720, "touch"], [430, 720, "keyboard"]]) task(`BN-02 first tick @${w}x${h} ${how}`, async () => {
   const { ctx, page } = await open("page-details", "pd-seal", w, h, { touch: how === "touch" });
   const ids = await page.evaluate(() => [...document.querySelectorAll('[data-testid="pd-attachment-row"]')].filter((r) => r.querySelector('[data-testid="pd-attachment-check"]:not(:disabled)')).map((r) => r.dataset.id));
   ok(`BN-02 first tick @${w}x${h} ${how}: unsealed rows to tick (precondition)`, ids.length >= 3);
-  if (ids.length < 3) { await ctx.close(); continue; }
+  if (ids.length < 3) { await ctx.close(); return; }
   const place = (id, edge) => page.evaluate(([id, edge]) => {
     const body = document.querySelector(".pd-body"); const b = body.getBoundingClientRect();
     const r = document.querySelector(`[data-testid="pd-attachment-row"][data-id="${id}"]`).getBoundingClientRect();
@@ -508,12 +514,12 @@ for (const [w, h, how] of [[800, 720, "mouse"], [800, 720, "keyboard"], [390, 72
   await tick(ids[0]);
   eq(`BN-02 first tick @${w}x${h} ${how}: ticking a row the form does not cover scrolls nothing`, await page.evaluate(() => document.querySelector(".pd-body").scrollTop), p1.scrollTop);
   await ctx.close();
-}
+});
 
 // ── BRK2-01: the Macro Position switch keeps its pill shape, with the knob inside, on touch ─────
 // The 24 px touch-checkbox rule also caught .checkbox-control and made the track 24x24 with the
 // chosen knob 10 px outside it. Measured with the real cascade, mouse and touch.
-for (const [w, touch] of [[620, true], [754, true], [994, false]]) {
+for (const [w, touch] of [[620, true], [754, true], [994, false]]) task(`BRK2-01 macro @${w}`, async () => {
   const { ctx, page } = await open("realm-console", "realm-steward", w, 900, { touch });
   await page.locator('.tab-navigation .tab-button:has-text("Macro")').first().click();
   await sleep(500);
@@ -530,8 +536,30 @@ for (const [w, touch] of [[620, true], [754, true], [994, false]]) {
     ok(`BRK2-01 macro @${w} ${touch ? "touch" : "mouse"} #${i}: the label keeps its distance (${Math.round(x.gap)} px)`, x.gap >= 10);
   }
   await ctx.close();
-}
+});
+
+// ── run the scenarios ─────────────────────────────────────────────────────────────────────────────
+// Each scenario is self-contained: its own browser context (own viewport, storage, renderer process),
+// the shared read-only file servers, and every one of its own sleeps and measurements exactly as when they
+// ran one after another. Only the number of scenarios open at once changes (SV_DOM_JOBS, default 4;
+// SV_DOM_JOBS=1 is the old serial order). A scenario that throws FAILS the file (it used to crash it).
+const JOBS = Math.max(1, Math.floor(Number(process.env.SV_DOM_JOBS)) || 4);
+const timings = [];
+let nextTask = 0;
+await Promise.all(Array.from({ length: Math.min(JOBS, tasks.length) }, async () => {
+  while (nextTask < tasks.length) {
+    const t = tasks[nextTask++];
+    const t0 = Date.now();
+    try { await t.fn(); } catch (e) { ok(`${t.name}: ran to the end (${String(e && e.message || e).split("\n")[0]})`, false); }
+    timings.push([t.name, Date.now() - t0]);
+  }
+}));
+eq("every scenario ran", timings.length, tasks.length);
+// BR-03 measured, not skipped: on the desktop the reminder check returns early when no reminder is shown;
+// every check site follows a change, so a missing reminder there means the gate measured nothing.
+eq("BR-03 desktop: every reminder check found the reminder shown", floatSkipped, []);
+console.log(`responsive-dom: ${tasks.length} scenarios, ${Math.min(JOBS, tasks.length)} at a time; slowest: ${timings.sort((a, b) => b[1] - a[1]).slice(0, 3).map(([n, ms]) => `${n} ${(ms / 1000).toFixed(1)} s`).join(", ")}`);
 
 await browser.close();
-for (const k of Object.keys(servers)) servers[k].s.close();
+for (const k of Object.keys(servers)) (await servers[k]).s.close();
 report("responsive-dom");
