@@ -12,6 +12,7 @@
 //   node scripts/public-tracker/release-gate.mjs check                       # a report only (exit 0)
 //   node scripts/public-tracker/release-gate.mjs marketplace-latest          # the Marketplace's newest build (before the deploy)
 //   node scripts/public-tracker/release-gate.mjs try-first <forge>           # after `post`: hand the "Try it first" message to the watcher
+//   node scripts/public-tracker/release-gate.mjs listed <version>           # the Marketplace lists <version>: release it on the tracker
 //
 // `prepare` (scripts/release-autopilot.mjs does the writing):
 //   1. THE NOTE. When the newest note in src/server/shared/release-notes.js is not newer than the release production
@@ -35,12 +36,19 @@
 // message of the new version's More details (a per-version field) to the watcher on the workhorse (forge-app-marketing
 // apps/try-first/watcher.mjs, every 10 min, puts it on once the Marketplace lists the version): it kicks the watcher once
 // and logs its heartbeat. It never waits for the listing. Logged only.
+// `listed` (2026-10-22): run by the try-first watcher on the workhorse once per newly listed build. `post` runs the tracker
+// while the version still waits for Marketplace approval, so its issues read "waiting for Marketplace approval" until the
+// tracker runs again (SVT-149/150 on 8.19.0 did). From main, with scripts/public-tracker clean, it runs `tracker.mjs plan
+// --check-site` (read-only), and only when coverage.mjs listedSyncVerdict finds nothing in the site diff but what the
+// listing changes does it run apply, verify and public --reprove, commit the receipt and push main. Exit 0 = in sync
+// (or nothing to do); 3 = refused before anything was read (not main / tracker files dirty); 4 = the diff holds more than
+// a listing (nothing written; a person runs the reviewed apply); 5 = a tracker step failed.
 
 import { execFileSync, spawn } from "node:child_process";
-import { readFileSync, writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync, readdirSync, rmSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { productionRelease, trackerReleaseRefusal, missingRows, trackedNotes, vge, vparts, lint, plainLine } from "./coverage.mjs";
+import { productionRelease, trackerReleaseRefusal, missingRows, trackedNotes, vge, vparts, lint, plainLine, listedSyncVerdict } from "./coverage.mjs";
 import * as A from "../release-autopilot.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -281,6 +289,32 @@ if (cmd === "marketplace-latest") {
     }
   } catch (e) { log(`==> Could not commit the tracker step (${String(e && (e.stderr || e.message)).trim()})`); }
   process.exit(0);
+} else if (cmd === "listed") {
+  const version = String(process.argv[3] || "");
+  if (!/^\d+\.\d+\.\d+$/.test(version)) { log("usage: release-gate.mjs listed <version the Marketplace lists>"); process.exit(2); }
+  const branch = git(["rev-parse", "--abbrev-ref", "HEAD"]).trim();
+  if (branch !== "main") { log(`==> listed ${version}: the checkout is on ${branch}, not main; nothing read or written`); process.exit(3); }
+  if (git(["status", "--porcelain", "--", REL(HERE)]).trim()) { log(`==> listed ${version}: ${REL(HERE)} has uncommitted changes; nothing read or written`); process.exit(3); }
+  const reviews = new Set(readdirSync(HERE));
+  const plan = await capture(process.execPath, [TRACKER, "plan", "--check-site"]);
+  for (const f of readdirSync(HERE)) if (!reviews.has(f) && /^review-\d{4}-\d\d-\d\d(-\d+)?\.md$/.test(f)) rmSync(join(HERE, f), { force: true }); // plan's review file: not a record of this sync
+  if (plan.code !== 0) { log(`==> listed ${version}: tracker plan failed (exit ${plan.code}); nothing written`); process.exit(5); }
+  const v = listedSyncVerdict(plan.stdout, version, TRACKER_KEY);
+  if (!v.ok) { log(`==> listed ${version}: REFUSED, ${v.why}. Nothing written; run the reviewed tracker apply by hand.`); process.exit(4); }
+  if (!v.changes) { log(`==> listed ${version}: the tracker already shows it released; nothing to write`); process.exit(0); }
+  log(`==> listed ${version}: releasing ${v.versions.join(", ")} on the tracker (${v.issues.length} issue description(s): ${v.issues.join(", ") || "none"})`);
+  const steps = [["apply"], ["verify"], ["public", "--reprove"]].map((a) => ({ label: `tracker.mjs ${a.join(" ")}`, cmd: process.execPath, args: [TRACKER, ...a] }));
+  const r = await A.runPostDeploySteps({ run, steps, cwd: REPO, log });
+  try {
+    git(["add", "-A", "--", REL(HERE)]);
+    if (!gitOk(["diff", "--cached", "--quiet"])) {
+      git(["commit", "-q", "-m", `public tracker: ${version} listed on the Marketplace, ${v.versions.join(", ")} released${v.issues.length ? ` (${v.issues.join(", ")})` : ""}${r.ok ? ", applied, verified and re-proved public" : ` (stopped at ${r.failed})`} by the try-first watcher`, "--", REL(HERE)]);
+      log("==> Committed the tracker receipt");
+      if (!process.env.RELEASE_GATE_NO_PUSH) log(gitOk(["push", "-q", "origin", "HEAD:main"]) ? "==> Pushed main" : "==> Could not push main (projsync or the next door pushes it; nothing is lost)");
+    }
+  } catch (e) { log(`==> Could not commit the tracker step (${String(e && (e.stderr || e.message)).trim()})`); }
+  log(r.ok ? `==> Public tracker: ${version} released, verified and re-proved public` : `==> Public tracker: stopped at ${r.failed}`);
+  process.exit(r.ok ? 0 : 5);
 } else if (cmd === "check") {
   // A report only (the door no longer refuses on it): what the tracker covers and what the next deploy will write.
   const { RELEASE_NOTES, CURRENT_RELEASE } = await fresh(NOTES_F);
@@ -292,6 +326,6 @@ if (cmd === "marketplace-latest") {
   log(why ? `==> Public tracker (report; the door writes what is missing):\n${why}` : `==> Public tracker: every line through ${CURRENT_RELEASE.version} has a row and the tracker is verified`);
   process.exit(0);
 } else {
-  log("usage: release-gate.mjs prepare [--approve-major] | post | check | marketplace-latest | try-first <forge version>");
+  log("usage: release-gate.mjs prepare [--approve-major] | post | check | marketplace-latest | try-first <forge version> | listed <version>");
   process.exit(2);
 }
