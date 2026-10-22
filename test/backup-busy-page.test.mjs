@@ -88,6 +88,30 @@ for (const code of [503, 429]) {
   ok(`page gone, search ${code}: an ordinary failure is recorded`, !!status().lastError);
 }
 
+// An ANSWERED refusal is not "busy": a 403 (the app lost that space) keeps the old meaning, so the
+// run goes on (discovery, then a new page) instead of failing every hour.
+for (const [label, prefix] of [
+  ["remembered page read 403", "/wiki/api/v2/pages/5000"],
+  ["remembered page restriction read 403", "/wiki/rest/api/content/5000/restriction"],
+]) {
+  site({ busy: new Map([[prefix, 403]]) });
+  await run();
+  eq(`${label}: not a failure`, status().lastError ?? null, null);
+  eq(`${label}: a new page is made (as before)`, created(), 1);
+}
+site({ busy: new Map([["/wiki/rest/api/content/search", 403]]) });
+world.pages.delete("5000");
+await run();
+eq("page gone, search 403: not a failure", status().lastError ?? null, null);
+eq("page gone, search 403: a new page is made (as before)", created(), 1);
+{
+  const { isBusyStatus } = await import("../src/server/capsules/backup/store.js");
+  ok("one rule says what busy is", typeof isBusyStatus === "function");
+  const busy = typeof isBusyStatus === "function" ? isBusyStatus : () => null;
+  eq("busy statuses", [429, 500, 502, 503, 504].map(busy), [true, true, true, true, true]);
+  eq("answered statuses", [400, 401, 403, 404, 409, 410].map(busy), [false, false, false, false, false, false]);
+}
+
 // Positive controls: a calm Confluence still behaves as before.
 site({});
 await run();
