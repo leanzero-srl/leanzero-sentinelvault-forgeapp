@@ -41,6 +41,11 @@ function site(w) {
     }
     if (base === "/wiki/api/v2/spaces") {
       if (world.listStatus !== 200) return { status: world.listStatus, body: { message: "busy" } };
+      if (world.listPages) { // paged: Confluence may hand back short or empty pages with a next link
+        const i = Number(qs.get("cursor") || 0);
+        const more = i + 1 < world.listPages.length;
+        return { body: { results: (world.listPages[i] || []).map((s) => ({ id: s.id, key: s.key, name: s.key })), _links: more ? { next: `/wiki/api/v2/spaces?type=global&cursor=${i + 1}` } : {} } };
+      }
       return { body: { results: world.spaces.map((s) => ({ id: s.id, key: s.key, name: s.key })) } };
     }
     if (method === "POST" && base === "/wiki/api/v2/pages") {
@@ -157,14 +162,47 @@ eq("space found: no error", st.lastError ?? null, null);
 ok("space found: the backup page is remembered", !!fake.kvs.get(SETTINGS_KEY)?.pageId);
 ok("space found: a backup was recorded", !!st.lastBackup?.generationId);
 
+// 7b. "none-visible" and "not-allowed" come only from a COMPLETE list.
+const spacesN = (n, from = 100) => Array.from({ length: n }, (_, i) => ({ id: String(from + i), key: `S${from + i}` }));
+site({ listPages: [[], [{ id: "77", key: "LATE" }]] });
+await run();
+st = status();
+eq("empty first page with a next link: the next page is read and used", [st.noSpace ?? null, !!st.lastBackup?.generationId], [null, true]);
+site({ listPages: Array.from({ length: 15 }, () => []) });
+await run();
+st = status();
+eq("only empty pages, never the end: not concluded", st.noSpace ?? null, null);
+ok("only empty pages, never the end: an ordinary failure", !!st.lastError);
+site({ listPages: [spacesN(25), spacesN(5, 200)], createStatus: 403 });
+await run();
+st = status();
+eq("25 refused but more spaces exist: not concluded", st.noSpace ?? null, null);
+ok("25 refused but more spaces exist: an ordinary failure", !!st.lastError);
+site({ listPages: [spacesN(3)], createStatus: 403 });
+await run();
+eq("every space of a complete list refused: not-allowed", status().noSpace?.cause, "not-allowed");
+site({ listStatus: 403 });
+await run();
+eq("a list the app may not read (403) is an answer: none visible", status().noSpace?.cause, "none-visible");
+
+// 7c. A paused site whose next run fails differently: the tab shows only the newer failure.
+site({});
+await run();
+world.listStatus = 503;
+await run();
+st = status();
+ok("paused, then a different failure: the failure is newer than the pause", !!st.lastError && String(st.lastError.at) >= String(st.noSpace?.checkedAt));
+
 // 8. The Backup tab shows the state in place of "No backup yet", with the way out.
 {
   const { readFileSync } = await import("node:fs");
   const { fileURLToPath } = await import("node:url");
   const tab = readFileSync(fileURLToPath(new URL("../src/ui/kit/BackupTab.jsx", import.meta.url)), "utf8");
-  ok("tab: the paused state has its own notice", /st\.noSpace && \(\s*<div[^>]*data-testid="bk-no-space"/.test(tab));
+  ok("tab: the paused state has its own notice", /\{spaceless && \(\s*<div[^>]*data-testid="bk-no-space"/.test(tab));
+  ok("tab: a newer, different failure replaces the paused notice", /const spaceless = st\.noSpace && !\(st\.lastError && String\(st\.lastError\.at\) > String\(st\.noSpace\.checkedAt \|\| ""\)\);/.test(tab));
   ok("tab: it names both causes and the way out", tab.includes("not-allowed") && tab.includes("Move to another space. The app also checks again once a day"));
   ok("tab: \"No backup yet\" is not shown while paused", /!st\.noSpace && <p className="api-empty" data-testid="bk-none">No backup yet/.test(tab));
+  ok("tab: the notice reads the shown state", /Backups are paused since \{when\(spaceless\.since\)\}: \{spaceless\.cause === "not-allowed"/.test(tab));
 }
 
 console.log = LOG;

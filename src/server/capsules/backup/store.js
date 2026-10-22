@@ -133,12 +133,31 @@ export async function spaceByKey(spaceKey, { strict = false } = {}) {
 
 /**
  * Global, current spaces the app can see, in Confluence's order — candidates for the backup page's
- * home. Throws when Confluence did not answer: an empty list means "none", a failed one "could not tell".
+ * home: { spaces (at most `want`), complete }. Follows the cursor (Confluence may hand back short or
+ * EMPTY pages with a next link) until `want` spaces, the end, or `maxPages` requests. `complete` =
+ * Confluence said there are no more, the only basis for "none" or "every space refused". A busy
+ * answer (429, 5xx) throws ("could not tell"); a refused first read (another 4xx) is an answered
+ * "none" (the old meaning); a refusal on a later page leaves the list incomplete.
  */
-export async function listGlobalSpaces(limit = 25) {
-  const res = await conf(route`/wiki/api/v2/spaces?type=global&status=current&limit=${limit}`);
-  if (!res.ok) throw statusError(`Could not list the spaces (${res.status})`, res.status);
-  return ((await readJson(res))?.results || []).map((s) => ({ spaceId: String(s.id), spaceKey: s.key, spaceName: s.name }));
+export async function listGlobalSpaces(want = 25, { maxPages = 10 } = {}) {
+  const spaces = [];
+  let cursor = null;
+  for (let i = 0; i < maxPages; i++) {
+    const res = cursor
+      ? await conf(route`/wiki/api/v2/spaces?type=global&status=current&limit=${want}&cursor=${cursor}`)
+      : await conf(route`/wiki/api/v2/spaces?type=global&status=current&limit=${want}`);
+    if (!res.ok) {
+      if (isBusyStatus(res.status)) throw statusError(`Could not list the spaces (${res.status})`, res.status);
+      return { spaces, complete: i === 0 };
+    }
+    const body = await readJson(res);
+    for (const s of body?.results || []) spaces.push({ spaceId: String(s.id), spaceKey: s.key, spaceName: s.name });
+    const next = body?._links?.next;
+    cursor = next ? new URL(next, "https://x.invalid").searchParams.get("cursor") : null;
+    if (!cursor) return { spaces: spaces.slice(0, want), complete: spaces.length <= want };
+    if (spaces.length >= want) return { spaces: spaces.slice(0, want), complete: false };
+  }
+  return { spaces, complete: false };
 }
 
 /** Restrict read AND update of a page to the app's own account. */
