@@ -15,6 +15,7 @@
 // pushed); every grant has its positive control on the same space.
 import "./_forge-fake/install.mjs";
 import { eq, ok, report } from "./_assert.mjs";
+import { fileURLToPath } from "node:url"; // a path, not a %20-encoded URL: the checkout path has a space
 
 const { resetFake, onConfluence, fake } = await import("./_forge-fake/state.mjs");
 const { kvs } = await import("@forge/kvs");
@@ -269,7 +270,7 @@ eq("activity: budget", [row({ capped: ["site-budget"], asked: { enabled: true, m
 const { readFileSync, readdirSync, statSync } = await import("node:fs");
 const { join } = await import("node:path");
 const walk = (d) => readdirSync(d).flatMap((f) => { const p = join(d, f); return statSync(p).isDirectory() ? walk(p) : (/\.(js|jsx|mjs)$/.test(f) ? [p] : []); });
-const SRC = new URL("../src/", import.meta.url).pathname;
+const SRC = fileURLToPath(new URL("../src/", import.meta.url));
 const files = walk(SRC).map((p) => [p.slice(SRC.length), readFileSync(p, "utf8")]);
 const llmCallers = files.filter(([p, t]) => p !== "server/infra/forge-llm.js" && /\b(runForgeLlmJson|callForgeLlmChat)\s*\(/.test(t)).map(([p]) => p);
 eq("the Forge LLM is called from the AI queue consumer only", llmCallers, ["server/capsules/validations/ai-worker.js"]);

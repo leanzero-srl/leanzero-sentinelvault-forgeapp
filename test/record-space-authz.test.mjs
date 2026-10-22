@@ -11,6 +11,7 @@ import "./_forge-fake/install.mjs";
 import { eq, ok, report } from "./_assert.mjs";
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url"; // a path, not a %20-encoded URL: the checkout path has a space
 
 const { resetFake, onConfluence, fake } = await import("./_forge-fake/state.mjs");
 const { kvs } = await import("@forge/kvs");
@@ -458,7 +459,7 @@ ok("activity on an unmoved page: its own space (control)", [...fake.kvs.keys()].
 // isStewardOfSpaces. In the files that only handle records there is no direct check at all; in
 // workflow/actions.js only the resolvers about a SPACE (settings, definitions, pickers, dashboard,
 // bulk apply) call one directly.
-const SRC = new URL("../src/server/", import.meta.url).pathname;
+const SRC = fileURLToPath(new URL("../src/server/", import.meta.url));
 const DIRECT = /\b(authorizeSteward|isAccountStewardAsApp|isOperatorSteward|isOperatorRealmSteward)\(/;
 const RECORD_ONLY = ["capsules/editreq/actions.js", "capsules/section-seals/actions.js", "capsules/sealing/actions.js", "capsules/workflow/approvals.js", "capsules/workflow/privilege.js", "triggers.js"];
 const strict = RECORD_ONLY.flatMap((f) => readFileSync(SRC + f, "utf8").split("\n").map((l, i) => [f, i + 1, l]).filter(([, , l]) => DIRECT.test(l) && !/^\s*(\/\/|\*)/.test(l))).map(([f, n]) => `${f}:${n}`);

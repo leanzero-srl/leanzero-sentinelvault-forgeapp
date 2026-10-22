@@ -4,6 +4,7 @@
 // page-property reader appears in src/server. Real modules, in-memory Forge fake.
 import "./_forge-fake/install.mjs";
 import { eq, ok, report } from "./_assert.mjs";
+import { fileURLToPath } from "node:url"; // a path, not a %20-encoded URL: the checkout path has a space
 
 const { resetFake } = await import("./_forge-fake/state.mjs");
 const { createWorld } = await import("./_forge-fake/confluence-world.mjs");
@@ -284,7 +285,7 @@ try {
 {
   const fs = await import("node:fs");
   const path = await import("node:path");
-  const root = path.resolve(path.dirname(new URL(import.meta.url).pathname), "..", "src", "server");
+  const root = path.resolve(path.dirname(fileURLToPath(new URL(import.meta.url))), "..", "src", "server");
   const ALLOW = {
     "capsules/backup/store.js": "the backup index on the backup page, which is restricted to the app's own account",
     "capsules/classification/logic.js": "mirror writer: reads the property only to update or delete it",
