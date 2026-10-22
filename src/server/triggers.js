@@ -59,6 +59,7 @@ import { randomUUID } from "node:crypto";
 // write / attachment restore / KVS purge), never on an attempt, and never between a dedup
 // marker claim and the side effect that marker protects (T6). It never throws.
 import { recordActivity } from "./infra/activity-log.js";
+import { refileForeignActivity } from "./infra/activity-refile.js";
 import { refreshByline } from "./capsules/page-details/byline.js"; // 5.0 byline chip — refreshed once per page save, after the restore passes
 import { isWorkflowHeld, mayEditInside } from "./shared/seal-authority.js"; // SEC-2
 import { isLiveAttachmentSeal, advancesSealedVersion } from "./shared/live-seal.js";
@@ -3100,8 +3101,25 @@ export async function sweepRestoreRechecks({ limit = 20 } = {}) {
   return { judged, enforced, left };
 }
 
+// 8.20.0, once per site: activity rows that 8.9.0-8.19.0 may have filed under another site's space key
+// are put back under this site's space (infra/activity-refile.js). It runs AFTER the guard work, in the
+// time the sweep has left (the function runs on the default 25 s), so it never delays enforcement.
+const REFILE_SWEEP_DEADLINE_MS = 18_000;
 export async function pageGuardSweep(event = null, context = null) {
   const started = Date.now();
+  try { return await pageGuardSweepBody(event, context, started); }
+  finally {
+    const left = REFILE_SWEEP_DEADLINE_MS - (Date.now() - started);
+    if (left >= 2_000) {
+      try {
+        const r = await refileForeignActivity({ budgetMs: Math.min(4_000, left - 1_000) });
+        if (!r.skipped) console.info(`[ACTIVITY-REFILE] checked=${r.checked || 0} refiled=${r.refiled || 0} kept=${r.kept || 0} passedOver=${r.passedOver || 0} done=${!!r.done}${r.reason === "restored" ? " leftAlone=restored" : ""}${r.waiting ? " waiting" : ""}${r.stopped ? " stopped" : ""}`);
+      } catch (e) { console.error("[ACTIVITY-REFILE] failed:", errText(e)); }
+    }
+  }
+}
+
+async function pageGuardSweepBody(event, context, started) {
   await sweepRestoreRechecks();
   // 8.15.0: the one-time scrub of pre-8.14 validation mirrors starts from here (one KVS read per fresh
   // instance once it is done, nothing after that). Confluence installation only.

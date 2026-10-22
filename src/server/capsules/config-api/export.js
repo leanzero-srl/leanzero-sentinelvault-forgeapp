@@ -22,7 +22,11 @@ export async function exportSpaceConfig(spaceKey, accountId) {
   try {
     const spaceId = await spaceIdByKey(spaceKey);
     if (spaceId) classificationDefault = (await (await getClassificationProvider()).provider.getSpaceDefault(spaceId)) ?? null;
-  } catch (_) { /* best-effort */ }
+  } catch (e) {
+    // A default Confluence could not read fails the export (never saved as "no default"); other
+    // misses stay best-effort as before.
+    if (e?.code === "CLASSIFICATION_UNREADABLE" || e?.code === "RATE_LIMITED") throw new Error("Confluence is limiting requests right now, so the space's classification default could not be read. Nothing was exported. Try again in a minute.");
+  }
   const workflows = [];
   if (wf && !wf.error) {
     if (wf.source === "space" && wf.default) workflows.push({ workflowId: "default", def: wf.default });
@@ -48,6 +52,9 @@ export async function exportSiteConfig(accountId) {
   const policy = await invoke("load-policy", { scope: "global" }, accountId);
   const validation = await invoke("load-validation-config", { scope: "global" }, accountId);
   const provider = await invoke("classification-provider", {}, accountId);
+  // A scheme that could not be read (Confluence busy) fails the export: writing "off, no levels" into the
+  // bundle or the mirror page would be read back, and could be applied elsewhere, as the site's setup.
+  if (provider?.error) throw new Error(provider.error);
   return {
     version: BUNDLE_VERSION,
     exportedAt: new Date().toISOString(),

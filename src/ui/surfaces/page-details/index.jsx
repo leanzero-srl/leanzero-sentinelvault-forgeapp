@@ -129,7 +129,7 @@ const ClassificationBlock = ({ c, sealed, pageId, onChanged }) => {
     <section className="pd-sec" data-testid="pd-classification">
       <h4>Classification</h4>
       <div className="pd-cls-row">
-        <LevelPill level={level} sealed={sealed} testId="pd-level-pill" />
+        {!c?.error && <LevelPill level={level} sealed={sealed} testId="pd-level-pill" />}
         <span className="pd-desc" data-testid="pd-level-desc">{desc}</span>
         {canChange && levels.length > 0 && (
           <span className="pd-override">

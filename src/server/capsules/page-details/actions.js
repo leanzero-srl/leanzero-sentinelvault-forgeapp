@@ -137,7 +137,7 @@ export const pageDetailsSummary = async (req) => {
       const [effective, pageLevelId, spaceDefaultId] = await Promise.all([
         provider.effectiveLevel(pageId),
         provider.getPageLevel(pageId),
-        meta.spaceId ? provider.getSpaceDefault(meta.spaceId).catch(() => null) : Promise.resolve(null),
+        meta.spaceId ? provider.getSpaceDefault(meta.spaceId).catch((e) => { if (e?.code === "CLASSIFICATION_UNREADABLE") throw e; return null; }) : Promise.resolve(null),
       ]);
       const spaceDefault = spaceDefaultId != null ? (levels.find((l) => String(l.id) === String(spaceDefaultId)) || null) : null;
       classification = { enabled: true, reason: null, effective, pageLevelId: pageLevelId ?? null, spaceDefault, levels, canChange: canEdit, provider: provider.name };
@@ -311,7 +311,7 @@ export const pageDetailsSummary = async (req) => {
   } catch (e) { console.warn("[PAGE-DETAILS] activity failed:", errText(e)); }
 
   // ── lazy byline refresh (space-default changes reach the chip on open, not by fan-out) ─────
-  if (!sealError) {
+  if (!sealError && !classification.error) { // a classification that could not be read writes no chip
     const liveSeals = seals.filter((r) => !r.isTrashed).length;
     await writeBylineFor(pageId, { level: classification.effective?.level || null, source: classification.effective?.source || "none", sealCount: liveSeals, classificationEnabled: sw.active, workflow: workflow.assigned ? workflow.status : null })
       .catch((e) => console.warn("[PAGE-DETAILS] byline refresh failed:", errText(e)));

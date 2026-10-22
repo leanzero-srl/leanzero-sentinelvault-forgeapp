@@ -1569,7 +1569,9 @@ const ribbonSummary = async (req) => {
   // after anything changed what it should say (a space default, the site switch, a space opt-out)
   // — the same stamp-checked write the details modal does, so an unchanged chip costs one KVS read.
   // Only with a known seal count; bounded so the banner never waits long on the property write.
-  if (attachmentsOk) {
+  // A classification that is on but could not be read (Confluence busy): no byline is written or handed
+  // to the page, so a classified page never shows "Unclassified" for a failed read.
+  if (attachmentsOk && !out.classification?.unknown) {
     const write = (async () => {
       const wf = await workflowRead;
       if (wf === undefined) return null; // the workflow read failed: do not write a chip without it
@@ -1620,7 +1622,7 @@ async function ribbonViewerHalf({ pageId, accountId, liveSeals, sectionRecords }
   const cls = sw.active
     ? await settle("classification", (async () => { const { provider } = await getClassificationProvider(); return provider.effectiveLevel(pageId); })(), null)
     : null;
-  half.classification = { level: null, source: "none", enabled: sw.active };
+  half.classification = { level: null, source: "none", enabled: sw.active, ...(sw.active && cls === null ? { unknown: true } : {}) };
   if (cls?.level) {
     const l = cls.level;
     half.classification = { level: { id: String(l.id), name: l.name, color: l.color || null, rank: Number(l.rank) || 0, description: typeof l.description === "string" ? l.description.slice(0, 160) : "" }, source: cls.source || "page", enabled: true };

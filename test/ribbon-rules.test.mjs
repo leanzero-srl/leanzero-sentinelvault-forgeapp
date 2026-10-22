@@ -101,4 +101,12 @@ eq("garbage → empty", untilLabel("nope", now), "");
 ok("inside the week → weekday + time", /^[A-Za-z]{3} \d{2}:\d{2}$/.test(untilLabel("2026-09-18T17:00:00.000Z", now, "en-GB")));
 ok("beyond the week → day month + time", /^\d{1,2} [A-Za-z]{3} \d{2}:\d{2}$/.test(untilLabel("2026-10-05T09:00:00.000Z", now, "en-GB")));
 
+// 8.20.0: on, but the level could not be read this time: never "Unclassified" (a failed read is not a marking).
+{
+  const u = decideRibbon({ classification: { enabled: true, level: null, unknown: true }, waitingOnMe: quiet, lockedFor: null, alerts: [], workflow: null, validation: null });
+  eq("unknown level: shown, carried as unknown, reason classification (not unclassified)", [u.show, u.classification.unknown, u.reasons], [true, true, ["classification"]]);
+  eq("a level beats a stray unknown flag", decideRibbon({ classification: { ...INTERNAL, unknown: true } }).classification.unknown, undefined);
+  eq("off ignores unknown", decideRibbon({ classification: { enabled: false, level: null, unknown: true } }).classification.unknown, undefined);
+}
+
 report("ribbon-rules");

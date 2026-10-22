@@ -197,6 +197,18 @@ export function normalizeNativeLevel(l) {
 const readJson = async (res) => { try { return await res.json(); } catch (_) { return null; } };
 
 /**
+ * 8.20.0: a read Confluence could not answer (429, 5xx) is "could not tell", never "no level": the
+ * callers then write no chip and refuse a change instead of showing or deciding on "Unclassified".
+ */
+export const BUSY_CODE = "CLASSIFICATION_UNREADABLE";
+export function busyError(status) {
+  const e = new Error(`Confluence could not answer the classification read (${status})`);
+  e.code = BUSY_CODE;
+  return e;
+}
+export const transientStatus = (status) => status === 429 || status >= 500;
+
+/**
  * NativeProvider. `request(path, init)` is a fetch-like function (Forge's
  * asApp().requestConfluence in production; a stub under test). Every id that reaches a path has
  * already passed isContentId(). `listLevels` returns null when native is UNAVAILABLE (see
@@ -206,6 +218,7 @@ export function createNativeProvider({ request }) {
   const json = { Accept: "application/json", "Content-Type": "application/json" };
   const levelOf = async (path) => {
     const res = await request(path, { headers: { Accept: "application/json" } });
+    if (!res.ok && transientStatus(res.status)) throw busyError(res.status);
     if (!res.ok) return null;
     const body = await readJson(res);
     return body?.id != null ? String(body.id) : null;
@@ -243,7 +256,9 @@ export function createNativeProvider({ request }) {
     async effectiveLevel(pageId) {
       // Native's GET on a page already returns the inherited level, but it does not say WHERE it
       // came from; the source is what the ribbon shows, so it is derived here the same way as App.
-      const levels = (await provider.listLevels()) || [];
+      // This provider was SELECTED, so a levels answer of "unavailable" here is Confluence being busy.
+      const levels = await provider.listLevels();
+      if (levels === null) throw busyError("levels");
       const page = await provider.getPageLevel(pageId);
       let space = null;
       if (page == null) {
@@ -260,6 +275,7 @@ export function createNativeProvider({ request }) {
 export async function resolveSpaceId(request, pageId) {
   if (!isContentId(pageId)) return null;
   const res = await request(`/wiki/api/v2/pages/${pageId}`, { headers: { Accept: "application/json" } });
+  if (!res.ok && transientStatus(res.status)) throw busyError(res.status);
   if (!res.ok) return null;
   const body = await readJson(res);
   return body?.spaceId != null ? String(body.spaceId) : null;

@@ -71,6 +71,8 @@ async function listVisibleSpaces() {
 }
 
 
+const BUSY_SCHEME = "Confluence is limiting requests right now, so the classification scheme could not be read. Nothing was changed. Try again in a minute.";
+
 export const getProvider = async (req) => {
   const accountId = req.context?.accountId;
   if (!accountId) return { name: "app", levels: [], canManageLevels: false, error: NOT_AUTHORIZED };
@@ -84,7 +86,8 @@ export const getProvider = async (req) => {
     return { name: provider.name, levels, canManageLevels, enabled: sw.active };
   } catch (e) {
     console.error("[CLASSIFICATION] provider failed:", errText(e));
-    return { name: "app", levels: [], canManageLevels: false, error: "Could not load the classification scheme" };
+    // No scheme name or levels on a failure: an empty "app" answer would read as "the App scheme, no levels".
+    return { name: null, levels: [], canManageLevels: false, busy: e?.code === "RATE_LIMITED", error: e?.code === "RATE_LIMITED" ? BUSY_SCHEME : "Could not load the classification scheme" };
   }
 };
 
@@ -105,9 +108,14 @@ export const listSpaces = async (req) => {
       if (spaces.length === 0) return { spaces: [], reason: NOT_AUTHORIZED };
     }
     const { provider } = await getClassificationProvider();
+    let busyRead = false;
     const defaults = await mapLimited(spaces, 8, async (s) => {
-      try { return await provider.getSpaceDefault(s.id); } catch (_) { return null; }
+      try { return await provider.getSpaceDefault(s.id); } catch (e) { if (e?.code === "CLASSIFICATION_UNREADABLE") busyRead = true; return null; }
     });
+    // A default Confluence could not read is not shown as "no default". Deliberate trade-off: one
+    // unreadable default fails the whole list with "try again" (a partial list would show the others'
+    // rows next to a misleading "no default"), never a wrong row.
+    if (busyRead) return { spaces: [], busy: true, error: BUSY_SCHEME };
     return { spaces: spaces.map((s, i) => ({ ...s, defaultLevelId: defaults[i] ?? null })), siteAdmin };
   } catch (e) {
     console.error("[CLASSIFICATION] list-spaces failed:", errText(e));
@@ -141,7 +149,12 @@ export const setSpaceDefault = async (req) => {
     if (!siteSwitch.active) return { spaceId, ok: false, reason: classificationOffReason(siteSwitch) };
     if (levelId != null && !findLevel(levels, levelId)) return { spaceId, ok: false, reason: `Unknown classification level "${levelId}"` };
     try {
-      const current = await provider.getSpaceDefault(space.id).catch(() => null);
+      // A current default Confluence could not read is not "none": the lowering check needs it.
+      let current;
+      try { current = await provider.getSpaceDefault(space.id); } catch (e) {
+        if (e?.code === "CLASSIFICATION_UNREADABLE") return { spaceId, ok: false, busy: true, reason: BUSY_SCHEME };
+        return { spaceId, ok: false, reason: "Could not read the space's current default. Nothing was changed." };
+      }
       if (String(current ?? "") === String(levelId ?? "")) return { spaceId, ok: true, key: space.key, defaultLevelId: levelId, unchanged: true };
       // P5: lowering a default lowers every page that inherits it — one reason, or no change.
       const lowered = isDowngrade(current, levelId, levels);
@@ -177,7 +190,11 @@ export const getSpaceDefault = async (req) => {
   if (!(await isOperatorSiteAdmin(accountId)) && !(await authorizeSteward(accountId, space.key))) return { reason: NOT_AUTHORIZED };
   try {
     const [{ provider, levels }, sw] = await Promise.all([getClassificationProvider(), resolveClassificationActive(space.key)]);
-    const levelId = await provider.getSpaceDefault(space.id).catch(() => null);
+    let levelId;
+    try { levelId = await provider.getSpaceDefault(space.id); } catch (e) {
+      if (e?.code === "CLASSIFICATION_UNREADABLE") return { busy: true, error: BUSY_SCHEME };
+      levelId = null;
+    }
     return { enabled: sw.active, offReason: sw.reason, levels, levelId: findLevel(levels, levelId) ? String(levelId) : null, spaceKey: space.key };
   } catch (e) {
     console.error("[CLASSIFICATION] space-default read failed:", errText(e));
@@ -230,7 +247,7 @@ export const setPage = async (req) => {
     let toId = levelId;
     if (toId == null) {
       const spaceId = await resolveSpaceId(confluenceRequest, pageId);
-      toId = spaceId ? await provider.getSpaceDefault(spaceId).catch(() => null) : null;
+      toId = spaceId ? await provider.getSpaceDefault(spaceId) : null; // unreadable: throws to the refusal below, never "none"
       if (!findLevel(levels, toId)) toId = null;
     }
     const fromId = before?.level?.id ?? null;
@@ -245,9 +262,13 @@ export const setPage = async (req) => {
       details: { from: fromId, fromName: findLevel(levels, fromId)?.name || null, to: toId, toName: findLevel(levels, toId)?.name || null, source: levelId == null ? "space" : "page", lowered, ...(reason ? { reason } : {}) },
       version: null,
     });
-    return { ok: true, effective: await provider.effectiveLevel(pageId), pageLevelId: levelId, previousPageLevelId: pageBefore ?? null, lowered };
+    // The change has landed: a busy read of the new effective level must not report a failure.
+    let effective = null;
+    try { effective = await provider.effectiveLevel(pageId); } catch (_) { effective = null; }
+    return { ok: true, ...(effective ? { effective } : { effectiveUnknown: true }), pageLevelId: levelId, previousPageLevelId: pageBefore ?? null, lowered };
   } catch (e) {
     console.error("[CLASSIFICATION] set-page failed:", errText(e));
+    if (e?.code === "CLASSIFICATION_UNREADABLE" || e?.code === "RATE_LIMITED") return { ok: false, busy: true, reason: BUSY_SCHEME };
     return { ok: false, reason: e?.message || "Could not set the classification" };
   }
 };
@@ -255,13 +276,14 @@ export const setPage = async (req) => {
 export const manageLevels = async (req) => {
   const accountId = req.context?.accountId;
   if (!accountId || !(await isOperatorSiteAdmin(accountId))) return { ok: false, reason: NOT_AUTHORIZED };
-  const { provider } = await getClassificationProvider();
+  let provider;
+  try { ({ provider } = await getClassificationProvider()); } catch (e) { return { ok: false, busy: e?.code === "RATE_LIMITED", reason: e?.code === "RATE_LIMITED" ? BUSY_SCHEME : "Could not load the classification scheme" }; }
   if (provider.name !== "app") return { ok: false, reason: "Levels are managed in Confluence's own classification settings on this site" };
   const v = validateLevels(req.payload?.levels);
   if (!v.ok) return { ok: false, reason: v.error };
   try {
     const levels = await getAppProvider().setLevels(v.levels);
-    resetProviderCache();
+    await resetProviderCache();
     return { ok: true, levels };
   } catch (e) {
     console.error("[CLASSIFICATION] manage-levels failed:", errText(e));
@@ -348,7 +370,8 @@ const previewAssetsLevels = async (req) => {
 // the config mirror apply), plus the link record the console shows and re-imports from.
 const importAssetsLevels = async (req) => {
   const g = await assetsGuard(req); if (g) return g;
-  const { provider } = await getClassificationProvider();
+  let provider;
+  try { ({ provider } = await getClassificationProvider()); } catch (e) { return { error: e?.code === "RATE_LIMITED" ? BUSY_SCHEME : "Could not load the classification scheme" }; }
   if (provider.name !== "app") return { error: "Levels are managed in Confluence's own classification settings on this site" };
   const objectTypeId = String(req.payload?.objectTypeId || "");
   const schemaId = String(req.payload?.schemaId || "");
@@ -358,7 +381,7 @@ const importAssetsLevels = async (req) => {
   if (r.error || !r.ok) return { error: r.error || "Nothing to import" };
   try {
     const levels = await getAppProvider().setLevels(r.levels.map(({ assetsObjectKey, ...l }) => l));
-    resetProviderCache();
+    await resetProviderCache();
     const link = {
       workspaceId: r.workspaceId, schemaId, objectTypeId, objectTypeName: String(req.payload?.objectTypeName || "").slice(0, 120), schemaName: String(req.payload?.schemaName || "").slice(0, 120),
       mapping, importedAt: new Date().toISOString(), importedBy: req.context.accountId, objectKeys: r.levels.map((l) => l.assetsObjectKey), problems: r.problems,

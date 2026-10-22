@@ -25,25 +25,27 @@
  */
 import { kvs, WhereConditions } from "@forge/kvs";
 import { route } from "@forge/api";
-import { appConfluence } from "../shared/confluence-call.js";
+import { appConfluence, invocationMemo } from "../shared/confluence-call.js";
 import { accountToName, looksLikeAccountId } from "../shared/account-id.js";
 import { liveContentSpace } from "../shared/content-access.js";
 import { errText } from "../shared/action-log.js";
 
 // Twenty-odd call sites write `actor: { accountId, name: null }` (triggers, stewards acting on
 // another owner's seal, realm actions) and the feed then read "Someone denied edit access" —
-// the record had the id all along. Resolve it once here, as the app, and cache per invocation.
-const actorNameCache = new Map();
+// the record had the id all along. Resolve it once here, as the app, and remember it for THIS
+// invocation only. Never in module scope: one Forge process serves several sites, so a module-level
+// map handed one site's answer (or one site's failed lookup) to the next site's invocation.
+// A definite answer (found, or a 4xx other than 429) is remembered; a 429, a 5xx or a throw is not.
 export async function resolveActorName(accountId) {
   if (!accountId || typeof accountId !== "string") return null;
-  if (actorNameCache.has(accountId)) return actorNameCache.get(accountId);
-  let name = null;
-  try {
-    const res = await appConfluence(route`/wiki/rest/api/user?accountId=${accountId}`);
-    if (res.ok) { const d = await res.json(); name = d?.displayName || d?.publicName || null; }
-  } catch (_) { /* best effort — the record still carries the id */ }
-  actorNameCache.set(accountId, name);
-  return name;
+  const found = await invocationMemo(`activity-actor-name|${accountId}`, async () => {
+    try {
+      const res = await appConfluence(route`/wiki/rest/api/user?accountId=${accountId}`);
+      if (res.ok) { const d = await res.json(); return { name: d?.displayName || d?.publicName || null }; }
+      return res.status >= 400 && res.status < 500 && res.status !== 429 ? { name: null } : null;
+    } catch (_) { return null; /* best effort — the record still carries the id */ }
+  });
+  return found?.name ?? null;
 }
 
 /** Exact type strings — the UI formatter switches on them; the unit test pins uniqueness. */
@@ -177,20 +179,15 @@ function boundDetails(details) {
  * @param {boolean} [entry.site]         also (or only) record it on the site leg `activity-site-`
  * @returns {Promise<{id:string}|null>}   the stored id, or null when nothing was written
  */
-// Where a page is now, for filing (a minute's memo: one invocation often records several events for
-// one page). null when Confluence cannot say (the caller's space is then used, as before).
-const PAGE_SPACE_TTL_MS = 60 * 1000;
-const pageSpaceMemo = new Map();
+// Where a page is now, for filing. Remembered for THIS invocation only (one invocation often records
+// several events for one page): page ids repeat across sites and one Forge process serves several
+// sites, so a module-level memo keyed by the page id filed one site's event under another site's
+// space key. null when Confluence cannot say (the caller's space is then used, as before); a failed
+// lookup is not remembered, the next event asks again.
 async function currentSpaceKeyOfPage(pageId) {
-  const hit = pageSpaceMemo.get(pageId);
-  if (hit && Date.now() - hit.at < PAGE_SPACE_TTL_MS) return hit.key;
-  let key = null;
-  try { const live = await liveContentSpace(pageId); key = live.status === "found" ? live.spaceKey : null; } catch (_) { key = null; }
-  if (key) { // a failed lookup is not remembered: the next event asks again
-    if (pageSpaceMemo.size > 500) pageSpaceMemo.clear();
-    pageSpaceMemo.set(pageId, { key, at: Date.now() });
-  }
-  return key;
+  return invocationMemo(`activity-page-space|${pageId}`, async () => {
+    try { const live = await liveContentSpace(pageId); return live.status === "found" ? live.spaceKey : null; } catch (_) { return null; }
+  });
 }
 
 export async function recordActivity(entry) {

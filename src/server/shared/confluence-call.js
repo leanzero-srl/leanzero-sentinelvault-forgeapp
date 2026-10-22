@@ -99,6 +99,12 @@ export function invocationMemo(key, load) {
   return cur.p;
 }
 
+/** Forget one memoised answer of the current invocation (after the app changed it). No scope: nothing to forget. */
+export function forgetInvocationMemo(key) {
+  const scope = currentInvocation();
+  if (scope) scope.memo.delete(key);
+}
+
 /** Wrap a Forge function handler so each call is one invocation (memo, notes, retry deadline). */
 export const asInvocation = (handler, { budgetMs = RESOLVER_BUDGET_MS, label = null } = {}) =>
   (...args) => runInvocation(() => handler(...args), { budgetMs, label });

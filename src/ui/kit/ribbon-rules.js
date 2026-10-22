@@ -76,8 +76,11 @@ export function pickUrgent({ waitingOnMe, lockedFor, alerts } = {}) {
  */
 export function decideRibbon(input = {}) {
   const active = input.classification?.enabled === true;
+  // `unknown`: on, but the level could not be read this time (Confluence busy). Never shown as
+  // "Unclassified": a failed read is not the page's marking.
+  const unknown = active && !input.classification.level && input.classification.unknown === true;
   const classification = active
-    ? { level: input.classification.level || null, source: input.classification.level ? input.classification.source || "page" : "none", enabled: true }
+    ? { level: input.classification.level || null, source: input.classification.level ? input.classification.source || "page" : "none", enabled: true, ...(unknown ? { unknown: true } : {}) }
     : { level: null, source: "none", enabled: false };
   const urgent = pickUrgent(input);
   const reasons = [];
@@ -85,7 +88,7 @@ export function decideRibbon(input = {}) {
   if (input.workflow) reasons.push("workflow");
   if (input.validation) reasons.push("validation");
   const dismissable = reasons.length > 0;
-  if (active) reasons.unshift(classification.level ? "classification" : "unclassified");
+  if (active) reasons.unshift(classification.level || unknown ? "classification" : "unclassified");
   return { show: active || reasons.length > 0, active, urgent, classification, reasons, dismissable };
 }
 
