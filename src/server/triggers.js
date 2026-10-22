@@ -1713,7 +1713,7 @@ export async function sweepRevertToApproved(pageId, record, targetVersion = null
 export const WORKFLOW_SWEEP_RESUME = "workflow-sweep-resume";
 // Per run: at most `pages` index pages (of 100 rows), and no new ROW once `loopMs` has passed since
 // the walk began or `runMs` since the run began (the function has 25 s; the vote settling runs
-// before the walk, the reaper and inbox housekeeping after it). At least one row is judged per run.
+// before the walk, the reaper and inbox housekeeping after it). Every run moves on by at least one row.
 // SVT-149: the budget used to be checked only between index pages and the resume point saved only
 // after a whole page, so one page of 100 rows that took longer than the function's limit was
 // started again from its first row every hour and the walk never got past it. Now the resume point
@@ -1854,7 +1854,7 @@ export async function workflowSweep() {
     for (let i = 0; i < results.length; i++) {
       // The row before this one is judged (the body below leaves each row with `continue`, so this
       // bookkeeping sits at the top of the next turn; the page's last row is covered after the loop).
-      // A page's first row needs no check: the first row of a run is always judged, and a later
+      // A page's first row needs no check: the first row of a run is always judged (or passed over), and a later
       // page is fetched only when the budget allowed it.
       if (i > 0) {
         const stop = overBudget();

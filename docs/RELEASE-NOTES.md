@@ -8,7 +8,7 @@ GENERATED from `src/server/shared/release-notes.js` by `scripts/render-release-n
 
 
 Fixed:
-- If the page a sealed file is on is deleted permanently from the space's trash, the file now stays under Files you hold sealed in My work and under My Sealed Files in space settings, shown as missing, so you can still release its seal yourself from My Sealed Files. Fixes SVT-150.
+- If the page a sealed file is on is deleted permanently from the space's trash, the file now stays listed under Files you hold sealed in My work and under My Sealed Files in space settings, marked unavailable or missing, and you can release its seal from My Sealed Files as before. Fixes SVT-150.
 - On sites with very many pages in workflows, the hourly workflow check could fail to finish and start again at the same place every hour, so pages later in the list could miss their review-date expiry and state-label updates. It now continues from the last page it checked and always moves on. Fixes SVT-149.
 
 ## 8.18.0 — 2026-10-22
