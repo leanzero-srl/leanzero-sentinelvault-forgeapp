@@ -41,7 +41,8 @@
     "8.11.0": "10469",
     "8.12.0": "10502",
     "8.13.0": "10655",
-    "8.14.0": "10754"
+    "8.14.0": "10754",
+    "8.14.1": "10820"
   },
   "issues": {
     "02dc09e3ae3c6c5a": {
@@ -603,7 +604,7 @@
     ],
     "assigned": true
   },
-  "updatedAt": "2026-10-21T19:36:25.531Z",
+  "updatedAt": "2026-10-22T00:01:24.786Z",
   "projectId": "10278",
   "issueTypeScheme": {
     "id": "10636",
@@ -619,6 +620,12 @@
       "version": "6.7.0",
       "kind": "changes",
       "why": "How authenticator codes for signed actions are stored (secret storage); security mechanism topic, as the CogniRunner tracker withholds secrets lines."
+    },
+    {
+      "h": "51e4df6a02478bf4",
+      "version": "8.14.1",
+      "kind": "fixes",
+      "why": "review: Security and privacy: the row says versions before 8.14.0 kept personal data (who checked a page and who approved it anyway) in a store attached to the page itself, so anyone who can read the page may be able to read it. That is an older version missing a data-minimisation safeguard. It also gives t"
     }
   ],
   "folds": {
@@ -650,7 +657,7 @@
       "GET /rest/api/3/issue/CRBAK-1": 404,
       "GET /rest/api/3/issue/CRD-30": 404,
       "GET /rest/api/3/issue/CRS-9": 404,
-      "GET /rest/api/3/issue/CRT-423": 200,
+      "GET /rest/api/3/issue/CRT-439": 200,
       "GET /rest/api/3/issue/CS-1223": 404,
       "GET /rest/api/3/issue/CST-37": 200,
       "GET /rest/api/3/issue/DACC-5": 404,
@@ -670,8 +677,8 @@
       "GET /rest/api/3/issue/SEC-1225": 404,
       "GET /rest/api/3/issue/VOY-1992": 404,
       "anonymous site-wide search (bounded, all pages): issues per project": {
+        "CRT": 439,
         "SVT": 137,
-        "CRT": 423,
         "LZMT": 376,
         "CST": 37
       },
@@ -681,12 +688,12 @@
       "negative control": "13 fake broken answers, each failed the verdict",
       "GET /jira/software/c/projects/SVT/issues": 200
     },
-    "provenAt": "2026-10-21T19:36:25.531Z",
+    "provenAt": "2026-10-22T00:01:24.786Z",
     "proofFailures": []
   },
   "verified": {
-    "through": "8.14.0",
-    "at": "2026-10-21T19:36:03.268Z",
+    "through": "8.14.1",
+    "at": "2026-10-22T00:00:56.990Z",
     "issues": 137,
     "failures": 0
   }
