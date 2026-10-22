@@ -125,7 +125,10 @@ export const getPageActivity = async (req) => {
       cursor: cursorOf(req.payload?.cursor),
       limit: clampLimit(req.payload?.limit, 10),
     });
-    return { entries: await decorateActorNames(entries), nextCursor };
+    // The page feed shows the page's own history on the page: a title a row recorded adds nothing
+    // there, and a page renamed since must not show its old title (only the space report uses it).
+    const untitled = entries.map((e) => { if (!e || typeof e !== "object" || !("pageTitle" in e)) return e; const c = { ...e }; delete c.pageTitle; return c; });
+    return { entries: await decorateActorNames(untitled), nextCursor };
   } catch (e) {
     console.error("[ACTIVITY] get-page-activity failed:", errText(e));
     return { entries: [], nextCursor: null, error: "Could not load activity" };

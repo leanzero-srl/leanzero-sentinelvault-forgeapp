@@ -163,4 +163,15 @@ for (const status of [429, 503]) {
   eq("[7] a deleted page's feed is not handed to someone who cannot read it", [r.entries.length, r.reason], [0, "Not authorized"]);
 }
 
+{
+  // The page feed (shown on the page itself) never hands out a recorded title: a page renamed since
+  // must not show its old title there.
+  const w = await world();
+  await record();
+  w.pages.get(PAGE).title = "Renamed";
+  const r = await runInvocation(() => getPageActivity({ payload: { pageId: PAGE }, context: { accountId: NAMED } }));
+  ok("[7] a reader of the page gets its feed", r.entries.length > 0);
+  eq("[7] ... without the title the rows recorded", r.entries.some((e) => "pageTitle" in e), false);
+}
+
 report("activity-recorded-title");
