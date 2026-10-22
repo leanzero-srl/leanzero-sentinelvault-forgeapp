@@ -67,7 +67,7 @@ const pickRequests = (r) => r?.requests;
 const pickAttachments = (r) => r?.attachments;
 
 const EditRequests = ({ onChange }) => {
-  const { items, error: loadError, reload } = useList("list-my-edit-requests", pickRequests);
+  const { items, extra, error: loadError, reload } = useList("list-my-edit-requests", pickRequests);
   const [busy, setBusy] = useState(null);
   const [error, setError] = useState(null);
   const load = useCallback(async () => { await reload(); if (onChange) onChange(); }, [reload, onChange]);
@@ -103,7 +103,8 @@ const EditRequests = ({ onChange }) => {
       {error && <p className="mw-error" role="alert">{error}</p>}
       {loadError && <LoadError what="the edit requests on your sealed files" onRetry={reload} testId="mw-requests-error" />}
       {!loadError && items === null && <p className="mw-loading">Checking for requests…</p>}
-      {!loadError && items && items.length === 0 && <p className="mw-none" data-testid="mw-requests-empty">Nobody is waiting on you to release a file.</p>}
+      {!loadError && items && items.length === 0 && !(extra?.unverified > 0) && <p className="mw-none" data-testid="mw-requests-empty">Nobody is waiting on you to release a file.</p>}
+      {!loadError && extra?.unverified > 0 && <p className="mw-none" data-testid="mw-requests-unverified">{unverifiedText(extra.unverified)}</p>}
       {items && items.length > 0 && (
         <ul className="mw-list">
           {items.map((req) => {
@@ -134,7 +135,7 @@ const EditRequests = ({ onChange }) => {
 // P1-3: people asking to edit a SECTION the current user holds sealed. Same loop as the files
 // card, against the section resolvers (approve mints a section grant for the seal's lifetime).
 const SectionRequests = ({ onChange }) => {
-  const { items, error: loadError, reload } = useList("list-my-section-edit-requests", pickRequests);
+  const { items, extra, error: loadError, reload } = useList("list-my-section-edit-requests", pickRequests);
   const [busy, setBusy] = useState(null);
   const [error, setError] = useState(null);
   const load = useCallback(async () => { await reload(); if (onChange) onChange(); }, [reload, onChange]);
@@ -170,7 +171,8 @@ const SectionRequests = ({ onChange }) => {
       {error && <p className="mw-error" role="alert">{error}</p>}
       {loadError && <LoadError what="the edit requests on your sealed sections" onRetry={reload} testId="mw-section-requests-error" />}
       {!loadError && items === null && <p className="mw-loading">Checking for requests…</p>}
-      {!loadError && items && items.length === 0 && <p className="mw-none" data-testid="mw-section-requests-empty">Nobody is waiting on you to release a section.</p>}
+      {!loadError && items && items.length === 0 && !(extra?.unverified > 0) && <p className="mw-none" data-testid="mw-section-requests-empty">Nobody is waiting on you to release a section.</p>}
+      {!loadError && extra?.unverified > 0 && <p className="mw-none" data-testid="mw-section-requests-unverified">{unverifiedText(extra.unverified)}</p>}
       {items && items.length > 0 && (
         <ul className="mw-list">
           {items.map((req) => {
@@ -655,6 +657,10 @@ const SignatureCard = () => {
 
 // The header total comes from count-my-work — the same resolver the ribbon badge will call — so
 // what the badge says and what the page shows are one number. Re-counted after every decision.
+// SVT-147: requests whose page Confluence could not confirm you can view right now are in neither a
+// list nor the total; the surfaces say so instead of "nothing waiting".
+const unverifiedText = (n) => `${n === 1 ? "One more" : `${n} more`} could not be checked right now, because Confluence is limiting requests or not answering. Reload in a moment.`;
+
 const MyWork = () => {
   useEffect(() => { enablePaletteSync().catch(() => {}); }, []);
   const [count, setCount] = useState(null);
@@ -672,8 +678,8 @@ const MyWork = () => {
           <p className="mw-sub">Everything Sentinel Vault is waiting on you for, across every space — and the files you hold sealed.</p>
         </div>
         {count && (
-          <span className={`mw-total ${count.total ? "" : "mw-total-zero"}`} data-testid="mw-total" data-total={count.total} title={`${count.approvals} approvals · ${count.fileRequests} file requests · ${count.sectionRequests} section requests · ${count.accessRequests} access requests`}>
-            {count.total} waiting on you
+          <span className={`mw-total ${count.total ? "" : "mw-total-zero"}`} data-testid="mw-total" data-total={count.total} title={`${count.approvals} approvals · ${count.fileRequests} file requests · ${count.sectionRequests} section requests · ${count.accessRequests} access requests${count.unverified ? ` · ${count.unverified} could not be checked right now` : ""}`}>
+            {count.total} waiting on you{count.unverified ? ` (${count.unverified} not checked yet)` : ""}
           </span>
         )}
       </header>

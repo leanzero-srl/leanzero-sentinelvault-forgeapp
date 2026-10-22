@@ -304,8 +304,9 @@ const listMyEditRequests = async (req) => {
   // K1 index discipline: the owner's OWN prefix, confirmed by key — never a site-wide scan of
   // every request filtered client-side (which went blind past ~1,000 records, like the
   // approvals inbox did before it61).
-  const requests = await viewableProposals(await listPendingRequestsForOwner(accountId), accountId);
-  return { requests };
+  const stats = { unverified: 0 };
+  const requests = await viewableProposals(await listPendingRequestsForOwner(accountId), accountId, { stats });
+  return { requests, unverified: stats.unverified };
 };
 
 /**
@@ -881,8 +882,9 @@ export const listSectionEditGrants = async (req) => {
 const listMySectionEditRequests = async (req) => {
   const accountId = req.context.accountId;
   if (!accountId) return { requests: [] };
-  const requests = await viewableProposals(await listPendingSectionRequestsForOwner(accountId), accountId);
-  return { requests };
+  const stats = { unverified: 0 };
+  const requests = await viewableProposals(await listPendingSectionRequestsForOwner(accountId), accountId, { stats });
+  return { requests, unverified: stats.unverified };
 };
 
 /**
@@ -908,15 +910,19 @@ const listMyRequestsAction = async (req) => {
 
 const countMyWork = async (req) => {
   const accountId = req.context.accountId;
-  if (!accountId) return { approvals: 0, fileRequests: 0, sectionRequests: 0, accessRequests: 0, total: 0 };
+  if (!accountId) return { approvals: 0, fileRequests: 0, sectionRequests: 0, accessRequests: 0, total: 0, unverified: 0 };
   const settle = async (p) => { try { return (await p).length; } catch (e) { console.warn("[MY-WORK] count", errText(e)); return 0; } };
+  // One view check per page for the whole count (the arms share `memo`); a check Confluence could not
+  // answer leaves that row out of the number, as its list does, and is counted in `unverified`.
+  const stats = { unverified: 0 };
+  const memo = new Map();
   const [approvals, fileRequests, sectionRequests, accessRequests] = await Promise.all([
-    settle(waitingApprovals(accountId)),
-    settle(listPendingRequestsForOwner(accountId).then((rows) => viewableProposals(rows, accountId))),
-    settle(listPendingSectionRequestsForOwner(accountId).then((rows) => viewableProposals(rows, accountId))),
+    settle(waitingApprovals(accountId, { stats, memo })),
+    settle(listPendingRequestsForOwner(accountId).then((rows) => viewableProposals(rows, accountId, { stats, memo }))),
+    settle(listPendingSectionRequestsForOwner(accountId).then((rows) => viewableProposals(rows, accountId, { stats, memo }))),
     settle(listMyStewardRequestsCore(accountId).then((r) => r.requests)),
   ]);
-  return { approvals, fileRequests, sectionRequests, accessRequests, total: approvals + fileRequests + sectionRequests + accessRequests };
+  return { approvals, fileRequests, sectionRequests, accessRequests, total: approvals + fileRequests + sectionRequests + accessRequests, unverified: stats.unverified };
 };
 
 export const actions = [

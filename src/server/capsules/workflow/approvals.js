@@ -584,6 +584,22 @@ export async function clearPageApprovals(pageId, stateId, approvers) {
 // path (applyAiVerdict) once BOTH the human quorum AND the AI gate are satisfied. Carries the
 // full #44 anchor rule (fail-closed on null / stale version) so it can't be bypassed.
 const completingKey = (pageId) => `workflow-completing-${pageId}`;
+// SVT-146 (review): a claim is HELD only while it is fresh. A run that died keeps its claim for the
+// key's 120 s TTL; past 60 s (no completion takes that long) it is treated as gone, so a dead claim
+// cannot hold back a denial that closes the request while approvals pile up behind it.
+const CLAIM_LIVE_MS = 60000;
+async function claimHeld(pageId) {
+  const c = await kvs.get(completingKey(pageId)).catch(() => null);
+  if (!c) return false;
+  const at = Date.parse(c.at || "");
+  return !Number.isFinite(at) || Date.now() - at < CLAIM_LIVE_MS;
+}
+// After taking the claim: is the request the caller judged still the open one? A withdraw, a
+// re-request or another completion in between means nothing may be applied on that judgement.
+async function sameRequestOpen(pageId, judged) {
+  const now = await kvs.get(pendingKey(pageId)).catch(() => null);
+  return !!now && requestIdOf(now) === requestIdOf(judged);
+}
 
 async function finalizeApprovedTransition(pageId, stateId, pending, actorAccountId, actorName, voteSummary, { holdChecked = false, quorum = null } = {}) {
   // The backstop for every completion (the last vote, an AI verdict): a page that moved to another
@@ -598,11 +614,16 @@ async function finalizeApprovedTransition(pageId, stateId, pending, actorAccount
   // One-shot completion CLAIM (dedup concurrent finalizers: duplicate AI delivery, and the
   // AI-verdict-vs-last-human-vote race). KVS has no CAS, so this narrows the window; the
   // DURABLE backstop is gating every side-effect on the transition actually happening below.
-  if (await kvs.get(completingKey(pageId))) {
+  if (await claimHeld(pageId)) {
     return { success: true, outcome: "approved", transitioned: false, alreadyCompleting: true };
   }
   await setWithTtl(completingKey(pageId), { stateId, at: new Date().toISOString() }, 120000);
   try {
+    // SVT-146 (review): the request judged must still be the open one (withdrawn, re-requested or
+    // completed in between: nothing is applied on it).
+    if (!(await sameRequestOpen(pageId, pending))) {
+      return { success: false, transitioned: false, closed: true, reason: "This request was closed or asked again while the decision was applied, so nothing was moved." };
+    }
     const live = await fetchLivePageVersion(pageId);
     if (live == null) {
       return { success: false, reason: "Could not verify the page version — approval not applied, please retry." };
@@ -860,14 +881,14 @@ export async function applyAiVerdict(pageId, reviewedVersion, status, reason) {
 // holds its claim, and re-read right before the write so a closed request is not brought back.
 async function markQuorumUnknown(pageId) {
   try {
-    if (await kvs.get(completingKey(pageId))) return;
+    if (await claimHeld(pageId)) return;
     const cur = await kvs.get(pendingKey(pageId));
     if (!cur || cur.quorumUnknownAt || cur.aiGate?.status !== "passed") return;
     await kvs.set(pendingKey(pageId), { ...cur, quorumUnknownAt: Date.now() });
   } catch (e) { console.warn("[APPROVALS] quorum-unknown mark failed:", errText(e)); }
 }
 async function clearQuorumUnknown(pageId) {
-  if (await kvs.get(completingKey(pageId))) return;
+  if (await claimHeld(pageId)) return;
   const cur = await kvs.get(pendingKey(pageId));
   if (cur?.quorumUnknownAt) { const { quorumUnknownAt, ...rest } = cur; await kvs.set(pendingKey(pageId), rest); }
 }
@@ -1028,9 +1049,18 @@ export async function decideApproval({ pageId, approverAccountId, decision, reas
   // recorded) missed this vote, and the request stayed open with enough approvals. Whichever of two
   // racing votes is recorded second now sees the other.
   const latest = (await kvs.get(pendingKey(pageId)).catch(() => null)) || null;
-  if (latest && requestIdOf(latest) === requestIdOf(pending)) {
-    pending.adminDeciders = [...new Set([...(latest.adminDeciders || []), ...(pending.adminDeciders || [])])];
+  if (!latest || requestIdOf(latest) !== requestIdOf(pending)) {
+    // SVT-146 (review): the request was withdrawn, completed or asked again while this decision ran.
+    // The vote belongs to a request that is no longer open: it must not count on the new one (a
+    // re-request reset every vote), so the reset is put back, and nothing is judged on it.
+    await dropSettle(pageId, approverAccountId);
+    if (latest) {
+      await kvs.set(key, { ...record, admin: undefined, status: "pending", decidedAt: null, reason: null, signature: undefined, decidedVersion: undefined, requestedAt: latest.rerequestedAt || latest.requestedAt || record.requestedAt || null, pinnedVersion: latest.pinnedVersion ?? record.pinnedVersion ?? null }).catch(() => {});
+      return { success: false, rerequested: true, reason: "This request was asked again while you decided, so your decision was not recorded. Decide again on the new request." };
+    }
+    return { success: false, closed: true, reason: "This request was closed while you decided, so your decision was not needed." };
   }
+  pending.adminDeciders = [...new Set([...(latest.adminDeciders || []), ...(pending.adminDeciders || [])])];
   // Aggregate from strongly-consistent per-key gets over the approvers who are approvers NOW
   // (quorumNow; the list read above is reused) plus the admins who decided.
   const q = adminDespiteUnknown
@@ -1110,9 +1140,10 @@ export async function decideApproval({ pageId, approverAccountId, decision, reas
  * (a run that died before its cleanup) is not written again, nor is the requester told twice.
  */
 async function applyDenial(pageId, pending, { by, byName, reason, quorum }) {
-  if (await kvs.get(completingKey(pageId))) return { applied: false };
+  if (await claimHeld(pageId)) return { applied: false };
   await setWithTtl(completingKey(pageId), { stateId: pending.toStateId, at: new Date().toISOString() }, 120000);
   try {
+    if (!(await sameRequestOpen(pageId, pending))) return { applied: false, closed: true };
     const stateId = pending.toStateId;
     const since = Date.parse(requestIdOf(pending) || "") || 0;
     const logged = (await getWorkflowLog(pageId)).some((e) => e?.kind === "approval-denied" && e.to === stateId && (e.ts || 0) >= since);
@@ -1169,12 +1200,21 @@ export async function settleRecordedVotes(pageId) {
   }
   if (!found.length) return { done: false, why: "nothing to settle" };
   const drop = async (list) => { for (const m of list) await kvs.delete(m.key).catch(() => {}); };
+  // Not applicable yet (a role or group unreadable, a moved-page hold, the version unreadable): the next
+  // try waits 1, 2, 4 … up to 24 hours, so markers that cannot be applied never crowd out the others.
+  const backoff = async (list) => {
+    for (const m of list) {
+      const tries = (Number(m.tries) || 0) + 1;
+      const { key, record, ...rest } = m;
+      await kvs.set(key, { ...rest, tries, nextAt: Date.now() + Math.min(24, 2 ** (tries - 1)) * 3600 * 1000 }).catch(() => {});
+    }
+  };
   const pending = await kvs.get(pendingKey(pageId));
   if (!pending) { await drop(found); return { done: false, why: "closed" }; }
   const mine = found.filter((m) => m.request === requestIdOf(pending));
   await drop(found.filter((m) => !mine.includes(m)));
   if (!mine.length) return { done: false, why: "older request" };
-  if (await kvs.get(completingKey(pageId))) return { done: false, why: "completing" };
+  if (await claimHeld(pageId)) return { done: false, why: "completing" };
   const stateId = pending.toStateId;
   // The completion moved the page (its evidence names this request) but died before its cleanup.
   const current = await readPageWorkflow(pageId);
@@ -1192,9 +1232,10 @@ export async function settleRecordedVotes(pageId) {
   if (q.unknown) {
     // The decide path's one exception: in "any", a space admin's approval does not depend on an
     // approver list that cannot be read — if that person is an admin NOW.
-    if (q.unknownCause !== "list" || (pending.mode || "any") !== "any" || !approval?.record?.admin) return { done: false, why: "still unknown" };
+    approval = votes.find((v) => v.decision === "approved" && v.record?.admin === true) || null;
+    if (q.unknownCause !== "list" || (pending.mode || "any") !== "any" || !approval) { await backoff(votes); return { done: false, why: "still unknown" }; }
     const now = await adminsNow(pageId, pending, [approval.accountId]);
-    if (!now.ids.includes(approval.accountId)) return { done: false, why: "still unknown" };
+    if (!now.ids.includes(approval.accountId)) { await backoff(votes); return { done: false, why: "still unknown" }; }
     outcome = "approved";
     evidence = await listUnknownEvidence(pageId, pending, [approval.accountId]);
   } else {
@@ -1219,6 +1260,7 @@ export async function settleRecordedVotes(pageId) {
     const voteSummary = q.unknown ? "approved (space admin)" : `approved (${counted.filter((r) => r?.status === "approved").length}/${counted.length})`;
     const res = await finalizeApprovedTransition(pageId, stateId, pending, approval.accountId, approval.record?.approverName || null, voteSummary, { quorum: evidence });
     const done = res?.transitioned === true || res?.stale === true;
+    if (!done && !res?.closed) await backoff(votes);
     console.info(`[APPROVALS] settled page=${pageId} outcome=${done ? (res.stale ? "stale" : "approved") : "not-applied"}`);
     return { done, why: done ? (res.stale ? "stale" : "approved") : "not applied" };
   }
@@ -1243,6 +1285,9 @@ export async function withdrawApproval({ pageId, actorAccountId, actorName, isSt
   if (!(actorAccountId && (actorAccountId === pending.requestedBy || isSteward))) {
     return { success: false, reason: "Only the person who asked, or a space admin, can withdraw this request." };
   }
+  // SVT-146 (review): never while a decision is being applied (it would complete or close the request
+  // the moment after it was withdrawn).
+  if (await claimHeld(pageId)) return { success: false, reason: "A decision on this request is being applied right now. Nothing was changed. Try again in a moment." };
   const records = await readApprovalRecords(pageId, pending.toStateId, deciderIds(pending));
   const approvalRecord = buildApprovalRecord({ pending, records, outcome: "withdrawn", completedBy: actorAccountId, completedByName: actorName || null });
   await appendWorkflowLog(pageId, {
@@ -1343,6 +1388,7 @@ export async function rerequestApproval({ pageId, actorAccountId, actorName, isS
   const approvers = pending.approvers || [];
   const allowed = isSteward || actorAccountId === pending.requestedBy || approvers.includes(actorAccountId);
   if (!allowed) return { success: false, reason: "Only an approver, the requester or a space admin can re-request this approval" };
+  if (await claimHeld(pageId)) return { success: false, reason: "A decision on this request is being applied right now. Nothing was changed. Try again in a moment." };
   const space = pending.spaceKey || (await readPageWorkflow(pageId))?.spaceKey || null;
   // The approver arm is an approver's act NOW (approverStatusNow), like a decision: re-pinning
   // resets every recorded decision, so someone taken off the list since the request may not.
@@ -1446,34 +1492,43 @@ export async function listMyApprovals(accountId) {
 // only. SVT-147: a record with no open request (resolved, or one being opened right now) and a
 // request whose AI review did not pass are not waiting on anyone; the inbox dropped both and the
 // counts did not.
-async function approvalRows(accountId) {
+async function approvalRows(accountId, { pageId = null } = {}) {
   if (!accountId) return [];
   const out = [];
+  const approverNow = newApproverCheck({ expandGroups: false }); // the ribbon count: no group reads
+  const judge = async (key, row) => {
+    if (!row?.pageId || !row?.stateId) { await kvs.delete(key).catch(() => {}); return; }
+    const record = await kvs.get(approvalKey(row.pageId, row.stateId, accountId));
+    if (record?.status === "pending") {
+      const pending = await kvs.get(pendingKey(row.pageId));
+      if (!pending) return;
+      if (pending.aiGate?.status === "failed") return; // #46: the requester revises and re-requests first
+      // Your OWN request is not waiting on you — you cannot decide it (segregation of duties);
+      // it counted as "Waiting for you" on the ribbon and in My work (tester 2026-09-29).
+      if (pending.requestedBy === accountId) return;
+      // Taken off the space's approver list since the request: not waiting on you any more (the
+      // decision would be refused). The index row stays: being put back on the list brings it
+      // back. "unknown" still lists it (the decision then says to try again). An admin's own
+      // record (made when they decided) is not an approver-list entry.
+      if (!record.admin && (await approverNow(pending.approvers, accountId, pending.spaceKey || null)) === "no") return;
+      out.push({ record, pending });
+      return;
+    }
+    if (!record) await kvs.delete(key).catch(() => {});
+  };
+  // One page (the banner): its index row by key, never a walk of the caller's whole index.
+  if (pageId != null) {
+    const key = inboxKey(accountId, pageId);
+    const row = await kvs.get(key).catch(() => null);
+    if (row) await judge(key, row);
+    return out;
+  }
   const prefix = `workflow-inbox-${accountId}-`;
   let query = kvs.query().where("key", WhereConditions.beginsWith(prefix)).limit(100);
   let iterations = 0;
-  const approverNow = newApproverCheck({ expandGroups: false }); // the ribbon count: no group reads
   do {
     const { results, nextCursor } = await query.getMany();
-    for (const { key, value: row } of results || []) {
-      if (!row?.pageId || !row?.stateId) { await kvs.delete(key).catch(() => {}); continue; }
-      const record = await kvs.get(approvalKey(row.pageId, row.stateId, accountId));
-      if (record?.status === "pending") {
-        // Your OWN request is not waiting on you — you cannot decide it (segregation of duties);
-        // it counted as "Waiting for you" on the ribbon and in My work (tester 2026-09-29).
-        const pending = await kvs.get(pendingKey(row.pageId));
-        if (!pending) continue;
-        if (pending.aiGate?.status === "failed") continue; // #46: the requester revises and re-requests first
-        if (pending.requestedBy === accountId) continue;
-        // Taken off the space's approver list since the request: not waiting on you any more (the
-        // decision would be refused). The index row stays: being put back on the list brings it
-        // back. "unknown" still lists it (the decision then says to try again). An admin's own
-        // record (made when they decided) is not an approver-list entry.
-        if (!record.admin && (await approverNow(pending.approvers, accountId, pending.spaceKey || null)) === "no") continue;
-        out.push({ record, pending }); continue;
-      }
-      if (!record) await kvs.delete(key).catch(() => {});
-    }
+    for (const { key, value: row } of results || []) await judge(key, row);
     if (!nextCursor || ++iterations >= 15) break;
     query = kvs.query().where("key", WhereConditions.beginsWith(prefix)).limit(100).cursor(nextCursor);
   } while (true);
@@ -1486,29 +1541,41 @@ async function approvalRows(accountId) {
  * raw index and could be higher than the list). The index half (approvalRows), then what only
  * Confluence knows: the page is not in the trash or gone (an unknown answer keeps the row, as the
  * inbox always did) and the caller can view it (decideApproval refuses otherwise).
- * `pageId`: only that page's rows (the banner). `knownReadable`: page ids the caller is already
- * proven to view (the banner's own page: from the context, or checked against the payload).
+ * A view check Confluence could not answer (429/5xx) leaves the row out of the list AND the count
+ * (no title is shown for a page not proven viewable) and is counted in `stats.unverified`, so the
+ * surfaces say some could not be checked instead of a quiet "nothing waiting".
+ * `pageId`: only that page's row (the banner). `knownReadable`: page ids the caller is already proven
+ * to view (the banner's own page: from the context, or checked against the payload). `memo`: a Map
+ * shared by the arms of one invocation (pageId → view status), so a page is asked about once.
  * Returns [{ record, pending, place }], in index order.
  */
-export async function waitingApprovals(accountId, { pageId = null, knownReadable = [] } = {}) {
-  let rows = await approvalRows(accountId);
-  if (pageId != null) rows = rows.filter((r) => String(r.record.pageId) === String(pageId));
+export async function waitingApprovals(accountId, { pageId = null, knownReadable = [], stats = null, memo = null } = {}) {
+  const rows = await approvalRows(accountId, { pageId });
   if (!rows.length) return [];
   const places = await fetchPageStatuses(rows.map((r) => r.record.pageId));
   const proven = new Set((knownReadable || []).map(String));
+  const views = memo || new Map();
   const out = [];
-  for (let i = 0; i < rows.length; i += 10) { // canReadPage per page, ten at a time
+  for (let i = 0; i < rows.length; i += 10) { // one view check per page, ten at a time
     const chunk = rows.slice(i, i + 10);
     const verdicts = await Promise.all(chunk.map(async (r) => {
-      const place = places.get(String(r.record.pageId));
+      const id = String(r.record.pageId);
+      const place = places.get(id);
       if (place && (place.status === "trashed" || place.status === "missing")) return null;
-      if (!proven.has(String(r.record.pageId)) && !(await canReadPage(accountId, r.record.pageId))) return null;
+      if (!proven.has(id)) {
+        if (!views.has(id)) views.set(id, viewStatus(accountId, id));
+        const st = await views.get(id);
+        if (st.unknown) { if (stats) stats.unverified = (stats.unverified || 0) + 1; return null; }
+        if (!st.allowed) return null;
+      }
       return { ...r, place: place || null };
     }));
     out.push(...verdicts.filter(Boolean));
   }
   return out;
 }
+// Confluence's answer for one account and page: { allowed, unknown } (content-access.js; never throws).
+export const viewStatus = (accountId, pageId) => accountContentAccessStatus(accountId, pageId, READ).catch(() => ({ allowed: false, unknown: true }));
 
 // Hourly housekeeping (called from workflowSweep):
 //   (a) BACKFILL — every pending transition's approvers get an index row if they lack one, so

@@ -629,7 +629,8 @@ const listMyApprovalsAction = async (req) => {
   // not failed, page not in the trash or gone, the caller can view it) that My work's total and the
   // page banner's count use too, so the count is never higher than this list. At most 25 are listed
   // (a working list, not a report); `total` says how many there are.
-  const rows = await waitingApprovals(req.context?.accountId);
+  const stats = { unverified: 0 };
+  const rows = await waitingApprovals(req.context?.accountId, { stats });
   const out = [];
   for (const { record: r, pending, place } of rows.slice(0, 25)) {
     // WF-1: the inbox says when the page moved on since the request, so a blind Approve there
@@ -648,7 +649,9 @@ const listMyApprovalsAction = async (req) => {
       mode: pending.mode || "any",
     });
   }
-  return { approvals: out, total: rows.length };
+  // `unverified`: waiting approvals whose page Confluence could not confirm you can view right now
+  // (429/5xx): in neither the list nor the total, and said so.
+  return { approvals: out, total: rows.length, unverified: stats.unverified };
 };
 
 // The approver pickers search the site's people and groups AS THE APP, so they answer only the

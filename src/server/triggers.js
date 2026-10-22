@@ -2018,29 +2018,44 @@ export async function workflowSweep() {
     pq = kvs.query().where("key", WhereConditions.beginsWith("workflow-pending-")).limit(100).cursor(nextCursor);
   } while (true);
 
+  // Inbox index housekeeping (2026-09-05): backfill rows for in-flight approvals, drop orphans.
+  let inbox = { backfilled: 0, orphansRemoved: 0 };
+  try { inbox = await sweepApprovalIndex({ nowMs }); } catch (e) { console.error("[WORKFLOW-SWEEP] inbox index", errText(e)); }
+
   // SVT-146: votes recorded whose outcome was never applied (decideApproval's second judgement could not
-  // be made, the completion failed, the function died) are applied now. One KVS query when there are
-  // none (the idle case); at most 50 pages a run, the rest next hour.
+  // be made, the completion failed, the function died) are applied now — after the housekeeping above,
+  // until 18 s into the run (the sweep's function has 25 s), oldest marker first so a few markers that
+  // cannot be applied yet never starve the rest (each waits 1, 2, 4 … 24 h between tries). One KVS query when there are none (the idle case);
+  // at most 50 pages a run. A marker older than 30 days is dropped (its request is still open: the
+  // requester can withdraw or re-request it).
   let votesSettled = 0;
   try {
-    const pages = new Set();
+    const SETTLE_BUDGET_MS = 18000, SETTLE_MAX_AGE_MS = 30 * 24 * 3600 * 1000;
+    const oldest = new Map(); // pageId -> oldest marker time
     let sq = kvs.query().where("key", WhereConditions.beginsWith(SETTLE_PREFIX)).limit(100);
     let siter = 0;
     do {
       const { results, nextCursor } = await sq.getMany();
-      for (const { value } of results || []) if (value?.pageId) pages.add(String(value.pageId));
-      if (!nextCursor || pages.size >= 50 || ++siter >= 5) break;
+      for (const { key, value } of results || []) {
+        if (!value?.pageId) continue;
+        const at = Number(value.at) || 0;
+        if (at && nowMs - at > SETTLE_MAX_AGE_MS) { await kvs.delete(key).catch(() => {}); console.warn(`[WORKFLOW-SWEEP] settle marker dropped after 30 days page=${value.pageId}`); continue; }
+        const due = Number(value.nextAt) || at; // a marker that could not be applied yet waits (settle's backoff)
+        if (due > nowMs) continue;
+        const id = String(value.pageId);
+        if (!oldest.has(id) || due < oldest.get(id)) oldest.set(id, due);
+      }
+      if (!nextCursor || ++siter >= 5) break;
       sq = kvs.query().where("key", WhereConditions.beginsWith(SETTLE_PREFIX)).limit(100).cursor(nextCursor);
     } while (true);
-    for (const pageId of [...pages].slice(0, 50)) {
+    const pages = [...oldest.entries()].sort((x, y) => x[1] - y[1]).slice(0, 50).map(([id]) => id);
+    for (const pageId of pages) {
+      if (Date.now() - nowMs > SETTLE_BUDGET_MS) break; // the rest next hour
       try { if ((await settleRecordedVotes(pageId))?.done) votesSettled++; }
       catch (e) { console.error(`[WORKFLOW-SWEEP] settle page=${pageId}`, errText(e)); }
     }
   } catch (e) { console.error("[WORKFLOW-SWEEP] settle", errText(e)); }
 
-  // Inbox index housekeeping (2026-09-05): backfill rows for in-flight approvals, drop orphans.
-  let inbox = { backfilled: 0, orphansRemoved: 0 };
-  try { inbox = await sweepApprovalIndex({ nowMs }); } catch (e) { console.error("[WORKFLOW-SWEEP] inbox index", errText(e)); }
 
   return { body: JSON.stringify({ reverted, demoted, healed, expired, overdue, skippedTrashed, purgedPages, labelsSynced, aiTimedOut, completedLate, votesSettled, inboxBackfilled: inbox.backfilled, orphanApprovalsRemoved: inbox.orphansRemoved }) };
 }
