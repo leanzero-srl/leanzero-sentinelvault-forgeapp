@@ -225,10 +225,10 @@ try {
     const w = await approvedPage();
     for (let i = 0; i < 350; i++) await kvs.set(`workflow-idx-AA-approved-${900000 + i}`, { pageId: String(900000 + i), spaceKey: "AA", stateId: "approved" });
     w.edit(PAGE, PLAIN, "an edit the event never delivered");
-    const keep = limits.loopMs; limits.loopMs = 0; // every page is over budget: one page per run
+    const keep = limits.pages; limits.pages = 1; // one index page per run
     let reverted = 0, runs = 0;
-    try { for (; runs < 6 && !reverted; runs++) reverted = (await sweep()).reverted || 0; } finally { limits.loopMs = keep; }
-    eq("[6b] budget spent after each page: the walk still reaches the live page, one page a run", [reverted, runs], [1, 4]);
+    try { for (; runs < 6 && !reverted; runs++) reverted = (await sweep()).reverted || 0; } finally { limits.pages = keep; }
+    eq("[6b] page cap reached after each page: the walk still reaches the live page, one page a run", [reverted, runs], [1, 4]);
     await kvs.delete(RESUME);
     const realQuery = kvs.query; let pagesServed = 0;
     kvs.query = (...a) => {

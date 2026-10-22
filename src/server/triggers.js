@@ -1711,15 +1711,23 @@ export async function sweepRevertToApproved(pageId, record, targetVersion = null
 // §4.2: hourly integrity sweep — the durable backstop for dropped events. Cursor-paginated,
 // author-aware (never reverts an authorized dropped-event edit), self-healing, dedup-guarded.
 export const WORKFLOW_SWEEP_RESUME = "workflow-sweep-resume";
-// Per run: at most `pages` index pages (of 100 rows), and no new page once `loopMs` has passed since
-// the walk began (the function has 25 s, and the reaper and inbox housekeeping run after the walk).
-// Mutable only so a test can shorten the budget.
-export const WORKFLOW_SWEEP_LIMITS = { pages: 20, loopMs: 12_000 };
+// Per run: at most `pages` index pages (of 100 rows), and no new ROW once `loopMs` has passed since
+// the walk began or `runMs` since the run began (the function has 25 s; the vote settling runs
+// before the walk, the reaper and inbox housekeeping after it). At least one row is judged per run.
+// SVT-149: the budget used to be checked only between index pages and the resume point saved only
+// after a whole page, so one page of 100 rows that took longer than the function's limit was
+// started again from its first row every hour and the walk never got past it. Now the resume point
+// names the last row judged inside its page (`doneKey`), is saved at least every `saveMs` and when
+// the budget stops the walk, and a run that starts where the previous one started (it was stopped
+// before saving anything) saves after every row, so the next stop names the exact row; a row that
+// stopped three runs in a row is passed over for this pass and logged (it is judged again on the
+// next pass over the index). Mutable only so a test can shorten the budget.
+export const WORKFLOW_SWEEP_LIMITS = { pages: 20, loopMs: 12_000, runMs: 18_000, saveMs: 3_000 };
 
 export async function workflowSweep() {
   const systemAccountId = await resolveAppAccountId();
   if (!systemAccountId) return { body: JSON.stringify({ swept: 0, reason: "no app account" }) };
-  let reverted = 0, demoted = 0, healed = 0, expired = 0, overdue = 0, skippedTrashed = 0, skippedUnseen = 0;
+  let reverted = 0, demoted = 0, healed = 0, expired = 0, overdue = 0, skippedTrashed = 0, skippedUnseen = 0, skippedStuck = 0;
   const nowMs = Date.now();
   const protectionOn = contentProtectionEnabled(await kvs.get("admin-settings-global").catch(() => null));
 
@@ -1770,20 +1778,59 @@ export async function workflowSweep() {
     const q = kvs.query().where("key", WhereConditions.beginsWith("workflow-idx-")).limit(100);
     return cursor ? q.cursor(cursor) : q;
   };
-  let resumeFrom = null;
-  try { resumeFrom = (await kvs.get(WORKFLOW_SWEEP_RESUME))?.cursor || null; } catch (_) { resumeFrom = null; }
+  // The resume point (SVT-149): `cursor` fetches the index page to continue in (none = the top),
+  // `doneKey` is the last row of that page already judged (none = its first row is next). A record
+  // written before SVT-149 carries only `cursor`, which reads the same as before.
+  let saved = null;
+  try { saved = await kvs.get(WORKFLOW_SWEEP_RESUME); } catch (_) { saved = null; }
+  let resumeFrom = (typeof saved?.cursor === "string" && saved.cursor) || null;
+  let doneKey = (typeof saved?.doneKey === "string" && saved.doneKey) || null;
+  // Stall guard: `started` is where the previous run began and how many runs in a row began there.
+  // A run that begins where the previous one began means that one was stopped before it could save
+  // any progress: this run saves after every row (careful), and the third such run passes over the
+  // first row it meets, the one every stopped run was judging.
+  const startPoint = `${resumeFrom || ""}|${doneKey || ""}`;
+  const startedHere = saved?.started?.from === startPoint ? Math.max(1, Number(saved.started.n) || 1) + 1 : 1;
+  const started = { from: startPoint, n: startedHere };
+  const careful = startedHere >= 2;
+  let passOverFirst = startedHere >= 3;
+  let pageCursor = resumeFrom;
+  let lastSaveAt = Date.now();
+  const saveResume = async (rec) => {
+    lastSaveAt = Date.now();
+    await kvs.set(WORKFLOW_SWEEP_RESUME, { ...rec, started, at: new Date().toISOString() }).catch(() => {});
+  };
+  await saveResume({ cursor: resumeFrom, doneKey });
   let query = idxQuery(resumeFrom);
   let iterations = 0;
   const walkStart = Date.now();
+  const overBudget = () => Date.now() - walkStart >= WORKFLOW_SWEEP_LIMITS.loopMs || Date.now() - nowMs >= WORKFLOW_SWEEP_LIMITS.runMs;
   do {
     let page;
-    try { page = await query.getMany(); }
-    catch (e) {
-      if (!(iterations === 0 && resumeFrom)) throw e;
-      // A stored cursor Confluence's storage no longer accepts: start from the top.
-      resumeFrom = null; query = idxQuery(null); page = await query.getMany();
+    try {
+      try { page = await query.getMany(); }
+      catch (e) {
+        if (!(iterations === 0 && resumeFrom)) throw e;
+        // A stored cursor Confluence's storage no longer accepts: start from the top.
+        resumeFrom = null; doneKey = null; pageCursor = null; query = idxQuery(null); page = await query.getMany();
+      }
+    } catch (e) {
+      // A failed index read ends the run with an error, not a stop: the place stays, and the run
+      // does not count toward passing a row over (no `started`).
+      await kvs.set(WORKFLOW_SWEEP_RESUME, { cursor: pageCursor, doneKey, at: new Date().toISOString() }).catch(() => {});
+      throw e;
     }
-    const { results, nextCursor } = page;
+    const { nextCursor } = page;
+    let results = page.results || [];
+    if (doneKey) {
+      // Continue after the last row judged. Rows are listed in key order; if that row is gone, the
+      // rows that sort after it are the ones left (an unsorted page is judged whole: never skipped).
+      const at = results.findIndex((r) => r?.key === doneKey);
+      const sorted = results.every((r, i) => i === 0 || String(results[i - 1].key) <= String(r.key));
+      results = at >= 0 ? results.slice(at + 1) : sorted ? results.filter((r) => String(r.key) > doneKey) : results;
+      doneKey = null;
+    }
+    let stoppedInPage = false;
     // Where each page IS, one batch call per query page: a trashed page keeps its record (it
     // may be restored) but gets no enforcement, expiry or comment while it is in the trash. An
     // `unseen` page (page-status.js: purged, OR live behind a view restriction that leaves the app
@@ -1802,7 +1849,23 @@ export async function workflowSweep() {
       }
       return spaceKeyById.get(spaceId);
     };
-    for (const { value: idx } of (results || [])) {
+    for (let i = 0; i < results.length; i++) {
+      // The row before this one is judged (the body below leaves each row with `continue`, so this
+      // bookkeeping sits at the top of the next turn; the page's last row is covered after the loop).
+      // A page's first row needs no check: the first row of a run is always judged, and a later
+      // page is fetched only when the budget allowed it.
+      if (i > 0) {
+        const stop = overBudget();
+        if (stop || careful || Date.now() - lastSaveAt >= WORKFLOW_SWEEP_LIMITS.saveMs) await saveResume({ cursor: pageCursor, doneKey: results[i - 1].key });
+        if (stop) { stoppedInPage = true; break; }
+      }
+      const idx = results[i]?.value;
+      if (passOverFirst) {
+        passOverFirst = false;
+        skippedStuck++;
+        console.warn(`[WORKFLOW-SWEEP] page=${idx?.pageId ?? "none"} passed over: the last ${startedHere - 1} runs stopped while judging it; judged again on the next pass`);
+        continue;
+      }
       try {
         const place = places.get(String(idx?.pageId))?.status || "unknown";
         if (place === "trashed") { skippedTrashed++; continue; }
@@ -2042,10 +2105,12 @@ export async function workflowSweep() {
         }
       } catch (e) { console.error("[WORKFLOW-SWEEP]", errText(e)); }
     }
+    if (stoppedInPage) break; // the resume point inside this page is saved above
     if (!nextCursor) { await kvs.delete(WORKFLOW_SWEEP_RESUME).catch(() => {}); break; }
     // Saved after EVERY page: a run the platform stops mid-walk still moves the next one on.
-    await kvs.set(WORKFLOW_SWEEP_RESUME, { cursor: nextCursor, at: new Date().toISOString() }).catch(() => {});
-    if (++iterations >= WORKFLOW_SWEEP_LIMITS.pages || Date.now() - walkStart >= WORKFLOW_SWEEP_LIMITS.loopMs) break;
+    pageCursor = nextCursor;
+    await saveResume({ cursor: nextCursor, doneKey: null });
+    if (++iterations >= WORKFLOW_SWEEP_LIMITS.pages || overBudget()) break;
     query = idxQuery(nextCursor);
   } while (true);
 
@@ -2082,7 +2147,7 @@ export async function workflowSweep() {
   let inbox = { backfilled: 0, orphansRemoved: 0 };
   try { inbox = await sweepApprovalIndex({ nowMs }); } catch (e) { console.error("[WORKFLOW-SWEEP] inbox index", errText(e)); }
 
-  return { body: JSON.stringify({ reverted, demoted, healed, expired, overdue, skippedTrashed, skippedUnseen, labelsSynced, aiTimedOut, completedLate, votesSettled, inboxBackfilled: inbox.backfilled, orphanApprovalsRemoved: inbox.orphansRemoved }) };
+  return { body: JSON.stringify({ reverted, demoted, healed, expired, overdue, skippedTrashed, skippedUnseen, skippedStuck, labelsSynced, aiTimedOut, completedLate, votesSettled, inboxBackfilled: inbox.backfilled, orphanApprovalsRemoved: inbox.orphansRemoved }) };
 }
 
 // --- Conditions & Validations phase (runs after the body-protection pipeline) ---
