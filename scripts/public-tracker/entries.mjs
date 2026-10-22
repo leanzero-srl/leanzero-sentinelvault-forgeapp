@@ -42,6 +42,10 @@ export const COMPONENTS = {
 const JIRA_ON = "It works once a site admin has connected Jira to Sentinel Vault in Atlassian Administration.";
 
 export const ENTRIES = {
+  // 8.17.0: written by the release door on 2026-10-22 (rows: model; review pass: model).
+  "d6d43e89ed3fe4f5": ["An approval request could stay open after enough approvers had decided", "W", {"fold":"known-approval-vote-not-applied","d":"An approval request could stay open although enough approvers had decided, when Confluence was limiting Sentinel Vault's requests or answering with errors at the moment of the deciding approval, or when two approvers decided at the same time. Sentinel Vault now finishes such a request at one of its hourly checks once Confluence answers again."}],
+  "0cf9c8fa7f0c26f9": ["The My work total and the banner's Waiting for you count didn't match the lists", "M", {"fold":"known-waiting-count-higher-than-lists","d":"The total at the top of My work and the page banner's Waiting for you count now count exactly what the lists show: approval requests on pages in the trash and approval requests whose AI review did not pass are no longer counted. The approvals list says how many wait in all when there are more than it shows, the total updates after you decide from that list, and when Confluence could not answer for some of them right now, My work says so."}],
+
   // 8.16.0 (2026-10-22). Worded as what holds now (this file is public).
   "404db31677f1c667": ["A space admin's approval counts only while that person is still a space admin", "W"],
   "b6fec327b429123b": ["Deciding an approval request, a proposed change or Approve anyway needs permission to view the page", "W"],
@@ -551,6 +555,12 @@ export const KNOWN = [
     where: "My work; Space settings, Sealed Files and Access Control tabs.",
     workaround: "Wait a moment and reload the page before you rely on an empty list.",
   },
+];
+
+// Known bugs a release closed (folded into that release's note line, so the issue is Done with it).
+// Moved out of KNOWN by the release door (scripts/release-autopilot.mjs); the tracker still builds their issues.
+export const CLOSED = [
+  // closed by 8.17.0 (SVT-146), moved out of KNOWN by the release door on 2026-10-22
   // 2026-10-22: two open defects found while releasing 8.16.0, confirmed on 8.16.0 and fixed in the next release.
   {
     k: "known-approval-vote-not-applied", c: "W", affects: "8.16.0", fix: "scheduled",
@@ -559,6 +569,8 @@ export const KNOWN = [
     where: "Approval requests in a space that uses a Sentinel Vault workflow.",
     workaround: "The person who asked can press Withdraw request on the page banner and then ask for approval again. The approvers then need to decide again.",
   },
+
+  // closed by 8.17.0 (SVT-147), moved out of KNOWN by the release door on 2026-10-22
   {
     k: "known-waiting-count-higher-than-lists", c: "M", affects: "8.16.0", fix: "scheduled",
     t: "The number of things waiting on you can be higher than the lists show",
