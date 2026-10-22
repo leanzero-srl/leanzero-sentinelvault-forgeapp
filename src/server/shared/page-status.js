@@ -5,11 +5,16 @@
 //
 // `GET /wiki/api/v2/pages?id=a,b,c&status=…` answers for up to 250 ids per call (probed live:
 // a comma list, 251 → 400; `status` accepts ARCHIVED, CURRENT, DELETED, TRASHED). Two calls per
-// batch — the live set and the trashed set — and an id in neither is gone.
+// batch — the live set and the trashed set.
 //
-// FAIL CLOSED toward "present": a page is reported `missing` only when BOTH calls succeeded and
-// neither returned it. A failed call marks the whole batch `unknown` so a transient 5xx can never
-// license a purge — "a negative that authorises action must be proven, not observed".
+// An id in neither list is `unseen`: the app cannot read it, and that is ALL it means. Confluence
+// answers the app the same way for a page purged from the trash and for a LIVE page whose view
+// restriction leaves the app out (measured on wolfaenpak 2026-10-22: a restricted live page was
+// absent from both lists and 404 on every direct read). So `unseen` never licenses removing,
+// releasing or rewriting anything the app holds about the page — the hourly sweep once deleted a
+// restricted Approved page's workflow record and whole history on it. Callers hold such a page
+// as it is (no enforcement, expiry or notice while it cannot be read) and pick it up again when
+// the app can read it. A failed call marks the batch `unknown`, as before.
 import { route } from "@forge/api";
 import { appConfluence } from "./confluence-call.js";
 
@@ -28,7 +33,7 @@ export function classifyPageStatuses(ids, liveResults, trashedResults, { liveOk 
     const sid = (p) => (p.spaceId != null ? { spaceId: String(p.spaceId) } : {});
     if (l) out.set(id, { status: l.status === "archived" ? "archived" : "current", title: l.title || null, url: l._links?.webui || null, ...sid(l) });
     else if (t) out.set(id, { status: "trashed", title: t.title || null, url: t._links?.webui || null, ...sid(t) });
-    else if (liveOk && trashedOk) out.set(id, { status: "missing", title: null, url: null });
+    else if (liveOk && trashedOk) out.set(id, { status: "unseen", title: null, url: null });
     else out.set(id, { status: "unknown", title: null, url: null });
   }
   return out;
@@ -41,7 +46,7 @@ async function fetchBatch(ids, status) {
   return { ok: Array.isArray(body?.results), results: body?.results || [] };
 }
 
-// Map of String(pageId) → { status: "current"|"archived"|"trashed"|"missing"|"unknown", title, url, spaceId? }.
+// Map of String(pageId) → { status: "current"|"archived"|"trashed"|"unseen"|"unknown", title, url, spaceId? }.
 export async function fetchPageStatuses(pageIds) {
   const ids = [...new Set((pageIds || []).map((x) => String(x)).filter((x) => /^\d+$/.test(x)))];
   const out = new Map();

@@ -17,6 +17,11 @@ function toCsv(pages) {
 // the workflow settings, so the settings started ~8,000 px down. It shows this many, then "Show all".
 export const DASHBOARD_ROWS = 20;
 
+// Pages Sentinel Vault cannot read (page-status.js "unseen"): kept with their workflow, never listed.
+function UnseenNote({ n }) {
+  return <p className="wf-dash-note" data-testid="wf-dash-unseen">{n} page{n === 1 ? "" : "s"} Sentinel Vault can’t read right now {n === 1 ? "is" : "are"} not shown. Each keeps its workflow state and history. Sentinel Vault cannot check them while it cannot read them, and checks them again once it can; a page deleted for good stays in this count.</p>;
+}
+
 // #48: read-only workflow dashboard for a space — state distribution + recent pages + CSV.
 export function WorkflowDashboard({ spaceKey }) {
   const [data, setData] = useState(null);
@@ -37,7 +42,7 @@ export function WorkflowDashboard({ spaceKey }) {
   // pattern + the it16 error-surfacing direction). Empty (total 0) stays quiet by design —
   // like the approvals inbox, the dashboard doesn't clutter a space with nothing to report.
   if (data?.error) return <div className="wf-dash-error" role="status">Couldn’t load workflow status right now. Reload the page to try again.</div>;
-  if (!data || (data.total === 0 && !data.inTrash)) return null;
+  if (!data || (data.total === 0 && !data.inTrash && !data.unseen)) return null;
   // Nothing live but something in the trash: four zero cards and an empty table would be
   // clutter that says less than one sentence does.
   if (data.total === 0) {
@@ -49,7 +54,8 @@ export function WorkflowDashboard({ spaceKey }) {
             <p className="wf-dash-sub">No pages under workflow in this space.</p>
           </div>
         </div>
-        <p className="wf-dash-note" data-testid="wf-dash-in-trash">{data.inTrash} page{data.inTrash === 1 ? " is" : "s are"} in the trash and not shown; a restored page keeps its workflow state.</p>
+        {data.inTrash > 0 && <p className="wf-dash-note" data-testid="wf-dash-in-trash">{data.inTrash} page{data.inTrash === 1 ? " is" : "s are"} in the trash and not shown; a restored page keeps its workflow state.</p>}
+        {data.unseen > 0 && <UnseenNote n={data.unseen} />}
       </div>
     );
   }
@@ -128,6 +134,7 @@ export function WorkflowDashboard({ spaceKey }) {
       {data.inTrash > 0 && (
         <p className="wf-dash-note" data-testid="wf-dash-in-trash">{data.inTrash} page{data.inTrash === 1 ? " is" : "s are"} in the trash and not shown; a restored page keeps its workflow state.</p>
       )}
+      {data.unseen > 0 && <UnseenNote n={data.unseen} />}
     </div>
   );
 }

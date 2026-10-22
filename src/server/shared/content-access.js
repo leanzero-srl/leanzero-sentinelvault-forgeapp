@@ -154,8 +154,10 @@ export async function resolvePageSpace(pageId) {
 /**
  * Where a piece of content (a page or a blog post) is NOW, with a failed read told apart from
  * content Confluence no longer has: `{ status: "found", spaceId, spaceKey }`, `{ status: "gone" }`
- * (404 as a page AND as a blog post: purged; a trashed page still answers, with its space), or
- * `{ status: "error" }` (anything else). Read as the app, so a restriction never reads as "gone".
+ * (404 as a page AND as a blog post; a trashed page still answers, with its space), or
+ * `{ status: "error" }` (anything else). "gone" means only that the APP cannot read it: Confluence
+ * answers the app 404 for a purged page and for a live page whose view restriction leaves the app
+ * out alike (measured 2026-10-22), so "gone" must never license removing anything.
  */
 export async function liveContentSpace(contentId) {
   if (!contentId) return { status: "error" };

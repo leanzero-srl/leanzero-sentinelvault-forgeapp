@@ -885,8 +885,9 @@ export const getWorkflowDashboard = async (req) => {
   const extraDefs = new Map();
   const { extras } = await listSpaceWorkflows(spaceKey);
   for (const x of extras) if (x.def) extraDefs.set(x.workflowId, x.def);
-  // The index outlives the page: a trashed page keeps its row (and its state, for a restore) and
-  // a purged page's row waits for the hourly sweep. Neither is work for a steward — on
+  // The index outlives the page: a trashed page keeps its row (and its state, for a restore), and so
+  // does an unseen one (page-status.js: purged, or hidden from the app by a view restriction — the
+  // app cannot tell which, so nothing removes it). Neither is work for a steward — on
   // 2026-09-05 every one of the thirteen pages this dashboard listed for WFH was in the trash.
   // ONE batch lookup (250 ids a call) answers status AND title for every row, where each row
   // used to cost its own request for the title alone.
@@ -905,9 +906,9 @@ export const getWorkflowDashboard = async (req) => {
     const sid = status.get(String(e.pageId))?.spaceId;
     return sid != null && String(sid) !== String(ownSpaceId);
   };
-  const shown = entries.filter((e) => !["trashed", "missing"].includes(placeOf(e)) && !movedAway(e));
+  const shown = entries.filter((e) => !["trashed", "unseen"].includes(placeOf(e)) && !movedAway(e));
   const inTrash = entries.filter((e) => placeOf(e) === "trashed").length;
-  const missing = entries.filter((e) => placeOf(e) === "missing").length;
+  const unseen = entries.filter((e) => placeOf(e) === "unseen").length;
   const counts = {};
   let overdue = 0;
   for (const e of shown) {
@@ -935,7 +936,7 @@ export const getWorkflowDashboard = async (req) => {
     spaceKey,
     total: shown.length,
     inTrash,
-    missing,
+    unseen,
     truncated: shown.length > LIST_CAP,
     listCap: LIST_CAP,
     overdue,

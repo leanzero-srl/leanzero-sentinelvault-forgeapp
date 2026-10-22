@@ -24,6 +24,7 @@ import { findState, getInitialState, validateTransition, validateDemoteTarget } 
 import { nextBaselineSource, baselineFields } from "./baseline.js";
 import { withLegacySource } from "./baseline-read.js"; // a pre-8.11.0 record's history, seeded before it is extended // B2: why the baseline moved, named on every surface
 import { errText } from "../../shared/action-log.js";
+import { fetchPageStatuses } from "../../shared/page-status.js";
 
 export const WORKFLOW_STATE_PROP = "sentinel-vault-workflow";
 
@@ -231,10 +232,30 @@ export function sanitizeLabelWorkflows(input) {
   return out.slice(0, 20);
 }
 
-// How many pages sit in a state of this space (first index page — enough to refuse a delete).
+// Index rows that still hold a steward change back. A row whose page the app cannot read
+// (page-status.js "unseen": purged, or hidden from the app) does not: nobody can move that page, and
+// its record keeps its state — a page whose state is removed meanwhile is judged as enforced if it
+// was (enforce-rules.js isEnforcedNow). A failed lookup counts every row (fail closed).
+async function blockingRows(values) {
+  if (!values.length) return values;
+  const places = await fetchPageStatuses(values.map((v) => v?.pageId).filter(Boolean)).catch(() => new Map());
+  return values.filter((v) => places.get(String(v?.pageId))?.status !== "unseen");
+}
+
+// How many pages sit in a state of this space (up to 100 — enough to refuse a delete).
 async function countPagesInState(spaceKey, stateId) {
-  const { results } = await kvs.query().where("key", WhereConditions.beginsWith(`workflow-idx-${sanitize(spaceKey)}-${stateId}-`)).limit(100).getMany();
-  return (results || []).length;
+  const prefix = `workflow-idx-${sanitize(spaceKey)}-${stateId}-`;
+  let n = 0;
+  let cursor = null;
+  for (let i = 0; i < 30 && n < 100; i++) {
+    let q = kvs.query().where("key", WhereConditions.beginsWith(prefix)).limit(100);
+    if (cursor) q = q.cursor(cursor);
+    const { results, nextCursor } = await q.getMany();
+    n += (await blockingRows((results || []).map((r) => r.value))).length;
+    cursor = nextCursor;
+    if (!cursor) break;
+  }
+  return n;
 }
 
 // The space's workflows as the editor sees them: the resolved default (with where it came from)
@@ -317,7 +338,7 @@ export async function deleteSpaceWorkflow(spaceKey, workflowId) {
   let q = kvs.query().where("key", WhereConditions.beginsWith(`workflow-idx-${sanitize(spaceKey)}-`)).limit(100);
   for (let i = 0; i < 30; i++) {
     const { results, nextCursor } = await q.getMany();
-    for (const { value } of results || []) {
+    for (const value of await blockingRows((results || []).map((r) => r.value))) {
       let wid = value?.workflowId;
       if (wid === undefined && value?.pageId) wid = (await readPageWorkflow(value.pageId))?.workflowId;
       if (wid === workflowId) return { success: false, reason: "Pages in this space still run this workflow — move them to another workflow first" };
@@ -506,35 +527,13 @@ async function persistState(pageId, record, prevStateId, prevSpaceKey = record.s
   // content states once, map to them, and surface failures instead of swallowing them.)
 }
 
-// Every workflow key a page owns, gone — for a page Confluence itself has forgotten (purged from
-// the trash: v2 GET 404s). Called by the hourly sweep once `fetchPageStatuses` says `missing`,
-// never on `trashed` (a restored page keeps its state, as Comala does) and never on `unknown`.
-// The approval records + inbox rows go through the approvals module's own teardown so the
-// per-approver index stays consistent with the records.
-export async function purgePageWorkflow(pageId, { clearApprovals } = {}) {
-  const record = await readPageWorkflow(pageId);
-  const sk = sanitize(record?.spaceKey || "_");
-  const keys = [
-    `workflow-state-${pageId}`, `workflow-pending-${pageId}`, `workflow-autoassigned-${pageId}`,
-    `workflow-integrity-notified-${pageId}`, `workflow-review-notified-${pageId}`, `workflow-completing-${pageId}`,
-    `workflow-label-${pageId}`,
-  ];
-  if (record?.stateId) keys.push(`workflow-idx-${sk}-${record.stateId}-${pageId}`);
-  for (const k of keys) await kvs.delete(k).catch(() => {});
-  // Index rows under other states (a record that moved while a write failed) and the log.
-  for (const prefix of [`workflow-log-${pageId}-`]) {
-    const { results } = await kvs.query().where("key", WhereConditions.beginsWith(prefix)).limit(100).getMany();
-    for (const { key } of results || []) await kvs.delete(key).catch(() => {});
-  }
-  if (typeof clearApprovals === "function") await clearApprovals(pageId, null, null).catch(() => {});
-  return { purged: true, stateId: record?.stateId || null, spaceKey: record?.spaceKey || null };
-}
-
 /**
  * Take ONE page out of its workflow (owner, 2026-09-29: "Apply to existing pages" or a mistaken
- * start put pages in that should not be). Unlike purgePageWorkflow (a DELETED page's clean-up)
- * the history is kept and gains a "removed" entry. Refused while the page is in an enforced state
- * (Approved — its protection is the point; move it back first) or while an approval is pending.
+ * start put pages in that should not be). The history is kept and gains a "removed" entry.
+ * (No path deletes a page's workflow history: a page the app cannot read may be purged OR hidden
+ * from the app by a view restriction, and Confluence answers both the same — page-status.js.)
+ * Refused while the page is in an enforced state (Approved — its protection is the point; move it
+ * back first) or while an approval is pending.
  * PURE decision first — `removeRefusal` — so the rule is unit-tested.
  */
 export function removeRefusal({ record, stateEnforced, hasPending }) {
