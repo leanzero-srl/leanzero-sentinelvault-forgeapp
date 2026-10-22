@@ -577,6 +577,14 @@ export const KNOWN = [
     where: "Spaces with workflows turned on: review dates, the Expired state and state labels.",
     workaround: "Where the page's workflow allows it, open the Sentinel Vault banner on a page whose review date has passed and use Move to… to move it on, or set a new review date there.",
   },
+  // 2026-10-22: found while testing, live, the release of a lapsed seal on a page deleted from the trash; confirmed on the 8.18.0 code, fix scheduled.
+  {
+    k: "known-purged-page-seal-missing-from-owner-lists", c: "S", affects: "8.18.0", fix: "scheduled",
+    t: "A sealed file whose page was deleted from the trash disappears from your own list of sealed files",
+    see: "If the page a file is on is deleted permanently from the space's trash, the file's seal is kept, but the file no longer appears under Files you hold sealed in My work or under My Sealed Files in space settings, so you cannot release it yourself.",
+    where: "My work, Files you hold sealed; space settings, My Sealed Files.",
+    workaround: "Ask a space admin to release it. Space admins still see the file on the Sealed Files tab in space settings, marked Missing, and can release it there with a reason while the site setting Allow space admins to force-unseal is on.",
+  },
 ];
 
 // Known bugs a release closed (folded into that release's note line, so the issue is Done with it).
