@@ -50,6 +50,19 @@ try {
   eq("a file that hangs past the timeout: the run fails", r.code, 1);
   ok("a file that hangs: the timeout is named", /hangs\.test\.mjs: timed out after 1 s/.test(r.out));
 
+  // review 2026-10-22: a grandchild holding the pipes kept "close" (and the run) open past the timeout
+  const holder = plant("holder.test.mjs", 'import { spawn } from "node:child_process";\nspawn("sleep", ["8"], { stdio: "inherit" });\nsetTimeout(() => {}, 60000);\n');
+  const t0 = Date.now();
+  r = run([holder], { SV_TEST_TIMEOUT_S: "1" });
+  eq("a hanging file whose child holds the pipes: the run fails", r.code, 1);
+  ok(`a hanging file whose child holds the pipes: the timeout still holds (${Date.now() - t0} ms)`, Date.now() - t0 < 6000 && /holder\.test\.mjs: timed out after 1 s/.test(r.out));
+
+  // review 2026-10-22: process.exit() right after writing to a slow pipe dropped the tail (the FAILED summary)
+  const big = plant("big.test.mjs", 'const line = "x".repeat(200);\nlet s = "";\nfor (let i = 0; i < 2000; i++) s += `  FAIL row ${i} ${line}\\n`;\nprocess.stdout.write(s + "big-file: LAST LINE\\n", () => process.exit(1));\n');
+  const piped = spawnSync("/bin/sh", ["-c", `"${process.execPath}" "${RUNNER}" "${big}" | (sleep 2; cat)`], { cwd: ROOT, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
+  ok("a long failing output through a slow pipe: the file's last line arrives", /big-file: LAST LINE/.test(piped.stdout));
+  ok("a long failing output through a slow pipe: the FAILED summary arrives", /FAILED .*big\.test\.mjs: exit code 1/.test(piped.stdout));
+
   r = run([path.join(tmp, "missing.test.mjs")]);
   eq("a file that does not exist: the run fails", r.code, 1);
 
