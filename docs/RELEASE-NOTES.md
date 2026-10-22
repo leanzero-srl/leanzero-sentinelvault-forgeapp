@@ -2,7 +2,7 @@
 
 GENERATED from `src/server/shared/release-notes.js` by `scripts/render-release-notes.mjs`. Do not edit.
 
-## 8.14.1 — 2026-10-21
+## 8.15.0 — 2026-10-21
 
 **Validation statuses saved on pages before 8.14.0 no longer name anyone**
 

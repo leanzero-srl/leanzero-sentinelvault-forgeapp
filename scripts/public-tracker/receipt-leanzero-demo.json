@@ -42,7 +42,7 @@
     "8.12.0": "10502",
     "8.13.0": "10655",
     "8.14.0": "10754",
-    "8.14.1": "10820"
+    "8.15.0": "10820"
   },
   "issues": {
     "02dc09e3ae3c6c5a": {
@@ -592,6 +592,10 @@
     "8ba4a915fd791f89": {
       "key": "SVT-141",
       "id": "28565"
+    },
+    "51e4df6a02478bf4": {
+      "key": "SVT-142",
+      "id": "28614"
     }
   },
   "permissionScheme": {
@@ -604,7 +608,7 @@
     ],
     "assigned": true
   },
-  "updatedAt": "2026-10-22T00:01:24.786Z",
+  "updatedAt": "2026-10-22T00:25:13.775Z",
   "projectId": "10278",
   "issueTypeScheme": {
     "id": "10636",
@@ -620,12 +624,6 @@
       "version": "6.7.0",
       "kind": "changes",
       "why": "How authenticator codes for signed actions are stored (secret storage); security mechanism topic, as the CogniRunner tracker withholds secrets lines."
-    },
-    {
-      "h": "51e4df6a02478bf4",
-      "version": "8.14.1",
-      "kind": "fixes",
-      "why": "review: Security and privacy: the row says versions before 8.14.0 kept personal data (who checked a page and who approved it anyway) in a store attached to the page itself, so anyone who can read the page may be able to read it. That is an older version missing a data-minimisation safeguard. It also gives t"
     }
   ],
   "folds": {
@@ -652,7 +650,7 @@
     "undo": "DELETE /rest/api/3/permissionscheme/10265/permission/11703",
     "proof": {
       "GET /rest/api/3/issue/SVT-1": 200,
-      "GET /rest/api/3/issue/SVT-141": 200,
+      "GET /rest/api/3/issue/SVT-142": 200,
       "GET /rest/api/3/issue/ATLAS-2361": 404,
       "GET /rest/api/3/issue/CRBAK-1": 404,
       "GET /rest/api/3/issue/CRD-30": 404,
@@ -677,24 +675,24 @@
       "GET /rest/api/3/issue/SEC-1225": 404,
       "GET /rest/api/3/issue/VOY-1992": 404,
       "anonymous site-wide search (bounded, all pages): issues per project": {
+        "SVT": 138,
         "CRT": 439,
-        "SVT": 137,
         "LZMT": 376,
         "CST": 37
       },
-      "anonymous listing of SVT": "137 issues (receipt holds 137; 已完成 106, Backlog 31)",
+      "anonymous listing of SVT": "138 issues (receipt holds 138; 已完成 107, Backlog 31)",
       "other projects whose scheme lets anyone browse": "CRT,CST,LZMT",
       "public trackers (allowlist)": "CRT,SVT,LZMT,CST",
       "negative control": "13 fake broken answers, each failed the verdict",
       "GET /jira/software/c/projects/SVT/issues": 200
     },
-    "provenAt": "2026-10-22T00:01:24.786Z",
+    "provenAt": "2026-10-22T00:25:13.775Z",
     "proofFailures": []
   },
   "verified": {
-    "through": "8.14.1",
-    "at": "2026-10-22T00:00:56.990Z",
-    "issues": 137,
+    "through": "8.15.0",
+    "at": "2026-10-22T00:24:51.750Z",
+    "issues": 138,
     "failures": 0
   }
 }

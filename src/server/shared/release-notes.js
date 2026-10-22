@@ -12,7 +12,7 @@ const note = (n) => Object.freeze({ ...n, changes: Object.freeze([...(n.changes 
 
 export const RELEASE_NOTES = Object.freeze([
   note({
-    version: "8.14.1",
+    version: "8.15.0",
     date: "2026-10-21",
     headline: "Validation statuses saved on pages before 8.14.0 no longer name anyone",
     changes: [],
