@@ -19,6 +19,19 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { ok, report } from "./_assert.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+// The clone links THIS checkout's node_modules, and the door refuses dependencies that do not match package-lock.json
+// (scripts/check-installed-deps.mjs). So a checkout whose node_modules is stale fails most cases for a reason that is
+// not the door's: the workhorse's primary checkout, fast-forwarded to a lock with markdown-it 14.3.3 while 14.3.2 was
+// still installed, gave 37/78 with nothing but "expected truthy" (2026-10-22). Name the cause once and stop.
+{
+  const { installedDepsProblems } = await import(pathToFileURL(path.join(root, "scripts/check-installed-deps.mjs")).href);
+  let problems;
+  try { problems = installedDepsProblems(root); } catch (e) { problems = [e.message]; }
+  if (problems.length) {
+    throw new Error(`deploy-door: cannot test the door here: ${root}'s node_modules does not match its package-lock.json `
+      + `(${problems.join("; ")}). The door would refuse every deploy for that reason alone. Run \`npm ci\` in this checkout, then run the test again.`);
+  }
+}
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "sv-door-"));
 const repo = path.join(tmp, "repo"), bin = path.join(tmp, "bin");
 const git = (...a) => execFileSync("git", ["-C", repo, "-c", "user.name=door-test", "-c", "user.email=door-test@invalid", ...a], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
