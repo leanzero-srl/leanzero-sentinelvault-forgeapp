@@ -21,7 +21,7 @@
  *        the page banner still showed the request. Written with the approval records, deleted
  *        with them, backfilled hourly by workflowSweep for approvals opened before this shipped.
  *   workflow-settle-{pageId}-{accountId}
- *        = { pageId, accountId, decision, request, at }
+ *        = { pageId, accountId, decision, judged, request, at }
  *        SVT-146: a vote written AHEAD of being recorded. decideApproval drops it once the vote's
  *        outcome is applied; whatever is left (the second judgement could not be made, the
  *        completion failed, the function died) is applied by the hourly sweep (settleRecordedVotes).
@@ -1000,7 +1000,9 @@ export async function decideApproval({ pageId, approverAccountId, decision, reas
   // SVT-146: written AHEAD of the vote, so a vote whose outcome is not applied below (the second
   // judgement cannot be made, the completion fails, the function dies) is applied by the hourly sweep
   // (settleRecordedVotes). Dropped below once the outcome is applied. A failed write records nothing.
-  await kvs.set(settleKey(pageId, approverAccountId), { pageId: String(pageId), accountId: approverAccountId, decision, request: requestIdOf(pending), at: Date.now() });
+  // `judged`: what the request's outcome was with this vote counted, when it was cast (q0) — the sweep
+  // completes a quorum re-judged after removals only on an approval judged "approved" then.
+  await kvs.set(settleKey(pageId, approverAccountId), { pageId: String(pageId), accountId: approverAccountId, decision, judged: q0.unknown ? null : (q0.outcome || null), request: requestIdOf(pending), at: Date.now() });
 
   record.status = decision;
   record.decidedAt = new Date().toISOString();
@@ -1152,9 +1154,10 @@ async function applyDenial(pageId, pending, { by, byName, reason, quorum }) {
  *  - A completion that moved the page but died before its cleanup: only the cleanup runs.
  *  - A marker whose vote was never recorded: dropped.
  *  - The request still cannot be judged (a role or group unreadable): kept for the next run.
- *  - Approved: completed only if one of the votes left is an APPROVAL (a "no" never completes a
- *    request, the decide path's rule) and the AI review, when required, passed (else the verdict
- *    completes it). Denied: closed. Pending: the markers go (a later vote judges it).
+ *  - Approved: completed only if one of the votes left is an APPROVAL that counts now (a "no" never
+ *    completes a request, the decide path's rule), the quorum was not met only by approvers taken off
+ *    the list after that vote, and the AI review, when required, passed (else the verdict completes
+ *    it). Denied: closed, named after a vote that counts. Pending: the markers go (a later vote judges it).
  * Returns { done, why }; `done` = this run closed the request (`why`: an internal tag, never shown).
  */
 export async function settleRecordedVotes(pageId) {
@@ -1183,7 +1186,7 @@ export async function settleRecordedVotes(pageId) {
   const votes = mine.map((m, i) => ({ ...m, record: records[i] })).filter((v) => v.record?.status === v.decision);
   await drop(mine.filter((m) => !votes.some((v) => v.key === m.key)));
   if (!votes.length) return { done: false, why: "no recorded vote" };
-  const approval = votes.find((v) => v.decision === "approved");
+  let approval = votes.find((v) => v.decision === "approved");
   const q = await quorumNow(pageId, pending);
   let outcome; let evidence;
   if (q.unknown) {
@@ -1195,7 +1198,19 @@ export async function settleRecordedVotes(pageId) {
     outcome = "approved";
     evidence = await listUnknownEvidence(pageId, pending, [approval.accountId]);
   } else {
-    outcome = q.outcome === "approved" && !approval ? "pending" : q.outcome;
+    // Only votes that COUNT now (approvers on the space's list, admins who are admins now) can stand in
+    // for the decision that completes or closes it, and be named as who did (review: a removed person's
+    // approval must neither complete a request nor be its completedBy).
+    const counts = new Set(q.counted || []);
+    const countedApproval = votes.find((v) => v.decision === "approved" && counts.has(v.accountId));
+    // A quorum met only because approvers were taken off the list after the vote (`rejudged`) is not
+    // completed by the sweep (the AI pass's rule, humanQuorumState): only an approval that was itself
+    // judged to complete the request when it was cast (`judged`, decideApproval's q0) may complete it
+    // then — a removal before the vote is what the decide path accepted; one after it is nobody's act.
+    const rejudgedOk = !q.rejudged || q.withRemovedPending === "approved" || (countedApproval?.judged === "approved");
+    if (q.outcome === "approved") outcome = countedApproval && rejudgedOk ? "approved" : "pending";
+    else outcome = q.outcome;
+    approval = countedApproval || null;
     evidence = { counted: q.counted, effective: q.effective, min: q.min };
   }
   if (outcome === "approved") {
@@ -1208,7 +1223,9 @@ export async function settleRecordedVotes(pageId) {
     return { done, why: done ? (res.stale ? "stale" : "approved") : "not applied" };
   }
   if (outcome === "denied") {
-    const denial = votes.find((v) => v.decision === "denied") || votes[0];
+    const counts = new Set(q.counted || []);
+    const denial = votes.find((v) => v.decision === "denied" && counts.has(v.accountId)) || votes.find((v) => counts.has(v.accountId));
+    if (!denial) { await drop(votes); return { done: false, why: "no counted vote" }; } // the next counted vote closes it
     const d = await applyDenial(pageId, pending, { by: denial.accountId, byName: denial.record?.approverName || null, reason: denial.record?.reason || null, quorum: evidence });
     console.info(`[APPROVALS] settled page=${pageId} outcome=${d.applied ? "denied" : "busy"}`);
     return { done: d.applied, why: d.applied ? "denied" : "completing" };
