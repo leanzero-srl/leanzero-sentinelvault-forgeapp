@@ -249,7 +249,19 @@ export const setPage = async (req) => {
       // Confluence's own scheme: a page level equal to the space default reads as following it (logic.js
       // place), so "use space default" still sends the reset, and a page can never stay pinned to a level
       // the person asked it to stop holding. Confluence answers 204 when there is nothing to reset.
-      if (levelId == null && provider.name === "native") await provider.resetPage(pageId);
+      if (levelId == null && provider.name === "native") {
+        await provider.resetPage(pageId); // measured: 204 also on a page with no level and no space default
+        await refreshByline(pageId).catch((e) => console.warn("[BYLINE] set-page refresh failed:", errText(e)));
+        // A pin equal to the space default may just have been removed: it is kept in the page's activity.
+        if (before?.level?.id) {
+          await recordActivity({
+            type: "classification.page-set", pageId: String(pageId), spaceKey: await resolvePageSpaceKey(pageId).catch(() => null),
+            actor: { accountId, name: null }, target: { kind: "page", id: String(pageId), name: null },
+            details: { from: before.level.id, fromName: before.level.name || null, to: before.level.id, toName: before.level.name || null, source: "space", lowered: false },
+            version: null,
+          });
+        }
+      }
       return { ok: true, unchanged: true, effective: before, pageLevelId: levelId };
     }
     // Confluence's own scheme refuses a page level LESS sensitive than the space's default (HTTP 400
