@@ -263,6 +263,31 @@ eq("AI review pending: settle does not complete it", await stateNow(), IN_REVIEW
 eq("AI review pending: the request stays open for the AI verdict", await stillOpen(), true);
 eq("AI review pending: nothing left to settle (the verdict completes it)", (await markers()).length, 0);
 
+// ══ 7b. Approvers taken off the list AFTER the vote: the sweep does not complete on that ══════════════
+// min 2 of [X, Y, Z]; X approved (judged "pending" when cast: one of two); then Y and Z are taken off the
+// space's list, so the quorum re-clamps to 1. Nobody acted after the removal: not completed.
+const vote = (who, status) => kvs.set(`workflow-approval-${PAGE}-${APPROVED}-approval-${who}`, { approverAccountId: who, status, approverName: who });
+const marker = (who, decision, judged) => kvs.set(`workflow-settle-${PAGE}-${who}`, { pageId: PAGE, accountId: who, decision, judged, request: REQ_AT, at: Date.now() });
+await world({ approval: { approvers: users(X), mode: "min", min: 2 } }); await openRequest({ snapshot: [X, Y, Z], mode: "min", min: 2 });
+await vote(X, "approved"); await marker(X, "approved", "pending");
+await settleRecordedVotes(PAGE);
+eq("removal after the vote: the sweep does not complete the re-clamped quorum", await stateNow(), IN_REVIEW);
+eq("removal after the vote: the request stays open (an explicit approval or a re-request finishes it)", await stillOpen(), true);
+// The same, but the approval was judged to complete it when cast (the removal came before the vote,
+// which the decide path accepts) and only the completion failed: the sweep completes it.
+await world({ approval: { approvers: users(X), mode: "min", min: 2 } }); await openRequest({ snapshot: [X, Y, Z], mode: "min", min: 2 });
+await vote(X, "approved"); await marker(X, "approved", "approved");
+await settleRecordedVotes(PAGE);
+eq("removal before the vote, completion failed: the sweep completes it", await stateNow(), APPROVED);
+
+// The vote left to settle is by someone taken off the list since: it neither completes the request nor
+// is named as who completed it. any-of [X, Y]: Y approved (counts), X approved and was removed.
+await world({ approval: { approvers: users(Y), mode: "any" } }); await openRequest();
+await vote(Y, "approved"); await vote(X, "approved"); await marker(X, "approved", "approved");
+await settleRecordedVotes(PAGE);
+eq("a removed approver's vote does not complete the request from the sweep", await stateNow(), IN_REVIEW);
+eq("a removed approver's vote: its marker goes", (await markers()).length, 0);
+
 // ══ 8. Withdraw and a completed request remove what was left ═════════════════════════════════════════
 await world({ approval: { approvers: users(X, Y), mode: "any" } }); await openRequest();
 await kvs.set(`workflow-settle-${PAGE}-${X}`, { pageId: PAGE, accountId: X, decision: "approved", request: REQ_AT, at: Date.now() });
