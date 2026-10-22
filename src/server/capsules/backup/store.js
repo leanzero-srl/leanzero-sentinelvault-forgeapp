@@ -63,10 +63,17 @@ export async function findBackupPages() {
   }));
 }
 
-/** One page by id as the app; null when it is gone or the app cannot see it. */
-export async function readPage(pageId) {
+/**
+ * One page by id as the app; null when it is gone or the app cannot see it. `strict`: only a 404
+ * reads as gone; any other failure (429, 5xx) THROWS ("could not tell"), so ensureBackupPage never
+ * makes a second backup page because Confluence was busy.
+ */
+export async function readPage(pageId, { strict = false } = {}) {
   const res = await conf(route`/wiki/api/v2/pages/${pageId}`);
-  if (!res.ok) return null;
+  if (!res.ok) {
+    if (strict && res.status !== 404) throw statusError(`Could not read the backup page (${res.status})`, res.status);
+    return null;
+  }
   const p = await readJson(res);
   return p?.status === "current" ? { pageId: String(p.id), title: p.title, spaceId: String(p.spaceId), authorId: p.authorId || null } : null;
 }
@@ -76,11 +83,11 @@ export async function readPage(pageId) {
  * person cannot plant a look-alike page for a reinstalled app to adopt), titled as one, and
  * restricted to the app alone. Every door that reads or writes a backup page goes through this.
  */
-export async function isBackupPage(pageId) {
-  const p = await readPage(pageId);
+export async function isBackupPage(pageId, { strict = false } = {}) {
+  const p = await readPage(pageId, { strict });
   if (!p || !/^Sentinel Vault backup/.test(p.title)) return false;
   if (p.authorId !== (await appAccountId())) return false;
-  return isRestrictedToApp(p.pageId);
+  return isRestrictedToApp(p.pageId, { strict });
 }
 
 /** Throwing form for the doors. Returns the page id. */
@@ -173,11 +180,14 @@ export async function createBackupPage(spaceId, environmentType) {
   return { pageId, title, spaceId: String(spaceId) };
 }
 
-/** The page's restrictions name ONLY the app (a precondition for writing anything to it). */
-export async function isRestrictedToApp(pageId) {
+/** The page's restrictions name ONLY the app (a precondition for writing anything to it). `strict`: as readPage. */
+export async function isRestrictedToApp(pageId, { strict = false } = {}) {
   const me = await appAccountId();
   const res = await conf(route`/wiki/rest/api/content/${pageId}/restriction`);
-  if (!res.ok) return false;
+  if (!res.ok) {
+    if (strict && res.status !== 404) throw statusError(`Could not read the backup page's restrictions (${res.status})`, res.status);
+    return false;
+  }
   const rows = (await readJson(res))?.results || [];
   const readRow = rows.find((r) => r.operation === "read");
   const users = (readRow?.restrictions?.user?.results || []).map((u) => u.accountId);
