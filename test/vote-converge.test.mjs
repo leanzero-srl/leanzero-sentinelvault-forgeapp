@@ -335,7 +335,7 @@ await vote(X, "approved"); await marker(X, "approved", "approved");
 }
 // A dead claim (a run that died 90 s ago) does not hold back a denial that closes the request.
 await world({ approval: { approvers: users(X, Y), mode: "all" } }); await openRequest({ mode: "all" });
-await kvs.set(`workflow-completing-${PAGE}`, { stateId: APPROVED, at: new Date(Date.now() - 90000).toISOString() });
+await kvs.set(`workflow-completing-${PAGE}`, { stateId: APPROVED, at: new Date(Date.now() - 150000).toISOString() });
 eq("dead claim: Y's denial closes the all-of request", (await decide(Y, "denied"))?.outcome, "denied");
 eq("dead claim: closed", await stillOpen(), false);
 // A live claim: withdraw waits.
@@ -343,6 +343,73 @@ await world({ approval: { approvers: users(X, Y), mode: "any" } }); await openRe
 await kvs.set(`workflow-completing-${PAGE}`, { stateId: APPROVED, at: new Date().toISOString() });
 eq("live claim: withdraw is refused for now", (await approvals.withdrawApproval({ pageId: PAGE, actorAccountId: REQUESTER, actorName: "Req" }))?.success, false);
 eq("live claim: the request is still open", await stillOpen(), true);
+
+// ══ 7d. Diff-review round: the request changes after the vote's same-request check ═══════════════════
+// Re-requested between decideApproval's check of the open request and the completion's own read of it:
+// the completion compares with the request the vote was judged on, so it moves nothing.
+await world({ approval: { approvers: users(X, Y), mode: "any" } }); await openRequest();
+{
+  const realGet = kvs.get; let armed = false; let n = 0;
+  const undo = afterVoteOf(X, async () => { armed = true; });
+  kvs.get = async (k) => {
+    const v = await realGet(k);
+    if (armed && k === `workflow-pending-${PAGE}` && ++n === 1) {
+      // the vote's check has just read the open request: the re-request lands now
+      kvs.get = realGet; armed = false;
+      await kvs.set(`workflow-pending-${PAGE}`, { ...v, rerequestedAt: new Date().toISOString() });
+      for (const a of [X, Y]) await kvs.set(`workflow-approval-${PAGE}-${APPROVED}-approval-${a}`, { approverAccountId: a, status: "pending", pinnedVersion: 3, requestedAt: new Date().toISOString() });
+    }
+    return v;
+  };
+  const r = await decide(X, "approved");
+  kvs.get = realGet; undo();
+  eq("re-requested after the check: the page did not move", await stateNow(), IN_REVIEW);
+  ok("re-requested after the check: not reported as moved", r?.transitioned !== true);
+}
+// A storage error on that check is not "closed": the vote stays to be applied.
+await world({ approval: { approvers: users(X, Y), mode: "any" } }); await openRequest();
+{
+  const realGet = kvs.get; let armed = false;
+  const undo = afterVoteOf(X, async () => { armed = true; });
+  kvs.get = async (k) => { if (armed && k === `workflow-pending-${PAGE}`) { armed = false; kvs.get = realGet; throw new Error("kvs 500"); } return realGet(k); };
+  const r = await decide(X, "approved");
+  kvs.get = realGet; undo();
+  ok("storage error on the check: not told the request was closed", r?.closed !== true);
+  eq("storage error on the check: the marker stays", (await markers()).length, 1);
+  await settleRecordedVotes(PAGE);
+  eq("storage error on the check: the sweep applies the vote", await stateNow(), APPROVED);
+}
+// Two markers on a re-clamped quorum: one judged to complete it when cast is enough.
+await world({ approval: { approvers: users(X, Y), mode: "min", min: 3 } }); await openRequest({ snapshot: [X, Y, Z], mode: "min", min: 3 });
+await vote(X, "approved"); await marker(X, "approved", "pending");
+await vote(Y, "approved"); await marker(Y, "approved", "approved");
+await settleRecordedVotes(PAGE);
+eq("two markers, one judged complete: the sweep completes it", await stateNow(), APPROVED);
+// A vote cast on the old request that landed on the re-requested one's records is put back.
+await world({ approval: { approvers: users(X, Y), mode: "all" } }); await openRequest({ mode: "all" });
+{
+  const R2 = "2026-10-03T00:00:00.000Z";
+  const p = await kvs.get(`workflow-pending-${PAGE}`);
+  await kvs.set(`workflow-pending-${PAGE}`, { ...p, rerequestedAt: R2 });
+  await kvs.set(`workflow-approval-${PAGE}-${APPROVED}-approval-${Y}`, { approverAccountId: Y, status: "pending", requestedAt: R2 });
+  await kvs.set(`workflow-approval-${PAGE}-${APPROVED}-approval-${X}`, { approverAccountId: X, status: "approved", requestedAt: REQ_AT, decidedAt: new Date().toISOString() });
+  await marker(X, "approved", "pending"); // request: REQ_AT (the old one)
+  await settleRecordedVotes(PAGE);
+  eq("stray old vote: put back to pending on the new request", await voteOf(X), "pending");
+  eq("stray old vote: the page did not move", await stateNow(), IN_REVIEW);
+}
+// A re-request holds the claim while it rewrites the request (no completion half-way through it).
+await world({ approval: { approvers: users(X, Y), mode: "any" } }); await openRequest();
+{
+  const p = await kvs.get(`workflow-pending-${PAGE}`);
+  await kvs.set(`workflow-pending-${PAGE}`, { ...p, pinnedVersion: 2 }); // the page changed since: a real re-request
+  const realSet = kvs.set; let sawClaim = false;
+  kvs.set = async (k, v, o) => { if (k.startsWith(`workflow-approval-${PAGE}-`) && (await kvs.get(`workflow-completing-${PAGE}`))) sawClaim = true; return realSet(k, v, o); };
+  await approvals.rerequestApproval({ pageId: PAGE, actorAccountId: REQUESTER, actorName: "Req" });
+  kvs.set = realSet;
+  ok("re-request: the votes are reset while the completion claim is held", sawClaim);
+  eq("re-request: the claim is released after", await kvs.get(`workflow-completing-${PAGE}`), undefined);
+}
 
 // ══ 8. Withdraw and a completed request remove what was left ═════════════════════════════════════════
 await world({ approval: { approvers: users(X, Y), mode: "any" } }); await openRequest();
