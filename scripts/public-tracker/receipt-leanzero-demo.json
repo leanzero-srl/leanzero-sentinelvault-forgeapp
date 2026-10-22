@@ -609,6 +609,14 @@
     "7dca295bdf7d4542": {
       "key": "SVT-145",
       "id": "28684"
+    },
+    "known-approval-vote-not-applied": {
+      "key": "SVT-146",
+      "id": "28685"
+    },
+    "known-waiting-count-higher-than-lists": {
+      "key": "SVT-147",
+      "id": "28686"
     }
   },
   "permissionScheme": {
@@ -621,7 +629,7 @@
     ],
     "assigned": true
   },
-  "updatedAt": "2026-10-22T10:01:12.880Z",
+  "updatedAt": "2026-10-22T10:39:56.693Z",
   "projectId": "10278",
   "issueTypeScheme": {
     "id": "10636",
