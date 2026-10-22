@@ -32,6 +32,12 @@ export function statusError(message, status, extra = {}) {
   return Object.assign(new Error(message), { status }, extra);
 }
 
+/**
+ * PURE. A status Confluence gave when it could not answer NOW (429, 5xx): "could not tell". Any other
+ * 4xx (403 lost access, 404 gone) IS an answer: the thing is not usable, as it always was.
+ */
+export const isBusyStatus = (status) => status === 429 || (Number(status) >= 500 && Number(status) < 600);
+
 export async function readJson(res) {
   const t = await res.text();
   try { return t ? JSON.parse(t) : null; } catch { return null; }
@@ -51,11 +57,17 @@ export async function appAccountId() {
   return id;
 }
 
-/** Pages carrying the backup label that the app can open (CQL, as the app). */
-export async function findBackupPages() {
+/**
+ * Pages carrying the backup label that the app can open (CQL, as the app). Throws on any failure;
+ * `strict` callers get [] for an answered refusal (a 4xx other than 429) and a throw only when busy.
+ */
+export async function findBackupPages({ strict = false } = {}) {
   const cql = `label = "${BACKUP_LABEL}" and type = page`;
   const res = await conf(route`/wiki/rest/api/content/search?cql=${cql}&limit=50&expand=space,version`);
-  if (!res.ok) throw new Error(`Backup search failed (${res.status})`);
+  if (!res.ok) {
+    if (strict && !isBusyStatus(res.status)) return [];
+    throw statusError(`Backup search failed (${res.status})`, res.status);
+  }
   const body = await readJson(res);
   return (body?.results || []).map((p) => ({
     pageId: String(p.id), title: p.title, spaceKey: p.space?.key || null, spaceName: p.space?.name || null,
@@ -64,14 +76,14 @@ export async function findBackupPages() {
 }
 
 /**
- * One page by id as the app; null when it is gone or the app cannot see it. `strict`: only a 404
- * reads as gone; any other failure (429, 5xx) THROWS ("could not tell"), so ensureBackupPage never
- * makes a second backup page because Confluence was busy.
+ * One page by id as the app; null when it is gone or the app cannot see it. `strict`: a busy answer
+ * (429, 5xx; a thrown fetch throws anyway) THROWS ("could not tell"), so ensureBackupPage never makes
+ * a second backup page because Confluence was busy; any other 4xx (404 gone, 403 no access) is null.
  */
 export async function readPage(pageId, { strict = false } = {}) {
   const res = await conf(route`/wiki/api/v2/pages/${pageId}`);
   if (!res.ok) {
-    if (strict && res.status !== 404) throw statusError(`Could not read the backup page (${res.status})`, res.status);
+    if (strict && isBusyStatus(res.status)) throw statusError(`Could not read the backup page (${res.status})`, res.status);
     return null;
   }
   const p = await readJson(res);
@@ -105,14 +117,14 @@ export async function spaceById(spaceId) {
 }
 
 /**
- * A space by key as the app; null when it does not exist or the app cannot see it. `strict`: a read
- * Confluence did not answer (429, 5xx) THROWS instead of reading as "no such space" (the backup's
- * paused state must never come from a busy answer).
+ * A space by key as the app; null when it does not exist or the app cannot see it. `strict`: a busy
+ * answer (429, 5xx) THROWS instead of reading as "no such space" (the backup's paused state must never
+ * come from a busy answer); any other 4xx is null as before.
  */
 export async function spaceByKey(spaceKey, { strict = false } = {}) {
   const res = await conf(route`/wiki/api/v2/spaces?keys=${spaceKey}&limit=1`);
   if (!res.ok) {
-    if (strict) throw statusError(`Could not read the space (${res.status})`, res.status);
+    if (strict && isBusyStatus(res.status)) throw statusError(`Could not read the space (${res.status})`, res.status);
     return null;
   }
   const s = (await readJson(res))?.results?.[0];
@@ -185,7 +197,7 @@ export async function isRestrictedToApp(pageId, { strict = false } = {}) {
   const me = await appAccountId();
   const res = await conf(route`/wiki/rest/api/content/${pageId}/restriction`);
   if (!res.ok) {
-    if (strict && res.status !== 404) throw statusError(`Could not read the backup page's restrictions (${res.status})`, res.status);
+    if (strict && isBusyStatus(res.status)) throw statusError(`Could not read the backup page's restrictions (${res.status})`, res.status);
     return false;
   }
   const rows = (await readJson(res))?.results || [];

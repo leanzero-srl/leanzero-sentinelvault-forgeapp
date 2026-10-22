@@ -80,6 +80,8 @@ export function choosePage(found, environmentType) {
  * restriction read and the label search are STRICT, so a 429/5xx throws an ordinary, retryable
  * failure instead of reading as "gone" / "no backup page here" and creating a second backup page
  * (the site then pointed at the new page and the old one, with its generations, was left behind).
+ * Any other 4xx is an answer and keeps the old meaning (a 403 on the remembered page = the app lost
+ * that space: discovery, then a new page or the paused state), so it never fails every hour.
  */
 export async function ensureBackupPage({ preferSpaceKey = null } = {}) {
   const env = appInfo().environmentType;
@@ -88,7 +90,7 @@ export async function ensureBackupPage({ preferSpaceKey = null } = {}) {
     if (await store.isBackupPage(settings.pageId, { strict: true })) return settings;
   }
   if (!preferSpaceKey) {
-    const found = choosePage(await store.findBackupPages(), env);
+    const found = choosePage(await store.findBackupPages({ strict: true }), env);
     if (found && (await store.isBackupPage(found.pageId, { strict: true }))) {
       const next = { pageId: found.pageId, spaceId: found.spaceId, spaceKey: found.spaceKey, spaceName: found.spaceName, title: found.title };
       await kvs.set(SETTINGS_KEY, next);
