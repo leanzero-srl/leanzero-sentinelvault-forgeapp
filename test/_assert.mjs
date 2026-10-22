@@ -19,9 +19,11 @@ export function ok(label, cond) {
 
 export function report(suite) {
   if (failures.length) {
-    console.log(`\n${suite}: ${passed}/${total} passed`);
-    for (const f of failures) console.log("  FAIL " + f);
-    process.exit(1);
+    // Exit once the text is written: stdout is a pipe under scripts/run-tests.mjs, and process.exit()
+    // right after console.log can drop the tail of a long FAIL list.
+    process.exitCode = 1;
+    process.stdout.write(`\n${suite}: ${passed}/${total} passed\n${failures.map((f) => "  FAIL " + f + "\n").join("")}`, () => process.exit(1));
+    return;
   }
   console.log(`${suite}: ${passed}/${total} passed`);
 }

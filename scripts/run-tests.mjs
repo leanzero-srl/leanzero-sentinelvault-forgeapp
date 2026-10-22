@@ -36,18 +36,21 @@ const positive = (v, d) => { const n = Number(v); return Number.isFinite(n) && n
 const JOBS = positive(process.env.SV_TEST_JOBS, Math.min(8, typeof os.availableParallelism === "function" ? os.availableParallelism() : os.cpus().length));
 const TIMEOUT_MS = positive(process.env.SV_TEST_TIMEOUT_S, 900) * 1000;
 
+// Ends the run once `text` is on stdout (a pipe drops what process.exit() cuts off), and stops here.
+const quit = async (code, text) => { process.exitCode = code; await new Promise((r) => process.stdout.write(text, r)); process.exit(code); };
+
 const args = process.argv.slice(2);
 let files;
 if (args.length) {
   files = args.map((a) => path.relative(ROOT, path.resolve(ROOT, a)));
   const missing = files.filter((f) => !existsSync(path.join(ROOT, f)));
-  if (missing.length) { console.log(`run-tests: no such file: ${missing.join(", ")}`); process.exit(1); }
+  if (missing.length) await quit(1, `run-tests: no such file: ${missing.join(", ")}\n`);
 } else {
   files = readdirSync(TEST_DIR).filter((f) => f.endsWith(".test.mjs")).sort().map((f) => `test/${f}`);
   files.sort((a, b) => ((SLOW_FIRST.indexOf(a) + 1 || 1e9) - (SLOW_FIRST.indexOf(b) + 1 || 1e9)));
 }
-if (!files.length) { console.log("run-tests: FAIL - no test files found"); process.exit(1); }
-if (process.env.SV_TEST_LIST === "1") { console.log(files.join("\n")); process.exit(0); }
+if (!files.length) await quit(1, "run-tests: FAIL - no test files found\n");
+if (process.env.SV_TEST_LIST === "1") await quit(0, `${files.join("\n")}\n`);
 
 const children = new Set();
 const runOne = (file) => new Promise((resolve) => {
@@ -61,7 +64,8 @@ const runOne = (file) => new Promise((resolve) => {
   children.add(child);
   child.stdout.on("data", (d) => chunks.push(d));
   child.stderr.on("data", (d) => chunks.push(d));
-  const timer = setTimeout(() => { timedOut = true; child.kill("SIGKILL"); }, TIMEOUT_MS);
+  // A grandchild that inherited the pipes would hold "close" open past the timeout: drop the pipes too.
+  const timer = setTimeout(() => { timedOut = true; child.kill("SIGKILL"); child.stdout.destroy(); child.stderr.destroy(); }, TIMEOUT_MS);
   child.on("error", (e) => { clearTimeout(timer); done({ ok: false, why: `could not start (${e && e.code || e})` }); });
   child.on("close", (code, signal) => {
     clearTimeout(timer);
@@ -92,8 +96,7 @@ await Promise.all(Array.from({ length: Math.min(JOBS, files.length) }, worker));
 const failed = results.filter((r) => !r.ok);
 const slowest = [...results].sort((a, b) => b.ms - a.ms).slice(0, 5).map((r) => `${path.basename(r.file)} ${(r.ms / 1000).toFixed(1)} s`).join(", ");
 console.log(`\nrun-tests: ${results.length - failed.length}/${files.length} files passed in ${((Date.now() - t0) / 1000).toFixed(1)} s (${Math.min(JOBS, files.length)} at a time; slowest: ${slowest})`);
-if (results.length !== files.length) { console.log(`run-tests: FAIL - ${files.length - results.length} file(s) never ran`); process.exit(1); }
-if (failed.length) {
-  for (const r of failed) console.log(`  FAILED ${r.file}: ${r.why}`);
-  process.exit(1);
-}
+// No process.exit() here: every child has closed, so node exits by itself once stdout is flushed.
+if (results.length !== files.length) { console.log(`run-tests: FAIL - ${files.length - results.length} file(s) never ran`); process.exitCode = 1; }
+for (const r of failed) console.log(`  FAILED ${r.file}: ${r.why}`);
+if (failed.length) process.exitCode = 1;

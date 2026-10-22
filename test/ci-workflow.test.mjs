@@ -1,7 +1,8 @@
 // Pins .github/workflows/ci.yml (2026-10-11). The repo is PUBLIC and CI runs on a SELF-HOSTED
 // runner (the workhorse Mac Studio): a fork must never be able to run code on it, and a job moved
 // back to a GitHub-hosted runner dies in ~3 s because Actions billing is off on leanzero-srl.
-// Runs as a step of the workflow itself (not in `npm test`, so package.json stays untouched).
+// Runs as a step of the workflow itself, before the install-heavy steps, and again inside `npm test`
+// (scripts/run-tests.mjs runs every test/*.test.mjs).
 import { readFileSync, readdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
