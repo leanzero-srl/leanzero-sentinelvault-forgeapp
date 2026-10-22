@@ -627,6 +627,10 @@
     "known-workflow-hourly-check-stuck": {
       "key": "SVT-149",
       "id": "28699"
+    },
+    "known-purged-page-seal-missing-from-owner-lists": {
+      "key": "SVT-150",
+      "id": "28700"
     }
   },
   "permissionScheme": {
@@ -639,7 +643,7 @@
     ],
     "assigned": true
   },
-  "updatedAt": "2026-10-22T14:13:14.693Z",
+  "updatedAt": "2026-10-22T14:31:05.148Z",
   "projectId": "10278",
   "issueTypeScheme": {
     "id": "10636",
@@ -715,7 +719,7 @@
     "undo": "DELETE /rest/api/3/permissionscheme/10265/permission/11703",
     "proof": {
       "GET /rest/api/3/issue/SVT-1": 200,
-      "GET /rest/api/3/issue/SVT-149": 200,
+      "GET /rest/api/3/issue/SVT-150": 200,
       "GET /rest/api/3/issue/ATLAS-2361": 404,
       "GET /rest/api/3/issue/CRBAK-1": 404,
       "GET /rest/api/3/issue/CRD-30": 404,
@@ -740,24 +744,24 @@
       "GET /rest/api/3/issue/SEC-1225": 404,
       "GET /rest/api/3/issue/VOY-1992": 404,
       "anonymous site-wide search (bounded, all pages): issues per project": {
-        "SVT": 145,
+        "SVT": 146,
         "CRT": 452,
         "LZMT": 376,
         "CST": 37
       },
-      "anonymous listing of SVT": "145 issues (receipt holds 145; 已完成 112, Backlog 31, Selected for Development 2)",
+      "anonymous listing of SVT": "146 issues (receipt holds 146; 已完成 112, Backlog 31, Selected for Development 3)",
       "other projects whose scheme lets anyone browse": "CRT,CST,LZMT",
       "public trackers (allowlist)": "CRT,SVT,LZMT,CST",
       "negative control": "13 fake broken answers, each failed the verdict",
       "GET /jira/software/c/projects/SVT/issues": 200
     },
-    "provenAt": "2026-10-22T14:13:14.693Z",
+    "provenAt": "2026-10-22T14:31:05.148Z",
     "proofFailures": []
   },
   "verified": {
     "through": "8.18.0",
-    "at": "2026-10-22T14:12:48.973Z",
-    "issues": 145,
+    "at": "2026-10-22T14:30:39.326Z",
+    "issues": 146,
     "failures": 0
   }
 }
