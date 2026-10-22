@@ -1,5 +1,5 @@
 /*
- * One-time scrub of the `sentinel-vault-validation` page property (8.14.1, 2026-10-21).
+ * One-time scrub of the `sentinel-vault-validation` page property (8.15.0, 2026-10-21).
  *
  * Before 8.14.0 the page property WAS the validation status, and it carried who checked the page
  * (`checkedBy`) and who approved it anyway (`approvedBy`): account ids. Since 8.14.0 the status lives in

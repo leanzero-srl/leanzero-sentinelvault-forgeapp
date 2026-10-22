@@ -1,4 +1,4 @@
-// The one-time scrub of the validation page properties written before 8.14.0 (8.14.1).
+// The one-time scrub of the validation page properties written before 8.14.0 (8.15.0).
 //
 // Before 8.14.0 `sentinel-vault-validation` WAS the status and carried `checkedBy` / `approvedBy`
 // (account ids). 8.14.0 moved the status to KVS and the mirror carries no ids, but an old property

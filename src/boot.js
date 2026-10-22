@@ -14,7 +14,7 @@ export const lifecycleTrigger = asInvocation(lifecycleTriggerCore, { label: "lif
 export const expirySweepTask = asInvocation(expirySweepTaskCore, { label: "expirySweepTask" });
 export const workflowSweep = asInvocation(workflowSweepCore, { label: "workflowSweep" });
 export const pageGuardSweep = asInvocation(pageGuardSweepCore, { label: "pageGuardSweep" });
-// 8.14.1: a page that leaves the archive gets its pre-8.14 validation property rewritten without account
+// 8.15.0: a page that leaves the archive gets its pre-8.14 validation property rewritten without account
 // ids (Confluence refuses changes while a page is archived; validations/mirror-scrub.js).
 import { scrubOnePageMirror } from "./server/capsules/validations/mirror-scrub.js";
 export const pageUnarchivedTrigger = asInvocation(async (event) => {

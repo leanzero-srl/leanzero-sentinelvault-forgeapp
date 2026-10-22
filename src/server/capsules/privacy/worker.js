@@ -111,7 +111,7 @@ export async function queuePrivacySweep(reason = "manual") {
   await pushSweep(reason);
 }
 
-// ── One-time scrub of the pre-8.14 validation mirrors (8.14.1, validations/mirror-scrub.js) ───────
+// ── One-time scrub of the pre-8.14 validation mirrors (8.15.0, validations/mirror-scrub.js) ───────
 const SCRUB_KICK_KEY = "privacy-validation-scrub-kick";
 const SCRUB_KICK_EVERY_MS = 15 * 60000;
 const SCRUB_ALIVE_MS = 20 * 60000; // a running chain saves its state after every batch, runs hand on in seconds

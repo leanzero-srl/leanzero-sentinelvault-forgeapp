@@ -2963,7 +2963,7 @@ export async function sweepRestoreRechecks({ limit = 20 } = {}) {
 export async function pageGuardSweep(event = null, context = null) {
   const started = Date.now();
   await sweepRestoreRechecks();
-  // 8.14.1: the one-time scrub of pre-8.14 validation mirrors starts from here (one KVS read per fresh
+  // 8.15.0: the one-time scrub of pre-8.14 validation mirrors starts from here (one KVS read per fresh
   // instance once it is done, nothing after that). Confluence installation only.
   try { const { kickValidationMirrorScrub } = await import("./capsules/privacy/worker.js"); await kickValidationMirrorScrub(context || event?.context || null); }
   catch (e) { console.warn("[VALIDATION-MIRROR] kick failed:", errText(e)); }
