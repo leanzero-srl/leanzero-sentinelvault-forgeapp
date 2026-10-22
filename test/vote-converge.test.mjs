@@ -411,6 +411,40 @@ await world({ approval: { approvers: users(X, Y), mode: "any" } }); await openRe
   eq("re-request: the claim is released after", await kvs.get(`workflow-completing-${PAGE}`), undefined);
 }
 
+// ══ 7e. Second diff review: a vote cast while a re-request rewrites the request ══════════════════════
+// The re-request has reset X's record (stamped with the new request) but not yet written the request:
+// X's call read the old request. X is told to decide again; nothing is recorded.
+await world({ approval: { approvers: users(X, Y), mode: "all" } }); await openRequest({ mode: "all" });
+{
+  const realGet = kvs.get; const R2 = new Date().toISOString();
+  kvs.get = async (k) => {
+    if (k === `workflow-approval-${PAGE}-${APPROVED}-approval-${X}`) {
+      kvs.get = realGet;
+      for (const a of [X, Y]) await kvs.set(`workflow-approval-${PAGE}-${APPROVED}-approval-${a}`, { approverAccountId: a, status: "pending", pinnedVersion: 3, requestedAt: R2 });
+    }
+    return realGet(k);
+  };
+  const r = await decide(X, "denied");
+  kvs.get = realGet;
+  eq("mid-re-request: X is told to decide again", r?.rerequested, true);
+  eq("mid-re-request: X's vote is not recorded", await voteOf(X), "pending");
+  eq("mid-re-request: the request is still open", await stillOpen(), true);
+}
+// A vote cast on an older request that landed on the new one's records never counts.
+await world({ approval: { approvers: users(X, Y), mode: "all" } }); await openRequest({ mode: "all" });
+{
+  const R2 = "2026-10-03T00:00:00.000Z";
+  const p = await kvs.get(`workflow-pending-${PAGE}`);
+  await kvs.set(`workflow-pending-${PAGE}`, { ...p, rerequestedAt: R2 });
+  await kvs.set(`workflow-approval-${PAGE}-${APPROVED}-approval-${X}`, { approverAccountId: X, status: "denied", requestedAt: REQ_AT, decidedAt: new Date().toISOString() });
+  await kvs.set(`workflow-approval-${PAGE}-${APPROVED}-approval-${Y}`, { approverAccountId: Y, status: "pending", requestedAt: R2, pinnedVersion: 3 });
+  const r = await decide(Y, "approved");
+  eq("stray old denial: Y's approval does not close the request as denied", r?.outcome, "pending");
+  eq("stray old denial: the request is still open", await stillOpen(), true);
+  const again = await decide(X, "approved");
+  eq("stray old denial: X can decide on the new request, completing it", again?.transitioned, true);
+}
+
 // ══ 8. Withdraw and a completed request remove what was left ═════════════════════════════════════════
 await world({ approval: { approvers: users(X, Y), mode: "any" } }); await openRequest();
 await kvs.set(`workflow-settle-${PAGE}-${X}`, { pageId: PAGE, accountId: X, decision: "approved", request: REQ_AT, at: Date.now() });
