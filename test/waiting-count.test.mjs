@@ -147,6 +147,33 @@ for (const id of many) await request(id);
   eq("27 waiting: My work's number is the inbox's total", count?.approvals, list?.total);
 }
 
+// ══ 4b. Confluence cannot answer the view check (429): the row is in neither, and both say so ══════════
+world(); await settings();
+await request(P.OK);
+await proposalOn(P.OK, 1);
+onConfluence((method, rawPath) => (/\/permission\/check$/.test(decodeURIComponent(rawPath).split("?")[0]) ? { status: 429, body: {} } : undefined));
+{
+  const list = await remote(workflow.get("list-my-approvals"), X);
+  const files = await remote(editreq.get("list-my-edit-requests"), X);
+  const count = await remote(editreq.get("count-my-work"), X);
+  eq("429: the inbox lists nothing it could not check", (list?.approvals || []).length, 0);
+  eq("429: the inbox says one could not be checked", list?.unverified, 1);
+  eq("429: the file request list says one could not be checked", files?.unverified, 1);
+  eq("429: My work's total leaves the unchecked rows out, like the lists", count?.total, 0);
+  eq("429: My work says three could not be checked (the approval and both proposals)", count?.unverified, 3);
+}
+// One view check per page for the whole count (approval + file + section proposal on one page).
+world(); await settings();
+await request(P.OK);
+await proposalOn(P.OK, 1);
+{
+  const { fake } = await import("./_forge-fake/state.mjs");
+  const before = fake.calls.length;
+  await remote(editreq.get("count-my-work"), X);
+  const checks = fake.calls.slice(before).filter((c) => c.path.includes(`/content/${P.OK}/permission/check`)).length;
+  eq("count-my-work asks Confluence once per page, whatever the arms", checks, 1);
+}
+
 // ══ 5. Source guards: no count reads a raw index ═════════════════════════════════════════════════════
 const src = (p) => readFileSync(new URL(`../src/server/${p}`, import.meta.url), "utf8");
 for (const f of ["capsules/editreq/actions.js", "capsules/sealing/actions.js", "capsules/workflow/actions.js"]) {

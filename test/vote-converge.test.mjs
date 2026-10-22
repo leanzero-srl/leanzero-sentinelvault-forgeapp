@@ -143,8 +143,9 @@ await world({ approval: min2, admins: [ADMIN], siteAdmins: [ADMIN2] }); await op
   eq("race, still limited: the page has not moved", await stateNow(), IN_REVIEW);
   ok("race, still limited: the marker stays", (await markers()).length === 1);
 
-  // Confluence answers again: the hourly sweep applies the two approvals.
+  // Confluence answers again, an hour later (the marker waited out its backoff): the sweep applies it.
   net.userLookup = 200;
+  for (const k of await markers()) { const m = await kvs.get(k); ok("race, still limited: the marker waits before its next try", (m?.nextAt || 0) > Date.now()); await kvs.set(k, { ...m, nextAt: Date.now() - 1 }); }
   const sweep = JSON.parse((await triggers.workflowSweep()).body);
   eq("race: the hourly sweep applies the decided request", await stateNow(), APPROVED);
   eq("race: the sweep reports one settled request", sweep.votesSettled, 1);
@@ -287,6 +288,61 @@ await vote(Y, "approved"); await vote(X, "approved"); await marker(X, "approved"
 await settleRecordedVotes(PAGE);
 eq("a removed approver's vote does not complete the request from the sweep", await stateNow(), IN_REVIEW);
 eq("a removed approver's vote: its marker goes", (await markers()).length, 0);
+
+// ══ 7c. Withdrawn or asked again while a decision was applied: nothing is applied on the old request ═══
+await world({ approval: { approvers: users(X, Y), mode: "any" } }); await openRequest();
+{
+  // The request is withdrawn right after X's vote is recorded (before X's second judgement).
+  const undo = afterVoteOf(X, async () => { await approvals.withdrawApproval({ pageId: PAGE, actorAccountId: REQUESTER, actorName: "Req" }); });
+  const r = await decide(X, "approved");
+  undo();
+  eq("withdrawn mid-decision: the page did not move", await stateNow(), IN_REVIEW);
+  eq("withdrawn mid-decision: the answer says the request was closed", r?.closed, true);
+  eq("withdrawn mid-decision: nothing left to settle", (await markers()).length, 0);
+}
+await world({ approval: { approvers: users(X, Y), mode: "all" } }); await openRequest({ mode: "all" });
+await vote(Y, "approved");
+{
+  // Re-requested (every vote reset) after X's checks passed and before X's vote is written: X's write
+  // lands on the NEW request's reset record. X's old vote must not count there.
+  const realSet = kvs.set; let fired = false;
+  kvs.set = async (k, v) => {
+    if (!fired && k === `workflow-settle-${PAGE}-${X}`) {
+      fired = true; kvs.set = realSet;
+      const p = await kvs.get(`workflow-pending-${PAGE}`);
+      await kvs.set(`workflow-pending-${PAGE}`, { ...p, rerequestedAt: new Date().toISOString(), pinnedVersion: 3 });
+      for (const a of [X, Y]) await kvs.set(`workflow-approval-${PAGE}-${APPROVED}-approval-${a}`, { approverAccountId: a, status: "pending", pinnedVersion: 3 });
+    }
+    return realSet(k, v);
+  };
+  const r = await decide(X, "approved");
+  kvs.set = realSet;
+  eq("re-requested mid-decision: the page did not move", await stateNow(), IN_REVIEW);
+  eq("re-requested mid-decision: X's vote is reset to pending on the new request", await voteOf(X), "pending");
+  eq("re-requested mid-decision: the answer says to decide again", r?.rerequested, true);
+}
+// A completion whose request was withdrawn after it was judged (settle took its judgement, then the
+// withdraw landed): the finalizer re-reads the request and moves nothing.
+await world({ approval: { approvers: users(X, Y), mode: "any" } }); await openRequest();
+await vote(X, "approved"); await marker(X, "approved", "approved");
+{
+  const realGet = kvs.get; let n = 0;
+  // Withdraw lands just before the finalizer re-reads the open request (after settle read it).
+  kvs.get = async (k) => { if (k === `workflow-completing-${PAGE}` && ++n === 2) { kvs.get = realGet; await kvs.delete(`workflow-pending-${PAGE}`); } return realGet(k); };
+  await settleRecordedVotes(PAGE);
+  kvs.get = realGet;
+  eq("withdrawn after settle judged it: the page did not move", await stateNow(), IN_REVIEW);
+}
+// A dead claim (a run that died 90 s ago) does not hold back a denial that closes the request.
+await world({ approval: { approvers: users(X, Y), mode: "all" } }); await openRequest({ mode: "all" });
+await kvs.set(`workflow-completing-${PAGE}`, { stateId: APPROVED, at: new Date(Date.now() - 90000).toISOString() });
+eq("dead claim: Y's denial closes the all-of request", (await decide(Y, "denied"))?.outcome, "denied");
+eq("dead claim: closed", await stillOpen(), false);
+// A live claim: withdraw waits.
+await world({ approval: { approvers: users(X, Y), mode: "any" } }); await openRequest();
+await kvs.set(`workflow-completing-${PAGE}`, { stateId: APPROVED, at: new Date().toISOString() });
+eq("live claim: withdraw is refused for now", (await approvals.withdrawApproval({ pageId: PAGE, actorAccountId: REQUESTER, actorName: "Req" }))?.success, false);
+eq("live claim: the request is still open", await stillOpen(), true);
 
 // ══ 8. Withdraw and a completed request remove what was left ═════════════════════════════════════════
 await world({ approval: { approvers: users(X, Y), mode: "any" } }); await openRequest();

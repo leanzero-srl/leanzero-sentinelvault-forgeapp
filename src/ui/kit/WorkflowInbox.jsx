@@ -12,6 +12,7 @@ import { invoke, view, router } from "./bridge";
 export default function WorkflowInbox({ emptyText = null, onDecided = null } = {}) {
   const [items, setItems] = useState(null);
   const [total, setTotal] = useState(0); // SVT-147: how many wait in all (the list shows at most 25)
+  const [unverified, setUnverified] = useState(0); // SVT-147: could not be checked right now (429/5xx)
   const [siteUrl, setSiteUrl] = useState("");
   const [busy, setBusy] = useState(null);
   const [msg, setMsg] = useState(null);
@@ -21,9 +22,11 @@ export default function WorkflowInbox({ emptyText = null, onDecided = null } = {
       const r = await invoke("list-my-approvals", {});
       setItems(r?.approvals || []);
       setTotal(typeof r?.total === "number" ? r.total : (r?.approvals || []).length);
+      setUnverified(typeof r?.unverified === "number" ? r.unverified : 0);
     } catch (_) {
       setItems([]);
       setTotal(0);
+      setUnverified(0);
     }
   }, []);
 
@@ -55,12 +58,13 @@ export default function WorkflowInbox({ emptyText = null, onDecided = null } = {
   }, [load, onDecided]);
 
   if (items === null) return emptyText ? <div className="wf-inbox wf-inbox-empty" data-testid="wf-inbox-loading">Checking for approvals…</div> : null;
+  const unverifiedLine = unverified > 0 ? `${unverified === 1 ? "One more" : `${unverified} more`} could not be checked right now, because Confluence is limiting requests or not answering. Reload in a moment.` : null;
   if (items.length === 0) {
-    if (!emptyText) return null;
+    if (!emptyText && !unverifiedLine) return null;
     return (
       <div className="wf-inbox wf-inbox-empty" data-testid="wf-inbox-empty">
         <div className="wf-inbox-head"><span className="wf-inbox-title">Approvals waiting on you</span><span className="wf-inbox-count wf-inbox-count-zero">0</span></div>
-        <p className="wf-inbox-none">{emptyText}</p>
+        <p className="wf-inbox-none" data-testid={unverifiedLine ? "wf-inbox-unverified" : undefined}>{unverifiedLine || emptyText}</p>
       </div>
     );
   }
@@ -74,6 +78,7 @@ export default function WorkflowInbox({ emptyText = null, onDecided = null } = {
         <span className="wf-inbox-count">{Math.max(total, items.length)}</span>
       </div>
       {total > items.length && <p className="wf-inbox-more" data-testid="wf-inbox-more">Showing {items.length} of {total}. Decide these to see the rest.</p>}
+      {unverifiedLine && <p className="wf-inbox-more" data-testid="wf-inbox-unverified">{unverifiedLine}</p>}
       {msg && <div role="status" aria-live="polite" className={msg.type === "success" ? "alert-success" : "alert-error"}>{msg.text}</div>}
       <ul className="wf-inbox-list">
         {items.map((it) => (
