@@ -45,7 +45,8 @@
     "8.15.0": "10820",
     "8.16.0": "10853",
     "8.17.0": "10889",
-    "8.18.0": "10955"
+    "8.18.0": "10955",
+    "8.19.0": "10988"
   },
   "issues": {
     "02dc09e3ae3c6c5a": {
@@ -643,7 +644,7 @@
     ],
     "assigned": true
   },
-  "updatedAt": "2026-10-22T14:31:05.148Z",
+  "updatedAt": "2026-10-22T14:52:58.944Z",
   "projectId": "10278",
   "issueTypeScheme": {
     "id": "10636",
@@ -710,6 +711,16 @@
       "version": "8.17.0",
       "into": "known-waiting-count-higher-than-lists",
       "key": "SVT-147"
+    },
+    "64d4cf1d83a49d4d": {
+      "version": "8.19.0",
+      "into": "known-purged-page-seal-missing-from-owner-lists",
+      "key": "SVT-150"
+    },
+    "12509ab24a178a82": {
+      "version": "8.19.0",
+      "into": "known-workflow-hourly-check-stuck",
+      "key": "SVT-149"
     }
   },
   "public": {
@@ -749,18 +760,18 @@
         "LZMT": 376,
         "CST": 37
       },
-      "anonymous listing of SVT": "146 issues (receipt holds 146; 已完成 112, Backlog 31, Selected for Development 3)",
+      "anonymous listing of SVT": "146 issues (receipt holds 146; 已完成 114, Backlog 31, Selected for Development 1)",
       "other projects whose scheme lets anyone browse": "CRT,CST,LZMT",
       "public trackers (allowlist)": "CRT,SVT,LZMT,CST",
       "negative control": "13 fake broken answers, each failed the verdict",
       "GET /jira/software/c/projects/SVT/issues": 200
     },
-    "provenAt": "2026-10-22T14:31:05.148Z",
+    "provenAt": "2026-10-22T14:52:58.944Z",
     "proofFailures": []
   },
   "verified": {
-    "through": "8.18.0",
-    "at": "2026-10-22T14:30:39.326Z",
+    "through": "8.19.0",
+    "at": "2026-10-22T14:52:29.049Z",
     "issues": 146,
     "failures": 0
   }
