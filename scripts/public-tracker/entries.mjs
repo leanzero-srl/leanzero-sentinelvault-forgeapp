@@ -42,6 +42,11 @@ export const COMPONENTS = {
 const JIRA_ON = "It works once a site admin has connected Jira to Sentinel Vault in Atlassian Administration.";
 
 export const ENTRIES = {
+  // 8.20.0: written by the release door on 2026-10-22 (rows: deterministic; review pass: none, deterministic net only).
+  "874557d2ab1e7aad": ["Sentinel Vault could answer a request with a result it had looked up for another...", "S", {"withhold":"the review pass did not answer (release door: no review, no publication)"}],
+  "ec4220d32fdb1924": ["Activity events recorded since 8.9.0 under a space key that is not a space on your...", "S", {"withhold":"touches security, permissions, isolation or keys (release door, deterministic rule)"}],
+  "31d7c334c2616930": ["When Confluence is limiting requests, the banner says Classification unavailable...", "S", {"withhold":"the review pass did not answer (release door: no review, no publication)"}],
+
   // 8.19.0: written by the release door on 2026-10-22 (rows: deterministic; review pass: none, deterministic net only).
   "64d4cf1d83a49d4d": ["If the page a sealed file is on is deleted permanently from the space's trash, the...", "S", {"fold":"known-purged-page-seal-missing-from-owner-lists","d":"This problem is fixed."}],
   "12509ab24a178a82": ["On sites with very many pages in workflows, the hourly workflow check could fail to...", "S", {"fold":"known-workflow-hourly-check-stuck","d":"This problem is fixed."}],
