@@ -106,6 +106,39 @@ export const trackerPostDeploySteps = (release) => [
   "  then commit scripts/public-tracker/production-release.json and receipt-leanzero-demo.json on main (the next forward production cut refuses until the receipt's clean verify reaches this release)",
 ].join("\n");
 
+// LISTED SYNC (2026-10-22). A Sentinel Vault version waits for Marketplace approval AFTER the door's `post` ran the tracker,
+// so its issues said "waiting for Marketplace approval" and its Jira version stayed unreleased until someone re-ran the
+// tracker by hand (SVT-149 and SVT-150 on 8.19.0 still said it after the Marketplace listed 8.19.0). The try-first
+// watcher (forge-app-marketing apps/try-first/watcher.mjs) now runs `release-gate.mjs listed <version>` once per newly
+// listed build. This verdict reads `tracker.mjs plan --check-site` and allows the write ONLY when the whole site diff is
+// what a listing changes: Jira versions (at or below the listed one) going released, and the description of issues whose
+// fix version goes released in that same diff (their closing sentence). Any create, adopt, transition, other field, other
+// version or unknown line refuses, so this path never publishes a row that has not been reviewed.
+const LISTED_VERSION_FIELDS = new Set(["released", "releaseDate", "description"]);
+export const listedSyncVerdict = (planText, listed, key = "SVT") => {
+  const lines = String(planText || "").split("\n");
+  const at = lines.findIndex((l) => l.startsWith("site check (read-only)"));
+  if (at < 0) return { ok: false, why: "the plan printed no site check (plan --check-site did not run or failed)" };
+  if (!SEMVER.test(String(listed || ""))) return { ok: false, why: `not a version: ${listed}` };
+  const L = vparts(listed), released = new Set(), issues = [], bad = [];
+  for (const l of lines.slice(at + 1)) {
+    if (!/^ {2}\S/.test(l) || /^ {2}NOT WANTED \(left as is\)/.test(l)) continue;
+    let m = /^ {2}version (\S+): (\S+) (\S*) -> "/.exec(l);
+    if (m) {
+      const fields = m[3].split(",").filter(Boolean);
+      if (m[2] === "update" && SEMVER.test(m[1]) && vge(L, vparts(m[1])) && fields.includes("released") && fields.every((f) => LISTED_VERSION_FIELDS.has(f))) released.add(m[1]);
+      else bad.push(l.trim());
+      continue;
+    }
+    m = /^ {2}(\S+) +(\S+) +(\S+) +(\d+\.\d+\.\d+) /.exec(l);
+    if (m && new RegExp(`^${key}-\\d+$`).test(m[1]) && m[2] === "update" && m[3] === "description") { issues.push({ key: m[1], version: m[4], line: l.trim() }); continue; }
+    bad.push(l.trim());
+  }
+  for (const i of issues) if (!released.has(i.version)) bad.push(`${i.line} (its version ${i.version} is not released by this listing)`);
+  if (bad.length) return { ok: false, why: `the site diff holds more than a listing changes: ${bad.slice(0, 5).join(" | ")}${bad.length > 5 ? ` (+${bad.length - 5})` : ""}` };
+  return { ok: true, versions: [...released], issues: issues.map((i) => i.key), changes: released.size + issues.length };
+};
+
 // The public lint and the note-label strip, shared by tracker.mjs (plan, apply) and the production door (release-gate.mjs
 // prepare), which lints the rows it writes with the same rules before they are committed (2026-10-20).
 // Drop the note's own "New: " / "Changed: " / "Improved: " label; the issue type says which.
