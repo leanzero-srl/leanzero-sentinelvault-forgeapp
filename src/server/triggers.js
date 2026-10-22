@@ -1719,9 +1719,9 @@ export const WORKFLOW_SWEEP_RESUME = "workflow-sweep-resume";
 // started again from its first row every hour and the walk never got past it. Now the resume point
 // names the last row judged inside its page (`doneKey`), is saved at least every `saveMs` and when
 // the budget stops the walk, and a run that starts where the previous one started (it was stopped
-// before saving anything) saves after every row, so the next stop names the exact row; a row that
-// stopped three runs in a row is passed over for this pass and logged (it is judged again on the
-// next pass over the index). Mutable only so a test can shorten the budget.
+// before saving anything) saves after every row, so the next stop names the exact row, which the
+// run after that passes over for this pass and logs (it is judged again on the next pass over the
+// index). Mutable only so a test can shorten the budget.
 export const WORKFLOW_SWEEP_LIMITS = { pages: 20, loopMs: 12_000, runMs: 18_000, saveMs: 3_000 };
 
 export async function workflowSweep() {
@@ -1781,44 +1781,44 @@ export async function workflowSweep() {
   // The resume point (SVT-149): `cursor` fetches the index page to continue in (none = the top),
   // `doneKey` is the last row of that page already judged (none = its first row is next). A record
   // written before SVT-149 carries only `cursor`, which reads the same as before.
-  let saved = null;
-  try { saved = await kvs.get(WORKFLOW_SWEEP_RESUME); } catch (_) { saved = null; }
+  let saved = null, savedUnread = false;
+  try { saved = await kvs.get(WORKFLOW_SWEEP_RESUME); } catch (_) { saved = null; savedUnread = true; }
   let resumeFrom = (typeof saved?.cursor === "string" && saved.cursor) || null;
   let doneKey = (typeof saved?.doneKey === "string" && saved.doneKey) || null;
-  // Stall guard: `started` is where the previous run began and how many runs in a row began there.
-  // A run that begins where the previous one began means that one was stopped before it could save
-  // any progress: this run saves after every row (careful), and the third such run passes over the
-  // first row it meets, the one every stopped run was judging.
+  // Stall guard: `started` is where the run that last reached its first row began, and how many runs
+  // in a row reached their first row from there. It is written just before a run judges its first
+  // row (never earlier: a run stopped in the index read or the page lookups judged nothing and is
+  // not counted). A run that begins where the previous counted one began means that one was stopped
+  // while judging, before it could save: this run saves after every row (careful), so if it is
+  // stopped too the place names the row; the next run from that same place passes over the first
+  // row it meets (logged; judged again on the next pass over the index).
   const startPoint = `${resumeFrom || ""}|${doneKey || ""}`;
   const startedHere = saved?.started?.from === startPoint ? Math.max(1, Number(saved.started.n) || 1) + 1 : 1;
   const started = { from: startPoint, n: startedHere };
   const careful = startedHere >= 2;
-  let passOverFirst = startedHere >= 3;
+  const passOverFirst = startedHere >= 3;
   let pageCursor = resumeFrom;
+  let placeDone = doneKey; // the row before the first one this run judges (null: the page's first)
+  let firstRowOfRun = true;
+  let walked = 0;
   let lastSaveAt = Date.now();
   const saveResume = async (rec) => {
     lastSaveAt = Date.now();
     await kvs.set(WORKFLOW_SWEEP_RESUME, { ...rec, started, at: new Date().toISOString() }).catch(() => {});
   };
-  await saveResume({ cursor: resumeFrom, doneKey });
   let query = idxQuery(resumeFrom);
   let iterations = 0;
   const walkStart = Date.now();
   const overBudget = () => Date.now() - walkStart >= WORKFLOW_SWEEP_LIMITS.loopMs || Date.now() - nowMs >= WORKFLOW_SWEEP_LIMITS.runMs;
   do {
     let page;
-    try {
-      try { page = await query.getMany(); }
-      catch (e) {
-        if (!(iterations === 0 && resumeFrom)) throw e;
-        // A stored cursor Confluence's storage no longer accepts: start from the top.
-        resumeFrom = null; doneKey = null; pageCursor = null; query = idxQuery(null); page = await query.getMany();
-      }
-    } catch (e) {
-      // A failed index read ends the run with an error, not a stop: the place stays, and the run
-      // does not count toward passing a row over (no `started`).
-      await kvs.set(WORKFLOW_SWEEP_RESUME, { cursor: pageCursor, doneKey, at: new Date().toISOString() }).catch(() => {});
-      throw e;
+    // A failed index read ends the run with an error and writes nothing: the place stays as saved,
+    // and a run that judged no row is not counted by the stall guard.
+    try { page = await query.getMany(); }
+    catch (e) {
+      if (!(iterations === 0 && resumeFrom)) throw e;
+      // A stored cursor Confluence's storage no longer accepts: start from the top.
+      resumeFrom = null; doneKey = null; placeDone = null; pageCursor = null; query = idxQuery(null); page = await query.getMany();
     }
     const { nextCursor } = page;
     let results = page.results || [];
@@ -1860,12 +1860,18 @@ export async function workflowSweep() {
         if (stop) { stoppedInPage = true; break; }
       }
       const idx = results[i]?.value;
-      if (passOverFirst) {
-        passOverFirst = false;
-        skippedStuck++;
-        console.warn(`[WORKFLOW-SWEEP] page=${idx?.pageId ?? "none"} passed over: the last ${startedHere - 1} runs stopped while judging it; judged again on the next pass`);
-        continue;
+      if (firstRowOfRun) {
+        firstRowOfRun = false;
+        // Counted by the stall guard from here on (see `started`). A resume record that could not be
+        // read is not overwritten with the top of the index before any row is judged.
+        if (!savedUnread) await saveResume({ cursor: pageCursor, doneKey: placeDone });
+        if (passOverFirst) {
+          skippedStuck++;
+          console.warn(`[WORKFLOW-SWEEP] page=${idx?.pageId ?? "none"} passed over: ${startedHere - 1} runs in a row that began here were stopped before saving; judged again on the next pass`);
+          continue;
+        }
       }
+      walked++;
       try {
         const place = places.get(String(idx?.pageId))?.status || "unknown";
         if (place === "trashed") { skippedTrashed++; continue; }
@@ -2106,6 +2112,7 @@ export async function workflowSweep() {
       } catch (e) { console.error("[WORKFLOW-SWEEP]", errText(e)); }
     }
     if (stoppedInPage) break; // the resume point inside this page is saved above
+    placeDone = null;
     if (!nextCursor) { await kvs.delete(WORKFLOW_SWEEP_RESUME).catch(() => {}); break; }
     // Saved after EVERY page: a run the platform stops mid-walk still moves the next one on.
     pageCursor = nextCursor;
@@ -2147,7 +2154,7 @@ export async function workflowSweep() {
   let inbox = { backfilled: 0, orphansRemoved: 0 };
   try { inbox = await sweepApprovalIndex({ nowMs }); } catch (e) { console.error("[WORKFLOW-SWEEP] inbox index", errText(e)); }
 
-  return { body: JSON.stringify({ reverted, demoted, healed, expired, overdue, skippedTrashed, skippedUnseen, skippedStuck, labelsSynced, aiTimedOut, completedLate, votesSettled, inboxBackfilled: inbox.backfilled, orphanApprovalsRemoved: inbox.orphansRemoved }) };
+  return { body: JSON.stringify({ reverted, demoted, healed, expired, overdue, skippedTrashed, skippedUnseen, skippedStuck, walked, labelsSynced, aiTimedOut, completedLate, votesSettled, inboxBackfilled: inbox.backfilled, orphanApprovalsRemoved: inbox.orphansRemoved }) };
 }
 
 // --- Conditions & Validations phase (runs after the body-protection pipeline) ---
