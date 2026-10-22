@@ -27,6 +27,11 @@ const JSONH = { Accept: "application/json", "Content-Type": "application/json" }
 
 const conf = (r, init) => appConfluence(r, init);
 
+/** An Error carrying the HTTP status (errText prints it; callers branch on it). */
+export function statusError(message, status, extra = {}) {
+  return Object.assign(new Error(message), { status }, extra);
+}
+
 export async function readJson(res) {
   const t = await res.text();
   try { return t ? JSON.parse(t) : null; } catch { return null; }
@@ -92,17 +97,28 @@ export async function spaceById(spaceId) {
   return s ? { spaceId: String(s.id), spaceKey: s.key, spaceName: s.name, type: s.type, status: s.status } : null;
 }
 
-export async function spaceByKey(spaceKey) {
+/**
+ * A space by key as the app; null when it does not exist or the app cannot see it. `strict`: a read
+ * Confluence did not answer (429, 5xx) THROWS instead of reading as "no such space" (the backup's
+ * paused state must never come from a busy answer).
+ */
+export async function spaceByKey(spaceKey, { strict = false } = {}) {
   const res = await conf(route`/wiki/api/v2/spaces?keys=${spaceKey}&limit=1`);
-  if (!res.ok) return null;
+  if (!res.ok) {
+    if (strict) throw statusError(`Could not read the space (${res.status})`, res.status);
+    return null;
+  }
   const s = (await readJson(res))?.results?.[0];
   return s ? { spaceId: String(s.id), spaceKey: s.key, spaceName: s.name, type: s.type, status: s.status } : null;
 }
 
-/** Global, current spaces in Confluence's order — candidates for the backup page's home. */
+/**
+ * Global, current spaces the app can see, in Confluence's order — candidates for the backup page's
+ * home. Throws when Confluence did not answer: an empty list means "none", a failed one "could not tell".
+ */
 export async function listGlobalSpaces(limit = 25) {
   const res = await conf(route`/wiki/api/v2/spaces?type=global&status=current&limit=${limit}`);
-  if (!res.ok) return [];
+  if (!res.ok) throw statusError(`Could not list the spaces (${res.status})`, res.status);
   return ((await readJson(res))?.results || []).map((s) => ({ spaceId: String(s.id), spaceKey: s.key, spaceName: s.name }));
 }
 
@@ -136,7 +152,7 @@ export async function createBackupPage(spaceId, environmentType) {
   });
   if (!res.ok) {
     const t = await res.text().catch(() => "");
-    throw new Error(`Could not create the backup page in space ${spaceId} (${res.status}${t ? `: ${t.slice(0, 160)}` : ""})`);
+    throw statusError(`Could not create the backup page in space ${spaceId} (${res.status}${t ? `: ${t.slice(0, 160)}` : ""})`, res.status, { createRefused: res.status === 403 });
   }
   const page = await readJson(res);
   const pageId = String(page.id);

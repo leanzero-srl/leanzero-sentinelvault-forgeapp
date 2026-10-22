@@ -4,7 +4,9 @@
  *
  * KVS bookkeeping (all `backup-*`, runtime: never part of the backup itself):
  *   backup-settings  { pageId, spaceId, spaceKey, spaceName, title }   where the backup lives
- *   backup-status    { lastBackup, lastCheckAt, lastError, lastRestore }
+ *   backup-status    { lastBackup, lastCheckAt, lastError, lastRestore, noSpace }
+ *                    noSpace { cause, since, checkedAt }: backups are paused, there is no space to keep
+ *                    the page in (cause "none-visible" | "not-allowed"); ended by the next backup
  *   backup-dirty     { since, reason }   the debounce flag of the save hook (hook.js)
  *   backup-paused    { restoredAt, generationId, items[] }   automations a restore turned off
  *   backup-job-<id>  one queued/running/done job (the UI polls it)
@@ -65,6 +67,14 @@ export function choosePage(found, environmentType) {
  * The page to write to, created on first use. Order: the remembered page (still there and still
  * restricted to the app) → a page discovery finds for this environment (a reinstall) → a new page
  * in the chosen space, or the first space the app can create a page in.
+ *
+ * No space at all is a STATE, not a failure (2026-10-23: one production site threw "No space found"
+ * every hour for weeks): with no chosen space, a site whose Confluence ANSWERED that the app sees no
+ * global space ("none-visible"), or refused (403) a page in every one it sees ("not-allowed"), throws
+ * the NO_BACKUP_SPACE error runBackup turns into the paused state. A list or remembered space
+ * Confluence did not answer (429, 5xx) throws an ordinary error: "could not tell" is never "none".
+ * Personal spaces are never candidates (their owner can delete them; they are archived when the
+ * owner leaves).
  */
 export async function ensureBackupPage({ preferSpaceKey = null } = {}) {
   const env = appInfo().environmentType;
@@ -81,24 +91,63 @@ export async function ensureBackupPage({ preferSpaceKey = null } = {}) {
     }
   }
   const candidates = [];
+  let listErr = null; // the space list went unanswered: the remembered space is still tried, "no space" is never concluded
   if (preferSpaceKey) {
     const s = await store.spaceByKey(preferSpaceKey);
     if (!s) throw new Error(`Space ${preferSpaceKey} was not found, or the app cannot see it.`);
     candidates.push(s);
   } else {
-    if (settings.spaceKey) { const s = await store.spaceByKey(settings.spaceKey); if (s) candidates.push(s); }
-    for (const s of await store.listGlobalSpaces(25)) if (!candidates.some((c) => c.spaceId === s.spaceId)) candidates.push(s);
+    if (settings.spaceKey) { const s = await store.spaceByKey(settings.spaceKey, { strict: true }); if (s) candidates.push(s); }
+    try {
+      for (const s of await store.listGlobalSpaces(25)) if (!candidates.some((c) => c.spaceId === s.spaceId)) candidates.push(s);
+    } catch (e) {
+      if (!candidates.length) throw e;
+      listErr = e;
+    }
   }
   let lastErr = null;
+  let refused = 0;
   for (const s of candidates) {
     try {
       const page = await store.createBackupPage(s.spaceId, env);
       const next = { pageId: page.pageId, spaceId: s.spaceId, spaceKey: s.spaceKey, spaceName: s.spaceName, title: page.title };
       await kvs.set(SETTINGS_KEY, next);
       return next;
-    } catch (e) { lastErr = e; console.warn(`[BACKUP] page in ${spaceKeyForLog(s.spaceKey)} failed: ${errText(e)}`); }
+    } catch (e) {
+      lastErr = e;
+      // A refusal is the paused state's evidence, reported once by runBackup; anything else is logged here.
+      if (e?.createRefused) refused += 1; else console.warn(`[BACKUP] page in ${spaceKeyForLog(s.spaceKey)} failed: ${errText(e)}`);
+    }
   }
+  if (!preferSpaceKey && !listErr && (!candidates.length || refused === candidates.length)) throw noSpaceError(candidates.length ? "not-allowed" : "none-visible");
   throw lastErr || new Error("No space found where the app can keep its backup page.");
+}
+
+export const NO_SPACE_CODE = "NO_BACKUP_SPACE";
+const NO_SPACE_TEXT = {
+  "none-visible": "Backups are paused: Sentinel Vault sees no space it can keep its backup page in.",
+  "not-allowed": "Backups are paused: Sentinel Vault may not add its backup page in any space it sees.",
+};
+/** The error that means "nowhere to keep the backup" (cause: "none-visible" | "not-allowed"). */
+export function noSpaceError(cause) {
+  return Object.assign(new Error(`${NO_SPACE_TEXT[cause]} Choose a space in Site settings, Backup and restore, Move to another space.`), { code: NO_SPACE_CODE, noSpaceCause: cause });
+}
+
+/**
+ * Enter (or stay in) the paused state: ONE stored state the Backup tab shows, announced by one log
+ * line and one history row when it begins or its cause changes, silent while it lasts. lastCheckAt
+ * makes the hourly sweep come back once a day (sweepReason); a change, Back up now and Move try at
+ * once. The raw error row goes: the state says it plainly.
+ */
+async function pauseForNoSpace(e, startedAt) {
+  const cause = e.noSpaceCause;
+  const prev = (await kvs.get(STATUS_KEY).catch(() => null)) || {};
+  const announce = prev.noSpace?.cause !== cause;
+  const { lastError: _e, ...rest } = prev;
+  const noSpace = { cause, since: announce ? startedAt : prev.noSpace.since, checkedAt: startedAt };
+  await kvs.set(STATUS_KEY, { ...rest, lastCheckAt: startedAt, noSpace }).catch(() => {});
+  if (announce) console.warn(`[BACKUP] paused: no space to keep the backup page in (cause=${safeKey(cause)}); checked again daily, after a change and on Back up now`);
+  return { ok: false, noSpace: cause, announce, reason: errMessage(e) };
 }
 
 // ── take a backup ─────────────────────────────────────────────────────────────────────────
@@ -167,7 +216,7 @@ export async function runBackup({ reason = "manual", actor = null } = {}) {
     const skip = automatic ? skipAutomaticGeneration({ keys, index, info, decision, nowMs: Date.parse(startedAt) }) : null;
     if (skip) {
       await store.writeIndex(where.pageId, { ...index, installations, lastCheckAt: startedAt });
-      const prev = (await kvs.get(STATUS_KEY)) || {};
+      const { noSpace: _ns, ...prev } = (await kvs.get(STATUS_KEY)) || {};
       await kvs.set(STATUS_KEY, { ...prev, lastCheckAt: startedAt, lastError: null, waiting: skip });
       return { ok: true, unchanged: true, skipped: skip, keys };
     }
@@ -176,6 +225,7 @@ export async function runBackup({ reason = "manual", actor = null } = {}) {
       // A fresh install (after a restore) has no status row yet: the newest generation IS its last backup.
       // A recorded backup ends the "deleted on purpose" state (worker.js sweepReason).
       const { deletedAt: _d, deletedBy: _b, ...prev } = (await kvs.get(STATUS_KEY)) || {};
+      delete prev.noSpace; // a backup was recorded: the paused state is over
       const lastBackup = { ...newest, ...(prev.lastBackup?.generationId === newest.generationId ? prev.lastBackup : {}), pageId: where.pageId, spaceKey: where.spaceKey, spaceName: where.spaceName };
       await kvs.set(STATUS_KEY, { ...prev, lastBackup, lastCheckAt: startedAt, lastError: null });
       return { ok: true, unchanged: true, generationId: newest.generationId, keys, bytes: newest.bytes };
@@ -202,11 +252,13 @@ export async function runBackup({ reason = "manual", actor = null } = {}) {
     await collectGarbage(where.pageId, generations, existing).catch((e) => console.warn(`[BACKUP] gc: ${errText(e)}`));
 
     const { deletedAt: _d, deletedBy: _b, ...prevStatus } = (await kvs.get(STATUS_KEY)) || {};
+    delete prevStatus.noSpace;
     const status = { ...prevStatus, lastBackup: { ...row, pageId: where.pageId, spaceKey: where.spaceKey, spaceName: where.spaceName, uploaded }, lastCheckAt: startedAt, lastError: null };
     await kvs.set(STATUS_KEY, status);
     console.log(`[BACKUP] generation ${generationId} reason=${safeKey(reason)} keys=${keys} bytes=${bytes} chunks=${chunks.length} uploaded=${uploaded}`);
     return { ok: true, unchanged: false, generationId, keys, bytes, chunks: chunks.length, uploaded };
   } catch (e) {
+    if (e?.code === NO_SPACE_CODE) return pauseForNoSpace(e, startedAt);
     console.error("[BACKUP] failed:", errText(e));
     const status = { ...((await kvs.get(STATUS_KEY).catch(() => null)) || {}), lastError: { at: startedAt, message: errMessage(e), reason } };
     await kvs.set(STATUS_KEY, status).catch(() => {});
