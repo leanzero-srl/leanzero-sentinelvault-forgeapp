@@ -22,7 +22,8 @@ import {
 import { retryAtFor } from "../../shared/edit-cooldown.js";
 import { DECLINED_REASON } from "../../../ui/kit/status-language.js";
 import { listMyStewardRequestsCore } from "../realms/actions.js";
-import { listMyApprovals, newApproverCheck, approverRefusal, cannotViewToDecide, viewToDecideRefusal } from "../workflow/approvals.js";
+import { viewableProposals } from "./viewable.js";
+import { waitingApprovals, newApproverCheck, approverRefusal, cannotViewToDecide, viewToDecideRefusal } from "../workflow/approvals.js";
 import { canReadPage, isStewardOfSeal } from "../../shared/content-access.js";
 import { recordActivity } from "../../infra/activity-log.js";
 import { errText } from "../../shared/action-log.js";
@@ -110,24 +111,6 @@ async function proposalAuthority(request, accountId, seal, pageId, authorized) {
   return { authorized: d.may, refusal: d.unknown ? approverRefusal("unknown") : null };
 }
 
-/**
- * 8.16: My work's request lists name the file or section, the proposer and the page. A PROPOSAL row
- * (addressed to the page's approvers) is listed only for someone who can view its page, asked once
- * per page; the seal owner's own requests are unchanged. The counts (ribbon, badge) run on every
- * page view and stay index-only; a count can be one higher than this list for such a row.
- */
-async function viewableProposals(rows, accountId) {
-  const seen = new Map();
-  const out = [];
-  for (const r of rows || []) {
-    if (!r?.proposal) { out.push(r); continue; }
-    const pageId = String(r.contentId || r.pageId || "");
-    if (!pageId) continue;
-    if (!seen.has(pageId)) seen.set(pageId, canReadPage(accountId, pageId));
-    if (await seen.get(pageId)) out.push(r);
-  }
-  return out;
-}
 
 async function moveBackForProposal(pageId, approverAccountId, request) {
   const wf = await import("../workflow/logic.js");
@@ -903,12 +886,12 @@ const listMySectionEditRequests = async (req) => {
 };
 
 /**
- * P1-3: what is waiting on the caller, as numbers — for the My work header and, later, the
- * ribbon/chip badge. Index reads only: three per-caller prefixes confirmed by key, and the
- * space-admin aggregate, which costs nothing when no space has anyone waiting (the common case)
- * and one role check per such space otherwise. `approvals` is the raw index count (it does not
- * drop approvals on trashed pages or AI-blocked transitions the way the inbox lister does, which
- * needs a REST lookup per page); the inbox card stays the authority for what is listed.
+ * P1-3: what is waiting on the caller, as numbers — for the My work header. SVT-147: every number
+ * counts exactly what its list on My work lists, by the list's own rule: approvals through
+ * waitingApprovals (the inbox's rows), file and section requests through viewableProposals (the
+ * request lists' rows), access requests through listMyStewardRequestsCore (the access list's rows).
+ * Before, the approvals and request numbers read the raw indexes and could be higher than the lists.
+ * The space-admin aggregate costs nothing when no space has anyone waiting (the common case).
  * Every arm fails soft to 0 so one broken index cannot blank the whole badge.
  */
 /**
@@ -928,9 +911,9 @@ const countMyWork = async (req) => {
   if (!accountId) return { approvals: 0, fileRequests: 0, sectionRequests: 0, accessRequests: 0, total: 0 };
   const settle = async (p) => { try { return (await p).length; } catch (e) { console.warn("[MY-WORK] count", errText(e)); return 0; } };
   const [approvals, fileRequests, sectionRequests, accessRequests] = await Promise.all([
-    settle(listMyApprovals(accountId)),
-    settle(listPendingRequestsForOwner(accountId)),
-    settle(listPendingSectionRequestsForOwner(accountId)),
+    settle(waitingApprovals(accountId)),
+    settle(listPendingRequestsForOwner(accountId).then((rows) => viewableProposals(rows, accountId))),
+    settle(listPendingSectionRequestsForOwner(accountId).then((rows) => viewableProposals(rows, accountId))),
     settle(listMyStewardRequestsCore(accountId).then((r) => r.requests)),
   ]);
   return { approvals, fileRequests, sectionRequests, accessRequests, total: approvals + fileRequests + sectionRequests + accessRequests };

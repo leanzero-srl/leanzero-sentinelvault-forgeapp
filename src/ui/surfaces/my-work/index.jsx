@@ -678,7 +678,7 @@ const MyWork = () => {
         )}
       </header>
       <div className="mw-grid">
-        <WorkflowInbox emptyText="Nothing is waiting on your approval." />
+        <WorkflowInbox emptyText="Nothing is waiting on your approval." onDecided={recount} />
         <EditRequests onChange={recount} />
         <SectionRequests onChange={recount} />
         <AccessRequests onChange={recount} />

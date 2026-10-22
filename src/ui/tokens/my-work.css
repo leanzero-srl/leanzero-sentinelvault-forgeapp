@@ -180,7 +180,7 @@ html[data-color-mode="dark"] .wf-inbox:not(.wf-inbox-empty) { border-color: #f59
 .wf-inbox .alert-success, .wf-inbox .alert-error { margin: 0 0 10px; padding: 10px 12px; }
 .wf-inbox-empty, html[data-color-mode="dark"] .wf-inbox-empty { border-color: var(--sv-border-primary, #E2E8F0); }
 .wf-inbox-count-zero { background: var(--sv-status-neutral, #64748B); }
-.wf-inbox-none { margin: 0; font-size: 13px; color: var(--sv-text-secondary, #475569); }
+.wf-inbox-none, .wf-inbox-more { margin: 0; font-size: 13px; color: var(--sv-text-secondary, #475569); }
 .wf-inbox-page { cursor: pointer; }
 
 /* ---- My work (A7) ---- */

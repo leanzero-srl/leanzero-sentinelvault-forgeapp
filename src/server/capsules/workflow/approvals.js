@@ -20,6 +20,12 @@
  *        reached a freshly opened approval, so "Approvals waiting on you" rendered nothing while
  *        the page banner still showed the request. Written with the approval records, deleted
  *        with them, backfilled hourly by workflowSweep for approvals opened before this shipped.
+ *   workflow-settle-{pageId}-{accountId}
+ *        = { pageId, accountId, decision, request, at }
+ *        SVT-146: a vote written AHEAD of being recorded. decideApproval drops it once the vote's
+ *        outcome is applied; whatever is left (the second judgement could not be made, the
+ *        completion failed, the function died) is applied by the hourly sweep (settleRecordedVotes).
+ *        `request` names the request it belongs to (requestIdOf). Deleted with the approval records.
  */
 import { route } from "@forge/api";
 import { appConfluence, rateLimitOf, noteAuthzUnknown } from "../../shared/confluence-call.js";
@@ -36,6 +42,7 @@ import { isStewardOfRecord, recordAuthority, stewardOfSpacesStatus, canReadPage,
 import { movedPageHold } from "./moved-hold.js";
 import { verifySignature } from "./signature.js";
 import { errText } from "../../shared/action-log.js";
+import { fetchPageStatuses } from "../../shared/page-status.js";
 
 const APPROVAL_ID = "approval"; // v1 single default round; schema carries the segment for future named rounds
 // 8.16: the one refusal for a decider who cannot view the page (approval requests and proposals). A
@@ -451,6 +458,12 @@ export function approverRefusal(status, extra = {}, { unreadGroups = [] } = {}) 
 const approvalKey = (pageId, stateId, accountId) => `workflow-approval-${pageId}-${stateId}-${APPROVAL_ID}-${accountId}`;
 const pendingKey = (pageId) => `workflow-pending-${pageId}`;
 export const inboxKey = (accountId, pageId) => `workflow-inbox-${accountId}-${pageId}`;
+// SVT-146: see the header. One marker per (page, voter); `request` ties it to the request it was cast
+// on (a re-request resets every vote and stamps rerequestedAt, so an older marker applies nothing).
+export const SETTLE_PREFIX = "workflow-settle-";
+const settleKey = (pageId, accountId) => `${SETTLE_PREFIX}${pageId}-${accountId}`;
+const requestIdOf = (pending) => pending?.rerequestedAt || pending?.requestedAt || null;
+const dropSettle = (pageId, accountId) => kvs.delete(settleKey(pageId, accountId)).catch(() => {});
 
 // Pure (unit-tested). An approval record is an ORPHAN when its page has no pending transition
 // any more (page deleted mid-approval, or a teardown path that cleared the pending record by
@@ -554,6 +567,7 @@ export async function clearPageApprovals(pageId, stateId, approvers) {
     for (const acc of approvers) {
       await kvs.delete(approvalKey(pageId, stateId, acc)).catch(() => {});
       await kvs.delete(inboxKey(acc, pageId)).catch(() => {});
+      await dropSettle(pageId, acc); // SVT-146: the request is closed, nothing is left to apply
     }
     return;
   }
@@ -562,7 +576,7 @@ export async function clearPageApprovals(pageId, stateId, approvers) {
   const { results } = await kvs.query().where("key", WhereConditions.beginsWith(prefix)).limit(100).getMany();
   for (const { key, value } of results || []) {
     await kvs.delete(key).catch(() => {});
-    if (value?.approverAccountId) await kvs.delete(inboxKey(value.approverAccountId, pageId)).catch(() => {});
+    if (value?.approverAccountId) { await kvs.delete(inboxKey(value.approverAccountId, pageId)).catch(() => {}); await dropSettle(pageId, value.approverAccountId); }
   }
 }
 
@@ -983,6 +997,11 @@ export async function decideApproval({ pageId, approverAccountId, decision, reas
     signature = v.signature;
   }
 
+  // SVT-146: written AHEAD of the vote, so a vote whose outcome is not applied below (the second
+  // judgement cannot be made, the completion fails, the function dies) is applied by the hourly sweep
+  // (settleRecordedVotes). Dropped below once the outcome is applied. A failed write records nothing.
+  await kvs.set(settleKey(pageId, approverAccountId), { pageId: String(pageId), accountId: approverAccountId, decision, request: requestIdOf(pending), at: Date.now() });
+
   record.status = decision;
   record.decidedAt = new Date().toISOString();
   record.reason = reason || null;
@@ -1001,6 +1020,15 @@ export async function decideApproval({ pageId, approverAccountId, decision, reas
   }
   await kvs.set(key, record);
 
+  // SVT-146: the request is judged again from a FRESH read of the open request. A space admin who
+  // decided while this call ran is on its decider list only there: judged on the snapshot read at the
+  // start, their approval was missed here while their own judgement (made before this vote was
+  // recorded) missed this vote, and the request stayed open with enough approvals. Whichever of two
+  // racing votes is recorded second now sees the other.
+  const latest = (await kvs.get(pendingKey(pageId)).catch(() => null)) || null;
+  if (latest && requestIdOf(latest) === requestIdOf(pending)) {
+    pending.adminDeciders = [...new Set([...(latest.adminDeciders || []), ...(pending.adminDeciders || [])])];
+  }
   // Aggregate from strongly-consistent per-key gets over the approvers who are approvers NOW
   // (quorumNow; the list read above is reused) plus the admins who decided.
   const q = adminDespiteUnknown
@@ -1042,6 +1070,7 @@ export async function decideApproval({ pageId, approverAccountId, decision, reas
     return result;
   };
 
+  // The settle marker stays: the sweep applies the vote once the request can be judged (SVT-146).
   if (later) return decided({ success: true, outcome: "pending" });
   if (outcome === "approved") {
     // #46: the human quorum is met — the transition completes only when the AI axis (if
@@ -1050,40 +1079,142 @@ export async function decideApproval({ pageId, approverAccountId, decision, reas
     // says pending, we'd hold with the quorum already met and neither path would finalize).
     const freshPending = (await kvs.get(pendingKey(pageId))) || pending;
     if (freshPending.aiGate?.required && freshPending.aiGate.status !== "passed") {
+      await dropSettle(pageId, approverAccountId); // the AI verdict completes it (applyAiVerdict), not a vote
       if (freshPending.aiGate.status === "failed") {
         return decided({ success: true, outcome: "ai-blocked", transitioned: false, reason: "AI content review did not pass — revise and re-request." });
       }
       return decided({ success: true, outcome: "pending-ai", transitioned: false, reason: "Approvals complete — waiting on the AI content review." });
     }
     const voteSummary = `approved (${records.filter((r) => r.status === "approved").length}/${records.length})`;
+    // Completed (or closed as stale): clearPageApprovals dropped the settle marker. Not applied (the
+    // version could not be read, a moved-page hold, another completion in flight that may still
+    // fail): the marker stays and the sweep applies the vote (SVT-146).
     return decided(await finalizeApprovedTransition(pageId, stateId, freshPending, approverAccountId, actorName, voteSummary, { holdChecked: decision === "approved", quorum: evidenceQuorum }));
   }
   if (outcome === "denied") {
-    // A4 §3: a denial used to leave NO durable trace once the records were deleted. Snapshot
-    // the evidence (from `records`, read above — before the clear) into a workflow-log entry
-    // FIRST, so the trace exists even if the clear below fails midway. Shape mirrors a
-    // transition entry (from/to/by/byName/reason) plus `kind` so readers can tell it apart:
-    // the page did NOT move, it stays in `from`.
-    const approvalRecord = buildApprovalRecord({
-      // The evidence names everyone asked (a removed approver's earlier vote included), as before.
-      pending, records: await readApprovalRecords(pageId, stateId, deciderIds(pending)), outcome: "denied", quorum: evidenceQuorum,
-      completedBy: approverAccountId, completedByName: actorName || record.approverName || null,
-    });
-    await appendWorkflowLog(pageId, {
-      kind: "approval-denied",
-      from: (await readPageWorkflow(pageId))?.stateId ?? null,
-      to: stateId,
-      by: approverAccountId,
-      byName: actorName || record.approverName || null,
-      reason: "approval denied",
-      details: { approvalRecord },
-    });
-    await clearPageApprovals(pageId, stateId, deciderIds(pending));
-    // WF-3: the approver's reason travels with the denial — it is the point of Deny + reason.
-    await notifyApprovalResolved({ pageId, requestedBy: pending.requestedBy, outcome: "denied", targetName: pending.toStateName || stateId, deciderName: actorName, reason: record.reason || null }).catch(() => {});
+    const d = await applyDenial(pageId, pending, { by: approverAccountId, byName: actorName || record.approverName || null, reason: record.reason || null, quorum: evidenceQuorum });
+    // Another completion holds the page right now: the vote stands and the sweep settles it.
+    if (!d.applied) return decided({ success: true, outcome: "pending" });
     return decided({ success: true, outcome: "denied" });
   }
+  await dropSettle(pageId, approverAccountId); // judged, nothing to apply
   return decided({ success: true, outcome: "pending" });
+}
+
+/**
+ * Close a request as denied — the decide path and settleRecordedVotes (SVT-146) share it. Runs under
+ * the completion claim (one completion per page at a time; `{ applied: false }` while another holds
+ * it) and logs the denial ONCE per request: an approval-denied entry already written for this request
+ * (a run that died before its cleanup) is not written again, nor is the requester told twice.
+ */
+async function applyDenial(pageId, pending, { by, byName, reason, quorum }) {
+  if (await kvs.get(completingKey(pageId))) return { applied: false };
+  await setWithTtl(completingKey(pageId), { stateId: pending.toStateId, at: new Date().toISOString() }, 120000);
+  try {
+    const stateId = pending.toStateId;
+    const since = Date.parse(requestIdOf(pending) || "") || 0;
+    const logged = (await getWorkflowLog(pageId)).some((e) => e?.kind === "approval-denied" && e.to === stateId && (e.ts || 0) >= since);
+    if (!logged) {
+      // A4 §3: a denial used to leave NO durable trace once the records were deleted. Snapshot
+      // the evidence into a workflow-log entry FIRST, so the trace exists even if the clear below
+      // fails midway. Shape mirrors a transition entry (from/to/by/byName/reason) plus `kind` so
+      // readers can tell it apart: the page did NOT move, it stays in `from`.
+      const approvalRecord = buildApprovalRecord({
+        // The evidence names everyone asked (a removed approver's earlier vote included), as before.
+        pending, records: await readApprovalRecords(pageId, stateId, deciderIds(pending)), outcome: "denied", quorum,
+        completedBy: by, completedByName: byName || null,
+      });
+      await appendWorkflowLog(pageId, {
+        kind: "approval-denied",
+        from: (await readPageWorkflow(pageId))?.stateId ?? null,
+        to: stateId,
+        by,
+        byName: byName || null,
+        reason: "approval denied",
+        details: { approvalRecord },
+      });
+    }
+    await clearPageApprovals(pageId, stateId, deciderIds(pending));
+    // WF-3: the approver's reason travels with the denial — it is the point of Deny + reason.
+    if (!logged) await notifyApprovalResolved({ pageId, requestedBy: pending.requestedBy, outcome: "denied", targetName: pending.toStateName || stateId, deciderName: byName, reason: reason || null }).catch(() => {});
+    return { applied: true };
+  } finally {
+    await kvs.delete(completingKey(pageId)).catch(() => {});
+  }
+}
+
+/**
+ * SVT-146 (hourly, workflowSweep): apply the votes that were recorded but whose outcome never was —
+ * what decideApproval would have done had its second judgement been made. Idempotent: a completion
+ * runs through finalizeApprovedTransition (completion claim, the state machine's no-op on a page that
+ * already left its state), a denial through applyDenial (claim, logged once per request).
+ *  - No open request, or markers from an older request: the markers go, nothing is applied.
+ *  - A completion that moved the page but died before its cleanup: only the cleanup runs.
+ *  - A marker whose vote was never recorded: dropped.
+ *  - The request still cannot be judged (a role or group unreadable): kept for the next run.
+ *  - Approved: completed only if one of the votes left is an APPROVAL (a "no" never completes a
+ *    request, the decide path's rule) and the AI review, when required, passed (else the verdict
+ *    completes it). Denied: closed. Pending: the markers go (a later vote judges it).
+ * Returns { done, why }; `done` = this run closed the request (`why`: an internal tag, never shown).
+ */
+export async function settleRecordedVotes(pageId) {
+  const found = [];
+  const { results } = await kvs.query().where("key", WhereConditions.beginsWith(`${SETTLE_PREFIX}${pageId}-`)).limit(100).getMany();
+  for (const { key } of results || []) {
+    const m = await kvs.get(key).catch(() => null); // strong read: the query is eventually consistent
+    if (m?.accountId) found.push({ key, ...m });
+  }
+  if (!found.length) return { done: false, why: "nothing to settle" };
+  const drop = async (list) => { for (const m of list) await kvs.delete(m.key).catch(() => {}); };
+  const pending = await kvs.get(pendingKey(pageId));
+  if (!pending) { await drop(found); return { done: false, why: "closed" }; }
+  const mine = found.filter((m) => m.request === requestIdOf(pending));
+  await drop(found.filter((m) => !mine.includes(m)));
+  if (!mine.length) return { done: false, why: "older request" };
+  if (await kvs.get(completingKey(pageId))) return { done: false, why: "completing" };
+  const stateId = pending.toStateId;
+  // The completion moved the page (its evidence names this request) but died before its cleanup.
+  const current = await readPageWorkflow(pageId);
+  if (current?.stateId === stateId && current?.approvalRecord?.outcome === "approved" && current.approvalRecord.requestedAt === pending.requestedAt) {
+    await clearPageApprovals(pageId, stateId, deciderIds(pending));
+    return { done: true, why: "cleaned up" };
+  }
+  const records = await readApprovalRecords(pageId, stateId, mine.map((m) => m.accountId));
+  const votes = mine.map((m, i) => ({ ...m, record: records[i] })).filter((v) => v.record?.status === v.decision);
+  await drop(mine.filter((m) => !votes.some((v) => v.key === m.key)));
+  if (!votes.length) return { done: false, why: "no recorded vote" };
+  const approval = votes.find((v) => v.decision === "approved");
+  const q = await quorumNow(pageId, pending);
+  let outcome; let evidence;
+  if (q.unknown) {
+    // The decide path's one exception: in "any", a space admin's approval does not depend on an
+    // approver list that cannot be read — if that person is an admin NOW.
+    if (q.unknownCause !== "list" || (pending.mode || "any") !== "any" || !approval?.record?.admin) return { done: false, why: "still unknown" };
+    const now = await adminsNow(pageId, pending, [approval.accountId]);
+    if (!now.ids.includes(approval.accountId)) return { done: false, why: "still unknown" };
+    outcome = "approved";
+    evidence = await listUnknownEvidence(pageId, pending, [approval.accountId]);
+  } else {
+    outcome = q.outcome === "approved" && !approval ? "pending" : q.outcome;
+    evidence = { counted: q.counted, effective: q.effective, min: q.min };
+  }
+  if (outcome === "approved") {
+    if (pending.aiGate?.required && pending.aiGate.status !== "passed") { await drop(votes); return { done: false, why: "ai review" }; }
+    const counted = [...(q.listedRecords || []), ...(q.adminRecords || [])];
+    const voteSummary = q.unknown ? "approved (space admin)" : `approved (${counted.filter((r) => r?.status === "approved").length}/${counted.length})`;
+    const res = await finalizeApprovedTransition(pageId, stateId, pending, approval.accountId, approval.record?.approverName || null, voteSummary, { quorum: evidence });
+    const done = res?.transitioned === true || res?.stale === true;
+    console.info(`[APPROVALS] settled page=${pageId} outcome=${done ? (res.stale ? "stale" : "approved") : "not-applied"}`);
+    return { done, why: done ? (res.stale ? "stale" : "approved") : "not applied" };
+  }
+  if (outcome === "denied") {
+    const denial = votes.find((v) => v.decision === "denied") || votes[0];
+    const d = await applyDenial(pageId, pending, { by: denial.accountId, byName: denial.record?.approverName || null, reason: denial.record?.reason || null, quorum: evidence });
+    console.info(`[APPROVALS] settled page=${pageId} outcome=${d.applied ? "denied" : "busy"}`);
+    return { done: d.applied, why: d.applied ? "denied" : "completing" };
+  }
+  await drop(votes);
+  return { done: false, why: "pending" };
 }
 
 // The requester takes their request back (or a space admin closes it without a decision): no vote,
@@ -1292,6 +1423,13 @@ export async function rerequestApproval({ pageId, actorAccountId, actorName, isS
 // An index row whose approval record is gone is stale (cleared by a path that predates the
 // index, or a lost delete) and is removed on the way past.
 export async function listMyApprovals(accountId) {
+  return (await approvalRows(accountId)).map((r) => r.record);
+}
+// The index half of the rule: { record, pending } per approval waiting on the caller, from storage
+// only. SVT-147: a record with no open request (resolved, or one being opened right now) and a
+// request whose AI review did not pass are not waiting on anyone; the inbox dropped both and the
+// counts did not.
+async function approvalRows(accountId) {
   if (!accountId) return [];
   const out = [];
   const prefix = `workflow-inbox-${accountId}-`;
@@ -1307,19 +1445,51 @@ export async function listMyApprovals(accountId) {
         // Your OWN request is not waiting on you — you cannot decide it (segregation of duties);
         // it counted as "Waiting for you" on the ribbon and in My work (tester 2026-09-29).
         const pending = await kvs.get(pendingKey(row.pageId));
-        if (pending?.requestedBy === accountId) continue;
+        if (!pending) continue;
+        if (pending.aiGate?.status === "failed") continue; // #46: the requester revises and re-requests first
+        if (pending.requestedBy === accountId) continue;
         // Taken off the space's approver list since the request: not waiting on you any more (the
         // decision would be refused). The index row stays: being put back on the list brings it
         // back. "unknown" still lists it (the decision then says to try again). An admin's own
         // record (made when they decided) is not an approver-list entry.
-        if (pending && !record.admin && (await approverNow(pending.approvers, accountId, pending.spaceKey || null)) === "no") continue;
-        out.push(record); continue;
+        if (!record.admin && (await approverNow(pending.approvers, accountId, pending.spaceKey || null)) === "no") continue;
+        out.push({ record, pending }); continue;
       }
       if (!record) await kvs.delete(key).catch(() => {});
     }
     if (!nextCursor || ++iterations >= 15) break;
     query = kvs.query().where("key", WhereConditions.beginsWith(prefix)).limit(100).cursor(nextCursor);
   } while (true);
+  return out;
+}
+
+/**
+ * SVT-147: THE rule for "an approval is waiting on you" — the approvals inbox lists these rows, My
+ * work's total and the page banner's Waiting for you count count them (before, the counts read the
+ * raw index and could be higher than the list). The index half (approvalRows), then what only
+ * Confluence knows: the page is not in the trash or gone (an unknown answer keeps the row, as the
+ * inbox always did) and the caller can view it (decideApproval refuses otherwise).
+ * `pageId`: only that page's rows (the banner). `knownReadable`: page ids the caller is already
+ * proven to view (the banner's own page: from the context, or checked against the payload).
+ * Returns [{ record, pending, place }], in index order.
+ */
+export async function waitingApprovals(accountId, { pageId = null, knownReadable = [] } = {}) {
+  let rows = await approvalRows(accountId);
+  if (pageId != null) rows = rows.filter((r) => String(r.record.pageId) === String(pageId));
+  if (!rows.length) return [];
+  const places = await fetchPageStatuses(rows.map((r) => r.record.pageId));
+  const proven = new Set((knownReadable || []).map(String));
+  const out = [];
+  for (let i = 0; i < rows.length; i += 10) { // canReadPage per page, ten at a time
+    const chunk = rows.slice(i, i + 10);
+    const verdicts = await Promise.all(chunk.map(async (r) => {
+      const place = places.get(String(r.record.pageId));
+      if (place && (place.status === "trashed" || place.status === "missing")) return null;
+      if (!proven.has(String(r.record.pageId)) && !(await canReadPage(accountId, r.record.pageId))) return null;
+      return { ...r, place: place || null };
+    }));
+    out.push(...verdicts.filter(Boolean));
+  }
   return out;
 }
 
