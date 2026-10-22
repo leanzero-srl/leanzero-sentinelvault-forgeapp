@@ -75,16 +75,21 @@ export function choosePage(found, environmentType) {
  * Confluence did not answer (429, 5xx) throws an ordinary error: "could not tell" is never "none".
  * Personal spaces are never candidates (their owner can delete them; they are archived when the
  * owner leaves).
+ *
+ * A NEW page only on answers Confluence gave (2026-10-23): the remembered page's read, its
+ * restriction read and the label search are STRICT, so a 429/5xx throws an ordinary, retryable
+ * failure instead of reading as "gone" / "no backup page here" and creating a second backup page
+ * (the site then pointed at the new page and the old one, with its generations, was left behind).
  */
 export async function ensureBackupPage({ preferSpaceKey = null } = {}) {
   const env = appInfo().environmentType;
   const settings = (await kvs.get(SETTINGS_KEY)) || {};
   if (settings.pageId && !preferSpaceKey) {
-    if (await store.isBackupPage(settings.pageId)) return settings;
+    if (await store.isBackupPage(settings.pageId, { strict: true })) return settings;
   }
   if (!preferSpaceKey) {
-    const found = choosePage(await store.findBackupPages().catch(() => []), env);
-    if (found && (await store.isBackupPage(found.pageId))) {
+    const found = choosePage(await store.findBackupPages(), env);
+    if (found && (await store.isBackupPage(found.pageId, { strict: true }))) {
       const next = { pageId: found.pageId, spaceId: found.spaceId, spaceKey: found.spaceKey, spaceName: found.spaceName, title: found.title };
       await kvs.set(SETTINGS_KEY, next);
       return next;
