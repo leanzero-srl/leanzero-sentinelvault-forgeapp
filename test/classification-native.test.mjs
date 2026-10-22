@@ -190,4 +190,30 @@ const writes = () => fake.calls.filter((c) => c.method !== "GET" && c.path.inclu
   eq("... and the page's activity records it", rows.map((v) => [v.type, v.details?.source]), [["classification.page-set", "space"]]);
 }
 
+{
+  // A scheme row stored before 8.21.0 (Confluence's order as the rank, colour names, no version). It is
+  // never reused as FRESH (its ranks are reversed), but when Confluence is busy it still says the site
+  // uses Confluence's own levels: re-ranked, never the App's levels, never "rate limited" for want of it.
+  const { getClassificationProvider } = await import("../src/server/capsules/classification/provider.js");
+  const v1Row = (age) => ({ name: "native", at: Date.now() - age, levels: LEVELS.map((l) => ({ id: l.id, name: l.name, color: l.color, rank: l.order, description: "" })) });
+  const busyLevels = (status) => onConfluence((method, rawPath) => (decodeURIComponent(rawPath).split("?")[0] === "/wiki/api/v2/classification-levels" ? { status, body: "busy", headers: { "Retry-After": "0" } } : undefined));
+  for (const status of [503, 429]) {
+    await setup();
+    await kvs.set("classification-scheme-cache", v1Row(3_600_000)); // an hour old: past the minute, within the day
+    busyLevels(status);
+    let got = null, code = null;
+    try { got = await runInvocation(() => getClassificationProvider()); } catch (e) { code = e?.code || "threw"; }
+    eq(`levels call ${status} with a pre-8.21 stored choice: still Confluence's own levels`, [got?.provider?.name ?? null, code], ["native", null]);
+    eq(`... re-ranked least sensitive first (${status})`, (got?.levels || []).map((l) => `${l.name}:${l.rank}`), ["Public:1", "Internal:2", "Restricted:3", "Highly restricted:4"]);
+    ok(`... with hex colours (${status})`, (got?.levels || []).length === 4 && got.levels.every((l) => /^#[0-9A-F]{6}$/i.test(l.color)));
+  }
+  await setup();
+  await kvs.set("classification-scheme-cache", v1Row(1_000)); // fresh by age, but the old shape
+  const before = fake.calls.length;
+  const fresh = await runInvocation(() => getClassificationProvider());
+  ok("a fresh pre-8.21 row is not reused: Confluence is asked again", fake.calls.slice(before).some((c) => c.path.includes("/wiki/api/v2/classification-levels")));
+  eq("... and the levels come ranked the new way", fresh.levels.map((l) => l.rank), [1, 2, 3, 4]);
+  eq("... and the stored row is the new shape", (await kvs.get("classification-scheme-cache"))?.v, 2);
+}
+
 report("classification-native");
