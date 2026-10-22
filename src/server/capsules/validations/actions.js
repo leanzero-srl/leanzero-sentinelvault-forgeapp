@@ -311,6 +311,13 @@ const approvePageGate = async (req) => {
   const pageId = req.payload?.pageId || req.context.extension?.content?.id;
   const accountId = req.context.accountId;
   if (!pageId) return { success: false, reason: "No page" };
+  // 8.16: "Approve anyway" is a decision about the page's content: the admin must be able to view it
+  // (the rule decide-approval follows). The page id may come from the payload or the REST API.
+  {
+    const { viewToDecideRefusal } = await import("../workflow/approvals.js");
+    const viewRefusal = await viewToDecideRefusal(accountId, pageId);
+    if (viewRefusal) return viewRefusal;
+  }
 
   // audit B6: authorize against the page's REAL space (resolved from the id), NOT the
   // caller-supplied spaceKey — else a steward of any space could clear any page's gate.

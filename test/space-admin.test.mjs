@@ -151,4 +151,40 @@ eq("mapLimited of nothing", await mapLimited([], 3, async () => 1), []);
 world();
 await kvs.set(`admin-settings-space-${SPACE.key}`, { adminUsers: [{ accountId: EDITOR }] });
 eq("a listed Sentinel Vault admin still is one", await sc.isAccountStewardAsApp(EDITOR, SPACE.key), true);
+// 8.16: a read with no answer (5xx) is "no" for the ordinary check, as before, but is NOT kept: the
+// next check in the same invocation asks again (review round 4: a kept failure turned every space
+// admin into "no" for a minute). Strict mode reports it as unknown, never as a proven "no"; a 4xx is
+// still a definite "no" even in strict mode.
+{
+  const { runInvocation } = await import("../src/server/shared/confluence-call.js");
+  const { cacheKeyOf } = sc;
+  // The first `n` matching calls answer 503 (a 5xx is not retried by the door).
+  const failOnce = (match, n = 1) => { let left = n; onConfluence((method, rawPath) => (left > 0 && match(decodeURIComponent(rawPath)) ? ((left -= 1), { status: 503, body: {} }) : undefined)); };
+  const clearCache = async () => { for (const k of await kvs.query().where("key", (await import("@forge/kvs")).WhereConditions.beginsWith("authz-")).limit(100).getMany().then((r) => (r.results || []).map((x) => x.key)).catch(() => [])) await kvs.delete(k); };
+  world(); await clearCache();
+  failOnce((p) => /\/wiki\/api\/v2\/spaces\/\d+\/permissions/.test(p));
+  const [a, b] = await runInvocation(async () => [await sc.isAccountStewardAsApp(EDITOR, SPACE.key), await sc.isAccountStewardAsApp(ROLE_ADMIN, SPACE.key)]);
+  eq("a 503 on the space's permission list is not kept: the next admin checked in the same call is still an admin", b, true);
+  eq("(and the collaborator checked during the 503 is still not one)", a, false);
+  world(); await clearCache();
+  failOnce((p) => p.startsWith("/wiki/rest/api/user/memberof") && p.includes(GROUP_ADMIN), 2); // both reads of the first check
+  const memo = sc.newStewardMemo();
+  const first = await sc.accountStewardStatusAsApp(GROUP_ADMIN, SPACE.key, { memo });
+  const second = await sc.accountStewardStatusAsApp(GROUP_ADMIN, SPACE.key, { memo });
+  eq("a 503 on the group list is not kept in an explicit memo: the next check finds the group admin", second.steward, true);
+  eq("(the check during the 503 was a plain no, not a yes)", first.steward, false);
+  world({ permissionsStatus: 503 }); await clearCache();
+  eq("strict: a 503 is 'could not tell'", (await sc.accountStewardStatusAsApp(ROLE_ADMIN, SPACE.key, { strict: true })).unknown, true);
+  eq("non-strict: a 503 is still a plain no", (await sc.accountStewardStatusAsApp(ROLE_ADMIN, SPACE.key)).unknown, false);
+  world({ endless: true }); await clearCache();
+  eq("strict: a permission list too long to read whole is 'could not tell'", (await sc.accountStewardStatusAsApp(ROLE_ADMIN, SPACE.key, { strict: true })).unknown, true);
+  eq("non-strict: the same is still a plain no", JSON.stringify(await sc.accountStewardStatusAsApp(ROLE_ADMIN, SPACE.key)), JSON.stringify({ steward: false, unknown: false }));
+  world({ stuckCursor: true }); await clearCache();
+  eq("strict: a cursor that does not advance is 'could not tell'", (await sc.accountStewardStatusAsApp(ROLE_ADMIN, SPACE.key, { strict: true })).unknown, true);
+  world(); await clearCache();
+  onConfluence((method, rawPath) => (decodeURIComponent(rawPath).startsWith("/wiki/rest/api/user/memberof") ? { body: { results: Array.from({ length: 200 }, (_, i) => ({ name: `g${i}`, id: `gid-${i}` })) } } : undefined));
+  eq("strict: a full page of 200 groups without the admin group is 'could not tell'", (await sc.accountStewardStatusAsApp(EDITOR, SPACE.key, { strict: true })).unknown, true);
+  world({ permissionsStatus: 403 }); await clearCache();
+  eq("strict: a 403 is still a definite no", JSON.stringify(await sc.accountStewardStatusAsApp(ROLE_ADMIN, SPACE.key, { strict: true })), JSON.stringify({ steward: false, unknown: false }));
+}
 report("space-admin");

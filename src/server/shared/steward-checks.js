@@ -35,11 +35,15 @@ const memoized = (memo, bucket, key, load) => {
   if (cur && Date.now() - cur.at <= MEMO_TTL_MS) return cur.p;
   const entry = { at: Date.now(), p: null };
   // A failed read (null) is not kept: the next space asks again instead of inheriting the miss.
-  entry.p = load().then((v) => {
+  entry.p = Promise.resolve().then(load).then((v) => {
     if (v == null && memo[bucket].get(key) === entry) memo[bucket].delete(key);
     const src = Number(v?.sourceAt);
     if (Number.isFinite(src) && src < entry.at) entry.at = src;
     return v;
+  }, (e) => {
+    // 8.16: a read with no answer throws (readFailedError) and is not kept either.
+    if (memo[bucket].get(key) === entry) memo[bucket].delete(key);
+    throw e;
   });
   memo[bucket].set(key, entry);
   return entry.p;
@@ -49,11 +53,26 @@ const memoized = (memo, bucket, key, load) => {
 // below, so a spent rate limit is never read as "not an admin" (8.12.0).
 const RATE_LIMITED = Object.freeze({ rateLimited: true });
 const isLimited = (v) => v === RATE_LIMITED;
+// 8.16: a read that got no answer at all (5xx, a thrown call). Every caller below treats it as "no",
+// as before, EXCEPT accountStewardStatusAsApp({ strict: true }), which reports it as unknown: a caller
+// that drops someone's vote on a "no" (workflow/approvals.js adminsNow) needs a proven negative. A
+// 4xx is Confluence's own answer (no such user or space, not visible): still a definite "no".
+// Never memoised (review round 4): a loader THROWS readFailedError() — both memos evict a rejection,
+// so the next check asks again exactly as it did when a failed read returned null — and the caller
+// turns it into READ_FAILED outside the memo (asFailed / orFailed).
+const READ_FAILED = Object.freeze({ readFailed: true });
+const isFailed = (v) => v === READ_FAILED;
+const failedRead = (res) => !res || res.status >= 500;
+const readFailedError = () => Object.assign(new Error("Confluence read failed"), { readFailed: true });
+const orFailed = (e) => { if (e?.readFailed) return READ_FAILED; throw e; };
+const asFailed = () => READ_FAILED; // any throw from a read is "no answer"
 
 const readUserAsApp = async (accountId) => {
   const res = await appConfluence(route`/wiki/rest/api/user?accountId=${accountId}&expand=groups,operations`);
   if (isRateLimited(res)) return RATE_LIMITED;
-  return res.ok ? await res.json() : null;
+  if (res.ok) return await res.json();
+  if (failedRead(res)) throw readFailedError();
+  return null;
 };
 
 // ── Short-lived answers shared across invocations (8.12.0) ──────────────────────────────────────
@@ -105,16 +124,21 @@ const cachePut = async (key, value, ttlMs, at) => {
 
 /** The account's groups ({ ids, names }), RATE_LIMITED, or null when Confluence would not say. */
 async function accountGroupsOf(accountId, memo = null) {
+  return groupsLoad(accountId, memo).catch(asFailed);
+}
+function groupsLoad(accountId, memo) {
   return memoized(memo, "groups", accountId, async () => {
     const key = groupsCacheKey(accountId);
     const hit = await cacheGet(key);
-    if (freshCached(hit, CACHE_GRANT_TTL_MS) && hit.accountId === accountId && Array.isArray(hit.ids) && Array.isArray(hit.names)) return { ids: hit.ids, names: hit.names, sourceAt: Number(hit.at) };
+    if (freshCached(hit, CACHE_GRANT_TTL_MS) && hit.accountId === accountId && Array.isArray(hit.ids) && Array.isArray(hit.names)) return { ids: hit.ids, names: hit.names, truncated: hit.truncated === true, sourceAt: Number(hit.at) };
     const startedAt = Date.now();
     const res = await appConfluence(route`/wiki/rest/api/user/memberof?accountId=${accountId}&limit=200`).catch(() => null);
     if (isRateLimited(res)) return RATE_LIMITED;
-    if (!res?.ok) return null;
+    if (!res?.ok) { if (failedRead(res)) throw readFailedError(); return null; }
     const rows = (await res.json())?.results || [];
-    const out = { ids: rows.map((g) => g?.id).filter(Boolean).map(String), names: rows.map((g) => g?.name).filter(Boolean).map(String) };
+    // 8.16: a full page (200, no paging here) may not be the whole list: `truncated`, so the strict
+    // check reads a "no" from it as "could not tell".
+    const out = { ids: rows.map((g) => g?.id).filter(Boolean).map(String), names: rows.map((g) => g?.name).filter(Boolean).map(String), truncated: rows.length >= 200 };
     if (out.ids.length <= MAX_CACHED_ENTRIES) await cachePut(key, { accountId, ...out }, CACHE_GRANT_TTL_MS, startedAt);
     return { ...out, sourceAt: startedAt };
   });
@@ -122,6 +146,9 @@ async function accountGroupsOf(accountId, memo = null) {
 
 /** `{ id, key }` of the space with exactly this key, RATE_LIMITED, or null (no such space, a failed read). */
 async function spaceRefOf(spaceKey) {
+  return spaceRefLoad(spaceKey).catch(orFailed);
+}
+function spaceRefLoad(spaceKey) {
   return invocationMemo(`space-ref|${spaceKey}`, async () => {
     const key = spaceIdCacheKey(spaceKey);
     const hit = await cacheGet(key);
@@ -129,7 +156,7 @@ async function spaceRefOf(spaceKey) {
     const startedAt = Date.now();
     const sres = await appConfluence(route`/wiki/api/v2/spaces?keys=${spaceKey}&limit=1`, { headers: { Accept: "application/json" } });
     if (isRateLimited(sres)) { console.warn(`[AUTHZ] space lookup ${spaceKeyForLog(spaceKey)} -> 429; could not check (nothing granted)`); return RATE_LIMITED; }
-    if (!sres.ok) { console.warn(`[AUTHZ] space lookup ${spaceKeyForLog(spaceKey)} -> ${sres.status}; not a space admin`); return null; }
+    if (!sres.ok) { console.warn(`[AUTHZ] space lookup ${spaceKeyForLog(spaceKey)} -> ${sres.status}; not a space admin`); if (failedRead(sres)) throw readFailedError(); return null; }
     const space = (await sres.json())?.results?.[0];
     if (!space?.id || space.key !== spaceKey) return null;
     await cachePut(key, { id: String(space.id), key: spaceKey }, SPACE_ID_TTL_MS, startedAt);
@@ -143,6 +170,9 @@ async function spaceRefOf(spaceKey) {
  * that does not advance before the end: "no" for everyone, as before).
  */
 async function spaceAdminSetOf(space) {
+  return spaceAdminSetLoad(space).catch(orFailed);
+}
+function spaceAdminSetLoad(space) {
   return invocationMemo(`space-admins|${space.id}`, async () => {
     const key = spaceAdminsCacheKey(space.id);
     const hit = await cacheGet(key);
@@ -162,7 +192,7 @@ async function spaceAdminSetOf(space) {
         JH,
       );
       if (isRateLimited(res)) { console.warn(`[AUTHZ] space permissions ${spaceKeyForLog(space.key)} -> 429; could not check (nothing granted)`); return RATE_LIMITED; }
-      if (!res.ok) { console.warn(`[AUTHZ] space permissions ${spaceKeyForLog(space.key)} -> ${res.status}; not a space admin`); return null; }
+      if (!res.ok) { console.warn(`[AUTHZ] space permissions ${spaceKeyForLog(space.key)} -> ${res.status}; not a space admin`); if (failedRead(res)) throw readFailedError(); return null; }
       const body = await res.json();
       for (const a of body?.results || []) {
         if (a?.operation?.key !== "administer" || a?.operation?.targetType !== "space" || !a?.principal?.id) continue;
@@ -176,11 +206,13 @@ async function spaceAdminSetOf(space) {
         if (out.users.length + out.groups.length <= MAX_CACHED_ENTRIES) await cachePut(key, { spaceId: String(space.id), spaceKey: space.key, ...out }, CACHE_GRANT_TTL_MS, startedAt);
         return { ...out, sourceAt: startedAt };
       }
-      if (seen.has(cursor)) return null; // a cursor that does not advance: the list cannot be read whole
+      // A cursor that does not advance, or more pages than are read: the list cannot be read whole —
+      // "no" for everyone, as before, and "could not tell" for the strict check (8.16, readFailedError).
+      if (seen.has(cursor)) throw readFailedError();
       seen.add(cursor);
     }
     console.warn(`[AUTHZ] space permissions ${spaceKeyForLog(space.key)}: more than ${SPACE_PERMISSION_MAX_PAGES} pages; not a space admin`);
-    return null;
+    throw readFailedError();
   });
 }
 
@@ -201,11 +233,12 @@ export async function isAccountStewardAsApp(accountId, realmKey, opts = {}) {
  * 429. Callers that ACT on a "no" against someone (the page trigger reverting an edit) must treat
  * unknown as "judge nothing now"; nothing is ever granted on unknown.
  */
-export async function accountStewardStatusAsApp(accountId, realmKey, { memo = null, spaceId = null } = {}) {
+export async function accountStewardStatusAsApp(accountId, realmKey, { memo = null, spaceId = null, strict = false } = {}) {
   if (!accountId) return NO_ANSWER;
   let realmConfig = null;
   let globalConfig = null;
   let limited = false;
+  let failed = false; // 8.16: a read with no answer (READ_FAILED, a throw): unknown only when `strict`
   // 1. Explicitly-listed steward (KVS; works everywhere).
   try {
     const sanitized = String(realmKey || "").replace(/[^a-zA-Z0-9:._\s-#]/g, "_");
@@ -213,12 +246,13 @@ export async function accountStewardStatusAsApp(accountId, realmKey, { memo = nu
     globalConfig = await kvs.get("admin-settings-global");
     const list = realmConfig?.adminUsers || globalConfig?.adminUsers || [];
     if (list.some((o) => (typeof o === "string" ? o : o?.accountId) === accountId)) return YES_ANSWER;
-  } catch (_) { /* fall through */ }
+  } catch (_) { failed = true; /* fall through */ }
   // 2. Steward GROUP cohorts + site/org-admin — mirrors isOperatorSteward's cohort + site-admin
   //    arms, but via asApp() (no asUser context in a trigger). One user GET, expanded twice.
   try {
-    const data = await memoized(memo, "user", accountId, () => readUserAsApp(accountId).catch(() => null));
+    const data = await memoized(memo, "user", accountId, () => readUserAsApp(accountId)).catch(asFailed);
     if (isLimited(data)) limited = true;
+    else if (isFailed(data)) failed = true;
     else if (data) {
       const stewardGroups = realmConfig?.adminGroups || globalConfig?.adminGroups || [];
       if (stewardGroups.length > 0) {
@@ -232,25 +266,28 @@ export async function accountStewardStatusAsApp(accountId, realmKey, { memo = nu
       // Confluence's own admin groups name the account itself.
       if ((data.groups?.results || []).some((g) => isAdminGroupName(g.name))) return YES_ANSWER;
     }
-  } catch (_) { /* fall through */ }
+  } catch (_) { failed = true; /* fall through */ }
   // 2b. The user's group list read on its own (the expand above can come back empty for an app).
   //     Its ids are kept for arm 3, which matches group principals by id.
   let groupIds = null;
   try {
     const groups = await accountGroupsOf(accountId, memo);
     if (isLimited(groups)) limited = true;
+    else if (isFailed(groups)) failed = true;
     else if (groups) {
       if (groups.names.some((n) => isAdminGroupName(n))) return YES_ANSWER;
       groupIds = groups.ids;
+      if (groups.truncated) failed = true; // a "no" from part of the list is not proven
     }
-  } catch (_) { /* fall through */ }
+  } catch (_) { failed = true; /* fall through */ }
   // 3. The space's own admins: Confluence lists the account (or one of its groups) with
   //    administer/space on the space: a direct permission, a group's, or a space ROLE where
   //    Confluence lists the role's holders as users and groups (it does on both measured sites).
   //    A `role` principal itself is never resolved (see below).
   const s = await spaceAdminStatus(accountId, realmKey, { groupIds: groupIds ?? (limited ? [] : null), spaceId, memo });
   if (s.admin) return YES_ANSWER;
-  return limited || s.unknown ? UNKNOWN_ANSWER : NO_ANSWER;
+  if (limited || s.unknown) return UNKNOWN_ANSWER;
+  return strict && (failed || s.failed) ? UNKNOWN_ANSWER : NO_ANSWER;
 }
 
 const YES_ANSWER = Object.freeze({ steward: true, unknown: false });
@@ -331,15 +368,22 @@ export async function isSpaceAdministrator(accountId, spaceKey, opts = {}) {
   return s.admin;
 }
 
-/** `{ admin: boolean, unknown: boolean }`: unknown when a 429 kept Confluence from answering (admin is then false). */
+/**
+ * `{ admin: boolean, unknown: boolean, failed?: true }`: unknown when a 429 kept Confluence from
+ * answering (admin is then false); `failed` (8.16) when a read got no answer at all (5xx, a throw):
+ * still "no" here, told apart for accountStewardStatusAsApp's strict mode.
+ */
 export async function spaceAdminStatus(accountId, spaceKey, { groupIds = null, spaceId = null, memo = null } = {}) {
   if (!accountId || !spaceKey) return { admin: false, unknown: false };
+  let truncatedGroups = false;
   try {
     const space = spaceId ? { id: String(spaceId), key: spaceKey } : await spaceRefOf(spaceKey);
     if (isLimited(space)) return { admin: false, unknown: true };
+    if (isFailed(space)) return { admin: false, unknown: false, failed: true };
     if (!space) return { admin: false, unknown: false };
     const set = await spaceAdminSetOf(space);
     if (isLimited(set)) return { admin: false, unknown: true };
+    if (isFailed(set)) return { admin: false, unknown: false, failed: true };
     if (!set) return { admin: false, unknown: false };
     if (set.users.includes(String(accountId))) return { admin: true, unknown: false };
     if (!set.groups.length) return { admin: false, unknown: false };
@@ -347,13 +391,16 @@ export async function spaceAdminStatus(accountId, spaceKey, { groupIds = null, s
     if (ids == null) {
       const g = await accountGroupsOf(accountId, memo);
       if (isLimited(g)) return { admin: false, unknown: true };
+      if (isFailed(g)) return { admin: false, unknown: false, failed: true };
       ids = g?.ids || []; // no group list: no group then grants
+      if (g?.truncated) truncatedGroups = true;
     }
     const mine = new Set(ids.filter(Boolean).map(String));
-    return { admin: set.groups.some((gid) => mine.has(String(gid))), unknown: false };
+    const admin = set.groups.some((gid) => mine.has(String(gid)));
+    return { admin, unknown: false, ...(!admin && truncatedGroups ? { failed: true } : {}) };
   } catch (e) {
     console.error("[AUTHZ] space admin check threw; not a space admin:", errText(e));
-    return { admin: false, unknown: false };
+    return { admin: false, unknown: false, failed: true };
   }
 }
 

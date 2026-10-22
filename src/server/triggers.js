@@ -38,7 +38,7 @@ import {
   autoAssignOnEvent, getSpaceWorkflowSettings, resolveWorkflowDef, findState, validateTransition, restampIfEnforced,
   transitionPageWorkflow, readPageWorkflow, purgePageWorkflow, mirrorStateLabel, readLabelStamp, clearStateLabel, restampApprovedVersion, fetchLivePageVersion,
 } from "./capsules/workflow/logic.js";
-import { applyAiVerdict, sweepApprovalIndex, clearPageApprovals } from "./capsules/workflow/approvals.js";
+import { applyAiVerdict, completeWhenKnown, sweepApprovalIndex, clearPageApprovals } from "./capsules/workflow/approvals.js";
 import { fetchPageStatuses } from "./shared/page-status.js";
 import { postEnforceComment, buildWorkflowEnforcementDispatch } from "./infra/approval-blueprints.js";
 import { postValidationComment } from "./infra/validation-blueprints.js";
@@ -1993,6 +1993,7 @@ export async function workflowSweep() {
   // record's only TTL). CAS-guarded in applyAiVerdict — a late worker that already wrote a
   // verdict is a no-op. Timeout = 15 min; older enqueuedAt still pending → terminal failed.
   let aiTimedOut = 0;
+  let completedLate = 0;
   const AI_GATE_TIMEOUT_MS = 15 * 60 * 1000;
   let pq = kvs.query().where("key", WhereConditions.beginsWith("workflow-pending-")).limit(100);
   let piter = 0;
@@ -2005,6 +2006,11 @@ export async function workflowSweep() {
           const pageId = String(key).replace(/^workflow-pending-/, "");
           const r = await applyAiVerdict(pageId, null, "failed", "AI review timed out — please re-request.");
           if (r?.applied) aiTimedOut++;
+        } else if (pend?.quorumUnknownAt) {
+          // 8.16: the AI pass landed while the human quorum could not be told: finish it once it can be.
+          const pageId = String(key).replace(/^workflow-pending-/, "");
+          const r = await completeWhenKnown(pageId);
+          if (r?.done) completedLate++;
         }
       } catch (e) { console.error("[WORKFLOW-SWEEP] ai-reaper", errText(e)); }
     }
@@ -2016,7 +2022,7 @@ export async function workflowSweep() {
   let inbox = { backfilled: 0, orphansRemoved: 0 };
   try { inbox = await sweepApprovalIndex({ nowMs }); } catch (e) { console.error("[WORKFLOW-SWEEP] inbox index", errText(e)); }
 
-  return { body: JSON.stringify({ reverted, demoted, healed, expired, overdue, skippedTrashed, purgedPages, labelsSynced, aiTimedOut, inboxBackfilled: inbox.backfilled, orphanApprovalsRemoved: inbox.orphansRemoved }) };
+  return { body: JSON.stringify({ reverted, demoted, healed, expired, overdue, skippedTrashed, purgedPages, labelsSynced, aiTimedOut, completedLate, inboxBackfilled: inbox.backfilled, orphanApprovalsRemoved: inbox.orphansRemoved }) };
 }
 
 // --- Conditions & Validations phase (runs after the body-protection pipeline) ---
