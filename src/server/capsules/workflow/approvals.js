@@ -584,24 +584,38 @@ export async function clearPageApprovals(pageId, stateId, approvers) {
 // path (applyAiVerdict) once BOTH the human quorum AND the AI gate are satisfied. Carries the
 // full #44 anchor rule (fail-closed on null / stale version) so it can't be bypassed.
 const completingKey = (pageId) => `workflow-completing-${pageId}`;
-// SVT-146 (review): a claim is HELD only while it is fresh. A run that died keeps its claim for the
-// key's 120 s TTL; past 60 s (no completion takes that long) it is treated as gone, so a dead claim
-// cannot hold back a denial that closes the request while approvals pile up behind it.
-const CLAIM_LIVE_MS = 60000;
+// SVT-146 (review): a claim is HELD only while it is younger than its key's 120 s TTL (the check also
+// covers a store that returns the row a moment past its TTL). A completion can take long under
+// Confluence's rate limit (retries wait), so the live window is the whole TTL, never shorter: a
+// shorter one let a denial overtake a slow completion. Each claim carries a token and is released
+// only by the run that took it (claimTake / claimRelease).
+const CLAIM_LIVE_MS = 120000;
+async function claimTake(pageId, stateId) {
+  const token = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+  await setWithTtl(completingKey(pageId), { stateId, at: new Date().toISOString(), token }, CLAIM_LIVE_MS);
+  return token;
+}
+async function claimRelease(pageId, token) {
+  const c = await kvs.get(completingKey(pageId)).catch(() => null);
+  if (c && c.token && c.token !== token) return; // another run's claim (ours lapsed): never ours to delete
+  await kvs.delete(completingKey(pageId)).catch(() => {});
+}
 async function claimHeld(pageId) {
   const c = await kvs.get(completingKey(pageId)).catch(() => null);
   if (!c) return false;
   const at = Date.parse(c.at || "");
   return !Number.isFinite(at) || Date.now() - at < CLAIM_LIVE_MS;
 }
-// After taking the claim: is the request the caller judged still the open one? A withdraw, a
-// re-request or another completion in between means nothing may be applied on that judgement.
-async function sameRequestOpen(pageId, judged) {
-  const now = await kvs.get(pendingKey(pageId)).catch(() => null);
-  return !!now && requestIdOf(now) === requestIdOf(judged);
+// After taking the claim: is the request the caller judged (`requestId`, requestIdOf of the request
+// the vote or verdict was judged on) still the open one? A withdraw, a re-request or another completion
+// in between means nothing may be applied on that judgement. `null` when storage could not answer.
+async function sameRequestOpen(pageId, requestId) {
+  let now;
+  try { now = await kvs.get(pendingKey(pageId)); } catch (_) { return null; }
+  return !!now && requestIdOf(now) === requestId;
 }
 
-async function finalizeApprovedTransition(pageId, stateId, pending, actorAccountId, actorName, voteSummary, { holdChecked = false, quorum = null } = {}) {
+async function finalizeApprovedTransition(pageId, stateId, pending, actorAccountId, actorName, voteSummary, { holdChecked = false, quorum = null, requestId = requestIdOf(pending) } = {}) {
   // The backstop for every completion (the last vote, an AI verdict): a page that moved to another
   // space since the request does not move (moved-hold.js); the request stays open. A caller that
   // asked already (decide-approval before the vote was recorded, the AI verdict before it was
@@ -617,11 +631,13 @@ async function finalizeApprovedTransition(pageId, stateId, pending, actorAccount
   if (await claimHeld(pageId)) {
     return { success: true, outcome: "approved", transitioned: false, alreadyCompleting: true };
   }
-  await setWithTtl(completingKey(pageId), { stateId, at: new Date().toISOString() }, 120000);
+  const claimToken = await claimTake(pageId, stateId);
   try {
     // SVT-146 (review): the request judged must still be the open one (withdrawn, re-requested or
-    // completed in between: nothing is applied on it).
-    if (!(await sameRequestOpen(pageId, pending))) {
+    // completed in between: nothing is applied on it). `requestId` is the request the caller judged.
+    const open = await sameRequestOpen(pageId, requestId);
+    if (open === null) return { success: false, transitioned: false, reason: "Could not confirm the request right now. The decision is kept and will be applied shortly." };
+    if (!open) {
       return { success: false, transitioned: false, closed: true, reason: "This request was closed or asked again while the decision was applied, so nothing was moved." };
     }
     const live = await fetchLivePageVersion(pageId);
@@ -679,7 +695,7 @@ async function finalizeApprovedTransition(pageId, stateId, pending, actorAccount
     }
     return { success: true, outcome: "approved", transitioned: false, alreadyCompleted: true };
   } finally {
-    await kvs.delete(completingKey(pageId)).catch(() => {});
+    await claimRelease(pageId, claimToken);
   }
 }
 
@@ -1048,12 +1064,19 @@ export async function decideApproval({ pageId, approverAccountId, decision, reas
   // start, their approval was missed here while their own judgement (made before this vote was
   // recorded) missed this vote, and the request stayed open with enough approvals. Whichever of two
   // racing votes is recorded second now sees the other.
-  const latest = (await kvs.get(pendingKey(pageId)).catch(() => null)) || null;
+  let latest;
+  // A storage error here is not "closed": the vote stands with its marker and the sweep applies it.
+  try { latest = (await kvs.get(pendingKey(pageId))) || null; } catch (_) { return { success: true, outcome: "pending" }; }
   if (!latest || requestIdOf(latest) !== requestIdOf(pending)) {
     // SVT-146 (review): the request was withdrawn, completed or asked again while this decision ran.
     // The vote belongs to a request that is no longer open: it must not count on the new one (a
     // re-request reset every vote), so the reset is put back, and nothing is judged on it.
     await dropSettle(pageId, approverAccountId);
+    if (latest && !(latest.approvers || []).includes(approverAccountId)) {
+      // Not asked on the new request (an admin's own record, or dropped from the list): no record.
+      await kvs.delete(key).catch(() => {});
+      return { success: false, rerequested: true, reason: "This request was asked again while you decided, so your decision was not recorded. Decide again on the new request." };
+    }
     if (latest) {
       await kvs.set(key, { ...record, admin: undefined, status: "pending", decidedAt: null, reason: null, signature: undefined, decidedVersion: undefined, requestedAt: latest.rerequestedAt || latest.requestedAt || record.requestedAt || null, pinnedVersion: latest.pinnedVersion ?? record.pinnedVersion ?? null }).catch(() => {});
       return { success: false, rerequested: true, reason: "This request was asked again while you decided, so your decision was not recorded. Decide again on the new request." };
@@ -1121,7 +1144,9 @@ export async function decideApproval({ pageId, approverAccountId, decision, reas
     // Completed (or closed as stale): clearPageApprovals dropped the settle marker. Not applied (the
     // version could not be read, a moved-page hold, another completion in flight that may still
     // fail): the marker stays and the sweep applies the vote (SVT-146).
-    return decided(await finalizeApprovedTransition(pageId, stateId, freshPending, approverAccountId, actorName, voteSummary, { holdChecked: decision === "approved", quorum: evidenceQuorum }));
+    // `requestId`: the request this vote was judged on — a re-request read into freshPending must fail
+    // the finalizer's same-request check, never pass it by comparing the new request with itself.
+    return decided(await finalizeApprovedTransition(pageId, stateId, freshPending, approverAccountId, actorName, voteSummary, { holdChecked: decision === "approved", quorum: evidenceQuorum, requestId: requestIdOf(pending) }));
   }
   if (outcome === "denied") {
     const d = await applyDenial(pageId, pending, { by: approverAccountId, byName: actorName || record.approverName || null, reason: record.reason || null, quorum: evidenceQuorum });
@@ -1141,9 +1166,11 @@ export async function decideApproval({ pageId, approverAccountId, decision, reas
  */
 async function applyDenial(pageId, pending, { by, byName, reason, quorum }) {
   if (await claimHeld(pageId)) return { applied: false };
-  await setWithTtl(completingKey(pageId), { stateId: pending.toStateId, at: new Date().toISOString() }, 120000);
+  const claimToken = await claimTake(pageId, pending.toStateId);
   try {
-    if (!(await sameRequestOpen(pageId, pending))) return { applied: false, closed: true };
+    const open = await sameRequestOpen(pageId, requestIdOf(pending));
+    if (open === null) return { applied: false };
+    if (!open) return { applied: false, closed: true };
     const stateId = pending.toStateId;
     const since = Date.parse(requestIdOf(pending) || "") || 0;
     const logged = (await getWorkflowLog(pageId)).some((e) => e?.kind === "approval-denied" && e.to === stateId && (e.ts || 0) >= since);
@@ -1172,7 +1199,7 @@ async function applyDenial(pageId, pending, { by, byName, reason, quorum }) {
     if (!logged) await notifyApprovalResolved({ pageId, requestedBy: pending.requestedBy, outcome: "denied", targetName: pending.toStateName || stateId, deciderName: byName, reason: reason || null }).catch(() => {});
     return { applied: true };
   } finally {
-    await kvs.delete(completingKey(pageId)).catch(() => {});
+    await claimRelease(pageId, claimToken);
   }
 }
 
@@ -1212,6 +1239,21 @@ export async function settleRecordedVotes(pageId) {
   const pending = await kvs.get(pendingKey(pageId));
   if (!pending) { await drop(found); return { done: false, why: "closed" }; }
   const mine = found.filter((m) => m.request === requestIdOf(pending));
+  // A vote cast on an older request that landed on this one's records (a re-request reset them while
+  // the vote was being written): its record still carries the old request's time. Put back to pending
+  // (or removed, for someone not asked on this request) — it must never count here.
+  for (const m of found.filter((x) => !mine.includes(x))) {
+    const k = approvalKey(pageId, pending.toStateId, m.accountId);
+    const rec = await kvs.get(k).catch(() => null);
+    if (!rec || !rec.status || rec.status === "pending") continue;
+    const listed = (pending.approvers || []).includes(m.accountId);
+    // A listed approver's record carries the time of the request it belongs to (opened or re-requested).
+    if (listed && rec.requestedAt && rec.requestedAt !== requestIdOf(pending)) {
+      await kvs.set(k, { ...rec, admin: undefined, status: "pending", decidedAt: null, reason: null, signature: undefined, decidedVersion: undefined, requestedAt: requestIdOf(pending), pinnedVersion: pending.pinnedVersion ?? null }).catch(() => {});
+    } else if (!listed && !(pending.adminDeciders || []).includes(m.accountId)) {
+      await kvs.delete(k).catch(() => {}); // not asked on this request and not one of its admin deciders
+    }
+  }
   await drop(found.filter((m) => !mine.includes(m)));
   if (!mine.length) return { done: false, why: "older request" };
   if (await claimHeld(pageId)) return { done: false, why: "completing" };
@@ -1248,10 +1290,11 @@ export async function settleRecordedVotes(pageId) {
     // completed by the sweep (the AI pass's rule, humanQuorumState): only an approval that was itself
     // judged to complete the request when it was cast (`judged`, decideApproval's q0) may complete it
     // then — a removal before the vote is what the decide path accepted; one after it is nobody's act.
-    const rejudgedOk = !q.rejudged || q.withRemovedPending === "approved" || (countedApproval?.judged === "approved");
+    const judgedApproval = votes.find((v) => v.decision === "approved" && counts.has(v.accountId) && v.judged === "approved");
+    const rejudgedOk = !q.rejudged || q.withRemovedPending === "approved" || !!judgedApproval;
     if (q.outcome === "approved") outcome = countedApproval && rejudgedOk ? "approved" : "pending";
     else outcome = q.outcome;
-    approval = countedApproval || null;
+    approval = (q.rejudged && q.withRemovedPending !== "approved" ? judgedApproval : countedApproval) || null;
     evidence = { counted: q.counted, effective: q.effective, min: q.min };
   }
   if (outcome === "approved") {
@@ -1437,23 +1480,31 @@ export async function rerequestApproval({ pageId, actorAccountId, actorName, isS
   }
   const from = pending.pinnedVersion;
   const requestedAt = new Date().toISOString();
-  // Every recorded decision was about the old request: the dropped approvers' and the admins'
-  // records go, every current approver starts again at pending.
-  const dropped = [...approvers.filter((id) => !next.approvers.includes(id)), ...(pending.adminDeciders || []).filter((id) => !next.approvers.includes(id))];
-  for (const acc of new Set(dropped)) {
-    await kvs.delete(approvalKey(pageId, pending.toStateId, acc)).catch(() => {});
-    await kvs.delete(inboxKey(acc, pageId)).catch(() => {});
-  }
-  for (const acc of next.approvers) {
-    const key = approvalKey(pageId, pending.toStateId, acc);
-    const rec = (await kvs.get(key)) || { pageId, stateId: pending.toStateId, approverAccountId: acc, approverName: names[acc] || null };
-    await kvs.set(key, { ...rec, admin: undefined, status: "pending", requestedAt, decidedAt: null, reason: null, signature: undefined, decidedVersion: undefined, pinnedVersion: live });
-    await kvs.set(inboxKey(acc, pageId), { pageId, stateId: pending.toStateId, requestedAt });
-  }
+  // SVT-146 (review): the rewrite holds the completion claim, so no vote can complete or close the
+  // request half-way through it (a vote recorded in between is applied later, by the sweep, on the new
+  // request's records: settleRecordedVotes puts back a vote cast on the old one).
   const { quorumUnknownAt: _mark, ...rest } = pending; // 8.16: the votes are reset, so is the sweep's mark
   const updated = { ...rest, approvers: next.approvers, mode: next.mode, min: next.min, adminDeciders: [], pinnedVersion: live, rerequestedAt: requestedAt, rerequestedBy: actorAccountId || null, rerequestedByName: actorName || null };
   if (versionChanged && updated.aiGate?.required) updated.aiGate = { ...updated.aiGate, status: "pending", reviewedVersion: null, reason: null, enqueuedAt: Date.now() };
-  await kvs.set(pendingKey(pageId), updated);
+  const claimToken = await claimTake(pageId, pending.toStateId);
+  try {
+    // Every recorded decision was about the old request: the dropped approvers' and the admins'
+    // records go, every current approver starts again at pending.
+    const dropped = [...approvers.filter((id) => !next.approvers.includes(id)), ...(pending.adminDeciders || []).filter((id) => !next.approvers.includes(id))];
+    for (const acc of new Set(dropped)) {
+      await kvs.delete(approvalKey(pageId, pending.toStateId, acc)).catch(() => {});
+      await kvs.delete(inboxKey(acc, pageId)).catch(() => {});
+    }
+    for (const acc of next.approvers) {
+      const key = approvalKey(pageId, pending.toStateId, acc);
+      const rec = (await kvs.get(key)) || { pageId, stateId: pending.toStateId, approverAccountId: acc, approverName: names[acc] || null };
+      await kvs.set(key, { ...rec, admin: undefined, status: "pending", requestedAt, decidedAt: null, reason: null, signature: undefined, decidedVersion: undefined, pinnedVersion: live });
+      await kvs.set(inboxKey(acc, pageId), { pageId, stateId: pending.toStateId, requestedAt });
+    }
+    await kvs.set(pendingKey(pageId), updated);
+  } finally {
+    await claimRelease(pageId, claimToken);
+  }
   await touchByline(pageId); // WF-6: decisions were reset → "Awaiting approval 0 of N"
   await appendWorkflowLog(pageId, {
     kind: "approval-rerequested", from: (await readPageWorkflow(pageId))?.stateId ?? null, to: pending.toStateId,

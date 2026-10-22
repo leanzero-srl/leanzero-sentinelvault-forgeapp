@@ -58,7 +58,7 @@ export default function WorkflowInbox({ emptyText = null, onDecided = null } = {
   }, [load, onDecided]);
 
   if (items === null) return emptyText ? <div className="wf-inbox wf-inbox-empty" data-testid="wf-inbox-loading">Checking for approvals…</div> : null;
-  const unverifiedLine = unverified > 0 ? `${unverified === 1 ? "One more" : `${unverified} more`} could not be checked right now, because Confluence is limiting requests or not answering. Reload in a moment.` : null;
+  const unverifiedLine = unverified > 0 ? `${unverified === 1 ? "One approval" : `${unverified} approvals`} waiting on you could not be checked right now, because Confluence is limiting requests or not answering. Reload in a moment.` : null;
   if (items.length === 0) {
     if (!emptyText && !unverifiedLine) return null;
     return (

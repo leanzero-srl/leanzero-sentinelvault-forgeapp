@@ -659,7 +659,7 @@ const SignatureCard = () => {
 // what the badge says and what the page shows are one number. Re-counted after every decision.
 // SVT-147: requests whose page Confluence could not confirm you can view right now are in neither a
 // list nor the total; the surfaces say so instead of "nothing waiting".
-const unverifiedText = (n) => `${n === 1 ? "One more" : `${n} more`} could not be checked right now, because Confluence is limiting requests or not answering. Reload in a moment.`;
+const unverifiedText = (n) => `${n === 1 ? "One request" : `${n} requests`} waiting on you could not be checked right now, because Confluence is limiting requests or not answering. Reload in a moment.`;
 
 const MyWork = () => {
   useEffect(() => { enablePaletteSync().catch(() => {}); }, []);
