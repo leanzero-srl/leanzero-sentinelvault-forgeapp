@@ -561,6 +561,22 @@ export const KNOWN = [
     where: "My work; Space settings, Sealed Files and Access Control tabs.",
     workaround: "Wait a moment and reload the page before you rely on an empty list.",
   },
+  // 2026-10-22: found while testing what a page deleted from the trash leaves behind; confirmed on the 8.17.0 code, fix scheduled.
+  {
+    k: "known-purged-page-activity-no-title", c: "A", affects: "8.17.0", fix: "scheduled",
+    t: "After a page is deleted from the trash, the Activity tab can show its events under the page's ID instead of its title",
+    see: "Once a page has been deleted permanently from the space's trash, the Activity tab in space settings still lists who did what on it, but the Page column can show those events as Page followed by a number, and the pageTitle column of the CSV export can be empty.",
+    where: "Space settings, Activity tab, and its Export CSV file.",
+    workaround: "Note the page's title before you delete it from the trash. The number shown is the page's ID, so an export taken while the page still existed links the two.",
+  },
+  // 2026-10-22: found while reviewing the 8.18.0 release; confirmed on the 8.18.0 code, fix scheduled.
+  {
+    k: "known-workflow-hourly-check-stuck", c: "W", affects: "8.18.0", fix: "scheduled",
+    t: "On sites with many pages in workflows, the hourly workflow check can keep starting again at the same place",
+    see: "Once an hour Sentinel Vault goes through the pages in workflows, for example to move a page whose review date has passed to Expired and to keep state labels in step. On a site with very many pages in workflows, this check can fail to finish and start again at the same place the next hour. Pages that come later in the list can then stay in their state after their review date has passed, with no overdue comment on the page, and their state labels can fall out of step.",
+    where: "Spaces with workflows turned on: review dates, the Expired state and state labels.",
+    workaround: "Where the page's workflow allows it, open the Sentinel Vault banner on a page whose review date has passed and use Move to… to move it on, or set a new review date there.",
+  },
 ];
 
 // Known bugs a release closed (folded into that release's note line, so the issue is Done with it).
