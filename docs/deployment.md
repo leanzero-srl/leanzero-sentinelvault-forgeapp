@@ -53,14 +53,21 @@ Each surface produces an `index.html`, `index.js`, and `styles.css` bundle.
 forge deploy
 ```
 
-Production is deployed only through the release door, run in a checkout whose HEAD is the commit being released:
+Production is deployed only through the release door. Name the commit that was TESTED, taken from where the tests ran, never from the door's own checkout:
 
 ```bash
-./scripts/deploy-prod.sh --sha <commit being released> [--licensing-live] [--approve-major]
-./scripts/deploy-prod.sh --dry-run [--sha <commit>]   # checks only: nothing is written, built or deployed
+./scripts/deploy-prod.sh --sha "$(git -C <tested worktree> rev-parse HEAD)" [--licensing-live] [--approve-major]
+./scripts/deploy-prod.sh --sha <tested branch> ...        # a branch that is NOT the one checked out where the door runs
+./scripts/deploy-prod.sh --dry-run [--sha <commit>]       # checks only: nothing is written, built or deployed
 ```
 
-`--sha` (a hex sha or a branch name; `HEAD`, `@` and anything relative to them are refused) is required on a real run. The door packages the working tree of the checkout it runs in, so before it writes, builds or deploys anything it refuses unless the named commit resolves, this checkout's HEAD is exactly that commit, and the packaged paths (`src`, `manifest.yml`, `package.json`, `package-lock.json`, `webpack.config.js`) are clean, tracked and untracked. The refusal names both shas and says whether the checkout is BEHIND the named commit (fast-forward it), AHEAD of it, or DIVERGED (merge into the named branch, then fast-forward). Right before `forge deploy` it checks again: the only commits after the named one may be the files the door writes itself (the in-app release note, `docs/RELEASE-NOTES.md`, `scripts/public-tracker/entries.mjs`). A dry run without `--sha` prints what a real run needs and the checkout's HEAD.
+`--sha` is required on a real run: a hex sha, a branch or a tag. Refused: HEAD-family names (`HEAD`, `ORIG_HEAD`, `FETCH_HEAD`...), a bare `@`, `@{...}`, anything with `~`, `^` or `:`, and the branch checked out in the door's own checkout (it always equals HEAD, so `--sha main` run in a stale main proves nothing). A sha copied from the door's checkout cannot be told apart, which is why it must come from the tested worktree. The door packages the working tree of the checkout it runs in, so before it writes, builds or deploys anything it refuses unless:
+
+1. the named commit resolves, and this checkout's HEAD is exactly that commit, or that commit plus only the door's own commits (a re-run of a run that stopped after writing its note or tracker rows);
+2. the packaged paths (`src`, `manifest.yml`, `package.json`, `package-lock.json`, `webpack.config.js`) are clean, tracked and untracked;
+3. the installed `node_modules` matches `package-lock.json` (every non-dev locked package at its version, `scripts/check-installed-deps.mjs`; a symlinked `node_modules` is refused). Forge bundles the root `node_modules`; the fix is `npm ci`.
+
+The refusal names both shas and says whether the checkout is BEHIND the named commit (fast-forward it), AHEAD of it, DIVERGED (merge into the named branch, then fast-forward), or that git could not compare them. Every command it prints carries `--sha`. Right before `forge deploy` it checks again: the only commits after the named one may be the files the door writes itself (the in-app release note, `docs/RELEASE-NOTES.md`, `scripts/public-tracker/entries.mjs`, and the tracker's `*.json` / `*.md` records). A dry run without `--sha` prints what a real run needs and the checkout's HEAD.
 
 The door then writes the in-app release note and the public tracker rows when they are missing (it never refuses on them), builds every bundle from HEAD, builds a production manifest without the dev-only `harness-test-state` webtrigger (`scripts/strip-dev-modules.mjs`), runs `forge lint -e production`, deploys, runs `forge eligibility -e production` and restores the dev manifest. It fails (exit 1, with the reason) when the deployed production version is not eligible for Runs on Atlassian; redeploy the last good release tag through the same door. Because `manifest.yml` has `licensing.enabled: true`, the door refuses unless the last release tag already shipped licensing (the paid plan is live) or you pass `--licensing-live` (needed only for the deploy that turns licensing on). The static `config-api` webtrigger (REST API) ships to production. After an eligible deploy it records the release and its commit in `scripts/public-tracker/production-release.json`, runs the tracker's `apply`, `verify` and `public --reprove` itself and commits the receipt (pushing main when run on main).
 
