@@ -73,6 +73,8 @@ export function choosePage(found, environmentType) {
  * global space ("none-visible"), or refused (403) a page in every one it sees ("not-allowed"), throws
  * the NO_BACKUP_SPACE error runBackup turns into the paused state. A list or remembered space
  * Confluence did not answer (429, 5xx) throws an ordinary error: "could not tell" is never "none".
+ * Both causes need the COMPLETE list (listGlobalSpaces follows its cursor): with more spaces than
+ * were tried, or pages that never reached the end, it is an ordinary failure.
  * Personal spaces are never candidates (their owner can delete them; they are archived when the
  * owner leaves).
  *
@@ -98,7 +100,7 @@ export async function ensureBackupPage({ preferSpaceKey = null } = {}) {
     }
   }
   const candidates = [];
-  let listErr = null; // the space list went unanswered: the remembered space is still tried, "no space" is never concluded
+  let sawAll = !preferSpaceKey; // every space the app can see was listed: the only basis for the paused state
   if (preferSpaceKey) {
     const s = await store.spaceByKey(preferSpaceKey);
     if (!s) throw new Error(`Space ${preferSpaceKey} was not found, or the app cannot see it.`);
@@ -106,10 +108,12 @@ export async function ensureBackupPage({ preferSpaceKey = null } = {}) {
   } else {
     if (settings.spaceKey) { const s = await store.spaceByKey(settings.spaceKey, { strict: true }); if (s) candidates.push(s); }
     try {
-      for (const s of await store.listGlobalSpaces(25)) if (!candidates.some((c) => c.spaceId === s.spaceId)) candidates.push(s);
+      const listed = await store.listGlobalSpaces(25);
+      for (const s of listed.spaces) if (!candidates.some((c) => c.spaceId === s.spaceId)) candidates.push(s);
+      sawAll = listed.complete;
     } catch (e) {
-      if (!candidates.length) throw e;
-      listErr = e;
+      if (!candidates.length) throw e; // busy and nothing remembered: could not tell
+      sawAll = false;
     }
   }
   let lastErr = null;
@@ -126,8 +130,10 @@ export async function ensureBackupPage({ preferSpaceKey = null } = {}) {
       if (e?.createRefused) refused += 1; else console.warn(`[BACKUP] page in ${spaceKeyForLog(s.spaceKey)} failed: ${errText(e)}`);
     }
   }
-  if (!preferSpaceKey && !listErr && (!candidates.length || refused === candidates.length)) throw noSpaceError(candidates.length ? "not-allowed" : "none-visible");
-  throw lastErr || new Error("No space found where the app can keep its backup page.");
+  if (sawAll && (!candidates.length || refused === candidates.length)) throw noSpaceError(candidates.length ? "not-allowed" : "none-visible");
+  // Not every space was seen (a busy list, more spaces than were tried, pages that never ended):
+  // an ordinary failure, tried again later — never the paused state.
+  throw lastErr || new Error("Could not list every space the app can see, so no backup page was made. It is tried again later.");
 }
 
 export const NO_SPACE_CODE = "NO_BACKUP_SPACE";

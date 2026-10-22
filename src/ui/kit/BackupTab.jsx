@@ -314,6 +314,8 @@ export default function BackupTab() {
   if (status.phase === "error") return <div className="settings-panel"><Failure reason={status.reason} onRetry={load} testId="bk-status-error" /></div>;
 
   const st = status.status || {};
+  // The paused state (no space for the backup page) unless a newer, different failure replaced it.
+  const spaceless = st.noSpace && !(st.lastError && String(st.lastError.at) > String(st.noSpace.checkedAt || ""));
   const last = st.lastBackup;
   const install = status.install || {};
   const paused = status.paused?.items || [];
@@ -337,9 +339,9 @@ export default function BackupTab() {
         ) : st.deletedAt
           ? <p className="api-empty" data-testid="bk-none">The backup was deleted {when(st.deletedAt)}. A new one is taken only after the next change anyone makes in the app or over REST, or when you press Back up now.</p>
           : !st.noSpace && <p className="api-empty" data-testid="bk-none">No backup yet. The first one is taken after the next change, within the hour, or now.</p>}
-        {st.noSpace && (
+        {spaceless && (
           <div className="api-inline-error" role="status" data-testid="bk-no-space">
-            Backups are paused since {when(st.noSpace.since)}: {st.noSpace.cause === "not-allowed"
+            Backups are paused since {when(spaceless.since)}: {spaceless.cause === "not-allowed"
               ? "Sentinel Vault may not add its backup page in any space it sees."
               : "Sentinel Vault sees no space it can keep its backup page in."} Choose a space with Move to another space. The app also checks again once a day and after each change.
           </div>
