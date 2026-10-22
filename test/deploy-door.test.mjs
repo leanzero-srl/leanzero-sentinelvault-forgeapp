@@ -231,14 +231,15 @@ let p = ""; process.stdin.on("data", (d) => (p += d)); process.stdin.on("end", (
   ok(`with the model off the note is written from the commit subjects; --approve-major cuts ${MAJOR}`, r.status === 0 && last.notes.includes(`version: "${MAJOR}"`) && /commit subjects/.test(last.notes)
     && last.notes.includes("Approvers see the page's classification in the approval dialog."));
 
-  // A COMMIT NAMING AN SVT KEY OF A KNOWN BUG CLOSES IT. known-macro-position-focus is SVT-47 in the receipt.
+  // A COMMIT NAMING AN SVT KEY OF A KNOWN BUG CLOSES IT. known-macro-position-focus is SVT-47 in the receipt. The log
+  // line lists every key the run closes ("closes SVT-150, SVT-149, SVT-47" when the real newest note names others).
   fs.writeFileSync(path.join(repo, "src/server/door-test-change.js"), "export const x = 2;\n");
   git("commit", "-qam", "Show the keyboard focus outline on the Top and Bottom switches (SVT-47)");
   r = door({ FAKE_ELIG: ELIGIBLE, WANT_DESIRED: "known-macro-position-focus" }, ["--licensing-live"]);
   const closedNote = (last.notes.match(/"[^"\n]*\(SVT-47\)\."/) || [""])[0];
   ok("the generated note line carries the key the commit names", r.status === 0 && !!closedNote);
   ok("...the row FOLDS into the known bug instead of a new issue, and the known bug moves from KNOWN to CLOSED",
-    /"fold":"known-macro-position-focus"/.test(last.entries) && /closes SVT-47/.test(last.log)
+    /"fold":"known-macro-position-focus"/.test(last.entries) && /closes [^\n]*\bSVT-47\b/.test(last.log)
     && last.entries.indexOf('k: "known-macro-position-focus"') > last.entries.indexOf("export const CLOSED"));
   const d = (last.desired || [])[0] || {};
   // the model is off here, so the fix text was never reviewed: the issue closes with a generic sentence, never the raw line
