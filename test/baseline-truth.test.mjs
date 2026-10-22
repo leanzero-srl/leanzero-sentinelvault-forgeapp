@@ -9,6 +9,7 @@
 // values and never credits an approver with the app's own revert. Real modules, in-memory fake.
 import "./_forge-fake/install.mjs";
 import { eq, ok, report } from "./_assert.mjs";
+import { fileURLToPath } from "node:url"; // a path, not a %20-encoded URL: the checkout path has a space
 
 const { resetFake, onConfluence } = await import("./_forge-fake/state.mjs");
 const { createWorld } = await import("./_forge-fake/confluence-world.mjs");
@@ -242,7 +243,7 @@ try {
 {
   const fs = await import("node:fs");
   const path = await import("node:path");
-  const root = path.resolve(path.dirname(new URL(import.meta.url).pathname), "..");
+  const root = path.resolve(path.dirname(fileURLToPath(new URL(import.meta.url))), "..");
   const files = [];
   const walk = (d) => { for (const e of fs.readdirSync(d, { withFileTypes: true })) { const p = path.join(d, e.name); if (e.isDirectory()) walk(p); else if (/\.(js|jsx)$/.test(e.name)) files.push(p); } };
   walk(path.join(root, "src"));

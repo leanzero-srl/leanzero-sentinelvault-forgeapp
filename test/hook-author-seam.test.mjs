@@ -10,6 +10,7 @@
 // removed from the production manifest. Real modules, in-memory Forge fake.
 import "./_forge-fake/install.mjs";
 import { eq, ok, report } from "./_assert.mjs";
+import { fileURLToPath } from "node:url"; // a path, not a %20-encoded URL: the checkout path has a space
 
 const { resetFake } = await import("./_forge-fake/state.mjs");
 const { createWorld } = await import("./_forge-fake/confluence-world.mjs");
@@ -83,7 +84,7 @@ try {
     eq("[3] an unscoped run after the hook sees the real author", [w.live(PAGE).number, w.live(PAGE).authorId], [2, STEWARD]);
     const fs = await import("node:fs");
     const path = await import("node:path");
-    const root = path.resolve(path.dirname(new URL(import.meta.url).pathname), "..", "src");
+    const root = path.resolve(path.dirname(fileURLToPath(new URL(import.meta.url))), "..", "src");
     const files = [];
     const walk = (d) => { for (const e of fs.readdirSync(d, { withFileTypes: true })) { const p = path.join(d, e.name); if (e.isDirectory()) walk(p); else if (/\.(m?js|jsx)$/.test(e.name)) files.push(p); } };
     walk(root);
@@ -100,7 +101,7 @@ try {
     const os = await import("node:os");
     const path = await import("node:path");
     const fs = await import("node:fs");
-    const repo = path.resolve(path.dirname(new URL(import.meta.url).pathname), "..");
+    const repo = path.resolve(path.dirname(fileURLToPath(new URL(import.meta.url))), "..");
     const out = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "sv-strip-")), "manifest.prod.yml");
     execFileSync(process.execPath, [path.join(repo, "scripts/strip-dev-modules.mjs"), path.join(repo, "manifest.yml"), out], { stdio: "ignore" });
     const prod = fs.readFileSync(out, "utf8");

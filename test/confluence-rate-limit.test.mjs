@@ -17,6 +17,7 @@
 //      the future, never for another account or another space, never from a 429
 import "./_forge-fake/install.mjs";
 import { eq, ok, report } from "./_assert.mjs";
+import { fileURLToPath } from "node:url"; // a path, not a %20-encoded URL: the checkout path has a space
 
 const { resetFake, onConfluence, fake } = await import("./_forge-fake/state.mjs");
 const { createWorld } = await import("./_forge-fake/confluence-world.mjs");
@@ -394,7 +395,7 @@ try {
   {
     const { readdirSync, readFileSync, statSync } = await import("node:fs");
     const { join } = await import("node:path");
-    const root = new URL("../src/", import.meta.url).pathname;
+    const root = fileURLToPath(new URL("../src/", import.meta.url));
     const files = [];
     const walk = (d) => { for (const f of readdirSync(d)) { const p = join(d, f); if (statSync(p).isDirectory()) { if (f !== "ui") walk(p); } else if (/\.(m?js|jsx)$/.test(f)) files.push(p); } };
     walk(root);
