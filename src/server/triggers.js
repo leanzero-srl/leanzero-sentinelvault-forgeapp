@@ -1719,9 +1719,10 @@ export const WORKFLOW_SWEEP_RESUME = "workflow-sweep-resume";
 // started again from its first row every hour and the walk never got past it. Now the resume point
 // names the last row judged inside its page (`doneKey`), is saved at least every `saveMs` and when
 // the budget stops the walk, and a run that starts where the previous one started (it was stopped
-// before saving anything) saves after every row, so the next stop names the exact row, which the
-// run after that passes over for this pass and logs (it is judged again on the next pass over the
-// index). Mutable only so a test can shorten the budget.
+// before saving anything) saves after every row, so the next stop names the exact row; when such a
+// careful run is stopped before saving even one row, the run after it passes that row over for this
+// pass and logs it (it is judged again on the next pass over the index). A row that stops every run
+// is passed over within a few runs. Mutable only so a test can shorten the budget.
 export const WORKFLOW_SWEEP_LIMITS = { pages: 20, loopMs: 12_000, runMs: 18_000, saveMs: 3_000 };
 
 export async function workflowSweep() {
@@ -1790,8 +1791,9 @@ export async function workflowSweep() {
   // row (never earlier: a run stopped in the index read or the page lookups judged nothing and is
   // not counted). A run that begins where the previous counted one began means that one was stopped
   // while judging, before it could save: this run saves after every row (careful), so if it is
-  // stopped too the place names the row; the next run from that same place passes over the first
-  // row it meets (logged; judged again on the next pass over the index).
+  // stopped too the place names the row (a later row: the place moves and counting starts again
+  // there). A third run from one place means a careful run was stopped on its very first row: that
+  // row is passed over (logged; judged again on the next pass over the index).
   const startPoint = `${resumeFrom || ""}|${doneKey || ""}`;
   const startedHere = saved?.started?.from === startPoint ? Math.max(1, Number(saved.started.n) || 1) + 1 : 1;
   const started = { from: startPoint, n: startedHere };
