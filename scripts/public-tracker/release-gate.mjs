@@ -11,7 +11,7 @@
 //   node scripts/public-tracker/release-gate.mjs post                        # after an ELIGIBLE production deploy
 //   node scripts/public-tracker/release-gate.mjs check                       # a report only (exit 0)
 //   node scripts/public-tracker/release-gate.mjs marketplace-latest          # the Marketplace's newest build (before the deploy)
-//   node scripts/public-tracker/release-gate.mjs try-first <forge> <build>   # after `post`: the "Try it first" message
+//   node scripts/public-tracker/release-gate.mjs try-first <forge>           # after `post`: hand the "Try it first" message to the watcher
 //
 // `prepare` (scripts/release-autopilot.mjs does the writing):
 //   1. THE NOTE. When the newest note in src/server/shared/release-notes.js is not newer than the release production
@@ -235,8 +235,6 @@ if (cmd === "marketplace-latest") {
   process.exit(0);
 } else if (cmd === "try-first") {
   const forgeVersion = /^\d+\.\d+\.\d+$/.test(String(process.argv[3] || "")) ? process.argv[3] : null;
-  const beforeBuild = process.argv[4] || null;
-  void beforeBuild; // the build before the deploy only fed the old wait for the listing
   const r = await A.tryFirstHandOff({ app: TRY_FIRST_APP, forgeVersion, run: capture });
   log(r.ok
     ? `==> Marketplace: ${r.note}`
@@ -294,6 +292,6 @@ if (cmd === "marketplace-latest") {
   log(why ? `==> Public tracker (report; the door writes what is missing):\n${why}` : `==> Public tracker: every line through ${CURRENT_RELEASE.version} has a row and the tracker is verified`);
   process.exit(0);
 } else {
-  log("usage: release-gate.mjs prepare [--approve-major] | post | check | marketplace-latest | try-first <forge version> <build before>");
+  log("usage: release-gate.mjs prepare [--approve-major] | post | check | marketplace-latest | try-first <forge version>");
   process.exit(2);
 }
