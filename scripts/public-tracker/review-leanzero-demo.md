@@ -1,6 +1,6 @@
 # Sentinel Vault Public Tracker - verify file
 
-Generated 2026-10-23T00:16:16.109Z by scripts/public-tracker/tracker.mjs verify.
+Generated 2026-10-23T00:39:25.139Z by scripts/public-tracker/tracker.mjs verify.
 Site https://leanzero-demo.atlassian.net. Project SVT (id 10278), permission scheme "Sentinel Vault Public Tracker permissions" (id 10265, used by: SVT), anonymous grants: BROWSE_PROJECTS.
 Issues checked: 149 of 149. Verification failures: 0. Withheld release-note lines: 8.
 
@@ -10,7 +10,7 @@ Issues checked: 149 of 149. Verification failures: 0. Withheld release-note line
 - version: 6.4.0 5; 6.5.0 1; 6.6.0 6; 6.7.0 8; 6.9.0 4; 6.10.0 4; 6.11.0 1; 7.0.0 5; 7.1.0 8; 8.0.0 16; 8.1.0 1; 8.2.0 2; 8.3.0 1; 8.4.0 1; 8.5.0 1; 8.6.0 13; 8.7.0 1; 8.8.0 1; 8.9.0 5; 8.10.0 5; 8.11.0 3; 8.12.0 3; 8.13.0 1; 8.14.0 10; 8.15.0 1; 8.16.0 3; open, affects 7.1.0 6; open, affects 8.12.0 25; 8.17.0 2; 8.19.0 2; 8.21.0 4
 - component: Classification 5; Sealed files and sections 19; Edit requests and access 4; REST API 5; Backup and restore 15; Layout and accessibility 10; Privacy and personal data 11; Space and site settings 17; Workflow and approvals 27; App permissions and updates 4; Page banner and Sentinel Vault window 10; Activity report 3; Jira issue attachments 13; My work 6
 - type: Improvement 55; Bug 94
-- versions in Jira: 6.4.0 released 2026-09-30, 6.5.0 released 2026-09-30, 6.6.0 released 2026-10-02, 6.7.0 released 2026-10-04, 6.9.0 released 2026-10-04, 6.10.0 released 2026-10-04, 6.11.0 released 2026-10-04, 7.0.0 released 2026-10-05, 7.1.0 released 2026-10-09, 8.0.0 released 2026-10-14, 8.1.0 released 2026-10-14, 8.2.0 released 2026-10-14, 8.3.0 released 2026-10-14, 8.4.0 released 2026-10-14, 8.5.0 released 2026-10-14, 8.6.0 released 2026-10-17, 8.7.0 released 2026-10-17, 8.8.0 released 2026-10-17, 8.9.0 released 2026-10-18, 8.10.0 released 2026-10-18, 8.11.0 released 2026-10-18, 8.12.0 released 2026-10-18, 8.13.0 released 2026-10-21, 8.14.0 released 2026-10-21, 8.15.0 released 2026-10-21, 8.16.0 released 2026-10-22, 8.17.0 released 2026-10-22, 8.18.0 released 2026-10-22, 8.19.0 released 2026-10-22, 8.20.0 released 2026-10-22, 8.21.0 unreleased
+- versions in Jira: 6.4.0 released 2026-09-30, 6.5.0 released 2026-09-30, 6.6.0 released 2026-10-02, 6.7.0 released 2026-10-04, 6.9.0 released 2026-10-04, 6.10.0 released 2026-10-04, 6.11.0 released 2026-10-04, 7.0.0 released 2026-10-05, 7.1.0 released 2026-10-09, 8.0.0 released 2026-10-14, 8.1.0 released 2026-10-14, 8.2.0 released 2026-10-14, 8.3.0 released 2026-10-14, 8.4.0 released 2026-10-14, 8.5.0 released 2026-10-14, 8.6.0 released 2026-10-17, 8.7.0 released 2026-10-17, 8.8.0 released 2026-10-17, 8.9.0 released 2026-10-18, 8.10.0 released 2026-10-18, 8.11.0 released 2026-10-18, 8.12.0 released 2026-10-18, 8.13.0 released 2026-10-21, 8.14.0 released 2026-10-21, 8.15.0 released 2026-10-21, 8.16.0 released 2026-10-22, 8.17.0 released 2026-10-22, 8.18.0 released 2026-10-22, 8.19.0 released 2026-10-22, 8.20.0 released 2026-10-22, 8.21.0 released 2026-10-23
 
 ## Issues
 
@@ -1085,7 +1085,7 @@ Issues checked: 149 of 149. Verification failures: 0. Withheld release-note line
 - type: Bug; status: Done (Done); fixVersion: 8.21.0; component: Activity report
 
 > This problem is fixed.
-> Fixed in Sentinel Vault 8.21.0, which is waiting for Marketplace approval and is not yet listed on the Marketplace.
+> Fixed in Sentinel Vault 8.21.0. A site still on version 7 or earlier gets it once a site admin approves the update in Confluence administration, Apps, Manage apps.
 
 ### SVT-149 - On sites with many pages in workflows, the hourly workflow check can keep starting again at the same place
 
@@ -1106,19 +1106,19 @@ Issues checked: 149 of 149. Verification failures: 0. Withheld release-note line
 - type: Bug; status: Done (Done); fixVersion: 8.21.0; component: Backup and restore
 
 > This problem is fixed.
-> Fixed in Sentinel Vault 8.21.0, which is waiting for Marketplace approval and is not yet listed on the Marketplace.
+> Fixed in Sentinel Vault 8.21.0. A site still on version 7 or earlier gets it once a site admin approves the update in Confluence administration, Apps, Manage apps.
 
 ### SVT-152 - Changing a page's classification fails on sites that use Confluence's own classification levels
 
 - type: Bug; status: Done (Done); fixVersion: 8.21.0; component: Classification
 
 > This problem is fixed.
-> Fixed in Sentinel Vault 8.21.0, which is waiting for Marketplace approval and is not yet listed on the Marketplace.
+> Fixed in Sentinel Vault 8.21.0. A site still on version 7 or earlier gets it once a site admin approves the update in Confluence administration, Apps, Manage apps.
 
 ### SVT-153 - When Confluence is busy, a backup can start a second backup page
 
 - type: Bug; status: Done (Done); fixVersion: 8.21.0; component: Backup and restore
 
 > This problem is fixed.
-> Fixed in Sentinel Vault 8.21.0, which is waiting for Marketplace approval and is not yet listed on the Marketplace.
+> Fixed in Sentinel Vault 8.21.0. A site still on version 7 or earlier gets it once a site admin approves the update in Confluence administration, Apps, Manage apps.
 

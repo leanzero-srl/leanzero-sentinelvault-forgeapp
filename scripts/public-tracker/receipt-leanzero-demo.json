@@ -658,7 +658,7 @@
     ],
     "assigned": true
   },
-  "updatedAt": "2026-10-23T00:16:39.926Z",
+  "updatedAt": "2026-10-23T00:39:54.844Z",
   "projectId": "10278",
   "issueTypeScheme": {
     "id": "10636",
@@ -818,12 +818,12 @@
       "negative control": "13 fake broken answers, each failed the verdict",
       "GET /jira/software/c/projects/SVT/issues": 200
     },
-    "provenAt": "2026-10-23T00:16:39.926Z",
+    "provenAt": "2026-10-23T00:39:54.844Z",
     "proofFailures": []
   },
   "verified": {
     "through": "8.21.0",
-    "at": "2026-10-23T00:16:16.112Z",
+    "at": "2026-10-23T00:39:25.147Z",
     "issues": 149,
     "failures": 0
   }
