@@ -184,6 +184,13 @@ eq("every space of a complete list refused: not-allowed", status().noSpace?.caus
 site({ listStatus: 403 });
 await run();
 eq("a list the app may not read (403) is an answer: none visible", status().noSpace?.cause, "none-visible");
+for (const code of [400, 401, 409]) {
+  site({ listStatus: code });
+  await run();
+  st = status();
+  eq("a list read failing with " + code + ": not concluded", st.noSpace ?? null, null);
+  ok("a list read failing with " + code + ": an ordinary failure", !!st.lastError);
+}
 
 // 7c. A paused site whose next run fails differently: the tab shows only the newer failure.
 site({});
