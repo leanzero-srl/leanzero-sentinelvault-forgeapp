@@ -43,6 +43,7 @@ function site(w) {
       if (world.listStatus !== 200) return { status: world.listStatus, body: { message: "busy" } };
       if (world.listPages) { // paged: Confluence may hand back short or empty pages with a next link
         const i = Number(qs.get("cursor") || 0);
+        if (world.listPages[i] === "refused") return { status: 403, body: {} };
         const more = i + 1 < world.listPages.length;
         return { body: { results: (world.listPages[i] || []).map((s) => ({ id: s.id, key: s.key, name: s.key })), _links: more ? { next: `/wiki/api/v2/spaces?type=global&cursor=${i + 1}` } : {} } };
       }
@@ -184,6 +185,10 @@ eq("every space of a complete list refused: not-allowed", status().noSpace?.caus
 site({ listStatus: 403 });
 await run();
 eq("a list the app may not read (403) is an answer: none visible", status().noSpace?.cause, "none-visible");
+site({ listPages: [[{ id: "88", key: "FIRST" }], "refused"] });
+await run();
+st = status();
+eq("a later list page refused: the spaces already read are still tried", [st.noSpace ?? null, !!st.lastBackup?.generationId], [null, true]);
 for (const code of [400, 401, 409]) {
   site({ listStatus: code });
   await run();

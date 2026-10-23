@@ -136,8 +136,9 @@ export async function spaceByKey(spaceKey, { strict = false } = {}) {
  * home: { spaces (at most `want`), complete }. Follows the cursor (Confluence may hand back short or
  * EMPTY pages with a next link) until `want` spaces, the end, or `maxPages` requests. `complete` =
  * Confluence said there are no more, the only basis for "none" or "every space refused". A busy
- * answer (429, 5xx) throws ("could not tell"); a refused first read (another 4xx) is an answered
- * "none" (the old meaning); a refusal on a later page leaves the list incomplete.
+ * answer (429, 5xx) throws ("could not tell"); a refused first read (403/404: the app may not list
+ * spaces) is an answered "none"; any other failed first read throws; a failed later page keeps the
+ * spaces already read and leaves the list incomplete (never a "no space" conclusion).
  */
 export async function listGlobalSpaces(want = 25, { maxPages = 10 } = {}) {
   const spaces = [];
@@ -150,6 +151,7 @@ export async function listGlobalSpaces(want = 25, { maxPages = 10 } = {}) {
       // Only a refusal of the FIRST read (403/404: the app may not list spaces) is an answer, "none".
       // Busy, any other status, or a refusal halfway through the list: could not tell.
       if (i === 0 && (res.status === 403 || res.status === 404)) return { spaces, complete: true };
+      if (i > 0 && !isBusyStatus(res.status)) return { spaces, complete: false };
       throw statusError(`Could not list the spaces (${res.status})`, res.status);
     }
     const body = await readJson(res);
