@@ -147,8 +147,10 @@ export async function listGlobalSpaces(want = 25, { maxPages = 10 } = {}) {
       ? await conf(route`/wiki/api/v2/spaces?type=global&status=current&limit=${want}&cursor=${cursor}`)
       : await conf(route`/wiki/api/v2/spaces?type=global&status=current&limit=${want}`);
     if (!res.ok) {
-      if (isBusyStatus(res.status)) throw statusError(`Could not list the spaces (${res.status})`, res.status);
-      return { spaces, complete: i === 0 };
+      // Only a refusal of the FIRST read (403/404: the app may not list spaces) is an answer, "none".
+      // Busy, any other status, or a refusal halfway through the list: could not tell.
+      if (i === 0 && (res.status === 403 || res.status === 404)) return { spaces, complete: true };
+      throw statusError(`Could not list the spaces (${res.status})`, res.status);
     }
     const body = await readJson(res);
     for (const s of body?.results || []) spaces.push({ spaceId: String(s.id), spaceKey: s.key, spaceName: s.name });
