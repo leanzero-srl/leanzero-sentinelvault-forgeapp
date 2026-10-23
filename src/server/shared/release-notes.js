@@ -14,12 +14,12 @@ export const RELEASE_NOTES = Object.freeze([
   note({
     version: "8.21.0",
     date: "2026-10-23",
-    headline: "A deleted page keeps its name in the Activity history, and page classification works with Confluence's own levels",
+    headline: "A deleted page keeps its name in the Activity history for admins, and page classification works with Confluence's own levels",
     changes: [],
     fixes: [
-      "The Activity tab keeps the title of the page each event was recorded on, so space admins still see which page a deleted page's events belong to. Events recorded before this version still show the page's ID. Fixes SVT-148.",
-      "On sites that use Confluence's own classification levels, choosing a level for a page, or choosing to follow the space default, works again. Raising a level no longer asks for the reason meant for lowering one, levels show the colours set in Confluence, and a page that follows its space default says so. Levels below the space default, which Confluence does not allow on a page, are no longer offered, and when Confluence does not accept a change, Sentinel Vault says so and that nothing was changed. Fixes SVT-152.",
-      "On a site where Sentinel Vault has no space it can keep its backup page in, automatic backups now pause instead of failing every hour, and Backup and restore says why and how to choose a space. Fixes SVT-151.",
+      "When a page has been deleted for good, the Activity tab of its space still shows the title the page had when each event was recorded, to Confluence site admins and admins of that space. Events recorded before this version still show the page's ID. Fixes SVT-148.",
+      "On sites that use Confluence's own classification levels, choosing a level for a page, or choosing to follow the space default, works again. Raising a level no longer asks for the reason meant for lowering one, levels take their colour from the level's colour in Confluence, and a page that follows its space default says so. Levels below the space default, which Confluence does not allow on a page, are no longer offered (a level a page already holds stays shown), and when Confluence does not accept a change, Sentinel Vault says so and that nothing was changed. Fixes SVT-152.",
+      "When Confluence confirms that Sentinel Vault has no space it can keep its backup page in (it sees no space, or refuses a page in every space it sees), automatic backups pause instead of failing every hour, and Backup and restore says why and how to choose a space. Fixes SVT-151.",
       "When Confluence is busy, a backup no longer starts a second backup page; it fails and tries again later. Fixes SVT-153.",
     ],
   }),
