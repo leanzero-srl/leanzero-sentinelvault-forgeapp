@@ -251,16 +251,10 @@ export const setPage = async (req) => {
       // the person asked it to stop holding. Confluence answers 204 when there is nothing to reset.
       if (levelId == null && provider.name === "native") {
         await provider.resetPage(pageId); // measured: 204 also on a page with no level and no space default
+        // Confluence cannot tell a pin at the space's own level from following the space, so no
+        // activity row is written here: it would assert a change that may not have happened. What
+        // readers see is the same level before and after.
         await refreshByline(pageId).catch((e) => console.warn("[BYLINE] set-page refresh failed:", errText(e)));
-        // A pin equal to the space default may just have been removed: it is kept in the page's activity.
-        if (before?.level?.id) {
-          await recordActivity({
-            type: "classification.page-set", pageId: String(pageId), spaceKey: await resolvePageSpaceKey(pageId).catch(() => null),
-            actor: { accountId, name: null }, target: { kind: "page", id: String(pageId), name: null },
-            details: { from: before.level.id, fromName: before.level.name || null, to: before.level.id, toName: before.level.name || null, source: "space", lowered: false },
-            version: null,
-          });
-        }
       }
       return { ok: true, unchanged: true, effective: before, pageLevelId: levelId };
     }
