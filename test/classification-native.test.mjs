@@ -181,13 +181,13 @@ const writes = () => fake.calls.filter((c) => c.method !== "GET" && c.path.inclu
 }
 {
   // "Use space default" on a page pinned at the space's own level (it reads as following): the pin is
-  // removed and the removal is kept in the page's activity.
+  // removed. Confluence cannot tell that pin from following the space, so no activity row claims a change.
   await setup();
   pageOwn = I;
   const r = await call("classification-set-page", { pageId: "900", levelId: null });
   eq("the pin equal to the space default is removed", [r.ok, pageOwn], [true, null]);
-  const rows = [...fake.kvs.entries()].filter(([k]) => k.startsWith("activity-page-900-")).map(([, v]) => v);
-  eq("... and the page's activity records it", rows.map((v) => [v.type, v.details?.source]), [["classification.page-set", "space"]]);
+  const rows = [...fake.kvs.entries()].filter(([k]) => k.startsWith("activity-page-900-"));
+  eq("... and no activity row asserts a change nobody can prove", rows.length, 0);
 }
 
 {

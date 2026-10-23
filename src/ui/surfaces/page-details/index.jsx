@@ -88,7 +88,10 @@ const ClassificationBlock = ({ c, sealed, pageId, onChanged }) => {
   const levels = c?.levels || [];
   // Confluence's own scheme refuses a page level below the space's default (classification-set-page
   // says so too): those levels are not offered.
-  const offered = c?.provider === "native" && c?.spaceDefault ? levels.filter((l) => !isDowngrade(c.spaceDefault.id, l.id, levels)) : levels;
+  // A level the page already holds stays listed, so the picker never loses the current choice.
+  const offered = c?.provider === "native" && c?.spaceDefault
+    ? levels.filter((l) => String(l.id) === String(c.pageLevelId ?? "") || !isDowngrade(c.spaceDefault.id, l.id, levels))
+    : levels;
   const fromId = level?.id ?? null;
   const landsOn = (levelId) => (levelId != null ? levelId : c?.spaceDefault?.id ?? null); // what readers see after
   const save = async (levelId, reason) => {
