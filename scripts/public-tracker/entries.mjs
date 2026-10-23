@@ -42,6 +42,12 @@ export const COMPONENTS = {
 const JIRA_ON = "It works once a site admin has connected Jira to Sentinel Vault in Atlassian Administration.";
 
 export const ENTRIES = {
+  // 8.21.0: written by the release door on 2026-10-23 (rows: deterministic; review pass: none, deterministic net only).
+  "1ff085c8476f15d2": ["When a page has been deleted for good, the Activity tab of its space still shows the...", "S", {"fold":"known-purged-page-activity-no-title","d":"This problem is fixed."}],
+  "4431848683e9da6b": ["On sites that use Confluence's own classification levels, choosing a level for a page,...", "S", {"fold":"known-native-classification-page-change-fails","d":"This problem is fixed."}],
+  "f8db00e77406595e": ["When Confluence confirms that Sentinel Vault has no space it can keep its backup page...", "S", {"fold":"known-backup-no-space-fails-hourly","d":"This problem is fixed."}],
+  "70adb0f1239814ef": ["When Confluence is busy, a backup no longer starts a second backup page", "S", {"fold":"known-backup-busy-second-page","d":"This problem is fixed."}],
+
   // 8.20.0: written by the release door on 2026-10-22 (rows: deterministic; review pass: none, deterministic net only).
   "874557d2ab1e7aad": ["Sentinel Vault could answer a request with a result it had looked up for another...", "S", {"withhold":"the review pass did not answer (release door: no review, no publication)"}],
   "ec4220d32fdb1924": ["Activity events recorded since 8.9.0 under a space key that is not a space on your...", "S", {"withhold":"touches security, permissions, isolation or keys (release door, deterministic rule)"}],
@@ -570,38 +576,6 @@ export const KNOWN = [
     where: "My work; Space settings, Sealed Files and Access Control tabs.",
     workaround: "Wait a moment and reload the page before you rely on an empty list.",
   },
-  // 2026-10-22: found while testing what a page deleted from the trash leaves behind; confirmed on the 8.17.0 code, fix scheduled.
-  {
-    k: "known-purged-page-activity-no-title", c: "A", affects: "8.17.0", fix: "scheduled",
-    t: "After a page is deleted from the trash, the Activity tab can show its events under the page's ID instead of its title",
-    see: "Once a page has been deleted permanently from the space's trash, the Activity tab in space settings still lists who did what on it, but the Page column can show those events as Page followed by a number, and the pageTitle column of the CSV export can be empty.",
-    where: "Space settings, Activity tab, and its Export CSV file.",
-    workaround: "Note the page's title before you delete it from the trash. The number shown is the page's ID, so an export taken while the page still existed links the two.",
-  },
-  // 2026-10-23: found in the production logs (one site, hourly); confirmed on the 8.20.0 code, fix scheduled.
-  {
-    k: "known-backup-no-space-fails-hourly", c: "B", affects: "8.20.0", fix: "scheduled",
-    t: "On a site with no space Sentinel Vault can keep its backup page in, the automatic backup fails every hour",
-    see: "When Sentinel Vault sees no space it can keep its backup page in, Backup and restore says the last backup failed and gives the reason, and the site history gets a new backup failed entry every hour.",
-    where: "Site settings, Backup and restore, and its history.",
-    workaround: "Choose a space for the backup with Move to another space. It must be a space where Sentinel Vault can view and add pages.",
-  },
-  // 2026-10-23: reproduced on the test site; confirmed on the 8.20.0 code, fix scheduled.
-  {
-    k: "known-native-classification-page-change-fails", c: "L", affects: "8.20.0", fix: "scheduled",
-    t: "Changing a page's classification fails on sites that use Confluence's own classification levels",
-    see: "On a site where Sentinel Vault uses Confluence's own classification levels, choosing a level for a page, or choosing to follow the space default, shows an error and the page keeps its level. Raising a level also asks for the reason meant for lowering one, and a page that follows its space default says its level was set on the page.",
-    where: "The page's classification chip and page details, and the classification settings in space and site settings.",
-    workaround: "Set the page's level with Confluence's own classification control on the page. Setting a space's default level from Sentinel Vault works, though raising it asks for a reason.",
-  },
-  // 2026-10-23: found while fixing the backup row above; confirmed on the 8.20.0 code, fix scheduled.
-  {
-    k: "known-backup-busy-second-page", c: "B", affects: "8.20.0", fix: "scheduled",
-    t: "When Confluence is busy, a backup can start a second backup page",
-    see: "If Confluence is limiting requests or answers with an error while a backup looks for its backup page, the backup can create a new backup page and keep its later backups there. The earlier backups stay on the earlier page.",
-    where: "Site settings, Backup and restore.",
-    workaround: "None needed to keep your backups: the earlier ones are not deleted and stay on the earlier backup page.",
-  },
 ];
 
 // Known bugs a release closed (folded into that release's note line, so the issue is Done with it).
@@ -644,5 +618,45 @@ export const CLOSED = [
     see: "Once an hour Sentinel Vault goes through the pages in workflows, for example to move a page whose review date has passed to Expired and to keep state labels in step. On a site with very many pages in workflows, this check can fail to finish and start again at the same place the next hour. Pages that come later in the list can then stay in their state after their review date has passed, with no overdue comment on the page, and their state labels can fall out of step.",
     where: "Spaces with workflows turned on: review dates, the Expired state and state labels.",
     workaround: "Where the page's workflow allows it, open the Sentinel Vault banner on a page whose review date has passed and use Move to… to move it on, or set a new review date there.",
+  },
+
+  // closed by 8.21.0 (SVT-148), moved out of KNOWN by the release door on 2026-10-23
+  // 2026-10-22: found while testing what a page deleted from the trash leaves behind; confirmed on the 8.17.0 code, fix scheduled.
+  {
+    k: "known-purged-page-activity-no-title", c: "A", affects: "8.17.0", fix: "scheduled",
+    t: "After a page is deleted from the trash, the Activity tab can show its events under the page's ID instead of its title",
+    see: "Once a page has been deleted permanently from the space's trash, the Activity tab in space settings still lists who did what on it, but the Page column can show those events as Page followed by a number, and the pageTitle column of the CSV export can be empty.",
+    where: "Space settings, Activity tab, and its Export CSV file.",
+    workaround: "Note the page's title before you delete it from the trash. The number shown is the page's ID, so an export taken while the page still existed links the two.",
+  },
+
+  // closed by 8.21.0 (SVT-152), moved out of KNOWN by the release door on 2026-10-23
+  // 2026-10-23: reproduced on the test site; confirmed on the 8.20.0 code, fix scheduled.
+  {
+    k: "known-native-classification-page-change-fails", c: "L", affects: "8.20.0", fix: "scheduled",
+    t: "Changing a page's classification fails on sites that use Confluence's own classification levels",
+    see: "On a site where Sentinel Vault uses Confluence's own classification levels, choosing a level for a page, or choosing to follow the space default, shows an error and the page keeps its level. Raising a level also asks for the reason meant for lowering one, and a page that follows its space default says its level was set on the page.",
+    where: "The page's classification chip and page details, and the classification settings in space and site settings.",
+    workaround: "Set the page's level with Confluence's own classification control on the page. Setting a space's default level from Sentinel Vault works, though raising it asks for a reason.",
+  },
+
+  // closed by 8.21.0 (SVT-151), moved out of KNOWN by the release door on 2026-10-23
+  // 2026-10-23: found in the production logs (one site, hourly); confirmed on the 8.20.0 code, fix scheduled.
+  {
+    k: "known-backup-no-space-fails-hourly", c: "B", affects: "8.20.0", fix: "scheduled",
+    t: "On a site with no space Sentinel Vault can keep its backup page in, the automatic backup fails every hour",
+    see: "When Sentinel Vault sees no space it can keep its backup page in, Backup and restore says the last backup failed and gives the reason, and the site history gets a new backup failed entry every hour.",
+    where: "Site settings, Backup and restore, and its history.",
+    workaround: "Choose a space for the backup with Move to another space. It must be a space where Sentinel Vault can view and add pages.",
+  },
+
+  // closed by 8.21.0 (SVT-153), moved out of KNOWN by the release door on 2026-10-23
+  // 2026-10-23: found while fixing the backup row above; confirmed on the 8.20.0 code, fix scheduled.
+  {
+    k: "known-backup-busy-second-page", c: "B", affects: "8.20.0", fix: "scheduled",
+    t: "When Confluence is busy, a backup can start a second backup page",
+    see: "If Confluence is limiting requests or answers with an error while a backup looks for its backup page, the backup can create a new backup page and keep its later backups there. The earlier backups stay on the earlier page.",
+    where: "Site settings, Backup and restore.",
+    workaround: "None needed to keep your backups: the earlier ones are not deleted and stay on the earlier backup page.",
   },
 ];
