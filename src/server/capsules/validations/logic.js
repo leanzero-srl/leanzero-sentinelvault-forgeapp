@@ -3,6 +3,7 @@ import { route } from "@forge/api";
 import { appConfluence } from "../../shared/confluence-call.js";
 import { setWithTtl, setUntil } from "../../shared/kvs-ttl.js";
 import { errText } from "../../shared/action-log.js";
+import { aiAllowance } from "./allowance.js";
 
 // Conditions & Validations — config + state storage.
 //
@@ -205,7 +206,17 @@ export async function checkAiSpend(spaceKey) {
     const used = await getMonthlyTokenUsage(spaceKey);
     if (used >= budget) return { ok: false, why: "budget", siteOff: false, ai, reason: "This space has reached its monthly AI token budget." };
   }
-  return { ok: true, ai };
+  // The SITE-WIDE monthly allowance (allowance.js): read only here; the consumer reserves under
+  // the lock right before the model call. A meter that cannot be read refuses ("busy").
+  const global = await readGlobalAiForAllowance();
+  const allowance = await aiAllowance.precheck(global);
+  if (!allowance.ok) return { ok: false, why: allowance.why, siteOff: false, ai, reason: allowance.reason };
+  return { ok: true, ai, globalAi: global };
+}
+
+/** The SITE's ai object only (never a space's): the one place an admin's lowered allowance lives. */
+export async function readGlobalAiForAllowance() {
+  try { return ((await kvs.get("validation-config-global")) || {}).ai || {}; } catch (_) { return {}; }
 }
 
 /**
@@ -219,6 +230,14 @@ export async function checkAiSpend(spaceKey) {
  */
 export function aiGateRefusal(spend, onBudgetExhausted) {
   const allow = onBudgetExhausted === "allow";
+  // A meter that could not be read or locked: never a pass, never a skip — retry.
+  if (spend.why === "busy") return { enqueued: false, verdict: "failed", reason: spend.reason || "AI review is busy right now. Please try again in a minute." };
+  // The site's monthly allowance is spent: like a space budget, the space's onBudgetExhausted decides.
+  if (spend.why === "allowance") {
+    return allow
+      ? { enqueued: false, verdict: "passed", reason: `${spend.reason} Allowed with a warning.` }
+      : { enqueued: false, verdict: "failed", reason: spend.reason };
+  }
   if (spend.why === "budget") {
     return allow
       ? { enqueued: false, verdict: "passed", reason: "AI budget exhausted — allowed with a warning." }

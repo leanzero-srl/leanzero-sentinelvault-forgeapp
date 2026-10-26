@@ -42,6 +42,8 @@ export const COMPONENTS = {
 const JIRA_ON = "It works once a site admin has connected Jira to Sentinel Vault in Atlassian Administration.";
 
 export const ENTRIES = {
+  // 8.22.0: the site-wide AI allowance (branch fix-ai-allowance, 2026-10-26).
+  "11fb498bbb566918": ["AI review has a monthly allowance for the whole site", "C"],
   // 8.21.0: written by the release door on 2026-10-23 (rows: deterministic; review pass: none, deterministic net only).
   "1ff085c8476f15d2": ["When a page has been deleted for good, the Activity tab of its space still shows the...", "S", {"fold":"known-purged-page-activity-no-title","d":"This problem is fixed."}],
   "4431848683e9da6b": ["On sites that use Confluence's own classification levels, choosing a level for a page,...", "S", {"fold":"known-native-classification-page-change-fails","d":"This problem is fixed."}],

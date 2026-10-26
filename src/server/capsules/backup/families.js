@@ -89,6 +89,10 @@ export const FAMILIES = Object.freeze([
   { prefix: "api-token-revoked:", cls: "secret" },
 
   // ── runtime: rebuilt by the app ─────────────────────────────────────────────────────────
+  // The site-wide AI allowance meter (ai-allowance-YYYYMM + its lock) and the cached licensed user
+  // count: RUNTIME, so a restore can never roll the month's spend back.
+  { prefix: "ai-allowance-", cls: "runtime" },
+  { prefix: "ai-licensed-users", cls: "runtime" },
   { prefix: "app-account-id", cls: "runtime" },
   { prefix: "macro-extension-key", cls: "runtime" },
   { prefix: "section-macro-extension-key", cls: "runtime" },

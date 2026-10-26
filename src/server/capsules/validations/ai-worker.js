@@ -4,6 +4,8 @@ import { readDocBody, readDocBodyAtVersion, extractPlainText } from "../../infra
 import { runForgeLlmJson, isForgeLlmModelAllowed, FORGE_LLM_DEFAULT_MODEL } from "../../infra/forge-llm.js";
 import { postAiFindingsComment } from "../../infra/validation-blueprints.js";
 import { applyAiVerdict } from "../workflow/approvals.js";
+import { recordActivity } from "../../infra/activity-log.js";
+import { aiAllowance, estimateMicro, monthLabel, resetLabel } from "./allowance.js";
 import {
   checkAiSpend,
   aiGateRefusal,
@@ -13,6 +15,32 @@ import {
   accrueTokenUsage,
   storeFindings,
 } from "./logic.js";
+
+// The site-wide allowance around ONE model call (allowance.js): reserve the worst case for this
+// prompt, call, settle to the reported tokens. Returns { refused } or { res }. A throw from the call
+// leaves the reservation in place; it is charged at its reserved size when it expires (fail-safe).
+async function callWithinAllowance(id, globalAi, { model, system, user }) {
+  const resv = await aiAllowance.reserve(id, estimateMicro(`${system || ""}${user || ""}`), globalAi);
+  if (!resv.ok) {
+    if (resv.firstTrip) await noteAllowanceReached(resv);
+    return { refused: { ok: false, why: resv.why, reason: resv.reason } };
+  }
+  const res = await runForgeLlmJson({ model, system, user });
+  const s = await aiAllowance.settle(resv, res?.usage);
+  if (s.firstTrip) await noteAllowanceReached(s);
+  return { res };
+}
+
+async function noteAllowanceReached({ month, limitMicro }) {
+  try {
+    const at = Date.UTC(Number(String(month).slice(0, 4)), Number(String(month).slice(4, 6)) - 1, 15);
+    await recordActivity({
+      type: "validation.ai-allowance-reached", site: true, pageId: null, spaceKey: null, actor: null,
+      target: { kind: "site", id: "site", name: null },
+      details: { month, monthLabel: monthLabel(month), resetLabel: resetLabel(at), limitMicro: limitMicro || 0 },
+    });
+  } catch (e) { console.warn("[AI-ALLOWANCE] activity not recorded:", errText(e)); }
+}
 
 // #46 Part B: gate-mode review. Scores the PINNED version (the bytes the humans reviewed and
 // #44 will enforce), then writes a terminal verdict onto the pending aiGate via applyAiVerdict.
@@ -41,7 +69,13 @@ async function handleGateReview(body) {
     const maxChars = ai.maxChars || 40000;
     if (text.length > maxChars) text = text.slice(0, maxChars);
     const { system, user } = buildValidationPrompt({ ai, pageText: text, pageTitle });
-    const res = await runForgeLlmJson({ model, system, user });
+    const call = await callWithinAllowance(`gate:${pageId}:${pinnedVersion || "cur"}:${Date.now()}`, spend.globalAi, { model, system, user });
+    if (call.refused) {
+      const refusal = aiGateRefusal(call.refused, onBudgetExhausted);
+      await applyAiVerdict(pageId, pinnedVersion, refusal.verdict, refusal.reason);
+      return { outcome: "refused", step: "allowance" };
+    }
+    const { res } = call;
     if (res.usage) await accrueTokenUsage(realmKey || spaceKey, res.usage);
     if (!res.ok || !res.parsed) {
       await applyAiVerdict(pageId, pinnedVersion, "failed", "AI review failed — please retry.");
@@ -109,7 +143,14 @@ export async function aiValidationConsumer(event) {
     if (text.length > maxChars) { text = text.slice(0, maxChars); truncated = true; }
 
     const { system, user } = buildValidationPrompt({ ai, pageText: text, pageTitle });
-    const res = await runForgeLlmJson({ model, system, user });
+    // A re-delivered event (same taskId) must get its OWN reservation: sharing the id let the second
+    // reserve overwrite the first, and the second settle then found nothing to settle (uncounted run).
+    const call = await callWithinAllowance(`manual:${taskId}:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`, spend.globalAi, { model, system, user });
+    if (call.refused) {
+      await setStatus({ status: "error", error: call.refused.reason, pageId });
+      return { outcome: "refused", step: "allowance" };
+    }
+    const { res } = call;
 
     if (res.usage) await accrueTokenUsage(realmKey || spaceKey, res.usage);
 
