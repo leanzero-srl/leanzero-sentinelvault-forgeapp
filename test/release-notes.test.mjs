@@ -7,6 +7,9 @@ import { RELEASE_NOTES, CURRENT_RELEASE, compareVersions } from "../src/server/s
 
 for (const n of RELEASE_NOTES) {
   ok(`${n.version} is x.y.z`, /^\d+\.\d+\.\d+$/.test(n.version));
+  // Forge numbers every production deploy minor+1 (x.y.0): a patch note (8.22.1, 2026-10-26) shipped as
+  // Forge 8.23.0, so the note, the tracker fixVersion and the Marketplace listing disagreed. Never x.y.N>0.
+  ok(`${n.version} is a minor release x.y.0 (Forge numbers every production deploy minor+1)`, /\.0$/.test(n.version));
   ok(`${n.version} has a real date`, /^\d{4}-\d{2}-\d{2}$/.test(n.date) && !Number.isNaN(Date.parse(n.date)));
   ok(`${n.version} has a headline`, typeof n.headline === "string" && n.headline.length > 10);
   ok(`${n.version} says what changed`, (n.changes?.length || 0) + (n.fixes?.length || 0) > 0);
