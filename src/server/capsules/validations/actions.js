@@ -5,6 +5,7 @@ import { Queue } from "@forge/events";
 import { fetchPageLabelsChecked } from "../../infra/labels.js";
 import { ruleListRefusal, rulesNeedLabels } from "../../shared/rule-config.js";
 import { recordActivity } from "../../infra/activity-log.js";
+import { aiAllowance } from "./allowance.js";
 import { decideRecheckWrite, recheckNote, rulesFingerprint, reconcileStoredState } from "./recheck.js";
 
 import { authorizeSteward, isOperatorSteward, isOperatorSiteAdmin } from "../../shared/steward-checks.js";
@@ -97,7 +98,15 @@ const loadConfig = async (req) => {
     const global = (await kvs.get("validation-config-global")) || {};
     return { ...cfg, effectiveAi: effectiveAiView(capAiConfig(global.ai, cfg.ai)) };
   }
-  if (await isOperatorSiteAdmin(caller)) return await loadValidationConfig("global");
+  if (await isOperatorSiteAdmin(caller)) {
+    const cfg = await loadValidationConfig("global");
+    if (!cfg || typeof cfg !== "object") return cfg;
+    // The site-wide monthly AI allowance (allowance.js), derived on every load: the editor and the
+    // REST export show it; storeConfig strips it.
+    let aiAllowanceView = null;
+    try { aiAllowanceView = await aiAllowance.view(cfg.ai || {}); } catch (e) { aiAllowanceView = { unavailable: true }; }
+    return { ...cfg, aiAllowance: aiAllowanceView };
+  }
   const adminOf = req.context.extension?.space?.key || req.context.extension?.content?.space?.key || key || null;
   if (adminOf && (await isOperatorSteward(caller, adminOf))) {
     const site = await loadValidationConfig("global");
@@ -136,8 +145,19 @@ const storeConfig = async (req) => {
   }
   // `effectiveAi` is derived on every load (loadConfig) and comes back in an exported bundle or a
   // round-tripped editor state; storing it would only leave a stale copy behind.
-  const { effectiveAi: _derived, ...toStore } = data;
+  const { effectiveAi: _derived, aiAllowance: _derivedAllowance, ...toStore } = data;
   const isSpace = scope === "space" && !!key;
+  // The site-wide AI allowance may only be LOWERED (allowance.js): clamp to the default on save
+  // (the read side clamps too). It is a site setting: a space's copy is dropped.
+  if (toStore.ai && typeof toStore.ai === "object" && "monthlyAllowanceMicro" in toStore.ai) {
+    toStore.ai = { ...toStore.ai };
+    const asked = Math.floor(Number(toStore.ai.monthlyAllowanceMicro));
+    if (isSpace || !Number.isFinite(asked) || asked <= 0) delete toStore.ai.monthlyAllowanceMicro;
+    else {
+      const { defaultMicro } = await aiAllowance.limits({});
+      toStore.ai.monthlyAllowanceMicro = Math.min(asked, defaultMicro);
+    }
+  }
   const before = isSpace && toStore.ai ? await loadValidationConfig("space", key) : null;
   const saved = await storeValidationConfig(scope || "global", key, toStore);
   if (!isSpace || !saved?.success) return saved;
