@@ -350,4 +350,45 @@ const people = (n) => Array.from({ length: n }, () => ({ accountType: "atlassian
   eq("M3: the finished row has no scan left", b.store.get(COUNT_KEY)?.scan, undefined);
 }
 
+{ // review 2 (#1): a failure must not overwrite a fresh count another caller saved meanwhile.
+  const clock = { t: T0 };
+  let b;
+  b = bed({ clock, fetchCount: async () => { b.store.set(COUNT_KEY, { count: 2000, kind: "group", at: new Date(clock.t).toISOString() }); return null; } });
+  await b.al.licensedUsers();
+  eq("R2-1: the fresh 2000 survives a concurrent failure", b.store.get(COUNT_KEY)?.count, 2000);
+  ok("R2-1: and no failedAt blocks the next read", !b.store.get(COUNT_KEY)?.failedAt);
+}
+{ // review 2 (#2): one scanner at a time. A second caller during a scan does not read pages.
+  let n = 0; let release;
+  const gate = new Promise((r) => { release = r; });
+  const b = bed({ fetchCount: async () => { n++; await gate; return { count: 300, kind: "group" }; } });
+  const p1 = b.al.licensedUsers();
+  await new Promise((r) => setTimeout(r, 20));
+  const second = await b.al.licensedUsers();
+  eq("R2-2: the second caller did not scan", n, 1);
+  eq("R2-2: it serves the fallback while nothing is known", second.users, 10);
+  release(); await p1;
+  eq("R2-2: the scan finishes and is served", (await b.al.licensedUsers()).users, 300);
+  ok("R2-2: the lease is gone after the scan", !b.store.get(COUNT_KEY)?.scanUntil);
+}
+{ // review 2 (#7): an unreadable app context fails toward the customer (the floor).
+  const b = bed({ ctx: null, fetchCount: async () => ({ count: 9, kind: "group" }) });
+  eq("R2-7: null context -> paid floor", (await b.al.licensedUsers()).users, 250);
+}
+{ // review 2 (#5/#6): an unparseable page or a capped group list is a failure, never a pick.
+  const { readDefaultGroupCount, MAX_GROUP_PAGES } = A;
+  const bad = async () => ({ ok: true, status: 200, json: async () => { throw new Error("parse"); } });
+  eq("R2-5: unparseable group page -> fail", (await readDefaultGroupCount(bad)).status, "fail");
+  let pages = 0;
+  const endless = async (path) => {
+    pages++;
+    const start = Number(new URL(path, "https://x").searchParams.get("start")) || 0;
+    const results = start === 0 ? [{ id: "leg", name: "confluence-users" }] : [{ id: `t${start}`, name: `team-${start}` }];
+    return { ok: true, status: 200, json: async () => ({ results, _links: { base: "https://acme.atlassian.net/wiki", next: `/x?start=${start + 1}` } }) };
+  };
+  eq("R2-6: capped group list -> fail, not the legacy group", (await readDefaultGroupCount(endless)).status, "fail");
+  eq("R2-6: stopped at the cap", pages, MAX_GROUP_PAGES);
+  eq("R2-9: a deactivated member is not counted", A.peopleIn([{ accountType: "atlassian", accountStatus: "inactive" }, { accountType: "atlassian" }]), 1);
+}
+
 report();

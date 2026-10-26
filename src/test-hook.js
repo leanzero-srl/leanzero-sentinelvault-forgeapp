@@ -281,7 +281,7 @@ export async function testStateTrigger(req) {
       // pages in `spaceId` (as the app), tries one door per page, and reports every status. The
       // decision for backup/store.js deletePage and attachment-status.js rests on this output.
       // User-count probe (2026-10-26, 8.22.1): which licensed-user-count sources answer THIS app
-      // with ITS scopes. Reads only; returns statuses and counts, never names or ids.
+      // with ITS scopes. Reads only; returns statuses, counts and the names of default-style groups (dev only, stripped from prod).
       if (fn === "userCountProbe") {
         const { default: api, route } = await import("@forge/api");
         const out = {};
