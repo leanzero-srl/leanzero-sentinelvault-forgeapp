@@ -24,6 +24,20 @@ Gate: laptop node-run gabee-20261026-140439-3009 exit 0, lint clean, 138/138 inc
 (Gabee has no forge-live-harness playwright: responsive-dom fails there "Playwright not found" — env, not code.)
 Release note 8.22.1 + entries rows 69dee81acf5fb68a / 2c4927a4bcc6a720 (component C) are IN e2dc58f.
 
+## Review result (independent agent, on e2dc58f): FIX-THEN-SHIP. Verify each before fixing.
+H1 (agent reproduced): precheck uses viewExhausted -> after one LARGE refused review (e.g. 150k with 120k left)
+   precheck refuses every smaller review for the rest of the month (reserve would accept 30k). Fix: precheck keeps
+   plain isExhausted; refusedNeedMicro only for the card wording. Red test: small review passes precheck after big refusal.
+M2: failed count is not cached -> every view/precheck/reserve re-lists all groups. Fix: cache {kind:"none", at} 1-6 h.
+M3: 25 group + 100 member pages serially can exceed the 25 s resolver budget. Fix: time budget (~8 s), cache partial as "group".
+M4: paging breaks on r.length < 200; if server caps limit lower, undercount. Fix: page on b._links.next / b.limit.
+M5: renamed site/custom domain -> legacy `confluence-users` may be ANOTHER site's group in a multi-site org. Fix: legacy
+   name only when no `confluence-users-*` group exists at all; else floor.
+L6: release-note "always gets at least 250" false (admin lowering, licence count < 250); reword; 2nd line after H1.
+L7: >5,000 groups misses the default group. L8: deactivated accounts may be counted (slight overcount).
+Rejected by reviewer: client-controlled count, floor bypass via cache, lower-then-raise, rollover, settle, trials.
+Note: old-code red run crashed on import for the group block; the behavioural block was shown red separately (12 FAIL).
+
 ## Open, in order
 a. Independent review agent was launched on e2dc58f (result not yet read when this was written). Re-run a fresh
    general-purpose reviewer on `git show e2dc58f` if its result is lost; verify each finding before fixing.
