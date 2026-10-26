@@ -55,9 +55,13 @@ export const COUNT_TTL_MS = 24 * 3600 * 1000;
 // A failed read is remembered: the next read waits this long, so an outage does not re-list every
 // group on every view, precheck and reserve.
 export const COUNT_RETRY_MS = 3600 * 1000;
-// Work per call on the group scan. A resolver has 25 s in all; the scan stops at this budget, keeps
+// Work per call on the group scan. A resolver has 25 s in all and the scan runs inline on the
+// precheck and settings paths (a 429 retry on one page can add more); the scan stops at this budget, keeps
 // its place in the count row and the next call resumes it.
-export const COUNT_BUDGET_MS = 8000;
+export const COUNT_BUDGET_MS = 4000;
+// One caller scans at a time: a scanning caller marks the row with scanUntil; the others serve the
+// last good count (or the count so far) instead of reading the same pages again.
+export const SCAN_LEASE_MS = COUNT_BUDGET_MS + 21000;
 // A half-done scan older than this starts again (its pages may have moved).
 export const SCAN_MAX_AGE_MS = 24 * 3600 * 1000;
 export const COUNT_STALE_MAX_MS = 35 * 24 * 3600 * 1000;
@@ -193,7 +197,8 @@ export function defaultGroupNames(baseUrl) {
 }
 
 /** PURE. People in one members page (app and customer accounts are not licensed users). */
-export const peopleIn = (results) => (Array.isArray(results) ? results : []).filter((u) => u?.accountType === "atlassian").length;
+export const peopleIn = (results) => (Array.isArray(results) ? results : [])
+  .filter((u) => u?.accountType === "atlassian" && (u?.accountStatus == null || u.accountStatus === "active")).length;
 
 async function readLicenceCount() {
   // Unofficial endpoint (no documented count API, CONFCLOUD-82766). A refusal is LOGGED (action log:
@@ -242,7 +247,8 @@ export async function readDefaultGroupCount(call = appConfluence, { deadline = I
   const s = state && typeof state === "object" ? { ...state } : { phase: "groups", next: 0, pages: 0, startedAt: now() };
   const fail = (status, step) => { logCountError(status, step); return { status: "fail" }; };
   while (s.phase === "groups") {
-    if (s.pages >= MAX_GROUP_PAGES) { s.next = null; }
+    // Capped before the end of the list: "not seen" is not "absent", so pick nothing.
+    if (s.pages >= MAX_GROUP_PAGES) return fail(507, "user-count-groups-capped");
     if (s.next == null) {
       const id = pickDefaultGroup(s);
       if (!id) return fail(404, s.exactId || s.legacyId ? "user-count-group-ambiguous" : "user-count-group-missing");
@@ -253,12 +259,15 @@ export async function readDefaultGroupCount(call = appConfluence, { deadline = I
     const res = await call(route`/wiki/rest/api/group?limit=200&start=${s.next}`);
     if (!res?.ok) return fail(res?.status, "user-count-groups");
     const b = await res.json().catch(() => null);
-    if (!s.name) s.name = defaultGroupNames(b?._links?.base)[0] || null;
+    if (!Array.isArray(b?.results)) return fail(res.status || 200, "user-count-groups-body");
+    if (!s.name && b?._links?.base) s.name = defaultGroupNames(b._links.base)[0];
     for (const g of Array.isArray(b?.results) ? b.results : []) {
       const n = String(g?.name || "").toLowerCase();
       if (!g?.id) continue;
       if (n.startsWith("confluence-users-")) s.anySuffixed = true;
       if (s.name && s.name !== "confluence-users" && n === s.name) s.exactId = String(g.id);
+      // (a custom-domain base gives no site name: then only a lone legacy group is safe; KNOWN LIMIT,
+      // such a site in a multi-site org gets the fallback / the paid floor, logged as -ambiguous)
       if (n === "confluence-users") s.legacyId = String(g.id);
     }
     s.pages++;
@@ -269,7 +278,8 @@ export async function readDefaultGroupCount(call = appConfluence, { deadline = I
     const res = await call(route`/wiki/rest/api/group/${s.groupId}/membersByGroupId?limit=200&start=${s.next}`);
     if (!res?.ok) return fail(res?.status, "user-count-members");
     const b = await res.json().catch(() => null);
-    const r = Array.isArray(b?.results) ? b.results : [];
+    if (!Array.isArray(b?.results)) return fail(res.status || 200, "user-count-members-body");
+    const r = b.results;
     s.people += peopleIn(r);
     s.listed += r.length;
     const total = Number(b?.totalSize);
@@ -331,10 +341,26 @@ export function makeAllowance({
     // The last good count stays in the row through a failure or a half-done scan.
     const keep = cached?.count > 0 ? { count: cached.count, kind: cached.kind, at: cached.at } : {};
     const save = async (row) => { try { await kvs.set(COUNT_KEY, row); } catch (_) { /* next read retries */ } };
+    // A failure or a half-done scan never overwrites a fresh count another caller saved meanwhile.
+    const saveUnlessFresh = async (row) => {
+      let cur = null;
+      try { cur = await kvs.get(COUNT_KEY); } catch (_) { cur = null; }
+      const curAt = Date.parse(cur?.at || "");
+      if (cur?.count > 0 && Number.isFinite(curAt) && curAt > (Number.isFinite(at) ? at : -Infinity) && now() - curAt < COUNT_TTL_MS) return false;
+      await save(row);
+      return true;
+    };
+    const soFar = (n) => {
+      const st = stale();
+      return n > 0 && !(st && st.users >= n) ? { users: n, source: "group", kind: "group" } : st || fallback;
+    };
     const failedAt = Date.parse(cached?.failedAt || "");
     if (Number.isFinite(failedAt) && now() - failedAt < COUNT_RETRY_MS) return stale() || fallback;
+    const leaseUntil = Date.parse(cached?.scanUntil || "");
+    if (Number.isFinite(leaseUntil) && now() < leaseUntil) return soFar(Math.floor(Number(cached?.scan?.people)) || 0);
     const scanAt = Number(cached?.scan?.startedAt);
     const resume = cached?.scan && Number.isFinite(scanAt) && now() - scanAt < SCAN_MAX_AGE_MS ? cached.scan : null;
+    await save({ ...keep, ...(resume ? { scan: resume } : {}), scanUntil: new Date(now() + SCAN_LEASE_MS).toISOString() });
     let raw = null;
     try { raw = await fetchCount({ state: resume, deadline: now() + COUNT_BUDGET_MS, now }); } catch (e) {
       console.warn("[AI-ALLOWANCE] user count read failed:", errText(e));
@@ -344,18 +370,15 @@ export function makeAllowance({
     if (raw && typeof raw === "object" && raw.partial) {
       // Out of time for this call: keep the place, resume on the next call. Until it finishes, the
       // last good count, else the people counted so far (a lower bound), else the fallback.
-      await save({ ...keep, scan: raw.partial });
-      const so = Math.floor(Number(raw.count));
-      const st = stale();
-      if (so > 0 && !(st && st.users >= so)) return { users: so, source: "group", kind: "group" };
-      return st || fallback;
+      await saveUnlessFresh({ ...keep, scan: raw.partial });
+      return soFar(Math.floor(Number(raw.count)) || 0);
     }
     const got = normCount(raw);
     if (got) {
       await save({ count: got.count, kind: got.kind, at: new Date(now()).toISOString() });
       return { users: got.count, source: got.kind === "licence" ? "count" : "group", kind: got.kind };
     }
-    await save({ ...keep, failedAt: new Date(now()).toISOString() });
+    await saveUnlessFresh({ ...keep, failedAt: new Date(now()).toISOString() });
     return stale() || fallback;
   }
 
@@ -367,7 +390,8 @@ export function makeAllowance({
     const counted = r.kind ? r.users : null;
     // An active paid licence (forced is null and a licence object exists): never below the floor
     // unless the licence count itself answered.
-    if (ctx?.license && r.kind !== "licence" && r.users < PAID_FLOOR_USERS) {
+    // A context that could not be read at all (null) fails toward the customer: the floor too.
+    if ((ctx?.license || ctx == null) && r.kind !== "licence" && r.users < PAID_FLOOR_USERS) {
       return { users: PAID_FLOOR_USERS, source: "paid-floor", counted };
     }
     return { users: r.users, source: r.source, counted };
@@ -428,7 +452,7 @@ export function makeAllowance({
         const row = expireReservations({ ...emptyRow(), ...((await kvs.get(rowKey(month))) || {}) }, t);
         if (row.spentMicro + row.reservedMicro + micro > lim.limitMicro) {
           const firstTrip = !row.reachedAt;
-          // Remember the smallest review refused this month, so the admin card and the precheck say
+          // Remember the smallest review refused this month, so the admin CARD says
           // "used up" while the arithmetic alone (remaining > one output reserve) still looks open.
           const need = Math.min(Number(row.refusedNeedMicro) > 0 ? Number(row.refusedNeedMicro) : Infinity, micro);
           if (firstTrip || need !== row.refusedNeedMicro) {
