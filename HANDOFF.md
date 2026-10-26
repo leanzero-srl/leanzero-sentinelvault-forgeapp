@@ -179,3 +179,39 @@ Open, in order:
 7. LOW manual review id = taskId: a re-delivered event overwrites the first reservation. Fix: id `${taskId}:${Date.now()}`.
 Rejected by the reviewer: limit overrun under concurrency, RMW outside the lock, rollover leak, LLM bypass, raising via
 space/REST/restore, restore rolling the meter back, gate left hanging, double charge on expiry, dev install w/o licence.
+
+## Session 4 (2026-10-26, Gabee) — ALL 7 FINDINGS VERIFIED REAL AND FIXED. Stopped at the 160k hook before dev/release.
+Branch fix-ai-allowance = 3022f9b+ on origin (merged origin/main 66a3549). Branch history re-authored to the repo
+identity leanzero.srl <office@leanzero.net> (set as LOCAL git config in this Gabee repo; no -c, no AI lines).
+Fix commit b778305 (after re-author): each finding confirmed in code first, each test RED on 4bb37b4, GREEN now:
+1 storeConfig stores what was asked (read side clamps; test/ai-allowance-store.test.mjs drives store/load resolvers
+  during a userCount 500 outage). 2 AiAllowanceCard: text input + local draft, convert/clamp on blur
+  (src/ui/kit/allowance-input.js; pure tests + source check). 3 readUserCount: !ok or bad body -> emit() action-log
+  line {action:"ai.licensed-user-count",surface:"ai-allowance",outcome:"error",status,step} (no data), fallback 10.
+4 isActive===false -> unlicensed. 5 LOCK_WAIT_MS = hold+5 s (20 s), settle retried once (both tested; dead fresh
+  lock is taken over after ~15 s). 6 estimateMicro(text): ASCII 2 chars/token, non-ASCII at UTF-8 bytes.
+7 manual reservation id `manual:${taskId}:${Date.now()}:${rand}` (ai-ceiling: two in-flight deliveries -> 2 charges).
+docs/REST-CONFIG-API.md documents ai.monthlyAllowanceMicro + derived aiAllowance.
+Gate on Gabee: lint clean, npm test 137/138 (only responsive-dom: no Playwright here).
+Laptop: worktree `~/Projects/Sentinel Vault/.claude/worktrees/fix-ai-allowance` at 3022f9b, `npm ci` + lint +
+full npm test launched as node-run job gabee-20261026-133046-ea8c (`~/Projects/machine-sync/bin/node-jobs log
+gabee-20261026-133046-ea8c`) — READ ITS RESULT FIRST (responsive-dom must pass there).
+
+Next, in order:
+1. Forge over SSH: keychain fails ("Keytar error"). Use env auth: `export PATH=$HOME/.nvm/versions/node/v22.22.0/bin:$PATH;
+   set -a; source ~/.claude/skills/leanzero-analytics/references/credentials.env; set +a` (FORGE_EMAIL/FORGE_API_TOKEN
+   exist on laptop + Gabee), then `forge deploy -e development --non-interactive` in the laptop worktree.
+2. Hook helper on laptop: `cd ~/Projects/forge-live-harness && node scratch/sv-ai-allowance/hook.mjs what=version`
+   (reads SENTINEL_TESTHOOK_URL + HARNESS_SECRET from .env). It answered 404 BEFORE the deploy: check
+   `forge variables list -e development` has HARNESS_SECRET and `forge webtrigger list -e development` URL matches .env.
+   userCount as the app: `node scratch/sv-ai-allowance/hook.mjs what=invoke fn=invoke key=load-validation-config
+   actor=712020:937bc860-eec2-4294-a65d-8e0fe7c45086 'payload={"scope":"global"}'` -> aiAllowance.userSource
+   ("count" = works as app, "fallback" = refused: then `forge logs -e development -s 15m | grep ai.licensed-user-count`
+   for the status; production would run on the 10-user fallback). Delete KVS `ai-licensed-users` first (what=delete).
+3. Live trip: enqueue-page-validation / getValidationJob seams (test-hook fn=enqueuePageValidation, getValidationJob);
+   store-validation-config with ai.monthlyAllowanceMicro = spent+1000, second review refused with the message; the
+   site Validations editor shows the exhausted notice (screenshot via harness); seed `ai-allowance-<last month>`
+   spent / or clear current row and lift the lowering -> reviews run again; restore config + delete seeded rows.
+4. SVT ticket (entries.mjs, component "C") + door: release worktree at the TESTED sha, `npm ci`,
+   `PUBLIC_TRACKER_ENV=$HOME/Projects/CogniRunner/test-harness/.env ./scripts/deploy-prod.sh --sha <sha> --non-interactive`
+   (MINOR, no manifest change).
