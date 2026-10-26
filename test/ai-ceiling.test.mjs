@@ -164,6 +164,28 @@ eq("consumer (manual): budget used up by the time the job runs => no model call"
 await world({ site: { enabled: true }, space: { enabled: true } });
 await W.aiValidationConsumer({ body: { taskId: "t3", pageId: PAGE, spaceKey: SPACE.key, realmKey: SPACE.key, requestedBy: STEWARD } });
 eq("consumer (manual): site on => one model call, job done (positive control)", [fake.llmCalls.length, (await kvs.get("ai-validation-status-t3"))?.status], [1, "done"]);
+{ // review finding 7: a manual job DELIVERED TWICE (same taskId, both in flight) is metered twice.
+  // With the taskId as the reservation id the second reserve overwrote the first and the second
+  // settle found nothing to settle: one model call went uncounted.
+  await world({ site: { enabled: true }, space: { enabled: true } });
+  const { aiAllowance, rowKey, monthKeyOf } = await import("../src/server/capsules/validations/allowance.js");
+  const gates = [];
+  const arrived = [];
+  fake.llm = () => new Promise((res) => { gates.push(() => res({ choices: [{ message: { content: '{"findings":[],"summary":"ok"}' }, finish_reason: "stop" }], usage: { input_tokens: 10, output_tokens: 5, total_tokens: 15 } })); arrived.push(1); });
+  const until = async (fn) => { for (let i = 0; i < 400 && !fn(); i++) await new Promise((r) => setTimeout(r, 5)); };
+  const body = { taskId: "dup", pageId: PAGE, spaceKey: SPACE.key, realmKey: SPACE.key, requestedBy: STEWARD };
+  const first = W.aiValidationConsumer({ body });
+  await until(() => arrived.length === 1);
+  const second = W.aiValidationConsumer({ body });
+  await until(() => arrived.length === 2);
+  const mid = await kvs.get(rowKey(monthKeyOf(Date.now())));
+  eq("finding 7: two in-flight deliveries hold two reservations", Object.keys(mid?.reservations || {}).length, 2);
+  gates[0](); await first;
+  gates[1](); await second;
+  const row = await kvs.get(rowKey(monthKeyOf(Date.now())));
+  eq("finding 7: both calls are charged (2 x (10 + 5 x 5) micro), nothing left reserved", [row?.spentMicro, row?.reservedMicro], [70, 0]);
+  void aiAllowance;
+}
 
 await world({ site: { enabled: false }, space: { enabled: true }, pending: pendingGate() });
 await W.aiValidationConsumer({ body: { taskId: "g1", mode: "gate", pageId: PAGE, spaceKey: SPACE.key, realmKey: SPACE.key, pinnedVersion: 3, threshold: "medium" } });
@@ -286,6 +308,13 @@ eq("…two pushes, two spend gates", [actionsSrc.split('key: "ai-validation-queu
 const rawAiReaders = files.filter(([p, t]) => p !== "server/capsules/validations/logic.js" && p.startsWith("server/capsules/validations/")
   && /\b(space|global)\??\.ai\b/.test(t.replace(/capAiConfig\([^)]*\)/g, ""))).map(([p]) => p);
 eq("no validations module but logic.js reads a raw site or space ai object except through capAiConfig", rawAiReaders, []);
+// The site-wide allowance (allowance.js): the ONE model call sits between a reserve and a settle.
+{
+  const calls = worker.split(/\brunForgeLlmJson\s*\(/).length - 1;
+  const iRes = worker.indexOf("aiAllowance.reserve("), iCall = worker.search(/\brunForgeLlmJson\s*\(/), iSet = worker.indexOf("aiAllowance.settle(");
+  eq("the model is called in one place, between the allowance reserve and settle", [calls, iRes >= 0 && iRes < iCall, iCall < iSet], [1, true, true]);
+  eq("both consumer branches go through callWithinAllowance", worker.split("callWithinAllowance(").length - 1, 3);
+}
 
 console.log = say;
 report("ai-ceiling");

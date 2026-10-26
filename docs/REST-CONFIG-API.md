@@ -142,6 +142,13 @@ or the budget sentence, and the space's activity log records `validation.ai-capp
 (`export-space-config`) carries `validation.effectiveAi`: `{ enabled, monthlyTokenBudget, siteEnabled,
 siteBudget, capped }`, derived on every read and dropped if posted back.
 
+The site-wide monthly AI allowance (one worst-case review per licensed user, at least 10 users) is a site
+setting: `site.validation.ai.monthlyAllowanceMicro` (micro-dollars; absent or 0 = the default) may only
+LOWER it. A value above the default is stored as sent but always reads as the default, so it can never
+raise the allowance; a space's copy is dropped. The site export carries a derived, read-only
+`validation.aiAllowance` (`month`, `limitMicro`, `defaultMicro`, `lowered`, `users`, `userSource`,
+`spentMicro`, `reservedMicro`, `remainingMicro`, `exhausted`, `resetsOn`), dropped if posted back.
+
 It is mirrored to the **space property** `sentinel-vault-receipt` on every space the job touched
 (last 20 receipts per space, newest first) and to the **content property** `sentinel-vault-receipt`
 on the site page named in `site.receiptPageId` (optional). The customer reads it with:

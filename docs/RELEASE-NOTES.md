@@ -2,6 +2,12 @@
 
 GENERATED from `src/server/shared/release-notes.js` by `scripts/render-release-notes.mjs`. Do not edit.
 
+## 8.22.0 — 2026-10-26
+
+**AI review has a monthly allowance for the whole site**
+
+- New: AI review has a monthly allowance for the whole site. The site's validation settings show this month's allowance, how much is used, what is left and when it resets, and a site admin can set a lower allowance there. When the allowance is used up, an AI review stops with a message that says when AI review starts again (the 1st of the next month, UTC). Every other Sentinel Vault feature keeps working.
+
 ## 8.21.0 — 2026-10-23
 
 **A deleted page keeps its name in the Activity history for admins, and page classification works with Confluence's own levels**

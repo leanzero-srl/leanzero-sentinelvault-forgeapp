@@ -12,6 +12,15 @@ const note = (n) => Object.freeze({ ...n, changes: Object.freeze([...(n.changes 
 
 export const RELEASE_NOTES = Object.freeze([
   note({
+    version: "8.22.0",
+    date: "2026-10-26",
+    headline: "AI review has a monthly allowance for the whole site",
+    changes: [
+      "New: AI review has a monthly allowance for the whole site. The site's validation settings show this month's allowance, how much is used, what is left and when it resets, and a site admin can set a lower allowance there. When the allowance is used up, an AI review stops with a message that says when AI review starts again (the 1st of the next month, UTC). Every other Sentinel Vault feature keeps working.",
+    ],
+    fixes: [],
+  }),
+  note({
     version: "8.21.0",
     date: "2026-10-23",
     headline: "A deleted page keeps its name in the Activity history for admins, and page classification works with Confluence's own levels",

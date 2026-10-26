@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { invoke } from "./bridge";
 import UnsavedFloat from "./UnsavedFloat";
+import AiAllowanceCard from "./AiAllowanceCard";
 import { ruleConfigProblem, ruleListRefusal } from "../../server/shared/rule-config.js"; // one completeness rule, shared with the save resolver
 import { errText } from "./error-facts.js";
 
@@ -124,6 +125,7 @@ export default function ValidationsEditor({ scope = "global", spaceKey = null })
   // load-validation-config (server/capsules/validations/logic.js capAiConfig) — the server enforces
   // it on every path; this only shows it.
   const [effAi, setEffAi] = useState(null);
+  const [allowance, setAllowance] = useState(null); // the site-wide AI allowance view (global scope)
   // The server refuses the settings to anyone who may not change them; show that instead of an
   // empty form (saving an empty form would replace the real rules).
   const [loadError, setLoadError] = useState(null);
@@ -143,6 +145,7 @@ export default function ValidationsEditor({ scope = "global", spaceKey = null })
           setCfg(loaded);
           setSaved(JSON.stringify(loaded));
           setEffAi(r.effectiveAi || null);
+          setAllowance(r.aiAllowance || null);
         } else {
           setSaved(JSON.stringify({ enabled: false, modes: { advisory: true, gate: false, revert: false }, rules: [], ai: { ...DEFAULT_AI } }));
         }
@@ -185,6 +188,10 @@ export default function ValidationsEditor({ scope = "global", spaceKey = null })
       if (r?.success) {
         setSaved(JSON.stringify(cfg));
         if (r.effectiveAi) setEffAi(r.effectiveAi);
+        if (scope === "global") {
+          const fresh = await invoke("load-validation-config", { scope: "global" }).catch(() => null);
+          if (fresh?.aiAllowance) setAllowance(fresh.aiAllowance);
+        }
         // The site AI ceiling: say what the site capped, next to the confirmation.
         setMsg({ type: "success", text: r.note ? `Validation rules saved. ${r.note}` : "Validation rules saved." });
       }
@@ -334,6 +341,10 @@ export default function ValidationsEditor({ scope = "global", spaceKey = null })
 
         {siteAiOff && (
           <p className="val-ai-ceiling" role="status" data-testid="val-ai-site-off">AI is turned off for this site by a site admin.</p>
+        )}
+
+        {scope === "global" && (
+          <AiAllowanceCard view={allowance} loweredMicro={cfg.ai.monthlyAllowanceMicro} onLower={(m) => updateAi({ monthlyAllowanceMicro: m })} />
         )}
 
         <SettingsRow label="Enable AI review" description={scope === "global"

@@ -63,6 +63,7 @@ const FACTORIES = new Map([
   ["ownerIndex", "binds KVS key prefixes; reads KVS (per installation) on every call"],
   ["createTokenStore", "binds the KVS storage functions; keeps nothing between calls"],
   ["makeLocks", "binds KVS lock functions; keeps nothing between calls"],
+  ["makeAllowance", "binds the AI allowance meter to KVS; keeps nothing between calls (the count is cached in KVS)"],
   [".sort", "a sorted copy of a constant list"], [".map", "a mapped copy of a constant list"],
   [".flatMap", "a mapped copy of a constant list"], [".getDefinitions", "the Resolver's fixed definitions"],
 ]);
