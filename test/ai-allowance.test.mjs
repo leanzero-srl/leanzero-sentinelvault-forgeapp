@@ -66,9 +66,9 @@ eq("development -> count", licenceForcesFreeTier({ environmentType: "DEVELOPMENT
 {
   const b = bed({ fetchCount: async () => null });
   b.store.set(COUNT_KEY, { count: 77, at: new Date(T0 - 10 * 86400000).toISOString() });
-  eq("failed read uses a 10-day-old count", (await b.al.licensedUsers()), { users: 77, source: "stale-cache" });
+  eq("failed read uses a 10-day-old count", (await b.al.licensedUsers()), { users: 77, source: "stale-cache", counted: 77 });
   b.store.set(COUNT_KEY, { count: 77, at: new Date(T0 - 36 * 86400000).toISOString() });
-  eq("count older than 35 days -> 10 users", (await b.al.licensedUsers()), { users: 10, source: "fallback" });
+  eq("count older than 35 days -> 10 users", (await b.al.licensedUsers()), { users: 10, source: "fallback", counted: null });
   b.store.delete(COUNT_KEY);
   eq("never read -> 10 users", (await b.al.licensedUsers()).users, 10);
 }
@@ -185,6 +185,75 @@ eq("development -> count", licenceForcesFreeTier({ environmentType: "DEVELOPMENT
   b.kvs.set = async (k, v, o) => { if (k === rowKey("202610") && failed === 0) { failed++; throw new Error("429"); } return realSet(k, v, o); };
   const s = await b.al.settle(r, { inputTokens: 1000, outputTokens: 100 });
   eq("finding 5: settle retried after a failed meter write", [s.settled, b.store.get(rowKey("202610")).spentMicro], [true, 1500]);
+}
+
+// --- 8.22.1: the user count the app CAN read, and a paid site is never strangled ---
+// Measured live 2026-10-26 on wolfaenpak as the app: licence userCount 401; the default group
+// confluence-users-wolfaenpak answers (50 members, 9 people = the admin view's 9 licensed users).
+{
+  const PAID = { license: { active: true, isEvaluation: false } };
+  const b = bed({ ctx: PAID, fetchCount: async () => null });
+  eq("8.22.1: paid licence, no count -> the 250-user floor, not 10", await b.al.licensedUsers(), { users: 250, source: "paid-floor", counted: null });
+  const v = await b.al.view({});
+  eq("8.22.1: paid floor limit = 250 x 30,480", v.limitMicro, 250 * 30480);
+  ok("8.22.1: the view names the floor", /250-user/.test(v.note || ""));
+  const g = bed({ ctx: PAID, fetchCount: async () => ({ count: 9, kind: "group" }) });
+  eq("8.22.1: paid + group count 9 (a lower bound) -> floor, count kept", await g.al.licensedUsers(), { users: 250, source: "paid-floor", counted: 9 });
+  const big = bed({ ctx: PAID, fetchCount: async () => ({ count: 512, kind: "group" }) });
+  eq("8.22.1: paid + group count 512 -> 512", (await big.al.licensedUsers()).users, 512);
+  eq("8.22.1: the group count is cached with its kind", big.store.get(COUNT_KEY)?.kind, "group");
+  const lic = bed({ ctx: PAID, fetchCount: async () => 40 });
+  eq("8.22.1: the licence count itself is authoritative (no floor)", (await lic.al.licensedUsers()).users, 40);
+  const trial = bed({ ctx: { license: { active: true, isEvaluation: true } }, fetchCount: async () => ({ count: 900, kind: "group" }) });
+  eq("8.22.1: a trial stays at 10", (await trial.al.licensedUsers()).users, 10);
+  const none = bed({ ctx: { environmentType: "PRODUCTION" }, fetchCount: async () => null });
+  eq("8.22.1: production without a licence stays at 10", (await none.al.licensedUsers()).users, 10);
+  const dev = bed({ fetchCount: async () => ({ count: 9, kind: "group" }) });
+  eq("8.22.1: development (no licence) uses the group count as is", await dev.al.licensedUsers(), { users: 9, source: "group", counted: 9 });
+  const old = bed({ ctx: PAID, fetchCount: async () => null });
+  old.store.set(COUNT_KEY, { count: 12, at: new Date(T0 - 3600000).toISOString() });
+  eq("8.22.1: an old cache row without a kind is a lower bound (paid floor)", (await old.al.licensedUsers()).users, 250);
+}
+{ // readDefaultGroupCount through a fake Confluence: paging, people only, the site's own group first
+  const { readDefaultGroupCount, defaultGroupNames, peopleIn } = A;
+  eq("8.22.1: group names from the base URL", defaultGroupNames("https://wolfaenpak.atlassian.net/wiki"), ["confluence-users-wolfaenpak", "confluence-users"]);
+  eq("8.22.1: unknown host -> legacy name only", defaultGroupNames("https://wiki.example.com"), ["confluence-users"]);
+  eq("8.22.1: apps are not people", peopleIn([{ accountType: "atlassian" }, { accountType: "app" }, { accountType: "customer" }]), 1);
+  const groups = [{ id: "g-other", name: "confluence-users" }, { id: "g1", name: "confluence-users-acme" }];
+  for (let i = 0; i < 230; i++) groups.unshift({ id: `x${i}`, name: `team-${i}` });
+  const members = Array.from({ length: 450 }, (_, i) => ({ accountType: i % 10 === 0 ? "app" : "atlassian" }));
+  const calls = [];
+  const res = (body) => ({ ok: true, status: 200, json: async () => body });
+  const call = async (path) => {
+    calls.push(path);
+    const u = new URL(path, "https://x");
+    const start = Number(u.searchParams.get("start")), limit = Number(u.searchParams.get("limit"));
+    if (u.pathname === "/wiki/rest/api/group") return res({ results: groups.slice(start, start + limit), _links: { base: "https://acme.atlassian.net/wiki" } });
+    if (u.pathname === "/wiki/rest/api/group/g1/membersByGroupId") return res({ results: members.slice(start, start + limit) });
+    return { ok: false, status: 404, json: async () => ({}) };
+  };
+  eq("8.22.1: people in the site's own default group, across pages", await readDefaultGroupCount(call), 405);
+  ok("8.22.1: never read the other site's legacy group", !calls.some((c) => c.includes("g-other")));
+  eq("8.22.1: a refused group list -> null", await readDefaultGroupCount(async () => ({ ok: false, status: 401, json: async () => ({}) })), null);
+}
+{ // the admin card after a trip (8.22.0 live observation): remaining 20,821 > the 20,480 output reserve,
+  // every review refused at reservation, yet the card said "not used up".
+  const { viewExhausted } = A;
+  eq("card: plain arithmetic still open", viewExhausted(23104, { spentMicro: 2283, reservedMicro: 0 }), false);
+  eq("card: after a refusal of 22,000 with 20,821 left -> used up", viewExhausted(23104, { spentMicro: 2283, reservedMicro: 0, reachedAt: "x", refusedNeedMicro: 22000 }), true);
+  eq("card: raising the limit clears it", viewExhausted(304800, { spentMicro: 2283, reservedMicro: 0, reachedAt: "x", refusedNeedMicro: 22000 }), false);
+  const b = bed({ users: 10 });
+  const lim = 10 * 30480;
+  const r1 = await b.al.reserve("big", lim - 20000, {});
+  await b.al.settle(r1, { inputTokens: lim - 20000, outputTokens: 0 }); // 20,000 left: below one reserve already
+  const b2 = bed({ users: 10 });
+  const r2 = await b2.al.reserve("a", lim - 21000, {}); // 21,000 left > 20,480 reserve
+  await b2.al.settle(r2, { inputTokens: lim - 21000, outputTokens: 0 });
+  eq("card: before any refusal the view is open", (await b2.al.view({})).exhausted, false);
+  const refused = await b2.al.reserve("b", 22000, {});
+  ok("card: the 22,000 review is refused", !refused.ok && refused.why === "allowance");
+  eq("card: the view now says used up", (await b2.al.view({})).exhausted, true);
+  eq("card: and the precheck refuses with the allowance message", (await b2.al.precheck({})).why, "allowance");
 }
 
 report();
