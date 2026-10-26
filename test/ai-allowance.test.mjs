@@ -391,4 +391,31 @@ const people = (n) => Array.from({ length: n }, () => ({ accountType: "atlassian
   eq("R2-9: a deactivated member is not counted", A.peopleIn([{ accountType: "atlassian", accountStatus: "inactive" }, { accountType: "atlassian" }]), 1);
 }
 
+{ // membersByGroupId in the LIVE shape (wolfaenpak, user token, 2026-10-26, confluence-users-wolfaenpak, 50 members):
+  // limit=5&start=0 -> {results:5, size:5, limit:5, _links.next "/rest/api/group/<id>/membersByGroupId?next=true&limit=5&start=5"}
+  // (no /wiki prefix, a `next=true` param before start, NO totalSize); start=45 (the last 5) -> no next; start=50 -> 0 results,
+  // no next; limit=200 -> all 50, no next; limit=500 -> 400 "Limit should not be greater than the 200".
+  const id = "9b1bd7bc-281a-4bb5-8ba2-335f9c725833";
+  const members = Array.from({ length: 437 }, (_, i) => ({ type: "known", accountId: `a${i}`, accountType: i % 9 === 0 ? "app" : "atlassian", accountStatus: "active" }));
+  const seen = [];
+  const live = async (path) => {
+    const u = new URL(path, "https://x");
+    const start = Number(u.searchParams.get("start")) || 0, limit = Number(u.searchParams.get("limit")) || 200;
+    if (u.pathname === "/wiki/rest/api/group") {
+      return { ok: true, status: 200, json: async () => ({ results: [{ type: "group", name: "confluence-users-acme", id }], start, limit, size: 1, _links: { base: "https://acme.atlassian.net/wiki", context: "/wiki", self: "https://acme.atlassian.net/wiki/rest/api/group" } }) };
+    }
+    if (u.pathname !== `/wiki/rest/api/group/${id}/membersByGroupId`) return { ok: false, status: 404, json: async () => ({}) };
+    if (limit > 200) return { ok: false, status: 400, json: async () => ({ statusCode: 400, message: "Limit should not be greater than the 200" }) };
+    seen.push(start);
+    const r = members.slice(start, start + limit);
+    const more = start + limit < members.length;
+    return { ok: true, status: 200, json: async () => ({ results: r, start, limit, size: r.length, _links: { base: "https://acme.atlassian.net/wiki", context: "/wiki", self: `https://acme.atlassian.net/wiki/rest/api/group/${id}/membersByGroupId`, ...(more ? { next: `/rest/api/group/${id}/membersByGroupId?next=true&limit=${limit}&start=${start + limit}` } : {}) } }) };
+  };
+  const want = members.filter((m) => m.accountType === "atlassian").length;
+  eq("8.22.1 live shape: 437 members over 3 pages of 200 (next=true link, no totalSize) all counted", await A.readDefaultGroupCount(live), { status: "done", count: want });
+  eq("8.22.1 live shape: followed the next link past 200 and 400, then stopped", seen, [0, 200, 400]);
+  eq("8.22.1 live shape: nextStart reads start from a next=true link", A.nextStart({ results: [{}], _links: { next: `/rest/api/group/${id}/membersByGroupId?next=true&limit=5&start=5` } }, 0), 5);
+  eq("8.22.1 live shape: the last page has no next link -> end", A.nextStart({ results: [{}], _links: {} }, 45), null);
+}
+
 report();
