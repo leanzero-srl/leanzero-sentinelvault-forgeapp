@@ -1,5 +1,17 @@
 # HANDOFF — Sentinel Vault 8.22.1 (fix-user-count), Gabee, 2026-10-26
 
+## DONE 2026-10-26 (released as 8.23.0) — nothing open
+- Paging proven live (wolfaenpak, limit=5 on confluence-users-wolfaenpak): membersByGroupId returns
+  _links.next "?next=true&limit=N&start=M" (no totalSize), none on the last page, limit>200 = 400. Test f7a7906
+  drives 437 members in that shape over 3 pages of 200; red when the next link is ignored.
+- Door on laptop, sha f7a79068b69648379e684674894a0ee91faf93d0: deployed, eligible for Runs on Atlassian.
+  Forge numbered it 8.23.0 (every prod deploy is minor+1), so the note/record/tracker were renamed 8.22.1 -> 8.23.0
+  (4d4f0ab) + guard in test/release-notes.test.mjs (no x.y.N>0). Deployed bundle's What's new says 8.22.1 until the next deploy.
+- Tracker: door stopped at apply (stale rows for the pre-review wording); fixed, applied: SVT-155, SVT-156 (fixVersion
+  8.23.0, read anonymously), verified 152/152.
+- SV production is NOT installed on wolfaenpak (dev only), so no live prod allowance read there.
+- Merged to main normally, worktrees removed by exact path.
+
 ## 8.22.0 — DONE
 - Laptop b7cae0e merged with origin d7060ff normally (merge 31fc045), pushed. Main merge 0bc39ea (no-ff), pushed.
 - SVT-154 "AI review has a monthly allowance for the whole site": fixVersion 8.22.0, Done (anonymous read).
