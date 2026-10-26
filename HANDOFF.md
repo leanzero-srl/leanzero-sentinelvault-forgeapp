@@ -1,6 +1,6 @@
 # HANDOFF — site-wide AI allowance (cost guard), 2026-10-26
 
-Stopped at the 160k context rule before writing code. Nothing is implemented yet. This file is the brief.
+SESSION 3 (2026-10-26): CODE + TESTS DONE AND COMMITTED (751e645, 92a772b). Read 'Session 3' at the bottom first.
 
 ## Where the work is
 - Worktree (Gabee's Mac): `~/Projects/leanzero-sentinelvault-forgeapp/.claude/worktrees/fix-ai-allowance`,
@@ -129,3 +129,39 @@ Code facts (read, file:line on f1bb2f2):
 - Live trip plan: run one review at the default, read the meter via the hook, lower the allowance to spent+1000
   micro through store-validation-config (hook invoke as the site admin), run again -> refused message + gate
   refusal; restore the field; seed `ai-allowance-<last month>` fully spent -> current month unaffected; delete it.
+
+## Session 3 (2026-10-26, Gabee) — IMPLEMENTED. Stopped at the 160k hook before release.
+Commits on fix-ai-allowance: 751e645 (feature), 92a772b (tests, guards, AI-COST-CEILING.md price-per-token fix).
+Done:
+- `src/server/capsules/validations/allowance.js`: makeAllowance({kvs,locks,now,fetchCount,appContext,lockWaitMs})
+  -> licensedUsers/limits/view/precheck/reserve/settle; real instance exported as `aiAllowance`. Row TTL 120 d.
+  Expired reservations (>20 min) are charged at their reserved size; a late settle of an expired one adds nothing.
+  Precheck/exhausted = remaining <= 20,480 (one output reserve). Busy lock (wait 8 s) / unreadable meter -> why "busy".
+- logic.js checkAiSpend: allowance precheck after the space budget (returns globalAi); readGlobalAiForAllowance();
+  aiGateRefusal: "busy" -> failed+retry, "allowance" -> onBudgetExhausted block/allow with the site message.
+- ai-worker.js callWithinAllowance(): reserve -> runForgeLlmJson -> settle, both branches; refusal -> gate verdict /
+  manual status error. Activity `validation.ai-allowance-reached` (site:true) on the first trip (activity-log.js
+  ACTIVITY_TYPES + activity-format.js case + validation filter list).
+- actions.js: global loadConfig adds derived `aiAllowance` view (REST export shows it); storeConfig strips
+  `aiAllowance`, clamps ai.monthlyAllowanceMicro to the default (drops it for space scope or <=0).
+- UI: src/ui/kit/AiAllowanceCard.jsx (global scope, above "Enable AI review"), CSS in tokens/realm-console.css
+  (.val-ai-allowance*: full border, solid exhausted notice). gen-action-names run.
+- backup/families.js: `ai-allowance-` and `ai-licensed-users` runtime.
+- Tests: test/ai-allowance.test.mjs 41/41 (lock-test fake; 25 concurrent reservers never exceed 4 grants);
+  ai-ceiling guard: one model call between reserve and settle; process-state allowlist `makeAllowance`.
+  `npm test` 136/137 (only responsive-dom: Playwright missing on Gabee; run it on laptop/workhorse), lint clean.
+Open, in order:
+1. Independent adversarial review was LAUNCHED (background general-purpose agent, diff 9ac0f4b..HEAD); its report was
+   not received before this stop. Re-run one if no result is in hand: lenses concurrency, rollover, bypass,
+   missing count, backup/restore (note: a config restore can carry ai.monthlyAllowanceMicro — read side clamps
+   to default, so it can never raise; meter is runtime so never rolled back). Verify each claim before fixing.
+2. Not done: no test-hook fn for the live read (`what=invoke&fn=aiAllowance`); docs/REST-CONFIG-API.md not updated
+   (export now includes `aiAllowance`). The live read can go through load-validation-config as a site admin.
+3. SVT ticket: features get their row via the release-note line hash in entries.mjs ENTRIES (component "C"),
+   written by the door's `release-gate.mjs prepare`; see skill lines 11-12, 61-74, 155-160, 528-540.
+4. Release: forge is logged in only on the LAPTOP. Door per skill line 155: release worktree from origin/main
+   after merging this branch, `npm ci`, `PUBLIC_TRACKER_ENV=$HOME/Projects/CogniRunner/test-harness/.env
+   ./scripts/deploy-prod.sh --sha <tested sha> --non-interactive`. Feature = MINOR (no manifest/scope change).
+5. Live on wolfaenpak dev (laptop forge): deploy dev, read view (confirm userCount works AS THE APP; if 403/404 the
+   source shows "fallback" = 10 users), run one review, lower allowance to spent+1000 micro, run again -> refused
+   with message + gate refusal, restore; seed `ai-allowance-<last month>` spent -> current month unaffected; delete.
