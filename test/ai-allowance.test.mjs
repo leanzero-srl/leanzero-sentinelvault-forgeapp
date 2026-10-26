@@ -42,10 +42,17 @@ eq("admin cannot raise", effectiveLimitMicro(1000000, 9e9), 1000000);
 eq("0 / absent = default", effectiveLimitMicro(1000000, 0), 1000000);
 eq("garbage = default", effectiveLimitMicro(1000000, "x"), 1000000);
 eq("cost = in x1 + out x5", costMicro({ inputTokens: 10000, outputTokens: 4096 }), 30480);
-eq("estimate covers the full output", estimateMicro(300), 100 + OUTPUT_RESERVE_MICRO);
+eq("estimate covers the full output (a number = ASCII chars, 2 a token)", estimateMicro(300), 150 + OUTPUT_RESERVE_MICRO);
+// review finding 6: CJK text runs ~1-2 tokens a character; the old chars/3 reserved a third of a token.
+eq("finding 6: CJK counts its full UTF-8 size (3 a character)", estimateMicro("\u6587".repeat(3000)), 9000 + OUTPUT_RESERVE_MICRO);
+ok("finding 6: a CJK prompt reserves at least 1.5 tokens a character", estimateMicro("\u6587\u66f8".repeat(5000)) - OUTPUT_RESERVE_MICRO >= 1.5 * 10000);
+eq("finding 6: ASCII text, 2 characters a token", estimateMicro("ab".repeat(500)), 500 + OUTPUT_RESERVE_MICRO);
 eq("UTC month key", monthKeyOf(Date.parse("2026-10-31T23:59:59Z")), "202610");
 eq("trial -> 10 users", licenceForcesFreeTier({ license: { isEvaluation: true, active: true } }), "trial");
 eq("inactive -> 10 users", licenceForcesFreeTier({ license: { active: false } }), "unlicensed");
+// review finding 4: the runtime licence object may carry isActive instead of active.
+eq("finding 4: isActive false -> 10 users", licenceForcesFreeTier({ license: { isActive: false } }), "unlicensed");
+eq("finding 4: isActive true -> the count", licenceForcesFreeTier({ license: { isActive: true, isEvaluation: false } }), null);
 eq("paid licence -> count", licenceForcesFreeTier({ license: { active: true, isEvaluation: false } }), null);
 eq("production without a licence -> 10 users", licenceForcesFreeTier({ environmentType: "PRODUCTION" }), "unlicensed");
 eq("development -> count", licenceForcesFreeTier({ environmentType: "DEVELOPMENT" }), null);
@@ -157,6 +164,27 @@ eq("development -> count", licenceForcesFreeTier({ environmentType: "DEVELOPMENT
   f.store.set("ai-allowance-lock", { token: "LIVE", at: new Date().toISOString() });
   const r = await al.reserve("x", 1000, {});
   eq("busy lock -> refused busy", [r.ok, r.why], [false, "busy"]);
+}
+
+{ // review finding 5: a lock row left by a DEAD holder (fresh, so it is not stale yet) must not
+  // refuse the review: the default wait outlasts the 15 s hold, so the row is taken over.
+  const f = fakeKvs();
+  const al = makeAllowance({ kvs: f.kvs, locks: makeLocks(f.kvs), now: () => T0, fetchCount: async () => 10, appContext: () => ({}) });
+  f.store.set("ai-allowance-lock", { token: "DEAD", at: new Date().toISOString() });
+  const t = Date.now();
+  const r = await al.reserve("after-dead", 1000, {});
+  eq("finding 5: default wait outlasts the hold -> reserved, not busy", [r.ok, r.why], [true, undefined]);
+  ok("finding 5: it waited for the hold to lapse (>= 14 s)", Date.now() - t >= 14000);
+}
+{ // review finding 5: a settle whose first attempt fails (the meter write throws a 429) is retried
+  // once (else the run is charged at its full reservation when it expires).
+  const b = bed({ users: 10 });
+  const r = await b.al.reserve("s1", 30000, {});
+  const realSet = b.kvs.set;
+  let failed = 0;
+  b.kvs.set = async (k, v, o) => { if (k === rowKey("202610") && failed === 0) { failed++; throw new Error("429"); } return realSet(k, v, o); };
+  const s = await b.al.settle(r, { inputTokens: 1000, outputTokens: 100 });
+  eq("finding 5: settle retried after a failed meter write", [s.settled, b.store.get(rowKey("202610")).spentMicro], [true, 1500]);
 }
 
 report();

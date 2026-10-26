@@ -1,8 +1,9 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
+import { acceptDraft, commitDraft, draftOf } from "./allowance-input";
 
 // The site-wide monthly AI allowance (server: capsules/validations/allowance.js), shown in the site
 // Validations editor. The server derives the view on every load; the admin may only LOWER the
-// limit (the server clamps on save and on read). Amounts are micro-dollars on the wire.
+// limit (the field clamps when the admin leaves it; the server clamps on every read). Amounts are micro-dollars on the wire.
 const usd = (micro) => `$${(Number(micro || 0) / 1e6).toFixed(2)}`;
 const SOURCE = {
   count: "from the site's licensed user count",
@@ -14,11 +15,14 @@ const SOURCE = {
 };
 
 export default function AiAllowanceCard({ view, loweredMicro, onLower }) {
+  const [draft, setDraft] = useState(draftOf(loweredMicro));
+  const [editing, setEditing] = useState(false);
+  // Follow the stored value (a load, a revert) while the admin is not typing in the field.
+  useEffect(() => { if (!editing) setDraft(draftOf(loweredMicro)); }, [loweredMicro, editing]);
   if (!view) return null;
   if (view.unavailable) {
     return <p className="val-ai-allowance-exhausted" role="status" data-testid="val-ai-allowance-unavailable">The AI allowance could not be read right now. AI review is paused until it can be.</p>;
   }
-  const dollars = Number(loweredMicro) > 0 ? (Number(loweredMicro) / 1e6).toString() : "";
   return (
     <div className="val-ai-allowance" data-testid="val-ai-allowance">
       <div className="val-ai-allowance-head">AI allowance for {view.monthLabel}</div>
@@ -40,11 +44,15 @@ export default function AiAllowanceCard({ view, loweredMicro, onLower }) {
       <label className="val-ai-allowance-lower">
         <span>Lower the monthly allowance to ($, empty = default)</span>
         <input
-          className="form-input" type="number" min="0" step="0.01" inputMode="decimal"
-          data-testid="val-ai-allowance-input" value={dollars} placeholder={(view.defaultMicro / 1e6).toFixed(2)}
-          onChange={(e) => {
-            const v = parseFloat(e.target.value);
-            onLower(Number.isFinite(v) && v > 0 ? Math.min(Math.round(v * 1e6), view.defaultMicro) : 0);
+          className="form-input" type="text" inputMode="decimal"
+          data-testid="val-ai-allowance-input" value={draft} placeholder={(view.defaultMicro / 1e6).toFixed(2)}
+          onFocus={() => setEditing(true)}
+          onChange={(e) => setDraft((prev) => acceptDraft(prev, e.target.value))}
+          onBlur={() => {
+            setEditing(false);
+            const micro = commitDraft(draft, view.defaultMicro);
+            setDraft(draftOf(micro));
+            onLower(micro);
           }}
         />
       </label>

@@ -20,7 +20,7 @@ import {
 // prompt, call, settle to the reported tokens. Returns { refused } or { res }. A throw from the call
 // leaves the reservation in place; it is charged at its reserved size when it expires (fail-safe).
 async function callWithinAllowance(id, globalAi, { model, system, user }) {
-  const resv = await aiAllowance.reserve(id, estimateMicro(String(system || "").length + String(user || "").length), globalAi);
+  const resv = await aiAllowance.reserve(id, estimateMicro(`${system || ""}${user || ""}`), globalAi);
   if (!resv.ok) {
     if (resv.firstTrip) await noteAllowanceReached(resv);
     return { refused: { ok: false, why: resv.why, reason: resv.reason } };
@@ -143,7 +143,9 @@ export async function aiValidationConsumer(event) {
     if (text.length > maxChars) { text = text.slice(0, maxChars); truncated = true; }
 
     const { system, user } = buildValidationPrompt({ ai, pageText: text, pageTitle });
-    const call = await callWithinAllowance(taskId, spend.globalAi, { model, system, user });
+    // A re-delivered event (same taskId) must get its OWN reservation: sharing the id let the second
+    // reserve overwrite the first, and the second settle then found nothing to settle (uncounted run).
+    const call = await callWithinAllowance(`manual:${taskId}:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`, spend.globalAi, { model, system, user });
     if (call.refused) {
       await setStatus({ status: "error", error: call.refused.reason, pageId });
       return { outcome: "refused", step: "allowance" };

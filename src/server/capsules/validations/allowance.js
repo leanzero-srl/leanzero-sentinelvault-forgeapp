@@ -22,13 +22,14 @@
  * install with no licence object. Users never supply the number.
  *
  * An admin may LOWER the allowance (the site config's ai.monthlyAllowanceMicro), never raise
- * it: the effective limit is min(stored, default), on save and on every read.
+ * it: the effective limit is min(stored, default) on every read. The SAVE stores what the admin
+ * asked (never clamped against a default that a count outage may have shrunk for a moment).
  */
 import { kvs as forgeKvs } from "@forge/kvs";
 import { route, getAppContext } from "@forge/api";
 import { makeLocks } from "../../shared/kvs-lock.js";
 import { appConfluence } from "../../shared/confluence-call.js";
-import { errText } from "../../shared/action-log.js";
+import { errText, emit } from "../../shared/action-log.js";
 
 export const IN_MICRO_PER_TOKEN = 1;
 export const OUT_MICRO_PER_TOKEN = 5;
@@ -43,7 +44,11 @@ export const LOCK_KEY = "ai-allowance-lock";
 export const ROW_PREFIX = "ai-allowance-";
 export const COUNT_KEY = "ai-licensed-users";
 const LOCK_HOLD_MS = 15000;
-const LOCK_WAIT_MS = 8000;
+// The wait must OUTLAST the hold (kvs-lock.js: a dead holder's row is taken over only after the
+// hold), else a burst behind one slow or dead holder is refused "busy" and its settles are dropped
+// (each dropped settle is later charged at the full reservation). Both calls run in the 120 s
+// ai-validation consumer: 2 x 20 s of waiting plus the model call fits.
+const LOCK_WAIT_MS = LOCK_HOLD_MS + 5000;
 const ROW_TTL_MS = 120 * 24 * 3600 * 1000;
 
 const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
@@ -75,9 +80,25 @@ export function costMicro(usage) {
   const o = Math.max(0, Number(usage?.outputTokens) || 0);
   return i * IN_MICRO_PER_TOKEN + o * OUT_MICRO_PER_TOKEN;
 }
-/** PURE. The worst case for a prompt of `chars` characters (~3 chars a token is generous). */
-export function estimateMicro(chars) {
-  return Math.ceil(Math.max(0, Number(chars) || 0) / 3) * IN_MICRO_PER_TOKEN + OUTPUT_RESERVE_MICRO;
+/**
+ * PURE. An upper bound on the input tokens of `text`. A byte-level tokenizer never makes more tokens
+ * than UTF-8 bytes, so every non-ASCII character counts at its full UTF-8 size (CJK = 3: a Chinese
+ * or Japanese page is ~1-2 tokens a character, far above the old chars/3). ASCII counts 1 token per
+ * 2 characters (English and markup run ~3-4). A number is read as that many ASCII characters.
+ */
+export function estimateInputTokens(text) {
+  if (typeof text === "number") return Math.ceil(Math.max(0, text) / 2);
+  let ascii = 0, other = 0;
+  for (const ch of String(text || "")) {
+    const cp = ch.codePointAt(0);
+    if (cp < 0x80) ascii++;
+    else other += cp < 0x800 ? 2 : cp < 0x10000 ? 3 : 4;
+  }
+  return Math.ceil(ascii / 2) + other;
+}
+/** PURE. The worst case for one review of `text` (the prompt) in micro-dollars. */
+export function estimateMicro(text) {
+  return estimateInputTokens(text) * IN_MICRO_PER_TOKEN + OUTPUT_RESERVE_MICRO;
 }
 /** PURE. The default allowance for `users` licensed users (10-user floor). */
 export function defaultAllowanceMicro(users) {
@@ -98,7 +119,8 @@ export function licenceForcesFreeTier(ctx) {
   const lic = ctx?.license;
   if (lic) {
     if (lic.isEvaluation === true) return "trial";
-    if (lic.active === false) return "unlicensed";
+    // runtime.d.ts carries both `active` and `isActive`; either one false means no paid licence.
+    if (lic.active === false || lic.isActive === false) return "unlicensed";
     return null;
   }
   return String(ctx?.environmentType || "").toUpperCase() === "PRODUCTION" ? "unlicensed" : null;
@@ -128,11 +150,20 @@ export const ALLOWANCE_BUSY_REASON = "AI review is busy right now. Please try ag
 export const COUNT_FALLBACK_NOTE = "Could not read the licensed user count; using the 10-user allowance.";
 
 async function readUserCount() {
+  // Unofficial endpoint (no documented count API, CONFCLOUD-82766). A refusal is LOGGED (action log:
+  // status only, no site or user data) and the caller falls back to the 10-user allowance.
   const res = await appConfluence(route`/wiki/rest/license/1.0/license/userCount`);
-  if (!res?.ok) return null;
+  if (!res?.ok) {
+    emit({ via: "job", action: "ai.licensed-user-count", surface: "ai-allowance", outcome: "error", status: Number(res?.status) || 0, step: "user-count" });
+    return null;
+  }
   const body = await res.json().catch(() => null);
   const n = Number(body?.count);
-  return Number.isFinite(n) && n > 0 ? Math.floor(n) : null;
+  if (!(Number.isFinite(n) && n > 0)) {
+    emit({ via: "job", action: "ai.licensed-user-count", surface: "ai-allowance", outcome: "error", status: Number(res.status) || 200, step: "user-count-body" });
+    return null;
+  }
+  return Math.floor(n);
 }
 
 /** Bind the allowance to a KVS (the real one by default; tests pass fakes and a clock). */
@@ -154,7 +185,10 @@ export function makeAllowance({
     const age = Number.isFinite(at) ? now() - at : Infinity;
     if (cached?.count > 0 && age < COUNT_TTL_MS) return { users: cached.count, source: "cached" };
     let count = null;
-    try { count = await fetchCount(); } catch (e) { console.warn("[AI-ALLOWANCE] user count read failed:", errText(e)); }
+    try { count = await fetchCount(); } catch (e) {
+      console.warn("[AI-ALLOWANCE] user count read failed:", errText(e));
+      emit({ via: "job", action: "ai.licensed-user-count", surface: "ai-allowance", outcome: "error", errorType: String(e?.name || "Error"), step: "user-count" });
+    }
     if (count > 0) {
       try { await kvs.set(COUNT_KEY, { count, at: new Date(now()).toISOString() }); } catch (_) { /* next read retries */ }
       return { users: count, source: "count" };
@@ -237,29 +271,33 @@ export function makeAllowance({
   async function settle(reservation, usage) {
     if (!reservation?.ok) return { settled: false };
     const { month, id, limitMicro } = reservation;
-    try {
-      return await underLock(async () => {
-        const row = { ...emptyRow(), ...((await kvs.get(rowKey(month))) || {}) };
-        row.reservations = row.reservations || {};
-        // A reservation that already expired was charged at its reserved size (>= what the model
-        // can report for that prompt): charging the actual on top would bill it twice.
-        if (row.reservations[id]) {
-          delete row.reservations[id];
-          row.spentMicro += costMicro(usage);
-        }
-        row.runs = (row.runs || 0) + 1;
-        expireReservations(row, now());
-        let firstTrip = false;
-        if (!row.reachedAt && isExhausted(limitMicro, row.spentMicro, row.reservedMicro)) {
-          row.reachedAt = new Date(now()).toISOString();
-          firstTrip = true;
-        }
-        await kvs.set(rowKey(month), row, { ttl: { value: Math.ceil(ROW_TTL_MS / 1000), unit: "SECONDS" } });
-        return { settled: true, firstTrip, month, limitMicro };
-      });
-    } catch (e) {
-      console.warn("[AI-ALLOWANCE] settle deferred:", errText(e));
-      return { settled: false };
+    for (let attempt = 0; ; attempt++) {
+      try {
+        return await underLock(async () => {
+          const row = { ...emptyRow(), ...((await kvs.get(rowKey(month))) || {}) };
+          row.reservations = row.reservations || {};
+          // A reservation that already expired was charged at its reserved size (>= what the model
+          // can report for that prompt): charging the actual on top would bill it twice.
+          if (row.reservations[id]) {
+            delete row.reservations[id];
+            row.spentMicro += costMicro(usage);
+          }
+          row.runs = (row.runs || 0) + 1;
+          expireReservations(row, now());
+          let firstTrip = false;
+          if (!row.reachedAt && isExhausted(limitMicro, row.spentMicro, row.reservedMicro)) {
+            row.reachedAt = new Date(now()).toISOString();
+            firstTrip = true;
+          }
+          await kvs.set(rowKey(month), row, { ttl: { value: Math.ceil(ROW_TTL_MS / 1000), unit: "SECONDS" } });
+          return { settled: true, firstTrip, month, limitMicro };
+        });
+      } catch (e) {
+        // One retry: a dropped settle is charged at the full reservation when it expires.
+        if (attempt === 0) continue;
+        console.warn("[AI-ALLOWANCE] settle deferred:", errText(e));
+        return { settled: false };
+      }
     }
   }
 
