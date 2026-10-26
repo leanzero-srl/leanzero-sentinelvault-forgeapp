@@ -24,6 +24,10 @@
  * other groups. So an ACTIVE PAID licence never gets less than PAID_FLOOR_USERS (250) unless the
  * licence count itself answered: a paying site is never cut to a handful of reviews by a count the
  * app could not read. Worst case of that floor: 250 x $0.03048 = $7.62 per paid site per month.
+ * The group scan is BOUNDED per call (COUNT_BUDGET_MS) and RESUMES from its place in the count row,
+ * pages on the server's next link (never on a short page), and takes the legacy `confluence-users`
+ * only when no `confluence-users-*` group exists (a multi-site org or a renamed site: it may be
+ * another site's). A failed read is remembered and retried after COUNT_RETRY_MS.
  * A failed read uses the last good count up to 35 days old, then the fallback (paid: the floor;
  * otherwise 10). A trial or an inactive licence gets the 10-user allowance (a trial is not
  * licence-funded), and so does a production install with no licence object.
@@ -45,9 +49,17 @@ export const OUTPUT_RESERVE_MICRO = MAX_OUTPUT_TOKENS * OUT_MICRO_PER_TOKEN; // 
 export const PER_USER_MICRO = 10000 * IN_MICRO_PER_TOKEN + OUTPUT_RESERVE_MICRO; // 30,480
 export const FREE_TIER_USERS = 10;
 export const PAID_FLOOR_USERS = 250;
-export const MAX_GROUP_PAGES = 25;   // 5,000 groups listed at most while looking for the default group
-export const MAX_MEMBER_PAGES = 100; // 20,000 members counted at most (a bigger site counts as 20,000)
+export const MAX_GROUP_PAGES = 500;   // pages of groups per scan (100,000 groups at 200 a page)
+export const MAX_MEMBER_PAGES = 1000; // pages of members per scan (a bigger group counts as what was read)
 export const COUNT_TTL_MS = 24 * 3600 * 1000;
+// A failed read is remembered: the next read waits this long, so an outage does not re-list every
+// group on every view, precheck and reserve.
+export const COUNT_RETRY_MS = 3600 * 1000;
+// Work per call on the group scan. A resolver has 25 s in all; the scan stops at this budget, keeps
+// its place in the count row and the next call resumes it.
+export const COUNT_BUDGET_MS = 8000;
+// A half-done scan older than this starts again (its pages may have moved).
+export const SCAN_MAX_AGE_MS = 24 * 3600 * 1000;
 export const COUNT_STALE_MAX_MS = 35 * 24 * 3600 * 1000;
 export const RESERVATION_MAX_MS = 20 * 60 * 1000; // longer than any consumer (120 s) can run
 export const LOCK_KEY = "ai-allowance-lock";
@@ -139,7 +151,7 @@ export function licenceForcesFreeTier(ctx) {
 export const isExhausted = (limit, spent, reserved) => limit - spent - reserved <= OUTPUT_RESERVE_MICRO;
 
 /**
- * PURE. The card/precheck view of "used up": the arithmetic, OR a review was refused this month and
+ * PURE. The CARD's view of "used up" (never the precheck's: see precheck): the arithmetic, OR a review was refused this month and
  * what is left is still below the smallest refused one. Raising the limit (or a new month) clears it.
  */
 export function viewExhausted(limit, row) {
@@ -194,40 +206,96 @@ async function readLicenceCount() {
   return Math.floor(n);
 }
 
-/** People in the site's default product-access group, read as the app (read:confluence-groups). */
-export async function readDefaultGroupCount(call = appConfluence) {
-  const groups = [];
-  let base = null;
-  for (let page = 0, start = 0; page < MAX_GROUP_PAGES; page++, start += 200) {
-    const res = await call(route`/wiki/rest/api/group?limit=200&start=${start}`);
-    if (!res?.ok) { logCountError(res?.status, "user-count-groups"); return null; }
-    const b = await res.json().catch(() => null);
-    base = base || b?._links?.base || null;
-    const r = Array.isArray(b?.results) ? b.results : [];
-    groups.push(...r);
-    if (r.length < 200) break;
-  }
-  const byName = new Map(groups.map((g) => [String(g?.name || "").toLowerCase(), g]));
-  const group = defaultGroupNames(base).map((n) => byName.get(n)).find((g) => g?.id);
-  if (!group) { logCountError(404, "user-count-group-missing"); return null; }
-  let people = 0;
-  for (let page = 0, start = 0; page < MAX_MEMBER_PAGES; page++, start += 200) {
-    const res = await call(route`/wiki/rest/api/group/${String(group.id)}/membersByGroupId?limit=200&start=${start}`);
-    if (!res?.ok) { logCountError(res?.status, "user-count-members"); return null; }
-    const b = await res.json().catch(() => null);
-    const r = Array.isArray(b?.results) ? b.results : [];
-    people += peopleIn(r);
-    if (r.length < 200) break;
-  }
-  return people > 0 ? people : null;
+/**
+ * PURE. Where the next page starts, or null when there is none. The server's own `_links.next` is
+ * the only "more" signal: a page shorter than the asked limit is NOT the end (a server that caps the
+ * limit lower would otherwise stop after one page and undercount). The step is what was returned.
+ */
+export function nextStart(body, start) {
+  const r = Array.isArray(body?.results) ? body.results : [];
+  if (!body?._links?.next || r.length === 0) return null;
+  const m = /[?&]start=(\d+)/.exec(String(body._links.next));
+  const n = m ? Number(m[1]) : start + r.length;
+  return n > start ? n : start + r.length;
 }
 
-/** { count, kind } or null. kind "licence" is the licensed count; "group" is a lower bound. */
-async function readUserCount() {
-  const licence = await readLicenceCount();
-  if (licence > 0) return { count: licence, kind: "licence" };
-  const group = await readDefaultGroupCount();
-  return group > 0 ? { count: group, kind: "group" } : null;
+/**
+ * PURE. Which group is the site's default one, once the group list is read. The site-named group
+ * (`confluence-users-<site>`, from THIS site's own base URL) when it exists. The legacy
+ * `confluence-users` only when NO `confluence-users-*` group exists at all: in an org with several
+ * sites (or a renamed site, whose own group keeps the old name) the legacy group may be another
+ * site's, so then nothing is picked and the caller uses its fallback.
+ */
+export function pickDefaultGroup({ exactId, legacyId, anySuffixed }) {
+  if (exactId) return exactId;
+  if (legacyId && !anySuffixed) return legacyId;
+  return null;
+}
+
+/**
+ * People in the site's default product-access group, read as the app (read:confluence-groups),
+ * BOUNDED: it stops when `now() >= deadline` and returns its place, so a caller can resume it.
+ * Returns { status:"done", count } | { status:"partial", state } | { status:"fail" }.
+ * `state` (from an earlier partial) resumes the scan; it carries no names, only ids and counters.
+ */
+export async function readDefaultGroupCount(call = appConfluence, { deadline = Infinity, now = () => Date.now(), state = null } = {}) {
+  const s = state && typeof state === "object" ? { ...state } : { phase: "groups", next: 0, pages: 0, startedAt: now() };
+  const fail = (status, step) => { logCountError(status, step); return { status: "fail" }; };
+  while (s.phase === "groups") {
+    if (s.pages >= MAX_GROUP_PAGES) { s.next = null; }
+    if (s.next == null) {
+      const id = pickDefaultGroup(s);
+      if (!id) return fail(404, s.exactId || s.legacyId ? "user-count-group-ambiguous" : "user-count-group-missing");
+      Object.assign(s, { phase: "members", groupId: String(id), next: 0, pages: 0, people: 0, listed: 0, total: null });
+      break;
+    }
+    if (now() >= deadline) return { status: "partial", state: s };
+    const res = await call(route`/wiki/rest/api/group?limit=200&start=${s.next}`);
+    if (!res?.ok) return fail(res?.status, "user-count-groups");
+    const b = await res.json().catch(() => null);
+    if (!s.name) s.name = defaultGroupNames(b?._links?.base)[0] || null;
+    for (const g of Array.isArray(b?.results) ? b.results : []) {
+      const n = String(g?.name || "").toLowerCase();
+      if (!g?.id) continue;
+      if (n.startsWith("confluence-users-")) s.anySuffixed = true;
+      if (s.name && s.name !== "confluence-users" && n === s.name) s.exactId = String(g.id);
+      if (n === "confluence-users") s.legacyId = String(g.id);
+    }
+    s.pages++;
+    s.next = s.exactId ? null : nextStart(b, s.next); // the site's own group found: stop listing
+  }
+  while (s.next != null && s.pages < MAX_MEMBER_PAGES) {
+    if (now() >= deadline) return { status: "partial", state: s };
+    const res = await call(route`/wiki/rest/api/group/${s.groupId}/membersByGroupId?limit=200&start=${s.next}`);
+    if (!res?.ok) return fail(res?.status, "user-count-members");
+    const b = await res.json().catch(() => null);
+    const r = Array.isArray(b?.results) ? b.results : [];
+    s.people += peopleIn(r);
+    s.listed += r.length;
+    const total = Number(b?.totalSize);
+    if (Number.isFinite(total) && total > 0) s.total = total;
+    s.pages++;
+    s.next = nextStart(b, s.next);
+  }
+  // Totals check: the server said how many members there are and fewer were read (a cap or a short
+  // page). The people counted stay a lower bound; the shortfall is logged (counts only).
+  if (s.total && s.listed < s.total) logCountError(206, "user-count-short");
+  return s.people > 0 ? { status: "done", count: s.people } : fail(204, "user-count-no-people");
+}
+
+/**
+ * { count, kind } | { partial: state, count } | null. kind "licence" is the licensed count; "group"
+ * is a lower bound. A resumed scan skips the licence call (it already answered no this round).
+ */
+async function readUserCount({ state = null, deadline = Infinity, now = () => Date.now() } = {}) {
+  if (!state) {
+    const licence = await readLicenceCount();
+    if (licence > 0) return { count: licence, kind: "licence" };
+  }
+  const g = await readDefaultGroupCount(appConfluence, { state, deadline, now });
+  if (g.status === "done") return { count: g.count, kind: "group" };
+  if (g.status === "partial") return { partial: g.state, count: g.state.people || 0 };
+  return null;
 }
 
 /** PURE. A fetchCount answer as { count, kind } (a bare number is the licence count). */
@@ -258,17 +326,37 @@ export function makeAllowance({
     // A cached row without a kind predates the group count: treat it as a lower bound.
     const cachedKind = cached?.kind === "licence" ? "licence" : "group";
     if (cached?.count > 0 && age < COUNT_TTL_MS) return { users: cached.count, source: "cached", kind: cachedKind };
-    let got = null;
-    try { got = normCount(await fetchCount()); } catch (e) {
+    const stale = () => (cached?.count > 0 && age < COUNT_STALE_MAX_MS ? { users: cached.count, source: "stale-cache", kind: cachedKind } : null);
+    const fallback = { users: FREE_TIER_USERS, source: "fallback", kind: null };
+    // The last good count stays in the row through a failure or a half-done scan.
+    const keep = cached?.count > 0 ? { count: cached.count, kind: cached.kind, at: cached.at } : {};
+    const save = async (row) => { try { await kvs.set(COUNT_KEY, row); } catch (_) { /* next read retries */ } };
+    const failedAt = Date.parse(cached?.failedAt || "");
+    if (Number.isFinite(failedAt) && now() - failedAt < COUNT_RETRY_MS) return stale() || fallback;
+    const scanAt = Number(cached?.scan?.startedAt);
+    const resume = cached?.scan && Number.isFinite(scanAt) && now() - scanAt < SCAN_MAX_AGE_MS ? cached.scan : null;
+    let raw = null;
+    try { raw = await fetchCount({ state: resume, deadline: now() + COUNT_BUDGET_MS, now }); } catch (e) {
       console.warn("[AI-ALLOWANCE] user count read failed:", errText(e));
       emit({ via: "job", action: "ai.licensed-user-count", surface: "ai-allowance", outcome: "error", errorType: String(e?.name || "Error"), step: "user-count" });
+      raw = null;
     }
+    if (raw && typeof raw === "object" && raw.partial) {
+      // Out of time for this call: keep the place, resume on the next call. Until it finishes, the
+      // last good count, else the people counted so far (a lower bound), else the fallback.
+      await save({ ...keep, scan: raw.partial });
+      const so = Math.floor(Number(raw.count));
+      const st = stale();
+      if (so > 0 && !(st && st.users >= so)) return { users: so, source: "group", kind: "group" };
+      return st || fallback;
+    }
+    const got = normCount(raw);
     if (got) {
-      try { await kvs.set(COUNT_KEY, { count: got.count, kind: got.kind, at: new Date(now()).toISOString() }); } catch (_) { /* next read retries */ }
+      await save({ count: got.count, kind: got.kind, at: new Date(now()).toISOString() });
       return { users: got.count, source: got.kind === "licence" ? "count" : "group", kind: got.kind };
     }
-    if (cached?.count > 0 && age < COUNT_STALE_MAX_MS) return { users: cached.count, source: "stale-cache", kind: cachedKind };
-    return { users: FREE_TIER_USERS, source: "fallback", kind: null };
+    await save({ ...keep, failedAt: new Date(now()).toISOString() });
+    return stale() || fallback;
   }
 
   async function licensedUsers() {
@@ -312,7 +400,10 @@ export function makeAllowance({
   async function precheck(globalAi) {
     try {
       const v = await view(globalAi);
-      return v.exhausted ? { ok: false, why: "allowance", reason: allowanceMessage(now()) } : { ok: true };
+      // The plain arithmetic only (8.22.1 review H1): the card's "used up" also counts the smallest
+      // REFUSED review, and using that here would refuse every smaller review for the rest of the
+      // month after one large refusal. reserve() is the authority for each review's own size.
+      return isExhausted(v.limitMicro, v.spentMicro, v.reservedMicro) ? { ok: false, why: "allowance", reason: allowanceMessage(now()) } : { ok: true };
     } catch (e) {
       console.error("[AI-ALLOWANCE] precheck failed:", errText(e));
       return { ok: false, why: "busy", reason: ALLOWANCE_BUSY_REASON };

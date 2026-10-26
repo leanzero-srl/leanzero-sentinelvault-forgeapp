@@ -288,7 +288,7 @@ export async function testStateTrigger(req) {
         // The shipped path: the real reader and the real allowance (fresh=1 drops the daily cache first).
         const al = await import("./server/capsules/validations/allowance.js");
         if (q(req, "fresh") === "1") await kvs.delete(al.COUNT_KEY);
-        out.defaultGroupCount = await al.readDefaultGroupCount();
+        out.defaultGroupCount = await al.readDefaultGroupCount(undefined, { deadline: Date.now() + al.COUNT_BUDGET_MS });
         out.licensedUsers = await al.aiAllowance.licensedUsers();
         // paid=1: the same allowance with a paid licence context (the dev install carries no licence
         // object, and `forge install --upgrade --license` does not change an up-to-date install).
@@ -298,6 +298,13 @@ export async function testStateTrigger(req) {
         out.limitMicro = lim.limitMicro;
         try { const { getAppContext } = await import("@forge/api"); const lic = getAppContext()?.license; out.licence = lic ? { active: lic.active, isActive: lic.isActive, isEvaluation: lic.isEvaluation, type: lic.type } : null; } catch (_) { out.licence = "n/a"; }
         if (q(req, "only") === "1") return json(200, out);
+        if (q(req, "links") === "1") { // paging shape of one members page (keys only, no names)
+          const g = await appConfluence(route`/wiki/rest/api/group?limit=5`); const gb = await g.json().catch(() => null);
+          out.groupLinks = Object.keys(gb?._links || {});
+          const own = (gb?.results || []).find((x) => String(x?.name || "").toLowerCase().startsWith("confluence-users-"));
+          if (own) { const m = await appConfluence(route`/wiki/rest/api/group/${String(own.id)}/membersByGroupId?limit=5`); const mb = await m.json().catch(() => null); out.memberKeys = Object.keys(mb || {}); out.memberLinks = Object.keys(mb?._links || {}); out.memberSize = mb?.size; out.memberTotal = mb?.totalSize; out.memberNext = mb?._links?.next ? String(mb._links.next).replace(/[0-9a-f-]{20,}/g, "<id>") : null; }
+          return json(200, out);
+        }
         const st = async (label, res) => {
           let body = null; try { body = await res.json(); } catch (_) { body = null; }
           out[label] = { status: res.status, ...(body && typeof body === "object" ? { keys: Object.keys(body).slice(0, 12), count: body.count, size: body.size, totalSize: body.totalSize, total: body.total, userCount: body.userCount } : {}) };
