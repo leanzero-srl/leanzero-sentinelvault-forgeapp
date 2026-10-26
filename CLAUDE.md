@@ -26,7 +26,7 @@ Use `src/server/shared/content-access.js`:
 Everything fails closed. Only an explicit `hasPermission: true` on a 2xx allows — an unresolvable
 account returns 404, not `hasPermission: false`, so never decide from the response body alone.
 
-This was found and fixed in `SECURITY-TODO.md` → SV-SEC-1 (closed 2026-08-20). It was systemic:
+This was found and fixed as SV-SEC-1 (closed 2026-08-20). It was systemic:
 one reported symptom, ~25 more instances of the same shape. If you are touching a resolver, assume
 the shape can recur and check for it rather than trusting that it was all caught.
 
@@ -93,7 +93,7 @@ container can serve several sites and account ids repeat across them).
 
 ## Violation-comment dedup — the two races are closed (it69, 2026-09-06)
 
-`SECURITY-TODO.md` "Known, pre-existing" records two races that made `violation-dedup.spec.ts`
+Two races (formerly SECURITY-TODO.md "Known, pre-existing", not on main) made `violation-dedup.spec.ts`
 and `sealed-media-attrs.spec.ts` fail about one run in three. Both are closed by two rules in
 `src/server/shared/notice-dedup.js` (pure, unit-tested) that `triggers.js` calls: a clean save
 re-arms the comment only when a USER authored the version read (the app's own restore never
