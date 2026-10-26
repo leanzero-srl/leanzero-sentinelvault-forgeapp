@@ -33,7 +33,7 @@ export const ACTIVITY_CATEGORIES = Object.freeze([
     "workflow.enforced", "workflow.expired", "workflow.review-due", "workflow.read-confirmed", "workflow.seals-held", "workflow.seals-released",
   ]) },
   { id: "validation", label: "Validation", types: Object.freeze([
-    "validation.reverted", "validation.gate", "validation.ai-capped",
+    "validation.reverted", "validation.gate", "validation.ai-capped", "validation.ai-allowance-reached",
   ]) },
   // 2026-09-30 (classification review, H): who changed a level, from what, to what, and why.
   { id: "classification", label: "Classification", types: Object.freeze([
@@ -519,6 +519,13 @@ export function formatActivity(entry) {
           ? `${who} ${d.turnedOn === false ? "changed this space's AI settings" : "turned on AI review for this space"}, but AI is turned off for this site by a site admin, so it stays off`
           : `${who} set this space's AI budget above the site's, so the site's ${d.siteBudget ? `${fmt(d.siteBudget)} tokens a month` : "budget"} applies`,
         detail: !siteOff && d.asked ? `asked for ${budgetText(d.asked.monthlyTokenBudget)}` : "" };
+    }
+    // The site-wide monthly AI allowance ran out (allowance.js): AI review pauses until the 1st.
+    case "validation.ai-allowance-reached": {
+      const usd = (m) => `$${(Number(m || 0) / 1e6).toFixed(2)}`;
+      return { ...base, label: "AI allowance used up", glyph: "shield", tone: "caution",
+        sentence: `This site used its AI review allowance for ${d.monthLabel || "this month"}, so AI review is paused until ${d.resetLabel || "next month"}`,
+        detail: d.limitMicro ? `allowance ${usd(d.limitMicro)}` : "" };
     }
     case "validation.gate": {
       const passed = d.state === "passed";
