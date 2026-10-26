@@ -2,7 +2,7 @@
 
 GENERATED from `src/server/shared/release-notes.js` by `scripts/render-release-notes.mjs`. Do not edit.
 
-## 8.22.1 — 2026-10-26
+## 8.23.0 — 2026-10-26
 
 **The AI review allowance follows a paid site's users**
 
