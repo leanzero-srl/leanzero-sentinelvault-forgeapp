@@ -228,13 +228,14 @@ eq("development -> count", licenceForcesFreeTier({ environmentType: "DEVELOPMENT
     calls.push(path);
     const u = new URL(path, "https://x");
     const start = Number(u.searchParams.get("start")), limit = Number(u.searchParams.get("limit"));
-    if (u.pathname === "/wiki/rest/api/group") return res({ results: groups.slice(start, start + limit), _links: { base: "https://acme.atlassian.net/wiki" } });
-    if (u.pathname === "/wiki/rest/api/group/g1/membersByGroupId") return res({ results: members.slice(start, start + limit) });
+    const nx = (all, path) => (start + limit < all.length ? { next: `${path}?limit=${limit}&start=${start + limit}` } : {});
+    if (u.pathname === "/wiki/rest/api/group") return res({ results: groups.slice(start, start + limit), _links: { base: "https://acme.atlassian.net/wiki", ...nx(groups, u.pathname) } });
+    if (u.pathname === "/wiki/rest/api/group/g1/membersByGroupId") return res({ results: members.slice(start, start + limit), _links: nx(members, u.pathname) });
     return { ok: false, status: 404, json: async () => ({}) };
   };
-  eq("8.22.1: people in the site's own default group, across pages", await readDefaultGroupCount(call), 405);
+  eq("8.22.1: people in the site's own default group, across pages", await readDefaultGroupCount(call), { status: "done", count: 405 });
   ok("8.22.1: never read the other site's legacy group", !calls.some((c) => c.includes("g-other")));
-  eq("8.22.1: a refused group list -> null", await readDefaultGroupCount(async () => ({ ok: false, status: 401, json: async () => ({}) })), null);
+  eq("8.22.1: a refused group list -> fail", await readDefaultGroupCount(async () => ({ ok: false, status: 401, json: async () => ({}) })), { status: "fail" });
 }
 { // the admin card after a trip (8.22.0 live observation): remaining 20,821 > the 20,480 output reserve,
   // every review refused at reservation, yet the card said "not used up".
@@ -253,7 +254,100 @@ eq("development -> count", licenceForcesFreeTier({ environmentType: "DEVELOPMENT
   const refused = await b2.al.reserve("b", 22000, {});
   ok("card: the 22,000 review is refused", !refused.ok && refused.why === "allowance");
   eq("card: the view now says used up", (await b2.al.view({})).exhausted, true);
-  eq("card: and the precheck refuses with the allowance message", (await b2.al.precheck({})).why, "allowance");
+  // 8.22.1 review H1: the precheck is the plain arithmetic; one refused review must not block smaller ones.
+  eq("H1: a smaller review still passes the precheck after a refusal", (await b2.al.precheck({})).ok, true);
+}
+
+{ // H1 (review of e2dc58f): 150k refused with 120k left; a 30k review must still pass precheck AND reserve.
+  const b = bed({ users: 10 });
+  const lim = 10 * 30480;
+  const r = await b.al.reserve("spend", lim - 120000, {});
+  await b.al.settle(r, { inputTokens: lim - 120000, outputTokens: 0 });
+  const big = await b.al.reserve("big", 150000, {});
+  ok("H1: the 150k review is refused", !big.ok && big.why === "allowance");
+  eq("H1: the card says used up only while the left is below the smallest refused", (await b.al.view({})).exhausted, true);
+  eq("H1: the precheck still lets a 30k review through", (await b.al.precheck({})).ok, true);
+  eq("H1: and the 30k reservation is accepted", (await b.al.reserve("small", 30000, {})).ok, true);
+}
+// --- M2: a failed count is remembered; retried after COUNT_RETRY_MS, not on every call ---
+{
+  let n = 0;
+  const clock = { t: T0 };
+  const b = bed({ clock, fetchCount: async () => { n++; return null; } });
+  await b.al.licensedUsers(); await b.al.licensedUsers(); await b.al.view({}); await b.al.precheck({});
+  eq("M2: four calls after a failure read the count once", n, 1);
+  ok("M2: the failure is in the count row", Boolean(b.store.get(COUNT_KEY)?.failedAt));
+  clock.t += A.COUNT_RETRY_MS + 1;
+  await b.al.licensedUsers();
+  eq("M2: after the retry interval it reads again", n, 2);
+  const g = bed({ clock: { t: T0 }, fetchCount: async () => null });
+  g.store.set(COUNT_KEY, { count: 77, kind: "group", at: new Date(T0 - 2 * 86400000).toISOString() });
+  await g.al.licensedUsers();
+  eq("M2: a failure keeps the last good count in the row", g.store.get(COUNT_KEY)?.count, 77);
+  eq("M2: and still serves it as stale", (await g.al.licensedUsers()).source, "stale-cache");
+}
+// --- M3 / M4 / M5: the bounded, resumable group scan through a fake Confluence ---
+function fakeConf({ groups, members = {}, base = "https://acme.atlassian.net/wiki", cap = 200, total = true, clock = null, msPerCall = 0 }) {
+  const calls = [];
+  const res = (body) => ({ ok: true, status: 200, json: async () => body });
+  const call = async (path) => {
+    calls.push(path);
+    if (clock) clock.t += msPerCall;
+    const u = new URL(path, "https://x");
+    const start = Number(u.searchParams.get("start")) || 0, limit = Math.min(cap, Number(u.searchParams.get("limit")) || 25);
+    const page = (all, extra) => res({ results: all.slice(start, start + limit), ...extra, _links: { base, ...(start + limit < all.length ? { next: `${u.pathname}?limit=${limit}&start=${start + limit}` } : {}) } });
+    if (u.pathname === "/wiki/rest/api/group") return page(groups, {});
+    const m = /^\/wiki\/rest\/api\/group\/([^/]+)\/membersByGroupId$/.exec(u.pathname);
+    if (m && members[m[1]]) return page(members[m[1]], total ? { totalSize: members[m[1]].length } : {});
+    return { ok: false, status: 404, json: async () => ({}) };
+  };
+  return { call, calls };
+}
+const people = (n) => Array.from({ length: n }, () => ({ accountType: "atlassian" }));
+{
+  const { readDefaultGroupCount } = A;
+  // M4: the server caps limit at 50 (a 50-row page is "short" vs the asked 200): page on the next link.
+  const f = fakeConf({ groups: [{ id: "g1", name: "confluence-users-acme" }], members: { g1: people(430) }, cap: 50 });
+  eq("M4: a server cap of 50 still counts all 430", await readDefaultGroupCount(f.call), { status: "done", count: 430 });
+  const g = fakeConf({ groups: [...Array.from({ length: 120 }, (_, i) => ({ id: `t${i}`, name: `team-${i}` })), { id: "g1", name: "confluence-users-acme" }], members: { g1: people(3) }, cap: 50 });
+  eq("M4: the site's group on the 3rd capped page of groups is found", (await readDefaultGroupCount(g.call)).count, 3);
+  // M5: renamed site (base acme, its own group still named after the old name) + a legacy group.
+  const ren = fakeConf({ groups: [{ id: "old", name: "confluence-users-oldacme" }, { id: "leg", name: "confluence-users" }], members: { old: people(40), leg: people(900) } });
+  eq("M5: legacy group not taken when a confluence-users-* group exists", await readDefaultGroupCount(ren.call), { status: "fail" });
+  ok("M5: and its members were never read", !ren.calls.some((c) => c.includes("/leg/")));
+  const multi = fakeConf({ groups: [{ id: "leg", name: "confluence-users" }, { id: "o", name: "confluence-users-othersite" }], members: { leg: people(900) }, base: "https://wiki.custom-domain.com/wiki" });
+  eq("M5: custom domain in a multi-site org -> nothing picked", (await readDefaultGroupCount(multi.call)).status, "fail");
+  const old = fakeConf({ groups: [{ id: "leg", name: "confluence-users" }, { id: "x", name: "site-admins" }], members: { leg: people(12) } });
+  eq("M5: a site with only the legacy group still counts it", await readDefaultGroupCount(old.call), { status: "done", count: 12 });
+  const own = fakeConf({ groups: [{ id: "leg", name: "confluence-users" }, { id: "g1", name: "confluence-users-acme" }], members: { g1: people(7), leg: people(900) } });
+  eq("M5: the site's own group wins over the legacy one", (await readDefaultGroupCount(own.call)).count, 7);
+  // M3: every call costs 1 s; an 8 s budget per call; 40 member pages. It resumes and finishes.
+  const clock = { t: T0 };
+  const big = fakeConf({ groups: [{ id: "g1", name: "confluence-users-acme" }], members: { g1: people(8000) }, clock, msPerCall: 1000 });
+  let r = await readDefaultGroupCount(big.call, { deadline: clock.t + 8000, now: () => clock.t });
+  eq("M3: the first call stops at its budget", r.status, "partial");
+  ok("M3: within the budget (<= 9 calls)", big.calls.length <= 9);
+  let rounds = 1;
+  while (r.status === "partial" && rounds < 20) { r = await readDefaultGroupCount(big.call, { deadline: clock.t + 8000, now: () => clock.t, state: r.state }); rounds++; }
+  eq("M3: resumed to the full count", r, { status: "done", count: 8000 });
+  eq("M3: no page read twice", big.calls.length, 41);
+}
+{ // M3 through the allowance: a big site's count builds up across calls, each call bounded.
+  const clock = { t: T0 };
+  const big = fakeConf({ groups: [{ id: "g1", name: "confluence-users-acme" }], members: { g1: people(8000) }, clock, msPerCall: 1000 });
+  const fetchCount = async (o) => {
+    const g = await A.readDefaultGroupCount(big.call, o);
+    if (g.status === "done") return { count: g.count, kind: "group" };
+    if (g.status === "partial") return { partial: g.state, count: g.state.people || 0 };
+    return null;
+  };
+  const b = bed({ clock, fetchCount });
+  const first = await b.al.licensedUsers();
+  ok("M3: first call is a lower bound, not the 10 fallback", first.users > 10 && first.users < 8000);
+  ok("M3: its place is kept in the count row", Boolean(b.store.get(COUNT_KEY)?.scan));
+  let u = first; for (let i = 0; i < 10 && u.users < 8000; i++) u = await b.al.licensedUsers();
+  eq("M3: later calls finish the count", u.users, 8000);
+  eq("M3: the finished row has no scan left", b.store.get(COUNT_KEY)?.scan, undefined);
 }
 
 report();
