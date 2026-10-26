@@ -8,8 +8,10 @@ Atlassian bills Forge LLM tokens to the **app vendor** — LeanZero — not to t
 customer's org. This is documented, not inferred:
 
   https://developer.atlassian.com/platform/forge/runtime-reference/forge-llms-api-pricing/
-  $0.10 per 1M input credits, $0.50 per 1M output credits, and **no free monthly
-  quota** — every token is billed.
+  $0.10 per 1M input CREDITS and $0.50 per 1M output CREDITS, and **no free monthly
+  quota** — every token is billed. A credit is not a token: Claude Haiku 4.5 costs 10 credits a
+  token, so the price per TOKEN is $1 per 1M input and $5 per 1M output (corrected 2026-10-26; the
+  earlier text read the credit price as a token price, ten times too low).
 
 Do not confuse this with Rovo. Rovo AI usage IS billed to the customer org, so a
 Rovo agent costs the vendor nothing. The Forge LLMs API is the opposite. That
@@ -68,6 +70,19 @@ overshoot the budget). `test/ai-ceiling.test.mjs` pins
 each path and fails if a new module calls the Forge LLM or pushes onto the AI queue without the gate.
 Still open: leak 1 (the budget counter is per space, so the site budget is a PER-SPACE ceiling, not an
 installation-wide total), leak 3 (default 0 = unlimited at site level), leak 4 (usage not shown in the UI).
+
+## Update 2026-10-26 — a site-wide monthly allowance (closes leak 1 for the site)
+
+Every site now has ONE monthly AI allowance: max(licensed users, 10) x 30,480 micro-dollars, i.e. one
+worst-case review (10,000 tokens in, 4,096 out at $1/$5 per 1M) per licensed user per month. Code:
+`src/server/capsules/validations/allowance.js`. One meter row per UTC month (`ai-allowance-YYYYMM`),
+changed only under the KVS lock; the worst case for each prompt is reserved before the model call and
+settled to the reported tokens after it; a busy lock or an unreadable meter refuses. The user count is
+Confluence's licence userCount read as the app, cached a day, last good value for 35 days, then 10
+users; a trial or inactive licence gets 10. A site admin may only lower it. When it is spent AI review
+pauses until the 1st of next month with a message; the workflow AI gate follows the space's
+onBudgetExhausted. The per-space token budget still applies on top. Guards: test/ai-allowance.test.mjs,
+test/ai-ceiling.test.mjs.
 
 ## The three apps, and where each one stands
 

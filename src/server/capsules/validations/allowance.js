@@ -21,7 +21,7 @@
  * licence gets the 10-user allowance (a trial is not licence-funded), and so does a production
  * install with no licence object. Users never supply the number.
  *
- * An admin may LOWER the allowance (validation-config-global.ai.monthlyAllowanceMicro), never raise
+ * An admin may LOWER the allowance (the site config's ai.monthlyAllowanceMicro), never raise
  * it: the effective limit is min(stored, default), on save and on every read.
  */
 import { kvs as forgeKvs } from "@forge/kvs";
@@ -44,7 +44,7 @@ export const ROW_PREFIX = "ai-allowance-";
 export const COUNT_KEY = "ai-licensed-users";
 const LOCK_HOLD_MS = 15000;
 const LOCK_WAIT_MS = 8000;
-const ROW_TTL_MS = 400 * 24 * 3600 * 1000;
+const ROW_TTL_MS = 120 * 24 * 3600 * 1000;
 
 const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 

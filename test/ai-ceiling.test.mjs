@@ -286,6 +286,13 @@ eq("…two pushes, two spend gates", [actionsSrc.split('key: "ai-validation-queu
 const rawAiReaders = files.filter(([p, t]) => p !== "server/capsules/validations/logic.js" && p.startsWith("server/capsules/validations/")
   && /\b(space|global)\??\.ai\b/.test(t.replace(/capAiConfig\([^)]*\)/g, ""))).map(([p]) => p);
 eq("no validations module but logic.js reads a raw site or space ai object except through capAiConfig", rawAiReaders, []);
+// The site-wide allowance (allowance.js): the ONE model call sits between a reserve and a settle.
+{
+  const calls = worker.split(/\brunForgeLlmJson\s*\(/).length - 1;
+  const iRes = worker.indexOf("aiAllowance.reserve("), iCall = worker.search(/\brunForgeLlmJson\s*\(/), iSet = worker.indexOf("aiAllowance.settle(");
+  eq("the model is called in one place, between the allowance reserve and settle", [calls, iRes >= 0 && iRes < iCall, iCall < iSet], [1, true, true]);
+  eq("both consumer branches go through callWithinAllowance", worker.split("callWithinAllowance(").length - 1, 3);
+}
 
 console.log = say;
 report("ai-ceiling");
