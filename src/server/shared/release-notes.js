@@ -12,6 +12,16 @@ const note = (n) => Object.freeze({ ...n, changes: Object.freeze([...(n.changes 
 
 export const RELEASE_NOTES = Object.freeze([
   note({
+    version: "8.23.0",
+    date: "2026-10-26",
+    headline: "The AI review allowance follows a paid site's users",
+    changes: [],
+    fixes: [
+      "The AI review allowance follows the site's users: on a paid site it no longer falls back to the allowance for 10 users, which stopped AI review after a few reviews. The default allowance is now set from the site's licensed user count or, when the app cannot read that, from the people in the site's default Confluence user group; on a paid site that second way never gives less than the allowance for 250 users. An administrator can still set a lower allowance in the validation settings.",
+      "Once a review has been stopped because the month's AI allowance is used up, the site's validation settings say the allowance is used up straight away, instead of only after the next review. A smaller review that still fits in what is left of the allowance keeps running.",
+    ],
+  }),
+  note({
     version: "8.22.0",
     date: "2026-10-26",
     headline: "AI review has a monthly allowance for the whole site",
