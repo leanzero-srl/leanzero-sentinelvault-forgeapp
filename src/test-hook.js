@@ -280,6 +280,64 @@ export async function testStateTrigger(req) {
       // attachment-status endpoints actually answer THIS app with ITS scopes. Creates throwaway
       // pages in `spaceId` (as the app), tries one door per page, and reports every status. The
       // decision for backup/store.js deletePage and attachment-status.js rests on this output.
+      // User-count probe (2026-10-26, 8.22.1): which licensed-user-count sources answer THIS app
+      // with ITS scopes. Reads only; returns statuses, counts and the names of default-style groups (dev only, stripped from prod).
+      if (fn === "userCountProbe") {
+        const { default: api, route } = await import("@forge/api");
+        const out = {};
+        // The shipped path: the real reader and the real allowance (fresh=1 drops the daily cache first).
+        const al = await import("./server/capsules/validations/allowance.js");
+        if (q(req, "fresh") === "1") await kvs.delete(al.COUNT_KEY);
+        out.defaultGroupCount = await al.readDefaultGroupCount(undefined, { deadline: Date.now() + al.COUNT_BUDGET_MS });
+        out.licensedUsers = await al.aiAllowance.licensedUsers();
+        // paid=1: the same allowance with a paid licence context (the dev install carries no licence
+        // object, and `forge install --upgrade --license` does not change an up-to-date install).
+        const subject = q(req, "paid") === "1" ? al.makeAllowance({ appContext: () => ({ license: { active: true, isEvaluation: false } }) }) : al.aiAllowance;
+        if (q(req, "paid") === "1") out.paidLicensedUsers = await subject.licensedUsers();
+        const lim = await subject.limits({});
+        out.limitMicro = lim.limitMicro;
+        try { const { getAppContext } = await import("@forge/api"); const lic = getAppContext()?.license; out.licence = lic ? { active: lic.active, isActive: lic.isActive, isEvaluation: lic.isEvaluation, type: lic.type } : null; } catch (_) { out.licence = "n/a"; }
+        if (q(req, "only") === "1") return json(200, out);
+        if (q(req, "links") === "1") { // paging shape of one members page (keys only, no names)
+          const g = await appConfluence(route`/wiki/rest/api/group?limit=5`); const gb = await g.json().catch(() => null);
+          out.groupLinks = Object.keys(gb?._links || {});
+          const own = (gb?.results || []).find((x) => String(x?.name || "").toLowerCase().startsWith("confluence-users-"));
+          if (own) { const m = await appConfluence(route`/wiki/rest/api/group/${String(own.id)}/membersByGroupId?limit=5`); const mb = await m.json().catch(() => null); out.memberKeys = Object.keys(mb || {}); out.memberLinks = Object.keys(mb?._links || {}); out.memberSize = mb?.size; out.memberTotal = mb?.totalSize; out.memberNext = mb?._links?.next ? String(mb._links.next).replace(/[0-9a-f-]{20,}/g, "<id>") : null; }
+          return json(200, out);
+        }
+        const st = async (label, res) => {
+          let body = null; try { body = await res.json(); } catch (_) { body = null; }
+          out[label] = { status: res.status, ...(body && typeof body === "object" ? { keys: Object.keys(body).slice(0, 12), count: body.count, size: body.size, totalSize: body.totalSize, total: body.total, userCount: body.userCount } : {}) };
+          return body;
+        };
+        await st("licence.userCount", await appConfluence(route`/wiki/rest/license/1.0/license/userCount`));
+        await st("licence.maxUsers", await appConfluence(route`/wiki/rest/license/1.0/license/maxUsers`));
+        await st("licence.remainingSeats", await appConfluence(route`/wiki/rest/license/1.0/license/remainingSeats`));
+        const groups = await st("v1.groups", await appConfluence(route`/wiki/rest/api/group?limit=200`));
+        const gl = Array.isArray(groups?.results) ? groups.results : [];
+        out.groupNames = gl.map((g) => String(g.name || "")).filter((n) => /^(confluence-users|users|confluence-user-access-admins|site-admins|confluence-admins)/i.test(n));
+        for (const g of gl.filter((x) => /^(confluence-users|users)\b/i.test(String(x.name || "")))) {
+          let start = 0; let n = 0; let atl = 0; let pages = 0; let status = 0;
+          for (;;) {
+            const res = await appConfluence(route`/wiki/rest/api/group/${g.id}/membersByGroupId?limit=200&start=${start}`);
+            status = res.status; if (!res.ok) break;
+            const b = await res.json().catch(() => null); const r = Array.isArray(b?.results) ? b.results : [];
+            n += r.length; atl += r.filter((u) => u.accountType === "atlassian").length; pages++;
+            if (r.length < 200 || pages > 50) break; start += 200;
+          }
+          out[`members.${g.name}`] = { status, members: n, atlassian: atl, pages };
+        }
+        const su = await st("search.user", await appConfluence(route`/wiki/rest/api/search/user?cql=${"type=user"}&limit=200`));
+        if (Array.isArray(su?.results)) out["search.user"].page = su.results.length;
+        const jr = (r) => api.asApp().requestJira(r, { headers: { Accept: "application/json" } });
+        try { await st("jira.group.confluence-users", await jr(route`/rest/api/3/group/member?groupname=${"confluence-users"}&maxResults=1`)); } catch (e) { out["jira.group"] = String(e?.name); }
+        try { await st("jira.applicationrole", await jr(route`/rest/api/3/applicationrole`)); } catch (e) { out["jira.applicationrole"] = String(e?.name); }
+        try {
+          const r = await jr(route`/rest/api/3/users/search?maxResults=1000`); const b = await r.json().catch(() => null);
+          out["jira.users.search"] = { status: r.status, n: Array.isArray(b) ? b.length : null, activeAtlassian: Array.isArray(b) ? b.filter((u) => u.accountType === "atlassian" && u.active).length : null };
+        } catch (e) { out["jira.users.search"] = String(e?.name); }
+        return json(200, out);
+      }
       if (fn === "endpointProbe") {
         const { asApp, route } = await import("@forge/api");
         const store = await import("./server/capsules/backup/store.js");
