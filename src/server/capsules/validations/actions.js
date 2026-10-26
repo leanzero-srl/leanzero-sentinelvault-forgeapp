@@ -147,16 +147,15 @@ const storeConfig = async (req) => {
   // round-tripped editor state; storing it would only leave a stale copy behind.
   const { effectiveAi: _derived, aiAllowance: _derivedAllowance, ...toStore } = data;
   const isSpace = scope === "space" && !!key;
-  // The site-wide AI allowance may only be LOWERED (allowance.js): clamp to the default on save
-  // (the read side clamps too). It is a site setting: a space's copy is dropped.
+  // The site-wide AI allowance may only be LOWERED (allowance.js): the READ side clamps it to the
+  // default every time. The save stores what was asked: clamping here against the current default
+  // would make a save during a licence-count outage (10-user fallback) shrink a big site's setting
+  // for good. It is a site setting: a space's copy is dropped.
   if (toStore.ai && typeof toStore.ai === "object" && "monthlyAllowanceMicro" in toStore.ai) {
     toStore.ai = { ...toStore.ai };
     const asked = Math.floor(Number(toStore.ai.monthlyAllowanceMicro));
     if (isSpace || !Number.isFinite(asked) || asked <= 0) delete toStore.ai.monthlyAllowanceMicro;
-    else {
-      const { defaultMicro } = await aiAllowance.limits({});
-      toStore.ai.monthlyAllowanceMicro = Math.min(asked, defaultMicro);
-    }
+    else toStore.ai.monthlyAllowanceMicro = Math.min(asked, Number.MAX_SAFE_INTEGER);
   }
   const before = isSpace && toStore.ai ? await loadValidationConfig("space", key) : null;
   const saved = await storeValidationConfig(scope || "global", key, toStore);
