@@ -215,3 +215,39 @@ Next, in order:
 4. SVT ticket (entries.mjs, component "C") + door: release worktree at the TESTED sha, `npm ci`,
    `PUBLIC_TRACKER_ENV=$HOME/Projects/CogniRunner/test-harness/.env ./scripts/deploy-prod.sh --sha <sha> --non-interactive`
    (MINOR, no manifest change).
+
+## Session 5 (2026-10-26, Gabee) — DEPLOYED to dev + PRODUCTION 8.22.0. Stopped at the 160k hook before merge.
+Done:
+1. Gate job gabee-20261026-133046-ea8c (laptop, 3022f9b): exit 0, lint clean, 138/138 files incl. responsive-dom.
+2. Dev deploy works ON GABEE with env auth (no ssh needed): `npm run build` first (static/ is gitignored, forge lint
+   fails "missing resource static/*" without it), then `forge deploy -e development --non-interactive`, then
+   `git checkout -- src/build-info.js`. Hook 404 cause: dev HARNESS_SECRET did not match forge-live-harness/.env
+   (URL matched). Fixed with `forge variables set -e development --encrypt HARNESS_SECRET <value from laptop .env>`
+   + redeploy -> `what=version` 200 (gitSha 7016c25). zsh-safe wrapper: laptop scratch/sv-ai-allowance/h.sh.
+3. userCount AS THE APP on wolfaenpak: REFUSED, HTTP 401. Action log line seen in forge logs:
+   {"action":"ai.licensed-user-count","surface":"ai-allowance","outcome":"error","status":401,"step":"user-count"}.
+   aiAllowance.userSource="fallback", users 10, limit 304800 micro ($0.30/mo). Production will run on the
+   10-user fallback unless Confluence answers apps there (expect not).
+4. Live trip (laptop forge-live-harness/scratch/sv-ai-allowance/trip.mjs, log trip-run3.log; actor = Mihai site
+   admin, the WFH steward is unlicensed and cannot read the page): R1 done (spent 1124); limit lowered to
+   spent+20480+1500=23104; R2 done; R3 job error with the user message "This site has used its AI review
+   allowance for October 2026. AI review starts again on 1 November 2026. Other Sentinel Vault features keep
+   working." (reachedAt set); a 4th also refused. Rollover simulated by moving ai-allowance-202610 -> 202609:
+   spent 0, next review done. All 4 touched keys restored equal to the snapshot; page deleted.
+   OBSERVATION (not fixed): after the trip the card's `exhausted` stays false (remaining 20821 > OUTPUT_RESERVE
+   20480) while each review is refused at reservation (input estimate + reserve > remaining). The job message
+   is right; only the admin card lags by up to one page's input cost. Candidate fix: card/precheck treat
+   reachedAt-this-month as exhausted (careful: raising the limit back must clear it).
+5. Release: note 8.22.0 + entries.mjs row 11fb498bbb566918 (component C) committed e9b1025 (pushed). Door ran on
+   the laptop via node-run job gabee-20261026-134418-7e7a, exit 0; it committed b7cae0e "public tracker: 8.22.0 in
+   production, applied and verified" on the LAPTOP worktree (`~/Projects/Sentinel Vault/.claude/worktrees/
+   fix-ai-allowance`) — CHECK it is pushed. Try-it-first handed to the workhorse watcher.
+Open, in order:
+a. Read the SVT key from b7cae0e (scripts/public-tracker/receipt*.json / entries) and confirm the issue anonymously:
+   `curl -s https://leanzero-demo.atlassian.net/rest/api/3/issue/SVT-<n>?fields=summary,fixVersions`.
+b. Verify prod version live: `forge environments`/`forge deploy list -e production` shows 8.22.0 at e9b1025.
+c. Push b7cae0e from the laptop (`git push origin fix-ai-allowance`), then merge to main with a normal merge
+   (branch already contains origin/main 66a3549; all 10+ commits are leanzero.srl, no AI lines). Never force-push
+   main. `gh run list --workflow ci.yml --commit <merge sha>` once.
+d. Remove worktrees by exact path: `git worktree remove` for this Gabee one and the laptop one, after the merge.
+e. Mark this HANDOFF done.
