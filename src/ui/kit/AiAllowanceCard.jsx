@@ -7,8 +7,10 @@ import { acceptDraft, commitDraft, draftOf } from "./allowance-input";
 const usd = (micro) => `$${(Number(micro || 0) / 1e6).toFixed(2)}`;
 const SOURCE = {
   count: "from the site's licensed user count",
-  cached: "from the site's licensed user count",
-  "stale-cache": "from the last licensed user count read",
+  group: "from the members of the site's default Confluence user group",
+  cached: "from the site's user count, read today",
+  "stale-cache": "from the last user count read",
+  "paid-floor": "the 250-user minimum for a paid licence (the full user count could not be read)",
   fallback: "the 10-user allowance (the licensed user count could not be read)",
   trial: "the 10-user allowance (trial)",
   unlicensed: "the 10-user allowance (no active licence)",

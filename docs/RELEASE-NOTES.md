@@ -2,6 +2,15 @@
 
 GENERATED from `src/server/shared/release-notes.js` by `scripts/render-release-notes.mjs`. Do not edit.
 
+## 8.22.1 — 2026-10-26
+
+**The AI review allowance follows a paid site's users**
+
+
+Fixed:
+- The AI review allowance follows the site's users: on a paid site it no longer falls back to the allowance for 10 users, which stopped AI review after a few reviews. The allowance is now set from the people in the site's default Confluence user group, and a paid site always gets at least the allowance for 250 users.
+- Once a review has been stopped because the month's AI allowance is used up, the site's validation settings say the allowance is used up straight away, instead of only after the next review.
+
 ## 8.22.0 — 2026-10-26
 
 **AI review has a monthly allowance for the whole site**

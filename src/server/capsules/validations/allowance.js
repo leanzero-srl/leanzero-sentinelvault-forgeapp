@@ -16,10 +16,17 @@
  * A busy lock or a failed KVS read REFUSES the review ("busy"): never a review the meter cannot see.
  * A new month is a new row: rollover needs no job.
  *
- * The user count comes from Confluence's licence userCount, read AS THE APP, cached daily; a failed
- * read uses the last good count up to 35 days old, then the 10-user allowance. A trial or an inactive
- * licence gets the 10-user allowance (a trial is not licence-funded), and so does a production
- * install with no licence object. Users never supply the number.
+ * The user count is read AS THE APP, cached daily (users never supply the number, the client never
+ * sends it): first Confluence's licence userCount (unofficial; it answers apps 401 on every site
+ * measured, 2026-10-26), then the members of the site's DEFAULT product-access group
+ * `confluence-users-<site>` (or the legacy `confluence-users`), people only (accountType atlassian),
+ * through read:confluence-groups. The group is a LOWER bound: a site can grant Confluence through
+ * other groups. So an ACTIVE PAID licence never gets less than PAID_FLOOR_USERS (250) unless the
+ * licence count itself answered: a paying site is never cut to a handful of reviews by a count the
+ * app could not read. Worst case of that floor: 250 x $0.03048 = $7.62 per paid site per month.
+ * A failed read uses the last good count up to 35 days old, then the fallback (paid: the floor;
+ * otherwise 10). A trial or an inactive licence gets the 10-user allowance (a trial is not
+ * licence-funded), and so does a production install with no licence object.
  *
  * An admin may LOWER the allowance (the site config's ai.monthlyAllowanceMicro), never raise
  * it: the effective limit is min(stored, default) on every read. The SAVE stores what the admin
@@ -37,6 +44,9 @@ export const MAX_OUTPUT_TOKENS = 4096;
 export const OUTPUT_RESERVE_MICRO = MAX_OUTPUT_TOKENS * OUT_MICRO_PER_TOKEN; // 20,480
 export const PER_USER_MICRO = 10000 * IN_MICRO_PER_TOKEN + OUTPUT_RESERVE_MICRO; // 30,480
 export const FREE_TIER_USERS = 10;
+export const PAID_FLOOR_USERS = 250;
+export const MAX_GROUP_PAGES = 25;   // 5,000 groups listed at most while looking for the default group
+export const MAX_MEMBER_PAGES = 100; // 20,000 members counted at most (a bigger site counts as 20,000)
 export const COUNT_TTL_MS = 24 * 3600 * 1000;
 export const COUNT_STALE_MAX_MS = 35 * 24 * 3600 * 1000;
 export const RESERVATION_MAX_MS = 20 * 60 * 1000; // longer than any consumer (120 s) can run
@@ -128,6 +138,16 @@ export function licenceForcesFreeTier(ctx) {
 /** PURE. A remaining amount below one review's output reserve cannot run a review. */
 export const isExhausted = (limit, spent, reserved) => limit - spent - reserved <= OUTPUT_RESERVE_MICRO;
 
+/**
+ * PURE. The card/precheck view of "used up": the arithmetic, OR a review was refused this month and
+ * what is left is still below the smallest refused one. Raising the limit (or a new month) clears it.
+ */
+export function viewExhausted(limit, row) {
+  const remaining = limit - (row?.spentMicro || 0) - (row?.reservedMicro || 0);
+  if (isExhausted(limit, row?.spentMicro || 0, row?.reservedMicro || 0)) return true;
+  const need = Number(row?.refusedNeedMicro);
+  return Boolean(row?.reachedAt) && need > 0 && remaining < need;
+}
 const emptyRow = () => ({ spentMicro: 0, reservedMicro: 0, runs: 0, reservations: {}, reachedAt: null });
 
 /** PURE. Charge reservations older than RESERVATION_MAX_MS as spent (a run that died). Mutates `row`. */
@@ -148,22 +168,73 @@ export function allowanceMessage(nowMs) {
 }
 export const ALLOWANCE_BUSY_REASON = "AI review is busy right now. Please try again in a minute.";
 export const COUNT_FALLBACK_NOTE = "Could not read the licensed user count; using the 10-user allowance.";
+export const PAID_FLOOR_NOTE = "Could not read the full licensed user count; a paid licence gets at least the 250-user allowance.";
 
-async function readUserCount() {
+const logCountError = (status, step) => emit({ via: "job", action: "ai.licensed-user-count", surface: "ai-allowance", outcome: "error", status: Number(status) || 0, step });
+
+/** PURE. The site's default Confluence group names, most specific first, from the wiki base URL. */
+export function defaultGroupNames(baseUrl) {
+  let host = "";
+  try { host = new URL(String(baseUrl || "")).hostname.toLowerCase(); } catch (_) { host = ""; }
+  const m = /^([a-z0-9][a-z0-9-]*)\.(atlassian\.net|jira\.com|jira-dev\.com)$/.exec(host);
+  return m ? [`confluence-users-${m[1]}`, "confluence-users"] : ["confluence-users"];
+}
+
+/** PURE. People in one members page (app and customer accounts are not licensed users). */
+export const peopleIn = (results) => (Array.isArray(results) ? results : []).filter((u) => u?.accountType === "atlassian").length;
+
+async function readLicenceCount() {
   // Unofficial endpoint (no documented count API, CONFCLOUD-82766). A refusal is LOGGED (action log:
-  // status only, no site or user data) and the caller falls back to the 10-user allowance.
+  // status only, no site or user data).
   const res = await appConfluence(route`/wiki/rest/license/1.0/license/userCount`);
-  if (!res?.ok) {
-    emit({ via: "job", action: "ai.licensed-user-count", surface: "ai-allowance", outcome: "error", status: Number(res?.status) || 0, step: "user-count" });
-    return null;
-  }
+  if (!res?.ok) { logCountError(res?.status, "user-count"); return null; }
   const body = await res.json().catch(() => null);
   const n = Number(body?.count);
-  if (!(Number.isFinite(n) && n > 0)) {
-    emit({ via: "job", action: "ai.licensed-user-count", surface: "ai-allowance", outcome: "error", status: Number(res.status) || 200, step: "user-count-body" });
-    return null;
-  }
+  if (!(Number.isFinite(n) && n > 0)) { logCountError(res.status || 200, "user-count-body"); return null; }
   return Math.floor(n);
+}
+
+/** People in the site's default product-access group, read as the app (read:confluence-groups). */
+export async function readDefaultGroupCount(call = appConfluence) {
+  const groups = [];
+  let base = null;
+  for (let page = 0, start = 0; page < MAX_GROUP_PAGES; page++, start += 200) {
+    const res = await call(route`/wiki/rest/api/group?limit=200&start=${start}`);
+    if (!res?.ok) { logCountError(res?.status, "user-count-groups"); return null; }
+    const b = await res.json().catch(() => null);
+    base = base || b?._links?.base || null;
+    const r = Array.isArray(b?.results) ? b.results : [];
+    groups.push(...r);
+    if (r.length < 200) break;
+  }
+  const byName = new Map(groups.map((g) => [String(g?.name || "").toLowerCase(), g]));
+  const group = defaultGroupNames(base).map((n) => byName.get(n)).find((g) => g?.id);
+  if (!group) { logCountError(404, "user-count-group-missing"); return null; }
+  let people = 0;
+  for (let page = 0, start = 0; page < MAX_MEMBER_PAGES; page++, start += 200) {
+    const res = await call(route`/wiki/rest/api/group/${String(group.id)}/membersByGroupId?limit=200&start=${start}`);
+    if (!res?.ok) { logCountError(res?.status, "user-count-members"); return null; }
+    const b = await res.json().catch(() => null);
+    const r = Array.isArray(b?.results) ? b.results : [];
+    people += peopleIn(r);
+    if (r.length < 200) break;
+  }
+  return people > 0 ? people : null;
+}
+
+/** { count, kind } or null. kind "licence" is the licensed count; "group" is a lower bound. */
+async function readUserCount() {
+  const licence = await readLicenceCount();
+  if (licence > 0) return { count: licence, kind: "licence" };
+  const group = await readDefaultGroupCount();
+  return group > 0 ? { count: group, kind: "group" } : null;
+}
+
+/** PURE. A fetchCount answer as { count, kind } (a bare number is the licence count). */
+function normCount(v) {
+  if (typeof v === "number") return v > 0 ? { count: Math.floor(v), kind: "licence" } : null;
+  const n = Math.floor(Number(v?.count));
+  return Number.isFinite(n) && n > 0 ? { count: n, kind: v.kind === "licence" ? "licence" : "group" } : null;
 }
 
 /** Bind the allowance to a KVS (the real one by default; tests pass fakes and a clock). */
@@ -175,34 +246,51 @@ export function makeAllowance({
   appContext = () => { try { return getAppContext(); } catch (_) { return null; } },
   lockWaitMs = LOCK_WAIT_MS,
 } = {}) {
-  /** { users, source } — source: "count" | "cached" | "stale-cache" | "fallback" | "trial" | "unlicensed". */
-  async function licensedUsers() {
-    const forced = licenceForcesFreeTier(appContext());
-    if (forced) return { users: FREE_TIER_USERS, source: forced };
+  /**
+   * { users, source, counted } — source: "count" | "group" | "cached" | "stale-cache" | "fallback" |
+   * "paid-floor" | "trial" | "unlicensed". `counted` is what was read (null when nothing was).
+   */
+  async function countedUsers() {
     let cached = null;
     try { cached = await kvs.get(COUNT_KEY); } catch (_) { cached = null; }
     const at = Date.parse(cached?.at || "");
     const age = Number.isFinite(at) ? now() - at : Infinity;
-    if (cached?.count > 0 && age < COUNT_TTL_MS) return { users: cached.count, source: "cached" };
-    let count = null;
-    try { count = await fetchCount(); } catch (e) {
+    // A cached row without a kind predates the group count: treat it as a lower bound.
+    const cachedKind = cached?.kind === "licence" ? "licence" : "group";
+    if (cached?.count > 0 && age < COUNT_TTL_MS) return { users: cached.count, source: "cached", kind: cachedKind };
+    let got = null;
+    try { got = normCount(await fetchCount()); } catch (e) {
       console.warn("[AI-ALLOWANCE] user count read failed:", errText(e));
       emit({ via: "job", action: "ai.licensed-user-count", surface: "ai-allowance", outcome: "error", errorType: String(e?.name || "Error"), step: "user-count" });
     }
-    if (count > 0) {
-      try { await kvs.set(COUNT_KEY, { count, at: new Date(now()).toISOString() }); } catch (_) { /* next read retries */ }
-      return { users: count, source: "count" };
+    if (got) {
+      try { await kvs.set(COUNT_KEY, { count: got.count, kind: got.kind, at: new Date(now()).toISOString() }); } catch (_) { /* next read retries */ }
+      return { users: got.count, source: got.kind === "licence" ? "count" : "group", kind: got.kind };
     }
-    if (cached?.count > 0 && age < COUNT_STALE_MAX_MS) return { users: cached.count, source: "stale-cache" };
-    return { users: FREE_TIER_USERS, source: "fallback" };
+    if (cached?.count > 0 && age < COUNT_STALE_MAX_MS) return { users: cached.count, source: "stale-cache", kind: cachedKind };
+    return { users: FREE_TIER_USERS, source: "fallback", kind: null };
+  }
+
+  async function licensedUsers() {
+    const ctx = appContext();
+    const forced = licenceForcesFreeTier(ctx);
+    if (forced) return { users: FREE_TIER_USERS, source: forced, counted: null };
+    const r = await countedUsers();
+    const counted = r.kind ? r.users : null;
+    // An active paid licence (forced is null and a licence object exists): never below the floor
+    // unless the licence count itself answered.
+    if (ctx?.license && r.kind !== "licence" && r.users < PAID_FLOOR_USERS) {
+      return { users: PAID_FLOOR_USERS, source: "paid-floor", counted };
+    }
+    return { users: r.users, source: r.source, counted };
   }
 
   /** The limit for this site now: { limitMicro, defaultMicro, lowered, users, userSource }. */
   async function limits(globalAi) {
-    const { users, source } = await licensedUsers();
+    const { users, source, counted } = await licensedUsers();
     const defaultMicro = defaultAllowanceMicro(users);
     const limitMicro = effectiveLimitMicro(defaultMicro, globalAi?.monthlyAllowanceMicro);
-    return { limitMicro, defaultMicro, lowered: limitMicro < defaultMicro, users, userSource: source };
+    return { limitMicro, defaultMicro, lowered: limitMicro < defaultMicro, users, userSource: source, countedUsers: counted };
   }
 
   /** The admin's view (read only). Throws when the meter row cannot be read. */
@@ -215,8 +303,8 @@ export function makeAllowance({
     return {
       month, monthLabel: monthLabel(month), resetsOn: nextMonthStart(t).toISOString(), resetLabel: resetLabel(t),
       ...lim, spentMicro: row.spentMicro, reservedMicro: row.reservedMicro, remainingMicro, runs: row.runs,
-      exhausted: isExhausted(lim.limitMicro, row.spentMicro, row.reservedMicro), reachedAt: row.reachedAt || null,
-      ...(lim.userSource === "fallback" ? { note: COUNT_FALLBACK_NOTE } : {}),
+      exhausted: viewExhausted(lim.limitMicro, row), reachedAt: row.reachedAt || null,
+      ...(lim.userSource === "fallback" ? { note: COUNT_FALLBACK_NOTE } : lim.userSource === "paid-floor" ? { note: PAID_FLOOR_NOTE } : {}),
     };
   }
 
@@ -249,7 +337,14 @@ export function makeAllowance({
         const row = expireReservations({ ...emptyRow(), ...((await kvs.get(rowKey(month))) || {}) }, t);
         if (row.spentMicro + row.reservedMicro + micro > lim.limitMicro) {
           const firstTrip = !row.reachedAt;
-          if (firstTrip) { row.reachedAt = new Date(t).toISOString(); await kvs.set(rowKey(month), row, { ttl: { value: Math.ceil(ROW_TTL_MS / 1000), unit: "SECONDS" } }); }
+          // Remember the smallest review refused this month, so the admin card and the precheck say
+          // "used up" while the arithmetic alone (remaining > one output reserve) still looks open.
+          const need = Math.min(Number(row.refusedNeedMicro) > 0 ? Number(row.refusedNeedMicro) : Infinity, micro);
+          if (firstTrip || need !== row.refusedNeedMicro) {
+            if (firstTrip) row.reachedAt = new Date(t).toISOString();
+            row.refusedNeedMicro = need;
+            await kvs.set(rowKey(month), row, { ttl: { value: Math.ceil(ROW_TTL_MS / 1000), unit: "SECONDS" } });
+          }
           return { ok: false, why: "allowance", reason: allowanceMessage(t), firstTrip, month, limitMicro: lim.limitMicro };
         }
         row.reservations[id] = { micro, at: new Date(t).toISOString() };

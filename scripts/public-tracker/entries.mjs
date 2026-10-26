@@ -42,6 +42,9 @@ export const COMPONENTS = {
 const JIRA_ON = "It works once a site admin has connected Jira to Sentinel Vault in Atlassian Administration.";
 
 export const ENTRIES = {
+  // 8.22.1: the user count the app can read + the paid floor; the card after a trip (branch fix-user-count, 2026-10-26).
+  "69dee81acf5fb68a": ["On a paid site the AI review allowance no longer falls back to 10 users", "C"],
+  "2c4927a4bcc6a720": ["The AI allowance shows as used up as soon as a review is stopped", "C"],
   // 8.22.0: the site-wide AI allowance (branch fix-ai-allowance, 2026-10-26).
   "11fb498bbb566918": ["AI review has a monthly allowance for the whole site", "C"],
   // 8.21.0: written by the release door on 2026-10-23 (rows: deterministic; review pass: none, deterministic net only).
