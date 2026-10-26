@@ -84,3 +84,48 @@ licence count unavailable). Report max 12 lines.
 Deploy dev, lower the allowance to $0.01 as site admin, run one manual AI review (passes, meter shows actual),
 run another (refused with the message; gate refused too), then raise it back to the default (works again);
 seed the previous month's row as fully spent and show the current month is unaffected (rollover). Restore config.
+
+## Session 2 (2026-10-26, Gabee) — code read, design pinned to the code. STILL NO CODE WRITTEN.
+Stopped again at the 160k hook (the global CLAUDE.md + skill text alone cost ~45k; next agent: do NOT load the
+whole sentinel-vault skill, its "Release speed", "Production door from the laptop" and "Action log" sections are
+the only parts needed; grep them).
+
+Code facts (read, file:line on f1bb2f2):
+- ai-worker.js: handleGateReview (l.21-66) and aiValidationConsumer (l.72-159) both call checkAiSpend(spaceKey),
+  build {system,user} via buildValidationPrompt, then `runForgeLlmJson({model,system,user})` (maxTokens defaults
+  4096 in forge-llm.js l.51), then accrueTokenUsage(realmKey||spaceKey, res.usage). usage = {inputTokens,
+  outputTokens,totalTokens}; on a failed call forge-llm returns zeros (l.129).
+- logic.js: checkAiSpend l.194 is the ONE gate used by enqueuePageValidation (actions.js l.387), enqueueAiGate
+  (l.402) and both consumer branches -> put the cheap allowance check INSIDE checkAiSpend (new why:"allowance",
+  why:"busy"), and extend aiGateRefusal l.220 (allowance -> like budget: onBudgetExhausted block/allow, with the
+  site message; busy -> verdict "failed" + "please retry", never allow).
+- Lock: shared/kvs-lock.js makeLocks(kvs) -> {withLock(key, holdMs, fn, {waitMs})}; throws "lock ... is busy".
+  Make allowance.js a factory makeAllowance({kvs, locks, now, fetchCount, licence}) so the test can inject the
+  latency/FAIL_IF_EXISTS fake from test/kvs-lock.test.mjs (the SHARED fake test/_forge-fake/kvs.mjs IGNORES
+  keyPolicy, so a lock there always wins: unusable for the concurrency test).
+- Licence: `getAppContext().license` from @forge/api (runtime.d.ts: active, isEvaluation, ...) works in ANY
+  invocation (no resolver context needed). Rule: license present and (isEvaluation || active===false) -> 10 users;
+  environmentType PRODUCTION and no license -> 10 users; dev -> count.
+- Count read: asApp requestConfluence(route`/wiki/rest/license/1.0/license/userCount`) (tests: onConfluence handler).
+  Cache KVS `ai-licensed-users` {count, at}. NOT yet tested as the app: first dev deploy will tell; expose it via a
+  test-hook fn (`what=invoke&fn=aiAllowance`) returning the allowance view incl. source.
+- Admin lowering: site-only field `validation-config-global.ai.monthlyAllowanceMicro` (absent/<=0 = default);
+  read from the GLOBAL ai only (never the space's, never via capAiConfig's merged view). Clamp: min(stored,
+  default) on read; storeConfig (actions.js l.116) stores min too. REST: the config API stores through the same
+  resolver, and the read side = add a derived `aiAllowance` view to loadConfig's global answer (export.js l.53 reads
+  it -> REST export shows it) and strip `aiAllowance` in storeConfig next to `effectiveAi` (l.139). No new REST op.
+- UI: src/ui/kit/ValidationsEditor.jsx (395 lines), AI section l.339-380; global scope only: allowance card
+  (used / reserved / limit in $, reset date, users + source, lowered or not) + a number input in dollars
+  (custom styles; MiniSelect exists, no native select). Exhausted: solid notice, not a tint, no left rail.
+- Activity: recordActivity({type:"validation.ai-allowance-reached", pageId:null, spaceKey:null, actor:null,
+  target:{kind:"site"...}, details:{month, limitMicro}}) once per month (row.reachedAt set inside the lock);
+  add a case in src/ui/kit/activity-format.js next to validation.ai-capped (l.513) and to the list at l.36.
+- Backup: register `ai-allowance-` (meter rows + lock) and `ai-licensed-users` as cls "runtime" in
+  backup/families.js (l.91 block) — runtime so a backup restore can never roll the meter back (ai-usage- is
+  "config", a pre-existing rollback hole for the per-space budget: mention to reviewer, not in scope).
+- Meter row `ai-allowance-YYYYMM` {spentMicro, reservedMicro, runs, reservations:{[taskId]:{micro,at}}, reachedAt};
+  settle by the MONTH IT WAS RESERVED IN (carry month in the reservation result). Reserve estimate:
+  ceil((system.length+user.length)/3) + 4096*5. Pre-check refuses when limit-spent-reserved <= 4096*5.
+- Live trip plan: run one review at the default, read the meter via the hook, lower the allowance to spent+1000
+  micro through store-validation-config (hook invoke as the site admin), run again -> refused message + gate
+  refusal; restore the field; seed `ai-allowance-<last month>` fully spent -> current month unaffected; delete it.
