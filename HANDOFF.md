@@ -165,3 +165,17 @@ Open, in order:
 5. Live on wolfaenpak dev (laptop forge): deploy dev, read view (confirm userCount works AS THE APP; if 403/404 the
    source shows "fallback" = 10 users), run one review, lower allowance to spent+1000 micro, run again -> refused
    with message + gate refusal, restore; seed `ai-allowance-<last month>` spent -> current month unaffected; delete.
+
+## Review result (independent agent, 2026-10-26): FIX-THEN-SHIP. Each item still needs YOUR verification first.
+1. MED storeConfig clamps the stored value with the CURRENT default; a save during a count outage (fallback 10 users)
+   permanently lowers a big site's stored allowance. Fix: store `asked` as given (read side clamps), drop the save clamp.
+2. MED AiAllowanceCard input is controlled by the stored micro value: typing "0." empties, "1" snaps to default.
+   Fix: local text state, convert + clamp on blur.
+3. MED userCount as the app never tested; log res.status when !res.ok (warn), then the live check decides.
+4. LOW-MED licence: also treat `lic.isActive === false` as unlicensed (runtime.d.ts has both active? and isActive?).
+5. MED bursts: two lock takes per review, wait 8 s < hold 15 s (kvs-lock L3 says wait > hold). Fix: waitMs = hold+5 s
+   (consumer is 120 s), retry settle once; consider measuring 50 concurrent with the lock-test fake.
+6. LOW estimate chars/3 is not worst case for CJK: use ceil(chars/1.5) (or cap) and fix the comment in settle.
+7. LOW manual review id = taskId: a re-delivered event overwrites the first reservation. Fix: id `${taskId}:${Date.now()}`.
+Rejected by the reviewer: limit overrun under concurrency, RMW outside the lock, rollover leak, LLM bypass, raising via
+space/REST/restore, restore rolling the meter back, gate left hanging, double charge on expiry, dev install w/o licence.
