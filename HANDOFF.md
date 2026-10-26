@@ -38,7 +38,32 @@ L7: >5,000 groups misses the default group. L8: deactivated accounts may be coun
 Rejected by reviewer: client-controlled count, floor bypass via cache, lower-then-raise, rollover, settle, trials.
 Note: old-code red run crashed on import for the group block; the behavioural block was shown red separately (12 FAIL).
 
-## Open, in order
+
+## SESSION 2026-10-26 (Gabee, agent 2) — STATE AT HANDOFF (context limit)
+Branch head 4a9e0fb (pushed): 2c86fc1 = H1/M2/M3/M4/M5/L6 fixes; 4a9e0fb = 2nd independent review fixes
+(single-scanner lease scanUntil, failure never overwrites a fresh count, budget 4 s, unparseable/capped list = fail,
+null app context -> paid floor, inactive members excluded, comments). Each finding has a red test (proven red on the
+previous commit in a temp worktree, removed). test/ai-allowance.test.mjs 108/108.
+GATE on laptop fix-user-count-gate @4a9e0fb: node-run gabee-20261026-142725-24cd exit 0, lint clean, 138/138, responsive-dom 755/755.
+Dev deployed from Gabee worktree (21.116.0, development). Dev cache key ai-licensed-users DELETED (again after probes).
+LIVE (wolfaenpak dev, scratch/sv-ai-allowance/h1.mjs on laptop): count {users 9, source group}; paid probe
+{250, paid-floor, counted 9}, limit 7,620,000; big review REFUSED (refusedNeed 41,175, left 32,000, card exhausted true)
+then small review DONE (spent 1,153). All 4 keys restored = snapshot. groups API has _links.next (confirmed live).
+Reviewer known limit (kept, safe side): custom-domain or legacy-group site in a multi-site org -> fallback / paid floor.
+
+## STILL OPEN (in order)
+1. Confirm membersByGroupId also returns _links.next (if not, members stop after page 1 = undercount >200).
+   Was probing with a user-token script; env var names in forge-live-harness/data/env.mjs unknown. Easiest:
+   redeploy dev with the probe `links=1` branch fixed to look up confluence-users-wolfaenpak with limit=200, or
+   call it with limit=5 via the hook (add a `memberLimit` param). If no next link: fall back to "page full => continue".
+2. Door on the laptop: node-run --host laptop -- 'cd ~/Projects/"Sentinel Vault"/.claude/worktrees/fix-user-count-gate &&
+   PATH=$HOME/.nvm/versions/node/v22.22.0/bin:$PATH ./scripts/deploy-prod.sh --sha 4a9e0fb76ae495414c97e27eb005b71cc7338824'
+   TRAP: forge in a node-run detached job fails on Keychain on the laptop -> export creds from
+   ~/.claude/skills/leanzero-analytics/references/credentials.env (set -a; . file; set +a) inside the job.
+   Then SVT keys from scripts/public-tracker/receipt-leanzero-demo.json; curl anonymously.
+3. Merge to main (normal), push; remove worktrees by exact path; mark this HANDOFF done.
+
+## Open, in order (previous session)
 a. Independent review agent was launched on e2dc58f (result not yet read when this was written). Re-run a fresh
    general-purpose reviewer on `git show e2dc58f` if its result is lost; verify each finding before fixing.
    Areas to check myself: resolver time budget on the first daily read of a big site (25 group pages + 100 member
