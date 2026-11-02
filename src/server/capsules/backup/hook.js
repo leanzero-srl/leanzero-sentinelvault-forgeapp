@@ -53,7 +53,7 @@ export const CHANGED_WHEN = Object.freeze({
 export const AUTOMATIC_REASONS = Object.freeze(["privacy", "schedule"]);
 export const STATUS_KEY = "backup-status";
 
-/** Actions that only read (or that ARE the backup's own doors, which schedule nothing). */
+/** Actions that only read (or that ARE the backup's own doors, which schedule nothing). The three nux-tour actions touch only the caller's own tour-marks row, a preference that is not backed-up configuration. */
 export const READ_ACTIONS = Object.freeze([
   "check-audit-status", "check-edit-request", "check-license", "check-panel-status", "check-seal-stamp", "check-section-edit",
   "check-steward-request", "check-user-role", "check-watch", "classification-assets-attributes", "classification-assets-link",
@@ -62,7 +62,7 @@ export const READ_ACTIONS = Object.freeze([
   "count-my-work", "current-operator", "discover-panel-key", "enumerate-doc-artifacts", "enumerate-operator-seals",
   "enumerate-operators", "enumerate-page-seals", "enumerate-panel-artifacts", "enumerate-realm-rulesets",
   "enumerate-realm-seals", "enumerate-section-seals", "enumerate-teams", "export-site-config", "export-space-config",
-  "get-ai-findings", "get-api-job", "get-page-activity", "get-page-approvals", "get-page-workflow", "get-read-report",
+  "get-ai-findings", "get-nux-tours", "get-api-job", "get-page-activity", "get-page-approvals", "get-page-workflow", "get-read-report",
   "get-read-status", "get-space-activity", "get-space-workflow-settings", "get-validation-audit", "get-validation-job",
   "get-validation-state", "get-workflow-dashboard", "get-workflow-log", "identify-operator", "identify-realm",
   "list-ai-models", "list-api-jobs", "list-api-tokens", "list-breach-dispatches", "list-edit-grants", "list-edit-requests",
@@ -70,8 +70,8 @@ export const READ_ACTIONS = Object.freeze([
   "list-my-section-edit-requests", "list-my-steward-requests", "list-page-headings", "list-section-edit-grants",
   "list-section-edit-requests", "list-space-workflows", "list-steward-requests", "load-bulletin-toggles", "load-policy",
   "load-session", "load-validation-config", "load-workflow-config", "operator-dispatches", "page-details-summary",
-  "recent-dispatches", "resolve-artifact-preview", "ribbon-evaluate", "ribbon-summary", "search-grantees", "search-operators",
-  "search-workflow-groups", "search-workflow-users", "section-seal-status", "signature-status", "steward-override-enabled",
+  "recent-dispatches", "reset-nux-tours", "resolve-artifact-preview", "ribbon-evaluate", "ribbon-summary", "search-grantees", "search-operators",
+  "search-workflow-groups", "search-workflow-users", "section-seal-status", "set-nux-tour", "signature-status", "steward-override-enabled",
   "workflow-seals-to-freeze",
   // the backup's own doors
   "backup-status", "backup-discover", "backup-now", "backup-preview", "backup-restore", "backup-decline", "backup-job", "backup-export",
