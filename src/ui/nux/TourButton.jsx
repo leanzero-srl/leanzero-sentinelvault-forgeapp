@@ -13,7 +13,7 @@ export default function TourButton({ tour, testId, className = "sv-link" }) {
   useEffect(() => {
     let live = true;
     const take = (m) => { if (live) setLabel(tourButtonLabel(storedFor(m, tour))); };
-    readMarks().then(take);
+    readMarks().then(() => take(marksNow()));
     const off = onMarks(take);
     return () => { live = false; off(); };
   }, [tour]);

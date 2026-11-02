@@ -116,6 +116,7 @@ async function scenario({ con, view, theme }) {
       for (const f of fails) findings.push(`${tag}: ${label}/${cur.step}: ${f}`);
       if (shotsDir) await page.screenshot({ path: path.join(shotsDir, `${con.id}-${view.name}-${theme}-${label}-${cur.step}.png`) });
       seen.push(cur.step);
+      if (process.env.SV_NUX_TRACE) console.log(`  ${tag} ${label}/${cur.step} ${fails.length ? "FAIL " + fails.join("; ") : "ok"}`);
       const last = await page.evaluate(() => !!document.querySelector('[data-testid="nux-done"]'));
       await page.locator(last ? '[data-testid="nux-done"]' : '[data-testid="nux-next"]').click({ timeout: 4000 });
       await sleep(150);
@@ -215,9 +216,10 @@ async function skipScenario(con) {
 const jobs = [];
 for (const con of CONSOLES) for (const view of VIEWS) for (const theme of view.themes || ["light", "dark"]) {
   if (con.id === "space-member" && (view.long)) continue;
+  if (process.env.SV_NUX_ONLY && !`${con.id} ${view.name} ${theme}`.includes(process.env.SV_NUX_ONLY)) continue;
   jobs.push(() => scenario({ con, view, theme }));
 }
-jobs.push(() => marksScenario(CONSOLES[0]), () => marksScenario(CONSOLES[1]), () => skipScenario(CONSOLES[0]), () => skipScenario(CONSOLES[1]));
+if (!process.env.SV_NUX_ONLY) jobs.push(() => marksScenario(CONSOLES[0]), () => marksScenario(CONSOLES[1]), () => skipScenario(CONSOLES[0]), () => skipScenario(CONSOLES[1]));
 const N = Math.max(1, Number(process.env.SV_NUX_JOBS) || 5);
 let next = 0;
 const crashed = [];
@@ -228,7 +230,7 @@ await Promise.all(Array.from({ length: N }, async () => {
 for (const c of crashed) findings.push(`scenario crashed: ${c}`);
 if (process.env.SV_NUX_LINES === "1" || findings.length) console.log(lines.sort().join("\n"));
 for (const f of [...new Set(findings)].sort()) ok(`GEOMETRY: ${f}`, false);
-ok(`every tour step was measured (${lines.length} measurements; tours: ${allTours().length})`, lines.length > 300);
+ok(`every tour step was measured (${lines.length} measurements; tours: ${allTours().length})`, process.env.SV_NUX_ONLY ? true : lines.length > 300);
 await browser.close();
 for (const s of Object.values(servers)) s.s.close();
 report("nux-geometry");

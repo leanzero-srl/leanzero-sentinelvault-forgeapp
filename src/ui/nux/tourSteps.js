@@ -260,7 +260,7 @@ export const stepLabel = (index, count) => `Step ${index + 1} of ${count}`;
  *     then scrolled to show them). No side fits -> {fits:false}: the caller tries a narrower anchor.
  * No target (the hello): bubble and Elzi centred near the top, the tail pointing at Elzi.
  */
-export const EDGE = 8;
+export const EDGE = 16; // owner 2026-11-02: >= 16 px from the canvas edge (was 8)
 export const RING_GAP = 7;
 export const RING_W = 3;
 export const RING_OUT = RING_GAP + RING_W;

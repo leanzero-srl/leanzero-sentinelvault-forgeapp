@@ -17,7 +17,8 @@ const useMarks = () => {
   const [marks, setMarks] = useState(() => marksNow());
   useEffect(() => {
     let live = true;
-    readMarks().then((m) => { if (live) setMarks(m); });
+    // the promise answers with the FIRST snapshot; a tab mounted later must read what the marks are now
+    readMarks().then(() => { if (live) setMarks(marksNow()); });
     const off = onMarks((m) => { if (live) setMarks(m); });
     return () => { live = false; off(); };
   }, []);
