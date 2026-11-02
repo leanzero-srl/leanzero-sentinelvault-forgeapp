@@ -112,7 +112,7 @@ export const SPACE_STEPS = Object.freeze({
       "Name the people or groups who can approve, and how many of them must say yes. Space admins can approve too. You can ask approvers to sign each decision with an authenticator code."),
   ],
   activity: [
-    step("what", "@sv-activity-report", "curious", "The activity log",
+    step("what", "act-head", "curious", "The activity log",
       "Every seal, release, edit request, approval and classification change in this space is recorded here, with who did it and when. If someone asks why a file was released, the answer is in this list."),
     step("export", "@sv-activity-export", "happy", "Filter and export",
       "Narrow the list by period or by kind of event, load more as you go, and export it to a CSV file for an audit."),

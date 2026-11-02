@@ -63,7 +63,7 @@ if (shotsDir) fs.mkdirSync(shotsDir, { recursive: true });
 // the three consoles: which bundle, which mock scenario, which key is its page tour, its tabs (testid) and the tab keys
 const CONSOLES = [
   { id: "site", app: "steward-console", shot: "steward", page: "site", tabs: SITE_TABS.map((t) => [t, ({ api: "tab-api-access" })[t] || `tab-${t}`]), prefix: "site", steward: true },
-  { id: "space-steward", app: "realm-console", shot: "realm-steward", page: "space", tabs: SPACE_TABS.map((t) => [t, `rc-tab-${t}`]), prefix: "space", steward: true },
+  { id: "space-steward", app: "realm-console", shot: "realm-steward", page: "space", tabs: SPACE_TABS.filter((t) => t !== "my-claims").map((t) => [t, `rc-tab-${t}`]), prefix: "space", steward: true },
   { id: "space-member", app: "realm-console", shot: "realm-user", page: "space", tabs: [["my-claims", "rc-tab-my-claims"]], prefix: "space", steward: false },
 ];
 const VIEWS = [
@@ -94,6 +94,22 @@ async function scenario({ con, view, theme }) {
     try { localStorage.clear(); sessionStorage.clear(); } catch (_) { /* fresh */ }
     const dark = () => { if (document.documentElement) document.documentElement.setAttribute("data-color-mode", th); };
     dark(); document.addEventListener("readystatechange", dark); document.addEventListener("DOMContentLoaded", dark);
+    // PLACEMENT OVER TIME (owner gate + the LeanZero Management finding 2026-11-03): from the first frame a step is drawn, its bubble,
+    // Elzi, ring and tail must not move again. Every frame is recorded per step; the test fails any later change.
+    window.__frames = {};
+    const watch = () => {
+      const q = (sel) => document.querySelector(sel);
+      const n = q("[data-nux-fits]"), b = q(".nux-bubble"), e = q(".nux-elzi"), r = q(".nux-ring"), t = q(".nux-tail");
+      if (n && b && b.style.visibility !== "hidden") {
+        const k = (el) => { if (!el) return "-"; const x = el.getBoundingClientRect(); return [x.left, x.top, x.width, x.height].map((v) => Math.round(v * 2) / 2).join(","); };
+        const id = `${n.getAttribute("data-nux-tour")}/${n.getAttribute("data-nux-step")}`;
+        const key = [k(b), k(e), k(r), k(t), Math.round(scrollY)].join("|");
+        const f = (window.__frames[id] = window.__frames[id] || { first: key, moves: 0, last: key });
+        if (key !== f.last) { f.moves++; f.last = key; }
+      }
+      requestAnimationFrame(watch);
+    };
+    requestAnimationFrame(watch);
     window.__dialogs = 0; window.alert = window.confirm = window.prompt = () => { window.__dialogs++; return true; };
   }, [con.shot, theme]);
   const page = await ctx.newPage();
@@ -110,7 +126,9 @@ async function scenario({ con, view, theme }) {
       if (!cur) break;
       if (expectTour && cur.tour !== expectTour) { findings.push(`${tag}: ${label}: expected tour ${expectTour}, on screen ${cur.tour}`); break; }
       if (!(await settled(page))) findings.push(`${tag}: ${label}/${cur.step}: the step never stopped moving`);
+      const moved = await page.evaluate((id) => { const f = (window.__frames || {})[id]; return f ? f.moves : 0; }, `${cur.tour}/${cur.step}`);
       const g = await tourRects(page);
+      if (moved) findings.push(`${tag}: ${label}/${cur.step}: the step moved ${moved} time(s) after its first draw (placement must be final when drawn)`);
       const fails = [...new Set([...judge(g, vis), ...judgeOwner(g, vis)])];
       lines.push(`${label}/${cur.step}: ` + geoLine(tag, g, vis, fails));
       for (const f of fails) findings.push(`${tag}: ${label}/${cur.step}: ${f}`);
@@ -132,24 +150,14 @@ async function scenario({ con, view, theme }) {
   await sleep(500);
   ok(`${tag}: no mini-tour opens straight after the page tour`, (await stepLine(page)) === null);
   // 2. each tab: its mini-tour opens by itself, without the hello
-  for (const [tab, testid] of con.tabs) {
+  // the tab on screen when the page tour ends waits for its next visit (never two tours back to back): visit it last
+  for (const [tab, testid] of [...con.tabs.slice(1), ...con.tabs.slice(0, 1)]) {
     if (con.tabs.length > 1 || con.id === "space-member") {
       await page.locator(`[data-testid="${testid}"]`).first().click({ timeout: 5000 }).catch(() => findings.push(`${tag}: tab ${tab}: its button is not there`));
     }
     if (view.long) await page.evaluate(() => { const c = document.querySelector(".tab-content") || document.querySelector(".space-admin-container"); if (c && !c.querySelector(".nux-long-pad")) { const d = document.createElement("div"); d.className = "nux-long-pad"; d.style.cssText = "height:2400px"; d.setAttribute("aria-hidden", "true"); c.insertBefore(d, c.firstChild); } });
     await page.waitForFunction(() => document.querySelector("[data-nux-step]"), { timeout: 8000 }).catch(() => {});
     const key = `${con.prefix}-${tab}`;
-    if (tab === con.tabs[0][0] && con.page === "site" && tab === "settings") { /* the first tab opens right after the page tour: it waits for the next visit */ }
-    const cur = await stepLine(page);
-    if (!cur) {
-      // the tab that was on screen when the page tour ended waits for its next visit; revisit it once
-      const other = con.tabs.find(([t]) => t !== tab);
-      if (other && tab === con.tabs[0][0]) {
-        await page.locator(`[data-testid="${other[1]}"]`).first().click().catch(() => {}); await sleep(400);
-        await page.locator(`[data-testid="${testid}"]`).first().click().catch(() => {});
-        await page.waitForFunction(() => document.querySelector("[data-nux-step]"), { timeout: 8000 }).catch(() => {});
-      }
-    }
     const seen = await walk(`tab-${tab}`, key);
     ok(`${tag}: ${key} opened by itself and walked (${seen.length} steps)`, seen.length >= 1);
     ok(`${tag}: ${key} carries no hello (not the first tour)`, !seen.includes("hello"));

@@ -151,7 +151,7 @@ export default function ActivityReport({ spaceKey, siteUrl = null }) {
 
   return (
     <div className="sv-activity-report" data-testid="sv-activity-report">
-      <div className="sv-activity-report-head">
+      <div className="sv-activity-report-head" data-nux="act-head">
         <div>
           <h3 className="sv-activity-report-title">Activity</h3>
           <p className="sv-activity-report-sub">Everything Sentinel Vault did or was asked to do on pages in this space — seals, sections, edit access, workflow and validation.</p>

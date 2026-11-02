@@ -53,6 +53,7 @@ export const GLANCE_BTN = Object.freeze({ text: "btn-secondary", go: "btn-primar
 // SMALL_W the bubble tightens too. Measured, never keyed off which module this is.
 export const HEAD_ONLY_W = 480;
 const SMALL_W = 360;
+const BUBBLE_MAX_W = 380;
 // Elzi's size. The head is 60 px wide (design review 2026-10-29: at 40 px she read as an avatar,
 // not a character) in every glance, 256 px included; the full body is 80 px in her tile.
 export const ELZI_HEAD_PX = 60;
@@ -115,10 +116,12 @@ const scrollUnionIntoView = (union) => {
     t.setAttribute("aria-hidden", "true");
     t.style.cssText = "position:absolute;left:0;width:1px;pointer-events:none;opacity:0;top:" + Math.max(0, union.top - EDGE) + "px;height:" + Math.max(1, union.bottom - union.top + 2 * EDGE + BOTTOM_RESERVE) + "px";
     document.body.appendChild(t);
-    t.scrollIntoView({ block: "center", behavior: reducedMotion() ? "auto" : "smooth" });
+    t.scrollIntoView({ block: "center", behavior: "auto" }); // before anything is drawn: never animated
     setTimeout(() => t.remove(), 800);
   } catch (e) { /* nothing to scroll */ }
 };
+const frame = () => new Promise((res) => requestAnimationFrame(() => requestAnimationFrame(res)));
+const settled = async () => { try { if (document.fonts && document.fonts.ready) await Promise.race([document.fonts.ready, new Promise((r) => setTimeout(r, 400))]); } catch (e) { /* no fonts API */ } await frame(); };
 const rectOf = (el) => {
   const r = el.getBoundingClientRect();
   return { top: r.top + window.scrollY, left: r.left + window.scrollX, width: r.width, height: r.height };
@@ -261,80 +264,124 @@ export default function Tour({ steps: given = null, tour: givenTour = null, auto
   const sidewaysFor = useRef("");
   const scrolledAt = useRef(0);
   const rejected = useRef(new Set()); // anchors of this step that did not fit on screen even after the scroll
+  const runRef = useRef(0);
+  /* ONE PLACEMENT, FROM FINAL NUMBERS (owner gate 2026-11-02; the LeanZero Management lane found the defect in this
+     shared engine: a step drawn ~300 ms off, its tail inside the ring). Four causes, all fixed here:
+       - every measure run has a number and an older run stops when a newer one starts (stale()), so a step never draws
+         from the previous step's numbers;
+       - the bubble's height was guessed and corrected AFTER it was drawn (the side flipped late). The bubble element is
+         always in the DOM (hidden until placed), is given the width the placement chose, and its REAL height is read
+         BEFORE anything is drawn (up to 3 rounds until the height stops changing);
+       - the scroll that brings the step into view ran after the first draw. It now runs BEFORE: scroll, wait for fonts and
+         two frames, read the visible window again, then place;
+       - the target's box was read once. It is read again a frame later until it holds still (up to 8 frames). */
   const measure = useCallback(async () => {
     if (!step) return;
-    const doc = docBox();
+    const run = ++runRef.current;
+    const stale = () => run !== runRef.current || stepRef.current !== step;
+    const drop = () => { setSteps((list) => { const left = list.filter((x) => x.id !== step.id); dispatch({ type: "recount", count: left.length }); return left; }); };
+    let visible = await visibleRect();
+    if (stale()) return;
+    let doc = docBox();
     const small = doc.w < SMALL_W;
     const headOnly = doc.w < HEAD_ONLY_W;
     const elziW = headOnly ? ELZI_HEAD_PX : ELZI_BODY_PX;
     const elziH = Math.round(headOnly ? HEAD_H : BODY_H);
-    const bubbleH = calloutHRef.current || 150;
-    const visible = await visibleRect();
     // a step on another tab finds its anchor once that tab has drawn (up to TAB_WAIT_MS, then dropped)
     let anchorName = step.anchor;
     if (step.late) {
       anchorName = step.anchors.find((a) => has(a)) || null;
       if (!anchorName) {
         if (Date.now() - stepAt.current < TAB_WAIT_MS) { setTimeout(() => { if (stepRef.current === step) measure(); }, 150); return; }
-        setSteps((list) => { const left = list.filter((x) => x.id !== step.id); dispatch({ type: "recount", count: left.length }); return left; });
+        drop();
         return;
       }
     }
     const tokens = anchorName ? [anchorName, ...(step.narrower || [])] : [null];
-    let el = null, target = null, place = null;
     const usable = tokens.filter((t, i) => i === tokens.length - 1 || !rejected.current.has(t));
-    for (const t of usable) {
-      const e = t ? findAnchor(t) : null;
-      if (t && !e) continue;
-      const r = e ? rectOf(e) : null;
-      const pl = placeTour({ target: r, visible, frameW: doc.w, bubbleH, elziW, elziH });
-      if (!place || pl.fits) { el = e; target = r; place = pl; }
-      if (pl.fits) break;
-    }
-    if (anchorName && !el) {
+    const firstEl = () => usable.map((t) => (t ? findAnchor(t) : null)).find(Boolean) || null;
+    if (anchorName && !firstEl()) {
       if (step.late) { setTimeout(() => { if (stepRef.current === step) measure(); }, 150); return; }
       setSteps((list) => { const left = list.filter((x) => x.id === step.id ? false : (!x.anchors.length || x.late || x.anchors.some((a) => has(a)))); dispatch({ type: "recount", count: left.length }); return left; });
       return;
     }
-    // bring the element and the row into view together, once per step and size
-    const sk = `${step.id}|${doc.w}|${bubbleH}`;
-    // an element cut off at the frame's side (a tab button in the phone's swipe strip): its own scroller
-    // brings it in sideways first, once per step and size; the next measure sees it whole
-    if (el && target && sidewaysFor.current !== sk && (target.left < 0 || target.left + target.width > doc.w)) {
-      sidewaysFor.current = sk;
-      try { el.scrollIntoView({ block: "nearest", inline: "center", behavior: "auto" }); } catch (e) { /* old browser */ }
-      setTimeout(() => { if (stepRef.current === step) measure(); }, 80);
-      return;
+    // where the bubble goes, for a given bubble height: the first anchor whose ring, bubble and Elzi fit the visible window
+    const placeAt = (bubbleH) => {
+      let el = null, target = null, place = null;
+      for (const t of usable) {
+        const e = t ? findAnchor(t) : null;
+        if (t && !e) continue;
+        const r = e ? rectOf(e) : null;
+        const pl = placeTour({ target: r, visible, frameW: doc.w, bubbleH, elziW, elziH });
+        if (!place || pl.fits) { el = e; target = r; place = pl; }
+        if (pl.fits) break;
+      }
+      return { el, target, place };
+    };
+    // an element cut off at the frame's side (a tab button in the phone's swipe strip): its own scroller brings it in sideways first
+    const sk = `${step.id}|${doc.w}`;
+    const el0 = firstEl();
+    if (el0 && sidewaysFor.current !== sk) {
+      const r0 = rectOf(el0);
+      if (r0.left < 0 || r0.left + r0.width > doc.w) {
+        sidewaysFor.current = sk;
+        try { el0.scrollIntoView({ block: "nearest", inline: "center", behavior: "auto" }); } catch (e) { /* old browser */ }
+        await settled();
+        if (stale()) return;
+      }
     }
-    // ALWAYS centred once per step, even when it already looks in view: Jira draws sticky bars (the
-    // panel's own title row) OVER the top of this frame, which no measurement from in here can see
-    // (live 2026-10-29: the hello bubble sat under "Sentinel Vault"). Centre keeps clear of them.
-    const unionShown = place.union.top >= visible.top - 1 && place.union.bottom <= visible.top + visible.height - (target ? BOTTOM_RESERVE : 0) + 1;
-    if (scrolledFor.current === sk && Date.now() - scrolledAt.current > 900 && !unionShown && el && step.narrower && rejected.current.size < tokens.length - 1) {
-      // scrolled already and Jira could not show both: drop to the narrower element and go again
-      const tok = tokens.find((t) => findAnchor(t) === el);
-      if (tok && tok !== tokens[tokens.length - 1]) { rejected.current.add(tok); scrolledFor.current = ""; setTimeout(() => measure(), 0); return; }
-    }
+    // ALWAYS centred once per step, BEFORE anything is drawn (Jira draws sticky bars over the top of this frame, which
+    // nothing in here can measure: centring keeps clear of them), then the visible window is read again
     if (scrolledFor.current !== sk) {
-      // draw first (the spacer grows the frame when the row sits under the content), then scroll
       scrolledFor.current = sk;
-      scrolledAt.current = Date.now() + 60;
-      setTimeout(() => { scrollUnionIntoView(place.union); setTimeout(() => measure(), reducedMotion() ? 80 : 500); }, 60);
+      const p0 = placeAt(calloutHRef.current || 170).place;
+      if (p0) {
+        scrollUnionIntoView(p0.union);
+        await settled();
+        if (stale()) return;
+        visible = await visibleRect();
+        if (stale()) return;
+        doc = docBox();
+      }
     }
-    // the arm pose (full body) follows the same look: target above / left of Elzi
+    // the target's box, read until it holds still (a scroll Jira finishes late, a font that lands)
+    if (el0) {
+      let prev = null;
+      for (let i = 0; i < 8; i++) {
+        const e = firstEl();
+        const r = e ? JSON.stringify(rectOf(e)) : null;
+        if (r && r === prev) break;
+        prev = r;
+        await frame();
+        if (stale()) return;
+      }
+    }
+    // the bubble gets the width the placement chose, and its real height decides the placement (3 rounds)
+    let bubbleH = calloutHRef.current || 170;
+    let at = placeAt(bubbleH);
+    for (let i = 0; i < 3 && at.place; i++) {
+      const probe = calloutRef.current;
+      if (!probe) break;
+      probe.style.width = `${at.place.width}px`;
+      const h = Math.ceil(probe.getBoundingClientRect().height);
+      if (!h || Math.abs(h - bubbleH) <= 1) break;
+      bubbleH = h;
+      at = placeAt(bubbleH);
+    }
+    calloutHRef.current = bubbleH;
+    const { el, target, place } = at;
+    if (!place || stale()) return;
     const rel = target ? { above: place.look[1] < 0, left: place.look[0] < 0 } : null;
-    const anchorTok = el ? tokens.find((t) => t && findAnchor(t) === el) || null : null;
-    // what the element says it is showing (data-nux-say / the step's sayOf): the words follow it
+    const anchorTok = el ? usable.find((t) => t && findAnchor(t) === el) || null : null;
     const say = sayFor(step, el);
     const next = { hole: target, anchor: anchorTok, say, doc, small, headOnly, elziW, rel, visible, fits: place.fits, side: place.side, mode: place.mode,
       ring: place.ring, tail: place.tail, look: place.look, elzi: place.elzi, callout: { top: place.top, left: place.left, width: place.width } };
     const key = JSON.stringify([say, anchorTok, next.hole, next.callout, next.elzi, next.tail, Math.round(visible.top), Math.round(visible.height), doc.w, doc.contentH, headOnly, place.fits]);
-    if (stepRef.current !== step) return; // a newer step took over while this one was measuring
     if (key !== geoKey.current) { geoKey.current = key; setGeo(next); }
   }, [step]);
 
   // A new step draws nothing until it is measured (never the last step's placement for a moment).
-  useLayoutEffect(() => { scrolledFor.current = ""; geoKey.current = ""; rejected.current = new Set(); setGeo(null); measure(); }, [measure, st.index, st.open]);
+  useLayoutEffect(() => { scrolledFor.current = ""; geoKey.current = ""; calloutHRef.current = 0; rejected.current = new Set(); setGeo(null); measure(); }, [measure, st.index, st.open]);
 
   useEffect(() => {
     if (!st.open) return undefined;
@@ -352,7 +399,7 @@ export default function Tour({ steps: given = null, tour: givenTour = null, auto
     const el = calloutRef.current;
     if (!el) return;
     const h = Math.ceil(el.getBoundingClientRect().height);
-    if (h && Math.abs(h - (calloutHRef.current || 0)) > 2) { calloutHRef.current = h; measure(); }
+    if (h && Math.abs(h - (calloutHRef.current || 0)) > 2) { calloutHRef.current = h; geoKey.current = ""; measure(); }
   });
 
   // Focus on every step: Next when the tour is driven by keys (Enter on Replay, arrows, Enter on
@@ -445,7 +492,7 @@ export default function Tour({ steps: given = null, tour: givenTour = null, auto
           <Elzi pose={pose} face={step.face || "idle"} look={geo.look} head={headOnly} size={geo.elziW} />
         </div>
       )}
-      {geo && (
+      {(
         <div
           ref={calloutRef}
           className="nux-callout nux-bubble"
@@ -454,7 +501,7 @@ export default function Tour({ steps: given = null, tour: givenTour = null, auto
           aria-labelledby="nux-title"
           aria-describedby="nux-text"
           data-tail={tail ? tail.dir : undefined}
-          style={{ top: geo.callout.top, left: geo.callout.left, width: geo.callout.width }}
+          style={geo ? { top: geo.callout.top, left: geo.callout.left, width: geo.callout.width } : { top: 0, left: 0, width: Math.min(BUBBLE_MAX_W, Math.max(0, (doc.w || document.documentElement.clientWidth || 320) - 2 * EDGE)), visibility: "hidden" }}
         >
           {tail && <span className={`nux-tail nux-tail-${tail.dir}`} style={tailStyle} aria-hidden="true" />}
           <div className="nux-count">{stepLabel(st.index, st.count)}</div>

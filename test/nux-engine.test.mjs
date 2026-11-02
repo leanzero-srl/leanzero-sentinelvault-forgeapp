@@ -105,4 +105,14 @@ eq("the hello (no target) is judged on the canvas only", judgeAcceptance({ ...ba
   ok("no CogniRunner / Evidence words left in the port", !/CogniRunner|Evidence|eg-nux|getEvidenceTour|cw-btn/.test(all.replace(/\/\*[\s\S]*?\*\//g, "")));
   ok("every control the engine draws carries a test id the action log can name", ["nux-skip", "nux-back", "nux-next", "nux-done", "nux-replay"].every((id) => all.includes(`data-testid="${id}"`)));
 }
+// ── placement from final numbers (LeanZero Management finding aee08928, ported 2026-11-03) ──
+{
+  const t = read("src/ui/nux/Tour.jsx");
+  ok("every measure run has a number and an older run stops (stale)", /runRef\.current/.test(t) && /const stale = \(\) =>/.test(t));
+  ok("the bubble is always in the DOM (hidden until placed) so its real height is read before drawing", /visibility: "hidden"/.test(t) && /probe\.style\.width/.test(t));
+  ok("the scroll into view runs before the first draw, instantly", /behavior: "auto" \}\); \/\/ before anything is drawn/.test(t) && !/behavior: reducedMotion\(\) \? "auto" : "smooth"/.test(t));
+  ok("the target's box is read until it holds still", /for \(let i = 0; i < 8; i\+\+\)/.test(t));
+  ok("the gate watches placement over time", /after its first draw/.test(read("test/nux-geometry.test.mjs")));
+  eq("the canvas margin is the owner's 16 px", T.EDGE, 16);
+}
 report("nux-engine");
