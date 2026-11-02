@@ -14,7 +14,7 @@ export const replayTour = (tour) => {
 export default function TourReplay({ tour, className = "btn-secondary", label = "Tour" }) {
   return (
     <div className="nux-replay-row">
-      <button type="button" className={`${className} nux-replay-btn`} data-testid="nux-replay" data-nux-replay={tour}
+      <button type="button" className={`${className} nux-replay-btn`} data-testid="nux-replay" data-nux="tab-tour" data-nux-replay={tour}
         onClick={() => replayTour(tour)}>{label}</button>
     </div>
   );

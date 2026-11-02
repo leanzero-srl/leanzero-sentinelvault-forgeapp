@@ -10,8 +10,8 @@ import { errText } from "./error-facts.js";
 // steward enable workflow for the space, auto-assign new pages, preview the workflow
 // states, and apply the workflow to existing pages.
 
-const SettingsRow = ({ label, description, children }) => (
-  <div className="settings-row">
+const SettingsRow = ({ label, description, children, nux }) => (
+  <div className="settings-row" data-nux={nux}>
     <div className="settings-row-info">
       <p className="settings-row-label">{label}</p>
       <p className="settings-row-description">{description}</p>
@@ -253,6 +253,7 @@ export const WorkflowApprovalSection = ({ settings, setSettings, def, spaceKey =
   return (
         <Section title="Approval" description={`Who signs off before a page becomes ${enforceName}, and what must be true first.`} testId="wf-section-approval">
           <SettingsRow
+            nux="wf-approval"
             label="Require approval to reach Approved"
             description="Instead of moving straight to Approved, require the people below to sign off first. Until they do, the page stays In Review and shows “Awaiting approval” on its ribbon."
           >
@@ -553,6 +554,7 @@ export default function WorkflowSettingsEditor({ spaceKey = null, defRev = 0, on
         </div>
       )}
       <SettingsRow
+        nux="wf-enable"
         label="Enable document workflow"
         description="Track a review/approval state on pages in this space. When on, pages carry a workflow state shown on the Sentinel Vault ribbon, and approvers and space admins move it along the workflow."
       >

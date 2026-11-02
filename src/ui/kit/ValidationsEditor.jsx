@@ -9,8 +9,8 @@ import { errText } from "./error-facts.js";
 // scope) and the realm console (per-space scope). Self-contained: its own
 // SettingsRow / Toggle / MiniSelect so it doesn't depend on the host surface.
 
-const SettingsRow = ({ label, description, children }) => (
-  <div className="settings-row">
+const SettingsRow = ({ label, description, children, nux }) => (
+  <div className="settings-row" data-nux={nux}>
     <div className="settings-row-info">
       <p className="settings-row-label">{label}</p>
       <p className="settings-row-description">{description}</p>
@@ -225,11 +225,11 @@ export default function ValidationsEditor({ scope = "global", spaceKey = null })
 
   return (
     <div className="settings-panel">
-      <SettingsRow label="Enable content validation" description={scopeNote}>
+      <SettingsRow label="Enable content validation" description={scopeNote} nux="val-enable">
         <Toggle label="Enable content validation" checked={cfg.enabled} onChange={(e) => setCfg((p) => ({ ...p, enabled: e.target.checked }))} />
       </SettingsRow>
 
-      <SettingsRow label="Enforcement" description="How non-compliant pages are handled. Forge runs after a page is saved, so enforcement is applied post-save.">
+      <SettingsRow label="Enforcement" description="How non-compliant pages are handled. Forge runs after a page is saved, so enforcement is applied post-save." nux="val-modes">
         <div className="val-modes">
           <label className="form-checkbox-inline">
             <input type="checkbox" checked={cfg.modes.advisory} onChange={(e) => setCfg((p) => ({ ...p, modes: { ...p.modes, advisory: e.target.checked } }))} />
@@ -262,7 +262,7 @@ export default function ValidationsEditor({ scope = "global", spaceKey = null })
       })()}
 
       <div className="val-rules">
-        <div className="val-rules-head">
+        <div className="val-rules-head" data-nux="val-rules">
           <span className="val-rules-title">Rules</span>
           <button className="btn-secondary" onClick={addRule}>+ Add rule</button>
         </div>
@@ -330,7 +330,7 @@ export default function ValidationsEditor({ scope = "global", spaceKey = null })
 
       {/* Semantic AI Validations (Forge LLM — Runs on Atlassian) */}
       <div className="val-ai">
-        <div className="val-rules-head">
+        <div className="val-rules-head" data-nux="val-ai">
           <span className="val-rules-title">Semantic AI Validations</span>
           <span className="val-ai-badge">Runs on Atlassian</span>
         </div>

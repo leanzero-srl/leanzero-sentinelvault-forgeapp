@@ -1,7 +1,7 @@
 // src/ui/surfaces/realm-console/index.jsx
 
 import { useDeclineReason } from "../../kit/DeclineReason";
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, Suspense, lazy } from "react";
 import { createRoot } from "react-dom/client";
 import { invoke, view, router } from "../../kit/bridge";
 import { enablePaletteSync } from "../../kit/palette-sync";
@@ -26,6 +26,11 @@ import {
   control, readAllEffective, readEffective, formatDefault, formatValue, dependencyState,
 } from "../../../server/capsules/policies/settings-schema.js";
 import { errText } from "../../kit/error-facts.js";
+import TourButton from "../../nux/TourButton.jsx";
+// Elzi's tours load on demand: the engine, her poses and the step tables stay out of the entry bundle.
+const loadTours = () => import("../../nux/ConsoleTours.jsx");
+const PageTour = lazy(() => loadTours().then((m) => ({ default: m.PageTour })));
+const TabTour = lazy(() => loadTours().then((m) => ({ default: m.TabTour })));
 
 /**
  * A settings row drawn from its descriptor: label, one-line effect, "Effective default" and —
@@ -59,7 +64,7 @@ const SchemaRow = ({ desc, values, siteValues, children, testId }) => {
 
 const GroupCard = ({ id, title, text, children }) => (
   <section className="sv-group" data-testid={`sv-group-${id}`}>
-    <header className="sv-group-head">
+    <header className="sv-group-head" data-nux={`grp-${id}`}>
       <h3 className="sv-group-title">{title}</h3>
       <p className="sv-group-text">{text}</p>
     </header>
@@ -1645,7 +1650,7 @@ const RealmPolicyDashboard = () => {
     // harness assert the SERVED frontend matches the deployed backend (`what=version`), the it26 trap.
     <div className="space-admin-container" data-sv-build={BUILD_INFO.gitSha}>
       <div className="space-admin-header">
-        <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "12px" }} data-nux="space-head">
           <img
             src={logo}
             alt="Sentinel Vault Logo"
@@ -1659,9 +1664,11 @@ const RealmPolicyDashboard = () => {
             </p>
           </div>
         </div>
+        <TourButton tour="space" testId="space-tour-btn" className="sv-link" />
       </div>
 
       <LicenseBanner />
+      {(userRole === "steward" || userRole === "user") && <Suspense fallback={null}><PageTour console="space" steward={userRole === "steward"} /></Suspense>}
 
       {message && (
         <div
@@ -1676,18 +1683,18 @@ const RealmPolicyDashboard = () => {
       {/* Tab Navigation */}
       <div className="tab-navigation">
         {userRole === "user" && (
-          <button className={`tab-button ${activeTab === "my-claims" ? "active" : ""}`}
+          <button className={`tab-button ${activeTab === "my-claims" ? "active" : ""}`} data-testid="rc-tab-my-claims"
             onClick={() => switchTab(() => { setActiveTab("my-claims"); fetchMyClaimedFiles(); fetchMyEditRequests(); })}>
             My Sealed Files
           </button>
         )}
         {userRole === "steward" && (
           <>
-            <button className={`tab-button ${activeTab === "locked-attachments" ? "active" : ""}`}
+            <button className={`tab-button ${activeTab === "locked-attachments" ? "active" : ""}`} data-testid="rc-tab-locked-attachments"
               onClick={() => switchTab(() => setActiveTab("locked-attachments"))}>
               Sealed Files
             </button>
-            <button className={`tab-button ${activeTab === "permissions" ? "active" : ""}`}
+            <button className={`tab-button ${activeTab === "permissions" ? "active" : ""}`} data-testid="rc-tab-permissions"
               onClick={() => switchTab(() => { setActiveTab("permissions"); fetchPendingRequests(); })}>
               Access Control{pendingRequests.length > 0 && (
                 <span style={{
@@ -1704,23 +1711,23 @@ const RealmPolicyDashboard = () => {
                 }}>{pendingRequests.length}</span>
               )}
             </button>
-            <button className={`tab-button ${activeTab === "unlock-timeouts" ? "active" : ""}`}
+            <button className={`tab-button ${activeTab === "unlock-timeouts" ? "active" : ""}`} data-testid="rc-tab-unlock-timeouts"
               onClick={() => switchTab(() => setActiveTab("unlock-timeouts"))}>
               Seal Duration
             </button>
-            <button className={`tab-button ${activeTab === "macro-settings" ? "active" : ""}`}
+            <button className={`tab-button ${activeTab === "macro-settings" ? "active" : ""}`} data-testid="rc-tab-macro-settings"
               onClick={() => switchTab(() => setActiveTab("macro-settings"))}>
               Macro
             </button>
-            <button className={`tab-button ${activeTab === "validations" ? "active" : ""}`}
+            <button className={`tab-button ${activeTab === "validations" ? "active" : ""}`} data-testid="rc-tab-validations"
               onClick={() => switchTab(() => setActiveTab("validations"))}>
               Validations
             </button>
-            <button className={`tab-button ${activeTab === "workflow" ? "active" : ""}`}
+            <button className={`tab-button ${activeTab === "workflow" ? "active" : ""}`} data-testid="rc-tab-workflow"
               onClick={() => switchTab(() => setActiveTab("workflow"))}>
               Workflow
             </button>
-            <button className={`tab-button ${activeTab === "activity" ? "active" : ""}`}
+            <button className={`tab-button ${activeTab === "activity" ? "active" : ""}`} data-testid="rc-tab-activity"
               onClick={() => switchTab(() => setActiveTab("activity"))}>
               Activity
             </button>
@@ -1730,12 +1737,13 @@ const RealmPolicyDashboard = () => {
 
       {/* Approvals waiting on the current user (shows on any tab; renders nothing when empty) */}
       <WorkflowInbox />
+      {(userRole === "steward" || userRole === "user") && <Suspense fallback={null}><TabTour key={activeTab} console="space" tab={activeTab} /></Suspense>}
 
       {/* Tab Content */}
       {activeTab === "my-claims" && (
         <div className="tab-content">
           {userRole === "user" && stewardRequestStatus === "none" && !stewardRequestSent && (
-            <div className="steward-request-banner">
+            <div className="steward-request-banner" data-nux="request-admin">
               <div>
                 <strong>Want to manage all sealed files in this space?</strong>
                 <p style={{ margin: "4px 0 0", fontSize: "12px", color: "var(--sv-text-secondary)" }}>
@@ -1878,7 +1886,7 @@ const RealmPolicyDashboard = () => {
 
       {activeTab === "locked-attachments" && userRole === "steward" && (
         <div className="tab-content">
-          <div className="form-section">
+          <div className="form-section" data-nux="sealed-head">
             <h3 className="section-header">
               Sealed Files in {realmName}
             </h3>
@@ -1888,7 +1896,7 @@ const RealmPolicyDashboard = () => {
             </p>
           </div>
 
-          <div className="overlay-toolbar">
+          <div className="overlay-toolbar" data-nux="sealed-toolbar">
             <ColumnPicker
               columns={REALM_COLUMNS}
               visible={realmVisibleColumns}
@@ -2076,7 +2084,7 @@ const RealmPolicyDashboard = () => {
           </div>
 
           {/* Stewards */}
-          <div className="settings-card">
+          <div className="settings-card" data-nux="admins-card">
             <div className="settings-card-header">
               <h3>Space admins</h3>
               <p className="settings-card-desc">

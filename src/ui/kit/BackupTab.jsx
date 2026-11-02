@@ -55,7 +55,7 @@ async function waitForJob(jobId, onTick) {
 
 const Card = ({ id, title, text, children, tone }) => (
   <section className={`sv-group bk-card${tone ? ` bk-${tone}` : ""}`} data-testid={`bk-${id}-card`}>
-    <header className="sv-group-head">
+    <header className="sv-group-head" data-nux={`bk-${id}`}>
       <h3 className="sv-group-title">{title}</h3>
       {text && <p className="sv-group-text">{text}</p>}
     </header>

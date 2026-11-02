@@ -8,6 +8,8 @@
 // (long and short file names, several seal owners, a raw accountId actor, 40 workflow pages,
 // revoked API tokens) so the layouts are exercised the way the live ones are.
 
+import { NUX_TOUR_KEYS } from "../../src/ui/nux/nux-tours.js";
+
 const SHOT = () => (typeof window !== "undefined" && window.__SHOT__) || "panel";
 const NOW = Date.parse("2026-10-07T10:00:00.000Z");
 const future = (h) => new Date(NOW + h * 3600 * 1000).toISOString();
@@ -210,6 +212,22 @@ async function invoke(action, payload = {}) {
     case "get-validation-state": return { state: { state: "passed", violations: [], version: 9 } };
     case "get-ai-findings": return { aiEnabled: false, findings: null };
     case "get-page-activity": return { entries: clone(ACTIVITY.slice(0, 8)), nextCursor: null };
+    // Elzi's tours: a suite names the person's marks in window.__NUX__ ({tours:{<key>:{seen,version,how}}}); one that names none
+    // is answered "every tour seen", so no tour covers a page that is not testing tours. Writes land in window.__NUX_SET__.
+    case "get-nux-tours": {
+      const named = typeof window !== "undefined" && window.__NUX__;
+      const tours = {};
+      for (const k of NUX_TOUR_KEYS) tours[k] = named ? { seen: false, version: 0, ...((window.__NUX__.tours || {})[k] || {}) } : { seen: true, version: 99, how: "done" };
+      return { success: true, tours };
+    }
+    case "set-nux-tour": {
+      if (typeof window !== "undefined") {
+        window.__NUX_SET__ = [...(window.__NUX_SET__ || []), { tour: payload.tour, how: payload.how, version: payload.version }];
+        if (window.__NUX__) window.__NUX__ = { tours: { ...(window.__NUX__.tours || {}), [payload.tour]: { seen: true, version: payload.version, how: payload.how } } };
+      }
+      return { success: true };
+    }
+    case "reset-nux-tours": if (typeof window !== "undefined") { window.__NUX__ = { tours: {} }; window.__NUX_SET__ = [...(window.__NUX_SET__ || []), { reset: true }]; } return { success: true };
     // space console
     case "identify-realm": return { key: "WFH", name: "WORK FOR HIRE", id: "s1" };
     case "check-user-role": return { role: SHOT() === "realm-user" ? "user" : "steward", canForceRelease: true };

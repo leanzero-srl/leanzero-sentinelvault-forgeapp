@@ -57,8 +57,10 @@ function shotConfig(name, entry, outputDir, cssFile) {
 
 // Output under the (un-shipped) harness dir so build-shot bundles never get
 // bundled into the deployed Forge app.
-const OUT = "static/_screenshot-harness/shots-responsive";
-module.exports = [
+// SV_SHOT_OUT / SV_SHOT_ONLY: another output folder and a subset of the surfaces, so two test files can build side by side
+const OUT = process.env.SV_SHOT_OUT || "static/_screenshot-harness/shots-responsive";
+const ONLY = (process.env.SV_SHOT_ONLY || "").split(",").filter(Boolean);
+const ALL = [
   shotConfig("inline-panel",    "./src/ui/surfaces/inline-panel/index.jsx",    `${OUT}/inline-panel`,    "inline-panel.css"),
   shotConfig("steward-console", "./src/ui/surfaces/steward-console/index.jsx", `${OUT}/steward-console`, "steward-console.css"),
   shotConfig("realm-console",   "./src/ui/surfaces/realm-console/index.jsx",   `${OUT}/realm-console`,   "realm-console.css"),
@@ -68,3 +70,4 @@ module.exports = [
   shotConfig("page-details",    "./src/ui/surfaces/page-details/index.jsx",    `${OUT}/page-details`,    "page-details.css"),
   shotConfig("my-work",         "./src/ui/surfaces/my-work/index.jsx",         `${OUT}/my-work`,         "my-work.css"),
 ];
+module.exports = ONLY.length ? ALL.filter((c) => ONLY.some((n) => String(c.output.path).endsWith(`/${n}`))) : ALL;

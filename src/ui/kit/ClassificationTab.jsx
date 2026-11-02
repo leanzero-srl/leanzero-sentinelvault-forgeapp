@@ -414,7 +414,7 @@ export default function ClassificationTab({ onEnabledChange } = {}) {
       {/* CLS-1 + P8: the feature's state is ALWAYS the first thing on this tab, with ONE switch
           that works both ways. Off: everything below is dimmed but kept — the levels and defaults
           come back exactly as they were the moment it is on. */}
-      <div className={`cls-status ${state.enabled ? "is-on" : "is-off"}`} role="status" data-testid={state.enabled ? "cls-on-banner" : "cls-off-banner"}>
+      <div className={`cls-status ${state.enabled ? "is-on" : "is-off"}`} role="status" data-nux="cls-status" data-testid={state.enabled ? "cls-on-banner" : "cls-off-banner"}>
         <div className="cls-status-text">
           {state.enabled
             ? <><strong>Classification is on.</strong> Every page shows its level under its title and in the banner at the top — “Unclassified” until its space or the page itself sets one.</>

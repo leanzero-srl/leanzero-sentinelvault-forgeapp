@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from "react";
+import React, { useState, useEffect, useMemo, useCallback, Suspense, lazy } from "react";
 import { createRoot } from "react-dom/client";
 import { invoke, view, router } from "../../kit/bridge";
 import { enablePaletteSync } from "../../kit/palette-sync";
@@ -14,6 +14,11 @@ import Dialog, { ConfirmDialog } from "../../kit/Dialog";
 import { formatDurationHours } from "../../kit/format-duration";
 import logo from "../../assets/icons/icon.png";
 import { BUILD_INFO } from "../../../build-info.js";
+import TourButton from "../../nux/TourButton.jsx";
+// Elzi's tours load on demand: the engine, her poses and the step tables stay out of the entry bundle.
+const loadTours = () => import("../../nux/ConsoleTours.jsx");
+const PageTour = lazy(() => loadTours().then((m) => ({ default: m.PageTour })));
+const TabTour = lazy(() => loadTours().then((m) => ({ default: m.TabTour })));
 // P2 (UX review 2026-09-14 §3): the console renders FROM the schema — keys, labels, one-line
 // descriptions, engine defaults and the dependency table all live in settings-schema.js, which
 // reads its defaults from the same baseline.js the engine reads. No second copy here.
@@ -145,7 +150,7 @@ export const ControlRow = ({ desc, values, siteValues, onChange, children, siteD
 /** A group card: solid header (name + one line), then its rows. */
 export const GroupCard = ({ group, children, extra }) => (
   <section className="sv-group" data-testid={`sv-group-${group.id}`}>
-    <header className="sv-group-head">
+    <header className="sv-group-head" data-nux={`grp-${group.id}`}>
       <h3 className="sv-group-title">{group.name}</h3>
       <p className="sv-group-text">{group.text}</p>
     </header>
@@ -326,7 +331,7 @@ const CopyButton = ({ text, label = "Copy", testId, className = "btn-secondary a
 
 const ApiCard = ({ id, title, text, children }) => (
   <section className="sv-group api-card" data-testid={`api-${id}-card`}>
-    <header className="sv-group-head">
+    <header className="sv-group-head" data-nux={`api-${id}`}>
       <h3 className="sv-group-title">{title}</h3>
       <p className="sv-group-text">{text}</p>
     </header>
@@ -837,7 +842,7 @@ const GlobalPolicyEditor = () => {
     // harness assert the SERVED frontend matches the deployed backend (`what=version`), the it26 trap.
     <div className="admin-container" data-sv-build={BUILD_INFO.gitSha}>
       <div className="admin-header admin-header-row">
-        <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "12px" }} data-nux="site-head">
           <img src={logo} alt="Sentinel Vault Logo" style={{ height: "32px", width: "auto" }} />
           <div>
             <h1 className="admin-title">Sentinel Vault — Site settings <WhatsNew /></h1>
@@ -848,6 +853,7 @@ const GlobalPolicyEditor = () => {
         </div>
         {/* Marketplace: in-product documentation and support links (2026-10-04). */}
         <nav className="sv-help-links" aria-label="Help">
+          <TourButton tour="site" testId="site-tour-btn" className="sv-help-link sv-tour-link" />
           {HELP_LINKS.map((l) => (
             <a key={l.href} className="sv-help-link" href={l.href} target="_blank" rel="noreferrer" data-testid={l.testId}
               onClick={(e) => { e.preventDefault(); try { router.open(l.href); } catch (_) { window.open(l.href, "_blank", "noopener"); } }}>
@@ -859,6 +865,7 @@ const GlobalPolicyEditor = () => {
 
       <LicenseBanner />
       <RestoreBanner onChanged={reloadSettings} />
+      {!showSetup && <Suspense fallback={null}><PageTour console="site" /></Suspense>}
 
       {message && (
         <div className={messageType === "success" ? "alert-success" : "alert-error"}>{message}</div>
@@ -897,6 +904,7 @@ const GlobalPolicyEditor = () => {
 
           {/* Tab Content */}
           <div className="tab-content">
+            <Suspense fallback={null}><TabTour key={activeTab} console="site" tab={activeTab} /></Suspense>
             {activeTab === "settings" && (
               <div className="settings-panel sv-groups">
                 {GROUPS.map((g) => (
