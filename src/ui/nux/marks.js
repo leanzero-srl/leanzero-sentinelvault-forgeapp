@@ -9,7 +9,7 @@
  * One tour on screen at a time: holdOpen / releaseOpen / openTourNow (a plain module flag, so two tour
  * instances in one frame never draw two dims).
  */
-import { invoke } from "@forge/bridge";
+import { invoke } from "../kit/bridge.js";
 
 let read = null;
 let cache = null;

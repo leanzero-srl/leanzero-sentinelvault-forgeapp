@@ -19,7 +19,7 @@
  */
 import React, { useCallback, useEffect, useLayoutEffect, useReducer, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { invoke } from "@forge/bridge";
+import { invoke } from "../kit/bridge.js";
 import Elzi from "./Elzi.jsx";
 import TourReplay from "./TourReplay.jsx";
 import { injectTourStyles } from "./tourStyles.js";
