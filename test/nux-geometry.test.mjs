@@ -142,7 +142,15 @@ async function scenario({ con, view, theme }) {
       seen.push(cur.step);
       if (process.env.SV_NUX_TRACE) console.log(`  ${tag} ${label}/${cur.step} ${fails.length ? "FAIL " + fails.join("; ") : "ok"}`);
       const last = await page.evaluate(() => !!document.querySelector('[data-testid="nux-done"]'));
-      await page.locator(last ? '[data-testid="nux-done"]' : '[data-testid="nux-next"]').click({ timeout: 4000 });
+      const btnSel = last ? '[data-testid="nux-done"]' : '[data-testid="nux-next"]';
+      try { await page.locator(btnSel).click({ timeout: 4000 }); } catch (e) {
+        // a slow machine (this suite runs niced, beside other jobs) can miss 4 s; a REAL obstruction is still caught: say what sits
+        // on the button, then try once more with more time. A second miss is a failure like before.
+        const onTop = await page.evaluate((sel) => { const b = document.querySelector(sel); if (!b) return "no button"; const r = b.getBoundingClientRect(); const t = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2); return t === b || (t && b.contains(t)) ? "button on top" : `covered by ${t ? t.className || t.tagName : "nothing"}`; }, btnSel);
+        console.log(`  SLOW CLICK ${tag} ${label}/${cur.step}: ${onTop}`);
+        if (onTop !== "button on top") findings.push(`${tag}: ${label}/${cur.step}: the ${last ? "Done" : "Next"} button is ${onTop}`);
+        await page.locator(btnSel).click({ timeout: 12000 });
+      }
       await sleep(150);
     }
     return seen;
