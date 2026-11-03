@@ -476,7 +476,7 @@ export default function ClassificationTab({ onEnabledChange } = {}) {
       </section>
 
       <section className="cls-section">
-        <div className="cls-section-head">
+        <div className="cls-section-head" data-nux="cls-spaces-head">
           <h4 className="cls-section-title">Space defaults</h4>
           <input className="form-input cls-filter" placeholder="Filter spaces…" value={filter} onChange={(e) => setFilter(e.target.value)} aria-label="Filter spaces" />
           <label className="cls-personal-toggle"><label className="form-checkbox"><input type="checkbox" checked={!hidePersonal} onChange={(e) => setHidePersonal(!e.target.checked)} aria-label="Show personal spaces" /></label><span>Show personal spaces</span></label>
@@ -496,7 +496,7 @@ export default function ClassificationTab({ onEnabledChange } = {}) {
         {state.spaces.length === 0 ? (
           <p className="settings-row-description" data-testid="cls-spaces-empty">{state.reason === "Not authorized" ? "You do not administer any space." : "No spaces found."}</p>
         ) : (
-          <div className="cls-table-wrap" data-nux="cls-spaces-wrap">
+          <div className="cls-table-wrap">
             <table className="cls-table" data-testid="cls-spaces-table">
               <thead>
                 <tr>

@@ -44,7 +44,7 @@ export const SITE_STEPS = Object.freeze({
       "Classification shows a level, like Public or Confidential, under every page title. It starts off. Turning it off later keeps every level and default, so nothing is lost."),
     step("levels", ["cls-levels-editor", "@cls-provider-badge"], "happy", "The levels",
       "Each level has a rank, and rank 1 is the least sensitive. Rename them, change their colour, add your own, or import them from Jira Service Management Assets. Or use your site's own Confluence levels instead."),
-    step("spaces", ["cls-spaces-wrap", "@cls-spaces-empty"], "look", "A default per space",
+    step("spaces", ["cls-spaces-head", "@cls-spaces-empty"], "look", "A default per space",
       "A space can have a default level, so its pages start there. A page's own level wins over its space's. Lowering a level always asks for a reason, and the reason goes in the activity log."),
   ],
   api: [
