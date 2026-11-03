@@ -111,7 +111,8 @@ eq("the hello (no target) is judged on the canvas only", judgeAcceptance({ ...ba
   ok("every measure run has a number and an older run stops (stale)", /runRef\.current/.test(t) && /const stale = \(\) =>/.test(t));
   ok("the bubble is always in the DOM (hidden until placed) so its real height is read before drawing", /visibility: "hidden"/.test(t) && /probe\.style\.width/.test(t));
   ok("the scroll into view runs before the first draw, instantly", /behavior: "auto" \}\); \/\/ before anything is drawn/.test(t) && !/behavior: reducedMotion\(\) \? "auto" : "smooth"/.test(t));
-  ok("the target's box is read until it holds still", /for \(let i = 0; i < 8; i\+\+\)/.test(t));
+  ok("the target's box and the page height are read until they hold still", /for \(let i = 0; i < 24; i\+\+\)/.test(t) && /docBox\(\)\.contentH\]/.test(t));
+  ok("one measure at a time: a trigger during a run waits for it, a new step supersedes it", /inFlight\.current && force !== true/.test(t) && /measure\(true\)/.test(t));
   ok("the gate watches placement over time", /after its first draw/.test(read("test/nux-geometry.test.mjs")));
   eq("the canvas margin is the owner's 16 px", T.EDGE, 16);
 }

@@ -281,7 +281,7 @@ export default function Tour({ steps: given = null, tour: givenTour = null, auto
        - the scroll that brings the step into view ran after the first draw. It now runs BEFORE: scroll, wait for fonts and
          two frames, read the visible window again, then place;
        - the target's box was read once. It is read again a frame later until it holds still (up to 8 frames). */
-  const measure = useCallback(async () => {
+  const measureNow = useCallback(async () => {
     if (!step) return;
     const run = ++runRef.current;
     const stale = () => run !== runRef.current || stepRef.current !== step;
@@ -387,9 +387,25 @@ export default function Tour({ steps: given = null, tour: givenTour = null, auto
     const key = JSON.stringify([say, anchorTok, next.hole, next.callout, next.elzi, next.tail, Math.round(visible.top), Math.round(visible.height), doc.w, doc.contentH, headOnly, place.fits]);
     if (key !== geoKey.current) { geoKey.current = key; setGeo(next); }
   }, [step]);
+  /* ONE MEASURE AT A TIME (2026-11-03, seen under load: the 500 ms timer, the ResizeObserver and scroll each started a new run,
+     and a run that took longer than 500 ms was always made stale by the next one, so a step was never drawn). A trigger while a
+     run is in flight only asks for one more run after it; a new step (force) supersedes the old run at once. */
+  const inFlight = useRef(0);
+  const again = useRef(false);
+  const measure = useCallback((force = false) => {
+    if (inFlight.current && force !== true) { again.current = true; return; }
+    const p = measureNow();
+    const mine = runRef.current;
+    inFlight.current = mine || -1;
+    Promise.resolve(p).catch(() => {}).finally(() => {
+      if (inFlight.current !== (mine || -1)) return;
+      inFlight.current = 0;
+      if (again.current) { again.current = false; measure(); }
+    });
+  }, [measureNow]);
 
   // A new step draws nothing until it is measured (never the last step's placement for a moment).
-  useLayoutEffect(() => { scrolledFor.current = ""; geoKey.current = ""; calloutHRef.current = 0; rejected.current = new Set(); setGeo(null); measure(); }, [measure, st.index, st.open]);
+  useLayoutEffect(() => { scrolledFor.current = ""; geoKey.current = ""; calloutHRef.current = 0; rejected.current = new Set(); setGeo(null); again.current = false; measure(true); }, [measure, st.index, st.open]);
 
   // the tour is over (or this component goes): the centring block goes with it
   useEffect(() => { if (!st.open) dropScrollBlock(); }, [st.open]);
