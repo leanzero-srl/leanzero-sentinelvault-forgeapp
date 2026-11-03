@@ -40,6 +40,9 @@ try {
   // origin is a throwaway bare repository, NEVER the checkout under test: the push cases below really push.
   const origin = path.join(tmp, "origin.git");
   execFileSync("git", ["init", "-q", "--bare", origin], { stdio: "ignore" });
+  // CI checks out a SHALLOW clone (so the clone above is shallow too); a bare repo refuses a push that needs new
+  // shallow roots ("shallow update not allowed") unless told it may take them.
+  execFileSync("git", ["-C", origin, "config", "receive.shallowUpdate", "true"], { stdio: "ignore" });
   git("remote", "set-url", "origin", origin);
   // The clone is on a branch whatever the checkout under test is: CI runs a tag on a DETACHED HEAD, and a detached
   // clone reads to the door as a rollback from a tag, so the note-writing cases would fail only there (v8.13.0, 2026-10-21).
