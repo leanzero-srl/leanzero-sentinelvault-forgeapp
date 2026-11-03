@@ -51,7 +51,8 @@
     "8.21.0": "11120",
     "8.22.0": "11187",
     "8.23.0": "11189",
-    "8.24.0": "11224"
+    "8.24.0": "11224",
+    "8.25.0": "11225"
   },
   "issues": {
     "02dc09e3ae3c6c5a": {
@@ -681,7 +682,7 @@
     ],
     "assigned": true
   },
-  "updatedAt": "2026-11-03T09:02:24.340Z",
+  "updatedAt": "2026-11-03T09:26:09.578Z",
   "projectId": "10278",
   "issueTypeScheme": {
     "id": "10636",
@@ -796,6 +797,11 @@
       "version": "8.21.0",
       "into": "known-backup-busy-second-page",
       "key": "SVT-153"
+    },
+    "ae7dcf4e96b7c5e5": {
+      "version": "8.25.0",
+      "into": "known-reset-tours-waits-for-reload",
+      "key": "SVT-158"
     }
   },
   "public": {
@@ -805,7 +811,7 @@
     "undo": "DELETE /rest/api/3/permissionscheme/10265/permission/11703",
     "proof": {
       "GET /rest/api/3/issue/SVT-1": 200,
-      "GET /rest/api/3/issue/SVT-157": 200,
+      "GET /rest/api/3/issue/SVT-158": 200,
       "GET /rest/api/3/issue/ATLAS-2361": 404,
       "GET /rest/api/3/issue/CRBAK-1": 404,
       "GET /rest/api/3/issue/CRBAK2-1": 404,
@@ -817,7 +823,7 @@
       "GET /rest/api/3/issue/DACC-11": 404,
       "GET /rest/api/3/issue/DEMO-1": 404,
       "GET /rest/api/3/issue/DESIGN-1225": 404,
-      "GET /rest/api/3/issue/FSD-38": 404,
+      "GET /rest/api/3/issue/FSD-373": 404,
       "GET /rest/api/3/issue/GROWTH-1226": 404,
       "GET /rest/api/3/issue/GUARD-102": 404,
       "GET /rest/api/3/issue/HELIOS-1724": 404,
@@ -834,24 +840,24 @@
       "GET /rest/api/3/issue/SEC-1225": 404,
       "GET /rest/api/3/issue/VOY-1992": 404,
       "anonymous site-wide search (bounded, all pages): issues per project": {
-        "SVT": 153,
+        "SVT": 154,
         "LZMT": 383,
         "CRT": 548,
         "CST": 45
       },
-      "anonymous listing of SVT": "153 issues (receipt holds 153; 已完成 122, Backlog 31)",
+      "anonymous listing of SVT": "154 issues (receipt holds 154; 已完成 123, Backlog 31)",
       "other projects whose scheme lets anyone browse": "CRT,CST,LZMT",
       "public trackers (allowlist)": "CRT,SVT,LZMT,CST",
       "negative control": "13 fake broken answers, each failed the verdict",
       "GET /jira/software/c/projects/SVT/issues": 200
     },
-    "provenAt": "2026-11-03T08:11:22.632Z",
+    "provenAt": "2026-11-03T09:26:09.578Z",
     "proofFailures": []
   },
   "verified": {
-    "through": "8.24.0",
-    "at": "2026-11-03T08:09:54.442Z",
-    "issues": 153,
+    "through": "8.25.0",
+    "at": "2026-11-03T09:24:52.820Z",
+    "issues": 154,
     "failures": 0
   }
 }
