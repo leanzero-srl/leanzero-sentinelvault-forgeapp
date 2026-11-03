@@ -45,3 +45,19 @@ full-page dim layer is the wrong tool); My work. The consoles are where a first-
   light and dark. Owner acceptance (2026-11-02): Elzi and the bubble inside the canvas, 16 px margin, never on the target, target on top at its
   centre, no clipping ancestor, text inside the bubble, buttons visible. Plus marks, replay, Esc, Tab trap, straight corners, no native dialogs.
 - Then: a cold reader (fresh agent, bubbles and screens only), two design critics on screenshots at 1440 and 390 light and dark.
+
+## The 310 px frame (informational, stated honestly)
+310x700 is the live frame on a 390 px phone, outside the owner's gate (1440x900, 390x844, 1440x700 and long content, which must all pass).
+Three steps of the space Permissions tab (admins, class, quiet) point at cards that are taller than the 700 px window at 310 px wide
+(the admins card is 657 px). Ring, bubble and Elzi cannot all fit beside such a target, and the engine says so itself
+(data-nux-fits="false"); the bubble then sits below the card and the page scrolls to it. The geometry test prints these as INFO lines
+(only at 310x700, and only when the engine reported it cannot fit); every other 310 step must pass like the gate cases.
+
+## Causes found by the geometry gate (2026-11-03)
+- A step slid 16-17 px after its first draw: the block scrolled into view to centre a step was removed 800 ms later, and the page,
+  sized on a guessed bubble height, shrank; the browser clamped the scroll. Now every centring block stays until the tour ends and the
+  room under the content only grows during a tour.
+- At 310 px the hidden bubble used to read its height without the small-frame size class, so the drawn bubble was 23 px shorter and Elzi moved.
+- The classification "spaces" step pointed at a table wider than a phone frame (it scrolls sideways inside its own box); it now points at the
+  Space defaults heading row.
+- The hello sat over the header title at 1440; it now sits in the middle of the visible window.
