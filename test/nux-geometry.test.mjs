@@ -105,7 +105,7 @@ async function scenario({ con, view, theme }) {
         const id = `${n.getAttribute("data-nux-tour")}/${n.getAttribute("data-nux-step")}`;
         const key = [k(b), k(e), k(r), k(t), Math.round(scrollY)].join("|");
         const f = (window.__frames[id] = window.__frames[id] || { first: key, moves: 0, last: key });
-        if (key !== f.last) { f.moves++; f.last = key; }
+        if (key !== f.last) { f.moves++; (f.log = f.log || []).push(f.last + " => " + key + " @" + Math.round(performance.now())); f.last = key; }
       }
       requestAnimationFrame(watch);
     };
@@ -127,6 +127,7 @@ async function scenario({ con, view, theme }) {
       if (expectTour && cur.tour !== expectTour) { findings.push(`${tag}: ${label}: expected tour ${expectTour}, on screen ${cur.tour}`); break; }
       if (!(await settled(page))) findings.push(`${tag}: ${label}/${cur.step}: the step never stopped moving`);
       const moved = await page.evaluate((id) => { const f = (window.__frames || {})[id]; return f ? f.moves : 0; }, `${cur.tour}/${cur.step}`);
+      if (moved && process.env.SV_NUX_TRACE) console.log("   MOVES " + JSON.stringify(await page.evaluate((id) => window.__frames[id].log, `${cur.tour}/${cur.step}`)));
       const g = await tourRects(page);
       if (moved) findings.push(`${tag}: ${label}/${cur.step}: the step moved ${moved} time(s) after its first draw (placement must be final when drawn)`);
       const fails = [...new Set([...judge(g, vis), ...judgeOwner(g, vis)])];
