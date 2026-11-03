@@ -76,7 +76,9 @@ export const tourRects = (frame) => frame.evaluate(() => {
   const ezR = ez ? ez.getBoundingClientRect() : null;
   const elziSize = ezR ? { wantW, wantH, w: ezR.width, h: ezR.height } : null;
   const btns = [...document.querySelectorAll(".nux-btns button")].map(r);
-  const textFit = bub ? { sw: bub.scrollWidth, cw: bub.clientWidth, sh: bub.scrollHeight, ch: bub.clientHeight } : null;
+  // the tail is decoration that leaves the box by design (a tail pointing down adds its length to scrollHeight): measure what the box CONTAINS
+  const contentBottom = bub ? Math.max(0, ...[...bub.children].filter((c) => !c.classList.contains("nux-tail")).map((c) => c.getBoundingClientRect().bottom)) - bub.getBoundingClientRect().top - bub.clientTop + parseFloat(getComputedStyle(bub).paddingBottom) : 0;
+  const textFit = bub ? { sw: bub.scrollWidth, cw: bub.clientWidth, sh: Math.ceil(Math.min(bub.scrollHeight, contentBottom)), ch: bub.clientHeight } : null;
   return { step: n && n.getAttribute("data-nux-step"), anchor, fits: n && n.getAttribute("data-nux-fits"), side: n && n.getAttribute("data-nux-side"), mode: n && n.getAttribute("data-nux-mode"),
     variant: ez && ez.getAttribute("data-variant"), face: ez && ez.getAttribute("data-face"), pose: ez && ez.getAttribute("data-pose"),
     target, ring, ringW, textBox, hole, tail: dir ? { dir, tip } : null,

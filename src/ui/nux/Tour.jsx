@@ -350,17 +350,19 @@ export default function Tour({ steps: given = null, tour: givenTour = null, auto
         doc = docBox();
       }
     }
-    // the target's box, read until it holds still (a scroll Jira finishes late, a font that lands)
-    if (el0) {
-      let prev = null;
-      for (let i = 0; i < 8; i++) {
+    // the target's box AND the page's height, read until both hold still for three reads in a row (a scroll Jira finishes
+    // late, a font that lands, content that settles after the first paint: nothing is drawn on a page that is still moving)
+    {
+      let prev = null, same = 0;
+      for (let i = 0; i < 24; i++) {
         const e = firstEl();
-        const r = e ? JSON.stringify(rectOf(e)) : null;
-        if (r && r === prev) break;
+        const r = JSON.stringify([e ? rectOf(e) : null, docBox().contentH]);
+        if (r === prev) { same += 1; if (same >= 2) break; } else same = 0;
         prev = r;
         await frame();
         if (stale()) return;
       }
+      doc = docBox();
     }
     // the bubble gets the width the placement chose, and its real height decides the placement (3 rounds)
     let bubbleH = calloutHRef.current || 170;
