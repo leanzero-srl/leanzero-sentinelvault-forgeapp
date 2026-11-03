@@ -13,7 +13,7 @@
 //   node scripts/public-tracker/credentials.mjs   # prints the file it would use (exit 0), or why not and the fix (exit 1)
 import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 export const trackerCredentialCandidates = (home = homedir()) => [
@@ -44,7 +44,8 @@ const FIX = "Put the leanzero-demo harness admin's JIRA_ADMIN_EMAIL and JIRA_API
 
 /** { path, email, token } or a PUBLIC_TRACKER_CREDENTIALS_MISSING error naming every place looked and the fix. */
 export function resolveTrackerCredentials({ env = process.env, home = homedir(), exists = existsSync, read = (p) => readFileSync(p, "utf8") } = {}) {
-  const named = env.PUBLIC_TRACKER_ENV;
+  // Absolute, so the door's check and the tracker step (run from the repo root) read the same file.
+  const named = env.PUBLIC_TRACKER_ENV ? resolve(env.PUBLIC_TRACKER_ENV) : "";
   if (named) {
     if (!exists(named)) throw new Error(`PUBLIC_TRACKER_CREDENTIALS_MISSING: PUBLIC_TRACKER_ENV=${named} does not exist. ${FIX}`);
     const keys = keysOf(read, named);

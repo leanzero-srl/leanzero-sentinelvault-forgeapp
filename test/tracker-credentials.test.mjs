@@ -34,6 +34,8 @@ ok("PUBLIC_TRACKER_ENV set: only that file, and a missing one is named",
   /PUBLIC_TRACKER_ENV=\/nowhere\/\.env does not exist/.test(msgOf(() => resolveTrackerCredentials({ env: { PUBLIC_TRACKER_ENV: "/nowhere/.env" }, home, ...fsWith({ [first]: good }) }))));
 ok("PUBLIC_TRACKER_ENV set to a file without both keys: refused",
   /lacks JIRA_ADMIN_EMAIL and JIRA_API_TOKEN/.test(msgOf(() => resolveTrackerCredentials({ env: { PUBLIC_TRACKER_ENV: "/x/.env" }, home, ...fsWith({ "/x/.env": "JIRA_ADMIN_EMAIL=a\n" }) }))));
+const rel = path.resolve("rel-dir/.env");
+eq("a relative PUBLIC_TRACKER_ENV is made absolute (the tracker step runs from the repo root)", resolveTrackerCredentials({ env: { PUBLIC_TRACKER_ENV: "rel-dir/.env" }, home, ...fsWith({ [rel]: good }) }).path, rel);
 const none = msgOf(() => resolveTrackerCredentials({ env: {}, home, ...fsWith({}) }));
 ok("nothing found: PUBLIC_TRACKER_CREDENTIALS_MISSING, every place looked and the exact fix",
   /^PUBLIC_TRACKER_CREDENTIALS_MISSING/.test(none) && trackerCredentialCandidates(home).every((c) => none.includes(c)) && none.includes("export PUBLIC_TRACKER_ENV="));

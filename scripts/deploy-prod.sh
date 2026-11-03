@@ -168,13 +168,16 @@ fi
 # scripts/public-tracker/credentials.mjs finds them (PUBLIC_TRACKER_ENV, else the harness .env under its known checkout
 # names) and the resolved file is exported, so the tracker step after the deploy reads the same one. A dry run checks it
 # too. Guards: test/tracker-credentials.test.mjs, test/deploy-door.test.mjs.
-CRED_RC=0
-CRED_OUT="$(node scripts/public-tracker/credentials.mjs 2>&1)" || CRED_RC=$?
-if [[ $CRED_RC -ne 0 || -z "$CRED_OUT" ]]; then
+# stdout is the path only; stderr (the reason, or any node warning) is kept apart so it can never become the path.
+CRED_RC=0; CRED_ERR="$(mktemp)"
+CRED_OUT="$(node scripts/public-tracker/credentials.mjs 2>"$CRED_ERR")" || CRED_RC=$?
+if [[ $CRED_RC -ne 0 || -z "$CRED_OUT" || ! -f "$CRED_OUT" ]]; then
   echo "ABORT: the public tracker's credentials were not found, so its step after the deploy would fail. Nothing was written, built or deployed."
-  echo "  ${CRED_OUT}"
+  echo "  $(cat "$CRED_ERR")${CRED_OUT:+ (lookup printed: ${CRED_OUT})}"
+  rm -f "$CRED_ERR"
   exit 1
 fi
+rm -f "$CRED_ERR"
 export PUBLIC_TRACKER_ENV="$CRED_OUT"
 echo "==> Public tracker credentials: ${PUBLIC_TRACKER_ENV}"
 
