@@ -496,7 +496,7 @@ export default function ClassificationTab({ onEnabledChange } = {}) {
         {state.spaces.length === 0 ? (
           <p className="settings-row-description" data-testid="cls-spaces-empty">{state.reason === "Not authorized" ? "You do not administer any space." : "No spaces found."}</p>
         ) : (
-          <div className="cls-table-wrap">
+          <div className="cls-table-wrap" data-nux="cls-spaces-wrap">
             <table className="cls-table" data-testid="cls-spaces-table">
               <thead>
                 <tr>

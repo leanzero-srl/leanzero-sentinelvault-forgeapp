@@ -315,7 +315,10 @@ export const placeTour = ({ target, visible, frameW, bubbleH, elziW, elziH, rese
       ring: ringRect(target, frameW), top: bubble.top, left: bubble.left, width: bubbleW };
   };
   if (!target) {
-    const top = visible.top + EDGE * 2;
+    // Elzi's hello has nothing to point at: it sits in the middle of what is visible, so it never covers the page's
+    // header (owner look 2026-11-03: it hid the title at 1440). Never closer than 2 x EDGE to the top.
+    const blockH = beside ? Math.max(bubbleH, elziH) : bubbleH + ELZI_GAP + elziH;
+    const top = Math.round(visible.top + Math.max(EDGE * 2, (visible.height - reserveBottom - blockH) / 2));
     const eTop = beside ? top + Math.max(0, bubbleH - elziH) : top + bubbleH + ELZI_GAP;
     const bottom = Math.max(top + bubbleH, eTop + elziH);
     return pack("center", top, eTop, { top, bottom }, bottom - top + 4 * EDGE <= visible.height);
