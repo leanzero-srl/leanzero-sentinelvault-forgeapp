@@ -115,4 +115,22 @@ eq("the hello (no target) is judged on the canvas only", judgeAcceptance({ ...ba
   ok("the gate watches placement over time", /after its first draw/.test(read("test/nux-geometry.test.mjs")));
   eq("the canvas margin is the owner's 16 px", T.EDGE, 16);
 }
+
+// ── "Show all tours again" (the reset control) ──
+{
+  const { resetAllTours } = await import("../src/ui/nux/reset-tours.js");
+  const mkStore = () => { const m = new Map([[`${NUX_AUTO_PREFIX}site:v2`, "1"], ["other", "1"]]); return { m, get length() { return m.size; }, key: (i) => [...m.keys()][i], removeItem: (k) => m.delete(k) }; };
+  const sess = mkStore(), loc = mkStore(); let forgot = 0, asked = [];
+  const r = await resetAllTours({ call: async (a) => { asked.push(a); return { success: true }; }, session: sess, local: loc, forget: () => { forgot++; } });
+  eq("reset: asks the one reset action, then forgets the marks", [r, asked, forgot], [{ ok: true }, ["reset-nux-tours"], 1]);
+  eq("reset: clears this app's notes in the tab and in the browser, nothing else", [[...sess.m.keys()], [...loc.m.keys()]], [["other"], ["other"]]);
+  const s2 = mkStore(); forgot = 0;
+  const bad = await resetAllTours({ call: async () => ({ success: false }), session: s2, local: mkStore(), forget: () => { forgot++; } });
+  eq("reset: a failed stored reset clears nothing locally and says so", [bad, s2.m.size, forgot], [{ ok: false }, 2, 0]);
+  const thrown = await resetAllTours({ call: async () => { throw new Error("x"); }, session: s2, local: mkStore(), forget: () => { forgot++; } });
+  eq("reset: a throwing call is a failure, not a crash", thrown, { ok: false });
+  const dlg = read("src/ui/nux/ResetTours.jsx");
+  ok("reset: the control asks in the app's own dialog, never a native confirm", /from "..\/kit\/Dialog.jsx"/.test(dlg) && !/window\.confirm|confirm\(/.test(dlg));
+  ok("reset: both consoles carry the control", /<ResetTours/.test(read("src/ui/surfaces/steward-console/index.jsx")) && /<ResetTours/.test(read("src/ui/surfaces/realm-console/index.jsx")));
+}
 report("nux-engine");

@@ -27,6 +27,7 @@ import {
 } from "../../../server/capsules/policies/settings-schema.js";
 import { errText } from "../../kit/error-facts.js";
 import TourButton from "../../nux/TourButton.jsx";
+import ResetTours from "../../nux/ResetTours.jsx";
 // Elzi's tours load on demand: the engine, her poses and the step tables stay out of the entry bundle.
 const loadTours = () => import("../../nux/ConsoleTours.jsx");
 const PageTour = lazy(() => loadTours().then((m) => ({ default: m.PageTour })));
@@ -1664,7 +1665,10 @@ const RealmPolicyDashboard = () => {
             </p>
           </div>
         </div>
-        <TourButton tour="space" testId="space-tour-btn" className="sv-link" />
+        <span style={{ display: "flex", flexWrap: "wrap", gap: "4px 16px", alignItems: "center" }}>
+          <TourButton tour="space" testId="space-tour-btn" className="sv-link" />
+          <ResetTours className="sv-link" />
+        </span>
       </div>
 
       <LicenseBanner />

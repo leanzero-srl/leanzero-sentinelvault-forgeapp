@@ -15,6 +15,7 @@ import { formatDurationHours } from "../../kit/format-duration";
 import logo from "../../assets/icons/icon.png";
 import { BUILD_INFO } from "../../../build-info.js";
 import TourButton from "../../nux/TourButton.jsx";
+import ResetTours from "../../nux/ResetTours.jsx";
 // Elzi's tours load on demand: the engine, her poses and the step tables stay out of the entry bundle.
 const loadTours = () => import("../../nux/ConsoleTours.jsx");
 const PageTour = lazy(() => loadTours().then((m) => ({ default: m.PageTour })));
@@ -854,6 +855,7 @@ const GlobalPolicyEditor = () => {
         {/* Marketplace: in-product documentation and support links (2026-10-04). */}
         <nav className="sv-help-links" aria-label="Help">
           <TourButton tour="site" testId="site-tour-btn" className="sv-help-link sv-tour-link" />
+          <ResetTours className="sv-help-link sv-tour-link" />
           {HELP_LINKS.map((l) => (
             <a key={l.href} className="sv-help-link" href={l.href} target="_blank" rel="noreferrer" data-testid={l.testId}
               onClick={(e) => { e.preventDefault(); try { router.open(l.href); } catch (_) { window.open(l.href, "_blank", "noopener"); } }}>

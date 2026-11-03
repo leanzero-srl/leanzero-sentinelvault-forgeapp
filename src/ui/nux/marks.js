@@ -25,6 +25,12 @@ export const readMarks = () => {
 };
 /** JUDGE SCORE #2: after a Reset cleared this person's marks (demo.js clearTours), the next read asks Jira again. */
 export const forgetMarks = () => { read = null; cache = null; };
+/** After a Reset (the stored row is gone): every mark reads "not seen" at once, and every tour button and tab hears it. */
+export const resetMarks = () => {
+  read = Promise.resolve({ ok: true, seen: false, tours: {} });
+  cache = { ok: true, seen: false, tours: {} };
+  for (const fn of subs) { try { fn(cache); } catch (e) { /* a gone listener */ } }
+};
 /** What is known now (null until the read answered). */
 export const marksNow = () => cache;
 /** Tell every tour on the page when the marks change. Returns the unsubscribe. */
