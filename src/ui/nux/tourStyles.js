@@ -53,6 +53,10 @@ export const TOUR_CSS = [
   ".nux-btns-go { margin-left: auto; display: inline-flex; gap: 6px; }",
   // straight corners on the bubble's buttons, whichever app's classes they carry (owner rule: no rounded corners)
   ".nux .nux-btns button { border-radius: 0; }",
+  // the console's own .btn-primary / .btn-secondary carry a 12 x 32 px padding meant for a page; in the bubble they are compact so Skip, Back and Next always fit
+  ".nux .nux-btns button { padding: 7px 14px; font-size: 14px; line-height: 20px; min-width: 0; transform: none; box-shadow: none; white-space: nowrap; }",
+  ".nux .nux-btns button:hover, .nux .nux-btns button:active { transform: none; box-shadow: none; }",
+  ".nux .nux-replay-btn { padding: 2px 8px; font-size: 12px; }",
   ".nux-small .nux-bubble { padding: 8px 10px; }",
   ".nux-small .nux-title { font-size: 14px; }",
   "@media (prefers-reduced-motion: reduce) { .nux-elzi-bob { animation: none; } }",

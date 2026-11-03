@@ -1,97 +1,44 @@
-# HANDOFF — Sentinel Vault 8.22.1 (fix-user-count), Gabee, 2026-10-26
+# HANDOFF: Sentinel Vault Elzi NUX lane (written 2026-11-03 03:00, at 350k context)
 
-## DONE 2026-10-26 (released as 8.23.0) — nothing open
-- Paging proven live (wolfaenpak, limit=5 on confluence-users-wolfaenpak): membersByGroupId returns
-  _links.next "?next=true&limit=N&start=M" (no totalSize), none on the last page, limit>200 = 400. Test f7a7906
-  drives 437 members in that shape over 3 pages of 200; red when the next link is ignored.
-- Door on laptop, sha f7a79068b69648379e684674894a0ee91faf93d0: deployed, eligible for Runs on Atlassian.
-  Forge numbered it 8.23.0 (every prod deploy is minor+1), so the note/record/tracker were renamed 8.22.1 -> 8.23.0
-  (4d4f0ab) + guard in test/release-notes.test.mjs (no x.y.N>0). Deployed bundle's What's new says 8.22.1 until the next deploy.
-- Tracker: door stopped at apply (stale rows for the pre-review wording); fixed, applied: SVT-155, SVT-156 (fixVersion
-  8.23.0, read anonymously), verified 152/152.
-- SV production is NOT installed on wolfaenpak (dev only), so no live prod allowance read there.
-- Merged to main normally, worktrees removed by exact path.
+Worktree: ~/Projects/leanzero-sentinelvault-forgeapp/.claude/worktrees/nux-elzi (branch nux-elzi, from origin/main f7f7924, NOT pushed, NOT merged).
+Brief: ~/Projects/machine-sync/docs/nux-campaign/BRIEF-COMMON.md (+ both ADDENDA: owner geometry gate; LOW priority, one browser, nice -n 15 taskpolicy -b).
+VIGIL: ~/Projects/machine-sync/docs/nux-campaign/sv/VIGIL.md (one line per <=15 min; write OVERRULED: lines for any block).
+Plan and concept list: docs/nux/NOTES.md. Bubble text for the cold reader: docs/nux/BUBBLES-FOR-COLD-READER.md.
 
-## 8.22.0 — DONE
-- Laptop b7cae0e merged with origin d7060ff normally (merge 31fc045), pushed. Main merge 0bc39ea (no-ff), pushed.
-- SVT-154 "AI review has a monthly allowance for the whole site": fixVersion 8.22.0, Done (anonymous read).
-- Prod: production-release.json 8.22.0 @ e9b10257; forge deploy list production 2026-10-26T11:45Z Success (major 8).
-- Worktrees removed by exact path: Gabee .claude/worktrees/fix-ai-allowance, laptop ~/Projects/Sentinel Vault/.claude/worktrees/fix-ai-allowance.
-- NOT done: `gh run list --workflow ci.yml --commit 0bc39ea` (check once).
+## Done (all committed except the last CSS edit, see below)
+- Engine port: src/ui/nux/{Tour.jsx,tourSteps.js,marks.js,Elzi.jsx,elziPoses.js,TourReplay.jsx,tourStyles.js,nux-tours.js,tours.js,ConsoleTours.jsx,TourButton.jsx}.
+  Changed from CogniRunner: SV words/test ids (data-testid nux-*), btn-primary/btn-secondary, --sv-* tokens, teal accent, invoke via kit/bridge.js,
+  EDGE=16 (owner), LZM aee08928 fix ported (run numbers, always-rendered hidden bubble as height probe, scroll BEFORE first draw, target box held still).
+- Backend: src/server/shared/nux.js (row `nux:<accountId>`), src/server/capsules/nux/actions.js (get-nux-tours, set-nux-tour, reset-nux-tours), registered in registry.js, classified in backup/hook.js READ_ACTIONS.
+  NOT yet done: nothing calls reset-nux-tours from a UI (no "Show all tours again" control); add one (a small Reset in the site console, own dialog via kit/Dialog, call clearNuxShownHere + forgetAutoShown + forgetMarks) or drop the action.
+- Wiring: steward-console (site) and realm-console (space): lazy PageTour + TabTour, TourButton in headers, data-nux anchors (grp-*, api-*, bk-*, val-*, wf-*, cls-status, act-head, sealed-head, sealed-toolbar, admins-card, request-admin, site-head, space-head), rc-tab-* test ids on realm tabs.
+- Mock bridge (scripts/responsive/bridge-mock.js): get/set/reset-nux-tours via window.__NUX__ (no value = "all seen", so other suites are unaffected); webpack.responsive.cjs takes SV_SHOT_OUT / SV_SHOT_ONLY.
+- Tests: test/nux-engine.test.mjs 49/49 green. test/nux-geometry.test.mjs (+ nux-geometry-lib.mjs, nux-geometry-rules.mjs): every step, 1440x900, 390x844, 1440x700, 310x700, long-content, light+dark, plus marks/replay/Esc/Tab/corners and "no movement after first draw".
+  Probes PASS: site 1440x900 light 16 steps; space-steward 1440x900 light 19 steps (26/26).
+- Bubble copy linted: ai_phrasing_lint 4.7 -> 1.1 per 1k words.
+- Env vars: SV_NUX_ONLY="<console> <view> <theme>" (one scenario), SV_NUX_JOBS, SV_NUX_NOBUILD=1, SV_NUX_TRACE=1, SV_NUX_LINES=1, SV_NUX_SHOTS=<dir> (screenshot every step).
+  Build the two bundles: SV_SHOT_OUT=static/_screenshot-harness/shots-nux SV_SHOT_ONLY=steward-console,realm-console npx webpack --config scripts/responsive/webpack.responsive.cjs --mode production
 
-## 8.22.1 — commit e2dc58f on branch fix-user-count (pushed), base main 0bc39ea
-Live measurement as the app on wolfaenpak dev (hook fn=userCountProbe, dev-only, stripped from prod):
-licence userCount / maxUsers / remainingSeats 401; Jira group member + applicationrole 401;
-/wiki/rest/api/group 200; confluence-users-wolfaenpak membersByGroupId = 50 members, 9 accountType=atlassian
-(= admin view 9); search/user CQL totalSize 81 (org-wide, wrong); Forge License type has no user count.
-Fix (allowance.js): licence count first, else people in default group `confluence-users-<site>` (legacy
-`confluence-users`); active paid licence never < 250 users unless the licence count answered
-(worst case 250 x $0.03048 = $7.62 / paid site / month); trial/inactive/prod-no-licence stay 10.
-Card: row.refusedNeedMicro (smallest refused) -> viewExhausted(); precheck follows. Scope that would fix it
-properly: none documented (CONFCLOUD-82766); the org/admin user-management API needs an org API key, not a Forge scope.
-Live proof on dev: fresh read -> {users 9, source group}; paid seam (paid=1) -> {250, paid-floor, counted 9},
-limit 7,620,000; card: tripped row without refusedNeed -> exhausted false, with refusedNeed 22000 -> true; row restored (was absent).
-Tests: test/ai-allowance.test.mjs new blocks; on old main code 12 FAIL (proven in a temp worktree, removed).
-Gate: laptop node-run gabee-20261026-140439-3009 exit 0, lint clean, 138/138 incl. responsive-dom 755/755.
-(Gabee has no forge-live-harness playwright: responsive-dom fails there "Playwright not found" — env, not code.)
-Release note 8.22.1 + entries rows 69dee81acf5fb68a / 2c4927a4bcc6a720 (component C) are IN e2dc58f.
+## FIRST FULL MATRIX (363/480; ran on the build BEFORE the CSS fix below)
+Failures were: (1) 390 and 310: bubble text overflows its box + a button outside the bubble (console btn padding 12x32);
+(2) 310x700: "ring-to-target gap -155" (a target wider than the 310 frame; ring is clamped, check the narrower-anchor fallback) ;
+(3) space-steward long-1440x700: tab-locked-attachments/force and tab-unlock-timeouts/end "moved 1 time after first draw" (a late layout change after the 2400 px pad; find what moves: probably a fixed bar or font, then fix, do not loosen the gate).
+UNCOMMITTED at hand-off time: src/ui/nux/tourStyles.js compact bubble buttons (padding 7px 14px, nowrap) = the fix for (1). Commit it, rebuild, rerun 390 and 310 first (SV_NUX_ONLY="390x844"), then the rest.
 
-## Review result (independent agent, on e2dc58f): FIX-THEN-SHIP. Verify each before fixing.
-H1 (agent reproduced): precheck uses viewExhausted -> after one LARGE refused review (e.g. 150k with 120k left)
-   precheck refuses every smaller review for the rest of the month (reserve would accept 30k). Fix: precheck keeps
-   plain isExhausted; refusedNeedMicro only for the card wording. Red test: small review passes precheck after big refusal.
-M2: failed count is not cached -> every view/precheck/reserve re-lists all groups. Fix: cache {kind:"none", at} 1-6 h.
-M3: 25 group + 100 member pages serially can exceed the 25 s resolver budget. Fix: time budget (~8 s), cache partial as "group".
-M4: paging breaks on r.length < 200; if server caps limit lower, undercount. Fix: page on b._links.next / b.limit.
-M5: renamed site/custom domain -> legacy `confluence-users` may be ANOTHER site's group in a multi-site org. Fix: legacy
-   name only when no `confluence-users-*` group exists at all; else floor.
-L6: release-note "always gets at least 250" false (admin lowering, licence count < 250); reword; 2nd line after H1.
-L7: >5,000 groups misses the default group. L8: deactivated accounts may be counted (slight overcount).
-Rejected by reviewer: client-controlled count, floor bypass via cache, lower-then-raise, rollover, settle, trials.
-Note: old-code red run crashed on import for the group block; the behavioural block was shown red separately (12 FAIL).
+## Still to do, in order
+1. Fix (1)(2)(3), rerun the FULL matrix once on the final build (cause: owner gate; cheaper path = the SV_NUX_ONLY probes; ~1.5 h one browser; vigil every 15 min).
+2. LOOK at screenshots (SV_NUX_SHOTS=<dir>, not only pass counts). Known to check: the hello bubble sits over the header title ("What's new" link) at 1440; consider placing it lower.
+3. Reset control (see above) + a11y check; `npm test` full once (needs Playwright at ~/Projects/forge-live-harness; responsive-dom builds into shots-responsive, nux into shots-nux, no clash); `node scripts/gen-action-names.mjs`; `npm run lint`.
+4. Cold reader: FRESH agent, give ONLY docs/nux/BUBBLES-FOR-COLD-READER.md + screenshots; grade the 14 concepts in NOTES.md UNDERSTOOD/PARTLY/LOST; ship with 0 LOST.
+5. Critics: design-critic-grid + design-critic-owner-rules on fresh screenshots at 1440 and 390, light and dark (they must look for clipping, overlap, off-canvas bubbles).
+6. Release (tracker-first, hard rules in the sentinel-vault skill): add a KNOWN entry in scripts/public-tracker/entries.mjs (`plan`, then `apply`), release note (docs/RELEASE-NOTES.md + src/server/shared/release-notes.js, version x.y.0 = next minor after 8.23.0, i.e. 8.24.0 unless Forge says otherwise), independent reviewer on tracker + note text BEFORE posting, public repo: NO AI trailers (commit-msg hook is present on the main checkout; check the worktree uses it), never force-push.
+   Door: `./scripts/deploy-prod.sh --sha "$(git -C <tested worktree> rev-parse HEAD)"` from a worktree at origin/main with a real npm ci, ON THE LAPTOP (forge is NOT logged in on Gabee's Mac; run via ~/Projects/machine-sync/bin/node-run, class build). Merge to main first normally; dev + staging deploy and live check on wolfaenpak (SV production is not installed there, dev only), production smoke, leanzero-demo check, CI: ssh workhorse 'zsh -lc "gh run list --workflow ci.yml --commit <sha>"' (read-only).
+7. Clean up: worktree by exact path, browsers, shots-nux dir (gitignored), scratchpad logs.
 
-
-## SESSION 2026-10-26 (Gabee, agent 2) — STATE AT HANDOFF (context limit)
-Branch head 4a9e0fb (pushed): 2c86fc1 = H1/M2/M3/M4/M5/L6 fixes; 4a9e0fb = 2nd independent review fixes
-(single-scanner lease scanUntil, failure never overwrites a fresh count, budget 4 s, unparseable/capped list = fail,
-null app context -> paid floor, inactive members excluded, comments). Each finding has a red test (proven red on the
-previous commit in a temp worktree, removed). test/ai-allowance.test.mjs 108/108.
-GATE on laptop fix-user-count-gate @4a9e0fb: node-run gabee-20261026-142725-24cd exit 0, lint clean, 138/138, responsive-dom 755/755.
-Dev deployed from Gabee worktree (21.116.0, development). Dev cache key ai-licensed-users DELETED (again after probes).
-LIVE (wolfaenpak dev, scratch/sv-ai-allowance/h1.mjs on laptop): count {users 9, source group}; paid probe
-{250, paid-floor, counted 9}, limit 7,620,000; big review REFUSED (refusedNeed 41,175, left 32,000, card exhausted true)
-then small review DONE (spent 1,153). All 4 keys restored = snapshot. groups API has _links.next (confirmed live).
-Reviewer known limit (kept, safe side): custom-domain or legacy-group site in a multi-site org -> fallback / paid floor.
-
-## STILL OPEN (in order)
-1. Confirm membersByGroupId also returns _links.next (if not, members stop after page 1 = undercount >200).
-   Was probing with a user-token script; env var names in forge-live-harness/data/env.mjs unknown. Easiest:
-   redeploy dev with the probe `links=1` branch fixed to look up confluence-users-wolfaenpak with limit=200, or
-   call it with limit=5 via the hook (add a `memberLimit` param). If no next link: fall back to "page full => continue".
-2. Door on the laptop: node-run --host laptop -- 'cd ~/Projects/"Sentinel Vault"/.claude/worktrees/fix-user-count-gate &&
-   PATH=$HOME/.nvm/versions/node/v22.22.0/bin:$PATH ./scripts/deploy-prod.sh --sha 4a9e0fb76ae495414c97e27eb005b71cc7338824'
-   TRAP: forge in a node-run detached job fails on Keychain on the laptop -> export creds from
-   ~/.claude/skills/leanzero-analytics/references/credentials.env (set -a; . file; set +a) inside the job.
-   Then SVT keys from scripts/public-tracker/receipt-leanzero-demo.json; curl anonymously.
-3. Merge to main (normal), push; remove worktrees by exact path; mark this HANDOFF done.
-
-## Open, in order (previous session)
-a. Independent review agent was launched on e2dc58f (result not yet read when this was written). Re-run a fresh
-   general-purpose reviewer on `git show e2dc58f` if its result is lost; verify each finding before fixing.
-   Areas to check myself: resolver time budget on the first daily read of a big site (25 group pages + 100 member
-   pages inside load-validation-config), refusedNeedMicro blocking smaller reviews for the rest of the month.
-b. Fix confirmed findings + red tests, re-gate on laptop: worktree `~/Projects/Sentinel Vault/.claude/worktrees/fix-user-count-gate`
-   (detached at e2dc58f; `git fetch && git checkout --detach origin/fix-user-count`), via
-   `~/Projects/machine-sync/bin/node-run --host laptop -- 'cd ...gate && export PATH=$HOME/.nvm/versions/node/v22.22.0/bin:$PATH && npm ci --silent && npm run lint && npm test 2>&1 | tail -4'`.
-c. Door on the laptop in that gate worktree: `./scripts/deploy-prod.sh --sha <full tested sha>` (via node-run, like session 5).
-   Then read the new SVT keys from scripts/public-tracker/receipt-leanzero-demo.json (rows above) and curl them anonymously.
-d. Merge fix-user-count to main (normal merge, never force), push; remove both worktrees by exact path
-   (Gabee .claude/worktrees/fix-user-count, laptop fix-user-count-gate).
-e. Fixture restore on wolfaenpak dev: KVS key `ai-licensed-users` did not exist before (now {count 9, kind group});
-   delete via hook `what=delete key=ai-licensed-users` (laptop: zsh ~/Projects/forge-live-harness/scratch/sv-ai-allowance/h.sh ...).
-   Scratch card.mjs in that laptop folder can go.
-## Traps
-- Forge CLI on Gabee: `set -a; . ~/.claude/skills/leanzero-analytics/references/credentials.env; set +a` (keychain token invalid).
-- `npm run build` before forge deploy; `git checkout -- src/build-info.js` after.
-- `forge install --upgrade --license active` does nothing on an up-to-date dev install (no licence object in dev).
-- Dev hook client lives on the laptop only (forge-live-harness/.env).
+## Traps paid for
+- marks.js readMarks() resolves with the FIRST snapshot; a component mounted later must read marksNow() (fixed in ConsoleTours/TourButton; same latent bug exists in CogniRunner AdminTours).
+- A tab that is on screen when the page tour ends waits for its NEXT visit (never two tours back to back): the test visits the first tab last.
+- Foreground Bash is cut at 120 s: run the geometry test in the background and watch with a Monitor until-loop (no sleep polling).
+- Do not run two builds into one output folder (SV_SHOT_OUT).
+- Playwright for the tests lives in ~/Projects/forge-live-harness (present on this Mac now).
+- The primary checkout's local main is stale; never touch it. build-info.js shows modified there, leave it.
