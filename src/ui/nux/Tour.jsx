@@ -112,16 +112,16 @@ const visibleRect = () => new Promise((resolve) => {
 // button sits over the window's bottom-right corner, tourSteps.js).
 // The block scrolled to centre a step is kept for as long as the step is on screen (a timer that removed it shrank the page
 // by however far its first-guess size differed from the real placement, and the browser slid the whole step by that much).
-let scrollBlock = null;
-const dropScrollBlock = () => { try { if (scrollBlock) scrollBlock.remove(); } catch (e) { /* gone */ } scrollBlock = null; };
+// Every step's block stays until the tour ends, so the page only ever grows during a tour (step N+1 never shrinks it).
+let scrollBlocks = [];
+const dropScrollBlock = () => { for (const b of scrollBlocks) { try { b.remove(); } catch (e) { /* gone */ } } scrollBlocks = []; };
 const scrollUnionIntoView = (union) => {
   try {
-    dropScrollBlock();
     const t = document.createElement("div");
     t.setAttribute("aria-hidden", "true");
     t.style.cssText = "position:absolute;left:0;width:1px;pointer-events:none;opacity:0;top:" + Math.max(0, union.top - EDGE) + "px;height:" + Math.max(1, union.bottom - union.top + 2 * EDGE + BOTTOM_RESERVE) + "px";
     document.body.appendChild(t);
-    scrollBlock = t;
+    scrollBlocks.push(t);
     t.scrollIntoView({ block: "center", behavior: "auto" }); // before anything is drawn: never animated
   } catch (e) { /* nothing to scroll */ }
 };
@@ -148,6 +148,7 @@ export default function Tour({ steps: given = null, tour: givenTour = null, auto
   const [stored, setStored] = useState(null);
   const [geo, setGeo] = useState(null);         // {hole, doc, callout:{top,left,width}, rel}
   const calloutHRef = useRef(0);
+  const spacerMax = useRef(0);
   const calloutRef = useRef(null);
   const nextRef = useRef(null);
   const returnFocus = useRef(null);
@@ -474,6 +475,10 @@ export default function Tour({ steps: given = null, tour: givenTour = null, auto
   // The same room scrollUnionIntoView gives its temporary block under the row (EDGE + BOTTOM_RESERVE): when that block goes
   // away 800 ms later the page must be as tall as it was, or the browser clamps the scroll and the whole step slides 16 px.
   const padBottom = BOTTOM_RESERVE + EDGE;
+  // the room under the content only grows while the tour is open: a shorter step after a taller one must not shrink the page
+  if (!st.open) spacerMax.current = 0;
+  else if (geo) spacerMax.current = Math.max(spacerMax.current, calloutBottom + padBottom - doc.contentH);
+  const spacerH = Math.max(0, spacerMax.current);
   const fullH = Math.max(doc.contentH, calloutBottom + padBottom);
   const ring = geo ? geo.ring : null;
   const dimBlocks = hole
@@ -491,7 +496,7 @@ export default function Tour({ steps: given = null, tour: givenTour = null, auto
     <div className={`nux${small ? " nux-small" : ""}${headOnly ? " nux-head" : ""}`} data-nux-tour={tourKey} data-nux-step={step.id} data-nux-anchor={geo && geo.anchor ? geo.anchor : undefined} data-nux-said={geo && geo.say ? geo.say : undefined}
       data-nux-fits={geo ? String(geo.fits) : undefined} data-nux-side={geo ? geo.side : undefined} data-nux-mode={geo ? geo.mode : undefined}>
       {/* the frame grows when the bubble sits below the content (the iframe is sized to it) */}
-      {calloutBottom + padBottom > doc.contentH && <div className="nux-spacer" style={{ height: calloutBottom + padBottom - doc.contentH }} aria-hidden="true" />}
+      {spacerH > 0 && <div className="nux-spacer" style={{ height: spacerH }} aria-hidden="true" />}
       <div className="nux-dim" aria-hidden="true">
         {dimBlocks.map((b, i) => <div key={i} className="nux-dim-block" style={b} />)}
       </div>
