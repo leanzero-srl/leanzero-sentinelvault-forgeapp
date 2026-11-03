@@ -3,20 +3,20 @@
 1. [Hi! I'm Elzi.] I'm Sentinel Vault's guide. I'll show you around quickly.
 2. [This is Sentinel Vault] Sentinel Vault protects files and sections on Confluence pages. When someone seals a file, nobody else can change it until it's released or the seal runs out. If someone does, their change is undone and they're told. You set the rules for the whole site here.
 3. [Site settings] These switches apply to every space: how long a seal lasts, who is told, what people may do from a page. A space admin can adjust some of them for one space. Changes only count once you press Apply.
-4. [See this again] Press Take the tour any time. Each tab also has its own Tour button.
+4. [See this again] This button opens the tour again any time. Each tab also has its own Tour button.
 
 ## Tour space
 1. [Hi! I'm Elzi.] I'm Sentinel Vault's guide. I'll show you around quickly.
 2. [Sentinel Vault in this space] This is where you look after sealed files in this space. A seal keeps a file safe from other people's edits until it's released or runs out.
 3. [Every sealed file] Every sealed file in the space is listed here. If an owner is away and a file is stuck, you can release their seal. You'll be asked for a reason, and it's recorded.
 4. [Who manages this space] Add people or groups as Sentinel Vault admins for this space, approve requests for access, and set the space to Quiet so it posts no comments.
-5. [See this again] Press Take the tour any time. Each tab also has its own Tour button.
+5. [See this again] This button opens the tour again any time. Each tab also has its own Tour button.
 
 ## Tour space
 1. [Hi! I'm Elzi.] I'm Sentinel Vault's guide. I'll show you around quickly.
 2. [Sentinel Vault in this space] This is where you look after sealed files in this space. A seal keeps a file safe from other people's edits until it's released or runs out.
 3. [Your sealed files] These are the files you have sealed in this space, and the edit requests you have made. To manage everyone's seals, ask a space admin for access.
-4. [See this again] Press Take the tour any time. Each tab also has its own Tour button.
+4. [See this again] This button opens the tour again any time. Each tab also has its own Tour button.
 
 ## Tour site-settings
 1. [Protection] This group decides what gets protected and who may step in. If someone removes a sealed image from a page, Sentinel Vault can put it back. Space admins can release a seal that'sn't theirs, with a reason that's recorded.

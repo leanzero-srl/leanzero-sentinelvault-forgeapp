@@ -1663,12 +1663,13 @@ const RealmPolicyDashboard = () => {
               Manage Sentinel Vault preferences and access control for this
               space.
             </p>
+            {/* the tour links sit in the title column (aligned with it, and inside the header the page tour rings) */}
+            <span style={{ display: "flex", flexWrap: "wrap", gap: "4px 16px", alignItems: "center", marginTop: "8px" }}>
+              <TourButton tour="space" testId="space-tour-btn" className="sv-link" />
+              <ResetTours className="sv-link" />
+            </span>
           </div>
         </div>
-        <span style={{ display: "flex", flexWrap: "wrap", gap: "4px 16px", alignItems: "center" }}>
-          <TourButton tour="space" testId="space-tour-btn" className="sv-link" />
-          <ResetTours className="sv-link" />
-        </span>
       </div>
 
       <LicenseBanner />

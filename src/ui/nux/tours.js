@@ -141,7 +141,7 @@ export const siteTour = () => ({
     step("settings", "@tab-settings", "look", "Site settings",
       "These switches apply to every space. They set how long a seal lasts, who is told, and what people may do from a page. A space admin can adjust some of them for one space. Changes only count once you press Apply."),
     step("again", ["site-tour-btn", "tab-tour"], "happy", "See this again",
-      "Press Take the tour any time. Each tab also has its own Tour button.",
+      "This button opens the tour again any time. Each tab also has its own Tour button.",
       { textBy: { "tab-tour": "Each tab has a Tour button like this one. Press it any time." } }),
   ],
 });
@@ -160,7 +160,7 @@ export const spaceTour = ({ steward = false } = {}) => ({
     steward && step("access", "@rc-tab-permissions", "surprised", "Who manages this space",
       "Add people or groups as Sentinel Vault admins for this space, approve requests for access, and set the space to Quiet so it posts no comments."),
     step("again", ["space-tour-btn", "tab-tour"], "happy", "See this again",
-      "Press Take the tour any time. Each tab also has its own Tour button.",
+      "This button opens the tour again any time. Each tab also has its own Tour button.",
       { textBy: { "tab-tour": "Each tab has a Tour button like this one. Press it any time." } }),
   ].filter(Boolean),
 });

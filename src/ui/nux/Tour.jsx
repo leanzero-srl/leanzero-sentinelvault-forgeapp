@@ -499,7 +499,9 @@ export default function Tour({ steps: given = null, tour: givenTour = null, auto
   if (!st.open) spacerMax.current = 0;
   else if (geo) spacerMax.current = Math.max(spacerMax.current, calloutBottom + padBottom - doc.contentH);
   const spacerH = Math.max(0, spacerMax.current);
-  const fullH = Math.max(doc.contentH, calloutBottom + padBottom);
+  // the dim reaches the bottom of what is visible too: on a page shorter than its window it stopped at the content (critics 2026-11-03)
+  const visBottom = geo && geo.visible ? Math.ceil(geo.visible.top + geo.visible.height) : 0;
+  const fullH = Math.max(doc.contentH, calloutBottom + padBottom, visBottom);
   const ring = geo ? geo.ring : null;
   const dimBlocks = hole
     ? [

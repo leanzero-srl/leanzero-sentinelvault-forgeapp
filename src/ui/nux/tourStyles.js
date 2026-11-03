@@ -57,6 +57,7 @@ export const TOUR_CSS = [
   ".nux .nux-btns button { padding: 7px 14px; font-size: 14px; line-height: 20px; min-width: 0; transform: none; box-shadow: none; white-space: nowrap; }",
   ".nux .nux-btns button:hover, .nux .nux-btns button:active { transform: none; box-shadow: none; }",
   ".nux .nux-replay-btn { padding: 2px 8px; font-size: 12px; }",
+  "@media (max-width: 480px) { .nux-replay-btn, .nux .nux-replay-btn { min-height: 36px; padding: 6px 12px; } }", // a phone tap target (critic 2026-11-03: 18 px was too small)
   ".nux-small .nux-bubble { padding: 8px 10px; }",
   ".nux-small .nux-title { font-size: 14px; }",
   "@media (prefers-reduced-motion: reduce) { .nux-elzi-bob { animation: none; } }",
