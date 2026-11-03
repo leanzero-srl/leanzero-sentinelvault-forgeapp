@@ -65,4 +65,5 @@ eq("backup bookkeeping is not in the backup", isBackedUp("backup-status"), false
 eq("activity site leg is backed up", isBackedUp("activity-site-0001-abc"), true);
 eq("an unknown key is backed up as Other", familyOf("brand-new-thing-1"), OTHER_FAMILY);
 ok("no secret family is ever backed up", FAMILIES.filter((f) => f.cls === "secret").every((f) => !isBackedUp(`${f.prefix}x`)));
+eq("Elzi tour marks (nux:<person>) are not in the backup", isBackedUp("nux:712020:abc"), false);
 report("backup-families");

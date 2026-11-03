@@ -150,6 +150,8 @@ export const FAMILIES = Object.freeze([
   { prefix: "jira-seal-lost-", cls: "config", group: "seals", index: true, label: "Sealed Jira files not put back yet" },
   // The backup's own bookkeeping (status, debounce flag, jobs, import staging, paused list).
   { prefix: "backup-", cls: "runtime" },
+  // Elzi's tours: a person's own "seen" marks (shared/nux.js). A preference, not site configuration: a backup never carries it.
+  { prefix: "nux:", cls: "runtime" },
   // The privacy sweep's status, lock and account index (capsules/privacy) — rebuilt by the next sweep.
   { prefix: "privacy-", cls: "runtime" },
 ]);

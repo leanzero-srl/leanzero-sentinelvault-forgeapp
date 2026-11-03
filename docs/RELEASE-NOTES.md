@@ -6,7 +6,8 @@ GENERATED from `src/server/shared/release-notes.js` by `scripts/render-release-n
 
 **Elzi shows you around site settings and space settings**
 
-- New: Elzi, the guide you may know from our other apps, now walks you through Sentinel Vault. The first time you open the site settings page or a space's Sentinel Vault page she says hello and shows you around, and every tab has a short tour of its own that explains the idea behind it, such as what a seal does, when a validation blocks a save, or what a backup restores. A tour opens by itself once for each person, and Skip or Esc closes it at any step. Take the tour or Replay tour in the page header opens the page tour again, and Show all tours again brings every tour back. What each person has seen is remembered for that person only and holds nothing but the tour's name, its version and the time; it is deleted with the person's data and is not part of a backup.
+- New: Elzi, the guide you may know from our other apps, now walks you through Sentinel Vault. The first time you open the site settings page or a space's Sentinel Vault page she says hello and shows you around, and once you have finished that tour, each tab opens a short tour of its own the first time you visit it. The tabs' tours explain the idea behind the tab, such as what a seal does, what a validation checks, or what a backup restores. Skip or Esc closes a tour at any step. Take the tour or Replay tour in the page header opens the page tour again, and Show all tours again brings back every tour. What you have seen is remembered for you alone: the tour's name, its version, whether you finished or skipped it, and when. It is deleted with your data and is not part of a backup.
+- undefined
 
 ## 8.23.0 — 2026-10-26
 
