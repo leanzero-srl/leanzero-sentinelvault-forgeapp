@@ -30,8 +30,11 @@
 //   A rollback or a hotfix from an older tag (the production release's commit is not behind HEAD, or HEAD is
 //   detached) writes nothing. Any failure is logged and the door goes on.
 // `post` records the deployed release (and the commit) in production-release.json, the tracker's LAST_VERSION, then
-// runs the tracker's apply, verify and public --reprove itself, commits what they wrote and pushes main. A failure
-// there is logged and never changes the deploy's exit code; the daily digest's tracker check catches the drift.
+// runs the tracker's apply, verify and public --reprove itself, commits what they wrote and pushes HEAD to origin/main
+// fast-forward only, from ANY checkout (main, another branch, a detached release worktree; pushMain). A tracker step
+// failure is logged and never changes the deploy's exit code; the daily digest's tracker check catches the drift. But
+// commits that did not land on origin/main (not committed, push refused or failed) exit 6 with the exact command, and
+// deploy-prod.sh then exits 3: deployed and eligible, receipt NOT on main (never silent again, 2026-11-03).
 // `try-first` (owner 2026-10-20; since 2026-10-22 release-autopilot 1.4.0 tryFirstHandOff) hands the "Try it first" top
 // message of the new version's More details (a per-version field) to the watcher on the workhorse (forge-app-marketing
 // apps/try-first/watcher.mjs, every 10 min, puts it on once the Marketplace lists the version): it kicks the watcher once
@@ -42,7 +45,8 @@
 // --check-site` (read-only), and only when coverage.mjs listedSyncVerdict finds nothing in the site diff but what the
 // listing changes does it run apply, verify and public --reprove, commit the receipt and push main. Exit 0 = in sync
 // (or nothing to do); 3 = refused before anything was read (not main / tracker files dirty); 4 = the diff holds more than
-// a listing (nothing written; a person runs the reviewed apply); 5 = a tracker step failed.
+// a listing (nothing written; a person runs the reviewed apply); 5 = a tracker step failed; 6 = written but NOT on
+// origin/main (the exact command is printed; the watcher's next run pushes it, as "nothing to write" pushes too).
 
 import { execFileSync, spawn } from "node:child_process";
 import { readFileSync, writeFileSync, readdirSync, rmSync } from "node:fs";
@@ -81,6 +85,38 @@ const fresh = (f) => import(`${pathToFileURL(f).href}?gate=${Date.now()}-${++loa
 const readProduction = () => JSON.parse(readFileSync(PRODUCTION_FILE, "utf8"));
 const today = () => new Date().toISOString().slice(0, 10);
 const runner = A.claudeRunner();
+/** Exit code of `post` / `listed` when the door's commits did not land on origin/main (deploy-prod.sh turns it loud). */
+const NOT_ON_MAIN = 6;
+
+/**
+ * Put HEAD on origin/main, fast-forward only, from ANY checkout: main, another branch or a detached release worktree.
+ * Until 2026-11-03 `post` pushed only when the checked-out branch was literally `main`, so a door run from a release
+ * worktree (detached HEAD) committed its receipt and printed nothing about the push: 8.25.0 and 8.26.0 were pushed by
+ * hand. Returns true when origin/main holds HEAD afterwards; otherwise prints a loud block with the exact command and
+ * returns false (the caller exits NOT_ON_MAIN). Never forces: a plain push refuses anything but a fast-forward.
+ */
+function pushMain() {
+  if (process.env.RELEASE_GATE_NO_PUSH) { log("==> Not pushed to origin/main (RELEASE_GATE_NO_PUSH is set: a test run)"); return true; }
+  const head = git(["rev-parse", "HEAD"]).trim();
+  const where = (() => { try { return `branch ${git(["symbolic-ref", "-q", "--short", "HEAD"]).trim()}`; } catch { return "a detached HEAD"; } })();
+  const fetched = gitOk(["fetch", "-q", "origin", "main"]);
+  if (fetched && gitOk(["merge-base", "--is-ancestor", head, "FETCH_HEAD"])) { log(`==> origin/main already holds ${head.slice(0, 12)}; nothing to push`); return true; }
+  const diverged = fetched && !gitOk(["merge-base", "--is-ancestor", "FETCH_HEAD", head]);
+  let why = "";
+  if (!diverged) {
+    try { git(["push", "-q", "origin", `${head}:refs/heads/main`]); log(`==> Pushed ${head.slice(0, 12)} to origin/main (fast-forward, from ${where})`); return true; }
+    catch (e) { why = String(e && (e.stderr || e.message) || e).trim().split("\n").filter(Boolean).slice(-2).join(" "); }
+  } else why = "origin/main has commits this checkout does not have (not a fast-forward)";
+  const q = JSON.stringify(REPO);
+  log("");
+  log(`==> NOT PUSHED: the release door's commits are NOT on origin/main (${why || (fetched ? "push failed" : "could not reach origin")}).`);
+  log(`    This checkout (${where}) holds them at ${head}. Put them on main, then check: git -C ${q} log origin/main -1`);
+  log(diverged
+    ? `    git -C ${q} fetch origin main && git -C ${q} merge --no-edit FETCH_HEAD && git -C ${q} push origin HEAD:refs/heads/main`
+    : `    git -C ${q} push origin ${head}:refs/heads/main`);
+  log("");
+  return false;
+}
 
 /** The commit production runs: the v<release> tag, else the sha the door recorded, else the commit that recorded it. */
 const productionCommit = (prod) => {
@@ -276,19 +312,22 @@ if (cmd === "marketplace-latest") {
   const steps = [["apply"], ["verify"], ["public", "--reprove"]].map((a) => ({ label: `tracker.mjs ${a.join(" ")}`, cmd: process.execPath, args: [TRACKER, ...a] }));
   const r = await A.runPostDeploySteps({ run, steps, cwd: REPO, log });
   log(r.ok ? `==> Public tracker: ${release} applied, verified and re-proved public` : `==> Public tracker: stopped at ${r.failed}; ${release} is deployed regardless (the daily digest's tracker check flags the drift)`);
+  let landed = false;
   try {
     git(["add", "-A", "--", REL(HERE)]);
     if (!gitOk(["diff", "--cached", "--quiet"])) {
       git(["commit", "-q", "-m", `public tracker: ${release} in production${r.ok ? ", applied and verified" : ` (tracker step stopped at ${r.failed})`} by the release door`]);
       log("==> Committed the production record and the tracker receipt");
     }
-    const branch = git(["rev-parse", "--abbrev-ref", "HEAD"]).trim();
-    if (branch === "main" && !process.env.RELEASE_GATE_NO_PUSH) {
-      if (gitOk(["push", "-q", "origin", "HEAD:main"])) log("==> Pushed main");
-      else log("==> Could not push main (pull and push it when convenient; nothing is lost)");
-    }
-  } catch (e) { log(`==> Could not commit the tracker step (${String(e && (e.stderr || e.message)).trim()})`); }
-  process.exit(0);
+    // the receipt AND prepare's note / tracker-row commits reach main here, whatever this checkout is on
+    landed = pushMain();
+  } catch (e) {
+    log("");
+    log(`==> NOT COMMITTED: the production record and the tracker receipt are NOT committed (${String(e && (e.stderr || e.message)).trim()}).`);
+    log(`    git -C ${JSON.stringify(REPO)} add -A -- ${REL(HERE)} && git -C ${JSON.stringify(REPO)} commit -m "public tracker: ${release} in production by the release door" && git -C ${JSON.stringify(REPO)} push origin HEAD:refs/heads/main`);
+    log("");
+  }
+  process.exit(landed ? 0 : NOT_ON_MAIN);
 } else if (cmd === "listed") {
   const version = String(process.argv[3] || "");
   if (!/^\d+\.\d+\.\d+$/.test(version)) { log("usage: release-gate.mjs listed <version the Marketplace lists>"); process.exit(2); }
@@ -301,20 +340,24 @@ if (cmd === "marketplace-latest") {
   if (plan.code !== 0) { log(`==> listed ${version}: tracker plan failed (exit ${plan.code}); nothing written`); process.exit(5); }
   const v = listedSyncVerdict(plan.stdout, version, TRACKER_KEY);
   if (!v.ok) { log(`==> listed ${version}: REFUSED, ${v.why}. Nothing written; run the reviewed tracker apply by hand.`); process.exit(4); }
-  if (!v.changes) { log(`==> listed ${version}: the tracker already shows it released; nothing to write`); process.exit(0); }
+  // a commit an earlier run could not push is pushed now (pushMain is a no-op when origin/main already holds HEAD)
+  if (!v.changes) { log(`==> listed ${version}: the tracker already shows it released; nothing to write`); process.exit(pushMain() ? 0 : NOT_ON_MAIN); }
   log(`==> listed ${version}: releasing ${v.versions.join(", ")} on the tracker (${v.issues.length} issue description(s): ${v.issues.join(", ") || "none"})`);
   const steps = [["apply"], ["verify"], ["public", "--reprove"]].map((a) => ({ label: `tracker.mjs ${a.join(" ")}`, cmd: process.execPath, args: [TRACKER, ...a] }));
   const r = await A.runPostDeploySteps({ run, steps, cwd: REPO, log });
+  let landed = false;
   try {
     git(["add", "-A", "--", REL(HERE)]);
     if (!gitOk(["diff", "--cached", "--quiet"])) {
       git(["commit", "-q", "-m", `public tracker: ${version} listed on the Marketplace, ${v.versions.join(", ")} released${v.issues.length ? ` (${v.issues.join(", ")})` : ""}${r.ok ? ", applied, verified and re-proved public" : ` (stopped at ${r.failed})`} by the try-first watcher`, "--", REL(HERE)]);
       log("==> Committed the tracker receipt");
-      if (!process.env.RELEASE_GATE_NO_PUSH) log(gitOk(["push", "-q", "origin", "HEAD:main"]) ? "==> Pushed main" : "==> Could not push main (projsync or the next door pushes it; nothing is lost)");
     }
-  } catch (e) { log(`==> Could not commit the tracker step (${String(e && (e.stderr || e.message)).trim()})`); }
+    landed = pushMain();
+  } catch (e) {
+    log(`==> NOT COMMITTED: the tracker receipt is NOT committed (${String(e && (e.stderr || e.message)).trim()}). git -C ${JSON.stringify(REPO)} add -A -- ${REL(HERE)} && git -C ${JSON.stringify(REPO)} commit -m "public tracker: ${version} listed" && git -C ${JSON.stringify(REPO)} push origin HEAD:refs/heads/main`);
+  }
   log(r.ok ? `==> Public tracker: ${version} released, verified and re-proved public` : `==> Public tracker: stopped at ${r.failed}`);
-  process.exit(r.ok ? 0 : 5);
+  process.exit(!r.ok ? 5 : landed ? 0 : NOT_ON_MAIN);
 } else if (cmd === "check") {
   // A report only (the door no longer refuses on it): what the tracker covers and what the next deploy will write.
   const { RELEASE_NOTES, CURRENT_RELEASE } = await fresh(NOTES_F);

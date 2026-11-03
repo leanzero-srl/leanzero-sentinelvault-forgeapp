@@ -37,6 +37,10 @@ const repo = path.join(tmp, "repo"), bin = path.join(tmp, "bin");
 const git = (...a) => execFileSync("git", ["-C", repo, "-c", "user.name=door-test", "-c", "user.email=door-test@invalid", ...a], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
 try {
   execFileSync("git", ["clone", "-q", "--no-hardlinks", root, repo], { stdio: "ignore" });
+  // origin is a throwaway bare repository, NEVER the checkout under test: the push cases below really push.
+  const origin = path.join(tmp, "origin.git");
+  execFileSync("git", ["init", "-q", "--bare", origin], { stdio: "ignore" });
+  git("remote", "set-url", "origin", origin);
   // The clone is on a branch whatever the checkout under test is: CI runs a tag on a DETACHED HEAD, and a detached
   // clone reads to the door as a rollback from a tag, so the note-writing cases would fail only there (v8.13.0, 2026-10-21).
   git("checkout", "-q", "-B", "main");
@@ -382,6 +386,53 @@ let p = ""; process.stdin.on("data", (d) => (p += d)); process.stdin.on("end", (
   try { fs.rmSync(path.join(repo, "src/server/sneak.js")); } catch { /* none */ }
   // The door's OWN commits (its note, its tracker rows) between the named commit and the deploy are allowed: the note
   // and tracker-row cases above commit them and deploy with --sha = the commit they started from.
+
+  // THE DOOR PUTS ITS COMMITS ON origin/main FROM ANY CHECKOUT (2026-11-03). `post` pushed only when the checked-out
+  // branch was literally `main`: from a release worktree on a detached HEAD (8.25.0, 8.26.0) it committed the receipt,
+  // exited 0 and said nothing, and both releases were pushed by hand. Now it pushes HEAD to origin/main fast-forward only
+  // from anywhere, and when that cannot happen the door exits 3 with the exact git command (production stays deployed).
+  {
+    const P = full("HEAD");
+    const originMain = () => execFileSync("git", ["-C", origin, "rev-parse", "refs/heads/main"], { encoding: "utf8" }).trim();
+    const PUSH = { FAKE_ELIG: ELIGIBLE, RELEASE_GATE_NO_PUSH: "" };
+    git("push", "-q", "-f", "origin", `${P}:refs/heads/main`);
+    git("checkout", "-q", "--detach", P);
+    r = door(PUSH, L, { keep: true });
+    let after = full("HEAD");
+    ok("DETACHED HEAD release worktree: the door deploys AND pushes its receipt commit to origin/main (fast-forward), exit 0",
+      r.status === 0 && last.deployed && after !== P && originMain() === after && /Pushed [0-9a-f]{12} to origin\/main \(fast-forward, from a detached HEAD\)/.test(r.stdout));
+    git("reset", "-q", "--hard", P);
+    git("push", "-q", "-f", "origin", `${P}:refs/heads/main`);
+    git("checkout", "-q", "-b", "release-x", P);
+    r = door(PUSH, L, { keep: true });
+    after = full("HEAD");
+    ok("a release checkout on ANOTHER branch: pushed to origin/main too, exit 0",
+      r.status === 0 && last.deployed && originMain() === after && /from branch release-x/.test(r.stdout));
+    git("checkout", "-q", "--detach", P); git("branch", "-q", "-D", "release-x");
+    // origin/main moved on meanwhile: never forced; deployed, exit 3, the merge-then-push command printed
+    git("commit", "-q", "--allow-empty", "-m", "someone else's commit on main");
+    const other = full("HEAD");
+    git("push", "-q", "-f", "origin", `${other}:refs/heads/main`);
+    git("reset", "-q", "--hard", P);
+    r = door(PUSH, L, { keep: true });
+    ok("origin/main has commits the checkout lacks: NOT forced, origin/main untouched, door exits 3 (deployed, ACTION NEEDED) with the merge-then-push command",
+      r.status === 3 && last.deployed && originMain() === other && /NOT PUSHED/.test(r.stdout) && /ACTION NEEDED: production is deployed and eligible/.test(r.stdout)
+      && r.stdout.includes("merge --no-edit FETCH_HEAD") && r.stdout.includes("push origin HEAD:refs/heads/main"));
+    git("reset", "-q", "--hard", P);
+    // origin unreachable: exit 3 with the exact push command naming the receipt commit
+    git("remote", "set-url", "origin", path.join(tmp, "no-such-origin.git"));
+    r = door(PUSH, L, { keep: true });
+    after = full("HEAD");
+    ok("origin unreachable: exit 3, NOT PUSHED, prints `git push origin <receipt sha>:refs/heads/main`",
+      r.status === 3 && last.deployed && /NOT PUSHED/.test(r.stdout) && r.stdout.includes(`push origin ${after}:refs/heads/main`));
+    git("remote", "set-url", "origin", origin);
+    git("reset", "-q", "--hard", P);
+    // the tracker step failing still never fails the deploy, and the receipt still lands on main
+    git("push", "-q", "-f", "origin", `${P}:refs/heads/main`);
+    r = door({ ...PUSH, FAKE_TRACKER_FAIL: "verify" }, L, { keep: true });
+    ok("a failing tracker step from a detached HEAD: exit 0, and the receipt is on origin/main", r.status === 0 && originMain() === full("HEAD"));
+    git("checkout", "-q", "main"); git("reset", "-q", "--hard", P);
+  }
 
   // DRY RUN: checks, writes nothing, builds nothing, deploys nothing
   r = door({ FAKE_ELIG: ELIGIBLE }, [...L, "--dry-run"], { sha: null });

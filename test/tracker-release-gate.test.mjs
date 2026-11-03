@@ -60,6 +60,13 @@ const door = fs.readFileSync(path.join(root, "scripts/deploy-prod.sh"), "utf8");
 ok("the production door writes the note and the tracker rows (prepare) before the build, never refusing on them, and runs the tracker step (post) after eligibility",
   door.indexOf("release-gate.mjs prepare") > 0 && door.indexOf("release-gate.mjs prepare") < door.indexOf("npm run build")
   && door.indexOf("release-gate.mjs post") > door.indexOf("Eligible for Runs on Atlassian")
-  && !/release-gate\.mjs check/.test(door) && /release-gate\.mjs prepare[^\n]*\|\| echo/.test(door) && /release-gate\.mjs post[^\n]*\|\| echo/.test(door));
+  && !/release-gate\.mjs check/.test(door) && /release-gate\.mjs prepare[^\n]*\|\| echo/.test(door) && /release-gate\.mjs post[^\n]*\|\| POST_RC=\$\?/.test(door)
+  && /POST_RC -ne 0 && \$POST_RC -ne 6 \]\]; then echo/.test(door));
+// pushing main (2026-11-03): never conditional on the branch name, never forced, never a silent skip
+const gateSrc = fs.readFileSync(path.join(root, "scripts/public-tracker/release-gate.mjs"), "utf8");
+ok("release-gate.mjs never decides the push from the branch being `main` in `post`", !/branch === "main"/.test(gateSrc));
+ok("release-gate.mjs never force-pushes", !/push", [^\n]*(--force|"-f"|\+HEAD|"\+)/.test(gateSrc));
+ok("`post` exits NOT_ON_MAIN when the receipt did not land, and the door turns that into exit 3",
+  /process\.exit\(landed \? 0 : NOT_ON_MAIN\)/.test(gateSrc) && /POST_RC -eq 6 \]\]; then[\s\S]*?exit 3/.test(door));
 
 report("tracker-release-gate");

@@ -283,12 +283,23 @@ fi
 echo "==> Eligible for Runs on Atlassian"
 
 # The public tracker, automatic: record the release production now carries (the tracker's LAST_VERSION), then apply,
-# verify and re-prove the tracker, commit the receipt and push main. A failure there is logged and never fails the
-# deploy (the daily digest's tracker check catches the drift the next morning).
-node scripts/public-tracker/release-gate.mjs post || echo "==> The public tracker step did not finish; production is deployed and eligible"
+# verify and re-prove the tracker, commit the receipt and push HEAD to origin/main fast-forward only, from ANY checkout
+# (a release worktree on a detached HEAD included). A tracker step failure is logged and never fails the deploy (the
+# daily digest's tracker check catches the drift the next morning). Commits that did NOT reach origin/main (post exit 6)
+# are not silent (8.25.0 and 8.26.0 were pushed by hand after a quiet skip, 2026-11-03): post prints the exact command
+# and the door ends with exit 3 after the Marketplace step: deployed and eligible, receipt not on main.
+POST_RC=0
+node scripts/public-tracker/release-gate.mjs post || POST_RC=$?
+if [[ $POST_RC -ne 0 && $POST_RC -ne 6 ]]; then echo "==> The public tracker step did not finish (exit ${POST_RC}); production is deployed and eligible"; fi
 
 # The Marketplace "Try it first" message (owner 2026-10-20): More details is per Marketplace version. Since release-autopilot
 # 1.4.0 the workhorse watcher puts it on each newly listed version; this step only kicks it and logs its heartbeat (no wait).
 # Logged, never fails the deploy.
 DEPLOYED_FORGE="$(grep -oE 'version of your app \[[0-9]+\.[0-9]+\.[0-9]+\]' <<<"$ELIG_OUT" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1 || true)"
 node scripts/public-tracker/release-gate.mjs try-first "${DEPLOYED_FORGE:-}" || echo "==> The Try it first step did not finish; production is deployed and eligible"
+
+if [[ $POST_RC -eq 6 ]]; then
+  echo "ACTION NEEDED: production is deployed and eligible (do NOT redeploy), but the door's commits are NOT on origin/main."
+  echo "  Run the git command printed after NOT PUSHED / NOT COMMITTED above, then tag the receipt commit. (Not a deploy; --sha does not apply.)"
+  exit 3
+fi

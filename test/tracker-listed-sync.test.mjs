@@ -56,5 +56,8 @@ ok("`listed` refuses off main and with dirty tracker files before reading anythi
 ok("`listed` writes (apply) only after listedSyncVerdict passed",
   body.indexOf("listedSyncVerdict(") > 0 && body.indexOf("listedSyncVerdict(") < body.indexOf("[\"apply\"]") && /if \(!v\.ok\)[^\n]*process\.exit\(4\)/.test(body));
 ok("`listed` deletes the review file its plan wrote (not a record of the sync)", /rmSync\(join\(HERE, f\)/.test(body));
+ok("`listed` never ends 0 with its commit off origin/main: exit 6 when the push fails, and a 'nothing to write' run pushes what an earlier run could not (2026-11-03)",
+  /nothing to write[^\n]*process\.exit\(pushMain\(\) \? 0 : NOT_ON_MAIN\)/.test(body) && /landed = pushMain\(\)/.test(body) && /landed \? 0 : NOT_ON_MAIN/.test(body)
+  && !/Could not push main/.test(gate));
 
 report("tracker-listed-sync");
