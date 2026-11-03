@@ -228,10 +228,10 @@ async function skipScenario(con) {
 const jobs = [];
 for (const con of CONSOLES) for (const view of VIEWS) for (const theme of view.themes || ["light", "dark"]) {
   if (con.id === "space-member" && (view.long)) continue;
-  if (process.env.SV_NUX_ONLY && !`${con.id} ${view.name} ${theme}`.includes(process.env.SV_NUX_ONLY)) continue;
+  if (process.env.SV_NUX_MARKS === "1" || (process.env.SV_NUX_ONLY && !`${con.id} ${view.name} ${theme}`.includes(process.env.SV_NUX_ONLY))) continue;
   jobs.push(() => scenario({ con, view, theme }));
 }
-if (!process.env.SV_NUX_ONLY) jobs.push(() => marksScenario(CONSOLES[0]), () => marksScenario(CONSOLES[1]), () => skipScenario(CONSOLES[0]), () => skipScenario(CONSOLES[1]));
+if (!process.env.SV_NUX_ONLY || process.env.SV_NUX_MARKS === "1") jobs.push(() => marksScenario(CONSOLES[0]), () => marksScenario(CONSOLES[1]), () => skipScenario(CONSOLES[0]), () => skipScenario(CONSOLES[1]));
 const N = Math.max(1, Number(process.env.SV_NUX_JOBS) || 5);
 let next = 0;
 const crashed = [];
