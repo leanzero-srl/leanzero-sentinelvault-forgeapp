@@ -12,6 +12,15 @@ const note = (n) => Object.freeze({ ...n, changes: Object.freeze([...(n.changes 
 
 export const RELEASE_NOTES = Object.freeze([
   note({
+    version: "8.24.0",
+    date: "2026-11-03",
+    headline: "Elzi shows you around site settings and space settings",
+    changes: [
+      "New: Elzi, the guide you may know from our other apps, now walks you through Sentinel Vault. The first time you open the site settings page or a space's Sentinel Vault page she says hello and shows you around, and every tab has a short tour of its own that explains the idea behind it, such as what a seal does, when a validation blocks a save, or what a backup restores. A tour opens by itself once for each person, and Skip or Esc closes it at any step. Take the tour or Replay tour in the page header opens the page tour again, and Show all tours again brings every tour back. What each person has seen is remembered for that person only and holds nothing but the tour's name, its version and the time; it is deleted with the person's data and is not part of a backup.",
+    ],
+    fixes: [],
+  }),
+  note({
     version: "8.23.0",
     date: "2026-10-26",
     headline: "The AI review allowance follows a paid site's users",
