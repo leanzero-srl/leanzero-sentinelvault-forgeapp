@@ -50,7 +50,8 @@
     "8.20.0": "11087",
     "8.21.0": "11120",
     "8.22.0": "11187",
-    "8.23.0": "11189"
+    "8.23.0": "11189",
+    "8.24.0": "11224"
   },
   "issues": {
     "02dc09e3ae3c6c5a": {
@@ -660,6 +661,10 @@
     "a5aba3077e520244": {
       "key": "SVT-156",
       "id": "29048"
+    },
+    "5777085d5a63cd5b": {
+      "key": "SVT-157",
+      "id": "29838"
     }
   },
   "permissionScheme": {
@@ -672,7 +677,7 @@
     ],
     "assigned": true
   },
-  "updatedAt": "2026-10-26T13:58:05.100Z",
+  "updatedAt": "2026-11-03T08:11:22.632Z",
   "projectId": "10278",
   "issueTypeScheme": {
     "id": "10636",
@@ -796,49 +801,53 @@
     "undo": "DELETE /rest/api/3/permissionscheme/10265/permission/11703",
     "proof": {
       "GET /rest/api/3/issue/SVT-1": 200,
-      "GET /rest/api/3/issue/SVT-154": 200,
+      "GET /rest/api/3/issue/SVT-157": 200,
       "GET /rest/api/3/issue/ATLAS-2361": 404,
       "GET /rest/api/3/issue/CRBAK-1": 404,
-      "GET /rest/api/3/issue/CRD-30": 404,
+      "GET /rest/api/3/issue/CRBAK2-1": 404,
+      "GET /rest/api/3/issue/CRD-41": 404,
       "GET /rest/api/3/issue/CRS-9": 404,
-      "GET /rest/api/3/issue/CRT-462": 200,
+      "GET /rest/api/3/issue/CRT-548": 200,
       "GET /rest/api/3/issue/CS-1223": 404,
-      "GET /rest/api/3/issue/CST-38": 200,
-      "GET /rest/api/3/issue/DACC-5": 404,
+      "GET /rest/api/3/issue/CST-45": 200,
+      "GET /rest/api/3/issue/DACC-11": 404,
+      "GET /rest/api/3/issue/DEMO-1": 404,
       "GET /rest/api/3/issue/DESIGN-1225": 404,
+      "GET /rest/api/3/issue/FSD-38": 404,
       "GET /rest/api/3/issue/GROWTH-1226": 404,
-      "GET /rest/api/3/issue/GUARD-9": 404,
+      "GET /rest/api/3/issue/GUARD-102": 404,
       "GET /rest/api/3/issue/HELIOS-1724": 404,
       "GET /rest/api/3/issue/ITHELP-1223": 404,
       "GET /rest/api/3/issue/KAN-1": 404,
       "GET /rest/api/3/issue/LEDGER-1225": 404,
-      "GET /rest/api/3/issue/LICW-47": 404,
-      "GET /rest/api/3/issue/LZMT-376": 200,
+      "GET /rest/api/3/issue/LICW-55": 404,
+      "GET /rest/api/3/issue/LZMT-383": 200,
       "GET /rest/api/3/issue/ORBIT-91": 404,
+      "GET /rest/api/3/issue/PAYB-31": 404,
       "GET /rest/api/3/issue/PLATSUP-1222": 404,
       "GET /rest/api/3/issue/PPL-27": 404,
       "GET /rest/api/3/issue/PRISM-1223": 404,
       "GET /rest/api/3/issue/SEC-1225": 404,
       "GET /rest/api/3/issue/VOY-1992": 404,
       "anonymous site-wide search (bounded, all pages): issues per project": {
-        "SVT": 150,
-        "CRT": 462,
-        "CST": 38,
-        "LZMT": 376
+        "SVT": 153,
+        "LZMT": 383,
+        "CRT": 548,
+        "CST": 45
       },
-      "anonymous listing of SVT": "150 issues (receipt holds 150; 已完成 119, Backlog 31)",
+      "anonymous listing of SVT": "153 issues (receipt holds 153; 已完成 122, Backlog 31)",
       "other projects whose scheme lets anyone browse": "CRT,CST,LZMT",
       "public trackers (allowlist)": "CRT,SVT,LZMT,CST",
       "negative control": "13 fake broken answers, each failed the verdict",
       "GET /jira/software/c/projects/SVT/issues": 200
     },
-    "provenAt": "2026-10-26T11:48:14.569Z",
+    "provenAt": "2026-11-03T08:11:22.632Z",
     "proofFailures": []
   },
   "verified": {
-    "through": "8.23.0",
-    "at": "2026-10-26T13:58:05.100Z",
-    "issues": 152,
+    "through": "8.24.0",
+    "at": "2026-11-03T08:09:54.442Z",
+    "issues": 153,
     "failures": 0
   }
 }
