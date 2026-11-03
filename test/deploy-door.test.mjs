@@ -392,6 +392,9 @@ let p = ""; process.stdin.on("data", (d) => (p += d)); process.stdin.on("end", (
   // exited 0 and said nothing, and both releases were pushed by hand. Now it pushes HEAD to origin/main fast-forward only
   // from anywhere, and when that cannot happen the door exits 3 with the exact git command (production stays deployed).
   {
+    const before = full("HEAD");
+    // production recorded one release back, so every run here has a receipt commit to land (post records CUT)
+    fs.writeFileSync(PROD_F, JSON.stringify({ release: LIVE })); git("commit", "-qam", "production one release back (push cases)");
     const P = full("HEAD");
     const originMain = () => execFileSync("git", ["-C", origin, "rev-parse", "refs/heads/main"], { encoding: "utf8" }).trim();
     const PUSH = { FAKE_ELIG: ELIGIBLE, RELEASE_GATE_NO_PUSH: "" };
@@ -400,7 +403,9 @@ let p = ""; process.stdin.on("data", (d) => (p += d)); process.stdin.on("end", (
     r = door(PUSH, L, { keep: true });
     let after = full("HEAD");
     ok("DETACHED HEAD release worktree: the door deploys AND pushes its receipt commit to origin/main (fast-forward), exit 0",
-      r.status === 0 && last.deployed && after !== P && originMain() === after && /Pushed [0-9a-f]{12} to origin\/main \(fast-forward, from a detached HEAD\)/.test(r.stdout));
+      r.status === 0 && last.deployed && after !== P && /public tracker: .* in production/.test(last.log) && originMain() === after && /Pushed [0-9a-f]{12} to origin\/main \(fast-forward, from a detached HEAD\)/.test(r.stdout));
+    r = door(PUSH, L, { sha: P, keep: true });
+    ok("...a redeploy with nothing new to commit: exit 0, says origin/main already holds HEAD", r.status === 0 && /origin\/main already holds/.test(r.stdout) && originMain() === full("HEAD"));
     git("reset", "-q", "--hard", P);
     git("push", "-q", "-f", "origin", `${P}:refs/heads/main`);
     git("checkout", "-q", "-b", "release-x", P);
@@ -431,7 +436,7 @@ let p = ""; process.stdin.on("data", (d) => (p += d)); process.stdin.on("end", (
     git("push", "-q", "-f", "origin", `${P}:refs/heads/main`);
     r = door({ ...PUSH, FAKE_TRACKER_FAIL: "verify" }, L, { keep: true });
     ok("a failing tracker step from a detached HEAD: exit 0, and the receipt is on origin/main", r.status === 0 && originMain() === full("HEAD"));
-    git("checkout", "-q", "main"); git("reset", "-q", "--hard", P);
+    git("checkout", "-q", "main"); git("reset", "-q", "--hard", before);
   }
 
   // DRY RUN: checks, writes nothing, builds nothing, deploys nothing
