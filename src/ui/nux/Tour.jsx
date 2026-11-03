@@ -461,8 +461,10 @@ export default function Tour({ steps: given = null, tour: givenTour = null, auto
   const replay = tourDef.replay ? <TourReplay tour={tourKey} /> : null;
   if (!st.open || !step) return replay;
   const last = st.index + 1 >= st.count;
-  const small = geo ? geo.small : false;
-  const headOnly = geo ? geo.headOnly : false;
+  // before the first placement the hidden bubble is the height probe: it must wear the same size class the drawn one will
+  const frameWNow = geo ? geo.doc.w : (typeof document !== "undefined" && document.documentElement.clientWidth) || 0;
+  const small = geo ? geo.small : (frameWNow > 0 && frameWNow < SMALL_W);
+  const headOnly = geo ? geo.headOnly : (frameWNow > 0 && frameWNow < HEAD_ONLY_W);
   const pose = poseFor(step, geo ? geo.rel : null);
   // a step may say it differently for the element that won (`textBy`, e.g. a phone's other button)
   // and other words for what the element is showing (`say`, e.g. a demo that is already Ready)
