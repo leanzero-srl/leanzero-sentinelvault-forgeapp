@@ -25,7 +25,7 @@ const step = (id, anchors, face, title, text, extra = {}) => ({ id, anchors: [].
 export const SITE_STEPS = Object.freeze({
   settings: [
     step("protection", "grp-protection", "curious", "Protection",
-      "This group decides what gets protected and who may step in. If someone removes a sealed image from a page, Sentinel Vault can put it back. Space admins can release a seal that'sn't theirs, with a reason that's recorded."),
+      "This group decides what gets protected and who may step in. If someone removes a sealed image from a page, Sentinel Vault can put it back. Space admins can release a seal that isn't theirs, with a reason that's recorded."),
     step("expiry", "grp-expiry", "happy", "How long a seal lasts",
       "A seal holds a file for a set time, 48 hours unless you change it. Before it runs out, the owner gets a few reminders. You can also turn expiry off, and then a seal lasts until someone releases it."),
     step("alerts", "grp-alerts", "look", "Who hears about it",
@@ -35,7 +35,7 @@ export const SITE_STEPS = Object.freeze({
     step("what", "val-enable", "curious", "Content rules",
       "A validation checks a page each time it's saved. You might ask for a heading, add a table requirement, or cap the length. Confluence can't stop a save, so the check runs right after it."),
     step("modes", "val-modes", "happy", "What happens to a page that fails",
-      "Advisory leaves a comment listing what's missing. Gate marks the page passed or failed. Revert puts back the last good version, which can throw away someone's work, so choose it on purpose."),
+      "Advisory leaves a comment listing what's missing. Gate stores a passed or failed status on the page and never stops the save. Revert puts back the last good version, which can throw away someone's work, so choose it on purpose."),
     step("ai", "val-ai", "look", "AI review",
       "An AI can also read a page against your own instructions. It runs on Atlassian's own AI, so nothing leaves Atlassian. It's off until you turn it on, and a monthly allowance for the whole site caps what it can use."),
   ],
@@ -81,9 +81,9 @@ export const SPACE_STEPS = Object.freeze({
   ],
   permissions: [
     step("quiet", "@sv-notifications-mode-card", "curious", "Quiet mode",
-      "Normally Sentinel Vault posts a comment on the page that mentions the people involved. Set the space to Quiet and it posts none and mentions nobody. Pop-ups, the page ribbon and the activity log keep working."),
+      "Normally this space follows the site's setting for page comments that mention people. Set the space to Quiet and it posts none and mentions nobody, even when the site has them turned on. Pop-ups, the page ribbon and the activity log keep working."),
     step("admins", "admins-card", "happy", "Space admins",
-      "Add people or whole groups as Sentinel Vault admins here. They can see every seal in this space and manage it. Requests for access wait in the next card for you to approve or deny."),
+      "Add people or whole groups as Sentinel Vault admins here. They can see every seal in this space and manage it. Requests for access wait in the card below for you to approve or deny."),
     step("class", "@sv-classification-card", "look", "Classification here",
       "If the site has classification on, you can switch it off for just this space, or pick a default level for its pages. Lowering that default asks for a reason."),
   ],
@@ -101,7 +101,7 @@ export const SPACE_STEPS = Object.freeze({
     step("what", "val-enable", "curious", "Rules for this space",
       "These checks run on pages in this space each time one is saved. Leave the list empty and the space follows the site's rules. Add your own and they replace the site's advisory rules. A rule the site marks required always applies."),
     step("modes", "val-modes", "happy", "What happens to a page that fails",
-      "Advisory leaves a comment, Gate marks the page passed or failed, and Revert puts back the last good version. A space can switch a way on. It can't switch off one the site turned on."),
+      "Advisory leaves a comment, Gate stores a passed or failed status on the page, and Revert puts back the last good version. A space can turn on a way the site left off, but it can't turn off one the site turned on."),
     step("rules", "val-rules", "look", "Add a rule",
       "Press Add rule, pick a type such as a required heading or table, give it a label, and say whether it's advisory or required. Then save."),
   ],
