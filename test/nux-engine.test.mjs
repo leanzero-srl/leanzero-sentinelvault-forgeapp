@@ -177,6 +177,9 @@ eq("the hello (no target) is judged on the canvas only", judgeAcceptance({ ...ba
     eq(`tall card: permissions/${id} falls back to its header row`, st && st.narrower, [tok]);
     ok(`tall card: the realm console draws the ${tok} anchor on a card header`, realm.includes(`<div className="settings-card-header" data-nux="${tok}">`));
   }
+  const ask = SPACE_STEPS["my-claims"].find((x) => x.id === "admin");
+  eq("tall card: my-claims/admin falls back to the Request admin access button", ask && ask.narrower, ["request-admin-btn"]);
+  ok("tall card: the realm console draws the request-admin-btn anchor on that button", /<button data-nux="request-admin-btn"[^>]*onClick=\{handleRequestSteward\}/.test(realm));
   const resolved = T.resolveSteps(() => true, SPACE_STEPS.permissions);
   ok("tall card: resolveSteps keeps the fallback on the step the engine runs", resolved.every((x) => Array.isArray(x.narrower) && x.narrower.length === 1));
 }

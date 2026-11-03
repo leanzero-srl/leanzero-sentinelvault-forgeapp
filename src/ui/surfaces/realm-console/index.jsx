@@ -1758,7 +1758,7 @@ const RealmPolicyDashboard = () => {
                   <p role="alert" style={{ margin: "6px 0 0", fontSize: "12px", fontWeight: 600, color: "var(--sv-interactive-danger)" }}>{stewardRequestError}</p>
                 )}
               </div>
-              <button className={`action-btn lock ${stewardRequestBusy ? "is-busy" : ""}`} onClick={handleRequestSteward} disabled={stewardRequestBusy} title="Ask a space admin to grant you admin access to Sentinel Vault in this space">
+              <button data-nux="request-admin-btn" className={`action-btn lock ${stewardRequestBusy ? "is-busy" : ""}`} onClick={handleRequestSteward} disabled={stewardRequestBusy} title="Ask a space admin to grant you admin access to Sentinel Vault in this space">
                 {stewardRequestBusy ? <>Requesting<span className="btn-busy-bar" /></> : "Request admin access"}
               </button>
             </div>

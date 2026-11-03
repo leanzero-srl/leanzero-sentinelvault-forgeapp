@@ -73,7 +73,8 @@ export const SPACE_STEPS = Object.freeze({
     step("what", "@rc-tab-my-claims", "curious", "Your sealed files",
       "Here are the files you have sealed in this space, and the edit requests you have made. A seal is yours until you release it or it runs out. After that the file is open to everyone again."),
     step("admin", "request-admin", "happy", "Want more control?",
-      "If you look after this space, ask for admin access. A space admin approves it. If it's declined, you can ask again after 48 hours."),
+      "If you look after this space, ask for admin access. A space admin approves it. If it's declined, you can ask again after 48 hours.",
+      { narrower: ["request-admin-btn"] }),
   ],
   "locked-attachments": [
     step("what", "sealed-head", "curious", "Sealed files",
