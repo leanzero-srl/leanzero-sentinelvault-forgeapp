@@ -237,6 +237,42 @@ async function skipScenario(con) {
   await ctx.close();
 }
 
+/* "Show all tours again" opens the page tour NOW, in the same view (live on leanzero-demo 2026-11-03: after the tour ran
+   and was skipped, Reset cleared the marks but nothing opened until a reload). Two starts: the tour ran in THIS view and
+   was skipped (the reported case), and a tour skipped on an earlier visit (nothing ran in this view). After the reset
+   tour ends, the current tab's mini-tour still waits for the next tab visit (the in-view rule is kept). */
+async function resetScenario(con, ranHere) {
+  const tag = `${con.id} reset${ranHere ? " after a tour in this view" : " after an earlier skip"}`;
+  const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 }, reducedMotion: "reduce" });
+  const marks = ranHere ? {} : { [con.page]: { seen: true, version: 2, how: "skipped" } };
+  await ctx.addInitScript(([sh, m]) => { window.__SHOT__ = sh; window.__NUX__ = { tours: m }; window.__dialogs = 0; for (const k of ["alert", "confirm", "prompt"]) window[k] = () => { window.__dialogs++; }; try { sessionStorage.clear(); localStorage.clear(); } catch (_) { /* fresh */ } }, [con.shot, marks]);
+  const page = await ctx.newPage();
+  await page.goto(servers[con.app].url, { waitUntil: "domcontentloaded" });
+  await page.waitForFunction(() => document.getElementById("root") && document.getElementById("root").children.length > 0, { timeout: 10000 });
+  if (ranHere) {
+    await page.waitForFunction(() => document.querySelector('[data-nux-step="hello"]'), { timeout: 8000 }).catch(() => {});
+    eq(`${tag}: the page tour opened by itself first`, (await stepLine(page))?.tour, con.page);
+    await page.locator('[data-testid="nux-skip"]').click();
+    await page.waitForFunction(() => !document.querySelector("[data-nux-step]"), { timeout: 4000 }).catch(() => {});
+  } else await sleep(2500);
+  eq(`${tag}: no tour on screen before the reset`, await stepLine(page), null);
+  await page.locator('[data-testid="nux-reset-btn"]').first().click();
+  await page.locator('[data-testid="nux-reset-yes"]').click();
+  await page.waitForFunction(() => document.querySelector("[data-nux-step]"), { timeout: 8000 }).catch(() => {});
+  const after = await stepLine(page);
+  eq(`${tag}: the page tour opens at once, without a reload`, after && [after.tour, after.step], [con.page, "hello"]);
+  ok(`${tag}: the reset was stored, then the tour marked shown`, (await sets(page)).join(",").includes(`reset,${con.page}:shown`));
+  ok(`${tag}: the dialog is gone`, (await page.locator('[data-testid="nux-reset-dialog"]').count()) === 0);
+  if (after) {
+    await page.locator('[data-testid="nux-skip"]').click();
+    await page.waitForFunction(() => !document.querySelector("[data-nux-step]"), { timeout: 4000 }).catch(() => {});
+    await sleep(1500);
+    eq(`${tag}: after it, nothing else opens in this view`, await stepLine(page), null);
+  }
+  ok(`${tag}: no native alert/confirm/prompt`, (await page.evaluate(() => window.__dialogs)) === 0);
+  await ctx.close();
+}
+
 // run the scenarios N at a time
 const jobs = [];
 for (const con of CONSOLES) for (const view of VIEWS) for (const theme of view.themes || ["light", "dark"]) {
@@ -244,7 +280,8 @@ for (const con of CONSOLES) for (const view of VIEWS) for (const theme of view.t
   if (process.env.SV_NUX_MARKS === "1" || (process.env.SV_NUX_ONLY && !`${con.id} ${view.name} ${theme}`.includes(process.env.SV_NUX_ONLY))) continue;
   jobs.push(() => scenario({ con, view, theme }));
 }
-if (!process.env.SV_NUX_ONLY || process.env.SV_NUX_MARKS === "1") jobs.push(() => marksScenario(CONSOLES[0]), () => marksScenario(CONSOLES[1]), () => skipScenario(CONSOLES[0]), () => skipScenario(CONSOLES[1]));
+if (!process.env.SV_NUX_ONLY || process.env.SV_NUX_MARKS === "1") jobs.push(() => marksScenario(CONSOLES[0]), () => marksScenario(CONSOLES[1]), () => skipScenario(CONSOLES[0]), () => skipScenario(CONSOLES[1]),
+  ...CONSOLES.flatMap((c) => [() => resetScenario(c, true), () => resetScenario(c, false)]));
 const N = Math.max(1, Number(process.env.SV_NUX_JOBS) || 5);
 let next = 0;
 const crashed = [];
@@ -256,7 +293,7 @@ for (const c of crashed) findings.push(`scenario crashed: ${c}`);
 if (process.env.SV_NUX_LINES === "1" || findings.length) console.log(lines.sort().join("\n"));
 for (const f of [...new Set(findings)].sort()) ok(`GEOMETRY: ${f}`, false);
 for (const f of [...new Set(infos)].sort()) console.log(`  INFO (cannot fit, engine said so): ${f}`);
-ok(`every tour step was measured (${lines.length} measurements; tours: ${allTours().length})`, process.env.SV_NUX_ONLY ? true : lines.length > 300);
+ok(`every tour step was measured (${lines.length} measurements; tours: ${allTours().length})`, (process.env.SV_NUX_ONLY || process.env.SV_NUX_MARKS === "1") ? true : lines.length > 300);
 await browser.close();
 for (const s of Object.values(servers)) s.s.close();
 report("nux-geometry");

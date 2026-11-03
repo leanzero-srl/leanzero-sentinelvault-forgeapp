@@ -1,8 +1,10 @@
 /*
  * "Show all tours again": gives this person every Elzi tour back. A small link beside the tour button in the console
  * headers; it asks first in the app's own dialog (never a native confirm), then clears the stored marks, this tab's
- * and this browser's "already shown" notes and the in-memory marks, so the page tour and every tab's mini-tour open
- * by themselves on the next visit and the header buttons read "Take the tour" again.
+ * and this browser's "already shown" notes and the in-memory marks. The page tour then opens at once in this view (the
+ * dialog promises "Elzi will walk you through this page ... again"; marks.js resetMarks also forgets that a tour already
+ * ran in this view), each tab's mini-tour opens on that tab's next visit after it, as the first time, and the header
+ * buttons read "Take the tour" again.
  */
 import React, { useState } from "react";
 import Dialog from "../kit/Dialog.jsx";

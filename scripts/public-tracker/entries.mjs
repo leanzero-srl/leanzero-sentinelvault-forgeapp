@@ -584,6 +584,14 @@ export const KNOWN = [
     where: "My work; Space settings, Sealed Files and Access Control tabs.",
     workaround: "Wait a moment and reload the page before you rely on an empty list.",
   },
+  // 2026-11-03: found on leanzero-demo; reproduced on the 8.24.0 code (a reset after a tour already ran in the same view), fix scheduled.
+  {
+    k: "known-reset-tours-waits-for-reload", c: "C", affects: "8.24.0", fix: "scheduled",
+    t: "After Show all tours again, Elzi's page tour does not start until you reload the page",
+    see: "If a tour has already been on screen since you opened the page, for example because you skipped Elzi's page tour, pressing Show all tours again and confirming brings your tours back but nothing opens. The page tour opens by itself again only after you reload the page or open it again.",
+    where: "Site settings and Space settings (the space's Sentinel Vault page), Show all tours again.",
+    workaround: "Reload the page after Show all tours again, or press Take the tour in the page header.",
+  },
 ];
 
 // Known bugs a release closed (folded into that release's note line, so the issue is Done with it).

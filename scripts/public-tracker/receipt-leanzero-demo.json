@@ -665,6 +665,10 @@
     "5777085d5a63cd5b": {
       "key": "SVT-157",
       "id": "29838"
+    },
+    "known-reset-tours-waits-for-reload": {
+      "key": "SVT-158",
+      "id": "29839"
     }
   },
   "permissionScheme": {
@@ -677,7 +681,7 @@
     ],
     "assigned": true
   },
-  "updatedAt": "2026-11-03T08:11:22.632Z",
+  "updatedAt": "2026-11-03T09:02:24.340Z",
   "projectId": "10278",
   "issueTypeScheme": {
     "id": "10636",

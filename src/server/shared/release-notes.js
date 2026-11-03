@@ -12,6 +12,15 @@ const note = (n) => Object.freeze({ ...n, changes: Object.freeze([...(n.changes 
 
 export const RELEASE_NOTES = Object.freeze([
   note({
+    version: "8.25.0",
+    date: "2026-11-03",
+    headline: "Show all tours again opens Elzi's tour right away",
+    changes: [],
+    fixes: [
+      "Show all tours again now opens Elzi's page tour right away. Before, if a tour had already been on screen since you opened the page, for example because you skipped it, nothing opened until you reloaded. Each tab's tour still opens the first time you visit that tab after you finish the page tour. Fixes SVT-158.",
+    ],
+  }),
+  note({
     version: "8.24.0",
     date: "2026-11-03",
     headline: "Elzi shows you around site settings and space settings",

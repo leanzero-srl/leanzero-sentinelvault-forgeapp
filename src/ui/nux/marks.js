@@ -6,15 +6,14 @@
  * opens or ends updates the copy in memory at once (noteMark), so a second tour on the same page sees
  * that the first one ran without asking Jira again. A failed read stays {ok:false}: no tour opens by
  * itself on a failed read.
- * One tour on screen at a time: holdOpen / releaseOpen / openTourNow (a plain module flag, so two tour
- * instances in one frame never draw two dims).
+ * One tour on screen at a time: holdOpen / releaseOpen / openTourNow / tourOpenSince live in view-guard.js.
  */
 import { invoke } from "../kit/bridge.js";
+import { clearViewGuard } from "./view-guard.js";
 
 let read = null;
 let cache = null;
 const subs = new Set();
-let openKey = null;
 
 const shape = (r) => (r && r.success ? { ok: true, seen: !!r.seen, version: r.version, tours: r.tours || null } : { ok: false });
 
@@ -25,10 +24,13 @@ export const readMarks = () => {
 };
 /** JUDGE SCORE #2: after a Reset cleared this person's marks (demo.js clearTours), the next read asks Jira again. */
 export const forgetMarks = () => { read = null; cache = null; };
-/** After a Reset (the stored row is gone): every mark reads "not seen" at once, and every tour button and tab hears it. */
+/** After a Reset (the stored row is gone): every mark reads "not seen" at once, and every tour button and tab hears it.
+    The view's "a tour already ran here" note goes too (clearViewGuard), BEFORE the listeners hear it, so the page tour
+    opens now in this view instead of on the next visit (live on leanzero-demo 2026-11-03). */
 export const resetMarks = () => {
   read = Promise.resolve({ ok: true, seen: false, tours: {} });
   cache = { ok: true, seen: false, tours: {} };
+  clearViewGuard();
   for (const fn of subs) { try { fn(cache); } catch (e) { /* a gone listener */ } }
 };
 /** What is known now (null until the read answered). */
@@ -48,14 +50,5 @@ export const tourSeen = (m, key) => !!(m && m.ok === true && m.tours && m.tours[
    shown? An admin who presses Skip on the page tour is not then met by a tour on every tab (false while unknown). */
 export const tourFinished = (m, key) => tourSeen(m, key) && m.tours[key].how === "done";
 
-export const openTourNow = () => openKey;
-let lastOpenAt = -1;
-let lastCloseAt = -1; // a tour that opened before `t` and closed after it was on screen since `t` too
-export const holdOpen = (key) => { openKey = key; lastOpenAt = Date.now(); };
-/*
- * Was a tour on screen at any moment since `t`? A tour opens by itself only into a view where no
- * tour has run since it was put on screen: the glance's activity tour does not follow straight after
- * the gate tour, and an admin tab's mini-tour waits for the next tab visit after the page tour.
- */
-export const tourOpenSince = (t) => openKey !== null || lastOpenAt >= t || lastCloseAt >= t;
-export const releaseOpen = (key) => { if (openKey === key) { openKey = null; lastCloseAt = Date.now(); } };
+// one tour on screen at a time, none straight after another in the same view (view-guard.js, dependency-free)
+export { holdOpen, openTourNow, releaseOpen, tourOpenSince, viewResets } from "./view-guard.js";

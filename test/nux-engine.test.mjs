@@ -134,4 +134,27 @@ eq("the hello (no target) is judged on the canvas only", judgeAcceptance({ ...ba
   ok("reset: the control asks in the app's own dialog, never a native confirm", /from "..\/kit\/Dialog.jsx"/.test(dlg) && !/window\.confirm|confirm\(/.test(dlg));
   ok("reset: both consoles carry the control", /<ResetTours/.test(read("src/ui/surfaces/steward-console/index.jsx")) && /<ResetTours/.test(read("src/ui/surfaces/realm-console/index.jsx")));
 }
+// ── the reset opens the page tour NOW, in the same view (live on leanzero-demo 2026-11-03: nothing opened until a reload) ──
+{
+  const G = await import("../src/ui/nux/view-guard.js");
+  const t0 = Date.now() - 1;
+  G.holdOpen("site"); G.releaseOpen("site");
+  ok("view guard: a tour that ran in this view stops a second auto-open", G.tourOpenSince(t0));
+  const n0 = G.viewResets();
+  eq("view guard: a reset forgets the tour that ran here and is counted", [G.clearViewGuard(), G.tourOpenSince(t0), G.viewResets()], [n0 + 1, false, n0 + 1]);
+  G.holdOpen("space");
+  G.clearViewGuard();
+  ok("view guard: a tour still on screen keeps its hold through a reset", G.tourOpenSince(t0) && G.openTourNow() === "space");
+  G.releaseOpen("space");
+  ok("view guard: after that tour, the in-view rule holds again (a tab's mini-tour waits for the next visit)", G.tourOpenSince(t0));
+  const marks = read("src/ui/nux/marks.js"), tour = read("src/ui/nux/Tour.jsx");
+  ok("reset: resetMarks clears the view guard BEFORE the listeners hear the new marks",
+    /clearViewGuard\(\);\s*\n\s*for \(const fn of subs\)/.test(marks.slice(marks.indexOf("export const resetMarks"))));
+  ok("reset: a Tour that hears a new reset count re-arms its auto start (autoDone off, a fresh view time, effect re-run)",
+    /n !== resetsSeen\.current\) \{ resetsSeen\.current = n; autoDone\.current = false; mountedAt\.current = Date\.now\(\); setRearmed\(n\); \}/.test(tour)
+    && /\[stored, rearmed, start,/.test(tour));
+  ok("reset: every other auto-open rule still decides (the stored mark, this tab's note, the in-view guard, `after`)",
+    /!wantsAutoStart\(\{ stored, key: tourKey, oncePerBrowser \}\) \|\| autoShownHere\(tourKey\) \|\| tourOpenSince\(mountedAt\.current\)/.test(tour) && /afterSeen\(tourDef, marksNow\(\)\)/.test(tour));
+  ok("reset: no second copy of the in-view guard in marks.js", !/let openKey|lastOpenAt/.test(marks));
+}
 report("nux-engine");

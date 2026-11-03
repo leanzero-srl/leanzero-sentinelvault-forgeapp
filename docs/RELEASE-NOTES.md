@@ -2,6 +2,14 @@
 
 GENERATED from `src/server/shared/release-notes.js` by `scripts/render-release-notes.mjs`. Do not edit.
 
+## 8.25.0 — 2026-11-03
+
+**Show all tours again opens Elzi's tour right away**
+
+
+Fixed:
+- Show all tours again now opens Elzi's page tour right away. Before, if a tour had already been on screen since you opened the page, for example because you skipped it, nothing opened until you reloaded. Each tab's tour still opens the first time you visit that tab after you finish the page tour. Fixes SVT-158.
+
 ## 8.24.0 — 2026-11-03
 
 **Elzi shows you around site settings and space settings**

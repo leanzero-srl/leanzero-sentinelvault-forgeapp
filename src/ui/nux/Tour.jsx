@@ -27,7 +27,7 @@ import {
   BOTTOM_RESERVE, EDGE, NUX_VERSION, RING_W, TAB_WAIT_MS, TOUR_INITIAL, anchorSelector, autoShownHere, markBrowserShown, wantsAutoStart, keyAction, markAutoShownHere, placeTour, poseFor,
   afterSeen, resolveSteps, sayFor, stepLabel, stepWords, stepsWithIntro, storedFor, tourButtonLabel, tourReducer,
 } from "./tourSteps.js";
-import { anyTourSeen, holdOpen, marksNow, noteMark, onMarks, openTourNow, readMarks, releaseOpen, tourOpenSince } from "./marks.js";
+import { anyTourSeen, holdOpen, marksNow, noteMark, onMarks, openTourNow, readMarks, releaseOpen, tourOpenSince, viewResets } from "./marks.js";
 
 export const NUX_REPLAY_EVENT = "sv-nux:replay";
 export const NUX_STEP_EVENT = "sv-nux:step";
@@ -154,6 +154,9 @@ export default function Tour({ steps: given = null, tour: givenTour = null, auto
   const returnFocus = useRef(null);
   const autoDone = useRef(false);
   const mountedAt = useRef(Date.now());
+  // "Show all tours again" in this view (marks.js resetMarks counts it): the auto start is armed once more, now
+  const resetsSeen = useRef(viewResets());
+  const [rearmed, setRearmed] = useState(0);
   // Was the last input a key? (design review 2026-10-29: a mouse- or auto-opened tour must not land
   // on Next with its keyboard ring; keyboard users still get the focus on Next and :focus-visible.)
   const byKey = useRef(false);
@@ -182,7 +185,12 @@ export default function Tour({ steps: given = null, tour: givenTour = null, auto
   useEffect(() => {
     injectTourStyles();
     let live = true;
-    const take = (r) => { if (live) { const mine = storedFor(r, tourKey); setStored(mine); sayLabel(mine, tourKey); } };
+    const take = (r) => {
+      if (!live) return;
+      const n = viewResets();
+      if (n !== resetsSeen.current) { resetsSeen.current = n; autoDone.current = false; mountedAt.current = Date.now(); setRearmed(n); }
+      const mine = storedFor(r, tourKey); setStored(mine); sayLabel(mine, tourKey);
+    };
     if (marksNow()) take(marksNow());
     readMarks().then(take);
     const off = onMarks(take);
@@ -194,6 +202,8 @@ export default function Tour({ steps: given = null, tour: givenTour = null, auto
   // answered). It is marked "shown" at once (KVS, and this tab's sessionStorage in case that write
   // fails), so a reload halfway through does not open it again. Its view not drawn within
   // AUTO_WAIT_MS (a failed read): no tour, and nothing is marked, so it waits for an issue that works.
+  // After "Show all tours again" (`rearmed`) the same rules decide once more in this view: the reset cleared the marks,
+  // the "shown here" notes and the view's "a tour ran here" note, so the page tour opens now, not on the next visit.
   useEffect(() => {
     if (!autoStart || autoDone.current || !wantsAutoStart({ stored, key: tourKey, oncePerBrowser }) || autoShownHere(tourKey) || tourOpenSince(mountedAt.current)) return undefined;
     // a tour that comes after another (the activity list after the gate / steward tour) waits for its mark
@@ -216,7 +226,7 @@ export default function Tour({ steps: given = null, tour: givenTour = null, auto
       } else if (Date.now() - t0 > AUTO_WAIT_MS) clearInterval(id);
     }, AUTO_POLL_MS);
     return () => clearInterval(id);
-  }, [stored, start, tourKey, autoStart, oncePerBrowser, tourDef.ready]);
+  }, [stored, rearmed, start, tourKey, autoStart, oncePerBrowser, tourDef.ready]);
 
   // Replay from the trail's button.
   useEffect(() => {
