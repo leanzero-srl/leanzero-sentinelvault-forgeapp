@@ -110,14 +110,19 @@ const visibleRect = () => new Promise((resolve) => {
 // Scroll so the element + the row are on screen together (crosses into Jira's page from the iframe).
 // The scroll target carries BOTTOM_RESERVE px of clear space under the row (Jira's floating Rovo
 // button sits over the window's bottom-right corner, tourSteps.js).
+// The block scrolled to centre a step is kept for as long as the step is on screen (a timer that removed it shrank the page
+// by however far its first-guess size differed from the real placement, and the browser slid the whole step by that much).
+let scrollBlock = null;
+const dropScrollBlock = () => { try { if (scrollBlock) scrollBlock.remove(); } catch (e) { /* gone */ } scrollBlock = null; };
 const scrollUnionIntoView = (union) => {
   try {
+    dropScrollBlock();
     const t = document.createElement("div");
     t.setAttribute("aria-hidden", "true");
     t.style.cssText = "position:absolute;left:0;width:1px;pointer-events:none;opacity:0;top:" + Math.max(0, union.top - EDGE) + "px;height:" + Math.max(1, union.bottom - union.top + 2 * EDGE + BOTTOM_RESERVE) + "px";
     document.body.appendChild(t);
+    scrollBlock = t;
     t.scrollIntoView({ block: "center", behavior: "auto" }); // before anything is drawn: never animated
-    setTimeout(() => t.remove(), 800);
   } catch (e) { /* nothing to scroll */ }
 };
 const frame = () => new Promise((res) => requestAnimationFrame(() => requestAnimationFrame(res)));
@@ -382,6 +387,10 @@ export default function Tour({ steps: given = null, tour: givenTour = null, auto
 
   // A new step draws nothing until it is measured (never the last step's placement for a moment).
   useLayoutEffect(() => { scrolledFor.current = ""; geoKey.current = ""; calloutHRef.current = 0; rejected.current = new Set(); setGeo(null); measure(); }, [measure, st.index, st.open]);
+
+  // the tour is over (or this component goes): the centring block goes with it
+  useEffect(() => { if (!st.open) dropScrollBlock(); }, [st.open]);
+  useEffect(() => dropScrollBlock, []);
 
   useEffect(() => {
     if (!st.open) return undefined;

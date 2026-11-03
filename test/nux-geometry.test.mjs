@@ -104,8 +104,8 @@ async function scenario({ con, view, theme }) {
         const k = (el) => { if (!el) return "-"; const x = el.getBoundingClientRect(); return [x.left, x.top, x.width, x.height].map((v) => Math.round(v * 2) / 2).join(","); };
         const id = `${n.getAttribute("data-nux-tour")}/${n.getAttribute("data-nux-step")}`;
         const key = [k(b), k(e), k(r), k(t), Math.round(scrollY)].join("|");
-        const f = (window.__frames[id] = window.__frames[id] || { first: key, moves: 0, last: key });
-        if (key !== f.last) { f.moves++; (f.log = f.log || []).push(f.last + " => " + key + " @" + Math.round(performance.now())); f.last = key; }
+        const f = (window.__frames[id] = window.__frames[id] || { first: key, moves: 0, last: key }); const shNow = document.documentElement.scrollHeight; if (f.sh !== undefined && f.sh !== shNow) (f.log = f.log || []).push("sh " + f.sh + " -> " + shNow + " @" + Math.round(performance.now())); f.sh = shNow;
+        if (key !== f.last) { f.moves++; (f.log = f.log || []).push(f.last + " => " + key + " @" + Math.round(performance.now()) + " sh=" + document.documentElement.scrollHeight + " sp=" + ((document.querySelector(".nux-spacer") || {}).offsetHeight || 0) + " root=" + Math.round(document.getElementById("root").getBoundingClientRect().bottom + scrollY)); f.last = key; }
       }
       requestAnimationFrame(watch);
     };
