@@ -275,6 +275,8 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .tab-content {
   padding: 8px 40px 0;
 }
+/* A tab's own Tour button sits in the same gutter as the tab's content (it touched the frame's right edge). */
+.space-admin-container > .nux-replay-row { padding: 0 40px; }
 
 /* Empty State */
 .empty-state {
@@ -2613,6 +2615,7 @@ html[data-color-mode="dark"] .sv-busy-veil { background: var(--sv-frosted-bg, rg
   .tab-navigation { margin: 20px 16px 0; max-width: calc(100% - 32px); }
   .tab-button { padding: 8px 12px; }
   .tab-content { padding: 8px 16px 0; }
+  .space-admin-container > .nux-replay-row { padding: 0 16px; }
   .alert-success, .alert-error { margin-left: 16px; margin-right: 16px; }
   .action-bar { padding: 12px 16px; }
 }
