@@ -162,6 +162,22 @@ else
   exit 1
 fi
 
+# The public tracker's credentials, BEFORE anything is written, built or deployed (2026-11-03): the door deploys and
+# THEN runs the tracker, so a Mac without them used to deploy 8.25.0 and only then lose the tracker step ("no credentials
+# file at ../CogniRunner/test-harness/.env": a repo-relative default, wrong in every worktree and on Gabee's MacBook).
+# scripts/public-tracker/credentials.mjs finds them (PUBLIC_TRACKER_ENV, else the harness .env under its known checkout
+# names) and the resolved file is exported, so the tracker step after the deploy reads the same one. A dry run checks it
+# too. Guards: test/tracker-credentials.test.mjs, test/deploy-door.test.mjs.
+CRED_RC=0
+CRED_OUT="$(node scripts/public-tracker/credentials.mjs 2>&1)" || CRED_RC=$?
+if [[ $CRED_RC -ne 0 || -z "$CRED_OUT" ]]; then
+  echo "ABORT: the public tracker's credentials were not found, so its step after the deploy would fail. Nothing was written, built or deployed."
+  echo "  ${CRED_OUT}"
+  exit 1
+fi
+export PUBLIC_TRACKER_ENV="$CRED_OUT"
+echo "==> Public tracker credentials: ${PUBLIC_TRACKER_ENV}"
+
 # Licensing guard: manifest.yml carries `licensing.enabled: true`. Deploying that to PROD
 # before a PAID pricing plan is live in the Partner portal makes every existing install read
 # unlicensed -> the nag banner appears for all current customers. Acknowledge explicitly.

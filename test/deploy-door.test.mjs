@@ -49,7 +49,7 @@ try {
   git("checkout", "-q", "-B", "main");
   // the working copy under test (the clone holds the last commit; the door is copied in as it is on disk now)
   for (const f of ["scripts/deploy-prod.sh", "scripts/check-installed-deps.mjs", "scripts/strip-dev-modules.mjs", "manifest.yml", "scripts/public-tracker/coverage.mjs", "scripts/public-tracker/release-gate.mjs",
-    "scripts/public-tracker/tracker.mjs", "scripts/release-autopilot.mjs"]) fs.copyFileSync(path.join(root, f), path.join(repo, f));
+    "scripts/public-tracker/tracker.mjs", "scripts/public-tracker/credentials.mjs", "scripts/release-autopilot.mjs"]) fs.copyFileSync(path.join(root, f), path.join(repo, f));
   // The tracker gate reads the clone's own rows, receipt and production-release.json: a row for every note line,
   // production recorded one release behind the one being cut, and a receipt verified through it.
   const { hashOf } = await import(pathToFileURL(path.join(root, "scripts/public-tracker/coverage.mjs")).href);
@@ -105,8 +105,8 @@ esac
   // recorded and wrote in `last` and resets the clone to the commit the case started from, so every case starts clean.
   // The model is OFF (no `claude` call in a test) unless a case points RELEASE_AUTOPILOT_CLAUDE at the stand-in below;
   // the tracker driver is a stand-in that logs its argv; nothing is pushed.
-  const TRK_LOG = path.join(tmp, "tracker.log");
-  fs.writeFileSync(path.join(bin, "tracker-stub.mjs"), `import fs from "node:fs"; fs.appendFileSync(${JSON.stringify(TRK_LOG)}, process.argv.slice(2).join(" ") + "\\n"); process.exit(process.env.FAKE_TRACKER_FAIL === process.argv[2] ? 1 : 0);\n`);
+  const TRK_LOG = path.join(tmp, "tracker.log"), TRK_ENV_LOG = path.join(tmp, "tracker-env.log");
+  fs.writeFileSync(path.join(bin, "tracker-stub.mjs"), `import fs from "node:fs"; fs.appendFileSync(${JSON.stringify(TRK_LOG)}, process.argv.slice(2).join(" ") + "\\n"); fs.appendFileSync(${JSON.stringify(TRK_ENV_LOG)}, (process.env.PUBLIC_TRACKER_ENV || "(unset)") + "\\n"); process.exit(process.env.FAKE_TRACKER_FAIL === process.argv[2] ? 1 : 0);\n`);
   // The Marketplace "Try it first" hand-off kicks the workhorse watcher over ssh (or zsh -lc on the workhorse): both are
   // stand-ins here that log the command and print KICK=<code> + the watcher's state (FAKE_PUBLISHER=error: a failing
   // watcher, =gone: the agent is not loaded). Nothing real runs.
@@ -119,7 +119,11 @@ elif [[ "$FAKE_PUBLISHER" == "gone" ]]; then echo KICK=113; echo '{}';
 else echo KICK=0; printf '{"lastTickAt":"%s","health":{"status":"ok"},"apps":{"sv":{"appliedVersion":"98.0.0","appliedBuild":"499"}}}\\n' "$NOW"; fi
 exit 0
 `, { mode: 0o755 });
-  const BASE_ENV = { RELEASE_GATE_MARKETPLACE_FAKE: JSON.stringify({ name: "98.1.0", buildNumber: 500 }), RELEASE_AUTOPILOT_MODEL: "off", RELEASE_GATE_TRACKER: path.join(bin, "tracker-stub.mjs"), RELEASE_GATE_NO_PUSH: "1",
+  // The door refuses before anything else when the tracker's credentials cannot be found (2026-11-03); a fixture file
+  // with stand-in keys (never read by the stub tracker) stands for them in every case that is not about them.
+  const TRK_CRED = path.join(tmp, "tracker.env");
+  fs.writeFileSync(TRK_CRED, "JIRA_ADMIN_EMAIL=door-test@invalid\nJIRA_API_TOKEN=not-a-token\n");
+  const BASE_ENV = { PUBLIC_TRACKER_ENV: TRK_CRED, RELEASE_GATE_MARKETPLACE_FAKE: JSON.stringify({ name: "98.1.0", buildNumber: 500 }), RELEASE_AUTOPILOT_MODEL: "off", RELEASE_GATE_TRACKER: path.join(bin, "tracker-stub.mjs"), RELEASE_GATE_NO_PUSH: "1",
     GIT_AUTHOR_NAME: "door-test", GIT_AUTHOR_EMAIL: "door-test@invalid", GIT_COMMITTER_NAME: "door-test", GIT_COMMITTER_EMAIL: "door-test@invalid" };
   let last = null;
   // Every real run names the commit being released (--sha); by default the commit the case starts from, i.e. the
@@ -128,12 +132,12 @@ exit 0
     const start = git("rev-parse", "HEAD");
     if (sha === undefined) args = [...args, "--sha", start];
     else if (sha !== null) args = [...args, "--sha", sha];
-    for (const f of [TRK_LOG, PUB_LOG, FORGE_LOG]) { try { fs.rmSync(f); } catch { /* none */ } }
+    for (const f of [TRK_LOG, TRK_ENV_LOG, PUB_LOG, FORGE_LOG]) { try { fs.rmSync(f); } catch { /* none */ } }
     const { RELEASE_AUTOPILOT_MODEL: _m, ...outer } = process.env;
     const r = spawnSync("bash", ["scripts/deploy-prod.sh", ...args], { cwd: repo, encoding: "utf8", env: { ...outer, PATH: `${bin}:${outer.PATH}`, ...BASE_ENV, ...env } });
     const read = (f) => { try { return fs.readFileSync(f, "utf8"); } catch { return null; } };
     last = { recorded: read(PROD_F), entries: read(ENTRIES_F), notes: read(path.join(repo, "src/server/shared/release-notes.js")), doc: read(path.join(repo, "docs/RELEASE-NOTES.md")),
-      tracker: (read(TRK_LOG) || "").trim().split("\n").filter(Boolean), publisher: (read(PUB_LOG) || "").trim().split("\n").filter(Boolean), log: git("log", "--format=%s", `${start}..HEAD`), build: read(path.join(repo, "src/build-info.js")), head: git("rev-parse", "--short", "HEAD"),
+      tracker: (read(TRK_LOG) || "").trim().split("\n").filter(Boolean), trackerEnv: (read(TRK_ENV_LOG) || "").trim().split("\n").filter(Boolean), publisher: (read(PUB_LOG) || "").trim().split("\n").filter(Boolean), log: git("log", "--format=%s", `${start}..HEAD`), build: read(path.join(repo, "src/build-info.js")), head: git("rev-parse", "--short", "HEAD"),
       forge: (read(FORGE_LOG) || "").trim().split("\n").filter(Boolean) };
     last.deployed = last.forge.some((l) => /^deploy\b/.test(l));
     last.desired = null;
@@ -159,6 +163,29 @@ process.exitCode = 0;
   let r = door({ FAKE_ELIG: ELIGIBLE });
   ok("eligible production: the door passes", r.status === 0 && /Eligible for Runs on Atlassian/.test(r.stdout));
   ok("licensing already shipped in the last release tag: no flag needed", /production already runs with licensing \(release v98\.0\.0\)/.test(r.stdout));
+  ok("...and the tracker step after the deploy reads the credentials file the door checked", last.trackerEnv.length === 3 && last.trackerEnv.every((e) => e === TRK_CRED));
+
+  // THE TRACKER'S CREDENTIALS ARE CHECKED BEFORE THE DEPLOY (2026-11-03, 8.25.0 on Gabee's MacBook: deployed, then the
+  // tracker step failed on "no credentials file at ../CogniRunner/test-harness/.env"). A HOME with none of the known
+  // files and PUBLIC_TRACKER_ENV unset: refused with the fix, nothing committed, built or deployed.
+  const credHome = path.join(tmp, "home");
+  fs.mkdirSync(credHome);
+  const harnessEnv = path.join(credHome, "Projects", "forge-live-harness", ".env");
+  r = door({ FAKE_ELIG: ELIGIBLE, PUBLIC_TRACKER_ENV: "", HOME: credHome });
+  ok("no tracker credentials anywhere: the door refuses (exit 1) BEFORE anything is committed, built or deployed",
+    r.status === 1 && /ABORT: the public tracker's credentials were not found/.test(r.stdout) && !last.deployed && last.forge.length === 0
+    && last.log === "" && last.tracker.length === 0 && !/Building every bundle/.test(r.stdout));
+  ok("...naming every place it looked and the exact fix", r.stdout.includes(harnessEnv) && r.stdout.includes("export PUBLIC_TRACKER_ENV="));
+  r = door({ FAKE_ELIG: ELIGIBLE, PUBLIC_TRACKER_ENV: path.join(tmp, "no-such.env") });
+  ok("PUBLIC_TRACKER_ENV naming a missing file: refused before the deploy, the file named", r.status === 1 && !last.deployed && r.stdout.includes(`PUBLIC_TRACKER_ENV=${path.join(tmp, "no-such.env")} does not exist`));
+  r = door({ FAKE_ELIG: ELIGIBLE, PUBLIC_TRACKER_ENV: "", HOME: credHome }, ["--dry-run"]);
+  ok("a dry run without tracker credentials says so too (exit 1)", r.status === 1 && /credentials were not found/.test(r.stdout));
+  fs.mkdirSync(path.dirname(harnessEnv), { recursive: true });
+  fs.writeFileSync(harnessEnv, "JIRA_ADMIN_EMAIL=door-test@invalid\nJIRA_API_TOKEN=not-a-token\n");
+  r = door({ FAKE_ELIG: ELIGIBLE, PUBLIC_TRACKER_ENV: "", HOME: credHome });
+  ok("PUBLIC_TRACKER_ENV unset, the forge-live-harness .env present: the door finds it itself, deploys, and hands it to the tracker step",
+    r.status === 0 && last.deployed && r.stdout.includes(`Public tracker credentials: ${harnessEnv}`) && last.trackerEnv.length === 3 && last.trackerEnv.every((e) => e === harnessEnv)
+    && r.stdout.indexOf("Public tracker credentials:") < r.stdout.indexOf("Deploying to production"));
 
   r = door({ FAKE_ELIG: NOT });
   ok("NOT eligible: the door fails", r.status === 1 && /FAILED: production was deployed but is NOT eligible/.test(r.stdout));

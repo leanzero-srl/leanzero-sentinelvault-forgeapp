@@ -31,15 +31,16 @@
 // fields) / unchanged, by the same rule `apply` writes by.
 //
 // It NEVER edits anything it did not create: no shared scheme, no other project, no global setting.
-// Credentials: JIRA_ADMIN_EMAIL + JIRA_API_TOKEN from the file named by PUBLIC_TRACKER_ENV, default
-// ../CogniRunner/test-harness/.env beside this repo (never printed). Only apply/verify/public and
-// plan --check-site read them.
+// Credentials: JIRA_ADMIN_EMAIL + JIRA_API_TOKEN via credentials.mjs (PUBLIC_TRACKER_ENV, else the harness .env under
+// ~/Projects/{CogniRunner,leanzero-cognirunner-forgeapp}/test-harness or ~/Projects/forge-live-harness; never printed).
+// Only apply/verify/public and plan --check-site read them.
 
 import { execFileSync } from "node:child_process";
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import * as EDITORIAL from "./entries.mjs";
+import { resolveTrackerCredentials } from "./credentials.mjs";
 const { ENTRIES, KNOWN, COMPONENTS } = EDITORIAL;
 // Known bugs a release closed (the release door moves them out of KNOWN when a note line names their SVT key and
 // folds into them): their issue is Done with that release. Absent in an entries.mjs that never closed one.
@@ -138,27 +139,11 @@ const reachedIn = (v) => {
 export { hashOf };
 
 // ---------- credentials (lazy: plan without --check-site needs none) ----------
-function parseEnv(text) {
-  const out = {};
-  for (const raw of text.split(/\r?\n/)) {
-    const line = raw.trim();
-    if (!line || line.startsWith("#")) continue;
-    const eq = line.indexOf("="); // the API token itself can contain '='
-    if (eq === -1) continue;
-    let val = line.slice(eq + 1).trim();
-    if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) val = val.slice(1, -1);
-    out[line.slice(0, eq).trim()] = val;
-  }
-  return out;
-}
 let AUTH = null;
 function auth() {
   if (AUTH) return AUTH;
-  const path = process.env.PUBLIC_TRACKER_ENV || resolve(REPO, "..", "CogniRunner", "test-harness", ".env");
-  if (!existsSync(path)) throw new Error(`no credentials file at ${path} (set PUBLIC_TRACKER_ENV)`);
-  const env = parseEnv(readFileSync(path, "utf8"));
-  if (!env.JIRA_ADMIN_EMAIL || !env.JIRA_API_TOKEN) throw new Error("credentials file lacks JIRA_ADMIN_EMAIL / JIRA_API_TOKEN");
-  AUTH = "Basic " + Buffer.from(`${env.JIRA_ADMIN_EMAIL}:${env.JIRA_API_TOKEN}`).toString("base64");
+  const { email, token } = resolveTrackerCredentials();
+  AUTH = "Basic " + Buffer.from(`${email}:${token}`).toString("base64");
   return AUTH;
 }
 
