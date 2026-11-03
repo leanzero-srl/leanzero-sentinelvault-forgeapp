@@ -42,6 +42,9 @@ export const COMPONENTS = {
 const JIRA_ON = "It works once a site admin has connected Jira to Sentinel Vault in Atlassian Administration.";
 
 export const ENTRIES = {
+  // 8.25.0: written by the release door on 2026-11-03 (rows: model; review pass: model).
+  "ae7dcf4e96b7c5e5": ["Show all tours again did nothing after a tour had been shown, until you reloaded the page", "P", {"fold":"known-reset-tours-waits-for-reload","d":"Show all tours again now opens Elzi's page tour right away. Before, if a tour had already been on screen since you opened the page, for example because you skipped it, nothing opened until you reloaded. Each tab's tour still opens the first time you visit that tab after you finish the page tour."}],
+
   // 8.24.0: written by the release door on 2026-11-03 (rows: model; review pass: model).
   "5777085d5a63cd5b": ["Elzi, our guide, now gives tours of the site settings and space Sentinel Vault pages", "C"],
 
@@ -584,14 +587,6 @@ export const KNOWN = [
     where: "My work; Space settings, Sealed Files and Access Control tabs.",
     workaround: "Wait a moment and reload the page before you rely on an empty list.",
   },
-  // 2026-11-03: found on leanzero-demo; reproduced on the 8.24.0 code (a reset after a tour already ran in the same view), fix scheduled.
-  {
-    k: "known-reset-tours-waits-for-reload", c: "C", affects: "8.24.0", fix: "scheduled",
-    t: "After Show all tours again, Elzi's page tour does not start until you reload the page",
-    see: "If a tour has already been on screen since you opened the page, for example because you skipped Elzi's page tour, pressing Show all tours again and confirming brings your tours back but nothing opens. The page tour opens by itself again only after you reload the page or open it again.",
-    where: "Site settings and Space settings (the space's Sentinel Vault page), Show all tours again.",
-    workaround: "Reload the page after Show all tours again, or press Take the tour in the page header.",
-  },
 ];
 
 // Known bugs a release closed (folded into that release's note line, so the issue is Done with it).
@@ -674,5 +669,15 @@ export const CLOSED = [
     see: "If Confluence is limiting requests or answers with an error while a backup looks for its backup page, the backup can create a new backup page and keep its later backups there. The earlier backups stay on the earlier page.",
     where: "Site settings, Backup and restore.",
     workaround: "None needed to keep your backups: the earlier ones are not deleted and stay on the earlier backup page.",
+  },
+
+  // closed by 8.25.0 (SVT-158), moved out of KNOWN by the release door on 2026-11-03
+  // 2026-11-03: found on leanzero-demo; reproduced on the 8.24.0 code (a reset after a tour already ran in the same view), fix scheduled.
+  {
+    k: "known-reset-tours-waits-for-reload", c: "C", affects: "8.24.0", fix: "scheduled",
+    t: "After Show all tours again, Elzi's page tour does not start until you reload the page",
+    see: "If a tour has already been on screen since you opened the page, for example because you skipped Elzi's page tour, pressing Show all tours again and confirming brings your tours back but nothing opens. The page tour opens by itself again only after you reload the page or open it again.",
+    where: "Site settings and Space settings (the space's Sentinel Vault page), Show all tours again.",
+    workaround: "Reload the page after Show all tours again, or press Take the tour in the page header.",
   },
 ];
