@@ -377,15 +377,28 @@ export default function Tour({ steps: given = null, tour: givenTour = null, auto
     // the bubble gets the width the placement chose, and its real height decides the placement (3 rounds)
     let bubbleH = calloutHRef.current || 170;
     let at = placeAt(bubbleH);
+    // the probe must hold the words the CHOSEN element will show (textBy / say): it still shows the last draw's words, so a
+    // step whose element has shorter words was placed for the longer ones and Elzi slid up a line after the first draw
+    // (round 2, 2026-11-03: Workflow "Who approves" at 310 px). React sets these single text children by textContent too.
+    const wordsInProbe = (probe, el) => {
+      const tok = el ? usable.find((t) => t && findAnchor(t) === el) || null : null;
+      const w = stepWords(step, { anchor: tok, say: sayFor(step, el) });
+      const t = probe.querySelector(".nux-title"), x = probe.querySelector(".nux-text");
+      if (t && t.textContent !== w.title) t.textContent = w.title;
+      if (x && x.textContent !== w.text) x.textContent = w.text;
+    };
     for (let i = 0; i < 3 && at.place; i++) {
       const probe = calloutRef.current;
       if (!probe) break;
+      wordsInProbe(probe, at.el);
       probe.style.width = `${at.place.width}px`;
       const h = Math.ceil(probe.getBoundingClientRect().height);
       if (!h || Math.abs(h - bubbleH) <= 1) break;
       bubbleH = h;
       at = placeAt(bubbleH);
     }
+    // the words of the element that won, also when the last round changed the element (React may not rewrite equal props)
+    if (calloutRef.current && at.place) wordsInProbe(calloutRef.current, at.el);
     calloutHRef.current = bubbleH;
     const { el, target, place } = at;
     if (!place || stale()) return;

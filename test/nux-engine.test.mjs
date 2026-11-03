@@ -180,6 +180,9 @@ eq("the hello (no target) is judged on the canvas only", judgeAcceptance({ ...ba
   const ask = SPACE_STEPS["my-claims"].find((x) => x.id === "admin");
   eq("tall card: my-claims/admin falls back to the Request admin access button", ask && ask.narrower, ["request-admin-btn"]);
   ok("tall card: the realm console draws the request-admin-btn anchor on that button", /<button data-nux="request-admin-btn"[^>]*onClick=\{handleRequestSteward\}/.test(realm));
+  const tourSrc = read("src/ui/nux/Tour.jsx");
+  ok("placement: the hidden bubble is measured with the chosen element's own words (textBy/say) in every round and after the last",
+    /wordsInProbe\(probe, at\.el\);\s*\n\s*probe\.style\.width/.test(tourSrc) && /if \(calloutRef\.current && at\.place\) wordsInProbe\(calloutRef\.current, at\.el\);/.test(tourSrc));
   const resolved = T.resolveSteps(() => true, SPACE_STEPS.permissions);
   ok("tall card: resolveSteps keeps the fallback on the step the engine runs", resolved.every((x) => Array.isArray(x.narrower) && x.narrower.length === 1));
 }
