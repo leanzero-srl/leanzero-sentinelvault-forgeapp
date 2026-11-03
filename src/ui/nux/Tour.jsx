@@ -462,7 +462,9 @@ export default function Tour({ steps: given = null, tour: givenTour = null, auto
   const calloutBottom = geo ? Math.max(geo.callout.top + (calloutHRef.current || 150), bottomOf(geo.elzi)) : 0;
   // room under the row for the scroll's clear space (BOTTOM_RESERVE, Jira's floating button)
   const hole = geo ? geo.hole : null;
-  const padBottom = hole ? BOTTOM_RESERVE : 16;
+  // The same room scrollUnionIntoView gives its temporary block under the row (EDGE + BOTTOM_RESERVE): when that block goes
+  // away 800 ms later the page must be as tall as it was, or the browser clamps the scroll and the whole step slides 16 px.
+  const padBottom = BOTTOM_RESERVE + EDGE;
   const fullH = Math.max(doc.contentH, calloutBottom + padBottom);
   const ring = geo ? geo.ring : null;
   const dimBlocks = hole
