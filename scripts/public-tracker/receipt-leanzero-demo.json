@@ -691,7 +691,7 @@
     ],
     "assigned": true
   },
-  "updatedAt": "2026-11-03T16:36:23.484Z",
+  "updatedAt": "2026-11-03T17:02:43.361Z",
   "projectId": "10278",
   "issueTypeScheme": {
     "id": "10636",
@@ -836,7 +836,7 @@
       "GET /rest/api/3/issue/CRBAK2-1": 404,
       "GET /rest/api/3/issue/CRD-41": 404,
       "GET /rest/api/3/issue/CRS-9": 404,
-      "GET /rest/api/3/issue/CRT-548": 200,
+      "GET /rest/api/3/issue/CRT-550": 200,
       "GET /rest/api/3/issue/CS-1223": 404,
       "GET /rest/api/3/issue/CST-49": 200,
       "GET /rest/api/3/issue/DACC-11": 404,
@@ -850,7 +850,7 @@
       "GET /rest/api/3/issue/KAN-1": 404,
       "GET /rest/api/3/issue/LEDGER-1225": 404,
       "GET /rest/api/3/issue/LICW-55": 404,
-      "GET /rest/api/3/issue/LZMT-383": 200,
+      "GET /rest/api/3/issue/LZMT-385": 200,
       "GET /rest/api/3/issue/ORBIT-91": 404,
       "GET /rest/api/3/issue/PAYB-31": 404,
       "GET /rest/api/3/issue/PLATSUP-1222": 404,
@@ -859,10 +859,10 @@
       "GET /rest/api/3/issue/SEC-1225": 404,
       "GET /rest/api/3/issue/VOY-1992": 404,
       "anonymous site-wide search (bounded, all pages): issues per project": {
+        "LZMT": 385,
+        "CRT": 550,
         "CST": 49,
-        "SVT": 156,
-        "LZMT": 383,
-        "CRT": 548
+        "SVT": 156
       },
       "anonymous listing of SVT": "156 issues (receipt holds 156; 已完成 125, Backlog 31)",
       "other projects whose scheme lets anyone browse": "CRT,CST,LZMT",
@@ -870,12 +870,12 @@
       "negative control": "13 fake broken answers, each failed the verdict",
       "GET /jira/software/c/projects/SVT/issues": 200
     },
-    "provenAt": "2026-11-03T16:36:23.484Z",
+    "provenAt": "2026-11-03T17:02:43.361Z",
     "proofFailures": []
   },
   "verified": {
     "through": "8.26.0",
-    "at": "2026-11-03T16:35:50.334Z",
+    "at": "2026-11-03T17:02:16.123Z",
     "issues": 156,
     "failures": 0
   }
