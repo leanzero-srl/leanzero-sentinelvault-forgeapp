@@ -42,6 +42,9 @@ export const COMPONENTS = {
 const JIRA_ON = "It works once a site admin has connected Jira to Sentinel Vault in Atlassian Administration.";
 
 export const ENTRIES = {
+  // 8.24.0: written by the release door on 2026-11-03 (rows: model; review pass: model).
+  "5777085d5a63cd5b": ["Elzi, our guide, now gives tours of the site settings and space Sentinel Vault pages", "C"],
+
   // 8.23.0 (released as Forge 8.23.0; drafted as 8.22.1): the user count the app can read + the paid floor; the card after a trip (branch fix-user-count, 2026-10-26).
   "579f61833a11cdbb": ["On a paid site the AI review allowance no longer falls back to 10 users", "C"],
   "a5aba3077e520244": ["The AI allowance shows as used up as soon as a review is stopped", "C"],
