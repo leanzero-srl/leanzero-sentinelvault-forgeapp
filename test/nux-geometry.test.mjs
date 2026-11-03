@@ -155,6 +155,9 @@ async function scenario({ con, view, theme }) {
     if (con.tabs.length > 1 || con.id === "space-member") {
       await page.locator(`[data-testid="${testid}"]`).first().click({ timeout: 5000 }).catch(() => findings.push(`${tag}: tab ${tab}: its button is not there`));
     }
+    // a console with ONE tab (the member's): that tab is on screen when the page tour ends and waits for its next
+    // visit, so the walk starts it with the tab's own "Tour" button (the by-itself opening is the multi-tab case)
+    if (con.tabs.length === 1) await page.locator('[data-testid="nux-replay"]').first().click({ timeout: 5000 }).catch(() => findings.push(`${tag}: tab ${tab}: its Tour button is not there`));
     if (view.long) await page.evaluate(() => { const c = document.querySelector(".tab-content") || document.querySelector(".space-admin-container"); if (c && !c.querySelector(".nux-long-pad")) { const d = document.createElement("div"); d.className = "nux-long-pad"; d.style.cssText = "height:2400px"; d.setAttribute("aria-hidden", "true"); c.insertBefore(d, c.firstChild); } });
     await page.waitForFunction(() => document.querySelector("[data-nux-step]"), { timeout: 8000 }).catch(() => {});
     const key = `${con.prefix}-${tab}`;
