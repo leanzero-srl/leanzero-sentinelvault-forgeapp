@@ -1,7 +1,8 @@
 // ELZI'S TOURS IN A REAL BROWSER - the owner's hard acceptance gate (2026-11-02), run before ANY deploy:
 //   "no overlapped or clipped or cut-off Elzi, nothing displaying under elements, no bubble outside the canvas".
 // Every step of every tour of both consoles (site settings, space steward, space member), on the offline mock build:
-//   viewports  1440x900, 390x844 (light and dark each), 1440x700 (short), 310x700 (the live frame on a 390 phone),
+//   viewports  1440x900, 390x844, 310x700 (the live frame on a 390 phone; gating since round 2, 2026-11-03), light and
+//              dark each, 1440x700 (short),
 //              and a LONG-CONTENT case (1440x700 with 2400 px of content ahead of every tab's body)
 //   per step   Elzi and the bubble wholly inside innerWidth x innerHeight (the iframe is the canvas), >= 16 px from the
 //              side edges, bubble no wider than the window minus its margins, bubble and Elzi never touch the target,
@@ -67,7 +68,7 @@ const CONSOLES = [
   { id: "space-member", app: "realm-console", shot: "realm-user", page: "space", tabs: [["my-claims", "rc-tab-my-claims"]], prefix: "space", steward: false },
 ];
 const VIEWS = [
-  { name: "1440x900", w: 1440, h: 900 }, { name: "390x844", w: 390, h: 844 }, { name: "1440x700", w: 1440, h: 700 }, { name: "310x700", w: 310, h: 700, themes: ["light"] },
+  { name: "1440x900", w: 1440, h: 900 }, { name: "390x844", w: 390, h: 844 }, { name: "1440x700", w: 1440, h: 700 }, { name: "310x700", w: 310, h: 700 },
   { name: "long-1440x700", w: 1440, h: 700, long: true, themes: ["light"] },
 ];
 
@@ -84,7 +85,6 @@ async function settled(page) {
   return false;
 }
 const findings = [];
-const infos = []; // 310x700 steps the engine itself says cannot fit
 const lines = [];
 
 async function scenario({ con, view, theme }) {
@@ -133,13 +133,17 @@ async function scenario({ con, view, theme }) {
       if (moved) findings.push(`${tag}: ${label}/${cur.step}: the step moved ${moved} time(s) after its first draw (placement must be final when drawn)`);
       const fails = [...new Set([...judge(g, vis), ...judgeOwner(g, vis)])];
       lines.push(`${label}/${cur.step}: ` + geoLine(tag, g, vis, fails));
-      // 310x700 only (the live frame on a 390 phone): a target taller than the window leaves no room for ring + bubble + Elzi;
-      // when the ENGINE itself reports it cannot fit (data-nux-fits=false) the fault is INFORMATIONAL, listed in NOTES.md, never silent.
-      // The gate cases (1440x900, 390x844, 1440x700, long content) never get this allowance.
-      const cannotFit = view.name === "310x700" && g.fits === "false";
-      for (const f of fails) { if (cannotFit) infos.push(`${tag}: ${label}/${cur.step}: ${f}`); else findings.push(`${tag}: ${label}/${cur.step}: ${f}`); }
+      // EVERY case gates, 310x700 included (round 2, 2026-11-03: the space Permissions cards taller than the 700 px window were
+      // INFO lines; their steps now fall back to the card's header row, tours.js `narrower`). The engine must also say it fits.
+      for (const f of fails) findings.push(`${tag}: ${label}/${cur.step}: ${f}`);
+      if (g.fits === "false") findings.push(`${tag}: ${label}/${cur.step}: the engine says ring, bubble and Elzi do not fit (data-nux-fits=false)`);
       if (shotsDir) await page.screenshot({ path: path.join(shotsDir, `${con.id}-${view.name}-${theme}-${label}-${cur.step}.png`) });
       seen.push(cur.step);
+      // the counter (round 2, bug 1): never "Step 1 of 1"; a tour whose first step is also its last shows none
+      const onlyStep = seen.length === 1 && await page.evaluate(() => !!document.querySelector('[data-testid="nux-done"]'));
+      if (cur.count && /\bof 1$/.test(cur.count.trim())) findings.push(`${tag}: ${label}/${cur.step}: the counter says "${cur.count}"`);
+      if (onlyStep && cur.count) findings.push(`${tag}: ${label}/${cur.step}: a one-step tour shows a counter ("${cur.count}")`);
+      if (!onlyStep && !cur.count) findings.push(`${tag}: ${label}/${cur.step}: a tour of several steps lost its counter`);
       if (process.env.SV_NUX_TRACE) console.log(`  ${tag} ${label}/${cur.step} ${fails.length ? "FAIL " + fails.join("; ") : "ok"}`);
       const last = await page.evaluate(() => !!document.querySelector('[data-testid="nux-done"]'));
       const btnSel = last ? '[data-testid="nux-done"]' : '[data-testid="nux-next"]';
@@ -292,7 +296,6 @@ await Promise.all(Array.from({ length: N }, async () => {
 for (const c of crashed) findings.push(`scenario crashed: ${c}`);
 if (process.env.SV_NUX_LINES === "1" || findings.length) console.log(lines.sort().join("\n"));
 for (const f of [...new Set(findings)].sort()) ok(`GEOMETRY: ${f}`, false);
-for (const f of [...new Set(infos)].sort()) console.log(`  INFO (cannot fit, engine said so): ${f}`);
 ok(`every tour step was measured (${lines.length} measurements; tours: ${allTours().length})`, (process.env.SV_NUX_ONLY || process.env.SV_NUX_MARKS === "1") ? true : lines.length > 300);
 await browser.close();
 for (const s of Object.values(servers)) s.s.close();

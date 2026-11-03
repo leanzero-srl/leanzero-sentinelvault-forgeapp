@@ -10,6 +10,8 @@
  *
  * Anchors: a data-nux token on the element, or "@<testid>" (the control's data-testid). A step whose anchors are
  * not drawn is left out, so a tab with nothing to show yet loses that step, not the tour.
+ * `narrower`: anchors tried, in order, when ring + bubble + Elzi do not fit round the step's own element (a card taller
+ * than a phone frame): the card's header row. Every step must fit at 310 px too (test/nux-geometry.test.mjs gates it).
  * Words (human-speech rules): what the thing is and why it matters, then one small example, then what to do.
  * Plain sentences a person would say, no unexplained terms, no em or en dash. Budgets: tourSteps.js
  * (TOUR_BUDGET_S a tour, STEP_MAX_S a bubble).
@@ -81,11 +83,14 @@ export const SPACE_STEPS = Object.freeze({
   ],
   permissions: [
     step("quiet", "@sv-notifications-mode-card", "curious", "Quiet mode",
-      "Normally this space follows the site's setting for page comments that mention people. Set the space to Quiet and it posts none and mentions nobody, even when the site has them turned on. Pop-ups, the page ribbon and the activity log keep working."),
+      "Normally this space follows the site's setting for page comments that mention people. Set the space to Quiet and it posts none and mentions nobody, even when the site has them turned on. Pop-ups, the page ribbon and the activity log keep working.",
+      { narrower: ["perm-quiet-head"] }),
     step("admins", "admins-card", "happy", "Space admins",
-      "Add people or whole groups as Sentinel Vault admins here. They can see every seal in this space and manage it. Requests for access wait in the card below for you to approve or deny."),
+      "Add people or whole groups as Sentinel Vault admins here. They can see every seal in this space and manage it. Requests for access wait in the card below for you to approve or deny.",
+      { narrower: ["perm-admins-head"] }),
     step("class", "@sv-classification-card", "look", "Classification here",
-      "If the site has classification on, you can switch it off for just this space, or pick a default level for its pages. Lowering that default asks for a reason."),
+      "If the site has classification on, you can switch it off for just this space, or pick a default level for its pages. Lowering that default asks for a reason.",
+      { narrower: ["perm-class-head"] }),
   ],
   "unlock-timeouts": [
     step("what", "@sv-row-useSiteDuration", "curious", "How long seals last here",
@@ -108,8 +113,10 @@ export const SPACE_STEPS = Object.freeze({
   workflow: [
     step("what", "wf-enable", "curious", "Approval workflow",
       "With the workflow on, each page carries a state, such as Draft or In Review, and it shows on the page ribbon. Approved pages are protected, and you choose what happens when someone edits one."),
-    step("approvers", "wf-approval", "happy", "Who approves",
-      "Name the people or groups who can approve, and how many of them must say yes. Space admins can approve too. You can ask approvers to sign each decision with an authenticator code."),
+    // the approval settings live on the workflow's own page (WF-11); on the tab, the step points at the button that opens it
+    step("approvers", ["wf-approval", "@wf-defs-toggle"], "happy", "Who approves",
+      "Name the people or groups who can approve, and how many of them must say yes. Space admins can approve too. You can ask approvers to sign each decision with an authenticator code.",
+      { textBy: { "@wf-defs-toggle": "This button opens the page where you set approvers. There you name the people or groups who can approve and how many must say yes. Space admins can approve too." } }),
   ],
   activity: [
     step("what", "act-head", "curious", "The activity log",

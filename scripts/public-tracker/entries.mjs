@@ -587,6 +587,22 @@ export const KNOWN = [
     where: "My work; Space settings, Sealed Files and Access Control tabs.",
     workaround: "Wait a moment and reload the page before you rely on an empty list.",
   },
+  // 2026-11-03 (bug round 2): reproduced offline on the 8.25.0 code (nux geometry run: the Macro and Workflow tab tours), fix scheduled.
+  {
+    k: "known-tour-step-1-of-1", c: "C", affects: "8.25.0", fix: "scheduled",
+    t: "A tab tour with a single step shows Step 1 of 1",
+    see: "On a space's Sentinel Vault page, the tours of the Macro and Workflow tabs have a single step, and Elzi's bubble still shows a Step 1 of 1 counter, which tells you nothing. The Workflow tour also leaves out its step about who approves pages.",
+    where: "Space settings (the space's Sentinel Vault page), the Macro and Workflow tab tours.",
+    workaround: "None needed. The tour itself works.",
+  },
+  // 2026-11-03 (bug round 2): reproduced offline on the 8.25.0 code at a 310 px wide frame (a phone), fix scheduled.
+  {
+    k: "known-tour-tall-cards-phone", c: "G", affects: "8.25.0", fix: "scheduled",
+    t: "On a phone, Elzi's Access Control tour runs off the bottom of the screen",
+    see: "On a narrow screen, such as Confluence on a phone, the Notifications, Classification and Space admins cards on a space's Access Control tab are too tall for Elzi to show the card, her bubble and herself on the screen at once. The top of the card scrolls out of sight, and Elzi and her bubble end up partly below the bottom of the screen.",
+    where: "Space settings (the space's Sentinel Vault page), the Access Control tab tour, on a narrow screen.",
+    workaround: "Scroll down to see the rest of Elzi's bubble, or take the tour on a wider screen.",
+  },
 ];
 
 // Known bugs a release closed (folded into that release's note line, so the issue is Done with it).

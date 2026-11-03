@@ -46,12 +46,17 @@ full-page dim layer is the wrong tool); My work. The consoles are where a first-
   centre, no clipping ancestor, text inside the bubble, buttons visible. Plus marks, replay, Esc, Tab trap, straight corners, no native dialogs.
 - Then: a cold reader (fresh agent, bubbles and screens only), two design critics on screenshots at 1440 and 390 light and dark.
 
-## The 310 px frame (informational, stated honestly)
-310x700 is the live frame on a 390 px phone, outside the owner's gate (1440x900, 390x844, 1440x700 and long content, which must all pass).
-Three steps of the space Permissions tab (admins, class, quiet) point at cards that are taller than the 700 px window at 310 px wide
-(the admins card is 657 px). Ring, bubble and Elzi cannot all fit beside such a target, and the engine says so itself
-(data-nux-fits="false"); the bubble then sits below the card and the page scrolls to it. The geometry test prints these as INFO lines
-(only at 310x700, and only when the engine reported it cannot fit); every other 310 step must pass like the gate cases.
+## The 310 px frame (a gate case since 2026-11-03)
+310x700 is the live frame on a 390 px phone. Until 8.25.0 it was informational: three steps of the space Access Control tab (quiet, admins,
+class) point at cards taller than the 700 px window at 310 px wide (the admins card is 657 px), so ring, bubble and Elzi could not fit and
+the engine said so (data-nux-fits="false"). Since 8.26.0 those steps carry `narrower` anchors (tours.js): the card's header row
+(perm-quiet-head, perm-admins-head, perm-class-head), tried only when the whole card does not fit. 310x700 now gates like every other case,
+light and dark, and every step must also report data-nux-fits="true".
+
+## Step counter
+A tour with one step shows no counter (stepLabel returns "" for a count of 1, Tour.jsx draws .nux-count and announces the number only when
+there is a label). Seen on the Macro tab tour (one step) and the Workflow tab tour, whose "Who approves" step pointed at a setting that lives on
+the workflow's own page; it now falls back to the button that opens that page. The geometry walk fails a "Step 1 of 1" or a lost counter.
 
 ## Causes found by the geometry gate (2026-11-03)
 - A step slid 16-17 px after its first draw: the block scrolled into view to centre a step was removed 800 ms later, and the page,

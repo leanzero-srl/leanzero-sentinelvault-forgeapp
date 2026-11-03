@@ -670,6 +670,14 @@
     "known-reset-tours-waits-for-reload": {
       "key": "SVT-158",
       "id": "29839"
+    },
+    "known-tour-step-1-of-1": {
+      "key": "SVT-159",
+      "id": "29937"
+    },
+    "known-tour-tall-cards-phone": {
+      "key": "SVT-160",
+      "id": "29938"
     }
   },
   "permissionScheme": {
@@ -682,7 +690,7 @@
     ],
     "assigned": true
   },
-  "updatedAt": "2026-11-03T09:26:09.578Z",
+  "updatedAt": "2026-11-03T15:40:56.650Z",
   "projectId": "10278",
   "issueTypeScheme": {
     "id": "10636",

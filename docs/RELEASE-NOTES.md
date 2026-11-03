@@ -2,6 +2,15 @@
 
 GENERATED from `src/server/shared/release-notes.js` by `scripts/render-release-notes.mjs`. Do not edit.
 
+## 8.26.0 — 2026-11-03
+
+**Elzi's tours fit on a phone and drop a counter that said nothing**
+
+
+Fixed:
+- A tour with only one step no longer shows Step 1 of 1. When the space's workflow is on, the Workflow tab's tour now also includes its step about who approves pages, pointing at the button that opens the workflow's own page. Fixes SVT-159.
+- On a phone, Elzi's tour of a space's Access Control tab now fits on the screen. When a card is too tall to show with her bubble, she points at the card's heading instead of the whole card. Fixes SVT-160.
+
 ## 8.25.0 — 2026-11-03
 
 **Show all tours again opens Elzi's tour right away**

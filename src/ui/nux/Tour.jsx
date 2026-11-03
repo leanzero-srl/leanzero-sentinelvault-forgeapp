@@ -496,7 +496,8 @@ export default function Tour({ steps: given = null, tour: givenTour = null, auto
   // and other words for what the element is showing (`say`, e.g. a demo that is already Ready)
   const { title, text } = stepWords(step, { anchor: geo ? geo.anchor : null, say: geo ? geo.say : null });
   // a title that ends in its own stop ("Hi! I'm Elzi.") gets no second one
-  const live = `${stepLabel(st.index, st.count)}. ${/[.!?]$/.test(title) ? title : `${title}.`} ${text}`;
+  const counter = stepLabel(st.index, st.count);
+  const live = `${counter ? `${counter}. ` : ""}${/[.!?]$/.test(title) ? title : `${title}.`} ${text}`;
   const doc = geo ? geo.doc : { w: 0, contentH: 0 };
   const bottomOf = (r) => (r ? r.top + r.height : 0);
   const calloutBottom = geo ? Math.max(geo.callout.top + (calloutHRef.current || 150), bottomOf(geo.elzi)) : 0;
@@ -552,7 +553,7 @@ export default function Tour({ steps: given = null, tour: givenTour = null, auto
           style={geo ? { top: geo.callout.top, left: geo.callout.left, width: geo.callout.width } : { top: 0, left: 0, width: Math.min(BUBBLE_MAX_W, Math.max(0, (doc.w || document.documentElement.clientWidth || 320) - 2 * EDGE)), visibility: "hidden" }}
         >
           {tail && <span className={`nux-tail nux-tail-${tail.dir}`} style={tailStyle} aria-hidden="true" />}
-          <div className="nux-count">{stepLabel(st.index, st.count)}</div>
+          {counter && <div className="nux-count">{counter}</div>}
           <div className="nux-title" id="nux-title">{title}</div>
           <p className="nux-text" id="nux-text">{text}</p>
           <div className="nux-btns">

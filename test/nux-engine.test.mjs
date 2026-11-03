@@ -157,4 +157,27 @@ eq("the hello (no target) is judged on the canvas only", judgeAcceptance({ ...ba
     /!wantsAutoStart\(\{ stored, key: tourKey, oncePerBrowser \}\) \|\| autoShownHere\(tourKey\) \|\| tourOpenSince\(mountedAt\.current\)/.test(tour) && /afterSeen\(tourDef, marksNow\(\)\)/.test(tour));
   ok("reset: no second copy of the in-view guard in marks.js", !/let openKey|lastOpenAt/.test(marks));
 }
+// ── the step counter (round 2, bug 1): a one-step tour shows no "Step 1 of 1" ──
+{
+  eq("counter: a tour of several steps says where you are", T.stepLabel(1, 4), "Step 2 of 4");
+  eq("counter: a one-step tour has no counter", T.stepLabel(0, 1), "");
+  eq("counter: no steps, no counter", T.stepLabel(0, 0), "");
+  const tour = read("src/ui/nux/Tour.jsx");
+  ok("counter: the bubble draws .nux-count only when there is a label", /\{counter && <div className="nux-count">\{counter\}<\/div>\}/.test(tour));
+  ok("counter: the live announcement leaves out an empty label (no leading '. ')", /const live = `\$\{counter \? `\$\{counter\}\. ` : ""\}/.test(tour));
+  ok("counter: nothing else in the UI prints 'Step N of M'", !/Step \$\{|of \$\{count/.test(tour));
+}
+// ── tall cards (round 2, bug 3): a step on a card taller than a phone frame falls back to the card's header row ──
+{
+  const { SPACE_STEPS } = await import("../src/ui/nux/tours.js");
+  const realm = read("src/ui/surfaces/realm-console/index.jsx");
+  const want = { quiet: "perm-quiet-head", admins: "perm-admins-head", class: "perm-class-head" };
+  for (const [id, tok] of Object.entries(want)) {
+    const st = SPACE_STEPS.permissions.find((x) => x.id === id);
+    eq(`tall card: permissions/${id} falls back to its header row`, st && st.narrower, [tok]);
+    ok(`tall card: the realm console draws the ${tok} anchor on a card header`, realm.includes(`<div className="settings-card-header" data-nux="${tok}">`));
+  }
+  const resolved = T.resolveSteps(() => true, SPACE_STEPS.permissions);
+  ok("tall card: resolveSteps keeps the fallback on the step the engine runs", resolved.every((x) => Array.isArray(x.narrower) && x.narrower.length === 1));
+}
 report("nux-engine");

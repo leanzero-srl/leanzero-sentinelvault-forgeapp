@@ -1980,7 +1980,7 @@ const RealmPolicyDashboard = () => {
         <div className="tab-content">
           {/* P1-4: Notifications — per-space quiet mode */}
           <div className="settings-card" data-testid="sv-notifications-mode-card">
-            <div className="settings-card-header">
+            <div className="settings-card-header" data-nux="perm-quiet-head">
               <h3>Notifications</h3>
               <p className="settings-card-desc">
                 Sentinel Vault never sends email. A notification is a comment on the page that @mentions the
@@ -2043,7 +2043,7 @@ const RealmPolicyDashboard = () => {
               can opt OUT; it cannot turn classification on while the site has it off (the same AND
               rule as the auto-insert macro), so the card is locked with the site-admin reason then. */}
           <div className="settings-card" data-testid="sv-classification-card">
-            <div className="settings-card-header">
+            <div className="settings-card-header" data-nux="perm-class-head">
               <h3>Classification</h3>
               <p className="settings-card-desc">
                 {siteValues.classificationEnabled
@@ -2090,7 +2090,7 @@ const RealmPolicyDashboard = () => {
 
           {/* Stewards */}
           <div className="settings-card" data-nux="admins-card">
-            <div className="settings-card-header">
+            <div className="settings-card-header" data-nux="perm-admins-head">
               <h3>Space admins</h3>
               <p className="settings-card-desc">
                 Space admins can see every sealed attachment in this space and force-unseal it.

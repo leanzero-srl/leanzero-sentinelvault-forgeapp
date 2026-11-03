@@ -71,6 +71,7 @@
 ## Tour space-workflow
 1. [Approval workflow] With the workflow on, each page carries a state, such as Draft or In Review, and it shows on the page ribbon. Approved pages are protected, and you choose what happens when someone edits one.
 2. [Who approves] Name the people or groups who can approve, and how many of them must say yes. Space admins can approve too. You can ask approvers to sign each decision with an authenticator code.
+   (on the Workflow tab itself, where the approval settings are not shown, pointing at the "Edit the states, approvers and protection" button) This button opens the page where you set approvers. There you name the people or groups who can approve and how many must say yes. Space admins can approve too.
 
 ## Tour space-activity
 1. [The activity log] Every seal, release, edit request, approval and classification change in this space is recorded here, with who did it and when. If someone asks why a file was released, the answer is in this list.

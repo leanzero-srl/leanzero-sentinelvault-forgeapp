@@ -240,8 +240,8 @@ export const poseFor = (step, rel) => {
   return `point-${v}-${h}`;
 };
 
-/** Step counter words, e.g. "Step 2 of 4". */
-export const stepLabel = (index, count) => `Step ${index + 1} of ${count}`;
+/** Step counter words, e.g. "Step 2 of 4". A tour of one step has no counter ("Step 1 of 1" says nothing): "". */
+export const stepLabel = (index, count) => (count > 1 ? `Step ${index + 1} of ${count}` : "");
 
 /*
  * PLACEMENT (owner 2026-10-29: never clipped, never over the target; design review 2026-10-29: the
