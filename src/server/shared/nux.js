@@ -12,7 +12,7 @@ import { kvs } from "@forge/kvs";
 import { NUX_TOUR_KEYS } from "../../ui/nux/nux-tours.js";
 
 export const NUX_PREFIX = "nux:";
-const HOW = new Set(["done", "skipped", "shown"]);
+const HOW = Object.freeze(["done", "skipped", "shown"]);
 
 export const nuxKey = (accountId) => {
   const id = String(accountId || "").replace(/[^0-9A-Za-z:_-]/g, "").slice(0, 128);
@@ -20,7 +20,7 @@ export const nuxKey = (accountId) => {
 };
 
 const markOf = (m) => (m && typeof m === "object" && m.version != null
-  ? { version: Number(m.version) || 0, how: HOW.has(m.how) ? m.how : "done", at: typeof m.at === "string" ? m.at : null }
+  ? { version: Number(m.version) || 0, how: HOW.includes(m.how) ? m.how : "done", at: typeof m.at === "string" ? m.at : null }
   : null);
 const marksOf = (row) => {
   const out = {};
@@ -48,7 +48,7 @@ export const writeNux = async (accountId, { version, how, tour } = {}, store = k
   const key = nuxKey(accountId);
   if (!key) return { ok: false };
   if (!NUX_TOUR_KEYS.includes(tour)) return { ok: false };
-  const mark = { version: Math.max(1, Math.min(1000, Math.floor(Number(version) || 1))), how: HOW.has(how) ? how : "done", at: new Date(now).toISOString() };
+  const mark = { version: Math.max(1, Math.min(1000, Math.floor(Number(version) || 1))), how: HOW.includes(how) ? how : "done", at: new Date(now).toISOString() };
   try {
     const marks = marksOf(await store.get(key));
     marks[tour] = mark;

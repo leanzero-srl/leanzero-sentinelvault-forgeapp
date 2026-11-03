@@ -22,4 +22,6 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 let fresh = true;
 try { execFileSync("node", [resolve(root, "scripts/render-release-notes.mjs"), "--check"], { stdio: "pipe" }); } catch (_) { fresh = false; }
 ok("docs/RELEASE-NOTES.md is rendered from the module (run scripts/render-release-notes.mjs)", fresh);
+// a stray comma in a changes/fixes array leaves a hole (undefined): the tracker hashes every line and the door crashed on it (2026-11-03)
+ok("every change and fix line is a non-empty string (no hole from a stray comma)", RELEASE_NOTES.every((n) => [...n.changes, ...n.fixes].every((l) => typeof l === "string" && l.trim().length > 0)) && RELEASE_NOTES.every((n) => n.changes.length === [...n.changes].filter(() => true).length && n.fixes.length === [...n.fixes].filter(() => true).length));
 report("release-notes");
