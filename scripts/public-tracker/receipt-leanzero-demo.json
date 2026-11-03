@@ -52,7 +52,8 @@
     "8.22.0": "11187",
     "8.23.0": "11189",
     "8.24.0": "11224",
-    "8.25.0": "11225"
+    "8.25.0": "11225",
+    "8.26.0": "11230"
   },
   "issues": {
     "02dc09e3ae3c6c5a": {
@@ -690,7 +691,7 @@
     ],
     "assigned": true
   },
-  "updatedAt": "2026-11-03T15:40:56.650Z",
+  "updatedAt": "2026-11-03T16:36:23.484Z",
   "projectId": "10278",
   "issueTypeScheme": {
     "id": "10636",
@@ -810,6 +811,16 @@
       "version": "8.25.0",
       "into": "known-reset-tours-waits-for-reload",
       "key": "SVT-158"
+    },
+    "231503a75f61bde9": {
+      "version": "8.26.0",
+      "into": "known-tour-step-1-of-1",
+      "key": "SVT-159"
+    },
+    "2d2105fa8ff6fe94": {
+      "version": "8.26.0",
+      "into": "known-tour-tall-cards-phone",
+      "key": "SVT-160"
     }
   },
   "public": {
@@ -819,7 +830,7 @@
     "undo": "DELETE /rest/api/3/permissionscheme/10265/permission/11703",
     "proof": {
       "GET /rest/api/3/issue/SVT-1": 200,
-      "GET /rest/api/3/issue/SVT-158": 200,
+      "GET /rest/api/3/issue/SVT-160": 200,
       "GET /rest/api/3/issue/ATLAS-2361": 404,
       "GET /rest/api/3/issue/CRBAK-1": 404,
       "GET /rest/api/3/issue/CRBAK2-1": 404,
@@ -827,13 +838,13 @@
       "GET /rest/api/3/issue/CRS-9": 404,
       "GET /rest/api/3/issue/CRT-548": 200,
       "GET /rest/api/3/issue/CS-1223": 404,
-      "GET /rest/api/3/issue/CST-45": 200,
+      "GET /rest/api/3/issue/CST-49": 200,
       "GET /rest/api/3/issue/DACC-11": 404,
       "GET /rest/api/3/issue/DEMO-1": 404,
       "GET /rest/api/3/issue/DESIGN-1225": 404,
-      "GET /rest/api/3/issue/FSD-373": 404,
+      "GET /rest/api/3/issue/FSD-38": 404,
       "GET /rest/api/3/issue/GROWTH-1226": 404,
-      "GET /rest/api/3/issue/GUARD-102": 404,
+      "GET /rest/api/3/issue/GUARD-105": 404,
       "GET /rest/api/3/issue/HELIOS-1724": 404,
       "GET /rest/api/3/issue/ITHELP-1223": 404,
       "GET /rest/api/3/issue/KAN-1": 404,
@@ -848,24 +859,24 @@
       "GET /rest/api/3/issue/SEC-1225": 404,
       "GET /rest/api/3/issue/VOY-1992": 404,
       "anonymous site-wide search (bounded, all pages): issues per project": {
-        "SVT": 154,
+        "CST": 49,
+        "SVT": 156,
         "LZMT": 383,
-        "CRT": 548,
-        "CST": 45
+        "CRT": 548
       },
-      "anonymous listing of SVT": "154 issues (receipt holds 154; 已完成 123, Backlog 31)",
+      "anonymous listing of SVT": "156 issues (receipt holds 156; 已完成 125, Backlog 31)",
       "other projects whose scheme lets anyone browse": "CRT,CST,LZMT",
       "public trackers (allowlist)": "CRT,SVT,LZMT,CST",
       "negative control": "13 fake broken answers, each failed the verdict",
       "GET /jira/software/c/projects/SVT/issues": 200
     },
-    "provenAt": "2026-11-03T09:26:09.578Z",
+    "provenAt": "2026-11-03T16:36:23.484Z",
     "proofFailures": []
   },
   "verified": {
-    "through": "8.25.0",
-    "at": "2026-11-03T09:24:52.820Z",
-    "issues": 154,
+    "through": "8.26.0",
+    "at": "2026-11-03T16:35:50.334Z",
+    "issues": 156,
     "failures": 0
   }
 }
