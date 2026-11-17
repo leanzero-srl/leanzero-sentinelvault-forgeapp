@@ -4,8 +4,9 @@
  */
 
 // Run by scripts/deploy-prod.sh. Owner, 2026-10-20: "no one needs to do that manually ... if we missed a release note
-// it's fine. listen the release notes in app need to be done automatically please." So nothing here ever refuses a
-// release or asks a person for anything:
+// it's fine. listen the release notes in app need to be done automatically please." So nothing here asks a person for
+// anything, and a missed tracker line never refuses a release. Two stops exist, both BEFORE the build and the deploy
+// (2026-11-17, release-autopilot core 1.5.0; see "THE WORDS" below): NOTE PENDING (exit 3) and a filler note (exit 2).
 //
 //   node scripts/public-tracker/release-gate.mjs prepare [--approve-major]   # before the build
 //   node scripts/public-tracker/release-gate.mjs post                        # after an ELIGIBLE production deploy
@@ -17,8 +18,8 @@
 // `prepare` (scripts/release-autopilot.mjs does the writing):
 //   1. THE NOTE. When the newest note in src/server/shared/release-notes.js is not newer than the release production
 //      carries (production-release.json) and HEAD has commits after that release, the release being cut has no
-//      note: it is written from those commits (messages and diffs; internal-only commits dropped) by one headless
-//      model call, or from the commit subjects when the model is unavailable, as the next Forge version production
+//      note: it is written from those commits (messages and diffs; internal-only commits dropped) by the visible
+//      session's agent, asked through a request file (THE WORDS below), as the next Forge version production
 //      will get (minor + 1, or the next major with --approve-major). A newest note with no lines gets its lines the
 //      same way. docs/RELEASE-NOTES.md is re-rendered, the module is re-imported and test/release-notes.test.mjs
 //      must pass, else both files go back as they were (a missed note is fine). Committed on its own.
@@ -28,13 +29,29 @@
 //      permissions, isolation or keys, or carries an id or a path. A line naming an SVT key of a KNOWN bug folds into
 //      it (the issue moves to Done with the release) and the known bug moves from KNOWN to CLOSED. Committed.
 //   A rollback or a hotfix from an older tag (the production release's commit is not behind HEAD, or HEAD is
-//   detached) writes nothing. Any failure is logged and the door goes on.
+//   detached) writes nothing. Any other failure is logged and the door goes on.
+//   THE WORDS (2026-11-17). Until core 1.4.0 the note, the rows and their review were asked of a headless model
+//   process. Headless model calls are forbidden on our Macs (visible sessions only; a guard hook blocks them), so the
+//   call answered nothing and the door published its fallback text (CogniRunner 1.37.4 shipped the filler line "This
+//   release fixes the problems listed below."). Now `prepare` asks the agent of the visible session that runs the door:
+//     - it writes test-harness/results/release-requests/<id>.json (gitignored; fields what, prompt, result_path) and
+//       exits 3, NOTE PENDING, printing the request's path. deploy-prod.sh stops there with exit 3, before the build
+//       and the deploy. Nothing is written in the answer's place: pending is never a pass, there is no fallback text.
+//     - an agent of the session answers the request's prompt and writes <id>.result.json =
+//       {"request_id":"<id>","output":<the JSON the prompt asks for>}; then the SAME door command is run again (the
+//       same inputs give the same id, so the answer is read). A cut asks up to three times, one per run: "release note
+//       <version>", "public tracker rows", "public tracker review" (give the review to an independent agent). The
+//       note is committed before the rows are asked for; deploy-prod.sh accepts that re-run (HEAD = the named commit
+//       plus only the door's own commits). A result with the wrong id or no JSON stays pending and `prepare` says why.
+//     - a note that would carry a FILLER_LINES line is REFUSED: exit 2, nothing written; deploy-prod.sh stops with
+//       exit 2. Write the note by hand from the real change, in the commit that ships it, and run the door again.
 // `post` records the deployed release (and the commit) in production-release.json, the tracker's LAST_VERSION, then
 // runs the tracker's apply, verify and public --reprove itself, commits what they wrote and pushes HEAD to origin/main
 // fast-forward only, from ANY checkout (main, another branch, a detached release worktree; pushMain). A tracker step
 // failure is logged and never changes the deploy's exit code; the daily digest's tracker check catches the drift. But
 // commits that did not land on origin/main (not committed, push refused or failed) exit 6 with the exact command, and
-// deploy-prod.sh then exits 3: deployed and eligible, receipt NOT on main (never silent again, 2026-11-03).
+// deploy-prod.sh then exits 6 too: deployed and eligible, receipt NOT on main (never silent again, 2026-11-03; it was
+// exit 3 until 2026-11-17, when 3 became NOTE PENDING, which means the opposite: nothing deployed, run it again).
 // `try-first` (owner 2026-10-20; since 2026-10-22 release-autopilot 1.4.0 tryFirstHandOff) hands the "Try it first" top
 // message of the new version's More details (a per-version field) to the watcher on the workhorse (forge-app-marketing
 // apps/try-first/watcher.mjs, every 10 min, puts it on once the Marketplace lists the version): it kicks the watcher once
@@ -84,7 +101,13 @@ let loads = 0;
 const fresh = (f) => import(`${pathToFileURL(f).href}?gate=${Date.now()}-${++loads}`);
 const readProduction = () => JSON.parse(readFileSync(PRODUCTION_FILE, "utf8"));
 const today = () => new Date().toISOString().slice(0, 10);
-const runner = A.claudeRunner();
+/** Where the door's requests to the visible session's agent live (gitignored, so a pending request never dirties the tree). */
+const REQUESTS_DIR = join(REPO, "test-harness", "results", "release-requests");
+/** The words come from the visible session's agent through request files: never a model process, never null (THE WORDS above). */
+const runner = A.requestRunner({ dir: REQUESTS_DIR });
+/** Exit code of `prepare` when the note would carry a filler line (deploy-prod.sh stops with it before the build). */
+const FILLER_REFUSED = 2;
+const flush = () => new Promise((done) => process.stdout.write("", done));
 /** Exit code of `post` / `listed` when the door's commits did not land on origin/main (deploy-prod.sh turns it loud). */
 const NOT_ON_MAIN = 6;
 
@@ -169,14 +192,29 @@ async function prepareNote({ approveMajor }) {
     c.internal = A.isInternalCommit(c, PACKAGED);
     if (!c.internal) c.diff = await A.commitDiff({ git: gitAsync, sha: c.sha, packagedPaths: PACKAGED });
   }
-  log(`==> Release note: ${version} has ${forward ? "a note with no lines" : "no note"}; writing it from ${commits.length} commit(s) since ${live} (${commits.filter((c) => !c.internal).length} customer-visible)`);
+  // Production's commit plus nothing but the door's own tracker record (post's receipt commit, the watcher's `listed`
+  // commit) is a redeploy too. Until 2026-11-17 such a run wrote a note for the next version whose only line was the
+  // filler "Maintenance release with no change you will notice."; a filler note is refused now, and there is nothing
+  // to write a real one from, so nothing is written.
+  if (!forward && commits.length && commits.every((c) => c.files.length && c.files.every((f) => f.startsWith(`${REL(HERE)}/`)))) {
+    log(`==> Release note: HEAD is the commit production runs (${live}) plus only the door's own tracker record; a redeploy, nothing is written`);
+    return current.version;
+  }
+  log(`==> Release note: ${version} has ${forward ? "a note with no lines" : "no note"}; asking for it from ${commits.length} commit(s) since ${live} (${commits.filter((c) => !c.internal).length} customer-visible)`);
   const examples = RELEASE_NOTES.slice(0, 3).map((n) => ({ version: n.version, headline: n.headline, changes: n.changes, fixes: n.fixes, action: n.action }));
   const g = await A.generateNote({ appName: APP, version, previous: live, examples, commits, trackerKey: TRACKER_KEY, hazards: NOTE_HAZARDS, runner, log, requireChange: false,
     audience: "It is read by the Confluence site admin and space admins who run the app" });
   for (const d of g.dropped) log(`    dropped a generated line (${d.why}): ${d.line.slice(0, 120)}`);
   const n = { version, date: today(), headline: forward && current.headline && current.headline.length > 10 ? current.headline : g.note.headline, changes: g.note.changes, fixes: g.note.fixes, action: forward && current.action ? current.action : g.note.action };
   if (n.headline.length <= 10) n.headline = `${n.headline.replace(/\.$/, "")} in Sentinel Vault ${version}`;
-  const why = `from the commits since ${live} (${g.source === "model" ? "headless model, checked line by line" : "the commit subjects, the model was unavailable"})`;
+  const why = `from the commits since ${live} (${g.source === "model" ? "written by the session's agent on the door's request, checked line by line" : "the commit subjects: the agent's answer left no usable line"})`;
+  // 2026-11-17 (CogniRunner 1.37.4 shipped "This release fixes the problems listed below."): a filler line is never published
+  const filler = A.fillerLinesIn(n);
+  if (filler.length) {
+    const e = new Error(`==> REFUSED (exit ${FILLER_REFUSED}): release note ${version} would carry ${filler.length === 1 ? "a filler line" : "filler lines"} (${filler.map((l) => JSON.stringify(l)).join(", ")}), and the door does not publish filler. Nothing was written, built or deployed.\n    Write the note for ${version} by hand in ${REL(NOTES_F)} from the real change, in the commit that ships it, and run the door again.`);
+    e.fillerRefused = true;
+    throw e;
+  }
   const before = readFileSync(NOTES_F, "utf8"), docBefore = (() => { try { return readFileSync(DOC_F, "utf8"); } catch { return null; } })();
   const putBack = () => { writeFileSync(NOTES_F, before); if (docBefore !== null) writeFileSync(DOC_F, docBefore); };
   try {
@@ -198,6 +236,7 @@ async function prepareNote({ approveMajor }) {
     return version;
   } catch (e) {
     putBack();
+    if (e && e.pending) throw e; // a request the session's agent has not answered is never "a missed note"
     log(`==> Release note: could not write ${version} (${String(e && (e.stderr || e.message) || e).trim().split("\n").slice(-3).join(" ")}); the module was put back and the release goes on without it`);
     return current.version;
   }
@@ -251,6 +290,7 @@ async function prepareTracker(release) {
     log(`==> Public tracker rows committed (${rows.filter((r) => !r.withhold).length} published, ${rows.filter((r) => r.withhold).length} withheld${out.closed.length ? `, ${out.closed.length} known bug(s) closed` : ""})`);
   } catch (e) {
     writeFileSync(ENTRIES_F, before);
+    if (e && e.pending) throw e; // a request the session's agent has not answered is never "a missed line"
     log(`==> Public tracker: could not write the rows (${e && e.message}); entries.mjs was put back and the release goes on (the tracker skips a line with no row)`);
   }
 }
@@ -295,7 +335,24 @@ if (cmd === "marketplace-latest") {
       const v = rc.verified && rc.verified.failures === 0 ? rc.verified.through : null;
       if (!v || !vge(vparts(v), live)) log(`==> Public tracker: the last clean verify ${v ? `reached ${v}` : "is not recorded"}, behind ${live.join(".")} in production; this deploy's tracker step covers it`);
     }
-  } catch (e) { log(`==> Release autopilot failed (${e && e.message}); the release goes on`); }
+  } catch (e) {
+    if (e && e.pending && e.request) {
+      // the door stops here (deploy-prod.sh exits 3 on this code, before the build and the deploy)
+      const q = e.request;
+      log([
+        `==> NOTE PENDING (exit ${A.NOTE_PENDING_EXIT}): ${q.what} waits for the visible session's agent. Nothing more was written, and nothing was built or deployed.`,
+        ...(q.why ? [`    the answer that is there was not used: ${q.why}`] : []),
+        `    request: ${q.path}`,
+        `    answer:  ${q.resultPath}  = {"request_id":"${q.id}","output":<the JSON the request's prompt asks for>}`,
+        "    Have an agent of this session answer the request's prompt and write that file, then run the same door command again.",
+        "    Pending is not a pass: the door writes no fallback text in its place.",
+      ].join("\n"));
+      await flush();
+      process.exit(A.NOTE_PENDING_EXIT);
+    }
+    if (e && e.fillerRefused) { log(e.message); await flush(); process.exit(FILLER_REFUSED); }
+    log(`==> Release autopilot failed (${e && e.message}); the release goes on`);
+  }
   process.exit(0);
 } else if (cmd === "post") {
   const { CURRENT_RELEASE } = await fresh(NOTES_F);

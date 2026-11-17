@@ -5,12 +5,16 @@
 //  - the licensing guard asks for --licensing-live only for the deploy that turns licensing on: when the last release
 //    tag already shipped `licensing.enabled: true`, the door runs without the flag.
 //  - release notes and the public tracker are AUTOMATIC (2026-10-20, owner: "the release notes in app need to be done
-//    automatically"): a release with no in-app note gets one written from the commits since production (through a
-//    stand-in model, and deterministically with the model off) and committed BEFORE the build; a note line with no
-//    tracker row gets one instead of a refusal; a line naming an SVT key of a known bug closes it (KNOWN -> CLOSED,
-//    and the tracker builds that issue as Done with the release); nothing about notes or the tracker ever refuses;
-//    after an eligible deploy the door records the release and runs the tracker's apply, verify and public --reprove
-//    itself, and a failing tracker step never changes the door's exit code.
+//    automatically"): a release with no in-app note gets one written from the commits since production and committed
+//    BEFORE the build; a note line with no tracker row gets one instead of a refusal; a line naming an SVT key of a
+//    known bug closes it (KNOWN -> CLOSED, and the tracker builds that issue as Done with the release); after an
+//    eligible deploy the door records the release and runs the tracker's apply, verify and public --reprove itself,
+//    and a failing tracker step never changes the door's exit code.
+//  - THE WORDS COME FROM THE VISIBLE SESSION'S AGENT, NEVER A MODEL PROCESS (2026-11-17, autopilot core 1.5.0): the
+//    door writes a request file and stops with NOTE PENDING, exit 3, before anything is written, committed, built or
+//    deployed; a result with the wrong id or no JSON stays pending and the door says why; answered, the same command
+//    goes on. Pending is never a pass and no fallback text stands in. A note carrying a filler line is REFUSED
+//    (exit 2). The helper below plays the session's agent by answering request files; nothing stands in for a binary.
 import { execFileSync, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
@@ -49,7 +53,7 @@ try {
   git("checkout", "-q", "-B", "main");
   // the working copy under test (the clone holds the last commit; the door is copied in as it is on disk now)
   for (const f of ["scripts/deploy-prod.sh", "scripts/check-installed-deps.mjs", "scripts/strip-dev-modules.mjs", "manifest.yml", "scripts/public-tracker/coverage.mjs", "scripts/public-tracker/release-gate.mjs",
-    "scripts/public-tracker/tracker.mjs", "scripts/public-tracker/credentials.mjs", "scripts/release-autopilot.mjs"]) fs.copyFileSync(path.join(root, f), path.join(repo, f));
+    "scripts/public-tracker/tracker.mjs", "scripts/public-tracker/credentials.mjs", "scripts/release-autopilot.mjs", "test/release-notes.test.mjs", ".gitignore"]) fs.copyFileSync(path.join(root, f), path.join(repo, f));
   // The tracker gate reads the clone's own rows, receipt and production-release.json: a row for every note line,
   // production recorded one release behind the one being cut, and a receipt verified through it.
   const { hashOf } = await import(pathToFileURL(path.join(root, "scripts/public-tracker/coverage.mjs")).href);
@@ -103,8 +107,29 @@ esac
   const NOT = "The version of your app [98.1.0] that's deployed to [production] is not eligible for the Runs on Atlassian program.\n  App is using a webtrigger module that can egress data";
   // The door commits (its note, its tracker rows, the production record after the deploy). The helper keeps what it
   // recorded and wrote in `last` and resets the clone to the commit the case started from, so every case starts clean.
-  // The model is OFF (no `claude` call in a test) unless a case points RELEASE_AUTOPILOT_CLAUDE at the stand-in below;
-  // the tracker driver is a stand-in that logs its argv; nothing is pushed.
+  // The tracker driver is a stand-in that logs its argv; nothing is pushed.
+  // THE MODEL IS THE VISIBLE SESSION'S AGENT (2026-11-17): the door asks through a request file under
+  // test-harness/results/release-requests/ and stops with exit 3 (NOTE PENDING). `agent` plays that agent: given the
+  // request it returns the JSON the prompt asks for; the helper writes <id>.result.json and runs the SAME command
+  // again, as a session does. `{ answer: null }` leaves a request unanswered; an answer function that returns
+  // undefined stops answering there. Answers stay in the requests dir between cases (same prompt = same id), so a
+  // case about pending clears it first (clearRequests).
+  const REQ_DIR = path.join(repo, "test-harness/results/release-requests");
+  const clearRequests = () => fs.rmSync(REQ_DIR, { recursive: true, force: true });
+  const pendingOf = (out) => {
+    const m = /^\s*request: (.+)$/m.exec(out || "");
+    if (!m || !/NOTE PENDING \(exit 3\)/.test(out)) return null;
+    return { ...JSON.parse(fs.readFileSync(m[1].trim(), "utf8")), path: m[1].trim() };
+  };
+  const listIn = (p, from) => JSON.parse(p.slice(p.indexOf("[", p.indexOf(from)), p.lastIndexOf("]", p.indexOf("Answer with ONLY")) + 1));
+  const NOTE_ANSWER = { headline: "Approvers see the page's classification", changes: [{ text: "New: the approval dialog shows the page's classification.", keys: [] }], fixes: [{ text: "Fixed something in src/server/x.js.", keys: [] }], action: null };
+  const agent = (q, { note = NOTE_ANSWER, review = "ok" } = {}) => {
+    const p = q.prompt;
+    if (/in-app release note/.test(p)) return note;
+    if (/adversarial reviewer/.test(p)) return { verdicts: listIn(p, "Rows (").map((row) => ({ h: row.h, verdict: review, reason: review === "ok" ? null : "the test's reviewer withholds it" })) };
+    if (/PUBLIC tracker/.test(p)) return { rows: listIn(p, "Lines (").map((l) => ({ h: l.h, title: "The approval dialog shows the page's classification", c: "W", d: null, withhold: null })) };
+    throw new Error(`deploy-door: a request the test's agent does not know: ${q.what}`);
+  };
   const TRK_LOG = path.join(tmp, "tracker.log"), TRK_ENV_LOG = path.join(tmp, "tracker-env.log");
   fs.writeFileSync(path.join(bin, "tracker-stub.mjs"), `import fs from "node:fs"; fs.appendFileSync(${JSON.stringify(TRK_LOG)}, process.argv.slice(2).join(" ") + "\\n"); fs.appendFileSync(${JSON.stringify(TRK_ENV_LOG)}, (process.env.PUBLIC_TRACKER_ENV || "(unset)") + "\\n"); process.exit(process.env.FAKE_TRACKER_FAIL === process.argv[2] ? 1 : 0);\n`);
   // The Marketplace "Try it first" hand-off kicks the workhorse watcher over ssh (or zsh -lc on the workhorse): both are
@@ -123,23 +148,36 @@ exit 0
   // with stand-in keys (never read by the stub tracker) stands for them in every case that is not about them.
   const TRK_CRED = path.join(tmp, "tracker.env");
   fs.writeFileSync(TRK_CRED, "JIRA_ADMIN_EMAIL=door-test@invalid\nJIRA_API_TOKEN=not-a-token\n");
-  const BASE_ENV = { PUBLIC_TRACKER_ENV: TRK_CRED, RELEASE_GATE_MARKETPLACE_FAKE: JSON.stringify({ name: "98.1.0", buildNumber: 500 }), RELEASE_AUTOPILOT_MODEL: "off", RELEASE_GATE_TRACKER: path.join(bin, "tracker-stub.mjs"), RELEASE_GATE_NO_PUSH: "1",
+  const BASE_ENV = { PUBLIC_TRACKER_ENV: TRK_CRED, RELEASE_GATE_MARKETPLACE_FAKE: JSON.stringify({ name: "98.1.0", buildNumber: 500 }), RELEASE_GATE_TRACKER: path.join(bin, "tracker-stub.mjs"), RELEASE_GATE_NO_PUSH: "1",
     GIT_AUTHOR_NAME: "door-test", GIT_AUTHOR_EMAIL: "door-test@invalid", GIT_COMMITTER_NAME: "door-test", GIT_COMMITTER_EMAIL: "door-test@invalid" };
   let last = null;
   // Every real run names the commit being released (--sha); by default the commit the case starts from, i.e. the
   // checkout's own HEAD. `{ sha: null }` leaves the flag out, `{ sha: "<x>" }` names something else.
-  const door = (env, args = [], { sha, keep } = {}) => {
+  const door = (env, args = [], { sha, keep, answer = agent } = {}) => {
     const start = git("rev-parse", "HEAD");
     if (sha === undefined) args = [...args, "--sha", start];
     else if (sha !== null) args = [...args, "--sha", sha];
     for (const f of [TRK_LOG, TRK_ENV_LOG, PUB_LOG, FORGE_LOG]) { try { fs.rmSync(f); } catch { /* none */ } }
-    const { RELEASE_AUTOPILOT_MODEL: _m, ...outer } = process.env;
-    const r = spawnSync("bash", ["scripts/deploy-prod.sh", ...args], { cwd: repo, encoding: "utf8", env: { ...outer, PATH: `${bin}:${outer.PATH}`, ...BASE_ENV, ...env } });
+    const outer = process.env;
+    // the same command again after each answered request (at most the note, the rows and their review, plus one)
+    let r, out = "";
+    const asked = [];
+    for (let i = 0; i < 5; i++) {
+      r = spawnSync("bash", ["scripts/deploy-prod.sh", ...args], { cwd: repo, encoding: "utf8", env: { ...outer, PATH: `${bin}:${outer.PATH}`, ...BASE_ENV, ...env } });
+      out += r.stdout;
+      const q = r.status === 3 && answer ? pendingOf(r.stdout) : null;
+      const a = q ? answer(q) : undefined;
+      if (a === undefined) break;
+      asked.push(q.what);
+      fs.writeFileSync(q.result_path, JSON.stringify({ request_id: q.id, output: a }));
+    }
+    r.stdout = out;
     const read = (f) => { try { return fs.readFileSync(f, "utf8"); } catch { return null; } };
     last = { recorded: read(PROD_F), entries: read(ENTRIES_F), notes: read(path.join(repo, "src/server/shared/release-notes.js")), doc: read(path.join(repo, "docs/RELEASE-NOTES.md")),
       tracker: (read(TRK_LOG) || "").trim().split("\n").filter(Boolean), trackerEnv: (read(TRK_ENV_LOG) || "").trim().split("\n").filter(Boolean), publisher: (read(PUB_LOG) || "").trim().split("\n").filter(Boolean), log: git("log", "--format=%s", `${start}..HEAD`), build: read(path.join(repo, "src/build-info.js")), head: git("rev-parse", "--short", "HEAD"),
       forge: (read(FORGE_LOG) || "").trim().split("\n").filter(Boolean) };
     last.deployed = last.forge.some((l) => /^deploy\b/.test(l));
+    last.asked = asked;
     last.desired = null;
     if (env.WANT_DESIRED) {
       // the tracker's own desired state in the clone, after the deploy (Marketplace read stubbed: everything is listed)
@@ -258,39 +296,87 @@ process.exitCode = 0;
   fs.writeFileSync(PROD_F, JSON.stringify({ release: CUT, at: "2026-10-18", sha: prodSha })); git("commit", "-qam", "production commit recorded");
   const [maj, min] = CUT.split(".").map(Number), NEXT = `${maj}.${min + 1}.0`, MAJOR = `${maj + 1}.0.0`;
   fs.writeFileSync(path.join(repo, "src/server/door-test-change.js"), "export const x = 1;\n"); git("add", "-A", "src"); git("commit", "-qm", "Approvers see the page's classification in the approval dialog");
-  // a stand-in for `claude -p`: answers the note prompt, the rows prompt and the review prompt
-  fs.writeFileSync(path.join(bin, "claude"), `#!/usr/bin/env node
-let p = ""; process.stdin.on("data", (d) => (p += d)); process.stdin.on("end", () => {
-  if (/in-app release note/.test(p)) console.log(JSON.stringify({ headline: "Approvers see the page's classification", changes: [{ text: "New: the approval dialog shows the page's classification.", keys: [] }], fixes: [{ text: "Fixed something in src/server/x.js.", keys: [] }], action: null }));
-  else if (/adversarial reviewer/.test(p)) { const rows = JSON.parse(p.slice(p.indexOf("[", p.indexOf("Rows (")), p.lastIndexOf("]", p.indexOf("Answer with ONLY")) + 1)); console.log(JSON.stringify({ verdicts: rows.map((r) => ({ h: r.h, verdict: "ok" })) })); }
-  else if (/PUBLIC tracker/.test(p)) { const lines = JSON.parse(p.slice(p.indexOf("[", p.indexOf("Lines (")), p.lastIndexOf("]", p.indexOf("Answer with ONLY")) + 1)); console.log(JSON.stringify({ rows: lines.map((l) => ({ h: l.h, title: "The approval dialog shows the page's classification", c: "W", d: null, withhold: null })) })); }
-  else process.exit(1);
-});
-`, { mode: 0o755 });
-  r = door({ FAKE_ELIG: ELIGIBLE, RELEASE_AUTOPILOT_MODEL: "", RELEASE_AUTOPILOT_CLAUDE: path.join(bin, "claude") }, ["--licensing-live"]);
-  ok(`no note for the release being cut: the door WRITES it (${NEXT}, from the model stand-in) and deploys`, r.status === 0 && /Deployed to production/.test(r.stdout)
+  // NOTE PENDING (2026-11-17). The release being cut has no note, so the door ASKS for it: a request file, exit 3,
+  // and nothing written, committed, built or deployed. No model process is started and no fallback text is written.
+  const { FILLER_LINES, REQUEST_PROTOCOL, requestId } = await import(pathToFileURL(path.join(root, "scripts/release-autopilot.mjs")).href);
+  const NOTES_PATH = path.join(repo, "src/server/shared/release-notes.js");
+  const notesBefore = fs.readFileSync(NOTES_PATH, "utf8");
+  const NL = ["--licensing-live"];
+  clearRequests();
+  r = door({ FAKE_ELIG: ELIGIBLE }, NL, { answer: null });
+  let q = pendingOf(r.stdout);
+  ok("no note for the release being cut and no answer yet: the door stops with NOTE PENDING, exit 3, and names the request file",
+    r.status === 3 && !!q && /Pending is not a pass/.test(r.stdout) && r.stdout.includes(path.join("test-harness", "results", "release-requests")));
+  ok("...before anything is written, committed, built or deployed (no fallback note)", !last.deployed && last.forge.length === 0 && last.log === "" && last.notes === notesBefore
+    && !/Building every bundle/.test(r.stdout) && last.tracker.length === 0 && git("status", "--porcelain", "--untracked-files=no") === "");
+  ok(`...the request file carries what is asked (release note ${NEXT}), the full prompt, its id and where the answer goes`, !!q && q.protocol === REQUEST_PROTOCOL && q.what === `release note ${NEXT}`
+    && q.id === requestId(q.prompt) && q.prompt.length > 200 && fs.realpathSync(path.dirname(q.result_path)) === fs.realpathSync(REQ_DIR) && path.basename(q.result_path) === `${q.id}.result.json`);
+  ok("...and the requests dir is gitignored, so a pending request never dirties the checkout", git("status", "--porcelain", "--untracked-files=all", "--", "test-harness") === "");
+  if (q) {
+    fs.writeFileSync(q.result_path, JSON.stringify({ request_id: "0000000000000000", output: NOTE_ANSWER }));
+    r = door({ FAKE_ELIG: ELIGIBLE }, NL, { answer: null });
+    ok("a result that names another request is not used: still exit 3, the door says why, nothing written or deployed",
+      r.status === 3 && /not used: the result names request/.test(r.stdout) && !last.deployed && last.log === "" && last.notes === notesBefore);
+    fs.writeFileSync(q.result_path, JSON.stringify({ request_id: q.id, output: "I could not write it." }));
+    r = door({ FAKE_ELIG: ELIGIBLE }, NL, { answer: null });
+    ok("a result whose output is not the asked JSON is not used either: still exit 3, no note written",
+      r.status === 3 && /not used: the result's output is not the JSON object/.test(r.stdout) && !last.deployed && last.log === "" && last.notes === notesBefore);
+  }
+  // the note answered, the tracker rows not yet: the door commits the note and stops again, still before the build
+  clearRequests();
+  r = door({ FAKE_ELIG: ELIGIBLE }, NL, { answer: (x) => (/^release note /.test(x.what) ? agent(x) : undefined) });
+  q = pendingOf(r.stdout.slice(r.stdout.lastIndexOf("NOTE PENDING (exit 3)")));
+  ok("the note answered, the tracker rows not: exit 3 on \"public tracker rows\", the note committed, nothing built or deployed",
+    r.status === 3 && !!q && q.what === "public tracker rows" && /in-app note written by the release door/.test(last.log) && !/public tracker: rows/.test(last.log)
+    && !last.deployed && last.forge.length === 0 && !/Building every bundle/.test(r.stdout));
+
+  // A FILLER NOTE IS REFUSED (2026-11-17: CogniRunner 1.37.4 shipped "This release fixes the problems listed below.")
+  for (const filler of FILLER_LINES) {
+    clearRequests();
+    r = door({ FAKE_ELIG: ELIGIBLE }, NL, { answer: (x) => (/^release note /.test(x.what) ? { headline: "Fixes in the approval dialog", changes: [{ text: filler, keys: [] }], fixes: [{ text: "The approval dialog showed no classification.", keys: [] }], action: null } : undefined) });
+    ok(`a note carrying the filler line "${filler}" is refused (exit 2): nothing written, committed, built or deployed`,
+      r.status === 2 && /does not publish filler/.test(r.stdout) && r.stdout.includes(filler) && !last.deployed && last.forge.length === 0 && last.log === "" && last.notes === notesBefore && !/Building every bundle/.test(r.stdout));
+  }
+  // a fix-only answer: the fix is the note, and no filler line is added to give it a "change"
+  clearRequests();
+  r = door({ FAKE_ELIG: ELIGIBLE }, NL, { answer: (x) => agent(x, { note: { headline: "The approval dialog shows the classification again", changes: [], fixes: [{ text: "The approval dialog showed no classification.", keys: [] }], action: null } }) });
+  ok("a fix-only note is written with its fix and no filler line, and deploys", r.status === 0 && last.deployed && last.notes.includes(`version: "${NEXT}"`) && last.notes.includes("The approval dialog showed no classification.")
+    && FILLER_LINES.every((f) => !last.notes.includes(f)));
+
+  // EVERY REQUEST ANSWERED: the same command, run again after each answer, writes the note and the rows and deploys
+  clearRequests();
+  r = door({ FAKE_ELIG: ELIGIBLE }, NL);
+  ok(`the door asked for the note, the tracker rows and their review, one at a time (${JSON.stringify(last.asked)})`, JSON.stringify(last.asked) === JSON.stringify([`release note ${NEXT}`, "public tracker rows", "public tracker review"]));
+  ok(`no note for the release being cut: the door WRITES it (${NEXT}, from the session agent's answer) and deploys`, r.status === 0 && /Deployed to production/.test(r.stdout)
     && last.notes.includes(`version: "${NEXT}"`) && last.notes.includes("New: the approval dialog shows the page's classification.") && JSON.parse(last.recorded).release === NEXT);
+  ok("...says in the note's comment and commit who wrote it (the session's agent, on the door's request), never a headless model", /written by the session's agent on the door's request/.test(last.notes) && /written by the session's agent/.test(last.log) && !/headless/.test(last.notes + last.log));
   ok("...drops a generated line that would turn the note gate red (a file name)", !last.notes.includes("src/server/x.js"));
   ok("...re-renders docs/RELEASE-NOTES.md and commits the note before the build", last.doc.includes(`## ${NEXT}`) && /release .*: in-app note written by the release door/.test(last.log)
     && r.stdout.indexOf(`Release note ${NEXT} written and committed`) < r.stdout.indexOf("Building every bundle"));
-  ok("...and writes the new line's tracker row through the model and the review pass", /rows: model; review pass: model/.test(last.entries) && last.entries.includes("The approval dialog shows the page's classification"));
+  ok("...and writes the new line's tracker row through the agent's rows and the review pass", /rows: model; review pass: model/.test(last.entries) && last.entries.includes("The approval dialog shows the page's classification"));
   r = door({ FAKE_ELIG: ELIGIBLE }, ["--licensing-live", "--approve-major"]);
-  ok(`with the model off the note is written from the commit subjects; --approve-major cuts ${MAJOR}`, r.status === 0 && last.notes.includes(`version: "${MAJOR}"`) && /commit subjects/.test(last.notes)
-    && last.notes.includes("Approvers see the page's classification in the approval dialog."));
+  ok(`--approve-major cuts ${MAJOR}: a different release is a different request, asked and answered the same way`, r.status === 0 && last.deployed && last.notes.includes(`version: "${MAJOR}"`) && last.asked[0] === `release note ${MAJOR}`
+    && last.notes.includes("New: the approval dialog shows the page's classification."));
+  // no model process anywhere: the door's own files start none, and this test puts no stand-in binary on the PATH
+  {
+    const core = fs.readFileSync(path.join(root, "scripts/release-autopilot.mjs"), "utf8"), gate = fs.readFileSync(path.join(root, "scripts/public-tracker/release-gate.mjs"), "utf8");
+    ok("the release door starts no model process: the core imports no child_process and no headless runner is left in it or in release-gate.mjs",
+      !/claudeRunner|child_process/.test(core) && !/claudeRunner/.test(gate) && /A\.requestRunner\(/.test(gate) && !fs.existsSync(path.join(bin, "claude")));
+  }
 
   // A COMMIT NAMING AN SVT KEY OF A KNOWN BUG CLOSES IT. known-macro-position-focus is SVT-47 in the receipt. The log
   // line lists every key the run closes ("closes SVT-150, SVT-149, SVT-47" when the real newest note names others).
   fs.writeFileSync(path.join(repo, "src/server/door-test-change.js"), "export const x = 2;\n");
   git("commit", "-qam", "Show the keyboard focus outline on the Top and Bottom switches (SVT-47)");
-  r = door({ FAKE_ELIG: ELIGIBLE, WANT_DESIRED: "known-macro-position-focus" }, ["--licensing-live"]);
+  r = door({ FAKE_ELIG: ELIGIBLE, WANT_DESIRED: "known-macro-position-focus" }, ["--licensing-live"], { answer: (x) => agent(x, { review: "withhold" }) });
   const closedNote = (last.notes.match(/"[^"\n]*\(SVT-47\)\."/) || [""])[0];
   ok("the generated note line carries the key the commit names", r.status === 0 && !!closedNote);
   ok("...the row FOLDS into the known bug instead of a new issue, and the known bug moves from KNOWN to CLOSED",
     /"fold":"known-macro-position-focus"/.test(last.entries) && /closes [^\n]*\bSVT-47\b/.test(last.log)
     && last.entries.indexOf('k: "known-macro-position-focus"') > last.entries.indexOf("export const CLOSED"));
   const d = (last.desired || [])[0] || {};
-  // the model is off here, so the fix text was never reviewed: the issue closes with a generic sentence, never the raw line
-  ok(`...and the tracker builds SVT-47's issue as a Done Bug with ${NEXT} as its fix version (unreviewed text: the generic sentence) (${JSON.stringify(last.desired).slice(0, 300)})`,
+  // the review pass withheld the row here, so its text is not public: the issue closes with a generic sentence, never the raw line
+  ok(`...and the tracker builds SVT-47's issue as a Done Bug with ${NEXT} as its fix version (withheld text: the generic sentence) (${JSON.stringify(last.desired).slice(0, 300)})`,
     d.type === "Bug" && d.status === "Done" && d.version === NEXT && !d.known && d.text === "This problem is fixed." && !/SVT-47/.test(d.text));
 
   // THE DOOR RELEASES THE COMMIT IT IS TOLD TO, OR NOTHING (2026-10-22). A door packages the working tree of the
@@ -391,6 +477,10 @@ let p = ""; process.stdin.on("data", (d) => (p += d)); process.stdin.on("end", (
   ok("...re-run naming the same tested sha: accepted (HEAD = it plus only the door's own commits) and deploys", r.status === 0 && last.deployed && /only this door's own commits \(a re-run\); accepted/.test(r.stdout));
   r = door({ FAKE_ELIG: ELIGIBLE }, L, { sha: S });
   ok("...and a redeploy of it after that deploy's own record commit (production-release.json, receipt) is accepted too", r.status === 0 && last.deployed);
+  // until 2026-11-17 that redeploy wrote a note for the NEXT version whose only line was the filler "Maintenance release
+  // with no change you will notice."; nothing customer-visible changed, so no note is asked for and none is written
+  ok("...and writes no note for it: production's commit plus only the door's own tracker record is a redeploy", /plus only the door's own tracker record; a redeploy, nothing is written/.test(r.stdout)
+    && !/in-app note written by the release door/.test(last.log) && !/Maintenance release/.test(last.notes) && last.asked.length === 0);
   git("reset", "-q", "--hard", afterStop);
   fs.writeFileSync(path.join(repo, "src/server/door-test-change.js"), "export const x = 4; // not tested\n"); git("commit", "-qam", "a change after the stopped run");
   r = door({ FAKE_ELIG: ELIGIBLE }, L, { sha: S });
@@ -420,7 +510,7 @@ let p = ""; process.stdin.on("data", (d) => (p += d)); process.stdin.on("end", (
   // THE DOOR PUTS ITS COMMITS ON origin/main FROM ANY CHECKOUT (2026-11-03). `post` pushed only when the checked-out
   // branch was literally `main`: from a release worktree on a detached HEAD (8.25.0, 8.26.0) it committed the receipt,
   // exited 0 and said nothing, and both releases were pushed by hand. Now it pushes HEAD to origin/main fast-forward only
-  // from anywhere, and when that cannot happen the door exits 3 with the exact git command (production stays deployed).
+  // from anywhere, and when that cannot happen the door exits 6 with the exact git command (production stays deployed).
   {
     const before = full("HEAD");
     // production recorded one release back, so every run here has a receipt commit to land (post records CUT)
@@ -444,22 +534,22 @@ let p = ""; process.stdin.on("data", (d) => (p += d)); process.stdin.on("end", (
     ok("a release checkout on ANOTHER branch: pushed to origin/main too, exit 0",
       r.status === 0 && last.deployed && originMain() === after && /from branch release-x/.test(r.stdout));
     git("checkout", "-q", "--detach", P); git("branch", "-q", "-D", "release-x");
-    // origin/main moved on meanwhile: never forced; deployed, exit 3, the merge-then-push command printed
+    // origin/main moved on meanwhile: never forced; deployed, exit 6, the merge-then-push command printed
     git("commit", "-q", "--allow-empty", "-m", "someone else's commit on main");
     const other = full("HEAD");
     git("push", "-q", "-f", "origin", `${other}:refs/heads/main`);
     git("reset", "-q", "--hard", P);
     r = door(PUSH, L, { keep: true });
-    ok("origin/main has commits the checkout lacks: NOT forced, origin/main untouched, door exits 3 (deployed, ACTION NEEDED) with the merge-then-push command",
-      r.status === 3 && last.deployed && originMain() === other && /NOT PUSHED/.test(r.stdout) && /ACTION NEEDED: production is deployed and eligible/.test(r.stdout)
+    ok("origin/main has commits the checkout lacks: NOT forced, origin/main untouched, door exits 6 (deployed, ACTION NEEDED; 3 is NOTE PENDING, nothing deployed) with the merge-then-push command",
+      r.status === 6 && last.deployed && originMain() === other && /NOT PUSHED/.test(r.stdout) && /ACTION NEEDED: production is deployed and eligible/.test(r.stdout)
       && r.stdout.includes("merge --no-edit FETCH_HEAD") && r.stdout.includes("push origin HEAD:refs/heads/main"));
     git("reset", "-q", "--hard", P);
-    // origin unreachable: exit 3 with the exact push command naming the receipt commit
+    // origin unreachable: exit 6 with the exact push command naming the receipt commit
     git("remote", "set-url", "origin", path.join(tmp, "no-such-origin.git"));
     r = door(PUSH, L, { keep: true });
     after = full("HEAD");
-    ok("origin unreachable: exit 3, NOT PUSHED, prints `git push origin <receipt sha>:refs/heads/main`",
-      r.status === 3 && last.deployed && /NOT PUSHED/.test(r.stdout) && r.stdout.includes(`push origin ${after}:refs/heads/main`));
+    ok("origin unreachable: exit 6, NOT PUSHED, prints `git push origin <receipt sha>:refs/heads/main`",
+      r.status === 6 && last.deployed && /NOT PUSHED/.test(r.stdout) && r.stdout.includes(`push origin ${after}:refs/heads/main`));
     git("remote", "set-url", "origin", origin);
     git("reset", "-q", "--hard", P);
     // the tracker step failing still never fails the deploy, and the receipt still lands on main

@@ -4,6 +4,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { eq, ok, report } from "./_assert.mjs";
 import { RELEASE_NOTES, CURRENT_RELEASE, compareVersions } from "../src/server/shared/release-notes.js";
+import { fillerLinesIn } from "../scripts/release-autopilot.mjs";
 
 for (const n of RELEASE_NOTES) {
   ok(`${n.version} is x.y.z`, /^\d+\.\d+\.\d+$/.test(n.version));
@@ -13,6 +14,9 @@ for (const n of RELEASE_NOTES) {
   ok(`${n.version} has a real date`, /^\d{4}-\d{2}-\d{2}$/.test(n.date) && !Number.isNaN(Date.parse(n.date)));
   ok(`${n.version} has a headline`, typeof n.headline === "string" && n.headline.length > 10);
   ok(`${n.version} says what changed`, (n.changes?.length || 0) + (n.fixes?.length || 0) > 0);
+  // 2026-11-17: CogniRunner 1.37.4 shipped the release door's filler line "This release fixes the problems listed below."
+  // A note says what really changed or it is not written (hand-written notes too): this gate runs before every deploy.
+  ok(`${n.version} carries no filler line (${JSON.stringify(fillerLinesIn(n))}); write what really changed`, fillerLinesIn(n).length === 0);
   ok(`${n.version} names no file or finding id`, !/\.(js|jsx|mjs)\b|SV-SEC|it\d{2}\b/.test(JSON.stringify(n)));
 }
 for (let i = 1; i < RELEASE_NOTES.length; i++) ok(`newest first: ${RELEASE_NOTES[i - 1].version} > ${RELEASE_NOTES[i].version}`, compareVersions(RELEASE_NOTES[i - 1].version, RELEASE_NOTES[i].version) > 0);

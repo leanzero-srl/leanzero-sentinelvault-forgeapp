@@ -15,7 +15,9 @@
 //      a line naming a KNOWN bug's key is folded into it (closed) instead of opening a new issue;
 //   4. the KNOWN -> CLOSED text move keeps the module loadable and moves exactly one element;
 //   5. post-deploy steps never throw and report the failing step;
-//   6. the real model runner answers null (never throws) when the CLI is missing or turned off;
+//   6. the real runner is a REQUEST FILE the visible session's agent answers (2026-11-17, core 1.5.0): with no answer
+//      it throws ModelPending (the door's exit 3), never null and never a fallback; a fix-only note carries its fixes
+//      as its change lines and no filler line; fillerLinesIn finds every FILLER_LINES line;
 //   7. the Marketplace "Try it first" step waits for the new version, runs the publisher on the workhorse under
 //      the vendor-browser lock, and reports (never throws) a late listing, a publisher error or a failed read-back.
 // Run by npm test. Alone: node test/release-autopilot.test.mjs (the core is shared with the other LeanZero doors).
@@ -190,10 +192,34 @@ try {
   ok(!r2.ok && r2.results[0].code === 127, "a runner that throws is a failure, never an exception");
 }
 
-/* ── 6. the real model runner degrades to null ──────────────────────────────── */
+/* ── 6. the real runner is a request to the visible session's agent: pending, never null, never a fallback ── */
 {
-  ok(await A.claudeRunner({ bin: "/nonexistent/claude-binary" })("hi") === null, "a missing CLI answers null");
-  ok(await A.claudeRunner({ model: "off" })("hi") === null, "RELEASE_AUTOPILOT_MODEL=off answers null");
+  const { mkdtempSync, readFileSync, writeFileSync, rmSync } = await import("node:fs");
+  const os = (await import("node:os")).default;
+  const dir = mkdtempSync(path.join(os.tmpdir(), "cr-release-request-"));
+  const run = A.requestRunner({ dir });
+  let e1 = null;
+  try { await run("Write the note. Answer with ONLY this JSON: {}", "release note 9.9.9"); } catch (e) { e1 = e; }
+  ok(e1 && e1.pending === true && e1.request.what === "release note 9.9.9" && A.NOTE_PENDING_EXIT === 3, "no answer yet: the runner throws ModelPending (exit code 3), it never resolves to null");
+  const req = JSON.parse(readFileSync(e1.request.path, "utf8"));
+  ok(req.protocol === A.REQUEST_PROTOCOL && req.id === A.requestId("Write the note. Answer with ONLY this JSON: {}") && req.prompt.startsWith("Write the note.") && req.result_path === e1.request.resultPath, "the request file carries the prompt, its id and where the answer goes");
+  const commits = [{ subject: "Fix the stop after 15 seconds", body: "Fixes CRT-12.", files: ["src/a.js"] }];
+  let e2 = null, logged = [];
+  try { await A.generateNote({ appName: "CogniRunner", version: "1.35.0", previous: "1.34.0", examples: [], commits, trackerKey: "CRT", runner: run, log: (s) => logged.push(s) }); } catch (e) { e2 = e; }
+  ok(e2 && e2.pending === true && !logged.some((l) => /deterministic fallback/.test(l)), "generateNote passes a pending request up: no deterministic fallback stands in for it");
+  let e3 = null;
+  try { await A.generateTrackerRows({ appName: "CogniRunner", trackerKey: "CRT", lines: [{ version: "1.35.0", kind: "changes", h: A.hashOf("A line."), line: "A line." }], components: { A: "Admin panel" }, runner: run }); } catch (e) { e3 = e; }
+  ok(e3 && e3.pending === true && e3.request.what === "public tracker rows", "generateTrackerRows passes a pending request up too");
+  writeFileSync(e2.request.resultPath, JSON.stringify({ request_id: e2.request.id, output: { headline: "Validators keep running.", changes: [{ text: "Fixes CRT-12: a validator stopped after 15 seconds.", keys: ["CRT-12"] }], fixes: [], action: null } }));
+  const g = await A.generateNote({ appName: "CogniRunner", version: "1.35.0", previous: "1.34.0", examples: [], commits, trackerKey: "CRT", runner: run });
+  ok(g.source === "model" && g.note.headline === "Validators keep running." && g.note.changes.length === 1 && A.fillerLinesIn(g.note).length === 0, `the same call reads the agent's answer once it is there (${JSON.stringify(g.note)})`);
+  // a fix-only note never gets the filler line: its fixes are its change lines
+  const d = A.deterministicNote({ commits, previous: "1.34.0", trackerKey: "CRT" });
+  ok(d.changes.length === 1 && /\(CRT-12\)\.$/.test(d.changes[0]) && d.fixes.length === 0 && A.fillerLinesIn(d).length === 0, `a fix-only deterministic note carries the fix as its change line, no filler (${JSON.stringify(d)})`);
+  const g2 = await A.generateNote({ appName: "CogniRunner", version: "1.35.0", previous: "1.34.0", examples: [], commits, trackerKey: "CRT", runner: fake([JSON.stringify({ headline: "x", changes: [], fixes: [{ text: "A validator stopped after 15 seconds.", keys: ["CRT-12"] }] })]) });
+  ok(g2.note.changes.length === 1 && g2.note.fixes.length === 0 && A.fillerLinesIn(g2.note).length === 0, `a model note with fixes only: the fixes are the change lines, no filler (${JSON.stringify(g2.note)})`);
+  ok(A.fillerLinesIn({ headline: "h", changes: ["This release fixes the problems listed below."], fixes: ["Real."] }).length === 1 && A.fillerLinesIn({ changes: ["maintenance release with no change you will notice"] }).length === 1 && A.fillerLinesIn({ headline: "h", changes: ["Real."] }).length === 0, "fillerLinesIn finds every FILLER_LINES line, whatever its case or full stop");
+  rmSync(dir, { recursive: true, force: true });
   ok(A.parseModelJson("```json\n{\"a\":1}\n```") && A.parseModelJson("x {\"a\":2} y").a === 2 && A.parseModelJson("nope") === null, "JSON is read from a fenced or bare answer");
 }
 

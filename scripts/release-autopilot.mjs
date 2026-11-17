@@ -11,10 +11,11 @@
  *
  *   1. NOTE. When the release being cut has no note (or a note with no lines), the door reads the
  *      commits since the previous production release (messages AND diffs), drops the internal-only
- *      ones, and writes the note: one headless model call (`claude -p`, Anthropic) in the app's own
- *      note style, checked line by line against the app's hazards; a deterministic note from the
- *      commit subjects when the model is unavailable or answers nothing usable. A release never
- *      waits on the model.
+ *      ones, and asks for the note: a REQUEST FILE the visible session's agent answers (see "the
+ *      model" below; never a headless model call), in the app's own note style, checked line by
+ *      line against the app's hazards. Until the answer is there the door stops with NOTE PENDING
+ *      (exit 3) before anything is written or deployed. Pending is never a pass, and no filler
+ *      line stands in for a missing answer: the door refuses a note that carries one.
  *   2. TRACKER ROWS. Every note line with no public tracker row gets one: a model pass writes the
  *      public title and a public-safe rewrite (or withholds the line), a SECOND model pass reviews
  *      the rows through a security/leakage lens, and a deterministic net withholds anything that
@@ -33,19 +34,20 @@
  *      10 min). Since core 1.4.0 the door does not wait for the listing: tryFirstHandOff kicks the
  *      watcher once, reads its heartbeat and returns. Logged, never blocks, never needs a person.
  *
- * A missed line is fine: nothing here refuses a release. Dependency-free (node builtins only); the
- * model is reached through the `claude` CLI on the machine running the door (laptop or workhorse).
+ * A missed tracker line is fine. Dependency-free (node builtins only). The model is the agent of
+ * the visible session that runs the door, reached through request and result files (requestRunner).
  * Tests inject `runner` so nothing calls a model.
  *
  * The canonical copy lives in CogniRunner (scripts/release-autopilot.mjs) and is copied verbatim
  * into LeanZero Management, Sentinel Vault and Cost Slasher; change it there and copy it on.
  */
 
-import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import os from "node:os";
+import path from "node:path";
 
-export const AUTOPILOT_VERSION = "1.4.0";
+export const AUTOPILOT_VERSION = "1.5.0";
 
 export const hashOf = (line) => createHash("sha256").update(line).digest("hex").slice(0, 16);
 const SEMVER = /^\d+\.\d+\.\d+$/;
@@ -84,6 +86,13 @@ export const stripKeys = (text, trackerKey) => String(text || "")
 
 /** Lines the door writes when it has nothing to say: never a public tracker issue. */
 export const FILLER_LINES = Object.freeze(["Maintenance release with no change you will notice.", "This release fixes the problems listed below.", "Security and reliability improvements."]);
+
+/** The filler lines a note carries (headline, changes, fixes, action). The door refuses to publish a note with any. */
+export const fillerLinesIn = (note) => {
+  const norm = (s) => String(s || "").trim().replace(/[.!]+$/, "").toLowerCase();
+  const filler = new Set(FILLER_LINES.map(norm));
+  return [note && note.headline, ...((note && note.changes) || []), ...((note && note.fixes) || []), note && note.action].filter((l) => l && filler.has(norm(l)));
+};
 
 export const hazardsOf = (text, hazards) => (hazards || []).filter(([re]) => { re.lastIndex = 0; return re.test(String(text || "")); }).map(([, what]) => what);
 
@@ -151,27 +160,60 @@ export const commitDiff = async ({ git, sha, packagedPaths, max = 4000 }) => {
 
 /* ── the model ─────────────────────────────────────────────────────────────────────────────── */
 
-/**
- * The headless model call: `claude -p` (Anthropic), no tools, one turn, the prompt on stdin.
- * Resolves to the text, or null on any failure or timeout (a release never waits on it).
- * RELEASE_AUTOPILOT_MODEL=off turns it off; RELEASE_AUTOPILOT_MODEL=<name> picks the model.
+/*
+ * THE MODEL IS THE VISIBLE SESSION'S AGENT, reached through a request file (2026-11-17, core 1.5.0).
+ * WHY: until 1.4.0 this was a headless `claude -p` child process. Headless Claude calls are forbidden on
+ * our Macs (owner 2026-11-04, visible sessions only; a guard hook blocks them), so on 1.37.4 the call
+ * answered nothing and the door published its fallback: the commit subject plus the filler line "This
+ * release fixes the problems listed below." A script cannot start an agent, so the call is a
+ * REQUEST / RESULT file pair, the same shape as the content pipeline's judge requests:
+ *   1. the door writes <dir>/<id>.json (what is asked, the full prompt, where the answer goes) and stops
+ *      with NOTE PENDING, exit code 3, before anything is written or deployed;
+ *   2. the visible session that ran the door has an agent read the request, answer its prompt and write
+ *      <dir>/<id>.result.json = {"request_id":"<id>","output":<the JSON the prompt asks for>};
+ *   3. the same door command is run again: the same inputs give the same id, so the answer is read.
+ * PENDING IS NEVER A PASS: no fallback text is written while a request waits, and a result with the wrong
+ * id or an unusable output keeps the request pending and says why.
  */
-export const claudeRunner = ({ bin = process.env.RELEASE_AUTOPILOT_CLAUDE || "claude", model = process.env.RELEASE_AUTOPILOT_MODEL, timeoutMs = 240000 } = {}) => {
-  if (model === "off") return async () => null;
-  return (prompt) => new Promise((resolve) => {
-    const args = ["-p", "--output-format", "text", "--max-turns", "1", "--tools", ""];
-    if (model) args.push("--model", model);
-    let out = "", done = false, child;
-    const finish = (v) => { if (!done) { done = true; clearTimeout(timer); resolve(v); } };
-    try { child = spawn(bin, args, { stdio: ["pipe", "pipe", "pipe"], env: process.env }); } catch { resolve(null); return; }
-    const timer = setTimeout(() => { try { child.kill("SIGKILL"); } catch { /* gone */ } finish(null); }, timeoutMs);
-    child.stdout.on("data", (d) => { out += d; });
-    child.stderr.on("data", () => {});
-    child.on("error", () => finish(null));
-    child.on("close", (code) => finish(code === 0 && out.trim() ? out : null));
-    child.stdin.on("error", () => {});
-    child.stdin.end(prompt);
-  });
+export const REQUEST_PROTOCOL = "lz-release-request-1";
+export const NOTE_PENDING_EXIT = 3;
+
+/** Thrown by requestRunner while a request has no usable answer. `pending` is what callers test for. */
+export class ModelPending extends Error {
+  constructor(request) {
+    super(`NOTE PENDING: ${request.what} waits for the visible session's agent (${request.path})`);
+    this.name = "ModelPending";
+    this.pending = true;
+    this.request = request;
+  }
+}
+
+export const requestId = (prompt) => createHash("sha256").update(`${REQUEST_PROTOCOL}\n${prompt}`).digest("hex").slice(0, 16);
+
+/**
+ * The runner the real door uses: (prompt, what) resolves to the agent's answer when <dir>/<id>.result.json
+ * holds one, and otherwise writes the request and throws ModelPending. Never resolves to null.
+ */
+export const requestRunner = ({ dir, now = () => new Date() }) => async (prompt, what = "a release door request") => {
+  const id = requestId(prompt);
+  const reqPath = path.join(dir, `${id}.json`), resPath = path.join(dir, `${id}.result.json`);
+  let why = null;
+  if (existsSync(resPath)) {
+    try {
+      const r = JSON.parse(readFileSync(resPath, "utf8"));
+      const out = typeof r.output === "string" ? r.output : JSON.stringify(r.output ?? null);
+      if (r.request_id !== id) why = `the result names request ${JSON.stringify(r.request_id)}, not ${id}`;
+      else if (!parseModelJson(out)) why = "the result's output is not the JSON object the prompt asks for";
+      else return out;
+    } catch (e) { why = `the result is not readable JSON (${e && e.message})`; }
+  }
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(reqPath, `${JSON.stringify({
+    protocol: REQUEST_PROTOCOL, id, what, created: now().toISOString(),
+    how: "An agent of the visible Claude session answers `prompt` and writes result_path as {\"request_id\":\"<id>\",\"output\":<the JSON object the prompt asks for>}. Then the same door command is run again. Never a headless model call, never a guessed or filler answer.",
+    result_path: resPath, prompt,
+  }, null, 1)}\n`);
+  throw new ModelPending({ id, what, path: reqPath, resultPath: resPath, why });
 };
 
 /** The first JSON object in a model's answer (fenced or bare), or null. */
@@ -185,12 +227,12 @@ export const parseModelJson = (text) => {
   try { return JSON.parse(body.slice(start, end + 1)); } catch { return null; }
 };
 
-/** One model call, tried twice (a headless call fails now and then: measured 2026-10-20 in Sentinel Vault, one null in four on the same prompt). */
+/** One model call, tried twice for an injected runner. A pending request (requestRunner) is passed up untouched: it is never a null answer. */
 const callModel = async (runner, prompt, log, what) => {
   if (typeof runner !== "function") return null;
   let text = null, json = null;
   for (let attempt = 1; attempt <= 2 && !json; attempt++) {
-    try { text = await runner(prompt); } catch (e) { text = null; log(`[autopilot] ${what}: the model call failed (${e && e.message})`); }
+    try { text = await runner(prompt, what); } catch (e) { if (e && e.pending) throw e; text = null; log(`[autopilot] ${what}: the model call failed (${e && e.message})`); }
     json = parseModelJson(text);
     if (!json && attempt === 1 && text !== undefined) log(`[autopilot] ${what}: ${text == null ? "no model answer" : "the model's answer was not JSON"}; trying once more`);
   }
@@ -203,8 +245,9 @@ const callModel = async (runner, prompt, log, what) => {
 const isFixSubject = (s) => /\b(?:fix(?:es|ed)?|bug|broke|broken|crash\w*|wrong|no longer|regression|error|fail\w*|stuck|missing|lost)\b/i.test(s);
 
 /**
- * The deterministic note, from the subjects of the customer-visible commits. Used when the model is
- * off or unusable; never refuses. Sensitive subjects collapse into one generic line.
+ * The deterministic note, from the subjects of the customer-visible commits. Only an injected runner
+ * that answers nothing reaches it (tests); the real door's runner is pending instead, and the door
+ * refuses any note that carries a FILLER_LINES line. Sensitive subjects collapse into one generic line.
  */
 export const deterministicNote = ({ commits, previous, trackerKey, requireChange = true }) => {
   const changes = [], fixes = [];
@@ -227,10 +270,11 @@ export const deterministicNote = ({ commits, previous, trackerKey, requireChange
   const uniq = (a) => [...new Set(a)].slice(0, 12);
   const out = { changes: uniq(changes), fixes: uniq(fixes) };
   if (!out.changes.length && !out.fixes.length) out.changes = ["Maintenance release with no change you will notice."];
-  if (requireChange && !out.changes.length) out.changes = ["This release fixes the problems listed below."];
   out.headline = out.fixes.length && out.changes.length <= 1
     ? `Fixes${previous ? ` since ${previous}` : ""}.`
     : `Improvements and fixes${previous ? ` since ${previous}` : ""}.`;
+  // a note needs at least one change line: a fix-only note carries its fixes there (as 1.37.3 does), never a filler line
+  if (requireChange && !out.changes.length) { out.changes = out.fixes; out.fixes = []; }
   return out;
 };
 
@@ -309,7 +353,8 @@ export const generateNote = async ({ appName, version, previous, examples, commi
     const line = base.length >= 12 ? clean(`${base.replace(/[.!?]$/, "")} (${k}).`, [k]) : null;
     note.fixes.push(line || `A problem reported on the public tracker is fixed (${k}).`);
   }
-  if (requireChange && !note.changes.length) note.changes.push("This release fixes the problems listed below.");
+  // a fix-only note carries its fixes as its change lines; no filler line is ever written in their place
+  if (requireChange && !note.changes.length) { note.changes = note.fixes; note.fixes = []; }
   note.changes = [...new Set(note.changes)];
   note.fixes = [...new Set(note.fixes)];
   return { note, source, dropped };

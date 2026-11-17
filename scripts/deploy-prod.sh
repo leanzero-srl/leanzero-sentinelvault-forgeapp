@@ -225,11 +225,30 @@ fi
 # automatically"): when the release being cut has no in-app note, the door writes it from the commits since the release
 # production carries, and every release-note line with no public tracker row gets one (model-written, model-reviewed,
 # withheld by a deterministic net when it touches security, permissions, isolation or keys). Each is committed here, so
-# the build below is of a named commit. It never refuses and never asks: a missed line is fine. Details in
+# the build below is of a named commit. A missed tracker line is fine. Details in
 # scripts/public-tracker/release-gate.mjs and scripts/release-autopilot.mjs.
+# THE WORDS COME FROM THE VISIBLE SESSION'S AGENT (2026-11-17, release-autopilot 1.5.0), never from a model process (a
+# headless model call is forbidden on our Macs and answered nothing, so the door published filler: CogniRunner 1.37.4).
+# prepare writes a request file under test-harness/results/release-requests/ and exits 3, NOTE PENDING: this door stops
+# here with EXIT 3, before the build and the deploy. An agent of the session answers the request (the path and the
+# answer's shape are printed), then this same command is run again; up to three stops per cut (the note, the tracker
+# rows, their review). Pending is never a pass. A note that would carry a filler line is refused: EXIT 2.
+# Exit codes of this door: 0 deployed and eligible; 1 refused or failed (ABORT / FAILED above the last line);
+# 2 a filler note, nothing built or deployed; 3 NOTE PENDING, nothing built or deployed, answer and re-run;
+# 6 deployed and eligible but the door's commits are NOT on origin/main (do NOT redeploy; run the printed git command).
 echo "==> Release notes and public tracker rows"
 PREP_ARGS=(); [[ "$APPROVE_MAJOR" == "1" ]] && PREP_ARGS+=(--approve-major)
-node scripts/public-tracker/release-gate.mjs prepare "${PREP_ARGS[@]+"${PREP_ARGS[@]}"}" || echo "==> The release autopilot did not finish; deploying as committed"
+PREP_RC=0
+node scripts/public-tracker/release-gate.mjs prepare "${PREP_ARGS[@]+"${PREP_ARGS[@]}"}" || PREP_RC=$?
+if [[ $PREP_RC -eq 3 ]]; then
+  echo "==> NOTE PENDING: stopped before the build; nothing was deployed. Once the request above is answered, run the same command again (${CMD} --sha ${NAMED_SHA} plus the same flags)."
+  exit 3
+fi
+if [[ $PREP_RC -eq 2 ]]; then
+  echo "ABORT: the release note would carry filler (above); stopped before the build, nothing was deployed."
+  exit 2
+fi
+if [[ $PREP_RC -ne 0 ]]; then echo "==> The release autopilot did not finish (exit ${PREP_RC}); deploying as committed"; fi
 if [[ -n "$(git status --porcelain --untracked-files=no)" ]]; then
   git checkout -- "${DOOR_FILES[@]}" 2>/dev/null || true
   echo "==> The release autopilot left uncommitted edits; they were put back"
@@ -306,7 +325,9 @@ echo "==> Eligible for Runs on Atlassian"
 # (a release worktree on a detached HEAD included). A tracker step failure is logged and never fails the deploy (the
 # daily digest's tracker check catches the drift the next morning). Commits that did NOT reach origin/main (post exit 6)
 # are not silent (8.25.0 and 8.26.0 were pushed by hand after a quiet skip, 2026-11-03): post prints the exact command
-# and the door ends with exit 3 after the Marketplace step: deployed and eligible, receipt not on main.
+# and the door ends with exit 6 after the Marketplace step: deployed and eligible, receipt not on main. (It was code 3
+# until 2026-11-17. Code 3 is NOTE PENDING now, which means "nothing deployed, run the same command again": the
+# opposite order, so the two never share a code.)
 POST_RC=0
 node scripts/public-tracker/release-gate.mjs post || POST_RC=$?
 if [[ $POST_RC -ne 0 && $POST_RC -ne 6 ]]; then echo "==> The public tracker step did not finish (exit ${POST_RC}); production is deployed and eligible"; fi
@@ -320,5 +341,5 @@ node scripts/public-tracker/release-gate.mjs try-first "${DEPLOYED_FORGE:-}" || 
 if [[ $POST_RC -eq 6 ]]; then
   echo "ACTION NEEDED: production is deployed and eligible (do NOT redeploy), but the door's commits are NOT on origin/main."
   echo "  Run the git command printed after NOT PUSHED / NOT COMMITTED above, then tag the receipt commit. (Not a deploy; --sha does not apply.)"
-  exit 3
+  exit 6
 fi

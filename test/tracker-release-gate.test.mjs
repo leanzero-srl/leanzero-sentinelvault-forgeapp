@@ -60,13 +60,58 @@ const door = fs.readFileSync(path.join(root, "scripts/deploy-prod.sh"), "utf8");
 ok("the production door writes the note and the tracker rows (prepare) before the build, never refusing on them, and runs the tracker step (post) after eligibility",
   door.indexOf("release-gate.mjs prepare") > 0 && door.indexOf("release-gate.mjs prepare") < door.indexOf("npm run build")
   && door.indexOf("release-gate.mjs post") > door.indexOf("Eligible for Runs on Atlassian")
-  && !/release-gate\.mjs check/.test(door) && /release-gate\.mjs prepare[^\n]*\|\| echo/.test(door) && /release-gate\.mjs post[^\n]*\|\| POST_RC=\$\?/.test(door)
+  && !/release-gate\.mjs check/.test(door) && /release-gate\.mjs prepare[^\n]*\|\| PREP_RC=\$\?/.test(door) && /release-gate\.mjs post[^\n]*\|\| POST_RC=\$\?/.test(door)
   && /POST_RC -ne 0 && \$POST_RC -ne 6 \]\]; then echo/.test(door));
 // pushing main (2026-11-03): never conditional on the branch name, never forced, never a silent skip
 const gateSrc = fs.readFileSync(path.join(root, "scripts/public-tracker/release-gate.mjs"), "utf8");
 ok("release-gate.mjs never decides the push from the branch being `main` in `post`", !/branch === "main"/.test(gateSrc));
 ok("release-gate.mjs never force-pushes", !/push", [^\n]*(--force|"-f"|\+HEAD|"\+)/.test(gateSrc));
-ok("`post` exits NOT_ON_MAIN when the receipt did not land, and the door turns that into exit 3",
-  /process\.exit\(landed \? 0 : NOT_ON_MAIN\)/.test(gateSrc) && /POST_RC -eq 6 \]\]; then[\s\S]*?exit 3/.test(door));
+// 2026-11-17: exit 3 is NOTE PENDING (nothing deployed, run the same command again). "Deployed, receipt not on main" used
+// to be exit 3 too; the two give opposite orders (re-run / do NOT redeploy), so it is exit 6 now, the code `post` uses.
+ok("`post` exits NOT_ON_MAIN when the receipt did not land, and the door turns that into exit 6 (never 3)",
+  /process\.exit\(landed \? 0 : NOT_ON_MAIN\)/.test(gateSrc) && /POST_RC -eq 6 \]\]; then[\s\S]*?exit 6/.test(door) && !/POST_RC -eq 6 \]\]; then[\s\S]*?exit 3/.test(door));
+
+// NOTE PENDING AND NO FILLER (2026-11-17, release-autopilot core 1.5.0). CogniRunner 1.37.4 shipped the door's filler
+// line because the note was asked of a headless model process, which is forbidden on our Macs and answers nothing. The
+// door now asks the visible session's agent through a request file and stops (exit 3) until it is answered. The door's
+// behaviour is run end to end in test/deploy-door.test.mjs; pinned here from the sources:
+const core = fs.readFileSync(path.join(root, "scripts/release-autopilot.mjs"), "utf8");
+ok("release-gate.mjs asks through request files (A.requestRunner) and no longer has a headless runner", /A\.requestRunner\(\{ dir: REQUESTS_DIR/.test(gateSrc) && !/claudeRunner/.test(gateSrc));
+ok("the autopilot core has no headless runner and imports no child_process", !/claudeRunner/.test(core) && !/child_process/.test(core) && /export const requestRunner/.test(core) && /export const NOTE_PENDING_EXIT = 3;/.test(core));
+ok("`prepare` passes a pending request up from every catch and exits NOTE_PENDING_EXIT; a filler note exits 2",
+  (gateSrc.match(/if \(e && e\.pending\) throw e;/g) || []).length >= 2 && /process\.exit\(A\.NOTE_PENDING_EXIT\)/.test(gateSrc) && /A\.fillerLinesIn\(n\)/.test(gateSrc) && /process\.exit\(FILLER_REFUSED\)/.test(gateSrc));
+{
+  const prep = door.indexOf("release-gate.mjs prepare"), build = door.indexOf("npm run build"), deploy = door.indexOf("forge deploy -e production");
+  const stop3 = door.indexOf("exit 3"), stop2 = door.indexOf("exit 2");
+  ok("the door stops on prepare's exit 3 (NOTE PENDING) and exit 2 (filler) before the build and the deploy, and exit 3 means nothing else in it",
+    prep > 0 && stop3 > prep && stop3 < build && stop2 > prep && stop2 < build && build < deploy && door.split("exit 3").length === 2
+    && /PREP_RC -eq 3 \]\]; then[\s\S]*?exit 3/.test(door) && /PREP_RC -eq 2 \]\]; then[\s\S]*?exit 2/.test(door));
+}
+// NO MODEL PROCESS ANYWHERE IN THE REPO: every tracked script, workflow and test is read. A comment may tell the history;
+// code may not name the old switches, spawn a `claude` binary or carry a `claude -p` / `--print` call.
+{
+  const { execFileSync } = await import("node:child_process");
+  const files = execFileSync("git", ["-C", root, "ls-files", "-z", "--", "scripts", "test", "test-harness", ".github", "src", "package.json"], { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 })
+    .split("\0").filter((f) => /\.(?:mjs|cjs|js|jsx|ts|sh|ya?ml|json)$/.test(f) && !/package-lock\.json$/.test(f));
+  const self = "test/tracker-release-gate.test.mjs";
+  const isComment = (l) => /^\s*(?:\/\/|\/?\*|#)/.test(l);
+  const bad = [];
+  for (const f of files) {
+    if (f === self) continue;
+    let text;
+    try { text = fs.readFileSync(path.join(root, f), "utf8"); } catch { continue; }
+    text.split("\n").forEach((l, i) => {
+      if (isComment(l)) return;
+      const inTest = f.startsWith("test/");
+      if (/RELEASE_AUTOPILOT_(?:MODEL|CLAUDE)/.test(l) || /\bclaudeRunner\s*\(/.test(l) || /\bclaude\s+(?:-p|--print)\b/.test(l)
+        || /(?:spawn|spawnSync|execFile|execFileSync|exec|execSync)\(\s*["'`]claude\b/.test(l)
+        || (inTest ? /writeFileSync\([^\n]*["'`]claude["'`]/.test(l) : /["'`]claude["'`]/.test(l))) bad.push(`${f}:${i + 1}`);
+    });
+  }
+  ok(`no headless model call is left anywhere in the repository (${files.length} files read): ${bad.join(", ")}`, files.length > 100 && bad.length === 0);
+  let ignored = false;
+  try { execFileSync("git", ["-C", root, "check-ignore", "-q", "test-harness/results/release-requests/0000000000000000.json"], { stdio: "ignore" }); ignored = true; } catch { ignored = false; }
+  ok("the door's request files are gitignored (test-harness/results/release-requests/)", ignored);
+}
 
 report("tracker-release-gate");

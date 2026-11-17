@@ -69,3 +69,7 @@ webpack.screenshot.js
 !docs/media/videos/
 !docs/media/videos/*.mp4
 .playwright-mcp/
+
+# The release door's requests to the visible session's agent and their answers (scripts/public-tracker/release-gate.mjs
+# prepare, NOTE PENDING): run state, never committed.
+test-harness/results/release-requests/
